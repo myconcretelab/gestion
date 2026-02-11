@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator postgres_client {
+  provider = "prisma-client-js"
+  output   = "../../generated/postgres-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Gite {
+  id                                   String   @id @default(cuid())
+  nom                                  String
+  prefixe_contrat                      String
+  adresse_ligne1                       String
+  adresse_ligne2                       String?
+  capacite_max                         Int
+  proprietaires_noms                   String
+  proprietaires_adresse                String
+  site_web                             String?
+  email                                String?
+  telephones                           Json
+  taxe_sejour_par_personne_par_nuit    Decimal  @db.Decimal(10,2)
+  iban                                 String
+  bic                                  String?
+  titulaire                            String
+  regle_animaux_acceptes               Boolean  @default(false)
+  regle_bois_premiere_flambee          Boolean  @default(false)
+  regle_tiers_personnes_info           Boolean  @default(false)
+  options_draps_par_lit                Decimal  @default(0) @db.Decimal(10,2)
+  options_linge_toilette_par_personne  Decimal  @default(0) @db.Decimal(10,2)
+  options_menage_forfait               Decimal  @default(0) @db.Decimal(10,2)
+  options_depart_tardif_forfait        Decimal  @default(0) @db.Decimal(10,2)
+  options_chiens_forfait               Decimal  @default(0) @db.Decimal(10,2)
+  caution_montant_defaut               Decimal  @default(0) @db.Decimal(10,2)
+  cheque_menage_montant_defaut         Decimal  @default(0) @db.Decimal(10,2)
+  arrhes_taux_defaut                   Decimal  @default(0.2) @db.Decimal(5,4)
+  prix_nuit_liste                      Json?
+  caracteristiques                     String?
+  createdAt                            DateTime @default(now())
+  updatedAt                            DateTime @updatedAt
+
+  contrats                             Contrat[]
+  counters                             ContratCounter[]
+
+  @@map("gites")
+}
+
+model Contrat {
+  id                     String   @id @default(cuid())
+  numero_contrat         String   @unique
+  gite_id                String
+  date_creation          DateTime @default(now())
+  date_derniere_modif    DateTime @updatedAt
+  locataire_nom          String
+  locataire_adresse      String
+  locataire_tel          String
+  nb_adultes             Int
+  nb_enfants_2_17        Int
+  date_debut             DateTime
+  heure_arrivee          String
+  date_fin               DateTime
+  heure_depart           String
+  nb_nuits               Int
+  prix_par_nuit          Decimal  @db.Decimal(10,2)
+  remise_montant         Decimal  @default(0) @db.Decimal(10,2)
+  taxe_sejour_calculee   Decimal? @db.Decimal(10,2)
+  options                Json
+  arrhes_montant         Decimal  @db.Decimal(10,2)
+  arrhes_date_limite     DateTime
+  solde_montant          Decimal  @db.Decimal(10,2)
+  caution_montant        Decimal  @db.Decimal(10,2)
+  cheque_menage_montant  Decimal  @db.Decimal(10,2)
+  afficher_caution_phrase Boolean @default(true)
+  afficher_cheque_menage_phrase Boolean @default(true)
+  clauses                Json
+  pdf_path               String
+  statut_paiement_arrhes String   @default("non_recu")
+  notes                  String?
+
+  gite                   Gite     @relation(fields: [gite_id], references: [id])
+
+  @@map("contrats")
+}
+
+model ContratCounter {
+  id         String @id @default(cuid())
+  giteId     String
+  year       Int
+  lastNumber Int
+
+  gite       Gite   @relation(fields: [giteId], references: [id])
+
+  @@unique([giteId, year])
+  @@map("contrat_counters")
+}

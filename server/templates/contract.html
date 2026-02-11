@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Contrat de location</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        font-size: 10.5pt;
+        line-height: 1.25;
+        color: #111;
+      }
+      .page {
+        width: 100%;
+        min-height: 100%;
+        padding: 8mm 10mm 12mm;
+        border: 1px solid #222;
+        position: relative;
+        page-break-after: always;
+      }
+      .page:last-child {
+        page-break-after: auto;
+      }
+      .doc-header {
+        text-align: center;
+      }
+      .title {
+        font-family: "Times New Roman", Times, serif;
+        font-weight: 700;
+        font-size: 18pt;
+        letter-spacing: 0.4px;
+      }
+      .subtitle {
+        font-family: "Times New Roman", Times, serif;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 13.5pt;
+        margin-top: 2px;
+      }
+      .header-address {
+        font-size: 10pt;
+        margin-top: 2px;
+      }
+      .rule {
+        border-bottom: 1px solid #777;
+        margin: 6mm 0 4mm;
+      }
+      .top-grid {
+        display: grid;
+        grid-template-columns: 1.35fr 1fr;
+        gap: 8mm;
+      }
+      .intro p {
+        margin: 0 0 3mm 0;
+      }
+      .sign-name {
+        margin-top: 2mm;
+        font-weight: 600;
+      }
+      .block {
+        margin-top: 4mm;
+      }
+      .block-title {
+        font-weight: 700;
+        margin-bottom: 1mm;
+      }
+      .box {
+        border: 1px solid #222;
+        padding: 3.5mm 4mm;
+      }
+      .label {
+        font-weight: 700;
+        margin-bottom: 2mm;
+      }
+      .link {
+        color: #1a5fb4;
+        text-decoration: underline;
+      }
+      .small {
+        font-size: 9.2pt;
+      }
+      .muted {
+        color: #444;
+      }
+      .notes ul {
+        margin: 1mm 0 0 0;
+        padding-left: 16px;
+      }
+      .caracteristiques-list {
+        margin: 1mm 0 0 0;
+        padding-left: 16px;
+      }
+      .mid-band {
+        margin-top: 6mm;
+        background: #e0e0e0;
+        border: 1px solid #666;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .mid-band .band-col {
+        padding: 4mm;
+      }
+      .mid-band .band-col + .band-col {
+        border-left: 1px solid #666;
+      }
+      .band-title {
+        font-weight: 700;
+        margin-bottom: 2mm;
+      }
+      .band-strong {
+        font-weight: 600;
+      }
+      .band-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 2mm;
+      }
+      .band-table td {
+        padding: 1.2mm 0;
+        vertical-align: top;
+      }
+      .band-table td:last-child {
+        text-align: right;
+      }
+      .band-option td {
+        font-size: 9.6pt;
+      }
+      .band-discount td {
+        color: #333;
+      }
+      .band-total td {
+        border-top: 1px solid #444;
+        font-weight: 700;
+        padding-top: 2mm;
+      }
+      .option-form {
+        margin-top: 3mm;
+        padding: 0.5mm 0;
+        font-size: 9.2pt;
+      }
+      .option-form__title {
+        font-weight: 700;
+        margin-bottom: 1.2mm;
+      }
+      .option-form__list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.6mm 3mm;
+        align-items: start;
+      }
+      .option-form__row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 2mm;
+        padding-bottom: 0.2mm;
+        min-width: 0;
+        border: none;
+      }
+      .option-form__row:last-child {
+        padding-bottom: 0;
+      }
+      .option-form__left {
+        display: flex;
+        gap: 1.4mm;
+        align-items: flex-start;
+        flex: 1 1 auto;
+        min-width: 0;
+        line-height: 1;
+      }
+      .option-form__text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2mm;
+        min-width: 0;
+      }
+      .option-form__label {
+        font-weight: 600;
+      }
+      .option-form__meta {
+        color: #444;
+        font-size: 8.7pt;
+        white-space: nowrap;
+      }
+      .option-form__right {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 2mm;
+        flex: 0 0 auto;
+        min-width: 0;
+        text-align: right;
+        align-self: flex-start;
+        white-space: nowrap;
+      }
+      .option-form__calc {
+        text-align: right;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .option-form__circle {
+        width: 4.2mm;
+        height: 4.2mm;
+        border: 1.1px solid #111;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .line {
+        display: inline-block;
+        border-bottom: 1.3px solid #222;
+        height: 3.6mm;
+        vertical-align: bottom;
+      }
+      .line--xs {
+        min-width: 7mm;
+      }
+      .line--sm {
+        min-width: 8mm;
+      }
+      .line--md {
+        min-width: 12mm;
+      }
+      .line--lg {
+        min-width: 30mm;
+      }
+      .section-title {
+        font-weight: 700;
+        margin-top: 5mm;
+        margin-bottom: 2mm;
+      }
+      .options-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1mm;
+      }
+      .options-table th,
+      .options-table td {
+        padding: 1mm 0;
+        border-bottom: 1px dotted #bbb;
+        vertical-align: top;
+      }
+      .options-table th {
+        text-align: left;
+        font-weight: 500;
+      }
+      .options-table td:last-child {
+        text-align: right;
+      }
+      .payment p {
+        margin: 1mm 0;
+      }
+      .reservation-terms {
+        margin-top: 4mm;
+        font-size: 9.6pt;
+      }
+      .reservation-terms p {
+        margin: 1.2mm 0;
+      }
+      .reservation-terms ul {
+        margin: 1mm 0 1.4mm 0;
+        padding-left: 16px;
+      }
+      .iban-line {
+        margin-top: 5mm;
+        border: 1px solid #222;
+        padding: 2mm 3mm;
+        font-size: 9.2pt;
+      }
+      .signature {
+        margin-top: 6mm;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8mm;
+      }
+      .sign-label {
+        font-weight: 700;
+        margin-top: 1.5mm;
+      }
+      .sign-line {
+        border-bottom: 1px solid #222;
+        height: 12mm;
+        margin-top: 2mm;
+      }
+      .footer {
+        position: fixed;
+        bottom: 6mm;
+        left: 16mm;
+        right: 16mm;
+        text-align: right;
+        font-size: 8.5pt;
+        color: #555;
+      }
+      .conditions-title {
+        font-family: "Times New Roman", Times, serif;
+        font-weight: 700;
+        font-size: 14pt;
+        text-align: center;
+        margin-bottom: 4mm;
+      }
+      .conditions h3 {
+        margin-top: 3mm;
+        text-transform: uppercase;
+        font-size: 10pt;
+      }
+      .conditions p,
+      .conditions li {
+        font-size: 9.3pt;
+      }
+      .conditions ul {
+        padding-left: 16px;
+        margin: 2mm 0 3mm 0;
+      }
+      .clauses ul {
+        margin: 1mm 0 0 0;
+        padding-left: 16px;
+      }
+      .clauses p,
+      .clauses li {
+        font-size: 9.2pt;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="doc-header">
+        <div class="title">CONTRAT DE LOCATION</div>
+        <div class="subtitle">GITE {{giteName}}</div>
+        <div class="header-address">{{giteAdresse}}</div>
+      </div>
+
+      <div class="rule"></div>
+
+      <div class="top-grid">
+        <div class="intro">
+          <p>Madame, Monsieur,</p>
+          <p>
+            Nous avons le plaisir de vous proposer la réservation de notre gîte {{giteName}}
+            selon les conditions décrites dans ce document. Espérant que cette proposition
+            retiendra votre attention, nous vous adressons nos sincères salutations.
+          </p>
+          <p class="sign-name">{{proprietairesNoms}}</p>
+
+          <div class="block">
+            <div class="block-title">Caractéristiques du gîte :</div>
+            <div>Capacité maximale : {{capaciteMax}} personnes</div>
+            <div>Adresse : {{giteAdresse}}</div>
+            {{{giteCaracteristiquesHtml}}}
+          </div>
+
+          <div class="block notes">
+            <div class="block-title">À noter :</div>
+            {{{notesHtml}}}
+          </div>
+        </div>
+
+        <div>
+          <div class="label">Propriétaires :</div>
+          <div class="box">
+            <div>{{proprietairesNoms}}</div>
+            <div>{{proprietairesAdresse}}</div>
+            {{{proprietairesContactHtml}}}
+          </div>
+
+          <div class="label" style="margin-top:6mm;">Locataires :</div>
+          <div class="box">
+            <div><strong>Nom et Prénom :</strong> {{locataireNom}}</div>
+            <div>Adresse : {{locataireAdresse}}</div>
+            <div>Tél : {{locataireTel}}</div>
+            <div class="small" style="margin-top:2mm;">
+              Nombre d'adultes : {{nbAdultes}}<br />
+              Nombre d'enfants (2 à 17 ans) : {{nbEnfants}}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mid-band">
+        <div class="band-col">
+          <div class="band-title">Le propriétaire loue</div>
+          <div class="band-strong">du {{dateDebut}} à {{heureArrivee}}</div>
+          <div class="band-strong">au {{dateFin}} à {{heureDepart}}</div>
+          <div class="small muted" style="margin-top:2mm;">Nombre de nuitées : {{nbNuits}}</div>
+        </div>
+        <div class="band-col">
+        <div class="band-title">Montant de la location</div>
+        <table class="band-table">
+          <tr>
+            <td>{{nbNuits}} nuitées x {{prixParNuit}}</td>
+            <td>{{montantBase}}</td>
+          </tr>
+          <tr>
+            <td>Remise exceptionnelle</td>
+            <td>{{remiseMontant}}</td>
+          </tr>
+          {{{optionsBandRowsHtml}}}
+          <tr class="band-total">
+            <td>TOTAL</td>
+            <td>{{totalGlobal}}</td>
+          </tr>
+        </table>
+          <div class="small muted" style="margin-top:2mm;">
+            Le prix comprend toutes les charges ainsi que la taxe de séjour : {{taxeSejourInfo}}.
+          </div>
+        </div>
+      </div>
+
+      {{{clientOptionsFormHtml}}}
+
+      <div class="reservation-terms">
+        <p>
+          Cette location prendra effet si je reçois à mon adresse ou par email ({{emailContact}})
+          avant le {{arrhesDateLimite}} :
+        </p>
+        <ul>
+          <li>Un exemplaire du présent contrat daté et signé avec la mention « lu et approuvé ».</li>
+          <li>Un chèque d'arrhes de {{arrhesMontant}}.</li>
+        </ul>
+        <p>
+          Au-delà de cette date et sans nouvelle de votre part cette proposition sera annulée et je
+          disposerai de la location à ma convenance. Le présent contrat est établi en 2 exemplaires.
+        </p>
+        {{{paiementSurPlaceHtml}}}
+      </div>
+
+      <div class="signature">
+        <div>
+          <div class="small muted">Fait le {{dateSignature}} à {{lieuSignature}}</div>
+          <div class="sign-label">Le propriétaire</div>
+          <div class="sign-line"></div>
+        </div>
+        <div>
+          <div class="small muted">J'ai pris connaissance des conditions générales de location précisées au verso.</div>
+          <div class="small muted">Fait le ............................, à ............................</div>
+          <div class="sign-label">Le locataire</div>
+          <div class="sign-line"></div>
+        </div>
+      </div>
+
+      <div class="iban-line">
+        TITULAIRE : {{titulaire}}&nbsp;&nbsp;&nbsp; IBAN : {{iban}}&nbsp;&nbsp;&nbsp; BIC : {{bic}}
+      </div>
+    </div>
+
+    <div class="page">
+      <div class="conditions-title">CONDITIONS GÉNÉRALES DE LOCATION</div>
+      <div class="conditions">
+        {{{conditionsHtml}}}
+      </div>
+    </div>
+
+    <div class="footer">Contrat n° {{contractNumber}}</div>
+  </body>
+</html>

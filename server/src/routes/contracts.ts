@@ -1,0 +1,584 @@
+import { Router } from "express";
+import { z } from "zod";
+import path from "path";
+import fs from "fs/promises";
+import prisma from "../db/prisma.js";
+import { env } from "../config/env.js";
+import { computeTotals, type OptionsInput } from "../services/contractCalculator.js";
+import { generateContractNumber } from "../services/contractNumber.js";
+import { generateContractPdf, generateContractPreviewPdf, type ContractRenderInput } from "../services/pdfService.js";
+import { toNumber, round2 } from "../utils/money.js";
+import { getPdfPaths } from "../utils/paths.js";
+import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
+
+const router = Router();
+
+const optionsSchema = z.object({
+  draps: z
+    .object({
+      enabled: z.boolean(),
+      nb_lits: z.number().int().min(0).optional(),
+      offert: z.boolean().optional(),
+    })
+    .optional(),
+  linge_toilette: z
+    .object({
+      enabled: z.boolean(),
+      nb_personnes: z.number().int().min(0).optional(),
+      offert: z.boolean().optional(),
+    })
+    .optional(),
+  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional() }).optional(),
+  depart_tardif: z.object({ enabled: z.boolean(), offert: z.boolean().optional() }).optional(),
+  chiens: z
+    .object({ enabled: z.boolean(), nb: z.number().int().min(0).optional(), offert: z.boolean().optional() })
+    .optional(),
+  regle_animaux_acceptes: z.boolean().optional(),
+  regle_bois_premiere_flambee: z.boolean().optional(),
+  regle_tiers_personnes_info: z.boolean().optional(),
+});
+
+type GiteRules = {
+  regle_animaux_acceptes: boolean;
+  regle_bois_premiere_flambee: boolean;
+  regle_tiers_personnes_info: boolean;
+};
+
+const resolveContractRules = (options: OptionsInput, gite: GiteRules) => ({
+  regle_animaux_acceptes: options.regle_animaux_acceptes ?? gite.regle_animaux_acceptes,
+  regle_bois_premiere_flambee: options.regle_bois_premiere_flambee ?? gite.regle_bois_premiere_flambee,
+  regle_tiers_personnes_info: options.regle_tiers_personnes_info ?? gite.regle_tiers_personnes_info,
+});
+
+const normalizeOptions = (options: OptionsInput, gite: GiteRules): OptionsInput => {
+  const regles = resolveContractRules(options, gite);
+  const next: OptionsInput = { ...options, ...regles };
+  if (!regles.regle_animaux_acceptes) {
+    next.chiens = { ...next.chiens, enabled: false, offert: false, nb: 0 };
+  }
+  return next;
+};
+
+const contractSchema = z.object({
+  gite_id: z.string().min(1),
+  locataire_nom: z.string().min(1),
+  locataire_adresse: z.string().min(1),
+  locataire_tel: z.string().min(1),
+  nb_adultes: z.number().int().min(1),
+  nb_enfants_2_17: z.number().int().min(0),
+  date_debut: z.string().min(1),
+  heure_arrivee: z.string().min(1),
+  date_fin: z.string().min(1),
+  heure_depart: z.string().min(1),
+  prix_par_nuit: z.number().min(0),
+  remise_montant: z.number().min(0).default(0),
+  options: optionsSchema.default({}),
+  arrhes_montant: z.number().min(0).optional(),
+  arrhes_date_limite: z.string().min(1),
+  caution_montant: z.number().min(0),
+  cheque_menage_montant: z.number().min(0),
+  afficher_caution_phrase: z.boolean().optional().default(true),
+  afficher_cheque_menage_phrase: z.boolean().optional().default(true),
+  clauses: z.record(z.any()).optional(),
+  notes: z.string().optional().nullable(),
+  statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
+});
+
+const arrhesStatusSchema = z.object({
+  statut_paiement_arrhes: z.enum(["non_recu", "recu"]),
+});
+
+const optionalDateString = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : undefined;
+}, z.string().optional());
+
+const previewSchema = z.object({
+  gite_id: z.string().min(1),
+  locataire_nom: z.string().optional().default(""),
+  locataire_adresse: z.string().optional().default(""),
+  locataire_tel: z.string().optional().default(""),
+  nb_adultes: z.number().int().min(1).optional().default(1),
+  nb_enfants_2_17: z.number().int().min(0).optional().default(0),
+  date_debut: optionalDateString,
+  heure_arrivee: z.string().optional().default("17:00"),
+  date_fin: optionalDateString,
+  heure_depart: z.string().optional().default("12:00"),
+  prix_par_nuit: z.number().min(0).optional().default(0),
+  remise_montant: z.number().min(0).optional().default(0),
+  options: optionsSchema.default({}),
+  arrhes_montant: z.number().min(0).optional(),
+  arrhes_date_limite: optionalDateString,
+  caution_montant: z.number().min(0).optional().default(0),
+  cheque_menage_montant: z.number().min(0).optional().default(0),
+  afficher_caution_phrase: z.boolean().optional().default(true),
+  afficher_cheque_menage_phrase: z.boolean().optional().default(true),
+  clauses: z.record(z.any()).optional(),
+  notes: z.string().optional().nullable(),
+  statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
+});
+
+const parseDate = (value: string) => new Date(value);
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const ensureValidDate = (value: Date, label: string) => {
+  if (Number.isNaN(value.getTime())) throw new Error(`Date invalide: ${label}`);
+};
+
+const hydrateGite = (gite: any) => ({
+  ...gite,
+  telephones: fromJsonString<string[]>(gite.telephones, []),
+  prix_nuit_liste: fromJsonString<number[]>(gite.prix_nuit_liste, []),
+});
+
+const hydrateContract = (contrat: any) => ({
+  ...contrat,
+  options: fromJsonString<OptionsInput>(contrat.options, {}),
+  clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
+  gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
+});
+
+router.get("/", async (req, res, next) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const giteId = typeof req.query.giteId === "string" ? req.query.giteId : undefined;
+    const numero = typeof req.query.numero === "string" ? req.query.numero : "";
+    const from = typeof req.query.from === "string" ? req.query.from : undefined;
+    const to = typeof req.query.to === "string" ? req.query.to : undefined;
+
+    const where: any = {};
+
+    if (giteId) where.gite_id = giteId;
+    if (q) {
+      where.OR = [
+        { locataire_nom: { contains: q, mode: "insensitive" } },
+        { numero_contrat: { contains: q, mode: "insensitive" } },
+      ];
+    }
+    if (numero) {
+      where.numero_contrat = { contains: numero, mode: "insensitive" };
+    }
+    if (from || to) {
+      where.date_debut = {};
+      if (from) where.date_debut.gte = new Date(from);
+      if (to) where.date_debut.lte = new Date(to);
+    }
+
+    const contrats = await prisma.contrat.findMany({
+      where,
+      orderBy: { date_creation: "desc" },
+      include: { gite: true },
+    });
+    res.json(contrats.map(hydrateContract));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/preview", async (req, res, next) => {
+  try {
+    const data = previewSchema.parse(req.body);
+    const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+
+    const dateDebut = data.date_debut ? parseDate(data.date_debut) : null;
+    const dateFin = data.date_fin ? parseDate(data.date_fin) : null;
+    if (dateDebut) ensureValidDate(dateDebut, "date_debut");
+    if (dateFin) ensureValidDate(dateFin, "date_fin");
+    if (dateDebut && dateFin && dateFin <= dateDebut) {
+      return res.status(400).json({ error: "La date de fin doit être postérieure à la date de début." });
+    }
+
+    const totalsDateDebut = dateDebut
+      ? dateDebut
+      : dateFin
+        ? addDays(dateFin, -1)
+        : new Date();
+    const totalsDateFin = dateFin
+      ? dateFin
+      : dateDebut
+        ? addDays(dateDebut, 1)
+        : addDays(totalsDateDebut, 1);
+
+    const options = normalizeOptions(data.options as OptionsInput, gite);
+
+    const totalsPre = computeTotals({
+      dateDebut: totalsDateDebut,
+      dateFin: totalsDateFin,
+      prixParNuit: data.prix_par_nuit ?? 0,
+      remiseMontant: data.remise_montant ?? 0,
+      nbAdultes: data.nb_adultes ?? 1,
+      nbEnfants: data.nb_enfants_2_17 ?? 0,
+      arrhesMontant: data.arrhes_montant ?? 0,
+      options,
+      gite,
+    });
+
+    const arrhesRate =
+      gite.arrhes_taux_defaut !== undefined && gite.arrhes_taux_defaut !== null
+        ? toNumber(gite.arrhes_taux_defaut)
+        : env.DEFAULT_ARRHES_RATE;
+    const arrhesMontant =
+      data.arrhes_montant !== undefined ? data.arrhes_montant : round2(totalsPre.totalSansOptions * arrhesRate);
+
+    const totals = computeTotals({
+      dateDebut: totalsDateDebut,
+      dateFin: totalsDateFin,
+      prixParNuit: data.prix_par_nuit ?? 0,
+      remiseMontant: data.remise_montant ?? 0,
+      nbAdultes: data.nb_adultes ?? 1,
+      nbEnfants: data.nb_enfants_2_17 ?? 0,
+      arrhesMontant,
+      options,
+      gite,
+    });
+
+    const arrhesDateLimite = data.arrhes_date_limite
+      ? parseDate(data.arrhes_date_limite)
+      : addDays(new Date(), 15);
+    if (data.arrhes_date_limite) ensureValidDate(arrhesDateLimite, "arrhes_date_limite");
+
+    const contractForPdf: ContractRenderInput = {
+      numero_contrat: "BROUILLON",
+      locataire_nom: data.locataire_nom ?? "",
+      locataire_adresse: data.locataire_adresse ?? "",
+      locataire_tel: data.locataire_tel ?? "",
+      nb_adultes: data.nb_adultes ?? 1,
+      nb_enfants_2_17: data.nb_enfants_2_17 ?? 0,
+      date_debut: dateDebut,
+      heure_arrivee: data.heure_arrivee ?? "17:00",
+      date_fin: dateFin,
+      heure_depart: data.heure_depart ?? "12:00",
+      prix_par_nuit: data.prix_par_nuit ?? 0,
+      remise_montant: data.remise_montant ?? 0,
+      arrhes_montant: arrhesMontant,
+      arrhes_date_limite: arrhesDateLimite,
+      solde_montant: totals.solde,
+      cheque_menage_montant: data.cheque_menage_montant ?? 0,
+      caution_montant: data.caution_montant ?? 0,
+      afficher_caution_phrase: data.afficher_caution_phrase ?? true,
+      afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
+      options,
+      clauses: data.clauses ?? {},
+      notes: data.notes ?? null,
+    };
+
+    const pdfBuffer = await generateContractPreviewPdf({
+      contract: contractForPdf,
+      gite,
+      totals,
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id", async (req, res, next) => {
+  try {
+    const contrat = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
+    res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/", async (req, res, next) => {
+  try {
+    const data = contractSchema.parse(req.body);
+    const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+
+    const dateDebut = parseDate(data.date_debut);
+    const dateFin = parseDate(data.date_fin);
+    ensureValidDate(dateDebut, "date_debut");
+    ensureValidDate(dateFin, "date_fin");
+    if (dateFin <= dateDebut) {
+      return res.status(400).json({ error: "La date de fin doit être postérieure à la date de début." });
+    }
+
+    const options = normalizeOptions(data.options as OptionsInput, gite);
+
+    const totalsPre = computeTotals({
+      dateDebut,
+      dateFin,
+      prixParNuit: data.prix_par_nuit,
+      remiseMontant: data.remise_montant ?? 0,
+      nbAdultes: data.nb_adultes,
+      nbEnfants: data.nb_enfants_2_17,
+      arrhesMontant: data.arrhes_montant ?? 0,
+      options,
+      gite,
+    });
+
+    const arrhesRate =
+      gite.arrhes_taux_defaut !== undefined && gite.arrhes_taux_defaut !== null
+        ? toNumber(gite.arrhes_taux_defaut)
+        : env.DEFAULT_ARRHES_RATE;
+    const arrhesMontant =
+      data.arrhes_montant !== undefined ? data.arrhes_montant : round2(totalsPre.totalSansOptions * arrhesRate);
+
+    const totals = computeTotals({
+      dateDebut,
+      dateFin,
+      prixParNuit: data.prix_par_nuit,
+      remiseMontant: data.remise_montant ?? 0,
+      nbAdultes: data.nb_adultes,
+      nbEnfants: data.nb_enfants_2_17,
+      arrhesMontant,
+      options,
+      gite,
+    });
+
+    const numeroContrat = await generateContractNumber(
+      data.gite_id,
+      gite.prefixe_contrat,
+      dateDebut.getFullYear()
+    );
+
+    const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
+      numeroContrat,
+      dateDebut
+    );
+
+    const contrat = await prisma.contrat.create({
+      data: {
+        numero_contrat: numeroContrat,
+        gite_id: data.gite_id,
+        locataire_nom: data.locataire_nom,
+        locataire_adresse: data.locataire_adresse,
+        locataire_tel: data.locataire_tel,
+        nb_adultes: data.nb_adultes,
+        nb_enfants_2_17: data.nb_enfants_2_17,
+        date_debut: dateDebut,
+        heure_arrivee: data.heure_arrivee,
+        date_fin: dateFin,
+        heure_depart: data.heure_depart,
+        nb_nuits: totals.nbNuits,
+        prix_par_nuit: data.prix_par_nuit,
+        remise_montant: data.remise_montant ?? 0,
+        taxe_sejour_calculee: totals.taxeSejourCalculee,
+        options: encodeJsonField(options),
+        arrhes_montant: arrhesMontant,
+        arrhes_date_limite: parseDate(data.arrhes_date_limite),
+        solde_montant: totals.solde,
+        caution_montant: data.caution_montant,
+        cheque_menage_montant: data.cheque_menage_montant,
+        afficher_caution_phrase: data.afficher_caution_phrase ?? true,
+        afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
+        clauses: encodeJsonField(data.clauses ?? {}),
+        pdf_path: pdfRelativePath,
+        statut_paiement_arrhes: data.statut_paiement_arrhes ?? "non_recu",
+        notes: data.notes ?? null,
+      },
+      include: { gite: true },
+    });
+
+    await generateContractPdf({
+      contract: contrat,
+      gite,
+      totals,
+      outputPath: pdfAbsolutePath,
+    });
+
+    res.status(201).json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/:id", async (req, res, next) => {
+  try {
+    const data = contractSchema.parse(req.body);
+    const existing = await prisma.contrat.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+
+    const dateDebut = parseDate(data.date_debut);
+    const dateFin = parseDate(data.date_fin);
+    ensureValidDate(dateDebut, "date_debut");
+    ensureValidDate(dateFin, "date_fin");
+    if (dateFin <= dateDebut) {
+      return res.status(400).json({ error: "La date de fin doit être postérieure à la date de début." });
+    }
+
+    const arrhesMontant =
+      data.arrhes_montant !== undefined
+        ? data.arrhes_montant
+        : round2(toNumber(existing.arrhes_montant));
+
+    const options = normalizeOptions(data.options as OptionsInput, gite);
+
+    const totals = computeTotals({
+      dateDebut,
+      dateFin,
+      prixParNuit: data.prix_par_nuit,
+      remiseMontant: data.remise_montant ?? 0,
+      nbAdultes: data.nb_adultes,
+      nbEnfants: data.nb_enfants_2_17,
+      arrhesMontant,
+      options,
+      gite,
+    });
+
+    const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
+      existing.numero_contrat,
+      dateDebut
+    );
+
+    const contrat = await prisma.contrat.update({
+      where: { id: req.params.id },
+      data: {
+        gite_id: data.gite_id,
+        locataire_nom: data.locataire_nom,
+        locataire_adresse: data.locataire_adresse,
+        locataire_tel: data.locataire_tel,
+        nb_adultes: data.nb_adultes,
+        nb_enfants_2_17: data.nb_enfants_2_17,
+        date_debut: dateDebut,
+        heure_arrivee: data.heure_arrivee,
+        date_fin: dateFin,
+        heure_depart: data.heure_depart,
+        nb_nuits: totals.nbNuits,
+        prix_par_nuit: data.prix_par_nuit,
+        remise_montant: data.remise_montant ?? 0,
+        taxe_sejour_calculee: totals.taxeSejourCalculee,
+        options: encodeJsonField(options),
+        arrhes_montant: arrhesMontant,
+        arrhes_date_limite: parseDate(data.arrhes_date_limite),
+        solde_montant: totals.solde,
+        caution_montant: data.caution_montant,
+        cheque_menage_montant: data.cheque_menage_montant,
+        afficher_caution_phrase: data.afficher_caution_phrase ?? true,
+        afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
+        clauses: encodeJsonField(data.clauses ?? {}),
+        pdf_path: pdfRelativePath,
+        statut_paiement_arrhes: data.statut_paiement_arrhes ?? "non_recu",
+        notes: data.notes ?? null,
+      },
+      include: { gite: true },
+    });
+
+    await generateContractPdf({
+      contract: contrat,
+      gite,
+      totals,
+      outputPath: pdfAbsolutePath,
+    });
+
+    res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/arrhes", async (req, res, next) => {
+  try {
+    const data = arrhesStatusSchema.parse(req.body);
+    const contrat = await prisma.contrat.update({
+      where: { id: req.params.id },
+      data: { statut_paiement_arrhes: data.statut_paiement_arrhes },
+      include: { gite: true },
+    });
+    res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/regenerate", async (req, res, next) => {
+  try {
+    const contrat = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const dateDebut = contrat.date_debut;
+    const dateFin = contrat.date_fin;
+
+    const options = normalizeOptions(
+      fromJsonString<OptionsInput>(contrat.options, {}),
+      contrat.gite
+    );
+
+    const totals = computeTotals({
+      dateDebut,
+      dateFin,
+      prixParNuit: toNumber(contrat.prix_par_nuit),
+      remiseMontant: toNumber(contrat.remise_montant),
+      nbAdultes: contrat.nb_adultes,
+      nbEnfants: contrat.nb_enfants_2_17,
+      arrhesMontant: toNumber(contrat.arrhes_montant),
+      options,
+      gite: contrat.gite,
+    });
+
+    const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
+      contrat.numero_contrat,
+      dateDebut
+    );
+
+    await prisma.contrat.update({
+      where: { id: contrat.id },
+      data: {
+        nb_nuits: totals.nbNuits,
+        taxe_sejour_calculee: totals.taxeSejourCalculee,
+        solde_montant: totals.solde,
+        pdf_path: pdfRelativePath,
+        options: encodeJsonField(options),
+      },
+    });
+
+    await generateContractPdf({
+      contract: contrat,
+      gite: contrat.gite,
+      totals,
+      outputPath: pdfAbsolutePath,
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:id", async (req, res, next) => {
+  try {
+    const contrat = await prisma.contrat.findUnique({ where: { id: req.params.id } });
+    if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
+    await prisma.contrat.delete({ where: { id: req.params.id } });
+    const absolutePath = path.join(process.cwd(), contrat.pdf_path);
+    await fs.unlink(absolutePath).catch(() => undefined);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/pdf", async (req, res, next) => {
+  try {
+    const contrat = await prisma.contrat.findUnique({ where: { id: req.params.id } });
+    if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
+    const absolutePath = path.join(process.cwd(), contrat.pdf_path);
+    res.sendFile(absolutePath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

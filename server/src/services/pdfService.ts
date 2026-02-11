@@ -1,0 +1,545 @@
+import fs from "fs/promises";
+import path from "path";
+import { chromium, Browser } from "playwright";
+import { Gite, Prisma } from "@prisma/client";
+import { renderTemplate } from "./template.js";
+import { formatDate } from "../utils/dates.js";
+import { formatEuro, round2, toNumber } from "../utils/money.js";
+import type { ContractTotals, OptionsInput } from "./contractCalculator.js";
+
+let browserPromise: Promise<Browser> | null = null;
+let templateCache: { contractHtml: string; conditionsHtml: string } | null = null;
+
+export type ContractRenderInput = {
+  numero_contrat: string;
+  locataire_nom: string;
+  locataire_adresse: string;
+  locataire_tel: string;
+  nb_adultes: number;
+  nb_enfants_2_17: number;
+  date_debut: Date | null;
+  heure_arrivee: string;
+  date_fin: Date | null;
+  heure_depart: string;
+  prix_par_nuit: Prisma.Decimal | number | string;
+  remise_montant: Prisma.Decimal | number | string;
+  arrhes_montant: Prisma.Decimal | number | string;
+  arrhes_date_limite: Date;
+  solde_montant: Prisma.Decimal | number | string;
+  cheque_menage_montant: Prisma.Decimal | number | string;
+  caution_montant: Prisma.Decimal | number | string;
+  afficher_caution_phrase?: boolean;
+  afficher_cheque_menage_phrase?: boolean;
+  options: OptionsInput | string;
+  clauses?: Record<string, unknown> | string | null;
+  notes?: string | null;
+};
+
+const getBrowser = async () => {
+  if (!browserPromise) {
+    browserPromise = chromium.launch({ args: ["--no-sandbox"] });
+  }
+  return browserPromise;
+};
+
+export const closeBrowser = async () => {
+  if (!browserPromise) return;
+  const browser = await browserPromise;
+  await browser.close();
+  browserPromise = null;
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const formatTel = (telephones: unknown) => {
+  if (Array.isArray(telephones)) {
+    return telephones.filter(Boolean).join(" / ");
+  }
+  if (typeof telephones === "string") {
+    try {
+      const parsed = JSON.parse(telephones);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean).join(" / ");
+    } catch {
+      return telephones;
+    }
+    return telephones;
+  }
+  return "";
+};
+
+const resolveContractRules = (gite: Gite, options?: OptionsInput) => ({
+  regle_animaux_acceptes: options?.regle_animaux_acceptes ?? gite.regle_animaux_acceptes,
+  regle_bois_premiere_flambee:
+    options?.regle_bois_premiere_flambee ?? gite.regle_bois_premiere_flambee,
+  regle_tiers_personnes_info:
+    options?.regle_tiers_personnes_info ?? gite.regle_tiers_personnes_info,
+});
+
+const buildGiteCaracteristiquesHtml = (value: string | null | undefined) => {
+  if (!value) return "";
+  const items = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!items.length) return "";
+  return `<ul class="caracteristiques-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+};
+
+const formatOptionalDate = (value: Date | string | null | undefined, fallback = "À renseigner") => {
+  if (!value) return fallback;
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (!Number.isFinite(date.getTime())) return fallback;
+  return formatDate(date);
+};
+
+const buildProprietairesContactHtml = (gite: Gite) => {
+  const lines: string[] = [];
+  if (gite.site_web) {
+    lines.push(`<div class="link">${escapeHtml(gite.site_web)}</div>`);
+  }
+  if (gite.email) {
+    lines.push(`<div class="link">${escapeHtml(gite.email)}</div>`);
+  }
+  const tel = formatTel(gite.telephones);
+  if (tel) {
+    lines.push(`<div>T/ ${escapeHtml(tel)}</div>`);
+  }
+  return lines.join("");
+};
+
+const buildNotesHtml = (params: { gite: Gite; options: OptionsInput }) => {
+  const { gite, options } = params;
+  const regles = resolveContractRules(gite, options);
+  const notes: string[] = [];
+  if (!regles.regle_animaux_acceptes) {
+    notes.push("Les animaux ne sont pas acceptés.");
+  }
+  if (regles.regle_tiers_personnes_info) {
+    notes.push("Les propriétaires doivent être informés de l'éventuel accès au gîte de tierces personnes.");
+  }
+  if (regles.regle_bois_premiere_flambee) {
+    notes.push("En hiver, bois fourni pour une première flambée.");
+  }
+  if (!notes.length) {
+    return "<p class=\"small muted\">Aucune mention particulière.</p>";
+  }
+  return `<ul>${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>`;
+};
+
+const buildPaiementSurPlaceHtml = (params: {
+  soldeMontant: string;
+  chequeMenageMontant: string;
+  cautionMontant: string;
+  afficherChequeMenagePhrase: boolean;
+  afficherCautionPhrase: boolean;
+}) => {
+  const extras: string[] = [];
+  if (params.afficherChequeMenagePhrase) {
+    extras.push(
+      `le chèque de ménage de ${params.chequeMenageMontant} (encaissé que si le ménage n’est pas correctement fait à votre départ)`
+    );
+  }
+  if (params.afficherCautionPhrase) {
+    extras.push(`le chèque de caution de ${params.cautionMontant}`);
+  }
+
+  let tail = ".";
+  if (extras.length === 1) {
+    tail = `, en même temps que ${extras[0]}.`;
+  } else if (extras.length === 2) {
+    tail = `, en même temps que ${extras[0]} et ${extras[1]}.`;
+  }
+
+  return `<p>Le montant restant de la location, soit ${params.soldeMontant} (sans les services annexes) sera payé le jour de la remise des clés${tail}</p>`;
+};
+
+const parseJsonField = <T>(value: unknown, fallback: T): T => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value !== "string") return value as T;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const formatSignedEuro = (value: number, sign: "+" | "-") =>
+  `${sign} ${formatEuro(Math.abs(value))}`;
+
+const buildClientOptionsFormHtml = (params: {
+  options: OptionsInput;
+  totals: ContractTotals;
+  gite: Gite;
+}) => {
+  const { options, totals, gite } = params;
+  const regles = resolveContractRules(gite, options);
+  const rows: string[] = [];
+  const line = (size: "line--xs" | "line--sm" | "line--md" | "line--lg") => `<span class="line ${size}"></span>`;
+  const buildRow = (params: { label: string; meta: string; calcHtml: string }) => `
+    <div class="option-form__row">
+      <div class="option-form__left">
+        <span class="option-form__circle"></span>
+        <div class="option-form__text">
+          <span class="option-form__label">${escapeHtml(params.label)}</span>
+          <span class="option-form__meta">${escapeHtml(params.meta)}</span>
+        </div>
+      </div>
+      <div class="option-form__right">
+        <span class="option-form__calc">${params.calcHtml}</span>
+      </div>
+    </div>
+  `;
+
+  if (!options.draps?.enabled) {
+    const tarif = toNumber(gite.options_draps_par_lit);
+    const tarifDisplay = escapeHtml(formatEuro(tarif));
+    rows.push(
+      buildRow({
+        label: "Draps",
+        meta: `${formatEuro(tarif)} / lit / séjour`,
+        calcHtml: `${tarifDisplay} × ${line("line--sm")} lits = ${line("line--md")} €`,
+      })
+    );
+  }
+
+  if (!options.linge_toilette?.enabled) {
+    const tarif = toNumber(gite.options_linge_toilette_par_personne);
+    const tarifDisplay = escapeHtml(formatEuro(tarif));
+    rows.push(
+      buildRow({
+        label: "Linge de toilette",
+        meta: `${formatEuro(tarif)} / personne / séjour`,
+        calcHtml: `${tarifDisplay} × ${line("line--sm")} personnes = ${line("line--md")} €`,
+      })
+    );
+  }
+
+  if (!options.menage?.enabled) {
+    const tarif = toNumber(gite.options_menage_forfait);
+    rows.push(
+      buildRow({
+        label: "Ménage fin de séjour",
+        meta: `Forfait ${formatEuro(tarif)}`,
+        calcHtml: `Forfait = ${line("line--md")} €`,
+      })
+    );
+  }
+
+  if (!options.depart_tardif?.enabled) {
+    const tarif = toNumber(gite.options_depart_tardif_forfait);
+    rows.push(
+      buildRow({
+        label: "Départ tardif",
+        meta: `Forfait ${formatEuro(tarif)}`,
+        calcHtml: `Forfait = ${line("line--md")} €`,
+      })
+    );
+  }
+
+  if (regles.regle_animaux_acceptes && !options.chiens?.enabled) {
+    const tarif = toNumber(gite.options_chiens_forfait);
+    const tarifDisplay = escapeHtml(formatEuro(tarif));
+    rows.push(
+      buildRow({
+        label: "Chiens",
+        meta: `${formatEuro(tarif)} / nuit / chien`,
+        calcHtml: `${tarifDisplay} × ${line("line--xs")} chiens × ${escapeHtml(
+          String(totals.nbNuits)
+        )} nuit(s) = ${line("line--md")} €`,
+      })
+    );
+  }
+
+  if (!rows.length) return "";
+
+  return `
+    <div class="option-form">
+      <div class="option-form__title">
+        Services annexes en option, à régler sur place (à entourer si souhaités) :
+      </div>
+      <div class="option-form__list">
+        ${rows.join("\n")}
+      </div>
+    </div>
+  `;
+};
+
+const buildOptionsBandRowsHtml = (params: {
+  options: OptionsInput;
+  totals: ContractTotals;
+  gite: Gite;
+}) => {
+  const rows: string[] = [];
+  const { options, totals, gite } = params;
+  const regles = resolveContractRules(gite, options);
+  const nbNuits = totals.nbNuits;
+  const anyOption =
+    options.draps?.enabled ||
+    options.linge_toilette?.enabled ||
+    options.menage?.enabled ||
+    options.depart_tardif?.enabled ||
+    (regles.regle_animaux_acceptes && options.chiens?.enabled);
+
+  if (options.draps?.enabled) {
+    const nbLits = options.draps.nb_lits ?? 0;
+    const tarif = toNumber(gite.options_draps_par_lit);
+    const base = round2(tarif * nbLits);
+    rows.push(
+      `<tr class="band-option"><td>Draps (${nbLits} lit(s) x ${formatEuro(tarif)} / séjour)</td><td>${formatSignedEuro(
+        base,
+        "+"
+      )}</td></tr>`
+    );
+    if (options.draps?.offert) {
+      rows.push(
+        `<tr class="band-option band-discount"><td>Offre exeptionelle - Draps</td><td>${formatSignedEuro(
+          base,
+          "-"
+        )}</td></tr>`
+      );
+    }
+  }
+  if (options.linge_toilette?.enabled) {
+    const nbPersonnes = options.linge_toilette.nb_personnes ?? 0;
+    const tarif = toNumber(gite.options_linge_toilette_par_personne);
+    const base = round2(tarif * nbPersonnes);
+    rows.push(
+      `<tr class="band-option"><td>Linge de toilette (${nbPersonnes} pers. x ${formatEuro(
+        tarif
+      )} / séjour)</td><td>${formatSignedEuro(base, "+")}</td></tr>`
+    );
+    if (options.linge_toilette?.offert) {
+      rows.push(
+        `<tr class="band-option band-discount"><td>Offre exeptionelle - Linge de toilette</td><td>${formatSignedEuro(
+          base,
+          "-"
+        )}</td></tr>`
+      );
+    }
+  }
+  if (options.menage?.enabled) {
+    const tarif = toNumber(gite.options_menage_forfait);
+    const base = round2(tarif);
+    rows.push(
+      `<tr class="band-option"><td>Ménage fin de séjour</td><td>${formatSignedEuro(base, "+")}</td></tr>`
+    );
+    if (options.menage?.offert) {
+      rows.push(
+        `<tr class="band-option band-discount"><td>Offre exeptionelle - Ménage fin de séjour</td><td>${formatSignedEuro(
+          base,
+          "-"
+        )}</td></tr>`
+      );
+    }
+  }
+  if (options.depart_tardif?.enabled) {
+    const tarif = toNumber(gite.options_depart_tardif_forfait);
+    const base = round2(tarif);
+    rows.push(
+      `<tr class="band-option"><td>Départ tardif</td><td>${formatSignedEuro(base, "+")}</td></tr>`
+    );
+    if (options.depart_tardif?.offert) {
+      rows.push(
+        `<tr class="band-option band-discount"><td>Offre exeptionelle - Départ tardif</td><td>${formatSignedEuro(
+          base,
+          "-"
+        )}</td></tr>`
+      );
+    }
+  }
+  if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
+    const nbChiens = options.chiens.nb ?? 1;
+    const tarif = toNumber(gite.options_chiens_forfait);
+    const base = round2(tarif * nbChiens * nbNuits);
+    rows.push(
+      `<tr class="band-option"><td>Chiens (${nbChiens} x ${nbNuits} nuit(s) x ${formatEuro(
+        tarif
+      )})</td><td>${formatSignedEuro(base, "+")}</td></tr>`
+    );
+    if (options.chiens?.offert) {
+      rows.push(
+        `<tr class="band-option band-discount"><td>Offre exeptionelle - Chiens</td><td>${formatSignedEuro(
+          base,
+          "-"
+        )}</td></tr>`
+      );
+    }
+  }
+
+  if (!anyOption) {
+    rows.push(`<tr class="band-option"><td>Options</td><td>${formatSignedEuro(0, "+")}</td></tr>`);
+  }
+
+  return rows.join("\n");
+};
+
+const buildClausesHtml = (params: {
+  gite: Gite;
+  options: OptionsInput;
+  clauses: Record<string, unknown> | null;
+}) => {
+  const clauses: string[] = [];
+  const { gite, options } = params;
+  const regles = resolveContractRules(gite, options);
+
+  if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
+    clauses.push(
+      `Animaux acceptés sous réserve de respecter les lieux. Supplément chiens: ${formatEuro(
+        toNumber(gite.options_chiens_forfait)
+      )} / nuit.`
+    );
+  }
+
+  if (!options.menage?.enabled) {
+    clauses.push(
+      "Le gîte doit être rendu propre; le chèque ménage pourra être encaissé si le nettoyage n'est pas effectué."
+    );
+  }
+
+  if (options.depart_tardif?.enabled) {
+    clauses.push("Départ tardif accordé selon l'horaire convenu avec le propriétaire.");
+  }
+
+  if (params.clauses && typeof params.clauses["texte_additionnel"] === "string") {
+    clauses.push(String(params.clauses["texte_additionnel"]));
+  }
+
+  if (!clauses.length) {
+    return "<p class=\"small muted\">Aucune clause particulière.</p>";
+  }
+
+  return `<ul>${clauses.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>`;
+};
+
+const loadTemplates = async () => {
+  if (templateCache) return templateCache;
+  const templatePath = path.join(process.cwd(), "templates", "contract.html");
+  const conditionsPath = path.join(process.cwd(), "templates", "conditions.html");
+  const [contractHtml, conditionsHtml] = await Promise.all([
+    fs.readFile(templatePath, "utf-8"),
+    fs.readFile(conditionsPath, "utf-8"),
+  ]);
+  templateCache = { contractHtml, conditionsHtml };
+  return templateCache;
+};
+
+const pdfBaseOptions = {
+  format: "A4" as const,
+  printBackground: true,
+  margin: {
+    top: "12mm",
+    right: "12mm",
+    bottom: "12mm",
+    left: "12mm",
+  },
+};
+
+const buildContractHtml = async (params: {
+  contract: ContractRenderInput;
+  gite: Gite;
+  totals: ContractTotals;
+}) => {
+  const { contractHtml, conditionsHtml } = await loadTemplates();
+  const options = parseJsonField<OptionsInput>(params.contract.options, {});
+  const clauses = parseJsonField<Record<string, unknown>>(params.contract.clauses ?? {}, {});
+
+  return renderTemplate(contractHtml, {
+    contractNumber: params.contract.numero_contrat,
+    giteName: params.gite.nom.toUpperCase(),
+    giteAdresse: [params.gite.adresse_ligne1, params.gite.adresse_ligne2]
+      .filter(Boolean)
+      .join(" - "),
+    proprietairesNoms: params.gite.proprietaires_noms,
+    proprietairesAdresse: params.gite.proprietaires_adresse,
+    proprietairesContactHtml: buildProprietairesContactHtml(params.gite),
+    locataireNom: params.contract.locataire_nom,
+    locataireAdresse: params.contract.locataire_adresse,
+    locataireTel: params.contract.locataire_tel,
+    nbAdultes: String(params.contract.nb_adultes),
+    nbEnfants: String(params.contract.nb_enfants_2_17),
+    capaciteMax: String(params.gite.capacite_max),
+    dateDebut: formatOptionalDate(params.contract.date_debut),
+    heureArrivee: params.contract.heure_arrivee,
+    dateFin: formatOptionalDate(params.contract.date_fin),
+    heureDepart: params.contract.heure_depart,
+    nbNuits: String(params.totals.nbNuits),
+    prixParNuit: formatEuro(toNumber(params.contract.prix_par_nuit)),
+    montantBase: formatEuro(params.totals.montantBase),
+    remiseMontant: formatEuro(toNumber(params.contract.remise_montant)),
+    totalGlobal: formatEuro(params.totals.totalGlobal),
+    optionsBandRowsHtml: buildOptionsBandRowsHtml({
+      options,
+      totals: params.totals,
+      gite: params.gite,
+    }),
+    clientOptionsFormHtml: buildClientOptionsFormHtml({
+      options,
+      totals: params.totals,
+      gite: params.gite,
+    }),
+    taxeSejourInfo: `${formatEuro(params.totals.taxeSejourCalculee)} (soit ${formatEuro(
+      toNumber(params.gite.taxe_sejour_par_personne_par_nuit)
+    )} / personne / nuit)`,
+    arrhesMontant: formatEuro(toNumber(params.contract.arrhes_montant)),
+    arrhesDateLimite: formatDate(params.contract.arrhes_date_limite),
+    paiementSurPlaceHtml: buildPaiementSurPlaceHtml({
+      soldeMontant: formatEuro(toNumber(params.contract.solde_montant)),
+      chequeMenageMontant: formatEuro(toNumber(params.contract.cheque_menage_montant)),
+      cautionMontant: formatEuro(toNumber(params.contract.caution_montant)),
+      afficherChequeMenagePhrase: params.contract.afficher_cheque_menage_phrase ?? true,
+      afficherCautionPhrase: params.contract.afficher_caution_phrase ?? true,
+    }),
+    iban: params.gite.iban,
+    bic: params.gite.bic ?? "",
+    titulaire: params.gite.titulaire,
+    notesHtml: buildNotesHtml({ gite: params.gite, options }),
+    giteCaracteristiquesHtml: buildGiteCaracteristiquesHtml(params.gite.caracteristiques),
+    clausesHtml: buildClausesHtml({ gite: params.gite, options, clauses }),
+    lieuSignature: params.gite.adresse_ligne2 ?? params.gite.adresse_ligne1,
+    dateSignature: formatDate(new Date()),
+    emailContact: params.gite.email ?? "contact@gites-broceliande.com",
+    conditionsHtml,
+  });
+};
+
+export const generateContractPdf = async (params: {
+  contract: ContractRenderInput;
+  gite: Gite;
+  totals: ContractTotals;
+  outputPath: string;
+}) => {
+  const html = await buildContractHtml(params);
+
+  await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  await page.setContent(html, { waitUntil: "load" });
+  await page.pdf({
+    path: params.outputPath,
+    ...pdfBaseOptions,
+  });
+  await page.close();
+};
+
+export const generateContractPreviewPdf = async (params: {
+  contract: ContractRenderInput;
+  gite: Gite;
+  totals: ContractTotals;
+}) => {
+  const html = await buildContractHtml(params);
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  await page.setContent(html, { waitUntil: "load" });
+  const buffer = await page.pdf({
+    ...pdfBaseOptions,
+    pageRanges: "1",
+  });
+  await page.close();
+  return buffer;
+};

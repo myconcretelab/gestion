@@ -1,0 +1,22 @@
+node_modules
+.env
+.env.local
+.DS_Store
+server/data
+server/prisma/dev.db
+server/prisma/dev.db-journal
+server/prisma/dev.db-wal
+server/prisma/dev.db-shm
+client/dist
+server/dist
+server/.cache
+server/generated
+
+# Playwright
+playwright-report
+.playwright
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

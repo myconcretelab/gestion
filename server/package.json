@@ -1,0 +1,42 @@
+{
+  "name": "contrats-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run dev:db && tsx watch --clear-screen=false src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "migrate": "npm run dev:db",
+    "seed": "node scripts/seed.mjs",
+    "prisma": "node scripts/prisma.mjs",
+    "prisma:use:sqlite": "node scripts/use-schema.mjs sqlite",
+    "prisma:use:postgres": "node scripts/use-schema.mjs postgres",
+    "prisma:generate": "node scripts/prisma.mjs generate",
+    "dev:db": "npm run prisma:use:sqlite && node scripts/prisma.mjs migrate dev",
+    "dev:reset": "npm run prisma:use:sqlite && node scripts/prisma.mjs migrate reset --force",
+    "prod:migrate": "npm run prisma:use:postgres && node scripts/prisma.mjs migrate deploy --schema prisma/postgres/schema.prisma",
+    "prod:generate": "npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma",
+    "db:studio": "npm run prisma:use:sqlite && node scripts/prisma.mjs studio",
+    "db:migrate:sqlite-to-postgres": "npm run prisma:use:sqlite && node scripts/prisma.mjs generate --schema prisma/schema.sqlite.prisma && npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma && tsx scripts/migrate-sqlite-to-postgres.ts --from=sqlite --to=postgres"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.2",
+    "cors": "^2.8.5",
+    "date-fns": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "playwright": "^1.48.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.16.5",
+    "prisma": "^6.19.2",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

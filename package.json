@@ -1,0 +1,24 @@
+{
+  "name": "contrats-monorepo",
+  "private": true,
+  "workspaces": ["server", "client"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "npm run start -w server",
+    "migrate": "npm run migrate -w server",
+    "seed": "npm run seed -w server",
+    "dev:db": "npm run dev:db -w server",
+    "dev:reset": "npm run dev:reset -w server",
+    "prod:migrate": "npm run prod:migrate -w server",
+    "prod:generate": "npm run prod:generate -w server",
+    "db:studio": "npm run db:studio -w server",
+    "prisma:generate": "npm run prisma:generate -w server",
+    "prisma:use:sqlite": "npm run prisma:use:sqlite -w server",
+    "prisma:use:postgres": "npm run prisma:use:postgres -w server",
+    "db:migrate:sqlite-to-postgres": "npm run db:migrate:sqlite-to-postgres -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
