@@ -173,6 +173,76 @@ const toContractRenderInput = (contrat: any): ContractRenderInput => ({
   notes: contrat.notes ?? null,
 });
 
+const contractTemplatePaths = [
+  path.join(process.cwd(), "server/templates/contract.html"),
+  path.join(process.cwd(), "server/templates/conditions.html"),
+];
+
+const getLatestTemplateMtimeMs = async () => {
+  const stats = await Promise.all(contractTemplatePaths.map((templatePath) => fs.stat(templatePath).catch(() => null)));
+  return stats.reduce((maxMtime, stat) => Math.max(maxMtime, stat?.mtimeMs ?? 0), 0);
+};
+
+const regenerateStoredContractPdf = async (contrat: any) => {
+  const options = normalizeOptions(fromJsonString<OptionsInput>(contrat.options, {}), contrat.gite);
+
+  const totals = computeTotals({
+    dateDebut: contrat.date_debut,
+    dateFin: contrat.date_fin,
+    prixParNuit: toNumber(contrat.prix_par_nuit),
+    remiseMontant: toNumber(contrat.remise_montant),
+    nbAdultes: contrat.nb_adultes,
+    nbEnfants: contrat.nb_enfants_2_17,
+    arrhesMontant: toNumber(contrat.arrhes_montant),
+    options,
+    gite: contrat.gite,
+  });
+
+  const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
+    contrat.numero_contrat,
+    contrat.date_debut
+  );
+
+  await prisma.contrat.update({
+    where: { id: contrat.id },
+    data: {
+      nb_nuits: totals.nbNuits,
+      taxe_sejour_calculee: totals.taxeSejourCalculee,
+      solde_montant: totals.solde,
+      pdf_path: pdfRelativePath,
+      options: encodeJsonField(options),
+    },
+  });
+
+  const contractForPdf = {
+    ...toContractRenderInput(contrat),
+    options,
+  };
+  await generateContractPdf({
+    contract: contractForPdf,
+    gite: contrat.gite,
+    totals,
+    outputPath: pdfAbsolutePath,
+  });
+
+  return { pdfRelativePath, pdfAbsolutePath };
+};
+
+const shouldRegeneratePdf = async (contrat: any, absolutePath: string) => {
+  const [pdfStat, latestTemplateMtimeMs] = await Promise.all([
+    fs.stat(absolutePath).catch(() => null),
+    getLatestTemplateMtimeMs(),
+  ]);
+  if (!pdfStat) return true;
+
+  const contractMtimeMs =
+    contrat.date_derniere_modif instanceof Date
+      ? contrat.date_derniere_modif.getTime()
+      : new Date(contrat.date_derniere_modif).getTime();
+  const latestSourceMtimeMs = Math.max(contractMtimeMs, latestTemplateMtimeMs);
+  return pdfStat.mtimeMs + 1 < latestSourceMtimeMs;
+};
+
 type PreviewContext = {
   gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
   totals: ReturnType<typeof computeTotals>;
@@ -569,53 +639,7 @@ router.post("/:id/regenerate", async (req, res, next) => {
       include: { gite: true },
     });
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
-
-    const dateDebut = contrat.date_debut;
-    const dateFin = contrat.date_fin;
-
-    const options = normalizeOptions(
-      fromJsonString<OptionsInput>(contrat.options, {}),
-      contrat.gite
-    );
-
-    const totals = computeTotals({
-      dateDebut,
-      dateFin,
-      prixParNuit: toNumber(contrat.prix_par_nuit),
-      remiseMontant: toNumber(contrat.remise_montant),
-      nbAdultes: contrat.nb_adultes,
-      nbEnfants: contrat.nb_enfants_2_17,
-      arrhesMontant: toNumber(contrat.arrhes_montant),
-      options,
-      gite: contrat.gite,
-    });
-
-    const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
-      contrat.numero_contrat,
-      dateDebut
-    );
-
-    await prisma.contrat.update({
-      where: { id: contrat.id },
-      data: {
-        nb_nuits: totals.nbNuits,
-        taxe_sejour_calculee: totals.taxeSejourCalculee,
-        solde_montant: totals.solde,
-        pdf_path: pdfRelativePath,
-        options: encodeJsonField(options),
-      },
-    });
-
-    const contractForPdf = {
-      ...toContractRenderInput(contrat),
-      options,
-    };
-    await generateContractPdf({
-      contract: contractForPdf,
-      gite: contrat.gite,
-      totals,
-      outputPath: pdfAbsolutePath,
-    });
+    await regenerateStoredContractPdf(contrat);
 
     res.json({ ok: true });
   } catch (err) {
@@ -638,9 +662,21 @@ router.delete("/:id", async (req, res, next) => {
 
 router.get("/:id/pdf", async (req, res, next) => {
   try {
-    const contrat = await prisma.contrat.findUnique({ where: { id: req.params.id } });
+    const contrat = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
-    const absolutePath = path.join(process.cwd(), contrat.pdf_path);
+
+    let absolutePath = path.join(process.cwd(), contrat.pdf_path);
+    if (await shouldRegeneratePdf(contrat, absolutePath)) {
+      const regenerated = await regenerateStoredContractPdf(contrat);
+      absolutePath = regenerated.pdfAbsolutePath;
+    }
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(absolutePath);
   } catch (err) {
     next(err);

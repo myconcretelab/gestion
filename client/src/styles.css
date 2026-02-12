@@ -817,6 +817,11 @@ button.warning {
   font-weight: 600;
 }
 
+.preview-success {
+  color: #166534;
+  font-weight: 600;
+}
+
 .preview-error {
   color: #b91c1c;
   font-weight: 600;

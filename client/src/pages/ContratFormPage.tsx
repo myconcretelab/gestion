@@ -1045,13 +1045,13 @@ const ContratFormPage = () => {
                 : "Prévisualisation inactive : dates invalides."}
           </span>
           {!previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after && (
-            <span className="preview-warning">
-              Dépassement détecté : taille de police réduite dans &quot;Caractéristiques du gîte&quot; et &quot;À noter&quot;.
+            <span className="preview-success">
+              Dépassement détecté puis corrigé : après ajustement, la page 1 ne dépasse plus.
             </span>
           )}
           {!previewLoading && !previewError && previewOverflow?.after && (
             <span className="preview-warning">
-              Dépassement persistant : le contrat dépasse une page malgré la réduction.
+              Dépassement persistant : le contrat dépasse encore une page malgré plusieurs niveaux de réduction.
             </span>
           )}
           {previewError && <span className="preview-error">{previewError}</span>}

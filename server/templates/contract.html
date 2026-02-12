@@ -309,22 +309,42 @@
       .conditions-title {
         font-family: "Times New Roman", Times, serif;
         font-weight: 700;
-        font-size: 14pt;
+        font-size: 13pt;
         text-align: center;
-        margin-bottom: 4mm;
+        margin: 0 0 2.4mm;
+        line-height: 1.1;
+      }
+      .page--conditions {
+        padding: 6mm 8mm 8mm;
+        page-break-after: auto;
+      }
+      .conditions {
+        font-size: 8.7pt;
+        line-height: 1.16;
       }
       .conditions h3 {
-        margin-top: 3mm;
+        margin: 1.8mm 0 0.8mm;
         text-transform: uppercase;
-        font-size: 10pt;
+        font-size: 9pt;
+        line-height: 1.12;
+      }
+      .conditions h3:first-child {
+        margin-top: 0;
       }
       .conditions p,
       .conditions li {
-        font-size: 9.3pt;
+        font-size: inherit;
+        line-height: inherit;
+      }
+      .conditions p {
+        margin: 0 0 0.95mm;
       }
       .conditions ul {
-        padding-left: 16px;
-        margin: 2mm 0 3mm 0;
+        padding-left: 13px;
+        margin: 0.5mm 0 0.95mm;
+      }
+      .conditions li {
+        margin: 0 0 0.5mm;
       }
       .clauses ul {
         margin: 1mm 0 0 0;
@@ -334,13 +354,97 @@
       .clauses li {
         font-size: 9.2pt;
       }
-      .compact-sections .caracteristiques,
-      .compact-sections .notes {
+      body.compact-sections .caracteristiques,
+      body.compact-sections .notes {
         font-size: 9.4pt;
       }
-      .compact-sections .caracteristiques .block-title,
-      .compact-sections .notes .block-title {
+      body.compact-sections .caracteristiques .block-title,
+      body.compact-sections .notes .block-title {
         font-size: 9.8pt;
+      }
+      body.compact-density .rule {
+        margin: 5mm 0 3mm;
+      }
+      body.compact-density .top-grid {
+        gap: 6mm;
+      }
+      body.compact-density .block {
+        margin-top: 3mm;
+      }
+      body.compact-density .mid-band {
+        margin-top: 4.5mm;
+      }
+      body.compact-density .mid-band .band-col {
+        padding: 3mm;
+      }
+      body.compact-density .option-form {
+        margin-top: 2mm;
+      }
+      body.compact-density .option-form__list {
+        gap: 0.4mm 2.4mm;
+      }
+      body.compact-density .option-form__row {
+        gap: 1.6mm;
+      }
+      body.compact-density .reservation-terms {
+        margin-top: 2.5mm;
+      }
+      body.compact-density .reservation-terms p {
+        margin: 1mm 0;
+      }
+      body.compact-density .reservation-terms ul {
+        margin: 0.8mm 0 1.1mm 0;
+      }
+      body.compact-density .signature {
+        margin-top: 4mm;
+        gap: 6mm;
+      }
+      body.compact-density .iban-line {
+        margin-top: 4mm;
+        padding: 1.6mm 2.4mm;
+      }
+      body.compact-text .page:first-of-type {
+        font-size: 10pt;
+        line-height: 1.2;
+      }
+      body.compact-text .page:first-of-type .title {
+        font-size: 17pt;
+      }
+      body.compact-text .page:first-of-type .subtitle {
+        font-size: 12.7pt;
+      }
+      body.compact-text .page:first-of-type .header-address {
+        font-size: 9.6pt;
+      }
+      body.compact-text .page:first-of-type .small {
+        font-size: 8.8pt;
+      }
+      body.compact-text .page:first-of-type .option-form {
+        font-size: 8.9pt;
+      }
+      body.compact-text .page:first-of-type .option-form__meta {
+        font-size: 8.2pt;
+      }
+      body.compact-final .page:first-of-type {
+        font-size: 9.7pt;
+        line-height: 1.16;
+      }
+      body.compact-final .page:first-of-type .title {
+        font-size: 16.2pt;
+      }
+      body.compact-final .page:first-of-type .subtitle {
+        font-size: 12.1pt;
+      }
+      body.compact-final .page:first-of-type .option-form__circle {
+        width: 3.8mm;
+        height: 3.8mm;
+      }
+      body.compact-final .page:first-of-type .sign-line {
+        height: 9mm;
+        margin-top: 1.2mm;
+      }
+      body.compact-final .page:first-of-type .line {
+        height: 3.1mm;
       }
       @media screen {
         body.preview {
@@ -481,7 +585,7 @@
       </div>
     </div>
 
-    <div class="page">
+    <div class="page page--conditions">
       <div class="conditions-title">CONDITIONS GÉNÉRALES DE LOCATION</div>
       <div class="conditions">
         {{{conditionsHtml}}}

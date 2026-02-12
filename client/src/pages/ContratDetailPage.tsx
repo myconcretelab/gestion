@@ -8,6 +8,7 @@ const ContratDetailPage = () => {
   const { id } = useParams();
   const [contrat, setContrat] = useState<Contrat | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pdfNonce] = useState(() => Date.now());
 
   const load = async () => {
     if (!id) return;
@@ -27,7 +28,11 @@ const ContratDetailPage = () => {
 
   const downloadPdf = () => {
     if (!id) return;
-    window.open(`/api/contracts/${id}/pdf`, "_blank");
+    const version = contrat?.date_derniere_modif ?? Date.now();
+    window.open(
+      `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(version))}&t=${Date.now()}`,
+      "_blank"
+    );
   };
 
   if (error) return <div className="note">{error}</div>;
@@ -36,6 +41,8 @@ const ContratDetailPage = () => {
   const arrhesPaid = contrat.statut_paiement_arrhes === "recu";
   const email = contrat.locataire_email;
   const phoneHref = contrat.locataire_tel ? contrat.locataire_tel.replace(/\s+/g, "") : "";
+  const pdfVersion = contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
+  const pdfUrl = `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
 
   return (
     <div>
@@ -127,7 +134,7 @@ const ContratDetailPage = () => {
       <div className="card">
         <div className="section-title">PDF</div>
         <div className="preview-shell">
-          <iframe className="preview-frame" title="Contrat PDF" src={`/api/contracts/${id}/pdf`} />
+          <iframe key={pdfUrl} className="preview-frame" title="Contrat PDF" src={pdfUrl} />
         </div>
       </div>
     </div>

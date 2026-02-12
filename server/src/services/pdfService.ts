@@ -6,8 +6,10 @@ import { formatDate } from "../utils/dates.js";
 import { formatEuro, round2, toNumber, type NumericLike } from "../utils/money.js";
 import type { ContractTotals, OptionsInput } from "./contractCalculator.js";
 
-let browserPromise: Promise<Browser> | null = null;
+let browser: Browser | null = null;
+let browserLaunchPromise: Promise<Browser> | null = null;
 let templateCache: { contractHtml: string; conditionsHtml: string } | null = null;
+const MAX_BROWSER_ATTEMPTS = 3;
 
 type GiteLike = {
   nom: string;
@@ -60,17 +62,74 @@ export type ContractRenderInput = {
 };
 
 const getBrowser = async () => {
-  if (!browserPromise) {
-    browserPromise = chromium.launch({ args: ["--no-sandbox"] });
+  if (browser && browser.isConnected()) {
+    return browser;
   }
-  return browserPromise;
+  if (browser && !browser.isConnected()) {
+    browser = null;
+  }
+  if (!browserLaunchPromise) {
+    browserLaunchPromise = chromium
+      .launch({ args: ["--no-sandbox"] })
+      .then((launchedBrowser) => {
+        browser = launchedBrowser;
+        browserLaunchPromise = null;
+        launchedBrowser.on("disconnected", () => {
+          if (browser === launchedBrowser) {
+            browser = null;
+          }
+        });
+        return launchedBrowser;
+      })
+      .catch((error) => {
+        browser = null;
+        browserLaunchPromise = null;
+        throw error;
+      });
+  }
+  return browserLaunchPromise;
+};
+
+const resetBrowserState = async () => {
+  const activeBrowser = browser ?? (browserLaunchPromise ? await browserLaunchPromise.catch(() => null) : null);
+  browser = null;
+  browserLaunchPromise = null;
+  if (activeBrowser) {
+    await activeBrowser.close().catch(() => undefined);
+  }
 };
 
 export const closeBrowser = async () => {
-  if (!browserPromise) return;
-  const browser = await browserPromise;
-  await browser.close();
-  browserPromise = null;
+  await resetBrowserState();
+};
+
+const isClosedBrowserError = (error: unknown) => {
+  if (!(error instanceof Error)) return false;
+  return /Target page, context or browser has been closed|Browser has been closed|has been closed/i.test(
+    error.message
+  );
+};
+
+const withPageRetry = async <T>(operation: (page: Page) => Promise<T>): Promise<T> => {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_BROWSER_ATTEMPTS; attempt += 1) {
+    let page: Page | null = null;
+    try {
+      const activeBrowser = await getBrowser();
+      page = await activeBrowser.newPage();
+      return await operation(page);
+    } catch (error) {
+      lastError = error;
+      const canRetry = isClosedBrowserError(error) && attempt < MAX_BROWSER_ATTEMPTS;
+      if (!canRetry) throw error;
+      await resetBrowserState();
+    } finally {
+      if (page) {
+        await page.close().catch(() => undefined);
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Erreur Playwright inconnue");
 };
 
 const escapeHtml = (value: string) =>
@@ -499,25 +558,38 @@ const measureOverflow = async (page: Page) => {
   }, printableHeightPx);
 };
 
-const applyCompactSectionsIfOverflow = async (page: Page) => {
+const compactClassSteps = [
+  "compact-sections",
+  "compact-density",
+  "compact-text",
+  "compact-final",
+] as const;
+
+const applyCompactionIfOverflow = async (page: Page) => {
   const overflowBefore = await measureOverflow(page);
   if (!overflowBefore) {
     return { overflowBefore, overflowAfter: false, compactApplied: false };
   }
 
-  await page.evaluate(() => {
-    document.body?.classList.add("compact-sections");
-  });
-  await page.waitForTimeout(0);
+  let overflowAfter: boolean = overflowBefore;
+  for (const className of compactClassSteps) {
+    await page.evaluate((compactClass) => {
+      document.body?.classList.add(compactClass);
+    }, className);
+    await page.waitForTimeout(0);
+    overflowAfter = await measureOverflow(page);
+    if (!overflowAfter) {
+      return { overflowBefore, overflowAfter, compactApplied: true };
+    }
+  }
 
-  const overflowAfter = await measureOverflow(page);
   return { overflowBefore, overflowAfter, compactApplied: true };
 };
 
 const prepareContractPage = async (page: Page, html: string) => {
   await page.setContent(html, { waitUntil: "load" });
   await page.emulateMedia({ media: "print" });
-  return applyCompactSectionsIfOverflow(page);
+  return applyCompactionIfOverflow(page);
 };
 
 const buildContractHtml = async (params: {
@@ -605,14 +677,13 @@ export const generateContractPdf = async (params: {
   const html = await buildContractHtml(params);
 
   await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  await prepareContractPage(page, html);
-  await page.pdf({
-    path: params.outputPath,
-    ...pdfBaseOptions,
+  await withPageRetry(async (page) => {
+    await prepareContractPage(page, html);
+    await page.pdf({
+      path: params.outputPath,
+      ...pdfBaseOptions,
+    });
   });
-  await page.close();
 };
 
 export const generateContractPreviewPdf = async (params: {
@@ -621,15 +692,14 @@ export const generateContractPreviewPdf = async (params: {
   totals: ContractTotals;
 }) => {
   const html = await buildContractHtml(params);
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  const compactInfo = await prepareContractPage(page, html);
-  const buffer = await page.pdf({
-    ...pdfBaseOptions,
-    pageRanges: "1",
+  return withPageRetry(async (page) => {
+    const compactInfo = await prepareContractPage(page, html);
+    const buffer = await page.pdf({
+      ...pdfBaseOptions,
+      pageRanges: "1",
+    });
+    return { buffer, ...compactInfo };
   });
-  await page.close();
-  return { buffer, ...compactInfo };
 };
 
 export const generateContractPreviewHtml = async (params: {
@@ -638,10 +708,9 @@ export const generateContractPreviewHtml = async (params: {
   totals: ContractTotals;
 }) => {
   const html = await buildContractHtml({ ...params, bodyAttrs: 'class="preview"' });
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  const compactInfo = await prepareContractPage(page, html);
-  const renderedHtml = await page.content();
-  await page.close();
-  return { html: renderedHtml, ...compactInfo };
+  return withPageRetry(async (page) => {
+    const compactInfo = await prepareContractPage(page, html);
+    const renderedHtml = await page.content();
+    return { html: renderedHtml, ...compactInfo };
+  });
 };
