@@ -104,6 +104,17 @@ const main = async () => {
   console.log(`Cible: ${maskUrl(postgresUrl)}`);
   console.log(`Mode: ${dryRun ? "dry-run" : wipe ? "wipe" : "upsert"}`);
 
+  if (sqliteUrl.startsWith("file:")) {
+    const sqlitePath = sqliteUrl.slice("file:".length);
+    if (!fs.existsSync(sqlitePath)) {
+      console.error(`Fichier SQLite introuvable: ${sqlitePath}`);
+      console.error(
+        "Astuce: utilisez --from-url=file:/chemin/vers/votre.db ou DATABASE_URL_SQLITE."
+      );
+      process.exit(1);
+    }
+  }
+
   const sqlite = new SqliteClient({
     datasources: { db: { url: sqliteUrl } },
   });
@@ -112,6 +123,24 @@ const main = async () => {
   });
 
   try {
+    const tableRows = await sqlite.$queryRawUnsafe<{ name: string }[]>(
+      "SELECT name FROM sqlite_master WHERE type='table'"
+    );
+    const tableNames = new Set(tableRows.map((row) => row.name));
+    const requiredTables = ["gites", "contrats", "contrat_counters"];
+    const missingTables = requiredTables.filter((name) => !tableNames.has(name));
+    if (missingTables.length > 0) {
+      const found = [...tableNames].sort().join(", ") || "(aucune table)";
+      console.error(
+        `Tables SQLite manquantes: ${missingTables.join(", ")}.`
+      );
+      console.error(`Tables trouvees: ${found}`);
+      console.error(
+        "Verifiez que vous pointez vers le bon fichier SQLite (ou que les migrations SQLite ont ete executees)."
+      );
+      process.exit(1);
+    }
+
     const [gites, counters, contrats] = await Promise.all([
       sqlite.gite.findMany(),
       sqlite.contratCounter.findMany(),
