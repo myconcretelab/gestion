@@ -4,49 +4,76 @@ import path from "path";
 import fs from "fs/promises";
 import prisma from "../db/prisma.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
+import { toNumber } from "../utils/money.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 const timeStringSchema = z.string().regex(timePattern, "Format attendu HH:MM");
+const emptyStringToNull = (value: unknown) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+};
 
 const giteSchema = z.object({
-  nom: z.string().min(1),
-  prefixe_contrat: z.string().min(2),
-  adresse_ligne1: z.string().min(1),
-  adresse_ligne2: z.string().optional().nullable(),
-  capacite_max: z.number().int().min(1),
-  proprietaires_noms: z.string().min(1),
-  proprietaires_adresse: z.string().min(1),
-  site_web: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable(),
-  caracteristiques: z.string().optional().nullable(),
+  nom: z.string().trim().min(1),
+  prefixe_contrat: z.string().trim().min(2),
+  adresse_ligne1: z.string().trim().min(1),
+  adresse_ligne2: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
+  capacite_max: z.coerce.number().int().min(1),
+  proprietaires_noms: z.string().trim().min(1),
+  proprietaires_adresse: z.string().trim().min(1),
+  site_web: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
+  email: z.preprocess(emptyStringToNull, z.string().email().nullable()).optional(),
+  caracteristiques: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
   telephones: z.array(z.string()).default([]),
-  taxe_sejour_par_personne_par_nuit: z.number().min(0),
-  iban: z.string().min(1),
-  bic: z.string().optional().nullable(),
-  titulaire: z.string().min(1),
+  taxe_sejour_par_personne_par_nuit: z.coerce.number().min(0),
+  iban: z.string().trim().min(1),
+  bic: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
+  titulaire: z.string().trim().min(1),
   regle_animaux_acceptes: z.boolean().default(false),
   regle_bois_premiere_flambee: z.boolean().default(false),
   regle_tiers_personnes_info: z.boolean().default(false),
-  options_draps_par_lit: z.number().min(0).default(0),
-  options_linge_toilette_par_personne: z.number().min(0).default(0),
-  options_menage_forfait: z.number().min(0).default(0),
-  options_depart_tardif_forfait: z.number().min(0).default(0),
-  options_chiens_forfait: z.number().min(0).default(0),
+  options_draps_par_lit: z.coerce.number().min(0).default(0),
+  options_linge_toilette_par_personne: z.coerce.number().min(0).default(0),
+  options_menage_forfait: z.coerce.number().min(0).default(0),
+  options_depart_tardif_forfait: z.coerce.number().min(0).default(0),
+  options_chiens_forfait: z.coerce.number().min(0).default(0),
   heure_arrivee_defaut: timeStringSchema.default("17:00"),
   heure_depart_defaut: timeStringSchema.default("12:00"),
-  caution_montant_defaut: z.number().min(0).default(0),
-  cheque_menage_montant_defaut: z.number().min(0).default(0),
-  arrhes_taux_defaut: z.number().min(0).max(1).default(0.2),
-  prix_nuit_liste: z.array(z.number().min(0)).optional().default([]),
+  caution_montant_defaut: z.coerce.number().min(0).default(0),
+  cheque_menage_montant_defaut: z.coerce.number().min(0).default(0),
+  arrhes_taux_defaut: z.coerce.number().min(0).max(1).default(0.2),
+  prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
 });
 
 const hydrateGite = (gite: any) => {
   const { _count, ...rest } = gite ?? {};
+  const telephonesRaw = fromJsonString<unknown>(gite.telephones, []);
+  const prixNuitListeRaw = fromJsonString<unknown>(gite.prix_nuit_liste, []);
+  const telephones = Array.isArray(telephonesRaw)
+    ? telephonesRaw.map((value) => String(value).trim()).filter(Boolean)
+    : [];
+  const prix_nuit_liste = Array.isArray(prixNuitListeRaw)
+    ? prixNuitListeRaw
+        .map((value) => toNumber(value as any))
+        .filter((value) => Number.isFinite(value) && value >= 0)
+    : [];
+
   return {
     ...rest,
-    telephones: fromJsonString<string[]>(gite.telephones, []),
-    prix_nuit_liste: fromJsonString<number[]>(gite.prix_nuit_liste, []),
+    telephones,
+    taxe_sejour_par_personne_par_nuit: toNumber(rest.taxe_sejour_par_personne_par_nuit),
+    options_draps_par_lit: toNumber(rest.options_draps_par_lit),
+    options_linge_toilette_par_personne: toNumber(rest.options_linge_toilette_par_personne),
+    options_menage_forfait: toNumber(rest.options_menage_forfait),
+    options_depart_tardif_forfait: toNumber(rest.options_depart_tardif_forfait),
+    options_chiens_forfait: toNumber(rest.options_chiens_forfait),
+    caution_montant_defaut: toNumber(rest.caution_montant_defaut),
+    cheque_menage_montant_defaut: toNumber(rest.cheque_menage_montant_defaut),
+    arrhes_taux_defaut: toNumber(rest.arrhes_taux_defaut),
+    prix_nuit_liste,
     contrats_count: typeof _count?.contrats === "number" ? _count.contrats : gite.contrats_count,
   };
 };
