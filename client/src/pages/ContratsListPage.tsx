@@ -106,7 +106,14 @@ const ContratsListPage = () => {
       </div>
 
       <div className="card">
-        <div className="section-title">Contrats</div>
+        <div className="contracts-header">
+          <div className="section-title">Contrats</div>
+          <Link className="contracts-add" to="/contrats/nouveau" aria-label="Créer un contrat">
+            <span className="contracts-add__icon" aria-hidden="true">
+              +
+            </span>
+          </Link>
+        </div>
         <table className="table">
           <thead>
             <tr>

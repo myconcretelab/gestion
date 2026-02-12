@@ -8,8 +8,7 @@ const App = () => {
   const location = useLocation();
   const isContratsSection =
     location.pathname === "/contrats" ||
-    (location.pathname.startsWith("/contrats/") &&
-      location.pathname !== "/contrats/nouveau");
+    location.pathname.startsWith("/contrats/");
 
   return (
     <div className="app">
@@ -22,9 +21,6 @@ const App = () => {
             aria-current={isContratsSection ? "page" : undefined}
           >
             Contrats
-          </NavLink>
-          <NavLink to="/contrats/nouveau" end>
-            Nouveau contrat
           </NavLink>
           <NavLink to="/gites">Gîtes</NavLink>
         </nav>
