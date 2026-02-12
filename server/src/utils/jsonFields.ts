@@ -1,4 +1,13 @@
-export const encodeJsonField = (value: unknown): string => JSON.stringify(value ?? null);
+import { Prisma } from "@prisma/client";
+
+const isSqlite = () => (process.env.DATABASE_URL ?? "").startsWith("file:");
+
+// Return type is intentionally loose because the Prisma client schema differs between SQLite and Postgres.
+export const encodeJsonField = (value: unknown): any => {
+  const normalized = value ?? null;
+  if (isSqlite()) return JSON.stringify(normalized);
+  return normalized as Prisma.InputJsonValue;
+};
 
 export const fromJsonString = <T>(value: unknown, fallback: T): T => {
   if (value === null || value === undefined) return fallback;
