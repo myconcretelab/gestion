@@ -148,6 +148,31 @@ const hydrateContract = (contrat: any) => ({
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
 });
 
+const toContractRenderInput = (contrat: any): ContractRenderInput => ({
+  numero_contrat: contrat.numero_contrat,
+  locataire_nom: contrat.locataire_nom,
+  locataire_adresse: contrat.locataire_adresse,
+  locataire_tel: contrat.locataire_tel,
+  nb_adultes: contrat.nb_adultes,
+  nb_enfants_2_17: contrat.nb_enfants_2_17,
+  date_debut: contrat.date_debut,
+  heure_arrivee: contrat.heure_arrivee,
+  date_fin: contrat.date_fin,
+  heure_depart: contrat.heure_depart,
+  prix_par_nuit: contrat.prix_par_nuit,
+  remise_montant: contrat.remise_montant,
+  arrhes_montant: contrat.arrhes_montant,
+  arrhes_date_limite: contrat.arrhes_date_limite,
+  solde_montant: contrat.solde_montant,
+  cheque_menage_montant: contrat.cheque_menage_montant,
+  caution_montant: contrat.caution_montant,
+  afficher_caution_phrase: contrat.afficher_caution_phrase,
+  afficher_cheque_menage_phrase: contrat.afficher_cheque_menage_phrase,
+  options: fromJsonString<OptionsInput>(contrat.options, {}),
+  clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
+  notes: contrat.notes ?? null,
+});
+
 type PreviewContext = {
   gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
   totals: ReturnType<typeof computeTotals>;
@@ -421,8 +446,9 @@ router.post("/", async (req, res, next) => {
       include: { gite: true },
     });
 
+    const contractForPdf = toContractRenderInput(contrat);
     await generateContractPdf({
-      contract: contrat,
+      contract: contractForPdf,
       gite,
       totals,
       outputPath: pdfAbsolutePath,
@@ -508,8 +534,9 @@ router.put("/:id", async (req, res, next) => {
       include: { gite: true },
     });
 
+    const contractForPdf = toContractRenderInput(contrat);
     await generateContractPdf({
-      contract: contrat,
+      contract: contractForPdf,
       gite,
       totals,
       outputPath: pdfAbsolutePath,
@@ -579,8 +606,12 @@ router.post("/:id/regenerate", async (req, res, next) => {
       },
     });
 
+    const contractForPdf = {
+      ...toContractRenderInput(contrat),
+      options,
+    };
     await generateContractPdf({
-      contract: contrat,
+      contract: contractForPdf,
       gite: contrat.gite,
       totals,
       outputPath: pdfAbsolutePath,
