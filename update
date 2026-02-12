@@ -28,4 +28,36 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   npm run build
 fi
 
+restart_server() {
+  if [[ "${SKIP_RESTART:-0}" == "1" ]]; then
+    echo "==> Skip restart (SKIP_RESTART=1)"
+    return
+  fi
+
+  if [[ -n "${RESTART_CMD:-}" ]]; then
+    echo "==> Restart server with RESTART_CMD"
+    bash -lc "${RESTART_CMD}"
+    return
+  fi
+
+  if [[ -n "${ALWAYSDATA_API_TOKEN:-}" && -n "${ALWAYSDATA_ACCOUNT:-}" && -n "${ALWAYSDATA_SITE_ID:-}" ]]; then
+    if ! command -v curl >/dev/null 2>&1; then
+      echo "curl is required for Alwaysdata API restart."
+      exit 1
+    fi
+
+    echo "==> Restart Alwaysdata site ${ALWAYSDATA_SITE_ID}"
+    curl --fail --silent --show-error \
+      -X POST \
+      --basic \
+      --user "${ALWAYSDATA_API_TOKEN} account=${ALWAYSDATA_ACCOUNT}:" \
+      "https://api.alwaysdata.com/v1/site/${ALWAYSDATA_SITE_ID}/restart/" >/dev/null
+    return
+  fi
+
+  echo "==> No restart configured (set RESTART_CMD or ALWAYSDATA_API_TOKEN/ALWAYSDATA_ACCOUNT/ALWAYSDATA_SITE_ID)."
+}
+
+restart_server
+
 echo "==> Update complete"
