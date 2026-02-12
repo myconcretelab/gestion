@@ -10,9 +10,11 @@ git pull
 echo "==> Install/update dependencies"
 npm ci --include=optional
 
+PLAYWRIGHT_BROWSERS_PATH_VALUE="${PLAYWRIGHT_BROWSERS_PATH:-0}"
+
 if [[ "${SKIP_PLAYWRIGHT_INSTALL:-0}" != "1" ]]; then
-  echo "==> Ensure Playwright Chromium is installed"
-  npx playwright install chromium
+  echo "==> Ensure Playwright Chromium is installed (PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH_VALUE})"
+  PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH_VALUE}" npx playwright install chromium
 fi
 
 echo "==> Generate Prisma client (PostgreSQL)"
