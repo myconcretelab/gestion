@@ -5,8 +5,18 @@ import dotenv from "dotenv";
 
 const args = process.argv.slice(2);
 const schemaArgIndex = args.findIndex((arg) => arg === "--schema" || arg.startsWith("--schema="));
+let schemaPath;
+if (schemaArgIndex !== -1) {
+  const schemaArg = args[schemaArgIndex];
+  if (schemaArg === "--schema") {
+    schemaPath = args[schemaArgIndex + 1];
+  } else {
+    schemaPath = schemaArg.split("=")[1];
+  }
+}
 if (process.env.PRISMA_SCHEMA && schemaArgIndex === -1) {
   args.push("--schema", process.env.PRISMA_SCHEMA);
+  schemaPath = process.env.PRISMA_SCHEMA;
 }
 
 const envPaths = [
@@ -32,7 +42,21 @@ const resolveDatabaseUrl = (value) => {
 };
 
 const fallbackUrl = `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
-const databaseUrl = resolveDatabaseUrl(process.env.DATABASE_URL ?? fallbackUrl);
+const wantsPostgres = Boolean(schemaPath && schemaPath.includes("postgres"));
+const rawDatabaseUrl = wantsPostgres
+  ? process.env.DATABASE_URL_POSTGRES ?? process.env.DATABASE_URL
+  : process.env.DATABASE_URL_SQLITE ?? process.env.DATABASE_URL ?? fallbackUrl;
+const databaseUrl = resolveDatabaseUrl(rawDatabaseUrl);
+if (wantsPostgres) {
+  if (!databaseUrl) {
+    console.error("DATABASE_URL (or DATABASE_URL_POSTGRES) is required for Postgres schema.");
+    process.exit(1);
+  }
+  if (!databaseUrl.startsWith("postgresql://") && !databaseUrl.startsWith("postgres://")) {
+    console.error("DATABASE_URL (or DATABASE_URL_POSTGRES) must start with postgresql:// or postgres://.");
+    process.exit(1);
+  }
+}
 const prismaCli = path.join(process.cwd(), "node_modules", "prisma", "build", "index.js");
 
 const result = spawnSync(process.execPath, [prismaCli, ...args], {

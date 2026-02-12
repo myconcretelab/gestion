@@ -16,10 +16,10 @@ Monorepo Node.js + React pour générer et archiver des contrats de location de 
 
 ## Installation locale
 
-1. Installer les dépendances à la racine:
+1. Installer les dépendances à la racine (inclure les deps optionnelles pour Rollup/Prisma):
 
 ```bash
-npm install
+npm install --include=optional
 ```
 
 2. Installer Chromium pour Playwright:
@@ -70,6 +70,7 @@ SEED_SKIP_PDF=1 npm run seed
 1. Configurer les variables d'environnement (via l'interface AlwaysData):
 
 - `DATABASE_URL=postgresql://myconcretelab:YOUR_PASSWORD@postgresql-myconcretelab.alwaysdata.net:5432/myconcretelab_contrats?schema=public`
+- (optionnel) `DATABASE_URL_POSTGRES=...` si vous gardez un `DATABASE_URL` SQLite dans un `.env` local
 - `NODE_ENV=production`
 - `PORT=4000`
 - `CLIENT_DIST_DIR=/home/USER/app/client/dist`
@@ -81,7 +82,7 @@ Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port di
 2. Build, generation Prisma et migrations:
 
 ```bash
-npm ci
+npm ci --include=optional
 npm run build
 npm run prod:generate
 npm run prod:migrate
