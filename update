@@ -4,16 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+load_env_file() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    local label="${file#$ROOT_DIR/}"
+    echo "==> Load env from ${label}"
+    set -a
+    # shellcheck disable=SC1090
+    source "$file"
+    set +a
+  fi
+}
+
+# Allow restart settings to live in env files, with later files overriding earlier ones.
+load_env_file "$ROOT_DIR/.env"
+load_env_file "$ROOT_DIR/.env.production"
+load_env_file "$ROOT_DIR/.env.update"
+
 echo "==> Pull latest code"
 git pull
 
 echo "==> Install/update dependencies"
 npm ci --include=optional
 
-PLAYWRIGHT_BROWSERS_PATH_VALUE="${PLAYWRIGHT_BROWSERS_PATH:-0}"
+PLAYWRIGHT_BROWSERS_PATH_VALUE="${PLAYWRIGHT_BROWSERS_PATH:-$ROOT_DIR/.cache/ms-playwright}"
 
 if [[ "${SKIP_PLAYWRIGHT_INSTALL:-0}" != "1" ]]; then
   echo "==> Ensure Playwright Chromium is installed (PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH_VALUE})"
+  if [[ "${PLAYWRIGHT_BROWSERS_PATH_VALUE}" != "0" ]]; then
+    mkdir -p "${PLAYWRIGHT_BROWSERS_PATH_VALUE}"
+  fi
   PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH_VALUE}" npx playwright install chromium
 fi
 
@@ -55,7 +75,7 @@ restart_server() {
     return
   fi
 
-  echo "==> No restart configured (set RESTART_CMD or ALWAYSDATA_API_TOKEN/ALWAYSDATA_ACCOUNT/ALWAYSDATA_SITE_ID)."
+  echo "==> No restart configured (set RESTART_CMD or ALWAYSDATA_API_TOKEN/ALWAYSDATA_ACCOUNT/ALWAYSDATA_SITE_ID in env or .env.update)."
 }
 
 restart_server
