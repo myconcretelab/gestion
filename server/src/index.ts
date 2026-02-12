@@ -43,11 +43,15 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/gites", gitesRouter);
 app.use("/api/contracts", contractsRouter);
 
-const clientDist = process.env.CLIENT_DIST_DIR
-  ? path.resolve(process.env.CLIENT_DIST_DIR)
-  : path.join(process.cwd(), "..", "client", "dist");
+const clientDistCandidates = [
+  process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,
+  path.join(process.cwd(), "client", "dist"),
+  path.join(process.cwd(), "..", "client", "dist"),
+].filter(Boolean) as string[];
 
-if (fs.existsSync(clientDist)) {
+const clientDist = clientDistCandidates.find((candidate) => fs.existsSync(candidate));
+
+if (clientDist) {
   app.use(express.static(clientDist));
   app.get("*", (_req, res) => {
     res.sendFile(path.join(clientDist, "index.html"));
