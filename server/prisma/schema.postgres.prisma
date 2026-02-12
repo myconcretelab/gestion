@@ -36,6 +36,8 @@ model Gite {
   options_menage_forfait               Decimal  @default(0) @db.Decimal(10,2)
   options_depart_tardif_forfait        Decimal  @default(0) @db.Decimal(10,2)
   options_chiens_forfait               Decimal  @default(0) @db.Decimal(10,2)
+  heure_arrivee_defaut                 String   @default("17:00")
+  heure_depart_defaut                  String   @default("12:00")
   caution_montant_defaut               Decimal  @default(0) @db.Decimal(10,2)
   cheque_menage_montant_defaut         Decimal  @default(0) @db.Decimal(10,2)
   arrhes_taux_defaut                   Decimal  @default(0.2) @db.Decimal(5,4)

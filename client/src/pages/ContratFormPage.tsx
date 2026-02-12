@@ -34,6 +34,42 @@ const addDays = (date: Date, days: number) => {
   return next;
 };
 
+const parseDateInput = (value: string) => {
+  const parts = value.split("-");
+  if (parts.length !== 3) return null;
+  const [year, month, day] = parts.map((part) => Number(part));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+};
+
+const nextDayFromInput = (value: string) => {
+  const date = parseDateInput(value);
+  if (!date) return "";
+  return formatDateInput(addDays(date, 1));
+};
+
+const utcDayFromInput = (value: string) => {
+  const date = parseDateInput(value);
+  if (!date) return null;
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / (1000 * 60 * 60 * 24);
+};
+
+const nightsBetweenInputs = (startValue: string, endValue: string) => {
+  const startDay = utcDayFromInput(startValue);
+  const endDay = utcDayFromInput(endValue);
+  if (startDay === null || endDay === null) return null;
+  const diff = endDay - startDay;
+  return diff > 0 ? diff : null;
+};
+
 const toDateInputValue = (value?: string | null) => {
   if (!value) return "";
   return value.includes("T") ? value.split("T")[0] : value;
@@ -93,6 +129,13 @@ const ContratFormPage = () => {
   } | null>(null);
   const [editingContract, setEditingContract] = useState<Contrat | null>(null);
   const [loadingContract, setLoadingContract] = useState(false);
+
+  const minDateFin = useMemo(() => {
+    if (!dateDebut) return undefined;
+    return nextDayFromInput(dateDebut) || undefined;
+  }, [dateDebut]);
+
+  const nbNuitsSelection = useMemo(() => nightsBetweenInputs(dateDebut, dateFin), [dateDebut, dateFin]);
 
   useEffect(() => {
     apiFetch<Gite[]>("/gites")
@@ -236,6 +279,13 @@ const ContratFormPage = () => {
       setPrixParNuit(prixNuitListe[0]);
     }
   }, [selectedGite, prixNuitListe, prixParNuit]);
+
+  useEffect(() => {
+    if (!selectedGite) return;
+    if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
+    setHeureArrivee(selectedGite.heure_arrivee_defaut || "17:00");
+    setHeureDepart(selectedGite.heure_depart_defaut || "12:00");
+  }, [selectedGite, isEdit, editingContract]);
 
   useEffect(() => {
     if (!selectedGite) return;
@@ -466,6 +516,19 @@ const ContratFormPage = () => {
     window.open(`/api/contracts/${createdContract.id}/pdf`, "_blank");
   };
 
+  const handleDateDebutChange = (value: string) => {
+    setDateDebut(value);
+    if (!value) return;
+
+    const nextMinDateFin = nextDayFromInput(value);
+    if (!nextMinDateFin) return;
+
+    setDateFin((previous) => {
+      if (!previous) return nextMinDateFin;
+      return previous < nextMinDateFin ? nextMinDateFin : previous;
+    });
+  };
+
   if (isEdit && loadingContract && !editingContract) return <div>Chargement...</div>;
 
   return (
@@ -524,15 +587,25 @@ const ContratFormPage = () => {
         <div className="section-title">Période</div>
         <div className="grid-2">
           <div className="field-group">
-            <div className="field-group__label">Dates</div>
+            <div className="field-group__header">
+              <div className="field-group__label">Dates</div>
+              <div className={`nights-chip${nbNuitsSelection ? "" : " nights-chip--muted"}`}>
+                {nbNuitsSelection ? `${nbNuitsSelection} nuit${nbNuitsSelection > 1 ? "s" : ""}` : "Durée à définir"}
+              </div>
+            </div>
             <div className="field-row">
               <label className="field">
                 Début
-                <input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} />
+                <input type="date" value={dateDebut} onChange={(e) => handleDateDebutChange(e.target.value)} />
               </label>
               <label className="field">
                 Fin
-                <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} />
+                <input
+                  type="date"
+                  value={dateFin}
+                  min={minDateFin}
+                  onChange={(e) => setDateFin(e.target.value)}
+                />
               </label>
             </div>
           </div>

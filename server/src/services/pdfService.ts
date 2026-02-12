@@ -563,6 +563,8 @@ const compactClassSteps = [
   "compact-density",
   "compact-text",
   "compact-final",
+  "compact-spacing",
+  "compact-margins",
 ] as const;
 
 const applyCompactionIfOverflow = async (page: Page) => {

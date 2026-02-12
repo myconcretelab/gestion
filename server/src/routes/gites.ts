@@ -6,6 +6,8 @@ import prisma from "../db/prisma.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 
 const router = Router();
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+const timeStringSchema = z.string().regex(timePattern, "Format attendu HH:MM");
 
 const giteSchema = z.object({
   nom: z.string().min(1),
@@ -31,6 +33,8 @@ const giteSchema = z.object({
   options_menage_forfait: z.number().min(0).default(0),
   options_depart_tardif_forfait: z.number().min(0).default(0),
   options_chiens_forfait: z.number().min(0).default(0),
+  heure_arrivee_defaut: timeStringSchema.default("17:00"),
+  heure_depart_defaut: timeStringSchema.default("12:00"),
   caution_montant_defaut: z.number().min(0).default(0),
   cheque_menage_montant_defaut: z.number().min(0).default(0),
   arrhes_taux_defaut: z.number().min(0).max(1).default(0.2),
@@ -144,6 +148,8 @@ router.post("/:id/duplicate", async (req, res, next) => {
         options_menage_forfait: existing.options_menage_forfait,
         options_depart_tardif_forfait: existing.options_depart_tardif_forfait,
         options_chiens_forfait: existing.options_chiens_forfait,
+        heure_arrivee_defaut: existing.heure_arrivee_defaut,
+        heure_depart_defaut: existing.heure_depart_defaut,
         caution_montant_defaut: existing.caution_montant_defaut,
         cheque_menage_montant_defaut: existing.cheque_menage_montant_defaut,
         arrhes_taux_defaut: existing.arrhes_taux_defaut,

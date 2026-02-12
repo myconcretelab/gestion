@@ -26,6 +26,8 @@ const emptyForm = {
   options_menage_forfait: 0,
   options_depart_tardif_forfait: 0,
   options_chiens_forfait: 0,
+  heure_arrivee_defaut: "17:00",
+  heure_depart_defaut: "12:00",
   caution_montant_defaut: 0,
   cheque_menage_montant_defaut: 0,
   arrhes_taux_defaut: 0.2,
@@ -81,6 +83,8 @@ const GitesPage = () => {
       options_menage_forfait: selected.options_menage_forfait,
       options_depart_tardif_forfait: selected.options_depart_tardif_forfait,
       options_chiens_forfait: selected.options_chiens_forfait,
+      heure_arrivee_defaut: selected.heure_arrivee_defaut ?? "17:00",
+      heure_depart_defaut: selected.heure_depart_defaut ?? "12:00",
       caution_montant_defaut: selected.caution_montant_defaut ?? 0,
       cheque_menage_montant_defaut: selected.cheque_menage_montant_defaut ?? 0,
       arrhes_taux_defaut: selected.arrhes_taux_defaut ?? 0.2,
@@ -104,6 +108,8 @@ const GitesPage = () => {
         .filter((value) => Number.isFinite(value) && value >= 0);
       const payload = {
         ...form,
+        heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
+        heure_depart_defaut: form.heure_depart_defaut || "12:00",
         prix_nuit_liste: prixNuitListe,
         telephones: form.telephones
           .split(",")
@@ -347,6 +353,22 @@ const GitesPage = () => {
                 step="0.01"
                 value={form.options_chiens_forfait}
                 onChange={(e) => handleChange("options_chiens_forfait", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Heure d'arrivée par défaut
+              <input
+                type="time"
+                value={form.heure_arrivee_defaut}
+                onChange={(e) => handleChange("heure_arrivee_defaut", e.target.value)}
+              />
+            </label>
+            <label className="field">
+              Heure de départ par défaut
+              <input
+                type="time"
+                value={form.heure_depart_defaut}
+                onChange={(e) => handleChange("heure_depart_defaut", e.target.value)}
               />
             </label>
           </div>

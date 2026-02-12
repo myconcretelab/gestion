@@ -36,6 +36,8 @@ model Gite {
   options_menage_forfait               Float  @default(0)
   options_depart_tardif_forfait        Float  @default(0)
   options_chiens_forfait               Float  @default(0)
+  heure_arrivee_defaut                 String  @default("17:00")
+  heure_depart_defaut                  String  @default("12:00")
   caution_montant_defaut               Float  @default(0)
   cheque_menage_montant_defaut         Float  @default(0)
   arrhes_taux_defaut                   Float  @default(0.2)

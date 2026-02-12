@@ -22,6 +22,8 @@ export type Gite = {
   options_menage_forfait: number;
   options_depart_tardif_forfait: number;
   options_chiens_forfait: number;
+  heure_arrivee_defaut: string;
+  heure_depart_defaut: string;
   caution_montant_defaut: number;
   cheque_menage_montant_defaut: number;
   arrhes_taux_defaut: number;
