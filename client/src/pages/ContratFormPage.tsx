@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import type { Contrat, ContratOptions, Gite } from "../utils/types";
 import { computeTotals } from "../utils/contractCalc";
@@ -33,7 +34,24 @@ const addDays = (date: Date, days: number) => {
   return next;
 };
 
+const toDateInputValue = (value?: string | null) => {
+  if (!value) return "";
+  return value.includes("T") ? value.split("T")[0] : value;
+};
+
+const mergeOptions = (value?: ContratOptions | null): ContratOptions => ({
+  ...defaultOptions,
+  ...(value ?? {}),
+  draps: { ...defaultOptions.draps, ...(value?.draps ?? {}) },
+  linge_toilette: { ...defaultOptions.linge_toilette, ...(value?.linge_toilette ?? {}) },
+  menage: { ...defaultOptions.menage, ...(value?.menage ?? {}) },
+  depart_tardif: { ...defaultOptions.depart_tardif, ...(value?.depart_tardif ?? {}) },
+  chiens: { ...defaultOptions.chiens, ...(value?.chiens ?? {}) },
+});
+
 const ContratFormPage = () => {
+  const { id } = useParams();
+  const isEdit = Boolean(id);
   const [gites, setGites] = useState<Gite[]>([]);
   const [giteId, setGiteId] = useState("");
   const [locataireNom, setLocataireNom] = useState("");
@@ -65,9 +83,16 @@ const ContratFormPage = () => {
   const [saving, setSaving] = useState(false);
   const [createdContract, setCreatedContract] = useState<Contrat | null>(null);
   const [createdPayloadKey, setCreatedPayloadKey] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewOverflow, setPreviewOverflow] = useState<{
+    before: boolean;
+    after: boolean;
+    compact: boolean;
+  } | null>(null);
+  const [editingContract, setEditingContract] = useState<Contrat | null>(null);
+  const [loadingContract, setLoadingContract] = useState(false);
 
   useEffect(() => {
     apiFetch<Gite[]>("/gites")
@@ -79,9 +104,47 @@ const ContratFormPage = () => {
   }, []);
 
   useEffect(() => {
+    if (!isEdit || !id) return;
+    setLoadingContract(true);
+    apiFetch<Contrat>(`/contracts/${id}`)
+      .then((data) => {
+        setEditingContract(data);
+        setGiteId(data.gite_id);
+        setLocataireNom(data.locataire_nom);
+        setLocataireAdresse(data.locataire_adresse);
+        setLocataireTel(data.locataire_tel);
+        setNbAdultes(data.nb_adultes);
+        setNbEnfants(data.nb_enfants_2_17);
+        setDateDebut(toDateInputValue(data.date_debut));
+        setDateFin(toDateInputValue(data.date_fin));
+        setHeureArrivee(data.heure_arrivee);
+        setHeureDepart(data.heure_depart);
+        setPrixParNuit(Number(data.prix_par_nuit ?? 0));
+        setRemiseMode("euro");
+        setRemiseValue(data.remise_montant ? String(data.remise_montant) : "");
+        setOptions(mergeOptions(data.options));
+        setArrhesAuto(false);
+        setArrhesMontant(Number(data.arrhes_montant ?? 0).toFixed(2));
+        setArrhesDateTouched(true);
+        setArrhesDateLimite(toDateInputValue(data.arrhes_date_limite));
+        setCautionTouched(true);
+        setChequeMenageTouched(true);
+        setCautionMontant(Number(data.caution_montant ?? 0));
+        setChequeMenageMontant(Number(data.cheque_menage_montant ?? 0));
+        setAfficherCautionPhrase(data.afficher_caution_phrase ?? true);
+        setAfficherChequeMenagePhrase(data.afficher_cheque_menage_phrase ?? true);
+        setClausesText(typeof data.clauses?.texte_additionnel === "string" ? data.clauses.texte_additionnel : "");
+        setStatutArrhes(data.statut_paiement_arrhes ?? "non_recu");
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoadingContract(false));
+  }, [id, isEdit]);
+
+  useEffect(() => {
+    if (isEdit && editingContract && giteId === editingContract.gite_id) return;
     setCautionTouched(false);
     setChequeMenageTouched(false);
-  }, [giteId]);
+  }, [giteId, isEdit, editingContract]);
 
   const selectedGite = useMemo(() => gites.find((g) => g.id === giteId) ?? null, [gites, giteId]);
   const prixNuitListe = useMemo(() => {
@@ -176,13 +239,14 @@ const ContratFormPage = () => {
 
   useEffect(() => {
     if (!selectedGite) return;
+    if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
     setOptions((prev) => ({
       ...prev,
       regle_animaux_acceptes: selectedGite.regle_animaux_acceptes,
       regle_bois_premiere_flambee: selectedGite.regle_bois_premiere_flambee,
       regle_tiers_personnes_info: selectedGite.regle_tiers_personnes_info,
     }));
-  }, [selectedGite?.id]);
+  }, [selectedGite?.id, isEdit, editingContract]);
 
   useEffect(() => {
     if (regleAnimauxAcceptes) return;
@@ -298,7 +362,8 @@ const ContratFormPage = () => {
     if (!previewReady) {
       setPreviewError(null);
       setPreviewLoading(false);
-      setPreviewUrl(null);
+      setPreviewHtml(null);
+      setPreviewOverflow(null);
       return;
     }
 
@@ -306,8 +371,9 @@ const ContratFormPage = () => {
     const timeout = window.setTimeout(async () => {
       setPreviewLoading(true);
       setPreviewError(null);
+      setPreviewOverflow(null);
       try {
-        const response = await fetch(`${API_BASE}/contracts/preview`, {
+        const response = await fetch(`${API_BASE}/contracts/preview-html`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(previewPayload),
@@ -325,9 +391,13 @@ const ContratFormPage = () => {
           throw new Error(message);
         }
 
-        const blob = await response.blob();
-        const nextUrl = URL.createObjectURL(blob);
-        setPreviewUrl(nextUrl);
+        const overflowBefore = response.headers.get("X-Contract-Overflow") === "1";
+        const overflowAfter = response.headers.get("X-Contract-Overflow-After") === "1";
+        const compact = response.headers.get("X-Contract-Compact") === "1";
+        setPreviewOverflow({ before: overflowBefore, after: overflowAfter, compact });
+
+        const html = await response.text();
+        setPreviewHtml(html);
       } catch (err: any) {
         if (err?.name === "AbortError") return;
         setPreviewError(err?.message ?? "Erreur lors de la prévisualisation.");
@@ -341,12 +411,6 @@ const ContratFormPage = () => {
       controller.abort();
     };
   }, [previewPayload, previewReady]);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
 
   const submit = async () => {
     if (!giteId) return;
@@ -381,11 +445,14 @@ const ContratFormPage = () => {
         payload.arrhes_montant = Number(arrhesMontant);
       }
 
-      const created = await apiFetch<Contrat>("/contracts", {
-        method: "POST",
+      const endpoint = isEdit && id ? `/contracts/${id}` : "/contracts";
+      const method = isEdit ? "PUT" : "POST";
+      const saved = await apiFetch<Contrat>(endpoint, {
+        method,
         json: payload,
       });
-      setCreatedContract(created);
+      setCreatedContract(saved);
+      if (isEdit) setEditingContract(saved);
       setCreatedPayloadKey(payloadKey);
     } catch (err: any) {
       setError(err.message);
@@ -398,6 +465,8 @@ const ContratFormPage = () => {
     if (!createdContract) return;
     window.open(`/api/contracts/${createdContract.id}/pdf`, "_blank");
   };
+
+  if (isEdit && loadingContract && !editingContract) return <div>Chargement...</div>;
 
   return (
     <div>
@@ -928,10 +997,10 @@ const ContratFormPage = () => {
       </div>
 
       <div className="card">
-        <div className="section-title">Création</div>
+        <div className="section-title">{isEdit ? "Mise à jour" : "Création"}</div>
         <div className="actions">
           <button onClick={submit} disabled={saving}>
-            {saving ? "Création..." : "Créer le contrat"}
+            {saving ? (isEdit ? "Mise à jour..." : "Création...") : isEdit ? "Mettre à jour le contrat" : "Créer le contrat"}
           </button>
           {createdContract && (
             <button className="secondary" onClick={downloadPdf}>
@@ -941,7 +1010,7 @@ const ContratFormPage = () => {
         </div>
         {createdContract && (
           <div className="note note--success" style={{ marginTop: 12 }}>
-            Contrat {createdContract.numero_contrat} créé.
+            Contrat {createdContract.numero_contrat} {isEdit ? "mis à jour" : "créé"}.
           </div>
         )}
       </div>
@@ -949,8 +1018,8 @@ const ContratFormPage = () => {
       <div className="card">
         <div className="section-title">Prévisualisation (page 1)</div>
         <div className="preview-shell">
-          {previewUrl ? (
-            <iframe className="preview-frame" title="Prévisualisation contrat" src={previewUrl} />
+          {previewHtml ? (
+            <iframe className="preview-frame" title="Prévisualisation contrat" srcDoc={previewHtml} />
           ) : (
             <div className="preview-placeholder">
               {!giteId
@@ -970,11 +1039,21 @@ const ContratFormPage = () => {
             {previewReady
               ? previewLoading
                 ? "Mise à jour en cours..."
-                : "PDF mis à jour automatiquement."
+                : "Prévisualisation HTML mise à jour automatiquement."
               : !giteId
                 ? "Prévisualisation inactive tant qu'aucun gîte n'est sélectionné."
                 : "Prévisualisation inactive : dates invalides."}
           </span>
+          {!previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after && (
+            <span className="preview-warning">
+              Dépassement détecté : taille de police réduite dans &quot;Caractéristiques du gîte&quot; et &quot;À noter&quot;.
+            </span>
+          )}
+          {!previewLoading && !previewError && previewOverflow?.after && (
+            <span className="preview-warning">
+              Dépassement persistant : le contrat dépasse une page malgré la réduction.
+            </span>
+          )}
           {previewError && <span className="preview-error">{previewError}</span>}
         </div>
       </div>

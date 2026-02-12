@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { chromium, Browser } from "playwright";
+import { chromium, Browser, Page } from "playwright";
 import { Gite, Prisma } from "@prisma/client";
 import { renderTemplate } from "./template.js";
 import { formatDate } from "../utils/dates.js";
@@ -181,18 +181,26 @@ const buildClientOptionsFormHtml = (params: {
   const regles = resolveContractRules(gite, options);
   const rows: string[] = [];
   const line = (size: "line--xs" | "line--sm" | "line--md" | "line--lg") => `<span class="line ${size}"></span>`;
-  const buildRow = (params: { label: string; meta: string; calcHtml: string }) => `
+  const buildRow = (params: { label: string; meta: string; calcHtml?: string; metaInline?: boolean }) => `
     <div class="option-form__row">
       <div class="option-form__left">
         <span class="option-form__circle"></span>
-        <div class="option-form__text">
+        <div class="option-form__text${params.metaInline ? " option-form__text--inline" : ""}">
           <span class="option-form__label">${escapeHtml(params.label)}</span>
-          <span class="option-form__meta">${escapeHtml(params.meta)}</span>
+          ${
+            params.metaInline
+              ? `<span class="option-form__meta option-form__meta--inline">${escapeHtml(params.meta)}</span>`
+              : `<span class="option-form__meta">${escapeHtml(params.meta)}</span>`
+          }
         </div>
       </div>
-      <div class="option-form__right">
+      ${
+        params.calcHtml
+          ? `<div class="option-form__right">
         <span class="option-form__calc">${params.calcHtml}</span>
-      </div>
+      </div>`
+          : ""
+      }
     </div>
   `;
 
@@ -226,7 +234,7 @@ const buildClientOptionsFormHtml = (params: {
       buildRow({
         label: "Ménage fin de séjour",
         meta: `Forfait ${formatEuro(tarif)}`,
-        calcHtml: `Forfait = ${line("line--md")} €`,
+        metaInline: true,
       })
     );
   }
@@ -237,7 +245,7 @@ const buildClientOptionsFormHtml = (params: {
       buildRow({
         label: "Départ tardif",
         meta: `Forfait ${formatEuro(tarif)}`,
-        calcHtml: `Forfait = ${line("line--md")} €`,
+        metaInline: true,
       })
     );
   }
@@ -440,16 +448,71 @@ const pdfBaseOptions = {
   },
 };
 
+const A4_HEIGHT_MM = 297;
+const MM_TO_PX = 96 / 25.4;
+
+const parseMm = (value: string | number | undefined) => {
+  if (typeof value === "number") return value;
+  if (!value) return 0;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getPrintableHeightPx = () => {
+  const marginTopMm = parseMm(pdfBaseOptions.margin.top);
+  const marginBottomMm = parseMm(pdfBaseOptions.margin.bottom);
+  const usableMm = A4_HEIGHT_MM - marginTopMm - marginBottomMm;
+  return usableMm * MM_TO_PX;
+};
+
+const measureOverflow = async (page: Page) => {
+  const printableHeightPx = getPrintableHeightPx();
+  return page.evaluate((heightPx) => {
+    const firstPage = document.querySelector(".page");
+    if (!firstPage) return false;
+    const renderedHeight = firstPage.getBoundingClientRect().height;
+    return renderedHeight > heightPx + 1;
+  }, printableHeightPx);
+};
+
+const applyCompactSectionsIfOverflow = async (page: Page) => {
+  const overflowBefore = await measureOverflow(page);
+  if (!overflowBefore) {
+    return { overflowBefore, overflowAfter: false, compactApplied: false };
+  }
+
+  await page.evaluate(() => {
+    document.body?.classList.add("compact-sections");
+  });
+  await page.waitForTimeout(0);
+
+  const overflowAfter = await measureOverflow(page);
+  return { overflowBefore, overflowAfter, compactApplied: true };
+};
+
+const prepareContractPage = async (page: Page, html: string) => {
+  await page.setContent(html, { waitUntil: "load" });
+  await page.emulateMedia({ media: "print" });
+  return applyCompactSectionsIfOverflow(page);
+};
+
 const buildContractHtml = async (params: {
   contract: ContractRenderInput;
   gite: Gite;
   totals: ContractTotals;
+  bodyAttrs?: string;
 }) => {
   const { contractHtml, conditionsHtml } = await loadTemplates();
   const options = parseJsonField<OptionsInput>(params.contract.options, {});
   const clauses = parseJsonField<Record<string, unknown>>(params.contract.clauses ?? {}, {});
+  const remiseMontantValue = toNumber(params.contract.remise_montant);
+  const remiseRowHtml =
+    remiseMontantValue > 0
+      ? `<tr><td>Remise exceptionnelle</td><td>${escapeHtml(formatEuro(remiseMontantValue))}</td></tr>`
+      : "";
 
   return renderTemplate(contractHtml, {
+    bodyAttrs: params.bodyAttrs ?? "",
     contractNumber: params.contract.numero_contrat,
     giteName: params.gite.nom.toUpperCase(),
     giteAdresse: [params.gite.adresse_ligne1, params.gite.adresse_ligne2]
@@ -472,6 +535,7 @@ const buildContractHtml = async (params: {
     prixParNuit: formatEuro(toNumber(params.contract.prix_par_nuit)),
     montantBase: formatEuro(params.totals.montantBase),
     remiseMontant: formatEuro(toNumber(params.contract.remise_montant)),
+    remiseRowHtml,
     totalGlobal: formatEuro(params.totals.totalGlobal),
     optionsBandRowsHtml: buildOptionsBandRowsHtml({
       options,
@@ -519,7 +583,7 @@ export const generateContractPdf = async (params: {
   await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
   const browser = await getBrowser();
   const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: "load" });
+  await prepareContractPage(page, html);
   await page.pdf({
     path: params.outputPath,
     ...pdfBaseOptions,
@@ -535,11 +599,25 @@ export const generateContractPreviewPdf = async (params: {
   const html = await buildContractHtml(params);
   const browser = await getBrowser();
   const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: "load" });
+  const compactInfo = await prepareContractPage(page, html);
   const buffer = await page.pdf({
     ...pdfBaseOptions,
     pageRanges: "1",
   });
   await page.close();
-  return buffer;
+  return { buffer, ...compactInfo };
+};
+
+export const generateContractPreviewHtml = async (params: {
+  contract: ContractRenderInput;
+  gite: Gite;
+  totals: ContractTotals;
+}) => {
+  const html = await buildContractHtml({ ...params, bodyAttrs: 'class="preview"' });
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  const compactInfo = await prepareContractPage(page, html);
+  const renderedHtml = await page.content();
+  await page.close();
+  return { html: renderedHtml, ...compactInfo };
 };

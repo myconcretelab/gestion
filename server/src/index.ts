@@ -14,6 +14,7 @@ app.use(
   cors({
     origin: env.CLIENT_ORIGIN,
     credentials: true,
+    exposedHeaders: ["X-Contract-Overflow", "X-Contract-Overflow-After", "X-Contract-Compact"],
   })
 );
 

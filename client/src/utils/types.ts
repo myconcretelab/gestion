@@ -52,6 +52,7 @@ export type Contrat = {
   locataire_nom: string;
   locataire_adresse: string;
   locataire_tel: string;
+  locataire_email?: string | null;
   nb_adultes: number;
   nb_enfants_2_17: number;
   date_debut: string;

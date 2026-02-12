@@ -182,6 +182,11 @@
         gap: 0.2mm;
         min-width: 0;
       }
+      .option-form__text--inline {
+        flex-direction: row;
+        align-items: baseline;
+        gap: 1mm;
+      }
       .option-form__label {
         font-weight: 600;
       }
@@ -189,6 +194,9 @@
         color: #444;
         font-size: 8.7pt;
         white-space: nowrap;
+      }
+      .option-form__meta--inline {
+        font-weight: 400;
       }
       .option-form__right {
         display: flex;
@@ -285,7 +293,7 @@
         margin-top: 1.5mm;
       }
       .sign-line {
-        border-bottom: 1px solid #222;
+        border-bottom: none;
         height: 12mm;
         margin-top: 2mm;
       }
@@ -326,9 +334,37 @@
       .clauses li {
         font-size: 9.2pt;
       }
+      .compact-sections .caracteristiques,
+      .compact-sections .notes {
+        font-size: 9.4pt;
+      }
+      .compact-sections .caracteristiques .block-title,
+      .compact-sections .notes .block-title {
+        font-size: 9.8pt;
+      }
+      @media screen {
+        body.preview {
+          background: #f4f3f0;
+          padding: 24px 0;
+        }
+        body.preview .page {
+          width: 100%;
+          max-width: 210mm;
+          min-height: 297mm;
+          margin: 0 auto 24px;
+          background: #fff;
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+        }
+        body.preview .page + .page {
+          display: none;
+        }
+        body.preview .footer {
+          display: none;
+        }
+      }
     </style>
   </head>
-  <body>
+  <body {{{bodyAttrs}}}>
     <div class="page">
       <div class="doc-header">
         <div class="title">CONTRAT DE LOCATION</div>
@@ -348,10 +384,9 @@
           </p>
           <p class="sign-name">{{proprietairesNoms}}</p>
 
-          <div class="block">
+          <div class="block caracteristiques">
             <div class="block-title">Caractéristiques du gîte :</div>
             <div>Capacité maximale : {{capaciteMax}} personnes</div>
-            <div>Adresse : {{giteAdresse}}</div>
             {{{giteCaracteristiquesHtml}}}
           </div>
 
@@ -396,10 +431,7 @@
             <td>{{nbNuits}} nuitées x {{prixParNuit}}</td>
             <td>{{montantBase}}</td>
           </tr>
-          <tr>
-            <td>Remise exceptionnelle</td>
-            <td>{{remiseMontant}}</td>
-          </tr>
+          {{{remiseRowHtml}}}
           {{{optionsBandRowsHtml}}}
           <tr class="band-total">
             <td>TOTAL</td>

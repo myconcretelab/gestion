@@ -6,7 +6,12 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { computeTotals, type OptionsInput } from "../services/contractCalculator.js";
 import { generateContractNumber } from "../services/contractNumber.js";
-import { generateContractPdf, generateContractPreviewPdf, type ContractRenderInput } from "../services/pdfService.js";
+import {
+  generateContractPdf,
+  generateContractPreviewHtml,
+  generateContractPreviewPdf,
+  type ContractRenderInput,
+} from "../services/pdfService.js";
 import { toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
@@ -143,6 +148,94 @@ const hydrateContract = (contrat: any) => ({
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
 });
 
+type PreviewContext = {
+  gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
+  totals: ReturnType<typeof computeTotals>;
+  contractForPdf: ContractRenderInput;
+};
+
+type PreviewError = { error: { status: number; message: string } };
+
+const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | PreviewError> => {
+  const data = previewSchema.parse(payload);
+  const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
+  if (!gite) return { error: { status: 404, message: "Gîte introuvable" } };
+
+  const dateDebut = data.date_debut ? parseDate(data.date_debut) : null;
+  const dateFin = data.date_fin ? parseDate(data.date_fin) : null;
+  if (dateDebut) ensureValidDate(dateDebut, "date_debut");
+  if (dateFin) ensureValidDate(dateFin, "date_fin");
+  if (dateDebut && dateFin && dateFin <= dateDebut) {
+    return { error: { status: 400, message: "La date de fin doit être postérieure à la date de début." } };
+  }
+
+  const totalsDateDebut = dateDebut ? dateDebut : dateFin ? addDays(dateFin, -1) : new Date();
+  const totalsDateFin = dateFin ? dateFin : dateDebut ? addDays(dateDebut, 1) : addDays(totalsDateDebut, 1);
+
+  const options = normalizeOptions(data.options as OptionsInput, gite);
+
+  const totalsPre = computeTotals({
+    dateDebut: totalsDateDebut,
+    dateFin: totalsDateFin,
+    prixParNuit: data.prix_par_nuit ?? 0,
+    remiseMontant: data.remise_montant ?? 0,
+    nbAdultes: data.nb_adultes ?? 1,
+    nbEnfants: data.nb_enfants_2_17 ?? 0,
+    arrhesMontant: data.arrhes_montant ?? 0,
+    options,
+    gite,
+  });
+
+  const arrhesRate =
+    gite.arrhes_taux_defaut !== undefined && gite.arrhes_taux_defaut !== null
+      ? toNumber(gite.arrhes_taux_defaut)
+      : env.DEFAULT_ARRHES_RATE;
+  const arrhesMontant =
+    data.arrhes_montant !== undefined ? data.arrhes_montant : round2(totalsPre.totalSansOptions * arrhesRate);
+
+  const totals = computeTotals({
+    dateDebut: totalsDateDebut,
+    dateFin: totalsDateFin,
+    prixParNuit: data.prix_par_nuit ?? 0,
+    remiseMontant: data.remise_montant ?? 0,
+    nbAdultes: data.nb_adultes ?? 1,
+    nbEnfants: data.nb_enfants_2_17 ?? 0,
+    arrhesMontant,
+    options,
+    gite,
+  });
+
+  const arrhesDateLimite = data.arrhes_date_limite ? parseDate(data.arrhes_date_limite) : addDays(new Date(), 15);
+  if (data.arrhes_date_limite) ensureValidDate(arrhesDateLimite, "arrhes_date_limite");
+
+  const contractForPdf: ContractRenderInput = {
+    numero_contrat: "BROUILLON",
+    locataire_nom: data.locataire_nom ?? "",
+    locataire_adresse: data.locataire_adresse ?? "",
+    locataire_tel: data.locataire_tel ?? "",
+    nb_adultes: data.nb_adultes ?? 1,
+    nb_enfants_2_17: data.nb_enfants_2_17 ?? 0,
+    date_debut: dateDebut,
+    heure_arrivee: data.heure_arrivee ?? "17:00",
+    date_fin: dateFin,
+    heure_depart: data.heure_depart ?? "12:00",
+    prix_par_nuit: data.prix_par_nuit ?? 0,
+    remise_montant: data.remise_montant ?? 0,
+    arrhes_montant: arrhesMontant,
+    arrhes_date_limite: arrhesDateLimite,
+    solde_montant: totals.solde,
+    cheque_menage_montant: data.cheque_menage_montant ?? 0,
+    caution_montant: data.caution_montant ?? 0,
+    afficher_caution_phrase: data.afficher_caution_phrase ?? true,
+    afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
+    options,
+    clauses: data.clauses ?? {},
+    notes: data.notes ?? null,
+  };
+
+  return { gite, totals, contractForPdf };
+};
+
 router.get("/", async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q : "";
@@ -182,101 +275,43 @@ router.get("/", async (req, res, next) => {
 
 router.post("/preview", async (req, res, next) => {
   try {
-    const data = previewSchema.parse(req.body);
-    const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
-    if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+    const context = await buildPreviewContext(req.body);
+    if ("error" in context) return res.status(context.error.status).json({ error: context.error.message });
 
-    const dateDebut = data.date_debut ? parseDate(data.date_debut) : null;
-    const dateFin = data.date_fin ? parseDate(data.date_fin) : null;
-    if (dateDebut) ensureValidDate(dateDebut, "date_debut");
-    if (dateFin) ensureValidDate(dateFin, "date_fin");
-    if (dateDebut && dateFin && dateFin <= dateDebut) {
-      return res.status(400).json({ error: "La date de fin doit être postérieure à la date de début." });
-    }
-
-    const totalsDateDebut = dateDebut
-      ? dateDebut
-      : dateFin
-        ? addDays(dateFin, -1)
-        : new Date();
-    const totalsDateFin = dateFin
-      ? dateFin
-      : dateDebut
-        ? addDays(dateDebut, 1)
-        : addDays(totalsDateDebut, 1);
-
-    const options = normalizeOptions(data.options as OptionsInput, gite);
-
-    const totalsPre = computeTotals({
-      dateDebut: totalsDateDebut,
-      dateFin: totalsDateFin,
-      prixParNuit: data.prix_par_nuit ?? 0,
-      remiseMontant: data.remise_montant ?? 0,
-      nbAdultes: data.nb_adultes ?? 1,
-      nbEnfants: data.nb_enfants_2_17 ?? 0,
-      arrhesMontant: data.arrhes_montant ?? 0,
-      options,
-      gite,
-    });
-
-    const arrhesRate =
-      gite.arrhes_taux_defaut !== undefined && gite.arrhes_taux_defaut !== null
-        ? toNumber(gite.arrhes_taux_defaut)
-        : env.DEFAULT_ARRHES_RATE;
-    const arrhesMontant =
-      data.arrhes_montant !== undefined ? data.arrhes_montant : round2(totalsPre.totalSansOptions * arrhesRate);
-
-    const totals = computeTotals({
-      dateDebut: totalsDateDebut,
-      dateFin: totalsDateFin,
-      prixParNuit: data.prix_par_nuit ?? 0,
-      remiseMontant: data.remise_montant ?? 0,
-      nbAdultes: data.nb_adultes ?? 1,
-      nbEnfants: data.nb_enfants_2_17 ?? 0,
-      arrhesMontant,
-      options,
-      gite,
-    });
-
-    const arrhesDateLimite = data.arrhes_date_limite
-      ? parseDate(data.arrhes_date_limite)
-      : addDays(new Date(), 15);
-    if (data.arrhes_date_limite) ensureValidDate(arrhesDateLimite, "arrhes_date_limite");
-
-    const contractForPdf: ContractRenderInput = {
-      numero_contrat: "BROUILLON",
-      locataire_nom: data.locataire_nom ?? "",
-      locataire_adresse: data.locataire_adresse ?? "",
-      locataire_tel: data.locataire_tel ?? "",
-      nb_adultes: data.nb_adultes ?? 1,
-      nb_enfants_2_17: data.nb_enfants_2_17 ?? 0,
-      date_debut: dateDebut,
-      heure_arrivee: data.heure_arrivee ?? "17:00",
-      date_fin: dateFin,
-      heure_depart: data.heure_depart ?? "12:00",
-      prix_par_nuit: data.prix_par_nuit ?? 0,
-      remise_montant: data.remise_montant ?? 0,
-      arrhes_montant: arrhesMontant,
-      arrhes_date_limite: arrhesDateLimite,
-      solde_montant: totals.solde,
-      cheque_menage_montant: data.cheque_menage_montant ?? 0,
-      caution_montant: data.caution_montant ?? 0,
-      afficher_caution_phrase: data.afficher_caution_phrase ?? true,
-      afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
-      options,
-      clauses: data.clauses ?? {},
-      notes: data.notes ?? null,
-    };
-
-    const pdfBuffer = await generateContractPreviewPdf({
-      contract: contractForPdf,
-      gite,
-      totals,
+    const previewPdf = await generateContractPreviewPdf({
+      contract: context.contractForPdf,
+      gite: context.gite,
+      totals: context.totals,
     });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Cache-Control", "no-store");
-    res.send(pdfBuffer);
+    res.setHeader("X-Contract-Overflow", previewPdf.overflowBefore ? "1" : "0");
+    res.setHeader("X-Contract-Overflow-After", previewPdf.overflowAfter ? "1" : "0");
+    res.setHeader("X-Contract-Compact", previewPdf.compactApplied ? "1" : "0");
+    res.send(previewPdf.buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/preview-html", async (req, res, next) => {
+  try {
+    const context = await buildPreviewContext(req.body);
+    if ("error" in context) return res.status(context.error.status).json({ error: context.error.message });
+
+    const previewHtml = await generateContractPreviewHtml({
+      contract: context.contractForPdf,
+      gite: context.gite,
+      totals: context.totals,
+    });
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Contract-Overflow", previewHtml.overflowBefore ? "1" : "0");
+    res.setHeader("X-Contract-Overflow-After", previewHtml.overflowAfter ? "1" : "0");
+    res.setHeader("X-Contract-Compact", previewHtml.compactApplied ? "1" : "0");
+    res.send(previewHtml.html);
   } catch (err) {
     next(err);
   }
