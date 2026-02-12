@@ -1,14 +1,38 @@
 import fs from "fs/promises";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
-import { Gite, Prisma } from "@prisma/client";
 import { renderTemplate } from "./template.js";
 import { formatDate } from "../utils/dates.js";
-import { formatEuro, round2, toNumber } from "../utils/money.js";
+import { formatEuro, round2, toNumber, type NumericLike } from "../utils/money.js";
 import type { ContractTotals, OptionsInput } from "./contractCalculator.js";
 
 let browserPromise: Promise<Browser> | null = null;
 let templateCache: { contractHtml: string; conditionsHtml: string } | null = null;
+
+type GiteLike = {
+  nom: string;
+  adresse_ligne1: string;
+  adresse_ligne2?: string | null;
+  proprietaires_noms: string;
+  proprietaires_adresse: string;
+  capacite_max: number;
+  site_web?: string | null;
+  email?: string | null;
+  telephones: unknown;
+  taxe_sejour_par_personne_par_nuit: NumericLike;
+  iban: string;
+  bic?: string | null;
+  titulaire: string;
+  caracteristiques?: string | null;
+  regle_animaux_acceptes: boolean;
+  regle_bois_premiere_flambee: boolean;
+  regle_tiers_personnes_info: boolean;
+  options_draps_par_lit: NumericLike;
+  options_linge_toilette_par_personne: NumericLike;
+  options_menage_forfait: NumericLike;
+  options_depart_tardif_forfait: NumericLike;
+  options_chiens_forfait: NumericLike;
+};
 
 export type ContractRenderInput = {
   numero_contrat: string;
@@ -21,13 +45,13 @@ export type ContractRenderInput = {
   heure_arrivee: string;
   date_fin: Date | null;
   heure_depart: string;
-  prix_par_nuit: Prisma.Decimal | number | string;
-  remise_montant: Prisma.Decimal | number | string;
-  arrhes_montant: Prisma.Decimal | number | string;
+  prix_par_nuit: NumericLike;
+  remise_montant: NumericLike;
+  arrhes_montant: NumericLike;
   arrhes_date_limite: Date;
-  solde_montant: Prisma.Decimal | number | string;
-  cheque_menage_montant: Prisma.Decimal | number | string;
-  caution_montant: Prisma.Decimal | number | string;
+  solde_montant: NumericLike;
+  cheque_menage_montant: NumericLike;
+  caution_montant: NumericLike;
   afficher_caution_phrase?: boolean;
   afficher_cheque_menage_phrase?: boolean;
   options: OptionsInput | string;
@@ -73,7 +97,7 @@ const formatTel = (telephones: unknown) => {
   return "";
 };
 
-const resolveContractRules = (gite: Gite, options?: OptionsInput) => ({
+const resolveContractRules = (gite: GiteLike, options?: OptionsInput) => ({
   regle_animaux_acceptes: options?.regle_animaux_acceptes ?? gite.regle_animaux_acceptes,
   regle_bois_premiere_flambee:
     options?.regle_bois_premiere_flambee ?? gite.regle_bois_premiere_flambee,
@@ -98,7 +122,7 @@ const formatOptionalDate = (value: Date | string | null | undefined, fallback = 
   return formatDate(date);
 };
 
-const buildProprietairesContactHtml = (gite: Gite) => {
+const buildProprietairesContactHtml = (gite: GiteLike) => {
   const lines: string[] = [];
   if (gite.site_web) {
     lines.push(`<div class="link">${escapeHtml(gite.site_web)}</div>`);
@@ -113,7 +137,7 @@ const buildProprietairesContactHtml = (gite: Gite) => {
   return lines.join("");
 };
 
-const buildNotesHtml = (params: { gite: Gite; options: OptionsInput }) => {
+const buildNotesHtml = (params: { gite: GiteLike; options: OptionsInput }) => {
   const { gite, options } = params;
   const regles = resolveContractRules(gite, options);
   const notes: string[] = [];
@@ -175,7 +199,7 @@ const formatSignedEuro = (value: number, sign: "+" | "-") =>
 const buildClientOptionsFormHtml = (params: {
   options: OptionsInput;
   totals: ContractTotals;
-  gite: Gite;
+  gite: GiteLike;
 }) => {
   const { options, totals, gite } = params;
   const regles = resolveContractRules(gite, options);
@@ -281,7 +305,7 @@ const buildClientOptionsFormHtml = (params: {
 const buildOptionsBandRowsHtml = (params: {
   options: OptionsInput;
   totals: ContractTotals;
-  gite: Gite;
+  gite: GiteLike;
 }) => {
   const rows: string[] = [];
   const { options, totals, gite } = params;
@@ -388,7 +412,7 @@ const buildOptionsBandRowsHtml = (params: {
 };
 
 const buildClausesHtml = (params: {
-  gite: Gite;
+  gite: GiteLike;
   options: OptionsInput;
   clauses: Record<string, unknown> | null;
 }) => {
@@ -498,7 +522,7 @@ const prepareContractPage = async (page: Page, html: string) => {
 
 const buildContractHtml = async (params: {
   contract: ContractRenderInput;
-  gite: Gite;
+  gite: GiteLike;
   totals: ContractTotals;
   bodyAttrs?: string;
 }) => {
@@ -574,7 +598,7 @@ const buildContractHtml = async (params: {
 
 export const generateContractPdf = async (params: {
   contract: ContractRenderInput;
-  gite: Gite;
+  gite: GiteLike;
   totals: ContractTotals;
   outputPath: string;
 }) => {
@@ -593,7 +617,7 @@ export const generateContractPdf = async (params: {
 
 export const generateContractPreviewPdf = async (params: {
   contract: ContractRenderInput;
-  gite: Gite;
+  gite: GiteLike;
   totals: ContractTotals;
 }) => {
   const html = await buildContractHtml(params);
@@ -610,7 +634,7 @@ export const generateContractPreviewPdf = async (params: {
 
 export const generateContractPreviewHtml = async (params: {
   contract: ContractRenderInput;
-  gite: Gite;
+  gite: GiteLike;
   totals: ContractTotals;
 }) => {
   const html = await buildContractHtml({ ...params, bodyAttrs: 'class="preview"' });

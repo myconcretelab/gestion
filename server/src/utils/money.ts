@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
+export type NumericLike = number | string | { toString(): string };
 
-export const toNumber = (value: Prisma.Decimal | number | string | null | undefined): number => {
+export const toNumber = (value: NumericLike | null | undefined): number => {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return value;
   if (typeof value === "string") return Number(value);

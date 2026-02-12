@@ -107,7 +107,9 @@ router.post("/:id/duplicate", async (req, res, next) => {
     const existing = await prisma.gite.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Gite introuvable" });
 
-    const prefixes = await prisma.gite.findMany({ select: { prefixe_contrat: true } });
+    const prefixes = (await prisma.gite.findMany({
+      select: { prefixe_contrat: true },
+    })) as Array<{ prefixe_contrat: string }>;
     const prefixSet = new Set(prefixes.map((p) => p.prefixe_contrat));
     const basePrefix = existing.prefixe_contrat;
     let suffix = 2;
@@ -161,10 +163,10 @@ router.delete("/:id", async (req, res, next) => {
     const existing = await prisma.gite.findUnique({ where: { id: giteId } });
     if (!existing) return res.status(404).json({ error: "Gite introuvable" });
 
-    const contrats = await prisma.contrat.findMany({
+    const contrats = (await prisma.contrat.findMany({
       where: { gite_id: giteId },
       select: { id: true, pdf_path: true },
-    });
+    })) as Array<{ id: string; pdf_path: string }>;
 
     await prisma.$transaction([
       prisma.contrat.deleteMany({ where: { gite_id: giteId } }),

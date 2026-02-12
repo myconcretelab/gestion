@@ -1,6 +1,5 @@
 import { differenceInCalendarDays } from "date-fns";
-import { toNumber, round2 } from "../utils/money.js";
-import { Prisma } from "@prisma/client";
+import { toNumber, round2, type NumericLike } from "../utils/money.js";
 
 export type OptionsInput = {
   draps?: { enabled: boolean; nb_lits?: number; offert?: boolean };
@@ -33,12 +32,12 @@ export type ContractTotals = {
 };
 
 export type GitePricing = {
-  taxe_sejour_par_personne_par_nuit: Prisma.Decimal | number | string;
-  options_draps_par_lit: Prisma.Decimal | number | string;
-  options_linge_toilette_par_personne: Prisma.Decimal | number | string;
-  options_menage_forfait: Prisma.Decimal | number | string;
-  options_depart_tardif_forfait: Prisma.Decimal | number | string;
-  options_chiens_forfait: Prisma.Decimal | number | string;
+  taxe_sejour_par_personne_par_nuit: NumericLike;
+  options_draps_par_lit: NumericLike;
+  options_linge_toilette_par_personne: NumericLike;
+  options_menage_forfait: NumericLike;
+  options_depart_tardif_forfait: NumericLike;
+  options_chiens_forfait: NumericLike;
 };
 
 export const computeTotals = (params: {
