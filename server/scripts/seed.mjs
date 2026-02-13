@@ -8,7 +8,12 @@ const resolveDatabaseUrl = (value) => {
   if (!value.startsWith("file:")) return value;
 
   const rawPath = value.slice("file:".length);
-  const absPath = path.resolve(process.cwd(), rawPath);
+  const normalizedRawPath = rawPath.replace(/^[./]+/, "");
+  const shouldResolveFromMonorepoRoot =
+    path.basename(process.cwd()) === "server" && normalizedRawPath.startsWith("server/");
+  const absPath = shouldResolveFromMonorepoRoot
+    ? path.resolve(process.cwd(), "..", normalizedRawPath)
+    : path.resolve(process.cwd(), rawPath);
   return `file:${absPath}`;
 };
 
