@@ -1,17 +1,44 @@
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
+import os from "os";
 
 const dotenvPaths = [
   process.env.DOTENV_CONFIG_PATH,
   path.join(process.cwd(), ".env"),
+  path.join(process.cwd(), ".env.production"),
+  path.join(process.cwd(), ".env.update"),
   path.join(process.cwd(), "..", ".env"),
+  path.join(process.cwd(), "..", ".env.production"),
+  path.join(process.cwd(), "..", ".env.update"),
 ].filter(Boolean) as string[];
+
+const initialEnvKeys = new Set(Object.keys(process.env));
 
 for (const envPath of dotenvPaths) {
   if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath, override: false });
+    const parsed = dotenv.parse(fs.readFileSync(envPath));
+    for (const [key, value] of Object.entries(parsed)) {
+      if (initialEnvKeys.has(key)) continue;
+      process.env[key] = value;
+    }
   }
+}
+
+const normalizePlaywrightBrowsersPath = (value?: string) => {
+  if (!value || value === "0") return value;
+  if (value === "~") return os.homedir();
+  if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
+  if (path.isAbsolute(value)) return value;
+  return path.resolve(process.cwd(), value);
+};
+
+const normalizedPlaywrightBrowsersPath = normalizePlaywrightBrowsersPath(
+  process.env.PLAYWRIGHT_BROWSERS_PATH
+);
+
+if (normalizedPlaywrightBrowsersPath) {
+  process.env.PLAYWRIGHT_BROWSERS_PATH = normalizedPlaywrightBrowsersPath;
 }
 
 const port = Number(process.env.PORT ?? 4000);

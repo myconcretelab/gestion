@@ -74,12 +74,13 @@ SEED_SKIP_PDF=1 npm run seed
 - `NODE_ENV=production`
 - `PORT=4000`
 - `CLIENT_DIST_DIR=/home/USER/app/client/dist`
-- `PLAYWRIGHT_BROWSERS_PATH=/home/USER/.cache/ms-playwright` (recommande pour eviter les re-telechargements)
+- `PLAYWRIGHT_BROWSERS_PATH=/home/USER/.cache/ms-playwright` (recommande pour eviter les re-telechargements, utilisez un chemin absolu)
 - (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` (et conserve `node_modules`)
 - (optionnel) `BASIC_AUTH_PASSWORD=...`
 - (optionnel) `RESTART_CMD=...` ou `ALWAYSDATA_API_TOKEN` + `ALWAYSDATA_ACCOUNT` + `ALWAYSDATA_SITE_ID` pour que `./update` redemarre le serveur
 
 Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
+Note: evitez `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright` dans les fichiers `.env`; utilisez `/home/USER/.cache/ms-playwright`.
 Note: `PLAYWRIGHT_BROWSERS_PATH=0` stocke les navigateurs dans `node_modules` et force souvent un re-telechargement apres `npm ci`.
 Note: `NPM_INSTALL_MODE=ci` est le comportement par defaut (reproductible, mais supprime `node_modules`), `NPM_INSTALL_MODE=install` evite cette suppression.
 Note: `./update` charge automatiquement `.env`, `.env.production` et `.env.update`.

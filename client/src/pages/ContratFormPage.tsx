@@ -400,6 +400,19 @@ const ContratFormPage = () => {
   }, [dateDebut, dateFin]);
 
   const previewReady = Boolean(giteId && (!dateDebut || !dateFin || previewDatesValid));
+  const previewOverflowStatus =
+    !previewLoading && !previewError && previewOverflow?.after
+      ? {
+          tone: "error" as const,
+          message:
+            "Dépassement persistant : le contrat dépasse encore une page malgré plusieurs niveaux de réduction.",
+        }
+      : !previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after
+        ? {
+            tone: "ok" as const,
+            message: "Dépassement détecté puis corrigé : après ajustement, la page 1 ne dépasse plus.",
+          }
+        : null;
 
   useEffect(() => {
     if (createdContract && createdPayloadKey && payloadKey !== createdPayloadKey) {
@@ -1089,7 +1102,14 @@ const ContratFormPage = () => {
       </div>
 
       <div className="card">
-        <div className="section-title">Prévisualisation (page 1)</div>
+        <div className="preview-header">
+          <div className="section-title">Prévisualisation (page 1)</div>
+          {previewOverflowStatus && (
+            <span className={`preview-status-chip preview-status-chip--${previewOverflowStatus.tone}`}>
+              {previewOverflowStatus.message}
+            </span>
+          )}
+        </div>
         <div className="preview-shell">
           {previewHtml ? (
             <iframe className="preview-frame" title="Prévisualisation contrat" srcDoc={previewHtml} />
@@ -1117,16 +1137,6 @@ const ContratFormPage = () => {
                 ? "Prévisualisation inactive tant qu'aucun gîte n'est sélectionné."
                 : "Prévisualisation inactive : dates invalides."}
           </span>
-          {!previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after && (
-            <span className="preview-success">
-              Dépassement détecté puis corrigé : après ajustement, la page 1 ne dépasse plus.
-            </span>
-          )}
-          {!previewLoading && !previewError && previewOverflow?.after && (
-            <span className="preview-warning">
-              Dépassement persistant : le contrat dépasse encore une page malgré plusieurs niveaux de réduction.
-            </span>
-          )}
           {previewError && <span className="preview-error">{previewError}</span>}
         </div>
       </div>
