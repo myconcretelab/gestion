@@ -24,8 +24,22 @@ load_env_file "$ROOT_DIR/.env.update"
 echo "==> Pull latest code"
 git pull
 
-echo "==> Install/update dependencies"
-npm ci --include=optional
+NPM_INSTALL_MODE="${NPM_INSTALL_MODE:-ci}"
+
+case "$NPM_INSTALL_MODE" in
+  ci)
+    echo "==> Install/update dependencies with npm ci"
+    npm ci --include=optional
+    ;;
+  install)
+    echo "==> Install/update dependencies with npm install (keeps existing node_modules)"
+    npm install --include=optional
+    ;;
+  *)
+    echo "Invalid NPM_INSTALL_MODE='${NPM_INSTALL_MODE}'. Expected 'ci' or 'install'."
+    exit 1
+    ;;
+esac
 
 PLAYWRIGHT_BROWSERS_PATH_VALUE="${PLAYWRIGHT_BROWSERS_PATH:-$ROOT_DIR/.cache/ms-playwright}"
 
@@ -33,8 +47,12 @@ if [[ "${SKIP_PLAYWRIGHT_INSTALL:-0}" != "1" ]]; then
   echo "==> Ensure Playwright Chromium is installed (PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH_VALUE})"
   if [[ "${PLAYWRIGHT_BROWSERS_PATH_VALUE}" != "0" ]]; then
     mkdir -p "${PLAYWRIGHT_BROWSERS_PATH_VALUE}"
+  else
+    echo "==> Warning: PLAYWRIGHT_BROWSERS_PATH=0 stores browsers inside node_modules."
+    echo "==>          With npm ci, browsers are removed and must be reinstalled each deploy."
   fi
-  PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH_VALUE}" npx playwright install chromium
+  # Use the server workspace binary to avoid npx fetching a mismatched Playwright version.
+  PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH_VALUE}" npm exec --workspace=server playwright install chromium
 fi
 
 echo "==> Generate Prisma client (PostgreSQL)"
