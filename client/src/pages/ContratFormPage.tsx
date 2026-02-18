@@ -672,7 +672,7 @@ const ContratFormPage = () => {
             {renderFieldError("locataire_nom")}
           </label>
           <label className={getFieldClassName("locataire_adresse")}>
-            Adresse locataire
+            Adresse locataire (optionnel)
             <input
               value={locataireAdresse}
               onChange={(e) => {

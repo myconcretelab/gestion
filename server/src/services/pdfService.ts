@@ -531,8 +531,10 @@ const pdfBaseOptions = {
   },
 };
 
+const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 const MM_TO_PX = 96 / 25.4;
+const OVERFLOW_SAFETY_PX = 2;
 
 const parseMm = (value: string | number | undefined) => {
   if (typeof value === "number") return value;
@@ -548,14 +550,27 @@ const getPrintableHeightPx = () => {
   return usableMm * MM_TO_PX;
 };
 
+const getPrintableWidthPx = () => {
+  const marginLeftMm = parseMm(pdfBaseOptions.margin.left);
+  const marginRightMm = parseMm(pdfBaseOptions.margin.right);
+  const usableMm = A4_WIDTH_MM - marginLeftMm - marginRightMm;
+  return usableMm * MM_TO_PX;
+};
+
+const getPrintableViewportPx = () => {
+  const width = Math.max(1, Math.ceil(getPrintableWidthPx()));
+  const height = Math.max(1, Math.ceil(getPrintableHeightPx()));
+  return { width, height };
+};
+
 const measureOverflow = async (page: Page) => {
   const printableHeightPx = getPrintableHeightPx();
-  return page.evaluate((heightPx) => {
+  return page.evaluate(({ heightPx, safetyPx }) => {
     const firstPage = document.querySelector(".page");
     if (!firstPage) return false;
     const renderedHeight = firstPage.getBoundingClientRect().height;
-    return renderedHeight > heightPx + 1;
-  }, printableHeightPx);
+    return renderedHeight > heightPx - safetyPx;
+  }, { heightPx: printableHeightPx, safetyPx: OVERFLOW_SAFETY_PX });
 };
 
 const compactClassSteps = [
@@ -589,6 +604,8 @@ const applyCompactionIfOverflow = async (page: Page) => {
 };
 
 const prepareContractPage = async (page: Page, html: string) => {
+  const viewport = getPrintableViewportPx();
+  await page.setViewportSize(viewport);
   await page.setContent(html, { waitUntil: "load" });
   await page.emulateMedia({ media: "print" });
   return applyCompactionIfOverflow(page);
