@@ -580,7 +580,7 @@ const measureOverflow = async (page: Page) => {
     const firstPage = document.querySelector(".page");
     if (!firstPage) return false;
     const renderedHeight = firstPage.getBoundingClientRect().height;
-    return renderedHeight > heightPx - safetyPx;
+    return renderedHeight > heightPx + safetyPx;
   }, { heightPx: printableHeightPx, safetyPx: OVERFLOW_SAFETY_PX });
 };
 
