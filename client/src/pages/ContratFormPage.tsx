@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { apiFetch } from "../utils/api";
+import { apiFetch, isApiError } from "../utils/api";
 import type { Contrat, ContratOptions, Gite } from "../utils/types";
 import { computeTotals } from "../utils/contractCalc";
 import { formatEuro } from "../utils/format";
@@ -85,6 +85,70 @@ const mergeOptions = (value?: ContratOptions | null): ContratOptions => ({
   chiens: { ...defaultOptions.chiens, ...(value?.chiens ?? {}) },
 });
 
+type ContractFieldKey =
+  | "gite_id"
+  | "locataire_nom"
+  | "locataire_adresse"
+  | "locataire_tel"
+  | "nb_adultes"
+  | "nb_enfants_2_17"
+  | "date_debut"
+  | "heure_arrivee"
+  | "date_fin"
+  | "heure_depart"
+  | "prix_par_nuit"
+  | "remise_montant"
+  | "arrhes_montant"
+  | "arrhes_date_limite"
+  | "caution_montant"
+  | "cheque_menage_montant"
+  | "statut_paiement_arrhes";
+
+type FieldErrors = Partial<Record<ContractFieldKey, string>>;
+
+const contractFieldKeys: ContractFieldKey[] = [
+  "gite_id",
+  "locataire_nom",
+  "locataire_adresse",
+  "locataire_tel",
+  "nb_adultes",
+  "nb_enfants_2_17",
+  "date_debut",
+  "heure_arrivee",
+  "date_fin",
+  "heure_depart",
+  "prix_par_nuit",
+  "remise_montant",
+  "arrhes_montant",
+  "arrhes_date_limite",
+  "caution_montant",
+  "cheque_menage_montant",
+  "statut_paiement_arrhes",
+];
+
+const contractFieldKeySet = new Set<ContractFieldKey>(contractFieldKeys);
+
+const getValidationFieldErrors = (error: unknown): FieldErrors => {
+  const result: FieldErrors = {};
+  if (!isApiError(error)) return result;
+
+  const rawFieldErrors = error.payload.details?.fieldErrors;
+  if (rawFieldErrors && typeof rawFieldErrors === "object") {
+    for (const [field, messages] of Object.entries(rawFieldErrors)) {
+      if (!contractFieldKeySet.has(field as ContractFieldKey) || !Array.isArray(messages)) continue;
+      const firstMessage = messages.find((message): message is string => typeof message === "string" && message.trim().length > 0);
+      if (firstMessage) result[field as ContractFieldKey] = firstMessage;
+    }
+  }
+
+  const normalizedMessage = error.message.toLowerCase();
+  if (!result.date_fin && normalizedMessage.includes("date de fin")) {
+    result.date_fin = error.message;
+  }
+
+  return result;
+};
+
 const ContratFormPage = () => {
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -116,6 +180,7 @@ const ContratFormPage = () => {
   const [clausesText, setClausesText] = useState("");
   const [statutArrhes, setStatutArrhes] = useState<"non_recu" | "recu">("non_recu");
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [createdContract, setCreatedContract] = useState<Contrat | null>(null);
   const [createdPayloadKey, setCreatedPayloadKey] = useState<string | null>(null);
@@ -414,6 +479,24 @@ const ContratFormPage = () => {
           }
         : null;
 
+  const clearFieldError = (field: ContractFieldKey) => {
+    setFieldErrors((previous) => {
+      if (!previous[field]) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const getFieldClassName = (field: ContractFieldKey, className = "field") =>
+    `${className}${fieldErrors[field] ? " field--error" : ""}`;
+
+  const renderFieldError = (field: ContractFieldKey) => {
+    const message = fieldErrors[field];
+    if (!message) return null;
+    return <div className="field-error">{message}</div>;
+  };
+
   useEffect(() => {
     if (createdContract && createdPayloadKey && payloadKey !== createdPayloadKey) {
       setCreatedContract(null);
@@ -479,6 +562,7 @@ const ContratFormPage = () => {
     if (!giteId) return;
     setSaving(true);
     setError(null);
+    setFieldErrors({});
     setCreatedContract(null);
     setCreatedPayloadKey(null);
     try {
@@ -517,8 +601,17 @@ const ContratFormPage = () => {
       setCreatedContract(saved);
       if (isEdit) setEditingContract(saved);
       setCreatedPayloadKey(payloadKey);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const validationErrors = getValidationFieldErrors(err);
+      const hasFieldErrors = Object.keys(validationErrors).length > 0;
+      setFieldErrors(validationErrors);
+      if (hasFieldErrors) {
+        setError("Veuillez corriger les champs en erreur.");
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Erreur lors de l'enregistrement du contrat.");
+      }
     } finally {
       setSaving(false);
     }
@@ -550,31 +643,65 @@ const ContratFormPage = () => {
       <div className="card">
         <div className="section-title">Infos locataire</div>
         <div className="grid-2">
-          <label className="field">
+          <label className={getFieldClassName("gite_id")}>
             Gîte
-            <select value={giteId} onChange={(e) => setGiteId(e.target.value)}>
+            <select
+              value={giteId}
+              onChange={(e) => {
+                clearFieldError("gite_id");
+                setGiteId(e.target.value);
+              }}
+            >
               {gites.map((gite) => (
                 <option key={gite.id} value={gite.id}>
                   {gite.nom}
                 </option>
               ))}
             </select>
+            {renderFieldError("gite_id")}
           </label>
-          <label className="field">
+          <label className={getFieldClassName("locataire_nom")}>
             Nom locataire
-            <input value={locataireNom} onChange={(e) => setLocataireNom(e.target.value)} />
+            <input
+              value={locataireNom}
+              onChange={(e) => {
+                clearFieldError("locataire_nom");
+                setLocataireNom(e.target.value);
+              }}
+            />
+            {renderFieldError("locataire_nom")}
           </label>
-          <label className="field">
+          <label className={getFieldClassName("locataire_adresse")}>
             Adresse locataire
-            <input value={locataireAdresse} onChange={(e) => setLocataireAdresse(e.target.value)} />
+            <input
+              value={locataireAdresse}
+              onChange={(e) => {
+                clearFieldError("locataire_adresse");
+                setLocataireAdresse(e.target.value);
+              }}
+            />
+            {renderFieldError("locataire_adresse")}
           </label>
-          <label className="field">
+          <label className={getFieldClassName("locataire_tel")}>
             Téléphone locataire
-            <input value={locataireTel} onChange={(e) => setLocataireTel(e.target.value)} />
+            <input
+              value={locataireTel}
+              onChange={(e) => {
+                clearFieldError("locataire_tel");
+                setLocataireTel(e.target.value);
+              }}
+            />
+            {renderFieldError("locataire_tel")}
           </label>
-          <label className="field">
+          <label className={getFieldClassName("nb_adultes")}>
             Adultes
-            <select value={nbAdultes} onChange={(e) => setNbAdultes(Number(e.target.value))}>
+            <select
+              value={nbAdultes}
+              onChange={(e) => {
+                clearFieldError("nb_adultes");
+                setNbAdultes(Number(e.target.value));
+              }}
+            >
               {adultOptions.map((value) => (
                 <option key={value} value={value}>
                   {value}
@@ -582,16 +709,24 @@ const ContratFormPage = () => {
               ))}
             </select>
             <div className="field-hint">Capacité max: {capaciteMax} personnes</div>
+            {renderFieldError("nb_adultes")}
           </label>
-          <label className="field">
+          <label className={getFieldClassName("nb_enfants_2_17")}>
             Enfants (2-17)
-            <select value={nbEnfants} onChange={(e) => setNbEnfants(Number(e.target.value))}>
+            <select
+              value={nbEnfants}
+              onChange={(e) => {
+                clearFieldError("nb_enfants_2_17");
+                setNbEnfants(Number(e.target.value));
+              }}
+            >
               {enfantOptions.map((value) => (
                 <option key={value} value={value}>
                   {value}
                 </option>
               ))}
             </select>
+            {renderFieldError("nb_enfants_2_17")}
           </label>
         </div>
       </div>
@@ -607,31 +742,59 @@ const ContratFormPage = () => {
               </div>
             </div>
             <div className="field-row">
-              <label className="field">
+              <label className={getFieldClassName("date_debut")}>
                 Début
-                <input type="date" value={dateDebut} onChange={(e) => handleDateDebutChange(e.target.value)} />
+                <input
+                  type="date"
+                  value={dateDebut}
+                  onChange={(e) => {
+                    clearFieldError("date_debut");
+                    handleDateDebutChange(e.target.value);
+                  }}
+                />
+                {renderFieldError("date_debut")}
               </label>
-              <label className="field">
+              <label className={getFieldClassName("date_fin")}>
                 Fin
                 <input
                   type="date"
                   value={dateFin}
                   min={minDateFin}
-                  onChange={(e) => setDateFin(e.target.value)}
+                  onChange={(e) => {
+                    clearFieldError("date_fin");
+                    setDateFin(e.target.value);
+                  }}
                 />
+                {renderFieldError("date_fin")}
               </label>
             </div>
           </div>
           <div className="field-group">
             <div className="field-group__label">Horaires</div>
             <div className="field-row">
-              <label className="field">
+              <label className={getFieldClassName("heure_arrivee")}>
                 Arrivée
-                <input type="time" value={heureArrivee} onChange={(e) => setHeureArrivee(e.target.value)} />
+                <input
+                  type="time"
+                  value={heureArrivee}
+                  onChange={(e) => {
+                    clearFieldError("heure_arrivee");
+                    setHeureArrivee(e.target.value);
+                  }}
+                />
+                {renderFieldError("heure_arrivee")}
               </label>
-              <label className="field">
+              <label className={getFieldClassName("heure_depart")}>
                 Départ
-                <input type="time" value={heureDepart} onChange={(e) => setHeureDepart(e.target.value)} />
+                <input
+                  type="time"
+                  value={heureDepart}
+                  onChange={(e) => {
+                    clearFieldError("heure_depart");
+                    setHeureDepart(e.target.value);
+                  }}
+                />
+                {renderFieldError("heure_depart")}
               </label>
             </div>
           </div>
@@ -643,10 +806,16 @@ const ContratFormPage = () => {
         <div className="grid-2">
           <div className="field-group">
             <div className="field-group__label">Tarif séjour</div>
-            <label className="field">
+            <label className={getFieldClassName("prix_par_nuit")}>
               Prix par nuit
               {prixNuitListe.length > 0 ? (
-                <select value={prixParNuit} onChange={(e) => setPrixParNuit(Number(e.target.value))}>
+                <select
+                  value={prixParNuit}
+                  onChange={(e) => {
+                    clearFieldError("prix_par_nuit");
+                    setPrixParNuit(Number(e.target.value));
+                  }}
+                >
                   {prixNuitListe.map((prix, index) => (
                     <option key={`${prix}-${index}`} value={prix}>
                       {formatEuro(prix)}
@@ -659,20 +828,27 @@ const ContratFormPage = () => {
                     type="number"
                     step="0.01"
                     value={prixParNuit}
-                    onChange={(e) => setPrixParNuit(Number(e.target.value))}
+                    onChange={(e) => {
+                      clearFieldError("prix_par_nuit");
+                      setPrixParNuit(Number(e.target.value));
+                    }}
                   />
                   <div className="field-hint">Ajoutez des tarifs dans la gestion des gîtes.</div>
                 </>
               )}
+              {renderFieldError("prix_par_nuit")}
             </label>
-            <div className="field">
+            <div className={getFieldClassName("remise_montant")}>
               Remise
               <div className="field-row field-row--compact">
                 <input
                   type="number"
                   step="0.01"
                   value={remiseValue}
-                  onChange={(e) => setRemiseValue(e.target.value)}
+                  onChange={(e) => {
+                    clearFieldError("remise_montant");
+                    setRemiseValue(e.target.value);
+                  }}
                 />
                 <select value={remiseMode} onChange={(e) => setRemiseMode(e.target.value as "euro" | "percent")}>
                   <option value="euro">€</option>
@@ -680,12 +856,13 @@ const ContratFormPage = () => {
                 </select>
               </div>
               <div className="field-hint">Soit {formatEuro(remiseMontant)}</div>
+              {renderFieldError("remise_montant")}
             </div>
           </div>
 
           <div className="field-group">
             <div className="field-group__label">Arrhes</div>
-            <div className="field">
+            <div className={getFieldClassName("arrhes_montant")}>
               Montant
               <div className="field-row field-row--compact">
                 <input
@@ -693,6 +870,7 @@ const ContratFormPage = () => {
                   step="0.01"
                   value={arrhesMontant}
                   onChange={(e) => {
+                    clearFieldError("arrhes_montant");
                     setArrhesAuto(false);
                     setArrhesMontant(e.target.value);
                   }}
@@ -712,30 +890,40 @@ const ContratFormPage = () => {
               <div className="field-hint">
                 {Math.round(arrhesRate * 100)}% du séjour: {formatEuro(arrhesAutoValue)}
               </div>
+              {renderFieldError("arrhes_montant")}
             </div>
-            <label className="field">
+            <label className={getFieldClassName("arrhes_date_limite")}>
               Date limite arrhes
               <input
                 type="date"
                 value={arrhesDateLimite}
                 onChange={(e) => {
+                  clearFieldError("arrhes_date_limite");
                   setArrhesDateTouched(true);
                   setArrhesDateLimite(e.target.value);
                 }}
               />
+              {renderFieldError("arrhes_date_limite")}
             </label>
-            <label className="field">
+            <label className={getFieldClassName("statut_paiement_arrhes")}>
               Statut arrhes
-              <select value={statutArrhes} onChange={(e) => setStatutArrhes(e.target.value as any)}>
+              <select
+                value={statutArrhes}
+                onChange={(e) => {
+                  clearFieldError("statut_paiement_arrhes");
+                  setStatutArrhes(e.target.value as any);
+                }}
+              >
                 <option value="non_recu">Non reçues</option>
                 <option value="recu">Reçues</option>
               </select>
+              {renderFieldError("statut_paiement_arrhes")}
             </label>
           </div>
 
           <div className="field-group">
             <div className="field-group__label">Garanties</div>
-            <label className="field">
+            <label className={getFieldClassName("caution_montant")}>
               Caution
               <div className="field-row field-row--compact">
                 <input
@@ -743,6 +931,7 @@ const ContratFormPage = () => {
                   step="0.01"
                   value={cautionMontant}
                   onChange={(e) => {
+                    clearFieldError("caution_montant");
                     setCautionTouched(true);
                     setCautionMontant(Number(e.target.value));
                   }}
@@ -759,8 +948,9 @@ const ContratFormPage = () => {
                   </label>
                 </div>
               </div>
+              {renderFieldError("caution_montant")}
             </label>
-            <label className="field">
+            <label className={getFieldClassName("cheque_menage_montant")}>
               Chèque ménage
               <div className="field-row field-row--compact">
                 <input
@@ -768,6 +958,7 @@ const ContratFormPage = () => {
                   step="0.01"
                   value={chequeMenageMontant}
                   onChange={(e) => {
+                    clearFieldError("cheque_menage_montant");
                     setChequeMenageTouched(true);
                     setChequeMenageMontant(Number(e.target.value));
                   }}
@@ -784,6 +975,7 @@ const ContratFormPage = () => {
                   </label>
                 </div>
               </div>
+              {renderFieldError("cheque_menage_montant")}
             </label>
           </div>
         </div>
