@@ -239,7 +239,7 @@ const buildPaiementSurPlaceHtml = (params: {
     tail = `, en même temps que ${extras[0]} et ${extras[1]}.`;
   }
 
-  return `<p>Le montant restant de la location, soit ${params.soldeMontant} (sans les services annexes) sera payé le jour de la remise des clés${tail}</p>`;
+  return `<p>Le montant restant de la location, soit ${params.soldeMontant} sera payé le jour de la remise des clés${tail}</p>`;
 };
 
 const parseJsonField = <T>(value: unknown, fallback: T): T => {

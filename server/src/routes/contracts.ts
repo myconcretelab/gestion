@@ -216,6 +216,7 @@ const regenerateStoredContractPdf = async (contrat: any) => {
 
   const contractForPdf = {
     ...toContractRenderInput(contrat),
+    solde_montant: totals.solde,
     options,
   };
   await generateContractPdf({
