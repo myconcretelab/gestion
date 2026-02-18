@@ -89,8 +89,8 @@ export const computeTotals = (params: {
   const nbPersonnes = params.nbAdultes + params.nbEnfants;
   const taxeSejourCalculee = round2(nbPersonnes * nbNuits * taxeTarif);
 
-  const solde = round2(totalSansOptions - params.arrhesMontant);
   const totalGlobal = round2(totalSansOptions + optionsTotal);
+  const solde = round2(totalGlobal - params.arrhesMontant);
 
   return {
     nbNuits,
