@@ -67,7 +67,7 @@ const normalizeOptions = (options: OptionsInput, gite: GiteRules): OptionsInput 
 const contractSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
-  locataire_adresse: z.string().min(1),
+  locataire_adresse: z.string().optional().default(""),
   locataire_tel: z.string().min(1),
   nb_adultes: z.number().int().min(1),
   nb_enfants_2_17: z.number().int().min(0),
