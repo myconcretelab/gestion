@@ -90,8 +90,6 @@ type ContractFieldKey =
   | "locataire_nom"
   | "locataire_adresse"
   | "locataire_tel"
-  | "nb_adultes"
-  | "nb_enfants_2_17"
   | "date_debut"
   | "heure_arrivee"
   | "date_fin"
@@ -111,8 +109,6 @@ const contractFieldKeys: ContractFieldKey[] = [
   "locataire_nom",
   "locataire_adresse",
   "locataire_tel",
-  "nb_adultes",
-  "nb_enfants_2_17",
   "date_debut",
   "heure_arrivee",
   "date_fin",
@@ -157,7 +153,7 @@ const ContratFormPage = () => {
   const [locataireNom, setLocataireNom] = useState("");
   const [locataireAdresse, setLocataireAdresse] = useState("");
   const [locataireTel, setLocataireTel] = useState("");
-  const [nbAdultes, setNbAdultes] = useState(2);
+  const [nbAdultes, setNbAdultes] = useState(1);
   const [nbEnfants, setNbEnfants] = useState(0);
   const [dateDebut, setDateDebut] = useState("");
   const [dateFin, setDateFin] = useState("");
@@ -262,17 +258,6 @@ const ContratFormPage = () => {
       .filter((value) => Number.isFinite(value) && value >= 0)
       .sort((a, b) => a - b);
   }, [selectedGite]);
-
-  const capaciteMax = Math.max(1, selectedGite?.capacite_max ?? 1);
-  const adultOptions = useMemo(
-    () => Array.from({ length: capaciteMax }, (_, index) => index + 1),
-    [capaciteMax]
-  );
-  const maxEnfants = Math.max(0, capaciteMax - nbAdultes);
-  const enfantOptions = useMemo(
-    () => Array.from({ length: maxEnfants + 1 }, (_, index) => index),
-    [maxEnfants]
-  );
 
   const montantBase = useMemo(() => {
     const start = new Date(dateDebut);
@@ -388,18 +373,6 @@ const ContratFormPage = () => {
     if (!arrhesAuto) return;
     if (Number.isFinite(arrhesAutoValue)) setArrhesMontant(arrhesAutoValue.toFixed(2));
   }, [arrhesAuto, arrhesAutoValue]);
-
-  useEffect(() => {
-    if (nbAdultes < 1) {
-      setNbAdultes(1);
-      return;
-    }
-    if (nbAdultes > capaciteMax) setNbAdultes(capaciteMax);
-  }, [nbAdultes, capaciteMax]);
-
-  useEffect(() => {
-    if (nbEnfants > maxEnfants) setNbEnfants(maxEnfants);
-  }, [maxEnfants, nbEnfants]);
 
   const previewPayload = useMemo(() => {
     const payload: any = {
@@ -692,41 +665,6 @@ const ContratFormPage = () => {
               }}
             />
             {renderFieldError("locataire_tel")}
-          </label>
-          <label className={getFieldClassName("nb_adultes")}>
-            Adultes
-            <select
-              value={nbAdultes}
-              onChange={(e) => {
-                clearFieldError("nb_adultes");
-                setNbAdultes(Number(e.target.value));
-              }}
-            >
-              {adultOptions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-            <div className="field-hint">Capacité max: {capaciteMax} personnes</div>
-            {renderFieldError("nb_adultes")}
-          </label>
-          <label className={getFieldClassName("nb_enfants_2_17")}>
-            Enfants (2-17)
-            <select
-              value={nbEnfants}
-              onChange={(e) => {
-                clearFieldError("nb_enfants_2_17");
-                setNbEnfants(Number(e.target.value));
-              }}
-            >
-              {enfantOptions.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-            {renderFieldError("nb_enfants_2_17")}
           </label>
         </div>
       </div>

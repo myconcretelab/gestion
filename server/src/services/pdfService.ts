@@ -196,6 +196,17 @@ const buildProprietairesContactHtml = (gite: GiteLike) => {
   return lines.join("");
 };
 
+const buildLocataireAdresseHtml = (value: string | null | undefined) => {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized) {
+    return '<span class="write-line write-line--address"></span><br /><span class="write-line write-line--address"></span>';
+  }
+  return normalized
+    .split(/\r?\n/)
+    .map((line) => escapeHtml(line))
+    .join("<br />");
+};
+
 const buildNotesHtml = (params: { gite: GiteLike; options: OptionsInput }) => {
   const { gite, options } = params;
   const regles = resolveContractRules(gite, options);
@@ -637,7 +648,7 @@ const buildContractHtml = async (params: {
     proprietairesAdresse: params.gite.proprietaires_adresse,
     proprietairesContactHtml: buildProprietairesContactHtml(params.gite),
     locataireNom: params.contract.locataire_nom,
-    locataireAdresse: params.contract.locataire_adresse,
+    locataireAdresseHtml: buildLocataireAdresseHtml(params.contract.locataire_adresse),
     locataireTel: params.contract.locataire_tel,
     nbAdultes: String(params.contract.nb_adultes),
     nbEnfants: String(params.contract.nb_enfants_2_17),

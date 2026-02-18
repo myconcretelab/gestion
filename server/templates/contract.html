@@ -26,6 +26,10 @@
         position: relative;
         page-break-after: always;
       }
+      .page:first-of-type {
+        display: flex;
+        flex-direction: column;
+      }
       .contract-number-floating {
         position: absolute;
         top: 4mm;
@@ -264,6 +268,19 @@
       .line--lg {
         min-width: 30mm;
       }
+      .write-line {
+        display: inline-block;
+        border-bottom: 1.2px solid #222;
+        min-width: 14mm;
+        height: 3.4mm;
+        vertical-align: bottom;
+      }
+      .write-line--count {
+        min-width: 12mm;
+      }
+      .write-line--address {
+        min-width: 52mm;
+      }
       .section-title {
         font-weight: 700;
         margin-top: 5mm;
@@ -301,17 +318,20 @@
         margin: 1mm 0 1.4mm 0;
         padding-left: 16px;
       }
-      .iban-line {
-        margin-top: 5mm;
-        border: 1px solid #222;
-        padding: 2mm 3mm;
-        font-size: 9.2pt;
-      }
       .signature {
-        margin-top: 6mm;
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 8mm;
+      }
+      .page-footer {
+        margin-top: auto;
+        padding-top: 4mm;
+      }
+      .iban-line {
+        margin-top: 2.6mm;
+        border: 1px solid #222;
+        padding: 2mm 3mm;
+        font-size: 9.2pt;
       }
       .sign-label {
         font-weight: 700;
@@ -412,11 +432,13 @@
         margin: 0.8mm 0 1.1mm 0;
       }
       body.compact-density .signature {
-        margin-top: 4mm;
         gap: 6mm;
       }
+      body.compact-density .page-footer {
+        padding-top: 2.6mm;
+      }
       body.compact-density .iban-line {
-        margin-top: 4mm;
+        margin-top: 2mm;
         padding: 1.6mm 2.4mm;
       }
       body.compact-text .page:first-of-type {
@@ -483,15 +505,17 @@
       body.compact-spacing .page:first-of-type .reservation-terms {
         margin-top: 2mm;
       }
+      body.compact-spacing .page:first-of-type .page-footer {
+        padding-top: 1.6mm;
+      }
       body.compact-spacing .page:first-of-type .signature {
-        margin-top: 2.6mm;
         gap: 4.6mm;
       }
       body.compact-spacing .page:first-of-type .sign-line {
         height: 8mm;
       }
       body.compact-spacing .page:first-of-type .iban-line {
-        margin-top: 2.8mm;
+        margin-top: 1.8mm;
         padding: 1.2mm 2mm;
       }
       body.compact-margins .page:first-of-type {
@@ -530,15 +554,17 @@
       body.compact-margins .page:first-of-type .reservation-terms ul {
         margin: 0.5mm 0 0.8mm 0;
       }
+      body.compact-margins .page:first-of-type .page-footer {
+        padding-top: 1mm;
+      }
       body.compact-margins .page:first-of-type .signature {
-        margin-top: 2mm;
         gap: 4mm;
       }
       body.compact-margins .page:first-of-type .sign-line {
         height: 7mm;
       }
       body.compact-margins .page:first-of-type .iban-line {
-        margin-top: 2.2mm;
+        margin-top: 1.2mm;
         padding: 1mm 1.8mm;
         font-size: 8.9pt;
       }
@@ -605,11 +631,11 @@
           <div class="label" style="margin-top:6mm;">Locataires :</div>
           <div class="box">
             <div><strong>Nom et Prénom :</strong> {{locataireNom}}</div>
-            <div>Adresse : {{locataireAdresse}}</div>
+            <div>Adresse : {{{locataireAdresseHtml}}}</div>
             <div>Tél : {{locataireTel}}</div>
             <div class="small" style="margin-top:2mm;">
-              Nombre d'adultes : {{nbAdultes}}<br />
-              Nombre d'enfants (2 à 17 ans) : {{nbEnfants}}
+              Nombre d'adultes : <span class="write-line write-line--count"></span><br />
+              Nombre d'enfants (2 à 17 ans) : <span class="write-line write-line--count"></span>
             </div>
           </div>
         </div>
@@ -660,22 +686,24 @@
         {{{paiementSurPlaceHtml}}}
       </div>
 
-      <div class="signature">
-        <div>
-          <div class="small muted">Fait le {{dateSignature}} à {{lieuSignature}}</div>
-          <div class="sign-label">Le propriétaire</div>
-          <div class="sign-line"></div>
+      <div class="page-footer">
+        <div class="signature">
+          <div>
+            <div class="small muted">Fait le {{dateSignature}} à {{lieuSignature}}</div>
+            <div class="sign-label">Le propriétaire</div>
+            <div class="sign-line"></div>
+          </div>
+          <div>
+            <div class="small muted">J'ai pris connaissance des conditions générales de location précisées au verso.</div>
+            <div class="small muted">Fait le ............................, à ............................</div>
+            <div class="sign-label">Le locataire</div>
+            <div class="sign-line"></div>
+          </div>
         </div>
-        <div>
-          <div class="small muted">J'ai pris connaissance des conditions générales de location précisées au verso.</div>
-          <div class="small muted">Fait le ............................, à ............................</div>
-          <div class="sign-label">Le locataire</div>
-          <div class="sign-line"></div>
-        </div>
-      </div>
 
-      <div class="iban-line">
-        TITULAIRE : {{titulaire}}&nbsp;&nbsp;&nbsp; IBAN : {{iban}}&nbsp;&nbsp;&nbsp; BIC : {{bic}}
+        <div class="iban-line">
+          TITULAIRE : {{titulaire}}&nbsp;&nbsp;&nbsp; IBAN : {{iban}}&nbsp;&nbsp;&nbsp; BIC : {{bic}}
+        </div>
       </div>
     </div>
 
