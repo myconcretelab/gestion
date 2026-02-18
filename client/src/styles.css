@@ -241,6 +241,19 @@ body {
   color: var(--ink);
 }
 
+.field--error input,
+.field--error select,
+.field--error textarea {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.15);
+}
+
+.field-error {
+  font-size: 0.78rem;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .actions {
   display: flex;
   gap: 12px;
