@@ -47,6 +47,16 @@ const giteSchema = z.object({
   arrhes_taux_defaut: z.coerce.number().min(0).max(1).default(0.2),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
 });
+const giteReorderSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).min(1),
+});
+
+const getNextGiteOrder = async () => {
+  const aggregate = await prisma.gite.aggregate({
+    _max: { ordre: true },
+  });
+  return (aggregate._max.ordre ?? -1) + 1;
+};
 
 const hydrateGite = (gite: any) => {
   const { _count, ...rest } = gite ?? {};
@@ -75,16 +85,53 @@ const hydrateGite = (gite: any) => {
     arrhes_taux_defaut: toNumber(rest.arrhes_taux_defaut),
     prix_nuit_liste,
     contrats_count: typeof _count?.contrats === "number" ? _count.contrats : gite.contrats_count,
+    factures_count: typeof _count?.factures === "number" ? _count.factures : gite.factures_count,
   };
 };
 
 router.get("/", async (_req, res, next) => {
   try {
     const gites = await prisma.gite.findMany({
-      orderBy: { nom: "asc" },
-      include: { _count: { select: { contrats: true } } },
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      include: { _count: { select: { contrats: true, factures: true } } },
     });
     res.json(gites.map(hydrateGite));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/reorder", async (req, res, next) => {
+  try {
+    const { ids } = giteReorderSchema.parse(req.body);
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length !== ids.length) {
+      return res.status(400).json({ error: "La liste de réorganisation contient des doublons." });
+    }
+
+    const gites = await prisma.gite.findMany({ select: { id: true } });
+    if (gites.length !== ids.length) {
+      return res.status(400).json({ error: "La liste de réorganisation est incomplète." });
+    }
+    const existingIds = new Set(gites.map((gite) => gite.id));
+    if (ids.some((id) => !existingIds.has(id))) {
+      return res.status(400).json({ error: "La liste de réorganisation contient des identifiants inconnus." });
+    }
+
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.gite.update({
+          where: { id },
+          data: { ordre: index },
+        })
+      )
+    );
+
+    const updated = await prisma.gite.findMany({
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      include: { _count: { select: { contrats: true, factures: true } } },
+    });
+    res.json(updated.map(hydrateGite));
   } catch (err) {
     next(err);
   }
@@ -103,8 +150,10 @@ router.get("/:id", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
+    const ordre = await getNextGiteOrder();
     const gite = await prisma.gite.create({
       data: {
+        ordre,
         ...parsed,
         telephones: encodeJsonField(parsed.telephones),
         prix_nuit_liste: encodeJsonField(parsed.prix_nuit_liste),
@@ -149,9 +198,11 @@ router.post("/:id/duplicate", async (req, res, next) => {
       suffix += 1;
       nextPrefix = `${basePrefix}${suffix}`;
     }
+    const ordre = await getNextGiteOrder();
 
     const duplicated = await prisma.gite.create({
       data: {
+        ordre,
         nom: `${existing.nom} (copie)`,
         prefixe_contrat: nextPrefix,
         adresse_ligne1: existing.adresse_ligne1,
@@ -200,17 +251,21 @@ router.delete("/:id", async (req, res, next) => {
       where: { gite_id: giteId },
       select: { id: true, pdf_path: true },
     })) as Array<{ id: string; pdf_path: string }>;
+    const factures = (await prisma.facture.findMany({
+      where: { gite_id: giteId },
+      select: { id: true, pdf_path: true },
+    })) as Array<{ id: string; pdf_path: string }>;
 
     await prisma.$transaction([
       prisma.contrat.deleteMany({ where: { gite_id: giteId } }),
+      prisma.facture.deleteMany({ where: { gite_id: giteId } }),
       prisma.contratCounter.deleteMany({ where: { giteId } }),
+      prisma.factureCounter.deleteMany({ where: { giteId } }),
       prisma.gite.delete({ where: { id: giteId } }),
     ]);
 
     await Promise.all(
-      contrats.map((contrat) =>
-        fs.unlink(path.join(process.cwd(), contrat.pdf_path)).catch(() => undefined)
-      )
+      [...contrats, ...factures].map((doc) => fs.unlink(path.join(process.cwd(), doc.pdf_path)).catch(() => undefined))
     );
     res.status(204).end();
   } catch (err) {

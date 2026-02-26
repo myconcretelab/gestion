@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Facture</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        font-size: 10.5pt;
+        line-height: 1.3;
+        color: #111;
+        background: #fff;
+      }
+      .page {
+        width: 100%;
+        min-height: 297mm;
+        padding: 11.2mm 11.2mm 12mm;
+        display: flex;
+        flex-direction: column;
+        gap: 5.8mm;
+      }
+      .top {
+        display: grid;
+        grid-template-columns: 1.45fr 1fr;
+        gap: 8.4mm;
+        align-items: start;
+      }
+      .kicker {
+        font-size: 8.8pt;
+        color: #444;
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        font-weight: 700;
+      }
+      .title {
+        margin: 1mm 0 0;
+        font-family: "Times New Roman", Times, serif;
+        font-size: 22pt;
+        letter-spacing: 0.6px;
+        line-height: 1.08;
+      }
+      .title-number {
+        display: inline-block;
+        margin-left: 1.2mm;
+        font-size: 16.2pt;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+      }
+      .subtitle {
+        margin-top: 0.8mm;
+        font-family: "Times New Roman", Times, serif;
+        font-size: 13.2pt;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+      .muted {
+        color: #444;
+        font-size: 9.3pt;
+      }
+      .box {
+        border: 1px solid #222;
+        padding: 4mm 4.4mm;
+        background: #fff;
+        border-radius: 0;
+      }
+      .box--meta {
+        border: none;
+        padding: 0;
+        background: transparent;
+      }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 2.8mm 3.8mm;
+      }
+      .meta-grid.meta-grid--single {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .meta-label {
+        display: block;
+        font-size: 8pt;
+        color: #444;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      }
+      .meta-value {
+        display: block;
+        margin-top: 0.8mm;
+        font-size: 10pt;
+        font-weight: 700;
+      }
+      .section-title {
+        margin: 0 0 2.2mm;
+        font-size: 8.5pt;
+        color: #444;
+        text-transform: uppercase;
+        letter-spacing: 0.11em;
+        font-weight: 700;
+      }
+      .line {
+        margin: 1mm 0;
+        font-size: 10pt;
+      }
+      .client-period {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5mm;
+      }
+      .period-panel {
+        border-top: 2px solid #444;
+        border-bottom: 1px solid #777;
+        padding: 3.3mm 0.4mm 3mm;
+      }
+      .period-main {
+        font-family: "Times New Roman", Times, serif;
+        font-size: 15pt;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        margin-bottom: 1.3mm;
+      }
+      .period-dates {
+        font-size: 11pt;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+      .period-sub {
+        margin-top: 1.5mm;
+        font-size: 9.2pt;
+        color: #333;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 1.6mm 1mm;
+        border-bottom: 1px solid #d3d3d3;
+        font-size: 9.7pt;
+      }
+      th {
+        text-align: left;
+        color: #444;
+        font-size: 8.2pt;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      td:last-child,
+      th:last-child {
+        text-align: right;
+      }
+      .totals {
+        margin-left: auto;
+        margin-top: 2.8mm;
+        width: 74mm;
+      }
+      .totals td {
+        border-bottom: none;
+        padding: 1mm 0;
+      }
+      .totals tr.total td {
+        border-top: 1px solid #444;
+        padding-top: 1.8mm;
+        font-size: 12pt;
+        font-weight: 700;
+      }
+      .bank-footer {
+        margin-top: auto;
+        padding-top: 2.8mm;
+        border-top: 1px solid #d3d3d3;
+      }
+      .bank-title {
+        margin: 0 0 1.6mm;
+        font-size: 8pt;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-weight: 700;
+      }
+      .iban {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 2.2mm 3.2mm;
+      }
+      .iban-item {
+        min-width: 0;
+      }
+      .iban-item .meta-label {
+        font-size: 7.8pt;
+      }
+      .iban-item .meta-value {
+        margin-top: 0.4mm;
+        font-size: 9.1pt;
+      }
+      p {
+        margin: 0 0 1.4mm;
+        font-size: 9.8pt;
+      }
+      .invoice-muted {
+        color: #555;
+      }
+      .invoice-row-offered td {
+        font-size: 9.1pt;
+        color: #555;
+      }
+      .invoice-remise-reason {
+        margin-top: 0.5mm;
+        font-size: 8.3pt;
+        color: #555;
+        font-style: italic;
+      }
+
+      body.compact-sections .page {
+        gap: 4mm;
+      }
+      body.compact-density .page {
+        padding: 8.8mm 8.8mm 9.6mm;
+      }
+      body.compact-density .top {
+        gap: 6mm;
+      }
+      body.compact-density .box {
+        padding: 2.5mm 3mm;
+      }
+      body.compact-density .box.box--meta {
+        padding: 0;
+      }
+      body.compact-density th,
+      body.compact-density td {
+        padding-top: 1.1mm;
+        padding-bottom: 1.1mm;
+      }
+      body.compact-text {
+        font-size: 10pt;
+      }
+      body.compact-text .title {
+        font-size: 20.5pt;
+      }
+      body.compact-text .title-number {
+        font-size: 15pt;
+      }
+      body.compact-text .subtitle {
+        font-size: 12.2pt;
+      }
+      body.compact-text .period-main {
+        font-size: 13.7pt;
+      }
+      body.compact-final {
+        font-size: 9.8pt;
+        line-height: 1.2;
+      }
+      body.compact-final .title {
+        font-size: 19pt;
+      }
+      body.compact-final .title-number {
+        font-size: 14pt;
+      }
+      body.compact-final .client-period {
+        gap: 3.4mm;
+      }
+      body.compact-final .period-dates {
+        font-size: 10.2pt;
+      }
+      body.compact-spacing .page {
+        gap: 3.2mm;
+      }
+      body.compact-spacing .section-title {
+        margin-bottom: 1.1mm;
+      }
+      body.compact-spacing .totals {
+        margin-top: 1.4mm;
+      }
+      body.compact-margins .page {
+        padding: 7.8mm 7.8mm 8.4mm;
+      }
+      body.compact-margins .top {
+        gap: 4.8mm;
+      }
+      body.compact-margins .title {
+        font-size: 18.5pt;
+      }
+      body.compact-margins .title-number {
+        font-size: 13.5pt;
+      }
+      body.compact-margins .period-main {
+        font-size: 12.7pt;
+      }
+
+      @media screen {
+        body.preview {
+          background: #f4f3f0;
+          padding: 24px 0;
+        }
+        body.preview .page {
+          width: 100%;
+          max-width: 210mm;
+          min-height: 297mm;
+          margin: 0 auto 24px;
+          background: #fff;
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+        }
+      }
+    </style>
+  </head>
+  <body {{{bodyAttrs}}}>
+    <div class="page">
+      <div class="top">
+        <div>
+          <div class="kicker">Document comptable</div>
+          <h1 class="title">FACTURE <span class="title-number">{{invoiceNumber}}</span></h1>
+          <div class="subtitle">{{giteName}}</div>
+          <div class="muted">{{giteAdresse}}</div>
+          <div class="muted" style="margin-top: 1.8mm;">{{proprietairesNoms}}</div>
+          <div class="muted">{{proprietairesAdresse}}</div>
+          {{{proprietairesContactHtml}}}
+        </div>
+        <div class="box box--meta">
+          <div class="meta-grid {{metaGridClass}}">
+            <div>
+              <span class="meta-label">Émise le</span>
+              <span class="meta-value">{{emissionDate}}</span>
+            </div>
+            {{{echeanceMetaHtml}}}
+          </div>
+        </div>
+      </div>
+
+      <div class="client-period">
+        <div class="box">
+          <div class="section-title">Client</div>
+          <div class="line"><strong>{{clientNom}}</strong></div>
+          <div class="line">{{{clientAdresseHtml}}}</div>
+          <div class="line">Téléphone: {{clientTel}}</div>
+        </div>
+
+        <div class="period-panel">
+          <div class="period-main">du {{periodStart}} au {{periodEnd}}</div>
+          <div class="period-sub">{{nightsLabel}}</div>
+          <div class="period-sub">{{occupancyLabel}}</div>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="section-title">Détail de facturation</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th>Montant</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{locationLineLabel}}</td>
+              <td>{{montantBase}}</td>
+            </tr>
+            {{{remiseRowHtml}}}
+            {{{optionsRowsHtml}}}
+            {{{optionsTotalRowHtml}}}
+            <tr>
+              <td>Dont taxe de séjour</td>
+              <td>{{taxeSejour}}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table class="totals">
+          <tr>
+            <td>Sous-total</td>
+            <td>{{totalGlobal}}</td>
+          </tr>
+          {{{acompteRowHtml}}}
+          <tr class="total">
+            <td>{{soldeLabel}}</td>
+            <td>{{soldeMontant}}</td>
+          </tr>
+        </table>
+      </div>
+
+      {{{notesBlockHtml}}}
+
+      <div class="bank-footer">
+        <div class="bank-title">Coordonnées bancaires</div>
+        <div class="iban">
+          <div class="iban-item">
+            <span class="meta-label">IBAN</span>
+            <span class="meta-value">{{iban}}</span>
+          </div>
+          <div class="iban-item">
+            <span class="meta-label">BIC</span>
+            <span class="meta-value">{{bic}}</span>
+          </div>
+          <div class="iban-item">
+            <span class="meta-label">Titulaire</span>
+            <span class="meta-value">{{titulaire}}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

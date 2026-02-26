@@ -12,6 +12,7 @@ const seed = async () => {
 
   const giteLib = await prisma.gite.create({
     data: {
+      ordre: 0,
       nom: "GITE LE LIBERTÉ",
       prefixe_contrat: "LIB",
       adresse_ligne1: "1 Rue de la Forêt, 35380 Paimpont",
@@ -46,6 +47,7 @@ const seed = async () => {
 
   const gitePrairie = await prisma.gite.create({
     data: {
+      ordre: 1,
       nom: "GITE LA PRAIRIE",
       prefixe_contrat: "PRA",
       adresse_ligne1: "12 Chemin des Sources, 56430 Tréhorenteuc",

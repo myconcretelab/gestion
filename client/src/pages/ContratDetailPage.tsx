@@ -58,6 +58,9 @@ const ContratDetailPage = () => {
           </div>
           <div className="actions">
             <Link to={`/contrats/${contrat.id}/edition`}>Éditer</Link>
+            <Link to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}>
+              Créer facture
+            </Link>
             <button onClick={downloadPdf}>Télécharger PDF</button>
             <button className="secondary" onClick={regenerate}>
               Régénérer

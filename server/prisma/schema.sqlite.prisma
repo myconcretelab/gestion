@@ -14,6 +14,7 @@ datasource db {
 
 model Gite {
   id                                   String   @id @default(cuid())
+  ordre                                Int      @default(0)
   nom                                  String
   prefixe_contrat                      String
   adresse_ligne1                       String
@@ -47,8 +48,11 @@ model Gite {
   updatedAt                            DateTime @updatedAt
 
   contrats                             Contrat[]
+  factures                             Facture[]
   counters                             ContratCounter[]
+  facture_counters                     FactureCounter[]
 
+  @@index([ordre], map: "gites_ordre_idx")
   @@map("gites")
 }
 
@@ -99,4 +103,53 @@ model ContratCounter {
 
   @@unique([giteId, year])
   @@map("contrat_counters")
+}
+
+model Facture {
+  id                     String   @id @default(cuid())
+  numero_facture         String   @unique
+  gite_id                String
+  date_creation          DateTime @default(now())
+  date_derniere_modif    DateTime @updatedAt
+  locataire_nom          String
+  locataire_adresse      String
+  locataire_tel          String
+  nb_adultes             Int
+  nb_enfants_2_17        Int
+  date_debut             DateTime
+  heure_arrivee          String
+  date_fin               DateTime
+  heure_depart           String
+  nb_nuits               Int
+  prix_par_nuit          Float
+  remise_montant         Float @default(0)
+  taxe_sejour_calculee   Float?
+  options                String
+  arrhes_montant         Float
+  arrhes_date_limite     DateTime
+  solde_montant          Float
+  caution_montant        Float
+  cheque_menage_montant  Float
+  afficher_caution_phrase Boolean @default(true)
+  afficher_cheque_menage_phrase Boolean @default(true)
+  clauses                String
+  pdf_path               String
+  statut_paiement        String   @default("non_reglee")
+  notes                  String?
+
+  gite                   Gite     @relation(fields: [gite_id], references: [id])
+
+  @@map("factures")
+}
+
+model FactureCounter {
+  id         String @id @default(cuid())
+  giteId     String
+  year       Int
+  lastNumber Int
+
+  gite       Gite   @relation(fields: [giteId], references: [id])
+
+  @@unique([giteId, year])
+  @@map("facture_counters")
 }
