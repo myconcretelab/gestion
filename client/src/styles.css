@@ -165,6 +165,16 @@ body {
   filter: brightness(1.03);
 }
 
+.contracts-add--invoice {
+  background: #0ea5e9;
+  border-color: rgba(14, 165, 233, 0.36);
+  box-shadow: 0 16px 30px rgba(14, 165, 233, 0.26), 0 6px 14px rgba(15, 23, 42, 0.12);
+}
+
+.contracts-add--invoice:focus-visible {
+  outline-color: rgba(14, 165, 233, 0.35);
+}
+
 .contracts-add:focus-visible {
   outline: 3px solid rgba(255, 90, 95, 0.35);
   outline-offset: 3px;
@@ -303,6 +313,47 @@ button.warning {
   text-align: left;
   padding: 8px;
   font-size: 0.9rem;
+}
+
+.gites-reorder-hint {
+  margin-top: -4px;
+  margin-bottom: 10px;
+}
+
+.table-drag-cell {
+  width: 72px;
+  text-align: center;
+}
+
+.drag-handle {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #4b5563;
+  box-shadow: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0;
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.table tbody tr.table-row--dragging td {
+  opacity: 0.5;
+}
+
+.table tbody tr.table-row--drag-over td {
+  background: #fff7ed;
 }
 
 .badge {
@@ -614,6 +665,12 @@ button.warning {
 
 .field-inline input {
   max-width: 120px;
+}
+
+.field--small input,
+.field--small select,
+.field--small textarea {
+  max-width: 280px;
 }
 
 .option-grid {

@@ -1,5 +1,6 @@
 export type Gite = {
   id: string;
+  ordre?: number;
   nom: string;
   prefixe_contrat: string;
   adresse_ligne1: string;
@@ -30,6 +31,7 @@ export type Gite = {
   prix_nuit_liste?: number[];
   caracteristiques?: string | null;
   contrats_count?: number;
+  factures_count?: number;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -76,6 +78,40 @@ export type Contrat = {
   clauses: Record<string, unknown>;
   pdf_path: string;
   statut_paiement_arrhes: "non_recu" | "recu";
+  notes?: string | null;
+  gite?: Gite;
+};
+
+export type Facture = {
+  id: string;
+  numero_facture: string;
+  gite_id: string;
+  date_creation: string;
+  date_derniere_modif: string;
+  locataire_nom: string;
+  locataire_adresse: string;
+  locataire_tel: string;
+  nb_adultes: number;
+  nb_enfants_2_17: number;
+  date_debut: string;
+  heure_arrivee: string;
+  date_fin: string;
+  heure_depart: string;
+  nb_nuits: number;
+  prix_par_nuit: number;
+  remise_montant: number;
+  taxe_sejour_calculee?: number;
+  options: ContratOptions;
+  arrhes_montant: number;
+  arrhes_date_limite: string;
+  solde_montant: number;
+  caution_montant: number;
+  cheque_menage_montant: number;
+  afficher_caution_phrase: boolean;
+  afficher_cheque_menage_phrase: boolean;
+  clauses: Record<string, unknown>;
+  pdf_path: string;
+  statut_paiement: "non_reglee" | "reglee";
   notes?: string | null;
   gite?: Gite;
 };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { apiFetch } from "../utils/api";
 import type { Gite } from "../utils/types";
 
@@ -42,6 +42,9 @@ const GitesPage = () => {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   const selected = useMemo(() => gites.find((g) => g.id === selectedId) ?? null, [gites, selectedId]);
 
@@ -94,6 +97,61 @@ const GitesPage = () => {
 
   const handleChange = (key: keyof FormState, value: string | number | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleDragStart = (event: DragEvent<HTMLButtonElement>, id: string) => {
+    if (reordering) return;
+    setDraggedId(id);
+    setDragOverId(id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLTableRowElement>, targetId: string) => {
+    if (reordering) return;
+    const sourceId = draggedId ?? event.dataTransfer.getData("text/plain");
+    if (!sourceId || sourceId === targetId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dragOverId !== targetId) setDragOverId(targetId);
+  };
+
+  const handleDrop = async (event: DragEvent<HTMLTableRowElement>, targetId: string) => {
+    event.preventDefault();
+    if (reordering) return;
+    const sourceId = draggedId ?? event.dataTransfer.getData("text/plain");
+    setDraggedId(null);
+    setDragOverId(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    const fromIndex = gites.findIndex((gite) => gite.id === sourceId);
+    const targetIndex = gites.findIndex((gite) => gite.id === targetId);
+    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return;
+
+    const reordered = [...gites];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    setGites(reordered);
+
+    setReordering(true);
+    setError(null);
+    try {
+      const updated = await apiFetch<Gite[]>("/gites/reorder", {
+        method: "POST",
+        json: { ids: reordered.map((gite) => gite.id) },
+      });
+      setGites(updated);
+    } catch (err: any) {
+      setError(err.message);
+      await load();
+    } finally {
+      setReordering(false);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+    setDragOverId(null);
   };
 
   const save = async () => {
@@ -162,25 +220,56 @@ const GitesPage = () => {
     <div>
       <div className="card">
         <div className="section-title">Gîtes</div>
+        <div className="field-hint gites-reorder-hint">
+          Glisser-déposer un gîte via la poignée pour changer l'ordre d'affichage.
+          {reordering ? " Enregistrement..." : ""}
+        </div>
         {error && <div className="note">{error}</div>}
         <table className="table">
           <thead>
             <tr>
+              <th className="table-drag-cell">Ordre</th>
               <th>Nom</th>
               <th>Préfixe</th>
               <th>Capacité</th>
               <th>Contrats</th>
+              <th>Factures</th>
               <th className="table-actions-cell">Actions</th>
             </tr>
           </thead>
           <tbody>
             {gites.map((gite) => (
-              <tr key={gite.id}>
+              <tr
+                key={gite.id}
+                className={`
+                  ${draggedId === gite.id ? "table-row--dragging" : ""}
+                  ${dragOverId === gite.id && draggedId !== gite.id ? "table-row--drag-over" : ""}
+                `}
+                onDragOver={(event) => handleDragOver(event, gite.id)}
+                onDrop={(event) => void handleDrop(event, gite.id)}
+              >
+                <td className="table-drag-cell">
+                  <button
+                    type="button"
+                    className="drag-handle"
+                    draggable={!reordering}
+                    onDragStart={(event) => handleDragStart(event, gite.id)}
+                    onDragEnd={handleDragEnd}
+                    aria-label={`Réorganiser ${gite.nom}`}
+                    title="Glisser pour réorganiser"
+                    disabled={reordering}
+                  >
+                    ≡
+                  </button>
+                </td>
                 <td>{gite.nom}</td>
                 <td>{gite.prefixe_contrat}</td>
                 <td>{gite.capacite_max}</td>
                 <td>
                   <span className="badge">{gite.contrats_count ?? 0}</span>
+                </td>
+                <td>
+                  <span className="badge">{gite.factures_count ?? 0}</span>
                 </td>
                 <td className="table-actions-cell">
                   <div className="table-actions">

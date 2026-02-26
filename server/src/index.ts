@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 import { env } from "./config/env.js";
 import gitesRouter from "./routes/gites.js";
 import contractsRouter from "./routes/contracts.js";
+import invoicesRouter from "./routes/invoices.js";
 
 const app = express();
 
@@ -14,7 +15,14 @@ app.use(
   cors({
     origin: env.CLIENT_ORIGIN,
     credentials: true,
-    exposedHeaders: ["X-Contract-Overflow", "X-Contract-Overflow-After", "X-Contract-Compact"],
+    exposedHeaders: [
+      "X-Contract-Overflow",
+      "X-Contract-Overflow-After",
+      "X-Contract-Compact",
+      "X-Invoice-Overflow",
+      "X-Invoice-Overflow-After",
+      "X-Invoice-Compact",
+    ],
   })
 );
 
@@ -42,6 +50,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/gites", gitesRouter);
 app.use("/api/contracts", contractsRouter);
+app.use("/api/invoices", invoicesRouter);
 
 const clientDistCandidates = [
   process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,

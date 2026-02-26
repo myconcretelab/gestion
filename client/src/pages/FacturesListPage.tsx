@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../utils/api";
-import type { Contrat, Gite } from "../utils/types";
-import { formatDate } from "../utils/format";
+import type { Facture, Gite } from "../utils/types";
+import { formatDate, formatEuro } from "../utils/format";
 
-const ContratsListPage = () => {
-  const [contrats, setContrats] = useState<Contrat[]>([]);
+const FacturesListPage = () => {
+  const [factures, setFactures] = useState<Facture[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
   const [q, setQ] = useState("");
   const [giteId, setGiteId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [arrhesUpdating, setArrhesUpdating] = useState<Record<string, boolean>>({});
+  const [statusUpdating, setStatusUpdating] = useState<Record<string, boolean>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const queryString = useMemo(() => {
@@ -25,11 +25,11 @@ const ContratsListPage = () => {
   }, [q, giteId, from, to]);
 
   const load = async () => {
-    const [contratsData, gitesData] = await Promise.all([
-      apiFetch<Contrat[]>(`/contracts${queryString ? `?${queryString}` : ""}`),
+    const [facturesData, gitesData] = await Promise.all([
+      apiFetch<Facture[]>(`/invoices${queryString ? `?${queryString}` : ""}`),
       apiFetch<Gite[]>("/gites"),
     ]);
-    setContrats(contratsData);
+    setFactures(facturesData);
     setGites(gitesData);
   };
 
@@ -37,35 +37,35 @@ const ContratsListPage = () => {
     load().catch((err) => setError(err.message));
   }, [queryString]);
 
-  const toggleArrhes = async (contrat: Contrat) => {
-    const nextStatus = contrat.statut_paiement_arrhes === "recu" ? "non_recu" : "recu";
-    setArrhesUpdating((prev) => ({ ...prev, [contrat.id]: true }));
+  const togglePayment = async (facture: Facture) => {
+    const nextStatus = facture.statut_paiement === "reglee" ? "non_reglee" : "reglee";
+    setStatusUpdating((prev) => ({ ...prev, [facture.id]: true }));
     try {
-      const updated = await apiFetch<Contrat>(`/contracts/${contrat.id}/arrhes`, {
+      const updated = await apiFetch<Facture>(`/invoices/${facture.id}/payment`, {
         method: "PATCH",
-        json: { statut_paiement_arrhes: nextStatus },
+        json: { statut_paiement: nextStatus },
       });
-      setContrats((prev) => prev.map((item) => (item.id === contrat.id ? updated : item)));
+      setFactures((prev) => prev.map((item) => (item.id === facture.id ? updated : item)));
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setArrhesUpdating((prev) => {
+      setStatusUpdating((prev) => {
         const next = { ...prev };
-        delete next[contrat.id];
+        delete next[facture.id];
         return next;
       });
     }
   };
 
-  const remove = async (contrat: Contrat) => {
+  const remove = async (facture: Facture) => {
     const confirmed = window.confirm(
-      `Supprimer le contrat ${contrat.numero_contrat} (${contrat.locataire_nom}) ?`
+      `Supprimer la facture ${facture.numero_facture} (${facture.locataire_nom}) ?`
     );
     if (!confirmed) return;
-    setDeletingId(contrat.id);
+    setDeletingId(facture.id);
     try {
-      await apiFetch(`/contracts/${contrat.id}`, { method: "DELETE" });
-      setContrats((prev) => prev.filter((item) => item.id !== contrat.id));
+      await apiFetch(`/invoices/${facture.id}`, { method: "DELETE" });
+      setFactures((prev) => prev.filter((item) => item.id !== facture.id));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -80,7 +80,7 @@ const ContratsListPage = () => {
         {error && <div className="note">{error}</div>}
         <div className="grid-2">
           <label className="field">
-            Nom locataire / N° contrat
+            Client / N° facture
             <input value={q} onChange={(e) => setQ(e.target.value)} />
           </label>
           <label className="field">
@@ -107,8 +107,8 @@ const ContratsListPage = () => {
 
       <div className="card">
         <div className="contracts-header">
-          <div className="section-title">Contrats</div>
-          <Link className="contracts-add" to="/contrats/nouveau" aria-label="Créer un contrat">
+          <div className="section-title">Factures</div>
+          <Link className="contracts-add contracts-add--invoice" to="/factures/nouvelle" aria-label="Créer une facture">
             <span className="contracts-add__icon" aria-hidden="true">
               +
             </span>
@@ -119,52 +119,44 @@ const ContratsListPage = () => {
             <tr>
               <th>Dates</th>
               <th>Gîte</th>
-              <th>Locataire</th>
-              <th>Arrhes payées</th>
+              <th>Client</th>
+              <th>Total</th>
+              <th>Réglée</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {contrats.map((contrat) => (
-              <tr key={contrat.id}>
+            {factures.map((facture) => (
+              <tr key={facture.id}>
                 <td>
-                  {formatDate(contrat.date_debut)} - {formatDate(contrat.date_fin)}
+                  {formatDate(facture.date_debut)} - {formatDate(facture.date_fin)}
                 </td>
-                <td>
-                  {contrat.gite?.nom ?? ""}
-                </td>
-                <td>{contrat.locataire_nom}</td>
+                <td>{facture.gite?.nom ?? ""}</td>
+                <td>{facture.locataire_nom}</td>
+                <td>{formatEuro((facture.solde_montant ?? 0) + (facture.arrhes_montant ?? 0))}</td>
                 <td>
                   <div className="switch-group switch-group--table">
                     <label className="switch">
                       <input
                         type="checkbox"
-                        checked={contrat.statut_paiement_arrhes === "recu"}
-                        disabled={Boolean(arrhesUpdating[contrat.id])}
-                        onChange={() => toggleArrhes(contrat)}
+                        checked={facture.statut_paiement === "reglee"}
+                        disabled={Boolean(statusUpdating[facture.id])}
+                        onChange={() => togglePayment(facture)}
                       />
                       <span className="slider" />
                     </label>
-                    <span>
-                      {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "Non payées"}
-                    </span>
+                    <span>{facture.statut_paiement === "reglee" ? "Oui" : "Non"}</span>
                   </div>
                 </td>
                 <td className="table-actions-cell">
                   <div className="table-actions">
-                    <Link className="table-action table-action--neutral" to={`/contrats/${contrat.id}`}>
+                    <Link className="table-action table-action--neutral" to={`/factures/${facture.id}`}>
                       Détails
-                    </Link>
-                    <Link
-                      className="table-action table-action--neutral"
-                      to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
-                    >
-                      Facturer
                     </Link>
                     <button
                       className="table-action table-action--danger"
-                      onClick={() => remove(contrat)}
-                      disabled={deletingId === contrat.id}
+                      onClick={() => remove(facture)}
+                      disabled={deletingId === facture.id}
                     >
                       Supprimer
                     </button>
@@ -179,4 +171,4 @@ const ContratsListPage = () => {
   );
 };
 
-export default ContratsListPage;
+export default FacturesListPage;

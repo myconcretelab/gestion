@@ -9,6 +9,7 @@ import type { ContractTotals, OptionsInput } from "./contractCalculator.js";
 let browser: Browser | null = null;
 let browserLaunchPromise: Promise<Browser> | null = null;
 let templateCache: { contractHtml: string; conditionsHtml: string } | null = null;
+let invoiceTemplateCache: string | null = null;
 const MAX_BROWSER_ATTEMPTS = 3;
 
 type GiteLike = {
@@ -58,6 +59,32 @@ export type ContractRenderInput = {
   afficher_cheque_menage_phrase?: boolean;
   options: OptionsInput | string;
   clauses?: Record<string, unknown> | string | null;
+  notes?: string | null;
+};
+
+export type InvoiceRenderInput = {
+  numero_facture: string;
+  locataire_nom: string;
+  locataire_adresse: string;
+  locataire_tel: string;
+  nb_adultes: number;
+  nb_enfants_2_17: number;
+  date_debut: Date | null;
+  heure_arrivee: string;
+  date_fin: Date | null;
+  heure_depart: string;
+  prix_par_nuit: NumericLike;
+  remise_montant: NumericLike;
+  arrhes_montant: NumericLike;
+  arrhes_date_limite: Date;
+  solde_montant: NumericLike;
+  cheque_menage_montant: NumericLike;
+  caution_montant: NumericLike;
+  afficher_caution_phrase?: boolean;
+  afficher_cheque_menage_phrase?: boolean;
+  options: OptionsInput | string;
+  clauses?: Record<string, unknown> | string | null;
+  statut_paiement?: "non_reglee" | "reglee";
   notes?: string | null;
 };
 
@@ -179,6 +206,11 @@ const formatOptionalDate = (value: Date | string | null | undefined, fallback = 
   const date = typeof value === "string" ? new Date(value) : value;
   if (!Number.isFinite(date.getTime())) return fallback;
   return formatDate(date);
+};
+
+const formatCountLabel = (count: number, singular: string, plural?: string) => {
+  const resolvedPlural = plural ?? `${singular}s`;
+  return `${count} ${count === 1 ? singular : resolvedPlural}`;
 };
 
 const buildProprietairesContactHtml = (gite: GiteLike) => {
@@ -519,16 +551,35 @@ const buildClausesHtml = (params: {
   return `<ul>${clauses.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>`;
 };
 
+const readTemplateFile = async (name: string) => {
+  const paths = [
+    path.join(process.cwd(), "templates", name),
+    path.join(process.cwd(), "server", "templates", name),
+  ];
+  for (const candidate of paths) {
+    try {
+      return await fs.readFile(candidate, "utf-8");
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(`Template introuvable: ${name}`);
+};
+
 const loadTemplates = async () => {
   if (templateCache) return templateCache;
-  const templatePath = path.join(process.cwd(), "templates", "contract.html");
-  const conditionsPath = path.join(process.cwd(), "templates", "conditions.html");
   const [contractHtml, conditionsHtml] = await Promise.all([
-    fs.readFile(templatePath, "utf-8"),
-    fs.readFile(conditionsPath, "utf-8"),
+    readTemplateFile("contract.html"),
+    readTemplateFile("conditions.html"),
   ]);
   templateCache = { contractHtml, conditionsHtml };
   return templateCache;
+};
+
+const loadInvoiceTemplate = async () => {
+  if (invoiceTemplateCache) return invoiceTemplateCache;
+  invoiceTemplateCache = await readTemplateFile("invoice.html");
+  return invoiceTemplateCache;
 };
 
 const pdfBaseOptions = {
@@ -738,6 +789,209 @@ export const generateContractPreviewHtml = async (params: {
   totals: ContractTotals;
 }) => {
   const html = await buildContractHtml({ ...params, bodyAttrs: 'class="preview"' });
+  return withPageRetry(async (page) => {
+    const compactInfo = await prepareContractPage(page, html);
+    const renderedHtml = await page.content();
+    return { html: renderedHtml, ...compactInfo };
+  });
+};
+
+const buildInvoiceOptionsRowsHtml = (params: {
+  totals: ContractTotals;
+  options: OptionsInput;
+  gite: GiteLike;
+}) => {
+  const rows: string[] = [];
+  const { totals, options, gite } = params;
+
+  const addOptionRows = (params: {
+    label: string;
+    baseAmount: number;
+    billedAmount: number;
+  }) => {
+    rows.push(`<tr><td>${escapeHtml(params.label)}</td><td>${formatEuro(params.baseAmount)}</td></tr>`);
+    const offeredAmount = round2(params.baseAmount - params.billedAmount);
+    if (offeredAmount <= 0) return;
+
+    rows.push(
+      `<tr class="invoice-row-offered"><td><span class="invoice-muted">Option offerte - ${escapeHtml(
+        params.label
+      )}</span></td><td>- ${formatEuro(offeredAmount)}</td></tr>`
+    );
+  };
+
+  if (options.draps?.enabled) {
+    const nbLits = options.draps.nb_lits ?? 0;
+    const tarif = toNumber(gite.options_draps_par_lit);
+    const baseAmount = round2(tarif * nbLits);
+    addOptionRows({
+      label: `Draps (${nbLits} lit(s) x ${formatEuro(tarif)} / séjour)`,
+      baseAmount,
+      billedAmount: totals.optionsDetail.draps,
+    });
+  }
+  if (options.linge_toilette?.enabled) {
+    const nbPersonnes = options.linge_toilette.nb_personnes ?? 0;
+    const tarif = toNumber(gite.options_linge_toilette_par_personne);
+    const baseAmount = round2(tarif * nbPersonnes);
+    addOptionRows({
+      label: `Linge de toilette (${nbPersonnes} pers. x ${formatEuro(tarif)} / séjour)`,
+      baseAmount,
+      billedAmount: totals.optionsDetail.linge,
+    });
+  }
+  if (options.menage?.enabled) {
+    const baseAmount = round2(toNumber(gite.options_menage_forfait));
+    addOptionRows({
+      label: "Ménage fin de séjour",
+      baseAmount,
+      billedAmount: totals.optionsDetail.menage,
+    });
+  }
+  if (options.depart_tardif?.enabled) {
+    const baseAmount = round2(toNumber(gite.options_depart_tardif_forfait));
+    addOptionRows({
+      label: "Départ tardif",
+      baseAmount,
+      billedAmount: totals.optionsDetail.departTardif,
+    });
+  }
+  if (options.chiens?.enabled) {
+    const nbChiens = options.chiens.nb ?? 1;
+    const tarif = toNumber(gite.options_chiens_forfait);
+    const baseAmount = round2(tarif * nbChiens * totals.nbNuits);
+    addOptionRows({
+      label: `Chiens (${nbChiens} x ${totals.nbNuits} nuit(s) x ${formatEuro(tarif)})`,
+      baseAmount,
+      billedAmount: totals.optionsDetail.chiens,
+    });
+  }
+
+  return rows.join("");
+};
+
+const buildInvoiceNotesHtml = (params: {
+  notes: string | null | undefined;
+  clauses: Record<string, unknown>;
+}) => {
+  const parts: string[] = [];
+  const note = (params.notes ?? "").trim();
+  if (note) parts.push(note);
+
+  const additionalClause = params.clauses["texte_additionnel"];
+  if (typeof additionalClause === "string" && additionalClause.trim()) {
+    parts.push(additionalClause.trim());
+  }
+
+  if (!parts.length) {
+    return "";
+  }
+
+  return parts.map((part) => `<p>${escapeHtml(part)}</p>`).join("");
+};
+
+const buildInvoiceHtml = async (params: {
+  invoice: InvoiceRenderInput;
+  gite: GiteLike;
+  totals: ContractTotals;
+  bodyAttrs?: string;
+}) => {
+  const template = await loadInvoiceTemplate();
+  const options = parseJsonField<OptionsInput>(params.invoice.options, {});
+  const clauses = parseJsonField<Record<string, unknown>>(params.invoice.clauses ?? {}, {});
+  const statutPaiement = params.invoice.statut_paiement ?? "non_reglee";
+  const remiseMontantValue = toNumber(params.invoice.remise_montant);
+  const remiseReasonRaw = clauses["remise_raison"];
+  const remiseReason = typeof remiseReasonRaw === "string" ? remiseReasonRaw.trim() : "";
+  const acompteMontantValue = toNumber(params.invoice.arrhes_montant);
+  const optionsRowsHtml = buildInvoiceOptionsRowsHtml({ totals: params.totals, options, gite: params.gite });
+  const optionsEnabled = optionsRowsHtml.length > 0;
+  const notesHtml = buildInvoiceNotesHtml({ notes: params.invoice.notes, clauses });
+  const remiseLabelHtml = remiseReason
+    ? `Remise<div class="invoice-remise-reason">${escapeHtml(remiseReason)}</div>`
+    : "Remise";
+  const remiseRowHtml =
+    remiseMontantValue > 0 ? `<tr><td>${remiseLabelHtml}</td><td>- ${formatEuro(remiseMontantValue)}</td></tr>` : "";
+  const optionsTotalRowHtml =
+    optionsEnabled ? `<tr><td>Total options</td><td>${formatEuro(params.totals.optionsTotal)}</td></tr>` : "";
+  const acompteRowHtml =
+    acompteMontantValue > 0 ? `<tr><td>Acompte reçu</td><td>- ${formatEuro(acompteMontantValue)}</td></tr>` : "";
+  const notesBlockHtml = notesHtml ? `<div class="box"><div class="section-title">Notes</div>${notesHtml}</div>` : "";
+  const soldeLabel = statutPaiement === "reglee" ? "Montant déjà payé" : "Reste à régler";
+  const nbNuits = params.totals.nbNuits;
+  const nightsLabel = formatCountLabel(nbNuits, "nuit");
+  const occupancyLabel = `${formatCountLabel(params.invoice.nb_adultes, "adulte")}, ${formatCountLabel(
+    params.invoice.nb_enfants_2_17,
+    "enfant"
+  )}`;
+  const locationLineLabel = `Location ${nightsLabel} x ${formatEuro(toNumber(params.invoice.prix_par_nuit))}`;
+  const metaGridClass = statutPaiement === "reglee" ? "meta-grid--single" : "";
+  const echeanceMetaHtml =
+    statutPaiement === "reglee"
+      ? ""
+      : `<div><span class="meta-label">Échéance</span><span class="meta-value">${formatDate(
+          params.invoice.arrhes_date_limite
+        )}</span></div>`;
+
+  return renderTemplate(template, {
+    bodyAttrs: params.bodyAttrs ?? "",
+    invoiceNumber: params.invoice.numero_facture,
+    emissionDate: formatDate(new Date()),
+    metaGridClass,
+    echeanceMetaHtml,
+    giteName: params.gite.nom,
+    giteAdresse: [params.gite.adresse_ligne1, params.gite.adresse_ligne2].filter(Boolean).join(" - "),
+    proprietairesNoms: params.gite.proprietaires_noms,
+    proprietairesAdresse: params.gite.proprietaires_adresse,
+    proprietairesContactHtml: buildProprietairesContactHtml(params.gite),
+    clientNom: params.invoice.locataire_nom,
+    clientAdresseHtml: buildLocataireAdresseHtml(params.invoice.locataire_adresse),
+    clientTel: params.invoice.locataire_tel,
+    periodStart: formatOptionalDate(params.invoice.date_debut),
+    periodEnd: formatOptionalDate(params.invoice.date_fin),
+    nightsLabel,
+    occupancyLabel,
+    locationLineLabel,
+    montantBase: formatEuro(params.totals.montantBase),
+    remiseRowHtml,
+    optionsRowsHtml,
+    optionsTotalRowHtml,
+    taxeSejour: formatEuro(params.totals.taxeSejourCalculee),
+    totalGlobal: formatEuro(params.totals.totalGlobal),
+    acompteRowHtml,
+    soldeLabel,
+    soldeMontant: formatEuro(toNumber(params.invoice.solde_montant)),
+    iban: params.gite.iban,
+    bic: params.gite.bic ?? "—",
+    titulaire: params.gite.titulaire,
+    notesBlockHtml,
+  });
+};
+
+export const generateInvoicePdf = async (params: {
+  invoice: InvoiceRenderInput;
+  gite: GiteLike;
+  totals: ContractTotals;
+  outputPath: string;
+}) => {
+  const html = await buildInvoiceHtml(params);
+
+  await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
+  await withPageRetry(async (page) => {
+    await prepareContractPage(page, html);
+    await page.pdf({
+      path: params.outputPath,
+      ...pdfBaseOptions,
+    });
+  });
+};
+
+export const generateInvoicePreviewHtml = async (params: {
+  invoice: InvoiceRenderInput;
+  gite: GiteLike;
+  totals: ContractTotals;
+}) => {
+  const html = await buildInvoiceHtml({ ...params, bodyAttrs: 'class="preview"' });
   return withPageRetry(async (page) => {
     const compactInfo = await prepareContractPage(page, html);
     const renderedHtml = await page.content();
