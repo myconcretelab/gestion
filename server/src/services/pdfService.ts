@@ -11,6 +11,14 @@ let browserLaunchPromise: Promise<Browser> | null = null;
 let templateCache: { contractHtml: string; conditionsHtml: string } | null = null;
 let invoiceTemplateCache: string | null = null;
 const MAX_BROWSER_ATTEMPTS = 3;
+const MINIMAL_PDF_BUFFER = Buffer.from("%PDF-1.1\n%%EOF\n", "utf-8");
+
+const isPdfGenerationDisabled = () => process.env.SKIP_PDF_GENERATION === "1";
+
+const writePlaceholderPdf = async (outputPath: string) => {
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, MINIMAL_PDF_BUFFER);
+};
 
 type GiteLike = {
   nom: string;
@@ -755,6 +763,11 @@ export const generateContractPdf = async (params: {
   totals: ContractTotals;
   outputPath: string;
 }) => {
+  if (isPdfGenerationDisabled()) {
+    await writePlaceholderPdf(params.outputPath);
+    return;
+  }
+
   const html = await buildContractHtml(params);
 
   await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
@@ -970,6 +983,11 @@ export const generateInvoicePdf = async (params: {
   totals: ContractTotals;
   outputPath: string;
 }) => {
+  if (isPdfGenerationDisabled()) {
+    await writePlaceholderPdf(params.outputPath);
+    return;
+  }
+
   const html = await buildInvoiceHtml(params);
 
   await fs.mkdir(path.dirname(params.outputPath), { recursive: true });

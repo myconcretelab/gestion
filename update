@@ -79,6 +79,13 @@ fi
 echo "==> Generate Prisma client (PostgreSQL)"
 npm run prod:generate
 
+if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
+  echo "==> Run tests"
+  npm run test
+else
+  echo "==> Skip tests (SKIP_TESTS=1)"
+fi
+
 echo "==> Apply database migrations (PostgreSQL)"
 npm run prod:migrate
 

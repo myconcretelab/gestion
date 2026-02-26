@@ -1,90 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { apiFetch, isApiError } from "../utils/api";
+import { apiFetch } from "../utils/api";
 import type { Contrat, Facture, ContratOptions, Gite } from "../utils/types";
-import { computeTotals } from "../utils/contractCalc";
 import { formatEuro } from "../utils/format";
-
-const defaultOptions: ContratOptions = {
-  draps: { enabled: false, nb_lits: 0, offert: false },
-  linge_toilette: { enabled: false, nb_personnes: 0, offert: false },
-  menage: { enabled: false, offert: false },
-  depart_tardif: { enabled: false, offert: false },
-  chiens: { enabled: false, nb: 0, offert: false },
-  regle_animaux_acceptes: false,
-  regle_bois_premiere_flambee: false,
-  regle_tiers_personnes_info: false,
-};
-
-const DEFAULT_ARRHES_RATE = 0.2;
-const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
+import {
+  addDays,
+  defaultOptions,
+  extractValidationFieldErrors,
+  formatDateInput,
+  mergeOptions,
+  nextDayFromInput,
+  nightsBetweenInputs,
+  toDateInputValue,
+} from "./shared/rentalForm";
+import { type RuleOptionKey, type ServiceOptionKey, useRentalFormPricing } from "./shared/rentalFormPricing";
+import { useHtmlPreview } from "./shared/useHtmlPreview";
+import { useDocumentSubmit } from "./shared/useDocumentSubmit";
 const INVOICE_GUARANTEE_AMOUNT = 0;
-
-const round2 = (value: number) => Math.round(value * 100) / 100;
-
-const formatDateInput = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const addDays = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
-const parseDateInput = (value: string) => {
-  const parts = value.split("-");
-  if (parts.length !== 3) return null;
-  const [year, month, day] = parts.map((part) => Number(part));
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
-  const date = new Date(year, month - 1, day);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return null;
-  }
-  return date;
-};
-
-const nextDayFromInput = (value: string) => {
-  const date = parseDateInput(value);
-  if (!date) return "";
-  return formatDateInput(addDays(date, 1));
-};
-
-const utcDayFromInput = (value: string) => {
-  const date = parseDateInput(value);
-  if (!date) return null;
-  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / (1000 * 60 * 60 * 24);
-};
-
-const nightsBetweenInputs = (startValue: string, endValue: string) => {
-  const startDay = utcDayFromInput(startValue);
-  const endDay = utcDayFromInput(endValue);
-  if (startDay === null || endDay === null) return null;
-  const diff = endDay - startDay;
-  return diff > 0 ? diff : null;
-};
-
-const toDateInputValue = (value?: string | null) => {
-  if (!value) return "";
-  return value.includes("T") ? value.split("T")[0] : value;
-};
-
-const mergeOptions = (value?: ContratOptions | null): ContratOptions => ({
-  ...defaultOptions,
-  ...(value ?? {}),
-  draps: { ...defaultOptions.draps, ...(value?.draps ?? {}) },
-  linge_toilette: { ...defaultOptions.linge_toilette, ...(value?.linge_toilette ?? {}) },
-  menage: { ...defaultOptions.menage, ...(value?.menage ?? {}) },
-  depart_tardif: { ...defaultOptions.depart_tardif, ...(value?.depart_tardif ?? {}) },
-  chiens: { ...defaultOptions.chiens, ...(value?.chiens ?? {}) },
-});
 
 type ContractFieldKey =
   | "gite_id"
@@ -121,26 +53,8 @@ const contractFieldKeys: ContractFieldKey[] = [
 
 const contractFieldKeySet = new Set<ContractFieldKey>(contractFieldKeys);
 
-const getValidationFieldErrors = (error: unknown): FieldErrors => {
-  const result: FieldErrors = {};
-  if (!isApiError(error)) return result;
-
-  const rawFieldErrors = error.payload.details?.fieldErrors;
-  if (rawFieldErrors && typeof rawFieldErrors === "object") {
-    for (const [field, messages] of Object.entries(rawFieldErrors)) {
-      if (!contractFieldKeySet.has(field as ContractFieldKey) || !Array.isArray(messages)) continue;
-      const firstMessage = messages.find((message): message is string => typeof message === "string" && message.trim().length > 0);
-      if (firstMessage) result[field as ContractFieldKey] = firstMessage;
-    }
-  }
-
-  const normalizedMessage = error.message.toLowerCase();
-  if (!result.date_fin && normalizedMessage.includes("date de fin")) {
-    result.date_fin = error.message;
-  }
-
-  return result;
-};
+const getValidationFieldErrors = (error: unknown): FieldErrors =>
+  extractValidationFieldErrors(error, contractFieldKeySet, "date_fin");
 
 const FactureFormPage = () => {
   const { id } = useParams();
@@ -174,14 +88,6 @@ const FactureFormPage = () => {
   const [saving, setSaving] = useState(false);
   const [createdContract, setCreatedContract] = useState<Facture | null>(null);
   const [createdPayloadKey, setCreatedPayloadKey] = useState<string | null>(null);
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewOverflow, setPreviewOverflow] = useState<{
-    before: boolean;
-    after: boolean;
-    compact: boolean;
-  } | null>(null);
   const [editingContract, setEditingContract] = useState<Facture | null>(null);
   const [loadingContract, setLoadingContract] = useState(false);
   const [loadingFromContract, setLoadingFromContract] = useState(false);
@@ -285,78 +191,43 @@ const FactureFormPage = () => {
     setLoadingFromContract(false);
   }, [isEdit, fromContractId]);
 
-  const selectedGite = useMemo(() => gites.find((g) => g.id === giteId) ?? null, [gites, giteId]);
+  const {
+    selectedGite,
+    prixNuitListe,
+    remiseMontant,
+    totals,
+    arrhesRate,
+    arrhesAutoValue,
+    drapsTarif,
+    lingeTarif,
+    menageTarif,
+    departTardifTarif,
+    chiensTarif,
+    regleAnimauxAcceptes,
+    regleBoisPremiereFlambee,
+    regleTiersPersonnesInfo,
+  } = useRentalFormPricing({
+    gites,
+    giteId,
+    dateDebut,
+    dateFin,
+    prixParNuit,
+    remiseMode,
+    remiseValue,
+    nbAdultes,
+    nbEnfants,
+    arrhesMontant,
+    options,
+  });
+
   const effectiveHeureArrivee = heureArrivee || selectedGite?.heure_arrivee_defaut || "17:00";
   const effectiveHeureDepart = heureDepart || selectedGite?.heure_depart_defaut || "12:00";
-  const prixNuitListe = useMemo(() => {
-    const list = Array.isArray(selectedGite?.prix_nuit_liste) ? selectedGite?.prix_nuit_liste : [];
-    return list
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value) && value >= 0)
-      .sort((a, b) => a - b);
-  }, [selectedGite]);
-
-  const montantBase = useMemo(() => {
-    const start = new Date(dateDebut);
-    const end = new Date(dateFin);
-    const hasDateDebut = Boolean(dateDebut);
-    const hasDateFin = Boolean(dateFin);
-    const startValid = Number.isFinite(start.getTime());
-    const endValid = Number.isFinite(end.getTime());
-    if (startValid && endValid && end > start) {
-      const nbNuits = Math.max(1, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-      return round2(nbNuits * prixParNuit);
-    }
-    if (!hasDateDebut || !hasDateFin) return round2(prixParNuit);
-    return 0;
-  }, [dateDebut, dateFin, prixParNuit]);
-
-  const remiseMontant = useMemo(() => {
-    const value = Number(remiseValue || 0);
-    if (!Number.isFinite(value)) return 0;
-    if (remiseMode === "percent") return round2((montantBase * value) / 100);
-    return round2(value);
-  }, [montantBase, remiseMode, remiseValue]);
-
-  const totals = useMemo(
-    () =>
-      computeTotals({
-        dateDebut,
-        dateFin,
-        prixParNuit,
-        remiseMontant,
-        nbAdultes,
-        nbEnfants,
-        arrhesMontant: Number(arrhesMontant || 0),
-        options,
-        gite: selectedGite,
-      }),
-    [dateDebut, dateFin, prixParNuit, remiseMontant, nbAdultes, nbEnfants, arrhesMontant, options, selectedGite]
-  );
-
-  const arrhesRate = selectedGite?.arrhes_taux_defaut ?? DEFAULT_ARRHES_RATE;
-  const arrhesAutoValue = useMemo(() => {
-    if (!Number.isFinite(totals.totalSansOptions)) return 0;
-    return round2(totals.totalSansOptions * arrhesRate);
-  }, [totals.totalSansOptions, arrhesRate]);
-
-  const drapsTarif = Number(selectedGite?.options_draps_par_lit ?? 0);
-  const lingeTarif = Number(selectedGite?.options_linge_toilette_par_personne ?? 0);
-  const menageTarif = Number(selectedGite?.options_menage_forfait ?? 0);
-  const departTardifTarif = Number(selectedGite?.options_depart_tardif_forfait ?? 0);
-  const chiensTarif = Number(selectedGite?.options_chiens_forfait ?? 0);
-
-  const regleAnimauxAcceptes = options.regle_animaux_acceptes ?? false;
-  const regleBoisPremiereFlambee = options.regle_bois_premiere_flambee ?? false;
-  const regleTiersPersonnesInfo = options.regle_tiers_personnes_info ?? false;
-
-  type ServiceOptionKey = "draps" | "linge_toilette" | "menage" | "depart_tardif" | "chiens";
 
   const updateOption = (key: ServiceOptionKey, value: any) => {
     setOptions((prev) => ({ ...prev, [key]: { ...prev[key], ...value } }));
   };
 
-  const updateRule = (key: "regle_animaux_acceptes" | "regle_bois_premiere_flambee" | "regle_tiers_personnes_info", value: boolean) => {
+  const updateRule = (key: RuleOptionKey, value: boolean) => {
     setOptions((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -477,6 +348,15 @@ const FactureFormPage = () => {
   }, [dateDebut, dateFin]);
 
   const previewReady = Boolean(giteId && (!dateDebut || !dateFin || previewDatesValid));
+  const { previewHtml, previewError, previewLoading, previewOverflow } = useHtmlPreview({
+    url: "/api/invoices/preview-html",
+    payload: previewPayload,
+    ready: previewReady,
+    overflowHeader: "X-Invoice-Overflow",
+    overflowAfterHeader: "X-Invoice-Overflow-After",
+    compactHeader: "X-Invoice-Compact",
+  });
+
   const previewOverflowStatus =
     !previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after
         ? {
@@ -510,116 +390,22 @@ const FactureFormPage = () => {
     }
   }, [payloadKey, createdContract, createdPayloadKey]);
 
-  useEffect(() => {
-    if (!previewReady) {
-      setPreviewError(null);
-      setPreviewLoading(false);
-      setPreviewHtml(null);
-      setPreviewOverflow(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeout = window.setTimeout(async () => {
-      setPreviewLoading(true);
-      setPreviewError(null);
-      setPreviewOverflow(null);
-      try {
-        const response = await fetch(`${API_BASE}/invoices/preview-html`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(previewPayload),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          let message = `Erreur preview (${response.status})`;
-          try {
-            const payload = await response.json();
-            if (payload?.error) message = payload.error;
-          } catch {
-            // ignore
-          }
-          throw new Error(message);
-        }
-
-        const overflowBefore = response.headers.get("X-Invoice-Overflow") === "1";
-        const overflowAfter = response.headers.get("X-Invoice-Overflow-After") === "1";
-        const compact = response.headers.get("X-Invoice-Compact") === "1";
-        setPreviewOverflow({ before: overflowBefore, after: overflowAfter, compact });
-
-        const html = await response.text();
-        setPreviewHtml(html);
-      } catch (err: any) {
-        if (err?.name === "AbortError") return;
-        setPreviewError(err?.message ?? "Erreur lors de la prévisualisation.");
-      } finally {
-        setPreviewLoading(false);
-      }
-    }, 600);
-
-    return () => {
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [previewPayload, previewReady]);
-
-  const submit = async () => {
-    if (!giteId) return;
-    setSaving(true);
-    setError(null);
-    setFieldErrors({});
-    setCreatedContract(null);
-    setCreatedPayloadKey(null);
-    try {
-      const payload: any = {
-        gite_id: giteId,
-        locataire_nom: locataireNom,
-        locataire_adresse: locataireAdresse,
-        locataire_tel: locataireTel,
-        nb_adultes: nbAdultes,
-        nb_enfants_2_17: nbEnfants,
-        date_debut: dateDebut,
-        heure_arrivee: effectiveHeureArrivee,
-        date_fin: dateFin,
-        heure_depart: effectiveHeureDepart,
-        prix_par_nuit: prixParNuit,
-        remise_montant: remiseMontant,
-        options,
-        arrhes_montant: Number(arrhesMontant || 0),
-        arrhes_date_limite: arrhesDateLimite,
-        caution_montant: INVOICE_GUARANTEE_AMOUNT,
-        cheque_menage_montant: INVOICE_GUARANTEE_AMOUNT,
-        afficher_caution_phrase: false,
-        afficher_cheque_menage_phrase: false,
-        clauses: clausesPayload,
-        statut_paiement: statutArrhes,
-      };
-
-      const endpoint = isEdit && id ? `/invoices/${id}` : "/invoices";
-      const method = isEdit ? "PUT" : "POST";
-      const saved = await apiFetch<Facture>(endpoint, {
-        method,
-        json: payload,
-      });
-      setCreatedContract(saved);
-      if (isEdit) setEditingContract(saved);
-      setCreatedPayloadKey(payloadKey);
-    } catch (err: unknown) {
-      const validationErrors = getValidationFieldErrors(err);
-      const hasFieldErrors = Object.keys(validationErrors).length > 0;
-      setFieldErrors(validationErrors);
-      if (hasFieldErrors) {
-        setError("Veuillez corriger les champs en erreur.");
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Erreur lors de l'enregistrement de la facture.");
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
+  const submit = useDocumentSubmit<Facture, ContractFieldKey>({
+    endpointBase: "/invoices",
+    id,
+    isEdit,
+    canSubmit: Boolean(giteId),
+    payload: previewPayload,
+    payloadKey,
+    getValidationFieldErrors,
+    setSaving,
+    setError,
+    setFieldErrors,
+    setCreatedDocument: setCreatedContract,
+    setCreatedPayloadKey,
+    setEditingDocument: setEditingContract,
+    unknownErrorMessage: "Erreur lors de l'enregistrement de la facture.",
+  });
 
   const downloadPdf = () => {
     if (!createdContract) return;
