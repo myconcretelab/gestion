@@ -15,54 +15,19 @@ import {
 import { toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
+import {
+  addDays,
+  buildDocumentListWhere,
+  ensureValidDate,
+  getLatestTemplateMtimeMs,
+  hydrateGite,
+  normalizeOptions,
+  optionalDateString,
+  optionsSchema,
+  parseDate,
+} from "./shared/rentalDocument.js";
 
 const router = Router();
-
-const optionsSchema = z.object({
-  draps: z
-    .object({
-      enabled: z.boolean(),
-      nb_lits: z.number().int().min(0).optional(),
-      offert: z.boolean().optional(),
-    })
-    .optional(),
-  linge_toilette: z
-    .object({
-      enabled: z.boolean(),
-      nb_personnes: z.number().int().min(0).optional(),
-      offert: z.boolean().optional(),
-    })
-    .optional(),
-  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional() }).optional(),
-  depart_tardif: z.object({ enabled: z.boolean(), offert: z.boolean().optional() }).optional(),
-  chiens: z
-    .object({ enabled: z.boolean(), nb: z.number().int().min(0).optional(), offert: z.boolean().optional() })
-    .optional(),
-  regle_animaux_acceptes: z.boolean().optional(),
-  regle_bois_premiere_flambee: z.boolean().optional(),
-  regle_tiers_personnes_info: z.boolean().optional(),
-});
-
-type GiteRules = {
-  regle_animaux_acceptes: boolean;
-  regle_bois_premiere_flambee: boolean;
-  regle_tiers_personnes_info: boolean;
-};
-
-const resolveContractRules = (options: OptionsInput, gite: GiteRules) => ({
-  regle_animaux_acceptes: options.regle_animaux_acceptes ?? gite.regle_animaux_acceptes,
-  regle_bois_premiere_flambee: options.regle_bois_premiere_flambee ?? gite.regle_bois_premiere_flambee,
-  regle_tiers_personnes_info: options.regle_tiers_personnes_info ?? gite.regle_tiers_personnes_info,
-});
-
-const normalizeOptions = (options: OptionsInput, gite: GiteRules): OptionsInput => {
-  const regles = resolveContractRules(options, gite);
-  const next: OptionsInput = { ...options, ...regles };
-  if (!regles.regle_animaux_acceptes) {
-    next.chiens = { ...next.chiens, enabled: false, offert: false, nb: 0 };
-  }
-  return next;
-};
 
 const contractSchema = z.object({
   gite_id: z.string().min(1),
@@ -93,12 +58,6 @@ const arrhesStatusSchema = z.object({
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]),
 });
 
-const optionalDateString = z.preprocess((value) => {
-  if (typeof value !== "string") return value;
-  const trimmed = value.trim();
-  return trimmed.length ? trimmed : undefined;
-}, z.string().optional());
-
 const previewSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().optional().default(""),
@@ -122,23 +81,6 @@ const previewSchema = z.object({
   clauses: z.record(z.any()).optional(),
   notes: z.string().optional().nullable(),
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
-});
-
-const parseDate = (value: string) => new Date(value);
-const addDays = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
-const ensureValidDate = (value: Date, label: string) => {
-  if (Number.isNaN(value.getTime())) throw new Error(`Date invalide: ${label}`);
-};
-
-const hydrateGite = (gite: any) => ({
-  ...gite,
-  telephones: fromJsonString<string[]>(gite.telephones, []),
-  prix_nuit_liste: fromJsonString<number[]>(gite.prix_nuit_liste, []),
 });
 
 const hydrateContract = (contrat: any) => ({
@@ -177,11 +119,6 @@ const contractTemplatePaths = [
   path.join(process.cwd(), "server/templates/contract.html"),
   path.join(process.cwd(), "server/templates/conditions.html"),
 ];
-
-const getLatestTemplateMtimeMs = async () => {
-  const stats = await Promise.all(contractTemplatePaths.map((templatePath) => fs.stat(templatePath).catch(() => null)));
-  return stats.reduce((maxMtime, stat) => Math.max(maxMtime, stat?.mtimeMs ?? 0), 0);
-};
 
 const regenerateStoredContractPdf = async (contrat: any) => {
   const options = normalizeOptions(fromJsonString<OptionsInput>(contrat.options, {}), contrat.gite);
@@ -232,7 +169,7 @@ const regenerateStoredContractPdf = async (contrat: any) => {
 const shouldRegeneratePdf = async (contrat: any, absolutePath: string) => {
   const [pdfStat, latestTemplateMtimeMs] = await Promise.all([
     fs.stat(absolutePath).catch(() => null),
-    getLatestTemplateMtimeMs(),
+    getLatestTemplateMtimeMs(contractTemplatePaths),
   ]);
   if (!pdfStat) return true;
 
@@ -339,24 +276,14 @@ router.get("/", async (req, res, next) => {
     const numero = typeof req.query.numero === "string" ? req.query.numero : "";
     const from = typeof req.query.from === "string" ? req.query.from : undefined;
     const to = typeof req.query.to === "string" ? req.query.to : undefined;
-
-    const where: any = {};
-
-    if (giteId) where.gite_id = giteId;
-    if (q) {
-      where.OR = [
-        { locataire_nom: { contains: q, mode: "insensitive" } },
-        { numero_contrat: { contains: q, mode: "insensitive" } },
-      ];
-    }
-    if (numero) {
-      where.numero_contrat = { contains: numero, mode: "insensitive" };
-    }
-    if (from || to) {
-      where.date_debut = {};
-      if (from) where.date_debut.gte = new Date(from);
-      if (to) where.date_debut.lte = new Date(to);
-    }
+    const where = buildDocumentListWhere({
+      q,
+      giteId,
+      numero,
+      from,
+      to,
+      numeroField: "numero_contrat",
+    });
 
     const contrats = await prisma.contrat.findMany({
       where,
