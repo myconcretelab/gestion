@@ -219,6 +219,10 @@
         color: #555;
         font-style: italic;
       }
+      .invoice-row-taxe-sejour td {
+        color: #666;
+        font-style: italic;
+      }
 
       body.compact-sections .page {
         gap: 4mm;
@@ -363,13 +367,12 @@
               <td>{{locationLineLabel}}</td>
               <td>{{montantBase}}</td>
             </tr>
-            {{{remiseRowHtml}}}
-            {{{optionsRowsHtml}}}
-            {{{optionsTotalRowHtml}}}
-            <tr>
+            <tr class="invoice-row-taxe-sejour">
               <td>Dont taxe de séjour</td>
               <td>{{taxeSejour}}</td>
             </tr>
+            {{{remiseRowHtml}}}
+            {{{optionsRowsHtml}}}
           </tbody>
         </table>
 

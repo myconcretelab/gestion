@@ -7,6 +7,6 @@ export const generateInvoiceNumber = async (giteId: string, prefix: string, year
     create: { giteId, year, lastNumber: 1 },
   });
 
-  const padded = String(counter.lastNumber).padStart(6, "0");
-  return `${prefix}-FAC-${year}-${padded}`;
+  const padded = String(counter.lastNumber).padStart(2, "0");
+  return `${prefix}-${year}-${padded}`;
 };

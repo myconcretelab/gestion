@@ -905,15 +905,12 @@ const buildInvoiceHtml = async (params: {
   const remiseReason = typeof remiseReasonRaw === "string" ? remiseReasonRaw.trim() : "";
   const acompteMontantValue = toNumber(params.invoice.arrhes_montant);
   const optionsRowsHtml = buildInvoiceOptionsRowsHtml({ totals: params.totals, options, gite: params.gite });
-  const optionsEnabled = optionsRowsHtml.length > 0;
   const notesHtml = buildInvoiceNotesHtml({ notes: params.invoice.notes, clauses });
   const remiseLabelHtml = remiseReason
     ? `Remise<div class="invoice-remise-reason">${escapeHtml(remiseReason)}</div>`
     : "Remise";
   const remiseRowHtml =
     remiseMontantValue > 0 ? `<tr><td>${remiseLabelHtml}</td><td>- ${formatEuro(remiseMontantValue)}</td></tr>` : "";
-  const optionsTotalRowHtml =
-    optionsEnabled ? `<tr><td>Total options</td><td>${formatEuro(params.totals.optionsTotal)}</td></tr>` : "";
   const acompteRowHtml =
     acompteMontantValue > 0 ? `<tr><td>Acompte reçu</td><td>- ${formatEuro(acompteMontantValue)}</td></tr>` : "";
   const notesBlockHtml = notesHtml ? `<div class="box"><div class="section-title">Notes</div>${notesHtml}</div>` : "";
@@ -955,7 +952,6 @@ const buildInvoiceHtml = async (params: {
     montantBase: formatEuro(params.totals.montantBase),
     remiseRowHtml,
     optionsRowsHtml,
-    optionsTotalRowHtml,
     taxeSejour: formatEuro(params.totals.taxeSejourCalculee),
     totalGlobal: formatEuro(params.totals.totalGlobal),
     acompteRowHtml,
