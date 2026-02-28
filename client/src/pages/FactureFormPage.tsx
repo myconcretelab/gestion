@@ -149,6 +149,7 @@ const FactureFormPage = () => {
     setError(null);
     setSourceContractNumber(null);
     setPrefilledContractGiteId(null);
+    setClausesText("");
     setLoadingFromContract(true);
     apiFetch<Contrat>(`/contracts/${fromContractId}`)
       .then((data) => {
@@ -173,7 +174,7 @@ const FactureFormPage = () => {
         setArrhesMontant(Number(data.arrhes_montant ?? 0).toFixed(2));
         setArrhesDateTouched(true);
         setArrhesDateLimite(toDateInputValue(data.arrhes_date_limite));
-        setClausesText(typeof data.clauses?.texte_additionnel === "string" ? data.clauses.texte_additionnel : "");
+        setClausesText("");
         setStatutArrhes("non_reglee");
       })
       .catch((err) => {
