@@ -75,6 +75,10 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     factureCreate: prisma.facture.create,
     factureFindUnique: prisma.facture.findUnique,
     factureUpdate: prisma.facture.update,
+    reservationFindUnique: prisma.reservation.findUnique,
+    reservationFindMany: prisma.reservation.findMany,
+    reservationCreate: prisma.reservation.create,
+    reservationUpdate: prisma.reservation.update,
   };
 
   try {
@@ -110,6 +114,10 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       arrhes_montant: 100,
     });
     prisma.facture.update = async ({ data }: any) => ({ id: "f1", numero_facture: "GT-2026-01", ...data });
+    prisma.reservation.findUnique = async () => null;
+    prisma.reservation.findMany = async () => [];
+    prisma.reservation.create = async () => ({ id: "r1" });
+    prisma.reservation.update = async ({ where }: any) => ({ id: where.id });
 
     const contractsRouterModule = await import("../src/routes/contracts.ts");
     const invoicesRouterModule = await import("../src/routes/invoices.ts");
@@ -264,6 +272,10 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     prisma.facture.create = original.factureCreate;
     prisma.facture.findUnique = original.factureFindUnique;
     prisma.facture.update = original.factureUpdate;
+    prisma.reservation.findUnique = original.reservationFindUnique;
+    prisma.reservation.findMany = original.reservationFindMany;
+    prisma.reservation.create = original.reservationCreate;
+    prisma.reservation.update = original.reservationUpdate;
 
     restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
     restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);

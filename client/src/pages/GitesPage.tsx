@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type DragEvent } from "react";
-import { apiFetch } from "../utils/api";
-import type { Gite } from "../utils/types";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { apiFetch, isApiError } from "../utils/api";
+import type { Gestionnaire, Gite, ReservationPlaceholder } from "../utils/types";
+import { getGiteColor } from "../utils/giteColors";
 
 const emptyForm = {
   nom: "",
@@ -32,25 +33,60 @@ const emptyForm = {
   cheque_menage_montant_defaut: 0,
   arrhes_taux_defaut: 0.2,
   prix_nuit_liste: "",
+  gestionnaire_id: "",
 };
 
 type FormState = typeof emptyForm;
+type GitesExportPayload = {
+  version?: number;
+  exported_at?: string;
+  gites: unknown[];
+};
+type GitesImportResult = {
+  created_count: number;
+  updated_count: number;
+};
+const PLACEHOLDER_FADE_OUT_MS = 320;
 
 const GitesPage = () => {
   const [gites, setGites] = useState<Gite[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [importingGites, setImportingGites] = useState(false);
+  const [exportingGites, setExportingGites] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
+  const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
+  const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
+  const [placeholderTargets, setPlaceholderTargets] = useState<Record<string, string>>({});
+  const [attachingPlaceholderId, setAttachingPlaceholderId] = useState<string | null>(null);
+  const [fadingPlaceholderIds, setFadingPlaceholderIds] = useState<string[]>([]);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const selected = useMemo(() => gites.find((g) => g.id === selectedId) ?? null, [gites, selectedId]);
 
   const load = async () => {
-    const data = await apiFetch<Gite[]>("/gites");
-    setGites(data);
+    const [gitesData, placeholdersData, gestionnairesData] = await Promise.all([
+      apiFetch<Gite[]>("/gites"),
+      apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
+      apiFetch<Gestionnaire[]>("/managers"),
+    ]);
+    setGites(gitesData);
+    setPlaceholders(placeholdersData);
+    setGestionnaires(gestionnairesData);
+    setPlaceholderTargets((prev) => {
+      const next = { ...prev };
+      for (const placeholder of placeholdersData) {
+        if (!next[placeholder.id] && gitesData[0]?.id) {
+          next[placeholder.id] = gitesData[0].id;
+        }
+      }
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -92,6 +128,7 @@ const GitesPage = () => {
       cheque_menage_montant_defaut: selected.cheque_menage_montant_defaut ?? 0,
       arrhes_taux_defaut: selected.arrhes_taux_defaut ?? 0.2,
       prix_nuit_liste: Array.isArray(selected.prix_nuit_liste) ? selected.prix_nuit_liste.join(", ") : "",
+      gestionnaire_id: selected.gestionnaire_id ?? "",
     });
   }, [selected]);
 
@@ -157,6 +194,7 @@ const GitesPage = () => {
   const save = async () => {
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
       const prixNuitListe = form.prix_nuit_liste
         .split(/[,;\n]+/)
@@ -168,20 +206,41 @@ const GitesPage = () => {
         ...form,
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
+        gestionnaire_id: form.gestionnaire_id || null,
         prix_nuit_liste: prixNuitListe,
         telephones: form.telephones
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean),
       };
+      let created: Gite | null = null;
       if (selectedId) {
         await apiFetch(`/gites/${selectedId}`, { method: "PUT", json: payload });
       } else {
-        await apiFetch(`/gites`, { method: "POST", json: payload });
+        created = await apiFetch<Gite>(`/gites`, { method: "POST", json: payload });
       }
       await load();
-      setSelectedId(null);
-      setForm(emptyForm);
+      if (created) {
+        setSelectedId(created.id);
+        const matchingPlaceholder = placeholders.find(
+          (placeholder) => placeholder.abbreviation === created.prefixe_contrat.toUpperCase()
+        );
+        if (
+          matchingPlaceholder &&
+          confirm(
+            `Associer le nouveau gîte ${created.nom} au placeholder ${matchingPlaceholder.abbreviation} (${matchingPlaceholder.reservations_count} réservations) ?`
+          )
+        ) {
+          await apiFetch(`/reservations/placeholders/${matchingPlaceholder.id}/assign`, {
+            method: "POST",
+            json: { gite_id: created.id },
+          });
+          await load();
+        }
+      } else {
+        setSelectedId(null);
+        setForm(emptyForm);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -191,6 +250,7 @@ const GitesPage = () => {
 
   const duplicate = async (id: string) => {
     setError(null);
+    setNotice(null);
     try {
       const created = await apiFetch<Gite>(`/gites/${id}/duplicate`, { method: "POST" });
       await load();
@@ -207,6 +267,7 @@ const GitesPage = () => {
         ? `Supprimer ce gîte et ses ${contratsCount} contrats ?`
         : "Supprimer ce gîte ?";
     if (!confirm(message)) return;
+    setNotice(null);
     try {
       await apiFetch(`/gites/${gite.id}`, { method: "DELETE" });
       await load();
@@ -216,14 +277,157 @@ const GitesPage = () => {
     }
   };
 
+  const attachPlaceholder = async (placeholder: ReservationPlaceholder) => {
+    const targetGiteId = placeholderTargets[placeholder.id] ?? selectedId ?? "";
+    if (!targetGiteId) {
+      setError("Choisissez un gîte cible avant de rattacher un placeholder.");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setAttachingPlaceholderId(placeholder.id);
+    try {
+      await apiFetch(`/reservations/placeholders/${placeholder.id}/assign`, {
+        method: "POST",
+        json: { gite_id: targetGiteId },
+      });
+      const targetGite = gites.find((gite) => gite.id === targetGiteId);
+      setNotice(
+        `Placeholder ${placeholder.abbreviation} rattaché à ${targetGite?.nom ?? "ce gîte"} (${placeholder.reservations_count} réservation(s)).`
+      );
+      setFadingPlaceholderIds((prev) => (prev.includes(placeholder.id) ? prev : [...prev, placeholder.id]));
+      await new Promise((resolve) => setTimeout(resolve, PLACEHOLDER_FADE_OUT_MS));
+      setPlaceholders((prev) => prev.filter((item) => item.id !== placeholder.id));
+      setPlaceholderTargets((prev) => {
+        const { [placeholder.id]: _removed, ...rest } = prev;
+        return rest;
+      });
+      await load();
+    } catch (err: any) {
+      if (isApiError(err) && err.status === 409) {
+        const conflicts = Array.isArray((err.payload as any).conflicts) ? (err.payload as any).conflicts : [];
+        const deduplicated = Number((err.payload as any).skipped_duplicates_count ?? 0);
+        const suffixParts: string[] = [];
+        if (conflicts.length > 0) suffixParts.push(`${conflicts.length} conflit(s)`);
+        if (deduplicated > 0) suffixParts.push(`${deduplicated} doublon(s) ignoré(s)`);
+        const suffix = suffixParts.length > 0 ? ` (${suffixParts.join(", ")})` : "";
+        setError(`${err.message}${suffix}`);
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setFadingPlaceholderIds((prev) => prev.filter((id) => id !== placeholder.id));
+      setAttachingPlaceholderId(null);
+    }
+  };
+
+  const triggerImport = () => {
+    importInputRef.current?.click();
+  };
+
+  const exportGites = async () => {
+    setExportingGites(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const payload = await apiFetch<GitesExportPayload>("/gites/export");
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `gites-export-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice(`${payload.gites.length} fiche(s) exportée(s).`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setExportingGites(false);
+    }
+  };
+
+  const importGitesFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setImportingGites(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+      let payload: { gites: unknown[] };
+
+      if (Array.isArray(parsed)) {
+        payload = { gites: parsed };
+      } else if (
+        parsed &&
+        typeof parsed === "object" &&
+        Array.isArray((parsed as { gites?: unknown[] }).gites)
+      ) {
+        payload = { gites: (parsed as { gites: unknown[] }).gites };
+      } else {
+        throw new Error("Format invalide: utilisez un JSON exporté depuis l'application.");
+      }
+
+      const result = await apiFetch<GitesImportResult>("/gites/import", {
+        method: "POST",
+        json: payload,
+      });
+      await load();
+      setNotice(`Import terminé: ${result.created_count} créé(s), ${result.updated_count} mis à jour.`);
+    } catch (err: any) {
+      if (err instanceof SyntaxError) {
+        setError("Le fichier n'est pas un JSON valide.");
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      input.value = "";
+      setImportingGites(false);
+    }
+  };
+
   return (
     <div>
       <div className="card">
-        <div className="section-title">Gîtes</div>
+        <div className="gites-header">
+          <div className="section-title">Gîtes</div>
+          <div className="gites-tools">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => void importGitesFromFile(event)}
+              style={{ display: "none" }}
+            />
+            <button
+              type="button"
+              className="table-action table-action--neutral gites-tool-button"
+              onClick={() => void exportGites()}
+              disabled={exportingGites || importingGites}
+            >
+              {exportingGites ? "Export..." : "Exporter"}
+            </button>
+            <button
+              type="button"
+              className="table-action table-action--neutral gites-tool-button"
+              onClick={triggerImport}
+              disabled={importingGites || exportingGites}
+            >
+              {importingGites ? "Import..." : "Importer"}
+            </button>
+          </div>
+        </div>
         <div className="field-hint gites-reorder-hint">
           Glisser-déposer un gîte via la poignée pour changer l'ordre d'affichage.
           {reordering ? " Enregistrement..." : ""}
         </div>
+        {notice && <div className="note note--success">{notice}</div>}
         {error && <div className="note">{error}</div>}
         <table className="table">
           <thead>
@@ -232,13 +436,15 @@ const GitesPage = () => {
               <th>Nom</th>
               <th>Préfixe</th>
               <th>Capacité</th>
+              <th>Gestionnaire</th>
               <th>Contrats</th>
               <th>Factures</th>
+              <th>Réservations</th>
               <th className="table-actions-cell">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {gites.map((gite) => (
+            {gites.map((gite, index) => (
               <tr
                 key={gite.id}
                 className={`
@@ -262,14 +468,21 @@ const GitesPage = () => {
                     ≡
                   </button>
                 </td>
-                <td>{gite.nom}</td>
+                <td className="gite-name-cell">
+                  <span className="gite-color-dot" style={{ backgroundColor: getGiteColor(gite, index) }} />
+                  {gite.nom}
+                </td>
                 <td>{gite.prefixe_contrat}</td>
                 <td>{gite.capacite_max}</td>
+                <td>{gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "—"}</td>
                 <td>
                   <span className="badge">{gite.contrats_count ?? 0}</span>
                 </td>
                 <td>
                   <span className="badge">{gite.factures_count ?? 0}</span>
+                </td>
+                <td>
+                  <span className="badge">{gite.reservations_count ?? 0}</span>
                 </td>
                 <td className="table-actions-cell">
                   <div className="table-actions">
@@ -289,6 +502,70 @@ const GitesPage = () => {
           </tbody>
         </table>
       </div>
+
+      {placeholders.length > 0 && (
+        <div className="card">
+          <div className="section-title">Réservations non attribuées (placeholders)</div>
+          <div className="field-hint gites-reorder-hint">
+            Lorsqu'un gîte importé n'est pas reconnu, un placeholder est créé. Rattachez-le ici.
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Abréviation</th>
+                <th>Libellé</th>
+                <th>Réservations</th>
+                <th>Gîte cible</th>
+                <th className="table-actions-cell">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {placeholders.map((placeholder) => (
+                <tr
+                  key={placeholder.id}
+                  className={`placeholder-row ${fadingPlaceholderIds.includes(placeholder.id) ? "placeholder-row--fading" : ""}`}
+                >
+                  <td>{placeholder.abbreviation}</td>
+                  <td>{placeholder.label ?? ""}</td>
+                  <td>
+                    <span className="badge">{placeholder.reservations_count}</span>
+                  </td>
+                  <td>
+                    <select
+                      className="placeholder-target-select"
+                      value={placeholderTargets[placeholder.id] ?? selectedId ?? ""}
+                      onChange={(event) =>
+                        setPlaceholderTargets((prev) => ({
+                          ...prev,
+                          [placeholder.id]: event.target.value,
+                        }))
+                      }
+                      disabled={attachingPlaceholderId === placeholder.id || fadingPlaceholderIds.includes(placeholder.id)}
+                    >
+                      <option value="">Choisir un gîte</option>
+                      {gites.map((gite) => (
+                        <option key={gite.id} value={gite.id}>
+                          {gite.nom} ({gite.prefixe_contrat})
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="table-actions-cell">
+                    <button
+                      type="button"
+                      className="table-action table-action--primary"
+                      onClick={() => attachPlaceholder(placeholder)}
+                      disabled={attachingPlaceholderId === placeholder.id || fadingPlaceholderIds.includes(placeholder.id)}
+                    >
+                      {attachingPlaceholderId === placeholder.id ? "Rattachement..." : "Rattacher"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card">
         <div className="section-title">{selected ? "Éditer" : "Créer"} un gîte</div>
@@ -313,6 +590,20 @@ const GitesPage = () => {
                 value={form.capacite_max}
                 onChange={(e) => handleChange("capacite_max", Number(e.target.value))}
               />
+            </label>
+            <label className="field">
+              Gestionnaire
+              <select
+                value={form.gestionnaire_id}
+                onChange={(e) => handleChange("gestionnaire_id", e.target.value)}
+              >
+                <option value="">Aucun</option>
+                {gestionnaires.map((gestionnaire) => (
+                  <option key={gestionnaire.id} value={gestionnaire.id}>
+                    {gestionnaire.prenom} {gestionnaire.nom}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
         </div>

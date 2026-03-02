@@ -28,6 +28,13 @@ import {
 
 const router = Router();
 
+const emptyStringToNull = (value: unknown) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+};
+
 const invoiceSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
@@ -51,6 +58,7 @@ const invoiceSchema = z.object({
   clauses: z.record(z.any()).optional(),
   notes: z.string().optional().nullable(),
   statut_paiement: z.enum(["non_reglee", "reglee"]).optional(),
+  reservation_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
 });
 
 const paymentStatusSchema = z.object({
@@ -179,6 +187,19 @@ const shouldRegenerateInvoicePdf = async (contrat: any, absolutePath: string) =>
       : new Date(contrat.date_derniere_modif).getTime();
   const latestSourceMtimeMs = Math.max(contractMtimeMs, latestTemplateMtimeMs);
   return pdfStat.mtimeMs + 1 < latestSourceMtimeMs;
+};
+
+const resolveLinkedReservation = async (reservationId: string | null | undefined, giteId: string) => {
+  if (!reservationId) return null;
+  const reservation = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    select: { id: true, gite_id: true },
+  });
+  if (!reservation) return { error: "Réservation introuvable." } as const;
+  if (reservation.gite_id && reservation.gite_id !== giteId) {
+    return { error: "La réservation sélectionnée est rattachée à un autre gîte." } as const;
+  }
+  return { id: reservation.id } as const;
 };
 
 type PreviewContext = {
@@ -337,6 +358,10 @@ router.post("/", async (req, res, next) => {
     const data = invoiceSchema.parse(req.body);
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+    const linkedReservation = await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id);
+    if (linkedReservation && "error" in linkedReservation) {
+      return res.status(400).json({ error: linkedReservation.error });
+    }
 
     const dateDebut = parseDate(data.date_debut);
     const dateFin = parseDate(data.date_fin);
@@ -419,6 +444,7 @@ router.post("/", async (req, res, next) => {
         pdf_path: pdfRelativePath,
         statut_paiement: data.statut_paiement ?? "non_reglee",
         notes: data.notes ?? null,
+        reservation_id: linkedReservation?.id ?? null,
       },
       include: { gite: true },
     });
@@ -445,6 +471,10 @@ router.put("/:id", async (req, res, next) => {
 
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+    const linkedReservation = await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id);
+    if (linkedReservation && "error" in linkedReservation) {
+      return res.status(400).json({ error: linkedReservation.error });
+    }
 
     const dateDebut = parseDate(data.date_debut);
     const dateFin = parseDate(data.date_fin);
@@ -507,6 +537,7 @@ router.put("/:id", async (req, res, next) => {
         pdf_path: pdfRelativePath,
         statut_paiement: data.statut_paiement ?? "non_reglee",
         notes: data.notes ?? null,
+        reservation_id: linkedReservation?.id ?? null,
       },
       include: { gite: true },
     });

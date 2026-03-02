@@ -141,25 +141,50 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gites, counters, contrats] = await Promise.all([
-      sqlite.gite.findMany(),
-      sqlite.contratCounter.findMany(),
-      sqlite.contrat.findMany(),
-    ]);
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations] =
+      await Promise.all([
+        tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
+        sqlite.gite.findMany(),
+        sqlite.contratCounter.findMany(),
+        sqlite.contrat.findMany(),
+        tableNames.has("factures") ? sqlite.facture.findMany() : Promise.resolve([]),
+        tableNames.has("facture_counters") ? sqlite.factureCounter.findMany() : Promise.resolve([]),
+        tableNames.has("reservation_placeholders") ? sqlite.reservationPlaceholder.findMany() : Promise.resolve([]),
+        tableNames.has("reservations") ? sqlite.reservation.findMany() : Promise.resolve([]),
+      ]);
 
+    console.log(`Gestionnaires: ${gestionnaires.length}`);
     console.log(`Gites: ${gites.length}`);
     console.log(`Compteurs: ${counters.length}`);
     console.log(`Contrats: ${contrats.length}`);
+    console.log(`Factures: ${factures.length}`);
+    console.log(`Compteurs factures: ${factureCounters.length}`);
+    console.log(`Placeholders reservations: ${placeholders.length}`);
+    console.log(`Reservations: ${reservations.length}`);
 
     if (dryRun) return;
 
     if (wipe) {
       console.log("Suppression des donnees cibles...");
       await postgres.$transaction([
+        postgres.reservation.deleteMany(),
+        postgres.reservationPlaceholder.deleteMany(),
+        postgres.facture.deleteMany(),
+        postgres.factureCounter.deleteMany(),
         postgres.contrat.deleteMany(),
         postgres.contratCounter.deleteMany(),
         postgres.gite.deleteMany(),
+        postgres.gestionnaire.deleteMany(),
       ]);
+    }
+
+    for (const gestionnaire of gestionnaires) {
+      const { id, ...rest } = gestionnaire;
+      await postgres.gestionnaire.upsert({
+        where: { id },
+        create: { id, ...rest },
+        update: rest,
+      });
     }
 
     for (const gite of gites) {
@@ -188,6 +213,15 @@ const main = async () => {
       });
     }
 
+    for (const counter of factureCounters) {
+      const { id, ...rest } = counter;
+      await postgres.factureCounter.upsert({
+        where: { id },
+        create: { id, ...rest },
+        update: rest,
+      });
+    }
+
     for (const contrat of contrats) {
       const { id, options, clauses, ...rest } = contrat;
       const data = {
@@ -198,6 +232,46 @@ const main = async () => {
       };
       const { id: _, ...update } = data;
       await postgres.contrat.upsert({
+        where: { id },
+        create: data,
+        update,
+      });
+    }
+
+    for (const facture of factures) {
+      const { id, options, clauses, ...rest } = facture;
+      const data = {
+        id,
+        options: parseJson(options, {}),
+        clauses: parseJson(clauses, {}),
+        ...rest,
+      };
+      const { id: _, ...update } = data;
+      await postgres.facture.upsert({
+        where: { id },
+        create: data,
+        update,
+      });
+    }
+
+    for (const placeholder of placeholders) {
+      const { id, ...rest } = placeholder;
+      await postgres.reservationPlaceholder.upsert({
+        where: { id },
+        create: { id, ...rest },
+        update: rest,
+      });
+    }
+
+    for (const reservation of reservations) {
+      const { id, options, ...rest } = reservation;
+      const data = {
+        id,
+        options: parseJson(options, {}),
+        ...rest,
+      };
+      const { id: _, ...update } = data;
+      await postgres.reservation.upsert({
         where: { id },
         create: data,
         update,

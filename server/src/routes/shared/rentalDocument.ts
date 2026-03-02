@@ -9,6 +9,7 @@ export const optionsSchema = z.object({
       enabled: z.boolean(),
       nb_lits: z.number().int().min(0).optional(),
       offert: z.boolean().optional(),
+      declared: z.boolean().optional(),
     })
     .optional(),
   linge_toilette: z
@@ -16,12 +17,20 @@ export const optionsSchema = z.object({
       enabled: z.boolean(),
       nb_personnes: z.number().int().min(0).optional(),
       offert: z.boolean().optional(),
+      declared: z.boolean().optional(),
     })
     .optional(),
-  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional() }).optional(),
-  depart_tardif: z.object({ enabled: z.boolean(), offert: z.boolean().optional() }).optional(),
+  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional(), declared: z.boolean().optional() }).optional(),
+  depart_tardif: z
+    .object({ enabled: z.boolean(), offert: z.boolean().optional(), declared: z.boolean().optional() })
+    .optional(),
   chiens: z
-    .object({ enabled: z.boolean(), nb: z.number().int().min(0).optional(), offert: z.boolean().optional() })
+    .object({
+      enabled: z.boolean(),
+      nb: z.number().int().min(0).optional(),
+      offert: z.boolean().optional(),
+      declared: z.boolean().optional(),
+    })
     .optional(),
   regle_animaux_acceptes: z.boolean().optional(),
   regle_bois_premiere_flambee: z.boolean().optional(),

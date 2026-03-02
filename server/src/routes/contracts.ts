@@ -29,6 +29,13 @@ import {
 
 const router = Router();
 
+const emptyStringToNull = (value: unknown) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+};
+
 const contractSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
@@ -52,6 +59,7 @@ const contractSchema = z.object({
   clauses: z.record(z.any()).optional(),
   notes: z.string().optional().nullable(),
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
+  reservation_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
 });
 
 const arrhesStatusSchema = z.object({
@@ -114,6 +122,162 @@ const toContractRenderInput = (contrat: any): ContractRenderInput => ({
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   notes: contrat.notes ?? null,
 });
+
+const normalizeTextKey = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+
+const toReservationOptionsSummary = (options: OptionsInput) => {
+  const labels: string[] = [];
+  const declarationFlags: boolean[] = [];
+
+  if (options.draps?.enabled) {
+    labels.push(`Draps x${Math.max(0, Math.round(options.draps.nb_lits ?? 0))}${options.draps.offert ? " offerts" : ""}`);
+    declarationFlags.push(Boolean(options.draps.declared));
+  }
+  if (options.linge_toilette?.enabled) {
+    labels.push(
+      `Linge x${Math.max(0, Math.round(options.linge_toilette.nb_personnes ?? 0))}${
+        options.linge_toilette.offert ? " offert" : ""
+      }`
+    );
+    declarationFlags.push(Boolean(options.linge_toilette.declared));
+  }
+  if (options.menage?.enabled) {
+    labels.push(`Ménage${options.menage.offert ? " offert" : ""}`);
+    declarationFlags.push(Boolean(options.menage.declared));
+  }
+  if (options.depart_tardif?.enabled) {
+    labels.push(`Départ tardif${options.depart_tardif.offert ? " offert" : ""}`);
+    declarationFlags.push(Boolean(options.depart_tardif.declared));
+  }
+  if (options.chiens?.enabled) {
+    labels.push(`Chiens x${Math.max(0, Math.round(options.chiens.nb ?? 0))}${options.chiens.offert ? " offerts" : ""}`);
+    declarationFlags.push(Boolean(options.chiens.declared));
+  }
+
+  return {
+    label: labels.join(" · "),
+    allDeclared: declarationFlags.length > 0 && declarationFlags.every(Boolean),
+  };
+};
+
+const isSameDate = (left: Date | string, right: Date | string) => new Date(left).getTime() === new Date(right).getTime();
+
+const syncReservationFromContract = async (params: {
+  explicitReservationId?: string | null;
+  existingReservationId?: string | null;
+  giteId: string;
+  locataireNom: string;
+  dateDebut: Date;
+  dateFin: Date;
+  nbNuits: number;
+  nbAdultes: number;
+  prixParNuit: number;
+  prixTotal: number;
+  options: OptionsInput;
+  optionsTotal: number;
+}) => {
+  const {
+    explicitReservationId,
+    existingReservationId,
+    giteId,
+    locataireNom,
+    dateDebut,
+    dateFin,
+    nbNuits,
+    nbAdultes,
+    prixParNuit,
+    prixTotal,
+    options,
+    optionsTotal,
+  } = params;
+  const sourceReservationId = explicitReservationId ?? existingReservationId ?? null;
+  const normalizedHost = normalizeTextKey(locataireNom);
+  const summary = toReservationOptionsSummary(options);
+
+  const reservationData = {
+    gite_id: giteId,
+    placeholder_id: null,
+    hote_nom: locataireNom,
+    date_entree: dateDebut,
+    date_sortie: dateFin,
+    nb_nuits: nbNuits,
+    nb_adultes: nbAdultes,
+    prix_par_nuit: round2(prixParNuit),
+    prix_total: round2(prixTotal),
+    frais_optionnels_montant: round2(optionsTotal),
+    frais_optionnels_libelle: summary.label || null,
+    frais_optionnels_declares: summary.allDeclared,
+    options: encodeJsonField(options),
+  };
+
+  let targetReservationId: string | null = null;
+  if (sourceReservationId) {
+    const linked = await prisma.reservation.findUnique({
+      where: { id: sourceReservationId },
+      select: { id: true, gite_id: true },
+    });
+    if (linked) {
+      if (!linked.gite_id || linked.gite_id === giteId) {
+        targetReservationId = linked.id;
+      }
+    }
+  }
+
+  if (!targetReservationId) {
+    const overlaps = await prisma.reservation.findMany({
+      where: {
+        gite_id: giteId,
+        date_entree: { lt: dateFin },
+        date_sortie: { gt: dateDebut },
+      },
+      orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        hote_nom: true,
+        date_entree: true,
+        date_sortie: true,
+      },
+    });
+
+    const exactHostAndDates = overlaps.find(
+      (reservation) =>
+        normalizeTextKey(reservation.hote_nom) === normalizedHost &&
+        isSameDate(reservation.date_entree, dateDebut) &&
+        isSameDate(reservation.date_sortie, dateFin)
+    );
+    const exactDates = overlaps.find(
+      (reservation) => isSameDate(reservation.date_entree, dateDebut) && isSameDate(reservation.date_sortie, dateFin)
+    );
+    const hostOverlap = overlaps.find((reservation) => normalizeTextKey(reservation.hote_nom) === normalizedHost);
+    const fallback = overlaps.length === 1 ? overlaps[0] : null;
+
+    targetReservationId = exactHostAndDates?.id ?? exactDates?.id ?? hostOverlap?.id ?? fallback?.id ?? null;
+  }
+
+  if (targetReservationId) {
+    const updated = await prisma.reservation.update({
+      where: { id: targetReservationId },
+      data: reservationData,
+      select: { id: true },
+    });
+    return updated.id;
+  }
+
+  const created = await prisma.reservation.create({
+    data: {
+      ...reservationData,
+      source_paiement: "A définir",
+      commentaire: null,
+    },
+    select: { id: true },
+  });
+  return created.id;
+};
 
 const contractTemplatePaths = [
   path.join(process.cwd(), "server/templates/contract.html"),
@@ -358,6 +522,16 @@ router.post("/", async (req, res, next) => {
     const data = contractSchema.parse(req.body);
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+    if (data.reservation_id) {
+      const reservation = await prisma.reservation.findUnique({
+        where: { id: data.reservation_id },
+        select: { id: true, gite_id: true },
+      });
+      if (!reservation) return res.status(404).json({ error: "Réservation introuvable." });
+      if (reservation.gite_id && reservation.gite_id !== data.gite_id) {
+        return res.status(400).json({ error: "La réservation sélectionnée est rattachée à un autre gîte." });
+      }
+    }
 
     const dateDebut = parseDate(data.date_debut);
     const dateFin = parseDate(data.date_fin);
@@ -411,6 +585,20 @@ router.post("/", async (req, res, next) => {
       dateDebut
     );
 
+    const reservationId = await syncReservationFromContract({
+      explicitReservationId: data.reservation_id ?? null,
+      giteId: data.gite_id,
+      locataireNom: data.locataire_nom,
+      dateDebut,
+      dateFin,
+      nbNuits: totals.nbNuits,
+      nbAdultes: data.nb_adultes,
+      prixParNuit: data.prix_par_nuit,
+      prixTotal: totals.montantBase,
+      options,
+      optionsTotal: totals.optionsTotal,
+    });
+
     const contrat = await prisma.contrat.create({
       data: {
         numero_contrat: numeroContrat,
@@ -440,6 +628,7 @@ router.post("/", async (req, res, next) => {
         pdf_path: pdfRelativePath,
         statut_paiement_arrhes: data.statut_paiement_arrhes ?? "non_recu",
         notes: data.notes ?? null,
+        reservation_id: reservationId,
       },
       include: { gite: true },
     });
@@ -466,6 +655,16 @@ router.put("/:id", async (req, res, next) => {
 
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+    if (data.reservation_id) {
+      const reservation = await prisma.reservation.findUnique({
+        where: { id: data.reservation_id },
+        select: { id: true, gite_id: true },
+      });
+      if (!reservation) return res.status(404).json({ error: "Réservation introuvable." });
+      if (reservation.gite_id && reservation.gite_id !== data.gite_id) {
+        return res.status(400).json({ error: "La réservation sélectionnée est rattachée à un autre gîte." });
+      }
+    }
 
     const dateDebut = parseDate(data.date_debut);
     const dateFin = parseDate(data.date_fin);
@@ -492,6 +691,21 @@ router.put("/:id", async (req, res, next) => {
       arrhesMontant,
       options,
       gite,
+    });
+
+    const reservationId = await syncReservationFromContract({
+      explicitReservationId: data.reservation_id ?? null,
+      existingReservationId: existing.reservation_id ?? null,
+      giteId: data.gite_id,
+      locataireNom: data.locataire_nom,
+      dateDebut,
+      dateFin,
+      nbNuits: totals.nbNuits,
+      nbAdultes: data.nb_adultes,
+      prixParNuit: data.prix_par_nuit,
+      prixTotal: totals.montantBase,
+      options,
+      optionsTotal: totals.optionsTotal,
     });
 
     const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
@@ -528,6 +742,7 @@ router.put("/:id", async (req, res, next) => {
         pdf_path: pdfRelativePath,
         statut_paiement_arrhes: data.statut_paiement_arrhes ?? "non_recu",
         notes: data.notes ?? null,
+        reservation_id: reservationId,
       },
       include: { gite: true },
     });

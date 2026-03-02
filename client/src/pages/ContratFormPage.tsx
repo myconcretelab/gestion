@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
-import type { Contrat, ContratOptions, Gite } from "../utils/types";
+import type { Contrat, ContratOptions, Gite, Reservation } from "../utils/types";
 import { formatEuro } from "../utils/format";
 import {
   addDays,
@@ -61,7 +61,9 @@ const getValidationFieldErrors = (error: unknown): FieldErrors =>
 
 const ContratFormPage = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
+  const fromReservationId = (searchParams.get("fromReservationId") ?? "").trim();
   const [gites, setGites] = useState<Gite[]>([]);
   const [giteId, setGiteId] = useState("");
   const [locataireNom, setLocataireNom] = useState("");
@@ -96,6 +98,9 @@ const ContratFormPage = () => {
   const [createdPayloadKey, setCreatedPayloadKey] = useState<string | null>(null);
   const [editingContract, setEditingContract] = useState<Contrat | null>(null);
   const [loadingContract, setLoadingContract] = useState(false);
+  const [loadingFromReservation, setLoadingFromReservation] = useState(false);
+  const [sourceReservationLabel, setSourceReservationLabel] = useState<string | null>(null);
+  const [linkedReservationId, setLinkedReservationId] = useState<string | null>(null);
 
   const minDateFin = useMemo(() => {
     if (!dateDebut) return undefined;
@@ -145,10 +150,56 @@ const ContratFormPage = () => {
         setAfficherChequeMenagePhrase(data.afficher_cheque_menage_phrase ?? true);
         setClausesText(typeof data.clauses?.texte_additionnel === "string" ? data.clauses.texte_additionnel : "");
         setStatutArrhes(data.statut_paiement_arrhes ?? "non_recu");
+        setLinkedReservationId(data.reservation_id ?? null);
+        setSourceReservationLabel(null);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoadingContract(false));
   }, [id, isEdit]);
+
+  useEffect(() => {
+    if (isEdit || !fromReservationId) return;
+    setError(null);
+    setLoadingFromReservation(true);
+    setSourceReservationLabel(null);
+    apiFetch<Reservation>(`/reservations/prefill/${fromReservationId}`)
+      .then((data) => {
+        if (!data.gite_id) {
+          throw new Error("La réservation sélectionnée n'est pas rattachée à un gîte.");
+        }
+        setLinkedReservationId(data.id);
+        setSourceReservationLabel(data.hote_nom);
+        setGiteId(data.gite_id);
+        setLocataireNom(data.hote_nom);
+        setLocataireAdresse("");
+        setLocataireTel("");
+        setNbAdultes(Math.max(1, data.nb_adultes ?? 1));
+        setNbEnfants(0);
+        setDateDebut(toDateInputValue(data.date_entree));
+        setDateFin(toDateInputValue(data.date_sortie));
+        setPrixParNuit(Number(data.prix_par_nuit ?? 0));
+        setRemiseMode("euro");
+        setRemiseValue("");
+        setOptions(mergeOptions(data.options));
+        setArrhesAuto(true);
+        setArrhesMontant("");
+        setClausesText("");
+        setStatutArrhes("non_recu");
+      })
+      .catch((err) => {
+        setLinkedReservationId(null);
+        setSourceReservationLabel(null);
+        setError(err.message);
+      })
+      .finally(() => setLoadingFromReservation(false));
+  }, [isEdit, fromReservationId]);
+
+  useEffect(() => {
+    if (isEdit || fromReservationId) return;
+    setLoadingFromReservation(false);
+    setSourceReservationLabel(null);
+    setLinkedReservationId(null);
+  }, [isEdit, fromReservationId]);
 
   useEffect(() => {
     if (isEdit && editingContract && giteId === editingContract.gite_id) return;
@@ -266,6 +317,7 @@ const ContratFormPage = () => {
       afficher_cheque_menage_phrase: afficherChequeMenagePhrase,
       clauses: clausesText ? { texte_additionnel: clausesText } : {},
       statut_paiement_arrhes: statutArrhes,
+      reservation_id: linkedReservationId,
     };
 
     if (arrhesMontant.trim()) {
@@ -295,6 +347,7 @@ const ContratFormPage = () => {
     clausesText,
     statutArrhes,
     arrhesMontant,
+    linkedReservationId,
   ]);
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
@@ -396,6 +449,10 @@ const ContratFormPage = () => {
   return (
     <div>
       {error && <div className="note">{error}</div>}
+      {!isEdit && loadingFromReservation && <div className="note">Préremplissage depuis la réservation...</div>}
+      {!isEdit && !loadingFromReservation && sourceReservationLabel && (
+        <div className="note note--success">Contrat prérempli depuis la réservation de {sourceReservationLabel}.</div>
+      )}
       <div className="card">
         <div className="section-title">Infos locataire</div>
         <div className="grid-2">

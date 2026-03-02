@@ -2,11 +2,11 @@ import { isApiError } from "../../utils/api";
 import type { ContratOptions } from "../../utils/types";
 
 export const defaultOptions: ContratOptions = {
-  draps: { enabled: false, nb_lits: 0, offert: false },
-  linge_toilette: { enabled: false, nb_personnes: 0, offert: false },
-  menage: { enabled: false, offert: false },
-  depart_tardif: { enabled: false, offert: false },
-  chiens: { enabled: false, nb: 0, offert: false },
+  draps: { enabled: false, nb_lits: 0, offert: false, declared: false },
+  linge_toilette: { enabled: false, nb_personnes: 0, offert: false, declared: false },
+  menage: { enabled: false, offert: false, declared: false },
+  depart_tardif: { enabled: false, offert: false, declared: false },
+  chiens: { enabled: false, nb: 0, offert: false, declared: false },
   regle_animaux_acceptes: false,
   regle_bois_premiere_flambee: false,
   regle_tiers_personnes_info: false,
