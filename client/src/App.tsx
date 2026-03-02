@@ -6,6 +6,9 @@ import ContratDetailPage from "./pages/ContratDetailPage";
 import FacturesListPage from "./pages/FacturesListPage";
 import FactureFormPage from "./pages/FactureFormPage";
 import FactureDetailPage from "./pages/FactureDetailPage";
+import ReservationsPage from "./pages/ReservationsPage";
+import StatisticsPage from "./pages/StatisticsPage";
+import SettingsPage from "./pages/SettingsPage";
 
 const App = () => {
   const location = useLocation();
@@ -15,12 +18,28 @@ const App = () => {
   const isFacturesSection =
     location.pathname === "/factures" ||
     location.pathname.startsWith("/factures/");
+  const isReservationsSection =
+    location.pathname === "/reservations" ||
+    location.pathname.startsWith("/reservations/");
+  const isStatsSection =
+    location.pathname === "/statistiques" ||
+    location.pathname.startsWith("/statistiques/");
+  const isSettingsSection =
+    location.pathname === "/parametres" ||
+    location.pathname.startsWith("/parametres/");
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="brand">Contrats Gîtes</div>
         <nav className="nav">
+          <NavLink
+            to="/reservations"
+            className={() => (isReservationsSection ? "active" : undefined)}
+            aria-current={isReservationsSection ? "page" : undefined}
+          >
+            Réservations
+          </NavLink>
           <NavLink
             to="/contrats"
             className={() => (isContratsSection ? "active" : undefined)}
@@ -36,7 +55,25 @@ const App = () => {
             Factures
           </NavLink>
           <NavLink to="/gites">Gîtes</NavLink>
+          <NavLink
+            to="/statistiques"
+            className={() => (isStatsSection ? "active" : undefined)}
+            aria-current={isStatsSection ? "page" : undefined}
+          >
+            Statistiques
+          </NavLink>
         </nav>
+        <div className="topbar-tools">
+          <NavLink
+            to="/parametres"
+            className={() => `topbar-icon-link${isSettingsSection ? " topbar-icon-link--active" : ""}`}
+            aria-current={isSettingsSection ? "page" : undefined}
+            aria-label="Paramètres"
+            title="Paramètres"
+          >
+            <span aria-hidden="true">⚙</span>
+          </NavLink>
+        </div>
       </header>
       <main className="content">
         <Routes>
@@ -50,6 +87,9 @@ const App = () => {
           <Route path="/factures/nouvelle" element={<FactureFormPage />} />
           <Route path="/factures/:id/edition" element={<FactureFormPage />} />
           <Route path="/factures/:id" element={<FactureDetailPage />} />
+          <Route path="/reservations" element={<ReservationsPage />} />
+          <Route path="/statistiques" element={<StatisticsPage />} />
+          <Route path="/parametres" element={<SettingsPage />} />
         </Routes>
       </main>
     </div>

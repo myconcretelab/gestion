@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
-import type { Contrat, Facture, ContratOptions, Gite } from "../utils/types";
+import type { Contrat, Facture, ContratOptions, Gite, Reservation } from "../utils/types";
 import { formatEuro } from "../utils/format";
 import {
   addDays,
@@ -61,6 +61,7 @@ const FactureFormPage = () => {
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const fromContractId = (searchParams.get("fromContractId") ?? "").trim();
+  const fromReservationId = (searchParams.get("fromReservationId") ?? "").trim();
   const [gites, setGites] = useState<Gite[]>([]);
   const [giteId, setGiteId] = useState("");
   const [locataireNom, setLocataireNom] = useState("");
@@ -93,6 +94,10 @@ const FactureFormPage = () => {
   const [loadingFromContract, setLoadingFromContract] = useState(false);
   const [sourceContractNumber, setSourceContractNumber] = useState<string | null>(null);
   const [prefilledContractGiteId, setPrefilledContractGiteId] = useState<string | null>(null);
+  const [loadingFromReservation, setLoadingFromReservation] = useState(false);
+  const [sourceReservationLabel, setSourceReservationLabel] = useState<string | null>(null);
+  const [prefilledReservationGiteId, setPrefilledReservationGiteId] = useState<string | null>(null);
+  const [linkedReservationId, setLinkedReservationId] = useState<string | null>(null);
 
   const minDateFin = useMemo(() => {
     if (!dateDebut) return undefined;
@@ -139,6 +144,9 @@ const FactureFormPage = () => {
         setStatutArrhes(data.statut_paiement ?? "non_reglee");
         setSourceContractNumber(null);
         setPrefilledContractGiteId(null);
+        setSourceReservationLabel(null);
+        setPrefilledReservationGiteId(null);
+        setLinkedReservationId(data.reservation_id ?? null);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoadingContract(false));
@@ -176,21 +184,73 @@ const FactureFormPage = () => {
         setArrhesDateLimite(toDateInputValue(data.arrhes_date_limite));
         setClausesText("");
         setStatutArrhes("non_reglee");
+        setSourceReservationLabel(null);
+        setPrefilledReservationGiteId(null);
+        setLinkedReservationId(data.reservation_id ?? null);
       })
       .catch((err) => {
         setSourceContractNumber(null);
         setPrefilledContractGiteId(null);
+        setLinkedReservationId(null);
         setError(err.message);
       })
       .finally(() => setLoadingFromContract(false));
   }, [isEdit, fromContractId]);
 
   useEffect(() => {
-    if (isEdit || fromContractId) return;
+    if (isEdit || fromContractId || fromReservationId) return;
     setSourceContractNumber(null);
     setPrefilledContractGiteId(null);
     setLoadingFromContract(false);
-  }, [isEdit, fromContractId]);
+    setSourceReservationLabel(null);
+    setPrefilledReservationGiteId(null);
+    setLoadingFromReservation(false);
+    setLinkedReservationId(null);
+  }, [isEdit, fromContractId, fromReservationId]);
+
+  useEffect(() => {
+    if (isEdit || fromContractId || !fromReservationId) return;
+    setError(null);
+    setSourceContractNumber(null);
+    setPrefilledContractGiteId(null);
+    setSourceReservationLabel(null);
+    setPrefilledReservationGiteId(null);
+    setLoadingFromReservation(true);
+    apiFetch<Reservation>(`/reservations/prefill/${fromReservationId}`)
+      .then((data) => {
+        if (!data.gite_id) {
+          throw new Error("La réservation sélectionnée n'est pas rattachée à un gîte.");
+        }
+        setLinkedReservationId(data.id);
+        setSourceReservationLabel(data.hote_nom);
+        setPrefilledReservationGiteId(data.gite_id);
+        setGiteId(data.gite_id);
+        setLocataireNom(data.hote_nom);
+        setLocataireAdresse("");
+        setLocataireTel("");
+        setNbAdultes(Math.max(1, data.nb_adultes ?? 1));
+        setNbEnfants(0);
+        setDateDebut(toDateInputValue(data.date_entree));
+        setDateFin(toDateInputValue(data.date_sortie));
+        setPrixParNuit(Number(data.prix_par_nuit ?? 0));
+        setRemiseMode("euro");
+        setRemiseValue("");
+        setRemiseReason("");
+        setOptions(mergeOptions(data.options));
+        setArrhesAuto(false);
+        setArrhesMontant("0.00");
+        setArrhesDateTouched(false);
+        setClausesText("");
+        setStatutArrhes("non_reglee");
+      })
+      .catch((err) => {
+        setLinkedReservationId(null);
+        setSourceReservationLabel(null);
+        setPrefilledReservationGiteId(null);
+        setError(err.message);
+      })
+      .finally(() => setLoadingFromReservation(false));
+  }, [isEdit, fromContractId, fromReservationId]);
 
   const {
     selectedGite,
@@ -242,22 +302,34 @@ const FactureFormPage = () => {
   useEffect(() => {
     if (!selectedGite) return;
     if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
-    if (!isEdit && prefilledContractGiteId && selectedGite.id === prefilledContractGiteId) return;
+    if (
+      !isEdit &&
+      ((prefilledContractGiteId && selectedGite.id === prefilledContractGiteId) ||
+        (prefilledReservationGiteId && selectedGite.id === prefilledReservationGiteId))
+    ) {
+      return;
+    }
     setHeureArrivee(selectedGite.heure_arrivee_defaut || "17:00");
     setHeureDepart(selectedGite.heure_depart_defaut || "12:00");
-  }, [selectedGite, isEdit, editingContract, prefilledContractGiteId]);
+  }, [selectedGite, isEdit, editingContract, prefilledContractGiteId, prefilledReservationGiteId]);
 
   useEffect(() => {
     if (!selectedGite) return;
     if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
-    if (!isEdit && prefilledContractGiteId && selectedGite.id === prefilledContractGiteId) return;
+    if (
+      !isEdit &&
+      ((prefilledContractGiteId && selectedGite.id === prefilledContractGiteId) ||
+        (prefilledReservationGiteId && selectedGite.id === prefilledReservationGiteId))
+    ) {
+      return;
+    }
     setOptions((prev) => ({
       ...prev,
       regle_animaux_acceptes: selectedGite.regle_animaux_acceptes,
       regle_bois_premiere_flambee: selectedGite.regle_bois_premiere_flambee,
       regle_tiers_personnes_info: selectedGite.regle_tiers_personnes_info,
     }));
-  }, [selectedGite?.id, isEdit, editingContract, prefilledContractGiteId]);
+  }, [selectedGite?.id, isEdit, editingContract, prefilledContractGiteId, prefilledReservationGiteId]);
 
   useEffect(() => {
     if (regleAnimauxAcceptes) return;
@@ -315,6 +387,7 @@ const FactureFormPage = () => {
       afficher_cheque_menage_phrase: false,
       clauses: clausesPayload,
       statut_paiement: statutArrhes,
+      reservation_id: linkedReservationId,
     };
 
     return payload;
@@ -336,6 +409,7 @@ const FactureFormPage = () => {
     clausesPayload,
     statutArrhes,
     arrhesMontant,
+    linkedReservationId,
   ]);
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
@@ -432,8 +506,12 @@ const FactureFormPage = () => {
     <div>
       {error && <div className="note">{error}</div>}
       {!isEdit && loadingFromContract && <div className="note">Préremplissage depuis le contrat...</div>}
+      {!isEdit && loadingFromReservation && <div className="note">Préremplissage depuis la réservation...</div>}
       {!isEdit && !loadingFromContract && sourceContractNumber && (
         <div className="note note--success">Facture préremplie depuis le contrat {sourceContractNumber}.</div>
+      )}
+      {!isEdit && !loadingFromReservation && sourceReservationLabel && (
+        <div className="note note--success">Facture préremplie depuis la réservation de {sourceReservationLabel}.</div>
       )}
       <div className="card">
         <div className="section-title">Infos client</div>

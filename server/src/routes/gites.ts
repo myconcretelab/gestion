@@ -46,16 +46,47 @@ const giteSchema = z.object({
   cheque_menage_montant_defaut: z.coerce.number().min(0).default(0),
   arrhes_taux_defaut: z.coerce.number().min(0).max(1).default(0.2),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
+  gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
 });
 const giteReorderSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1),
 });
+const giteImportItemSchema = giteSchema.extend({
+  id: z.string().trim().min(1).optional(),
+  ordre: z.coerce.number().int().min(0).optional(),
+});
+const giteImportSchema = z.object({
+  gites: z.array(giteImportItemSchema).min(1),
+});
+type GiteInput = z.infer<typeof giteSchema>;
+type GiteImportInput = z.infer<typeof giteImportItemSchema>;
+
+const toGitePersistenceData = (payload: GiteInput) => ({
+  ...payload,
+  prefixe_contrat: payload.prefixe_contrat.trim().toUpperCase(),
+  telephones: encodeJsonField(payload.telephones),
+  prix_nuit_liste: encodeJsonField(payload.prix_nuit_liste),
+});
+
+const toGiteInput = (payload: GiteImportInput): GiteInput => {
+  const { id: _id, ordre: _ordre, ...data } = payload;
+  return data;
+};
 
 const getNextGiteOrder = async () => {
   const aggregate = await prisma.gite.aggregate({
     _max: { ordre: true },
   });
   return (aggregate._max.ordre ?? -1) + 1;
+};
+
+const gestionnaireExists = async (gestionnaireId?: string | null) => {
+  if (!gestionnaireId) return true;
+  const existing = await prisma.gestionnaire.findUnique({
+    where: { id: gestionnaireId },
+    select: { id: true },
+  });
+  return Boolean(existing);
 };
 
 const hydrateGite = (gite: any) => {
@@ -86,6 +117,8 @@ const hydrateGite = (gite: any) => {
     prix_nuit_liste,
     contrats_count: typeof _count?.contrats === "number" ? _count.contrats : gite.contrats_count,
     factures_count: typeof _count?.factures === "number" ? _count.factures : gite.factures_count,
+    reservations_count:
+      typeof _count?.reservations === "number" ? _count.reservations : gite.reservations_count,
   };
 };
 
@@ -93,7 +126,10 @@ router.get("/", async (_req, res, next) => {
   try {
     const gites = await prisma.gite.findMany({
       orderBy: [{ ordre: "asc" }, { nom: "asc" }],
-      include: { _count: { select: { contrats: true, factures: true } } },
+      include: {
+        gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        _count: { select: { contrats: true, factures: true, reservations: true } },
+      },
     });
     res.json(gites.map(hydrateGite));
   } catch (err) {
@@ -129,19 +165,12 @@ router.post("/reorder", async (req, res, next) => {
 
     const updated = await prisma.gite.findMany({
       orderBy: [{ ordre: "asc" }, { nom: "asc" }],
-      include: { _count: { select: { contrats: true, factures: true } } },
+      include: {
+        gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        _count: { select: { contrats: true, factures: true, reservations: true } },
+      },
     });
     res.json(updated.map(hydrateGite));
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get("/:id", async (req, res, next) => {
-  try {
-    const gite = await prisma.gite.findUnique({ where: { id: req.params.id } });
-    if (!gite) return res.status(404).json({ error: "Gite introuvable" });
-    res.json(hydrateGite(gite));
   } catch (err) {
     next(err);
   }
@@ -150,13 +179,17 @@ router.get("/:id", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
+    if (!(await gestionnaireExists(parsed.gestionnaire_id))) {
+      return res.status(400).json({ error: "Gestionnaire introuvable." });
+    }
     const ordre = await getNextGiteOrder();
     const gite = await prisma.gite.create({
       data: {
         ordre,
-        ...parsed,
-        telephones: encodeJsonField(parsed.telephones),
-        prix_nuit_liste: encodeJsonField(parsed.prix_nuit_liste),
+        ...toGitePersistenceData(parsed),
+      },
+      include: {
+        gestionnaire: { select: { id: true, prenom: true, nom: true } },
       },
     });
     res.status(201).json(hydrateGite(gite));
@@ -168,14 +201,164 @@ router.post("/", async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
+    if (!(await gestionnaireExists(parsed.gestionnaire_id))) {
+      return res.status(400).json({ error: "Gestionnaire introuvable." });
+    }
     const gite = await prisma.gite.update({
       where: { id: req.params.id },
-      data: {
-        ...parsed,
-        telephones: encodeJsonField(parsed.telephones),
-        prix_nuit_liste: encodeJsonField(parsed.prix_nuit_liste),
+      data: toGitePersistenceData(parsed),
+      include: {
+        gestionnaire: { select: { id: true, prenom: true, nom: true } },
       },
     });
+    res.json(hydrateGite(gite));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/export", async (_req, res, next) => {
+  try {
+    const gites = await prisma.gite.findMany({
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      include: { _count: { select: { contrats: true, factures: true, reservations: true } } },
+    });
+
+    const exportRows = gites.map((gite) => {
+      const hydrated = hydrateGite(gite);
+      const {
+        contrats_count: _contratsCount,
+        factures_count: _facturesCount,
+        reservations_count: _reservationsCount,
+        ...data
+      } = hydrated;
+      return data;
+    });
+
+    res.json({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      gites: exportRows,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/import", async (req, res, next) => {
+  try {
+    const payload = giteImportSchema.parse(req.body);
+    const normalized = payload.gites.map((item) => ({
+      ...item,
+      prefixe_contrat: item.prefixe_contrat.trim().toUpperCase(),
+    }));
+
+    const seenIds = new Set<string>();
+    const seenPrefixes = new Set<string>();
+    for (const row of normalized) {
+      if (row.id) {
+        if (seenIds.has(row.id)) {
+          return res.status(400).json({ error: `Identifiant dupliqué dans l'import: ${row.id}` });
+        }
+        seenIds.add(row.id);
+      }
+      if (seenPrefixes.has(row.prefixe_contrat)) {
+        return res
+          .status(400)
+          .json({ error: `Préfixe contrat dupliqué dans l'import: ${row.prefixe_contrat}` });
+      }
+      seenPrefixes.add(row.prefixe_contrat);
+    }
+
+    const gestionnaireIds = [...new Set(normalized.map((row) => row.gestionnaire_id).filter(Boolean))] as string[];
+    if (gestionnaireIds.length > 0) {
+      const existingManagers = await prisma.gestionnaire.findMany({
+        where: { id: { in: gestionnaireIds } },
+        select: { id: true },
+      });
+      if (existingManagers.length !== gestionnaireIds.length) {
+        return res.status(400).json({ error: "L'import contient un gestionnaire introuvable." });
+      }
+    }
+
+    const existing = await prisma.gite.findMany({
+      select: { id: true, ordre: true },
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+    });
+    const existingIds = new Set(existing.map((item) => item.id));
+
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+      const importedIds: string[] = [];
+      const importedIdSet = new Set<string>();
+
+      for (const row of normalized) {
+        const data = toGitePersistenceData(toGiteInput(row));
+        if (row.id && existingIds.has(row.id)) {
+          await tx.gite.update({
+            where: { id: row.id },
+            data,
+          });
+          updatedCount += 1;
+          importedIds.push(row.id);
+          importedIdSet.add(row.id);
+          continue;
+        }
+
+        const created = await tx.gite.create({
+          data: {
+            ...(row.id ? { id: row.id } : {}),
+            ...data,
+            ordre: 0,
+          },
+        });
+        createdCount += 1;
+        importedIds.push(created.id);
+        importedIdSet.add(created.id);
+      }
+
+      const remainingIds = existing
+        .map((item) => item.id)
+        .filter((id) => !importedIdSet.has(id));
+      const finalOrder = [...importedIds, ...remainingIds];
+
+      await Promise.all(
+        finalOrder.map((id, index) =>
+          tx.gite.update({
+            where: { id },
+            data: { ordre: index },
+          })
+        )
+      );
+    });
+
+    const gites = await prisma.gite.findMany({
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      include: {
+        gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        _count: { select: { contrats: true, factures: true, reservations: true } },
+      },
+    });
+
+    res.json({
+      created_count: createdCount,
+      updated_count: updatedCount,
+      gites: gites.map(hydrateGite),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id", async (req, res, next) => {
+  try {
+    const gite = await prisma.gite.findUnique({
+      where: { id: req.params.id },
+      include: { gestionnaire: { select: { id: true, prenom: true, nom: true } } },
+    });
+    if (!gite) return res.status(404).json({ error: "Gite introuvable" });
     res.json(hydrateGite(gite));
   } catch (err) {
     next(err);
@@ -232,7 +415,9 @@ router.post("/:id/duplicate", async (req, res, next) => {
         cheque_menage_montant_defaut: existing.cheque_menage_montant_defaut,
         arrhes_taux_defaut: existing.arrhes_taux_defaut,
         prix_nuit_liste: encodeJsonField(fromJsonString<number[]>(existing.prix_nuit_liste, [])),
+        gestionnaire_id: existing.gestionnaire_id,
       },
+      include: { gestionnaire: { select: { id: true, prenom: true, nom: true } } },
     });
 
     res.status(201).json(hydrateGite(duplicated));
@@ -257,6 +442,7 @@ router.delete("/:id", async (req, res, next) => {
     })) as Array<{ id: string; pdf_path: string }>;
 
     await prisma.$transaction([
+      prisma.reservation.deleteMany({ where: { gite_id: giteId } }),
       prisma.contrat.deleteMany({ where: { gite_id: giteId } }),
       prisma.facture.deleteMany({ where: { gite_id: giteId } }),
       prisma.contratCounter.deleteMany({ where: { giteId } }),

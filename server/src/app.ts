@@ -5,8 +5,11 @@ import fs from "fs";
 import { ZodError } from "zod";
 import { env } from "./config/env.js";
 import gitesRouter from "./routes/gites.js";
+import managersRouter from "./routes/managers.js";
 import contractsRouter from "./routes/contracts.js";
 import invoicesRouter from "./routes/invoices.js";
+import reservationsRouter from "./routes/reservations.js";
+import statisticsRouter from "./routes/statistics.js";
 
 export const createApp = () => {
   const app = express();
@@ -50,8 +53,11 @@ export const createApp = () => {
   });
 
   app.use("/api/gites", gitesRouter);
+  app.use("/api/managers", managersRouter);
   app.use("/api/contracts", contractsRouter);
   app.use("/api/invoices", invoicesRouter);
+  app.use("/api/reservations", reservationsRouter);
+  app.use("/api/statistics", statisticsRouter);
 
   const clientDistCandidates = [
     process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,

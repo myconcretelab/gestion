@@ -1,3 +1,12 @@
+export type Gestionnaire = {
+  id: string;
+  prenom: string;
+  nom: string;
+  gites_count?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type Gite = {
   id: string;
   ordre?: number;
@@ -30,18 +39,51 @@ export type Gite = {
   arrhes_taux_defaut: number;
   prix_nuit_liste?: number[];
   caracteristiques?: string | null;
+  gestionnaire_id?: string | null;
+  gestionnaire?: Pick<Gestionnaire, "id" | "prenom" | "nom"> | null;
   contrats_count?: number;
   factures_count?: number;
+  reservations_count?: number;
   createdAt?: string;
   updatedAt?: string;
 };
 
+export type ReservationPlaceholder = {
+  id: string;
+  abbreviation: string;
+  label?: string | null;
+  reservations_count: number;
+};
+
+export type Reservation = {
+  id: string;
+  gite_id?: string | null;
+  placeholder_id?: string | null;
+  hote_nom: string;
+  date_entree: string;
+  date_sortie: string;
+  nb_nuits: number;
+  nb_adultes: number;
+  prix_par_nuit: number;
+  prix_total: number;
+  source_paiement?: string | null;
+  commentaire?: string | null;
+  frais_optionnels_montant: number;
+  frais_optionnels_libelle?: string | null;
+  frais_optionnels_declares: boolean;
+  options?: ContratOptions;
+  createdAt?: string;
+  updatedAt?: string;
+  gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre">;
+  placeholder?: Pick<ReservationPlaceholder, "id" | "abbreviation" | "label">;
+};
+
 export type ContratOptions = {
-  draps?: { enabled: boolean; nb_lits?: number; offert?: boolean };
-  linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean };
-  menage?: { enabled: boolean; offert?: boolean };
-  depart_tardif?: { enabled: boolean; offert?: boolean };
-  chiens?: { enabled: boolean; nb?: number; offert?: boolean };
+  draps?: { enabled: boolean; nb_lits?: number; offert?: boolean; declared?: boolean };
+  linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
+  menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
+  depart_tardif?: { enabled: boolean; offert?: boolean; declared?: boolean };
+  chiens?: { enabled: boolean; nb?: number; offert?: boolean; declared?: boolean };
   regle_animaux_acceptes?: boolean;
   regle_bois_premiere_flambee?: boolean;
   regle_tiers_personnes_info?: boolean;
@@ -79,6 +121,7 @@ export type Contrat = {
   pdf_path: string;
   statut_paiement_arrhes: "non_recu" | "recu";
   notes?: string | null;
+  reservation_id?: string | null;
   gite?: Gite;
 };
 
@@ -113,5 +156,6 @@ export type Facture = {
   pdf_path: string;
   statut_paiement: "non_reglee" | "reglee";
   notes?: string | null;
+  reservation_id?: string | null;
   gite?: Gite;
 };

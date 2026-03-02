@@ -6,9 +6,27 @@ import { getPdfPaths } from "../src/utils/paths.js";
 import { encodeJsonField } from "../src/utils/jsonFields.js";
 
 const seed = async () => {
+  await prisma.reservation.deleteMany();
+  await prisma.reservationPlaceholder.deleteMany();
+  await prisma.facture.deleteMany();
+  await prisma.factureCounter.deleteMany();
   await prisma.contrat.deleteMany();
   await prisma.contratCounter.deleteMany();
   await prisma.gite.deleteMany();
+  await prisma.gestionnaire.deleteMany();
+
+  const gestionnaireLea = await prisma.gestionnaire.create({
+    data: {
+      prenom: "Léa",
+      nom: "Martin",
+    },
+  });
+  const gestionnaireHugo = await prisma.gestionnaire.create({
+    data: {
+      prenom: "Hugo",
+      nom: "Dubois",
+    },
+  });
 
   const giteLib = await prisma.gite.create({
     data: {
@@ -42,6 +60,7 @@ const seed = async () => {
       cheque_menage_montant_defaut: 60,
       arrhes_taux_defaut: 0.2,
       prix_nuit_liste: encodeJsonField([120, 140, 160]),
+      gestionnaire_id: gestionnaireLea.id,
     },
   });
 
@@ -77,6 +96,7 @@ const seed = async () => {
       cheque_menage_montant_defaut: 50,
       arrhes_taux_defaut: 0.25,
       prix_nuit_liste: encodeJsonField([90, 110, 130]),
+      gestionnaire_id: gestionnaireHugo.id,
     },
   });
 

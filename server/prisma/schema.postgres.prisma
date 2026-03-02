@@ -44,16 +44,33 @@ model Gite {
   arrhes_taux_defaut                   Decimal  @default(0.2) @db.Decimal(5,4)
   prix_nuit_liste                      Json?
   caracteristiques                     String?
+  gestionnaire_id                      String?
   createdAt                            DateTime @default(now())
   updatedAt                            DateTime @updatedAt
 
+  gestionnaire                         Gestionnaire? @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
   contrats                             Contrat[]
   factures                             Facture[]
+  reservations                         Reservation[]
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
 
+  @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
   @@index([ordre], map: "gites_ordre_idx")
   @@map("gites")
+}
+
+model Gestionnaire {
+  id        String   @id @default(cuid())
+  prenom    String
+  nom       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gites     Gite[]
+
+  @@unique([prenom, nom])
+  @@map("gestionnaires")
 }
 
 model Contrat {
@@ -87,9 +104,11 @@ model Contrat {
   pdf_path               String
   statut_paiement_arrhes String   @default("non_recu")
   notes                  String?
+  reservation_id         String?
 
   gite                   Gite     @relation(fields: [gite_id], references: [id])
 
+  @@index([reservation_id], map: "contrats_reservation_id_idx")
   @@map("contrats")
 }
 
@@ -136,9 +155,11 @@ model Facture {
   pdf_path               String
   statut_paiement        String   @default("non_reglee")
   notes                  String?
+  reservation_id         String?
 
   gite                   Gite     @relation(fields: [gite_id], references: [id])
 
+  @@index([reservation_id], map: "factures_reservation_id_idx")
   @@map("factures")
 }
 
@@ -152,4 +173,44 @@ model FactureCounter {
 
   @@unique([giteId, year])
   @@map("facture_counters")
+}
+
+model ReservationPlaceholder {
+  id           String        @id @default(cuid())
+  abbreviation String        @unique
+  label        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  reservations Reservation[]
+
+  @@map("reservation_placeholders")
+}
+
+model Reservation {
+  id                        String                   @id @default(cuid())
+  gite_id                   String?
+  placeholder_id            String?
+  hote_nom                  String
+  date_entree               DateTime
+  date_sortie               DateTime
+  nb_nuits                  Int
+  nb_adultes                Int
+  prix_par_nuit             Decimal                  @db.Decimal(10,2)
+  prix_total                Decimal                  @db.Decimal(10,2)
+  source_paiement           String?
+  commentaire               String?
+  frais_optionnels_montant  Decimal                  @default(0) @db.Decimal(10,2)
+  frais_optionnels_libelle  String?
+  frais_optionnels_declares Boolean                  @default(false)
+  options                   Json                     @default("{}")
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+
+  gite                      Gite?                    @relation(fields: [gite_id], references: [id])
+  placeholder               ReservationPlaceholder?  @relation(fields: [placeholder_id], references: [id])
+
+  @@index([gite_id, date_entree])
+  @@index([placeholder_id, date_entree])
+  @@map("reservations")
 }

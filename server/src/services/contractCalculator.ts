@@ -2,11 +2,11 @@ import { differenceInCalendarDays } from "date-fns";
 import { toNumber, round2, type NumericLike } from "../utils/money.js";
 
 export type OptionsInput = {
-  draps?: { enabled: boolean; nb_lits?: number; offert?: boolean };
-  linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean };
-  menage?: { enabled: boolean; offert?: boolean };
-  depart_tardif?: { enabled: boolean; offert?: boolean };
-  chiens?: { enabled: boolean; nb?: number; offert?: boolean };
+  draps?: { enabled: boolean; nb_lits?: number; offert?: boolean; declared?: boolean };
+  linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
+  menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
+  depart_tardif?: { enabled: boolean; offert?: boolean; declared?: boolean };
+  chiens?: { enabled: boolean; nb?: number; offert?: boolean; declared?: boolean };
   regle_animaux_acceptes?: boolean;
   regle_bois_premiere_flambee?: boolean;
   regle_tiers_personnes_info?: boolean;
