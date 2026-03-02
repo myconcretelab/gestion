@@ -14,6 +14,14 @@ router.get("/", async (_req, res, next) => {
           ordre: true,
           prefixe_contrat: true,
           proprietaires_noms: true,
+          gestionnaire_id: true,
+          gestionnaire: {
+            select: {
+              id: true,
+              prenom: true,
+              nom: true,
+            },
+          },
         },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
@@ -29,6 +37,8 @@ router.get("/", async (_req, res, next) => {
           prix_par_nuit: true,
           prix_total: true,
           source_paiement: true,
+          frais_optionnels_montant: true,
+          frais_optionnels_declares: true,
         },
         orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
       }),

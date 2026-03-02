@@ -4,6 +4,12 @@ export type StatisticsGite = {
   ordre: number;
   prefixe_contrat: string;
   proprietaires_noms: string;
+  gestionnaire_id?: string | null;
+  gestionnaire?: {
+    id: string;
+    prenom: string;
+    nom: string;
+  } | null;
 };
 
 export type StatisticsEntry = {
@@ -16,6 +22,7 @@ export type StatisticsEntry = {
   adultes: number;
   prixNuit: number;
   revenus: number;
+  fraisOptionnelsDeclares: number;
   paiement: string;
   proprietaires: string;
 };
@@ -67,6 +74,7 @@ export const parseStatisticsPayload = (payload: StatisticsPayload): ParsedStatis
     entriesByGite[giteId] = (entries ?? [])
       .map((entry) => ({
         ...entry,
+        fraisOptionnelsDeclares: Number(entry.fraisOptionnelsDeclares ?? 0),
         debutDate: new Date(`${entry.debut}T00:00:00.000Z`),
       }))
       .filter((entry) => !Number.isNaN(entry.debutDate.getTime()));
@@ -296,26 +304,36 @@ export const getMonthlyAverageCA = (
   return sums.map((sum, idx) => ({ month: idx + 1, ca: counts[idx] ? sum / counts[idx] : 0 }));
 };
 
-export const computeUrssafByOwner = (
+export const computeUrssafByManager = (
   entriesByGite: Record<string, ParsedStatisticsEntry[]>,
   gites: StatisticsGite[],
   selectedYear: PeriodYear,
   selectedMonth: PeriodMonth
 ) => {
-  const byOwner: Record<string, number> = {};
+  const byManager: Record<string, { manager: string; amount: number }> = {};
 
   for (const gite of gites) {
-    const owner = gite.proprietaires_noms?.trim() || "Propriétaire non renseigné";
-    for (const entry of entriesByGite[gite.id] ?? []) {
-      if (!entryMatch(entry, selectedYear, selectedMonth)) continue;
-      if (!URSSAF_PAYMENTS.some((label) => normalizeLabel(entry.paiement).includes(normalizeLabel(label)))) continue;
-      byOwner[owner] = (byOwner[owner] ?? 0) + (entry.revenus || 0);
+    if (!gite.gestionnaire?.id) continue;
+    if (!byManager[gite.gestionnaire.id]) {
+      byManager[gite.gestionnaire.id] = {
+        manager: `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}`.trim(),
+        amount: 0,
+      };
     }
   }
 
-  return Object.entries(byOwner)
-    .map(([owner, amount]) => ({ owner, amount }))
-    .sort((left, right) => right.amount - left.amount);
+  for (const gite of gites) {
+    if (!gite.gestionnaire?.id) continue;
+    for (const entry of entriesByGite[gite.id] ?? []) {
+      if (!entryMatch(entry, selectedYear, selectedMonth)) continue;
+      if (!URSSAF_PAYMENTS.some((label) => normalizeLabel(entry.paiement).includes(normalizeLabel(label)))) continue;
+      byManager[gite.gestionnaire.id].amount += (entry.revenus || 0) + (entry.fraisOptionnelsDeclares || 0);
+    }
+  }
+
+  return Object.values(byManager)
+    .map((item) => ({ manager: item.manager, amount: item.amount }))
+    .sort((left, right) => right.amount - left.amount || left.manager.localeCompare(right.manager, "fr"));
 };
 
 export const computeChequeVirementNightsByGite = (
