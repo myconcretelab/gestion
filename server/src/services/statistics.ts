@@ -6,6 +6,12 @@ export type StatisticsGite = {
   ordre: number;
   prefixe_contrat: string;
   proprietaires_noms: string;
+  gestionnaire_id: string | null;
+  gestionnaire: {
+    id: string;
+    prenom: string;
+    nom: string;
+  } | null;
 };
 
 export type StatisticsReservation = {
@@ -18,6 +24,8 @@ export type StatisticsReservation = {
   prix_par_nuit: number;
   prix_total: number;
   source_paiement: string | null;
+  frais_optionnels_montant: number;
+  frais_optionnels_declares: boolean;
 };
 
 export type StatisticsEntry = {
@@ -30,6 +38,7 @@ export type StatisticsEntry = {
   adultes: number;
   prixNuit: number;
   revenus: number;
+  fraisOptionnelsDeclares: number;
   paiement: string;
   proprietaires: string;
 };
@@ -133,9 +142,23 @@ export const buildStatisticsPayload = (params: {
           ? reservation.prix_total / reservation.nb_nuits
           : 0;
     const prixNuit = round2(effectiveNightPrice);
+    const declaredOptionalFeesTotal = reservation.frais_optionnels_declares
+      ? round2(reservation.frais_optionnels_montant || 0)
+      : 0;
+    const totalSegmentNights = segments.reduce((sum, segment) => sum + segment.nights, 0);
+    let allocatedDeclaredOptionalFees = 0;
 
-    for (const segment of segments) {
+    for (let idx = 0; idx < segments.length; idx += 1) {
+      const segment = segments[idx];
       years.add(segment.start.getUTCFullYear());
+      const isLastSegment = idx === segments.length - 1;
+      const proportionalDeclaredOptionalFees =
+        totalSegmentNights > 0 ? round2((declaredOptionalFeesTotal * segment.nights) / totalSegmentNights) : 0;
+      const declaredOptionalFeesForSegment = isLastSegment
+        ? round2(declaredOptionalFeesTotal - allocatedDeclaredOptionalFees)
+        : proportionalDeclaredOptionalFees;
+      allocatedDeclaredOptionalFees = round2(allocatedDeclaredOptionalFees + declaredOptionalFeesForSegment);
+
       entriesByGite[gite.id].push({
         reservationId: reservation.id,
         giteId: gite.id,
@@ -146,6 +169,7 @@ export const buildStatisticsPayload = (params: {
         adultes: reservation.nb_adultes ?? 0,
         prixNuit,
         revenus: round2(prixNuit * segment.nights),
+        fraisOptionnelsDeclares: declaredOptionalFeesForSegment,
         paiement: (reservation.source_paiement ?? "Indéfini").trim() || "Indéfini",
         proprietaires: gite.proprietaires_noms,
       });

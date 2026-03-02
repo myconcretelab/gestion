@@ -10,7 +10,7 @@ import {
   computeChequeVirementNightsByGite,
   computeGiteStats,
   computeGlobalStats,
-  computeUrssafByOwner,
+  computeUrssafByManager,
   getMonthlyAverageCA,
   getMonthlyCAByGiteForYear,
   getMonthlyCAByYear,
@@ -196,7 +196,10 @@ const StatisticsPage = () => {
   const averageNights = useMemo(() => computeAverageNights(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
   const averageCA = useMemo(() => computeAverageCA(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
 
-  const urssafByOwner = useMemo(() => computeUrssafByOwner(entriesByGite, gites, selectedYear, selectedMonth), [entriesByGite, gites, selectedMonth, selectedYear]);
+  const urssafByManager = useMemo(
+    () => computeUrssafByManager(entriesByGite, gites, selectedYear, selectedMonth),
+    [entriesByGite, gites, selectedMonth, selectedYear]
+  );
   const chequeVirementNights = useMemo(
     () => computeChequeVirementNightsByGite(entriesByGite, gites, selectedYear, selectedMonth),
     [entriesByGite, gites, selectedMonth, selectedYear]
@@ -273,23 +276,24 @@ const StatisticsPage = () => {
 
         {showUrssaf ? (
           <div className="stats-urssaf">
-            <div className="stats-urssaf-grid">
-              {urssafByOwner.map((owner) => (
-                <div key={owner.owner} className="stats-urssaf-item">
-                  <span className="stats-urssaf-owner">{owner.owner}</span>
-                  <span className="stats-urssaf-value">{formatEuro(owner.amount)}</span>
-                  <button type="button" className="stats-copy-btn" onClick={() => copyRounded(owner.amount)}>
+            <div className="stats-urssaf-managers">
+              {urssafByManager.map((manager, index) => (
+                <div key={manager.manager} className="stats-urssaf-manager">
+                  <span className={`stats-urssaf-owner stats-urssaf-owner--${index % 4}`}>URSSAF {manager.manager}</span>
+                  <span className="stats-urssaf-value">{formatEuro(manager.amount)}</span>
+                  <button type="button" className="stats-copy-btn" onClick={() => copyRounded(manager.amount)}>
                     copier
                   </button>
                 </div>
               ))}
-              {urssafByOwner.length === 0 ? <div>Aucun montant URSSAF sur la période.</div> : null}
+              {urssafByManager.length === 0 ? <div>Aucun montant URSSAF sur la période.</div> : null}
             </div>
             <div className="stats-urssaf-nights">
               {gites.map((gite) => (
-                <span key={gite.id}>
-                  {gite.nom}: {Math.round(chequeVirementNights[gite.id] ?? 0)} nuitées
-                </span>
+                <div key={gite.id} className="stats-urssaf-night-item">
+                  <strong>{gite.nom}</strong>
+                  <span>{Math.round(chequeVirementNights[gite.id] ?? 0)} nuitées</span>
+                </div>
               ))}
             </div>
           </div>
@@ -313,13 +317,16 @@ const StatisticsPage = () => {
           </article>
         </div>
 
-        <div className="stats-tax-bar">
-          <div className="stats-tax-track">
-            <div className="stats-tax-fill" style={{ width: `${globalStats.totalCA > 0 ? 94 : 0}%` }} />
+        <div className="stats-tax-bar stats-tax-bar--header">
+          <div className="stats-tax-track-wrap">
+            <div className="stats-tax-track">
+              <div className="stats-tax-fill" style={{ width: `${globalStats.totalCA > 0 ? 94 : 0}%` }} />
+            </div>
+            <span className="stats-tax-percent">6% impôt</span>
           </div>
           <div className="stats-tax-values">
             <span>CA net: {formatEuro(globalStats.totalCA * 0.94)}</span>
-            <span>Impôt (6%): {formatEuro(globalStats.totalCA * 0.06)}</span>
+            <span>Impôt : {formatEuro(globalStats.totalCA * 0.06)}</span>
           </div>
         </div>
       </section>
