@@ -1,7 +1,13 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 import { Link } from "react-router-dom";
 import { mergeOptions } from "./shared/rentalForm";
+import {
+  computeUrssafByManager,
+  parseStatisticsPayload,
+  type ParsedStatisticsPayload,
+  type StatisticsPayload,
+} from "./statistics/statisticsUtils";
 import { apiFetch, isApiError } from "../utils/api";
 import { formatDate, formatEuro } from "../utils/format";
 import type { ContratOptions, Gite, Reservation, ReservationPlaceholder } from "../utils/types";
@@ -42,6 +48,10 @@ type ImportPreview = {
     matched_gite_nom: string | null;
     matched_gite_prefixe: string | null;
   }>;
+};
+
+type ReservationCreateResponse = Reservation & {
+  created_reservations?: Reservation[];
 };
 
 type ImportColumnField =
@@ -94,6 +104,14 @@ type ReservationOptionsPreview = {
 type ReservationFeesBreakdown = {
   declared: number;
   undeclared: number;
+};
+
+type UrssafDeclarationChecks = Record<string, true>;
+type UrssafDeclarationRow = {
+  year: number;
+  month: number;
+  manager_id: string;
+  declared_at: string;
 };
 
 const MONTHS = [
@@ -173,10 +191,26 @@ const normalizeReservationSource = (value: string | null | undefined) => {
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
+const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
+  `${year}-${pad2(month)}-${managerId}`;
+
 const toInputDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+};
+
+const getUtcStartOfToday = () => {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+};
+
+const isReservationInProgress = (reservation: Reservation) => {
+  const start = new Date(reservation.date_entree);
+  const end = new Date(reservation.date_sortie);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+  const todayUtcStart = getUtcStartOfToday();
+  return start.getTime() <= todayUtcStart && todayUtcStart < end.getTime();
 };
 
 const parseInputDate = (value: string): Date | null => {
@@ -467,6 +501,9 @@ const ReservationsPage = () => {
   const [importColumnMap, setImportColumnMap] = useState<Partial<Record<ImportColumnField, string>>>({});
   const [importing, setImporting] = useState(false);
   const [reservationOptions, setReservationOptions] = useState<Record<string, ContratOptions>>({});
+  const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [urssafDeclarationChecks, setUrssafDeclarationChecks] = useState<UrssafDeclarationChecks>({});
+  const [savingUrssafDeclarationByManagerId, setSavingUrssafDeclarationByManagerId] = useState<Record<string, boolean>>({});
 
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
   const reservationOptionsRef = useRef<Record<string, ContratOptions>>({});
@@ -481,6 +518,19 @@ const ReservationsPage = () => {
   useEffect(() => {
     reservationOptionsRef.current = reservationOptions;
   }, [reservationOptions]);
+
+  const loadStatistics = useCallback(async () => {
+    try {
+      const payload = await apiFetch<StatisticsPayload>("/statistics");
+      setStatisticsDataset(parseStatisticsPayload(payload));
+    } catch {
+      setStatisticsDataset(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatistics();
+  }, [loadStatistics]);
 
   useEffect(() => {
     return () => {
@@ -734,6 +784,7 @@ const ReservationsPage = () => {
       });
 
       setReservations((previous) => previous.map((item) => (item.id === rowId ? updated : item)));
+      void loadStatistics();
       setRowState((previous) => ({ ...previous, [rowId]: "saved" }));
       window.setTimeout(() => {
         setRowState((previous) => (previous[rowId] === "saved" ? { ...previous, [rowId]: "idle" } : previous));
@@ -951,6 +1002,7 @@ const ReservationsPage = () => {
     try {
       await apiFetch(`/reservations/${reservation.id}`, { method: "DELETE" });
       setReservations((previous) => previous.filter((item) => item.id !== reservation.id));
+      void loadStatistics();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -993,11 +1045,25 @@ const ReservationsPage = () => {
     }
 
     try {
-      const created = await apiFetch<Reservation>("/reservations", {
+      const created = await apiFetch<ReservationCreateResponse>("/reservations", {
         method: "POST",
         json: toPayload(draft),
       });
-      setReservations((previous) => [...previous, created]);
+      const createdReservations =
+        Array.isArray(created.created_reservations) && created.created_reservations.length > 0
+          ? created.created_reservations
+          : [created];
+      setReservations((previous) => {
+        const existingIds = new Set(previous.map((item) => item.id));
+        const next = [...previous];
+        for (const reservation of createdReservations) {
+          if (existingIds.has(reservation.id)) continue;
+          existingIds.add(reservation.id);
+          next.push(reservation);
+        }
+        return next;
+      });
+      void loadStatistics();
       if (activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB) {
         setNewRows((previous) => ({
           ...previous,
@@ -1014,9 +1080,8 @@ const ReservationsPage = () => {
     }
   };
 
-  const duplicateIntoNewRow = (reservation: Reservation) => {
+  const duplicateIntoNewRow = (reservation: Reservation, monthIndex: number, rowIndex: number) => {
     const source = toDraft(reservation);
-    const sourceMonth = new Date(reservation.date_entree).getUTCMonth() + 1;
     const shifted = recalcDraft({
       ...source,
       id: undefined,
@@ -1024,7 +1089,8 @@ const ReservationsPage = () => {
       date_sortie: source.date_sortie,
       hote_nom: `${source.hote_nom}`,
     });
-    setNewRows((previous) => ({ ...previous, [sourceMonth]: shifted }));
+    setNewRows((previous) => ({ ...previous, [monthIndex]: shifted }));
+    setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: rowIndex + 1 }));
   };
 
   const activeGite = gites.find((gite) => gite.id === activeTab) ?? null;
@@ -1276,6 +1342,128 @@ const ReservationsPage = () => {
 
   const isAllGitesTab = activeTab === ALL_GITES_TAB;
   const showUnassignedTab = reservations.some((reservation) => !reservation.gite_id);
+  const previousDeclarationPeriod = useMemo(() => {
+    const now = new Date();
+    const previousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1);
+    return {
+      year: previousMonth.getUTCFullYear(),
+      month: previousMonth.getUTCMonth() + 1,
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<UrssafDeclarationRow[]>(
+      `/urssaf-declarations?year=${previousDeclarationPeriod.year}&month=${previousDeclarationPeriod.month}`
+    )
+      .then((rows) => {
+        if (cancelled) return;
+        const loadedChecks: UrssafDeclarationChecks = {};
+        rows.forEach((item) => {
+          loadedChecks[buildUrssafDeclarationCheckKey(item.year, item.month, item.manager_id)] = true;
+        });
+        setUrssafDeclarationChecks((previous) => ({ ...previous, ...loadedChecks }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previousDeclarationPeriod.month, previousDeclarationPeriod.year]);
+
+  const previousMonthUrssafByManager = useMemo(() => {
+    if (!statisticsDataset) return [];
+    return computeUrssafByManager(
+      statisticsDataset.entriesByGite,
+      statisticsDataset.gites,
+      previousDeclarationPeriod.year,
+      previousDeclarationPeriod.month
+    );
+  }, [previousDeclarationPeriod.month, previousDeclarationPeriod.year, statisticsDataset]);
+
+  const managerNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    gites.forEach((gite) => {
+      const manager = gite.gestionnaire;
+      if (!manager?.id || map.has(manager.id)) return;
+      map.set(manager.id, `${manager.prenom} ${manager.nom}`.trim());
+    });
+    return map;
+  }, [gites]);
+
+  const activeManagerIds = useMemo(() => {
+    if (activeTab === UNASSIGNED_TAB || !activeTab) return [] as string[];
+    if (activeTab === ALL_GITES_TAB) {
+      return [...new Set(gites.map((gite) => gite.gestionnaire?.id).filter((managerId): managerId is string => Boolean(managerId)))];
+    }
+    const managerId = giteById.get(activeTab)?.gestionnaire?.id ?? null;
+    return managerId ? [managerId] : [];
+  }, [activeTab, giteById, gites]);
+
+  const urssafManagersForActiveTab = useMemo(() => {
+    if (activeManagerIds.length === 0) return [];
+    const totalsByManagerId = new Map(previousMonthUrssafByManager.map((item) => [item.managerId, item]));
+    return activeManagerIds
+      .map((managerId) => {
+        const found = totalsByManagerId.get(managerId);
+        if (found) return found;
+        return {
+          managerId,
+          manager: managerNameById.get(managerId) ?? "Gestionnaire",
+          amount: 0,
+        };
+      })
+      .sort((left, right) => right.amount - left.amount || left.manager.localeCompare(right.manager, "fr"));
+  }, [activeManagerIds, managerNameById, previousMonthUrssafByManager]);
+
+  const previousMonthVisible = year === previousDeclarationPeriod.year && monthsToRender.includes(previousDeclarationPeriod.month);
+  const pendingUrssafManagers = useMemo(
+    () =>
+      urssafManagersForActiveTab.filter(
+        (manager) =>
+          !urssafDeclarationChecks[
+            buildUrssafDeclarationCheckKey(previousDeclarationPeriod.year, previousDeclarationPeriod.month, manager.managerId)
+          ]
+      ),
+    [previousDeclarationPeriod.month, previousDeclarationPeriod.year, urssafDeclarationChecks, urssafManagersForActiveTab]
+  );
+  const showUrssafReminder = previousMonthVisible && pendingUrssafManagers.length > 0;
+  const urssafReminderPeriodLabel = `${MONTHS[previousDeclarationPeriod.month - 1]} ${previousDeclarationPeriod.year}`;
+
+  const markUrssafDeclarationDone = async (managerId: string) => {
+    if (savingUrssafDeclarationByManagerId[managerId]) return;
+    const key = buildUrssafDeclarationCheckKey(previousDeclarationPeriod.year, previousDeclarationPeriod.month, managerId);
+    setSavingUrssafDeclarationByManagerId((previous) => ({
+      ...previous,
+      [managerId]: true,
+    }));
+
+    try {
+      await apiFetch<UrssafDeclarationRow>("/urssaf-declarations", {
+        method: "POST",
+        json: {
+          year: previousDeclarationPeriod.year,
+          month: previousDeclarationPeriod.month,
+          manager_id: managerId,
+        },
+      });
+      setUrssafDeclarationChecks((previous) => ({
+        ...previous,
+        [key]: true,
+      }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingUrssafDeclarationByManagerId((previous) => ({
+        ...previous,
+        [managerId]: false,
+      }));
+    }
+  };
+
   const unresolvedImportRequiredFields =
     importPreview?.missing_required_fields.filter((field) => !(importColumnMap[field] ?? "").trim()) ?? [];
   const exportRows = useMemo(() => {
@@ -2038,6 +2226,36 @@ const ReservationsPage = () => {
 
         {!activeTab && <div className="field-hint">Créez un gîte pour commencer à saisir des réservations.</div>}
 
+        {activeTab && showUrssafReminder && (
+          <div className="reservations-urssaf-reminder">
+            <div className="reservations-urssaf-reminder__head">
+              <strong>Déclaration URSSAF en attente: {urssafReminderPeriodLabel}</strong>
+              <span>{formatPluralLabel(pendingUrssafManagers.length, "gestionnaire", "gestionnaires")} à valider</span>
+            </div>
+            <div className="reservations-urssaf-reminder__list">
+              {pendingUrssafManagers.map((manager) => (
+                <div key={manager.managerId} className="reservations-urssaf-reminder__item">
+                  <div>
+                    <div className="reservations-urssaf-reminder__manager">{manager.manager}</div>
+                    <div className="reservations-urssaf-reminder__amount">{formatEuro(manager.amount)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="table-action table-action--primary reservations-urssaf-reminder__check"
+                    onClick={() => {
+                      void markUrssafDeclarationDone(manager.managerId);
+                    }}
+                    title={`Valider la déclaration URSSAF de ${manager.manager}`}
+                    disabled={Boolean(savingUrssafDeclarationByManagerId[manager.managerId])}
+                  >
+                    Déclaré
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {activeTab &&
           monthsToRender.map((monthIndex) => {
             const list = reservationsByMonth.get(monthIndex) ?? [];
@@ -2067,9 +2285,16 @@ const ReservationsPage = () => {
                 groupedSummaries.set(key, monthSummary(group));
               });
             }
+            const isPreviousMonthSection = year === previousDeclarationPeriod.year && monthIndex === previousDeclarationPeriod.month;
+            const monthHasPendingUrssafReminder = showUrssafReminder && isPreviousMonthSection;
 
             return (
-              <section className={`reservations-month ${isAllGitesTab ? "reservations-month--all-gites" : ""}`} key={monthIndex}>
+              <section
+                className={`reservations-month ${isAllGitesTab ? "reservations-month--all-gites" : ""} ${
+                  monthHasPendingUrssafReminder ? "reservations-month--urssaf-pending" : ""
+                }`}
+                key={monthIndex}
+              >
                 <div className="reservations-month__head">
                   <div>
                     <div className="section-subtitle">{MONTHS[monthIndex - 1]}</div>
@@ -2146,6 +2371,7 @@ const ReservationsPage = () => {
                       const isDetailsExpanded = Boolean(expandedDetails[reservation.id]);
                       const isDetailsClosing = Boolean(closingDetails[reservation.id]);
                       const isRowSavedFading = Boolean(savedRowFade[reservation.id]);
+                      const isCurrentReservation = isReservationInProgress(reservation);
                       const rowStatusLabel = statusLabel(rowSaveState);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
 
@@ -2174,7 +2400,7 @@ const ReservationsPage = () => {
                           <tr
                             className={`reservations-row ${isEditing ? "reservations-row--editing" : ""} ${
                               isRowSavedFading ? "reservations-row--saved-fade" : ""
-                            }`}
+                            } ${isCurrentReservation ? "reservations-row--current" : ""}`}
                           >
                             <td className="reservations-insert-cell">
                               {addAllowed && (
@@ -2339,9 +2565,12 @@ const ReservationsPage = () => {
                               )}
                             </td>
                             <td className="reservations-col-nights">
-                              <span className={`nights-chip ${draft.nb_nuits <= 0 ? "nights-chip--muted" : ""}`}>
-                                {draft.nb_nuits > 0 ? formatNightsLabel(draft.nb_nuits) : "Dates invalides"}
-                              </span>
+                              <div className="reservations-nights-cell">
+                                <span className={`nights-chip ${draft.nb_nuits <= 0 ? "nights-chip--muted" : ""}`}>
+                                  {draft.nb_nuits > 0 ? formatNightsLabel(draft.nb_nuits) : "Dates invalides"}
+                                </span>
+                                {isCurrentReservation ? <span className="reservations-current-pill">En cours</span> : null}
+                              </div>
                             </td>
                             <td className="reservations-col-adults">
                               {isEditing || isInlineFieldActive(reservation.id, "nb_adultes") ? (
@@ -2707,7 +2936,7 @@ const ReservationsPage = () => {
                                   </button>
                                   <button
                                     className="table-action table-action--neutral"
-                                    onClick={() => duplicateIntoNewRow(reservation)}
+                                    onClick={() => duplicateIntoNewRow(reservation, monthIndex, rowIndex)}
                                     title="Dupliquer"
                                   >
                                     ⧉

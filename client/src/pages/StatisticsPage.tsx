@@ -278,7 +278,7 @@ const StatisticsPage = () => {
           <div className="stats-urssaf">
             <div className="stats-urssaf-managers">
               {urssafByManager.map((manager, index) => (
-                <div key={manager.manager} className="stats-urssaf-manager">
+                <div key={manager.managerId} className="stats-urssaf-manager">
                   <span className={`stats-urssaf-owner stats-urssaf-owner--${index % 4}`}>URSSAF {manager.manager}</span>
                   <span className="stats-urssaf-value">{formatEuro(manager.amount)}</span>
                   <button type="button" className="stats-copy-btn" onClick={() => copyRounded(manager.amount)}>
