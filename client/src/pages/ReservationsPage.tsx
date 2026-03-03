@@ -144,6 +144,17 @@ const DEFAULT_RESERVATION_SOURCE = "A définir";
 const ALL_GITES_TAB = "all-gites";
 const UNASSIGNED_TAB = "unassigned";
 const SERVICE_OPTION_KEYS: ReservationServiceOptionKey[] = ["draps", "linge_toilette", "menage", "depart_tardif", "chiens"];
+const INLINE_EDITABLE_FIELDS: InlineEditableField[] = [
+  "hote_nom",
+  "date_entree",
+  "date_sortie",
+  "nb_adultes",
+  "prix_par_nuit",
+  "prix_total",
+  "source_paiement",
+  "commentaire",
+];
+const INLINE_PICKER_FIELDS: InlineEditableField[] = ["date_entree", "date_sortie", "source_paiement"];
 const DETAILS_CLOSE_ANIMATION_MS = 280;
 const ROW_SAVED_FADE_MS = 900;
 
@@ -504,6 +515,7 @@ const ReservationsPage = () => {
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [urssafDeclarationChecks, setUrssafDeclarationChecks] = useState<UrssafDeclarationChecks>({});
   const [savingUrssafDeclarationByManagerId, setSavingUrssafDeclarationByManagerId] = useState<Record<string, boolean>>({});
+  const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
 
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
   const reservationOptionsRef = useRef<Record<string, ContratOptions>>({});
@@ -739,6 +751,69 @@ const ReservationsPage = () => {
     return Array.from({ length: 12 }, (_, idx) => idx + 1);
   }, [month]);
 
+  useEffect(() => {
+    if (!activeTab) {
+      setStuckMonthHeaders((previous) => (Object.keys(previous).length > 0 ? {} : previous));
+      return;
+    }
+
+    let rafId = 0;
+    const updateStickyMonthHeaders = () => {
+      const headers = Array.from(
+        document.querySelectorAll<HTMLElement>(".reservations-month__head[data-month-index]")
+      );
+      if (!headers.length) {
+        setStuckMonthHeaders((previous) => (Object.keys(previous).length > 0 ? {} : previous));
+        return;
+      }
+
+      const next: Record<number, boolean> = {};
+      for (const header of headers) {
+        const monthIndex = Number(header.dataset.monthIndex);
+        if (!Number.isFinite(monthIndex)) continue;
+        const section = header.closest<HTMLElement>(".reservations-month");
+        if (!section) continue;
+
+        const stickyTop = Number.parseFloat(window.getComputedStyle(header).top) || 0;
+        const headerRect = header.getBoundingClientRect();
+        const sectionRect = section.getBoundingClientRect();
+        const isPinnedToTop = headerRect.top <= stickyTop + 0.5 && sectionRect.top < stickyTop;
+        const hasRoomInSection = sectionRect.bottom > stickyTop + headerRect.height + 2;
+        next[monthIndex] = isPinnedToTop && hasRoomInSection;
+      }
+
+      setStuckMonthHeaders((previous) => {
+        const previousKeys = Object.keys(previous);
+        const nextKeys = Object.keys(next);
+        if (
+          previousKeys.length === nextKeys.length &&
+          nextKeys.every((key) => previous[Number(key)] === next[Number(key)])
+        ) {
+          return previous;
+        }
+        return next;
+      });
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        updateStickyMonthHeaders();
+      });
+    };
+
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
+  }, [activeTab, monthsToRender, reservationsByMonth]);
+
   const getRowDraft = (reservation: Reservation) => drafts[reservation.id] ?? toDraft(reservation);
 
   const setDraft = (rowId: string, updater: (previous: ReservationDraft) => ReservationDraft) => {
@@ -901,6 +976,19 @@ const ReservationsPage = () => {
 
   const isInlineFieldActive = (rowId: string, field: InlineEditableField) => inlineCell?.rowId === rowId && inlineCell.field === field;
 
+  const openNativePicker = (element: HTMLInputElement | HTMLSelectElement) => {
+    const picker = element as (HTMLInputElement | HTMLSelectElement) & { showPicker?: () => void };
+    try {
+      if (typeof picker.showPicker === "function") {
+        picker.showPicker();
+      } else {
+        element.click();
+      }
+    } catch {
+      element.click();
+    }
+  };
+
   const focusInlineField = (rowId: string, field: InlineEditableField, options: { openPicker?: boolean } = {}) => {
     const element = document.querySelector<HTMLInputElement | HTMLSelectElement>(
       `[data-inline-row-id="${rowId}"][data-inline-field="${field}"]`
@@ -913,16 +1001,9 @@ const ReservationsPage = () => {
       element.select();
     }
 
-    if (!options.openPicker || !(element instanceof HTMLSelectElement)) return;
-    const picker = element as HTMLSelectElement & { showPicker?: () => void };
-    try {
-      if (typeof picker.showPicker === "function") {
-        picker.showPicker();
-      } else {
-        element.click();
-      }
-    } catch {
-      element.click();
+    if (!options.openPicker) return;
+    if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) {
+      openNativePicker(element);
     }
   };
 
@@ -935,7 +1016,7 @@ const ReservationsPage = () => {
         [reservation.id]: previous[reservation.id] ?? toDraft(reservation),
       }));
     });
-    focusInlineField(reservation.id, field, { openPicker: field === "source_paiement" });
+    focusInlineField(reservation.id, field, { openPicker: INLINE_PICKER_FIELDS.includes(field) });
   };
 
   const closeInlineField = (reservation: Reservation, field: InlineEditableField) => {
@@ -970,7 +1051,7 @@ const ReservationsPage = () => {
       return;
     }
     setInlineCell({ rowId, field });
-    focusInlineField(rowId, field, { openPicker: field === "source_paiement" });
+    focusInlineField(rowId, field, { openPicker: INLINE_PICKER_FIELDS.includes(field) });
   };
 
   const handleInlineKeyDown = (
@@ -978,6 +1059,26 @@ const ReservationsPage = () => {
     reservation: Reservation,
     field: InlineEditableField
   ) => {
+    if (event.key === "Tab") {
+      const currentIndex = INLINE_EDITABLE_FIELDS.indexOf(field);
+      if (currentIndex >= 0) {
+        const targetIndex = event.shiftKey ? currentIndex - 1 : currentIndex + 1;
+        const nextField = INLINE_EDITABLE_FIELDS[targetIndex] ?? null;
+        if (nextField) {
+          event.preventDefault();
+          flushSync(() => {
+            setInlineCell({ rowId: reservation.id, field: nextField });
+            setDrafts((previous) => ({
+              ...previous,
+              [reservation.id]: previous[reservation.id] ?? toDraft(reservation),
+            }));
+          });
+          focusInlineField(reservation.id, nextField, { openPicker: nextField === "source_paiement" });
+        }
+      }
+      return;
+    }
+
     if (event.key === "Enter") {
       event.preventDefault();
       saveInlineField(reservation, field).catch((err) => setError((err as Error).message));
@@ -1641,6 +1742,16 @@ const ReservationsPage = () => {
     }, 0);
   };
 
+  const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) => {
+    window.setTimeout(() => {
+      const selector = `[data-grid-month="${monthIndex}"][data-grid-row="${rowIndex}"][data-grid-col="2"]`;
+      const element = document.querySelector<HTMLInputElement>(selector);
+      if (!element) return;
+      element.focus();
+      openNativePicker(element);
+    }, 0);
+  };
+
   const ensureEditableExistingRow = (reservation: Reservation) => {
     setEditingRows((previous) => ({ ...previous, [reservation.id]: true }));
     setDrafts((previous) => ({
@@ -1767,9 +1878,16 @@ const ReservationsPage = () => {
             data-grid-month={monthIndex}
             data-grid-row={newRowIndex}
             data-grid-col={1}
+            className="reservations-date-input"
             type="date"
             value={newRow.date_entree}
-            onChange={(event) => updateNewRow(monthIndex, (prev) => recalcDraft({ ...prev, date_entree: event.target.value }))}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              updateNewRow(monthIndex, (prev) => recalcDraft({ ...prev, date_entree: nextValue }));
+              if (nextValue) {
+                focusAndOpenGridDateSortiePicker(monthIndex, newRowIndex);
+              }
+            }}
             onKeyDown={(event) =>
               handleGridKeyDown(event, {
                 monthIndex,
@@ -1787,9 +1905,16 @@ const ReservationsPage = () => {
             data-grid-month={monthIndex}
             data-grid-row={newRowIndex}
             data-grid-col={2}
+            className="reservations-date-input"
             type="date"
             value={newRow.date_sortie}
-            onChange={(event) => updateNewRow(monthIndex, (prev) => recalcDraft({ ...prev, date_sortie: event.target.value }))}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              updateNewRow(monthIndex, (prev) => recalcDraft({ ...prev, date_sortie: nextValue }));
+              if (nextValue) {
+                focusGridCell(monthIndex, newRowIndex, 5);
+              }
+            }}
             onKeyDown={(event) =>
               handleGridKeyDown(event, {
                 monthIndex,
@@ -2295,7 +2420,10 @@ const ReservationsPage = () => {
                 }`}
                 key={monthIndex}
               >
-                <div className="reservations-month__head">
+                <div
+                  className={`reservations-month__head ${stuckMonthHeaders[monthIndex] ? "reservations-month__head--stuck" : ""}`}
+                  data-month-index={monthIndex}
+                >
                   <div>
                     <div className="section-subtitle">{MONTHS[monthIndex - 1]}</div>
                     <div className="reservations-month__meta">
@@ -2412,6 +2540,7 @@ const ReservationsPage = () => {
                                   +
                                 </button>
                               )}
+                              {isCurrentReservation ? <span className="reservations-current-pill reservations-current-pill--row-start">En cours</span> : null}
                             </td>
                             <td className="reservations-host-cell">
                               {isEditing || isInlineFieldActive(reservation.id, "hote_nom") ? (
@@ -2466,21 +2595,25 @@ const ReservationsPage = () => {
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
                                   data-grid-col={1}
+                                  className="reservations-date-input"
                                   data-inline-row-id={!isEditing ? reservation.id : undefined}
                                   data-inline-field={!isEditing ? "date_entree" : undefined}
                                   type="date"
                                   value={draft.date_entree}
                                   autoFocus={!isEditing}
                                   onChange={(event) => {
+                                    const nextValue = event.target.value;
                                     if (!isEditing) {
-                                      updateInlineField(reservation, (prev) =>
-                                        recalcDraft({ ...prev, date_entree: event.target.value })
-                                      );
+                                      updateInlineField(reservation, (prev) => recalcDraft({ ...prev, date_entree: nextValue }));
+                                      if (nextValue) {
+                                        openInlineField(reservation, "date_sortie");
+                                      }
                                       return;
                                     }
-                                    updateExistingField(reservation, (prev) =>
-                                      recalcDraft({ ...prev, date_entree: event.target.value })
-                                    );
+                                    updateExistingField(reservation, (prev) => recalcDraft({ ...prev, date_entree: nextValue }));
+                                    if (nextValue) {
+                                      focusAndOpenGridDateSortiePicker(monthIndex, gridRowIndex);
+                                    }
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
@@ -2518,21 +2651,25 @@ const ReservationsPage = () => {
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
                                   data-grid-col={2}
+                                  className="reservations-date-input"
                                   data-inline-row-id={!isEditing ? reservation.id : undefined}
                                   data-inline-field={!isEditing ? "date_sortie" : undefined}
                                   type="date"
                                   value={draft.date_sortie}
                                   autoFocus={!isEditing}
                                   onChange={(event) => {
+                                    const nextValue = event.target.value;
                                     if (!isEditing) {
-                                      updateInlineField(reservation, (prev) =>
-                                        recalcDraft({ ...prev, date_sortie: event.target.value })
-                                      );
+                                      updateInlineField(reservation, (prev) => recalcDraft({ ...prev, date_sortie: nextValue }));
+                                      if (nextValue) {
+                                        openInlineField(reservation, "prix_par_nuit");
+                                      }
                                       return;
                                     }
-                                    updateExistingField(reservation, (prev) =>
-                                      recalcDraft({ ...prev, date_sortie: event.target.value })
-                                    );
+                                    updateExistingField(reservation, (prev) => recalcDraft({ ...prev, date_sortie: nextValue }));
+                                    if (nextValue) {
+                                      focusGridCell(monthIndex, gridRowIndex, 5);
+                                    }
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
@@ -2569,7 +2706,6 @@ const ReservationsPage = () => {
                                 <span className={`nights-chip ${draft.nb_nuits <= 0 ? "nights-chip--muted" : ""}`}>
                                   {draft.nb_nuits > 0 ? formatNightsLabel(draft.nb_nuits) : "Dates invalides"}
                                 </span>
-                                {isCurrentReservation ? <span className="reservations-current-pill">En cours</span> : null}
                               </div>
                             </td>
                             <td className="reservations-col-adults">
