@@ -1,12 +1,20 @@
 import { Router } from "express";
 import prisma from "../db/prisma.js";
 import { buildStatisticsPayload } from "../services/statistics.js";
+import { toNumber } from "../utils/money.js";
 
 const router = Router();
 
+const hydrateStatisticsReservation = (reservation: any) => ({
+  ...reservation,
+  prix_par_nuit: toNumber(reservation.prix_par_nuit),
+  prix_total: toNumber(reservation.prix_total),
+  frais_optionnels_montant: toNumber(reservation.frais_optionnels_montant),
+});
+
 router.get("/", async (_req, res, next) => {
   try {
-    const [gites, reservations] = await Promise.all([
+    const [gites, rawReservations] = await Promise.all([
       prisma.gite.findMany({
         select: {
           id: true,
@@ -43,6 +51,7 @@ router.get("/", async (_req, res, next) => {
         orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
       }),
     ]);
+    const reservations = rawReservations.map(hydrateStatisticsReservation);
 
     res.json(
       buildStatisticsPayload({
