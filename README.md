@@ -77,6 +77,7 @@ SEED_SKIP_PDF=1 npm run seed
 - `PLAYWRIGHT_BROWSERS_PATH=/home/USER/.cache/ms-playwright` (recommande pour eviter les re-telechargements, utilisez un chemin absolu)
 - (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` (et conserve `node_modules`)
 - (optionnel) `BASIC_AUTH_PASSWORD=...`
+- (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
 - (optionnel) `RESTART_CMD=...` ou `ALWAYSDATA_API_TOKEN` + `ALWAYSDATA_ACCOUNT` + `ALWAYSDATA_SITE_ID` pour que `./update` redemarre le serveur
 
 Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
@@ -150,3 +151,4 @@ Par defaut, la source SQLite vient de `DATABASE_URL` (ou `DATABASE_URL_SQLITE`) 
 - Les PDF sont stockés sous `server/data/pdfs/YYYY/MM/`.
 - La numérotation est automatique `{PREFIX}-{YYYY}-{000001}` par gîte et par année.
 - Auth simple activable via `BASIC_AUTH_PASSWORD`.
+- Auth machine-à-machine possible via `Authorization: Bearer <INTEGRATION_API_TOKEN>`.
