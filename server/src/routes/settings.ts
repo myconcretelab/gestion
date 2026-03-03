@@ -56,6 +56,13 @@ const sourcePayloadSchema = z.object({
   exclude_summary: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional().default(null),
   is_active: z.boolean().optional().default(true),
 });
+const sourceImportItemSchema = sourcePayloadSchema.extend({
+  id: z.string().trim().min(1).optional(),
+  ordre: z.coerce.number().int().min(0).optional(),
+});
+const sourceImportSchema = z.object({
+  sources: z.array(sourceImportItemSchema).min(1),
+});
 
 const harPayloadSchema = z.object({
   har: z.any(),
@@ -68,6 +75,8 @@ const cronConfigSchema = z.object({
   minute: z.number().int().min(0).max(59),
   run_on_start: z.boolean().optional(),
 });
+const cronImportSchema = z.union([cronConfigSchema, z.object({ config: cronConfigSchema })]);
+type SourceImportItem = z.infer<typeof sourceImportItemSchema>;
 
 const parseIsoDateToUtc = (iso: string) => {
   const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -442,6 +451,152 @@ router.post("/ical-sources", async (req, res, next) => {
   }
 });
 
+router.get("/ical-sources/export", async (_req, res, next) => {
+  try {
+    const sources = await listIcalSources(false);
+    const exportRows = sources.map((source) => ({
+      id: source.id,
+      gite_id: source.gite_id,
+      type: source.type,
+      url: source.url,
+      include_summary: source.include_summary,
+      exclude_summary: source.exclude_summary,
+      is_active: source.is_active,
+      ordre: source.ordre,
+    }));
+
+    res.json({
+      version: 1,
+      exported_at: new Date().toISOString(),
+      sources: exportRows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/ical-sources/import", async (req, res, next) => {
+  try {
+    const payload = sourceImportSchema.parse(req.body);
+    const rows = payload.sources;
+
+    const seenIds = new Set<string>();
+    const seenKeys = new Set<string>();
+    for (const row of rows) {
+      if (row.id) {
+        if (seenIds.has(row.id)) {
+          return res.status(400).json({ error: `Identifiant source dupliqué dans l'import: ${row.id}` });
+        }
+        seenIds.add(row.id);
+      }
+
+      const key = `${row.gite_id}::${row.url}`;
+      if (seenKeys.has(key)) {
+        return res.status(400).json({ error: `URL iCal dupliquée dans l'import pour le même gîte: ${row.url}` });
+      }
+      seenKeys.add(key);
+    }
+
+    const giteIds = [...new Set(rows.map((row) => row.gite_id))];
+    const existingGites = await prisma.gite.findMany({
+      where: { id: { in: giteIds } },
+      select: { id: true },
+    });
+    if (existingGites.length !== giteIds.length) {
+      return res.status(400).json({ error: "L'import contient un gîte introuvable." });
+    }
+
+    const existingSources = await prisma.icalSource.findMany({
+      select: { id: true, gite_id: true, url: true, ordre: true },
+    });
+    const existingById = new Map(existingSources.map((source) => [source.id, source]));
+    const existingByKey = new Map(existingSources.map((source) => [`${source.gite_id}::${source.url}`, source]));
+
+    const nextOrderByGite = new Map<string, number>();
+    for (const source of existingSources) {
+      const current = nextOrderByGite.get(source.gite_id) ?? 0;
+      if (source.ordre + 1 > current) {
+        nextOrderByGite.set(source.gite_id, source.ordre + 1);
+      }
+    }
+
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    const normalizeSourceData = (row: SourceImportItem) => {
+      const data = {
+        gite_id: row.gite_id,
+        type: row.type,
+        url: row.url,
+        include_summary: row.include_summary ?? null,
+        exclude_summary: row.exclude_summary ?? null,
+        is_active: row.is_active,
+      };
+
+      if (typeof row.ordre === "number") {
+        return { ...data, ordre: row.ordre };
+      }
+
+      return data;
+    };
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        const key = `${row.gite_id}::${row.url}`;
+        const existingByRowId = row.id ? existingById.get(row.id) ?? null : null;
+        const existingByRowKey = existingByKey.get(key) ?? null;
+        const target = existingByRowId ?? existingByRowKey;
+
+        if (target) {
+          await tx.icalSource.update({
+            where: { id: target.id },
+            data: normalizeSourceData(row),
+          });
+
+          updatedCount += 1;
+
+          if (`${target.gite_id}::${target.url}` !== key) {
+            existingByKey.delete(`${target.gite_id}::${target.url}`);
+          }
+          const updatedEntry = {
+            id: target.id,
+            gite_id: row.gite_id,
+            url: row.url,
+            ordre: typeof row.ordre === "number" ? row.ordre : target.ordre,
+          };
+          existingById.set(target.id, updatedEntry);
+          existingByKey.set(key, updatedEntry);
+          continue;
+        }
+
+        const nextOrder = nextOrderByGite.get(row.gite_id) ?? 0;
+        const createData = {
+          ...(row.id ? { id: row.id } : {}),
+          ...normalizeSourceData(row),
+          ordre: typeof row.ordre === "number" ? row.ordre : nextOrder,
+        };
+
+        const created = await tx.icalSource.create({
+          data: createData,
+          select: { id: true, gite_id: true, url: true, ordre: true },
+        });
+
+        createdCount += 1;
+        nextOrderByGite.set(row.gite_id, Math.max(nextOrder + 1, created.ordre + 1));
+        existingById.set(created.id, created);
+        existingByKey.set(`${created.gite_id}::${created.url}`, created);
+      }
+    });
+
+    res.json({
+      created_count: createdCount,
+      updated_count: updatedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put("/ical-sources/:id", async (req, res, next) => {
   try {
     const payload = sourcePayloadSchema.parse(req.body);
@@ -522,6 +677,28 @@ router.put("/ical/cron", async (req, res, next) => {
 
 router.get("/ical/cron/config", (_req, res) => {
   res.json(getIcalSyncCronConfig());
+});
+
+router.get("/ical/cron/export", (_req, res) => {
+  res.json({
+    version: 1,
+    exported_at: new Date().toISOString(),
+    config: getIcalSyncCronConfig(),
+  });
+});
+
+router.post("/ical/cron/import", async (req, res, next) => {
+  try {
+    const payload = cronImportSchema.parse(req.body);
+    const patch = "config" in payload ? payload.config : payload;
+    const config = await updateIcalSyncCronConfig(patch as Partial<IcalCronConfig>);
+    res.json({
+      config,
+      state: getIcalCronState(),
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post("/ical/preview", async (_req, res, next) => {

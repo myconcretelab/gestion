@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { apiFetch } from "../utils/api";
 import type { Gestionnaire, Gite, IcalSource } from "../utils/types";
 
@@ -122,6 +122,23 @@ type IcalSourceDraft = {
   is_active: boolean;
 };
 
+type IcalSourcesExportPayload = {
+  version?: number;
+  exported_at?: string;
+  sources: unknown[];
+};
+
+type IcalSourcesImportResult = {
+  created_count: number;
+  updated_count: number;
+};
+
+type IcalCronExportPayload = {
+  version?: number;
+  exported_at?: string;
+  config: IcalCronConfig;
+};
+
 const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
   gite_id: "",
   type: "Airbnb",
@@ -209,8 +226,11 @@ const SettingsPage = () => {
   const [savingSourceId, setSavingSourceId] = useState<string | null>(null);
   const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
   const [creatingSource, setCreatingSource] = useState(false);
+  const [exportingSources, setExportingSources] = useState(false);
+  const [importingSources, setImportingSources] = useState(false);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
+  const importSourcesInputRef = useRef<HTMLInputElement | null>(null);
 
   const [icalPreview, setIcalPreview] = useState<IcalPreviewResult | null>(null);
   const [icalCronState, setIcalCronState] = useState<IcalCronState | null>(null);
@@ -223,8 +243,11 @@ const SettingsPage = () => {
   const [savingCron, setSavingCron] = useState(false);
   const [loadingIcalPreview, setLoadingIcalPreview] = useState(false);
   const [syncingIcal, setSyncingIcal] = useState(false);
+  const [exportingCron, setExportingCron] = useState(false);
+  const [importingCron, setImportingCron] = useState(false);
   const [icalError, setIcalError] = useState<string | null>(null);
   const [icalNotice, setIcalNotice] = useState<string | null>(null);
+  const importCronInputRef = useRef<HTMLInputElement | null>(null);
 
   const [harPayload, setHarPayload] = useState<unknown | null>(null);
   const [harFileName, setHarFileName] = useState<string>("");
@@ -434,6 +457,77 @@ const SettingsPage = () => {
     }
   };
 
+  const triggerSourceImport = () => {
+    importSourcesInputRef.current?.click();
+  };
+
+  const exportIcalSources = async () => {
+    setExportingSources(true);
+    setSourceError(null);
+    setSourceNotice(null);
+    try {
+      const payload = await apiFetch<IcalSourcesExportPayload>("/settings/ical-sources/export");
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ical-sources-export-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setSourceNotice(`${payload.sources.length} source(s) exportée(s).`);
+    } catch (error: any) {
+      setSourceError(error.message);
+    } finally {
+      setExportingSources(false);
+    }
+  };
+
+  const importIcalSourcesFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setImportingSources(true);
+    setSourceError(null);
+    setSourceNotice(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+
+      let sourcesPayload: unknown[];
+      if (Array.isArray(parsed)) {
+        sourcesPayload = parsed;
+      } else if (
+        parsed &&
+        typeof parsed === "object" &&
+        Array.isArray((parsed as { sources?: unknown[] }).sources)
+      ) {
+        sourcesPayload = (parsed as { sources: unknown[] }).sources;
+      } else {
+        throw new Error("Format invalide: utilisez un JSON exporté depuis l'application.");
+      }
+
+      const result = await apiFetch<IcalSourcesImportResult>("/settings/ical-sources/import", {
+        method: "POST",
+        json: { sources: sourcesPayload },
+      });
+      await loadSources();
+      setSourceNotice(`Import terminé: ${result.created_count} créée(s), ${result.updated_count} mise(s) à jour.`);
+    } catch (error: any) {
+      if (error instanceof SyntaxError) {
+        setSourceError("Le fichier n'est pas un JSON valide.");
+      } else {
+        setSourceError(error.message);
+      }
+    } finally {
+      input.value = "";
+      setImportingSources(false);
+    }
+  };
+
   const runIcalPreview = async () => {
     setLoadingIcalPreview(true);
     setIcalError(null);
@@ -467,6 +561,79 @@ const SettingsPage = () => {
       setIcalError(error.message);
     } finally {
       setSavingCron(false);
+    }
+  };
+
+  const triggerCronImport = () => {
+    importCronInputRef.current?.click();
+  };
+
+  const exportIcalCronConfig = async () => {
+    setExportingCron(true);
+    setIcalError(null);
+    setIcalNotice(null);
+    try {
+      const payload = await apiFetch<IcalCronExportPayload>("/settings/ical/cron/export");
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ical-cron-export-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setIcalNotice("Paramètres iCal exportés.");
+    } catch (error: any) {
+      setIcalError(error.message);
+    } finally {
+      setExportingCron(false);
+    }
+  };
+
+  const importIcalCronConfigFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setImportingCron(true);
+    setIcalError(null);
+    setIcalNotice(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+
+      let payload: unknown;
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        "config" in parsed &&
+        typeof (parsed as { config?: unknown }).config === "object"
+      ) {
+        payload = { config: (parsed as { config: unknown }).config };
+      } else if (parsed && typeof parsed === "object") {
+        payload = parsed;
+      } else {
+        throw new Error("Format invalide: utilisez un JSON exporté depuis l'application.");
+      }
+
+      const response = await apiFetch<{ config: IcalCronConfig; state: IcalCronState }>("/settings/ical/cron/import", {
+        method: "POST",
+        json: payload,
+      });
+      setIcalCronState(response.state);
+      setCronDraft(response.config);
+      setIcalNotice("Paramètres iCal importés.");
+    } catch (error: any) {
+      if (error instanceof SyntaxError) {
+        setIcalError("Le fichier n'est pas un JSON valide.");
+      } else {
+        setIcalError(error.message);
+      }
+    } finally {
+      input.value = "";
+      setImportingCron(false);
     }
   };
 
@@ -743,8 +910,33 @@ const SettingsPage = () => {
       <div className="card">
         <div className="settings-managers-header">
           <div className="section-title">Sources iCal configurées</div>
-          <div className="field-hint">{sources.length} source(s)</div>
+          <div className="gites-tools">
+            <div className="field-hint">{sources.length} source(s)</div>
+            <button
+              type="button"
+              className="table-action table-action--neutral gites-tool-button"
+              onClick={() => void exportIcalSources()}
+              disabled={exportingSources || importingSources || loadingSources}
+            >
+              {exportingSources ? "Export..." : "Exporter"}
+            </button>
+            <button
+              type="button"
+              className="table-action table-action--neutral gites-tool-button"
+              onClick={triggerSourceImport}
+              disabled={importingSources || exportingSources || loadingSources}
+            >
+              {importingSources ? "Import..." : "Importer"}
+            </button>
+          </div>
         </div>
+        <input
+          ref={importSourcesInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={(event) => void importIcalSourcesFromFile(event)}
+          style={{ display: "none" }}
+        />
         {loadingSources ? (
           <div className="field-hint">Chargement...</div>
         ) : sources.length === 0 ? (
@@ -843,7 +1035,34 @@ const SettingsPage = () => {
       </div>
 
       <div className="card">
-        <div className="section-title">Synchronisation iCal</div>
+        <div className="settings-managers-header">
+          <div className="section-title">Synchronisation iCal</div>
+          <div className="gites-tools">
+            <button
+              type="button"
+              className="table-action table-action--neutral gites-tool-button"
+              onClick={() => void exportIcalCronConfig()}
+              disabled={exportingCron || importingCron || savingCron || syncingIcal || loadingIcalPreview}
+            >
+              {exportingCron ? "Export..." : "Exporter paramètres"}
+            </button>
+            <button
+              type="button"
+              className="table-action table-action--neutral gites-tool-button"
+              onClick={triggerCronImport}
+              disabled={importingCron || exportingCron || savingCron || syncingIcal || loadingIcalPreview}
+            >
+              {importingCron ? "Import..." : "Importer paramètres"}
+            </button>
+          </div>
+        </div>
+        <input
+          ref={importCronInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={(event) => void importIcalCronConfigFromFile(event)}
+          style={{ display: "none" }}
+        />
         <div className="field-hint">
           Cron: {icalCronState?.config.enabled ? "activé" : "désactivé"}.
           {" "}
