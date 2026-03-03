@@ -62,6 +62,7 @@ const sourceImportItemSchema = sourcePayloadSchema.extend({
 });
 const sourceImportSchema = z.object({
   sources: z.array(sourceImportItemSchema).min(1),
+  gite_mapping: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
 });
 
 const harPayloadSchema = z.object({
@@ -77,6 +78,14 @@ const cronConfigSchema = z.object({
 });
 const cronImportSchema = z.union([cronConfigSchema, z.object({ config: cronConfigSchema })]);
 type SourceImportItem = z.infer<typeof sourceImportItemSchema>;
+type SourceImportPayload = z.infer<typeof sourceImportSchema>;
+type SourceImportUnknownGite = {
+  source_gite_id: string;
+  count: number;
+  sample_type: string | null;
+  sample_url: string | null;
+  mapped_to: string | null;
+};
 
 const parseIsoDateToUtc = (iso: string) => {
   const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -394,6 +403,82 @@ const buildImportLogResponse = (limitRaw: unknown) => {
   };
 };
 
+const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
+  const gites = await prisma.gite.findMany({
+    select: { id: true },
+  });
+  const localGiteIds = new Set(gites.map((gite) => gite.id));
+  const mapping = payload.gite_mapping ?? {};
+
+  const mapping_errors = Object.entries(mapping)
+    .filter(([, targetGiteId]) => !localGiteIds.has(targetGiteId))
+    .map(([sourceGiteId, targetGiteId]) => ({
+      source_gite_id: sourceGiteId,
+      mapped_to: targetGiteId,
+      message: `Le gîte cible ${targetGiteId} est introuvable.`,
+    }));
+
+  const unknownBySourceId = new Map<
+    string,
+    {
+      count: number;
+      sample_type: string | null;
+      sample_url: string | null;
+    }
+  >();
+
+  const rows = payload.sources.map((row) => {
+    if (localGiteIds.has(row.gite_id)) {
+      return {
+        ...row,
+        resolved_gite_id: row.gite_id,
+      };
+    }
+
+    const previous = unknownBySourceId.get(row.gite_id) ?? {
+      count: 0,
+      sample_type: null,
+      sample_url: null,
+    };
+    unknownBySourceId.set(row.gite_id, {
+      count: previous.count + 1,
+      sample_type: previous.sample_type ?? row.type ?? null,
+      sample_url: previous.sample_url ?? row.url ?? null,
+    });
+
+    const mapped = mapping[row.gite_id];
+    return {
+      ...row,
+      resolved_gite_id: mapped && localGiteIds.has(mapped) ? mapped : null,
+    };
+  });
+
+  const unknown_gites: SourceImportUnknownGite[] = [...unknownBySourceId.entries()].map(([sourceGiteId, item]) => {
+    const mapped = mapping[sourceGiteId];
+    return {
+      source_gite_id: sourceGiteId,
+      count: item.count,
+      sample_type: item.sample_type,
+      sample_url: item.sample_url,
+      mapped_to: mapped && localGiteIds.has(mapped) ? mapped : null,
+    };
+  });
+
+  const unresolved_gites = unknown_gites.filter((item) => !item.mapped_to);
+  const ready_count = rows.filter((row) => Boolean(row.resolved_gite_id)).length;
+
+  return {
+    rows,
+    unknown_gites,
+    unresolved_gites,
+    unresolved_count: unresolved_gites.length,
+    mapping_errors,
+    total_count: payload.sources.length,
+    ready_count,
+    can_import: unresolved_gites.length === 0 && mapping_errors.length === 0,
+  };
+};
+
 router.get("/ical-sources", async (_req, res, next) => {
   try {
     const sources = await listIcalSources(false);
@@ -478,7 +563,24 @@ router.get("/ical-sources/export", async (_req, res, next) => {
 router.post("/ical-sources/import", async (req, res, next) => {
   try {
     const payload = sourceImportSchema.parse(req.body);
-    const rows = payload.sources;
+    const analysis = await analyzeIcalSourcesImport(payload);
+    if (analysis.mapping_errors.length > 0) {
+      return res.status(400).json({
+        error: "Le mapping des gîtes contient des cibles introuvables.",
+        mapping_errors: analysis.mapping_errors,
+      });
+    }
+    if (analysis.unresolved_count > 0) {
+      return res.status(400).json({
+        error: "Certains gîtes importés sont introuvables. Analysez et attribuez-les avant l'import.",
+        unknown_gites: analysis.unknown_gites,
+        unresolved_count: analysis.unresolved_count,
+      });
+    }
+    const rows = analysis.rows.map((row) => ({
+      ...row,
+      gite_id: row.resolved_gite_id as string,
+    }));
 
     const seenIds = new Set<string>();
     const seenKeys = new Set<string>();
@@ -591,6 +693,23 @@ router.post("/ical-sources/import", async (req, res, next) => {
     res.json({
       created_count: createdCount,
       updated_count: updatedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/ical-sources/import/preview", async (req, res, next) => {
+  try {
+    const payload = sourceImportSchema.parse(req.body);
+    const analysis = await analyzeIcalSourcesImport(payload);
+    res.json({
+      total_count: analysis.total_count,
+      ready_count: analysis.ready_count,
+      unresolved_count: analysis.unresolved_count,
+      unknown_gites: analysis.unknown_gites,
+      mapping_errors: analysis.mapping_errors,
+      can_import: analysis.can_import,
     });
   } catch (error) {
     next(error);
