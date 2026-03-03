@@ -48,6 +48,20 @@ export type Gite = {
   updatedAt?: string;
 };
 
+export type IcalSource = {
+  id: string;
+  gite_id: string;
+  type: string;
+  url: string;
+  include_summary?: string | null;
+  exclude_summary?: string | null;
+  is_active: boolean;
+  ordre: number;
+  createdAt?: string;
+  updatedAt?: string;
+  gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre">;
+};
+
 export type ReservationPlaceholder = {
   id: string;
   abbreviation: string;

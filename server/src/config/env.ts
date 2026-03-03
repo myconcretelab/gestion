@@ -42,6 +42,20 @@ if (normalizedPlaywrightBrowsersPath) {
 }
 
 const port = Number(process.env.PORT ?? 4000);
+const parseBooleanEnv = (value: string | undefined, fallback: boolean) => {
+  if (!value) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+};
+const parseIntegerEnv = (value: string | undefined, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const rounded = Math.round(parsed);
+  if (rounded < min || rounded > max) return fallback;
+  return rounded;
+};
 
 export const env = {
   PORT: Number.isNaN(port) ? 4000 : port,
@@ -51,4 +65,8 @@ export const env = {
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   DATA_DIR: process.env.DATA_DIR ?? path.join(process.cwd(), "data"),
   PDF_SUBDIR: process.env.PDF_SUBDIR ?? "pdfs",
+  ICAL_SYNC_ENABLED: parseBooleanEnv(process.env.ICAL_SYNC_ENABLED, true),
+  ICAL_SYNC_RUN_ON_START: parseBooleanEnv(process.env.ICAL_SYNC_RUN_ON_START, false),
+  ICAL_SYNC_HOUR: parseIntegerEnv(process.env.ICAL_SYNC_HOUR, 3, 0, 23),
+  ICAL_SYNC_MINUTE: parseIntegerEnv(process.env.ICAL_SYNC_MINUTE, 15, 0, 59),
 };
