@@ -61,6 +61,7 @@ export const env = {
   PORT: Number.isNaN(port) ? 4000 : port,
   NODE_ENV: process.env.NODE_ENV ?? "development",
   BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD ?? "",
+  INTEGRATION_API_TOKEN: process.env.INTEGRATION_API_TOKEN ?? "",
   DEFAULT_ARRHES_RATE: Number(process.env.DEFAULT_ARRHES_RATE ?? 0.2),
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   DATA_DIR: process.env.DATA_DIR ?? path.join(process.cwd(), "data"),

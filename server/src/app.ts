@@ -32,9 +32,22 @@ export const createApp = () => {
     })
   );
 
+  const parseBearerToken = (authorizationHeader: string) => {
+    const [type, token] = authorizationHeader.split(" ");
+    if (type !== "Bearer" || !token) return null;
+    return token.trim();
+  };
+
   if (env.BASIC_AUTH_PASSWORD) {
     app.use((req, res, next) => {
       const header = req.headers.authorization ?? "";
+      if (env.INTEGRATION_API_TOKEN) {
+        const bearer = parseBearerToken(header);
+        if (bearer === env.INTEGRATION_API_TOKEN) {
+          return next();
+        }
+      }
+
       const [type, encoded] = header.split(" ");
       if (type !== "Basic" || !encoded) {
         res.setHeader("WWW-Authenticate", "Basic");
