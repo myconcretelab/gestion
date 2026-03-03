@@ -1046,6 +1046,115 @@ router.post("/", async (req, res, next) => {
   }
 });
 
+router.post("/:id/split", async (req, res, next) => {
+  try {
+    const existing = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      include: {
+        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+        placeholder: { select: { id: true, abbreviation: true, label: true } },
+      },
+    });
+    if (!existing) return res.status(404).json({ error: "Réservation introuvable" });
+
+    if (!existing.gite_id && !existing.placeholder_id) {
+      return res.status(400).json({ error: "La réservation ne peut pas être scindée sans gîte ou placeholder." });
+    }
+
+    const segments = splitReservationByMonth(existing.date_entree, existing.date_sortie);
+    if (segments.length <= 1) {
+      return res.status(400).json({ error: "La réservation ne chevauche pas plusieurs mois." });
+    }
+
+    const association: ReservationAssociation = {
+      gite_id: existing.gite_id ?? null,
+      placeholder_id: existing.placeholder_id ?? null,
+    };
+
+    const conflictById = new Map<string, any>();
+    for (const segment of segments) {
+      const conflicts = await findConflicts({
+        association,
+        dateEntree: segment.dateEntree,
+        dateSortie: segment.dateSortie,
+        excludeId: existing.id,
+      });
+      for (const conflict of conflicts) {
+        conflictById.set(conflict.id, conflict);
+      }
+    }
+
+    if (conflictById.size > 0) {
+      return res.status(409).json(buildConflictPayload([...conflictById.values()]));
+    }
+
+    const priceTotalsBySegment = allocateAmountByNights(toNumber(existing.prix_total), segments);
+    const optionalFeesBySegment = allocateAmountByNights(toNumber(existing.frais_optionnels_montant), segments);
+    const encodedOptions = encodeJsonField(fromJsonString<OptionsInput>(existing.options, {}));
+
+    const createdReservations = await prisma.$transaction(async (tx) => {
+      const created: any[] = [];
+      for (let index = 0; index < segments.length; index += 1) {
+        const segment = segments[index];
+        const prixTotal = priceTotalsBySegment[index] ?? 0;
+        const prixParNuit = segment.nbNuits > 0 ? round2(prixTotal / segment.nbNuits) : 0;
+
+        const createdReservation = await tx.reservation.create({
+          data: {
+            gite_id: association.gite_id,
+            placeholder_id: association.placeholder_id,
+            hote_nom: existing.hote_nom,
+            date_entree: segment.dateEntree,
+            date_sortie: segment.dateSortie,
+            nb_nuits: segment.nbNuits,
+            nb_adultes: existing.nb_adultes,
+            prix_par_nuit: prixParNuit,
+            prix_total: prixTotal,
+            source_paiement: existing.source_paiement,
+            commentaire: existing.commentaire,
+            frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
+            frais_optionnels_libelle: existing.frais_optionnels_libelle,
+            frais_optionnels_declares: existing.frais_optionnels_declares,
+            options: encodedOptions,
+          },
+          include: {
+            gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+            placeholder: { select: { id: true, abbreviation: true, label: true } },
+          },
+        });
+
+        created.push(createdReservation);
+      }
+
+      const firstCreatedId = created[0]?.id ?? null;
+      if (firstCreatedId) {
+        await tx.contrat.updateMany({
+          where: { reservation_id: existing.id },
+          data: { reservation_id: firstCreatedId },
+        });
+        await tx.facture.updateMany({
+          where: { reservation_id: existing.id },
+          data: { reservation_id: firstCreatedId },
+        });
+      }
+
+      await tx.reservation.delete({
+        where: { id: existing.id },
+      });
+
+      return created;
+    });
+
+    const hydratedCreated = createdReservations.map(hydrateReservation);
+    return res.status(201).json({
+      ...hydratedCreated[0],
+      created_reservations: hydratedCreated,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.put("/:id", async (req, res, next) => {
   try {
     const existing = await prisma.reservation.findUnique({ where: { id: req.params.id } });

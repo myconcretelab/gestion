@@ -1140,20 +1140,35 @@ button.warning {
 
 .reservations-save-state {
   margin-top: 4px;
-  font-size: 0.72rem;
+  margin-left: auto;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  font-size: 0.68rem;
   font-weight: 700;
+  line-height: 1.2;
   color: #374151;
 }
 
 .reservations-save-state--saving {
+  border-color: #7dd3fc;
+  background: #e0f2fe;
   color: #0369a1;
 }
 
 .reservations-save-state--saved {
+  border-color: #86efac;
+  background: #dcfce7;
   color: #166534;
 }
 
 .reservations-save-state--error {
+  border-color: #fca5a5;
+  background: #fee2e2;
   color: #b91c1c;
 }
 
