@@ -1,14 +1,17 @@
 node_modules
 .env
 .env.local
+.env.update
 .DS_Store
 server/data
 server/prisma/dev.db
 server/prisma/dev.db-journal
 server/prisma/dev.db-wal
 server/prisma/dev.db-shm
+server/prisma/source.db
 client/dist
 server/dist
+.cache/
 server/.cache
 server/generated
 
