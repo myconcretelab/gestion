@@ -49,6 +49,7 @@ model Gite {
   updatedAt                            DateTime @updatedAt
 
   gestionnaire                         Gestionnaire? @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
+  ical_sources                         IcalSource[]
   contrats                             Contrat[]
   factures                             Facture[]
   reservations                         Reservation[]
@@ -71,6 +72,26 @@ model Gestionnaire {
 
   @@unique([prenom, nom])
   @@map("gestionnaires")
+}
+
+model IcalSource {
+  id              String   @id @default(cuid())
+  gite_id         String
+  type            String
+  url             String
+  include_summary String?
+  exclude_summary String?
+  is_active       Boolean  @default(true)
+  ordre           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  gite            Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@unique([gite_id, url], map: "ical_sources_gite_url_key")
+  @@index([gite_id, ordre], map: "ical_sources_gite_id_ordre_idx")
+  @@index([is_active], map: "ical_sources_is_active_idx")
+  @@map("ical_sources")
 }
 
 model Contrat {

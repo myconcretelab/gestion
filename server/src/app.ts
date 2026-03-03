@@ -10,11 +10,12 @@ import contractsRouter from "./routes/contracts.js";
 import invoicesRouter from "./routes/invoices.js";
 import reservationsRouter from "./routes/reservations.js";
 import statisticsRouter from "./routes/statistics.js";
+import settingsRouter from "./routes/settings.js";
 
 export const createApp = () => {
   const app = express();
 
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "20mb" }));
   app.use(
     cors({
       origin: env.CLIENT_ORIGIN,
@@ -58,6 +59,7 @@ export const createApp = () => {
   app.use("/api/invoices", invoicesRouter);
   app.use("/api/reservations", reservationsRouter);
   app.use("/api/statistics", statisticsRouter);
+  app.use("/api/settings", settingsRouter);
 
   const clientDistCandidates = [
     process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,

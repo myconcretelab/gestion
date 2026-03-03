@@ -18,7 +18,8 @@
     "prod:migrate": "npm run prisma:use:postgres && node scripts/prisma.mjs migrate deploy --schema prisma/postgres/schema.prisma",
     "prod:generate": "npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma",
     "db:studio": "npm run prisma:use:sqlite && node scripts/prisma.mjs studio",
-    "db:migrate:sqlite-to-postgres": "npm run prisma:use:sqlite && node scripts/prisma.mjs generate --schema prisma/schema.sqlite.prisma && npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma && tsx scripts/migrate-sqlite-to-postgres.ts --from=sqlite --to=postgres"
+    "db:migrate:sqlite-to-postgres": "npm run prisma:use:sqlite && node scripts/prisma.mjs generate --schema prisma/schema.sqlite.prisma && npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma && tsx scripts/migrate-sqlite-to-postgres.ts --from=sqlite --to=postgres",
+    "import:what-today:icals": "tsx scripts/import-what-today-icals.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
@@ -26,6 +27,7 @@
     "date-fns": "^3.6.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "node-ical": "^0.20.1",
     "playwright": "^1.48.2",
     "zod": "^3.23.8"
   },
