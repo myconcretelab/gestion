@@ -133,11 +133,23 @@ type IcalSourcesImportResult = {
   updated_count: number;
 };
 
+type IcalSourcesImportPreviewUnknownExample = {
+  source_id: string | null;
+  type: string | null;
+  url: string | null;
+};
+
 type IcalSourcesImportPreviewUnknown = {
   source_gite_id: string;
   count: number;
   sample_type: string | null;
   sample_url: string | null;
+  sample_source_id?: string | null;
+  sample_gite_nom?: string | null;
+  sample_gite_prefixe?: string | null;
+  sample_types?: string[];
+  sample_hosts?: string[];
+  examples?: IcalSourcesImportPreviewUnknownExample[];
   mapped_to: string | null;
 };
 
@@ -193,6 +205,56 @@ const normalizeTextKey = (value: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "");
+
+const uniqueNonEmpty = (values: Array<string | null | undefined>) =>
+  [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+
+const truncateMiddle = (value: string, maxLength = 92) => {
+  if (value.length <= maxLength) return value;
+  const keep = Math.max(8, Math.floor((maxLength - 1) / 2));
+  return `${value.slice(0, keep)}...${value.slice(-keep)}`;
+};
+
+const extractUrlHost = (url: string | null | undefined) => {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+const extractIcalUrlIdentifiers = (url: string | null | undefined) => {
+  if (!url) return [];
+  const labels: string[] = [];
+  const airbnb = url.match(/calendar\/ical\/(\d+)\.ics/i)?.[1] ?? url.match(/multicalendar\/(\d+)/i)?.[1] ?? null;
+  if (airbnb) labels.push(`Airbnb #${airbnb}`);
+
+  const abritel = url.match(/\/icalendar\/([a-z0-9]+)\.ics/i)?.[1] ?? null;
+  if (abritel) labels.push(`Abritel #${abritel}`);
+
+  const gdfCode = url.match(/\/(\d{2}G\d{3,})\//i)?.[1] ?? null;
+  if (gdfCode) labels.push(`GDF ${gdfCode.toUpperCase()}`);
+
+  const gdfCalendar = url.match(/ical_([a-z0-9]{8,})\.ics/i)?.[1] ?? null;
+  if (gdfCalendar) labels.push(`Cal #${gdfCalendar.slice(0, 10)}...`);
+
+  return uniqueNonEmpty(labels);
+};
+
+const getUnknownImportExamples = (item: IcalSourcesImportPreviewUnknown): IcalSourcesImportPreviewUnknownExample[] => {
+  if (Array.isArray(item.examples) && item.examples.length > 0) return item.examples.slice(0, 4);
+  if (item.sample_url) {
+    return [
+      {
+        source_id: item.sample_source_id ?? null,
+        type: item.sample_type ?? null,
+        url: item.sample_url,
+      },
+    ];
+  }
+  return [];
+};
 
 const SOURCE_COLOR_BY_KEY: Record<string, string> = {
   [normalizeTextKey("Airbnb")]: "#E11D48",
@@ -1078,39 +1140,78 @@ const SettingsPage = () => {
                     <tr>
                       <th>Gîte import</th>
                       <th>Lignes</th>
-                      <th>Exemple</th>
+                      <th>Indices</th>
                       <th>Attribuer à</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sourceImportPreview.unknown_gites.map((item) => (
-                      <tr key={item.source_gite_id}>
-                        <td>{item.source_gite_id}</td>
-                        <td>{item.count}</td>
-                        <td>
-                          {(item.sample_type || "-") + " | " + (item.sample_url || "-")}
-                        </td>
-                        <td>
-                          <select
-                            value={sourceImportMapping[item.source_gite_id] ?? item.mapped_to ?? ""}
-                            onChange={(event) =>
-                              setSourceImportMapping((previous) => ({
-                                ...previous,
-                                [item.source_gite_id]: event.target.value,
-                              }))
-                            }
-                            disabled={analyzingSourcesImport || importingSources}
-                          >
-                            <option value="">Choisir un gîte</option>
-                            {gites.map((gite) => (
-                              <option key={gite.id} value={gite.id}>
-                                {gite.nom} ({gite.prefixe_contrat})
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
+                    {sourceImportPreview.unknown_gites.map((item) => {
+                      const examples = getUnknownImportExamples(item);
+                      const types = uniqueNonEmpty(
+                        (item.sample_types && item.sample_types.length > 0 ? item.sample_types : [item.sample_type]) as Array<
+                          string | null | undefined
+                        >
+                      );
+                      const hosts = uniqueNonEmpty(
+                        (item.sample_hosts && item.sample_hosts.length > 0
+                          ? item.sample_hosts
+                          : examples.map((example) => extractUrlHost(example.url))) as Array<string | null | undefined>
+                      );
+                      const identifiers = uniqueNonEmpty(
+                        examples.flatMap((example) => extractIcalUrlIdentifiers(example.url))
+                      );
+                      const importLabel = item.sample_gite_nom
+                        ? `${item.sample_gite_nom}${item.sample_gite_prefixe ? ` (${item.sample_gite_prefixe})` : ""}`
+                        : null;
+
+                      return (
+                        <tr key={item.source_gite_id}>
+                          <td>
+                            <div style={{ display: "grid", gap: 2 }}>
+                              <div>{importLabel || item.source_gite_id}</div>
+                              {importLabel ? <div className="field-hint">ID: {item.source_gite_id}</div> : null}
+                            </div>
+                          </td>
+                          <td>{item.count}</td>
+                          <td>
+                            <div style={{ display: "grid", gap: 4 }}>
+                              {types.length > 0 ? <div>Type: {types.join(", ")}</div> : null}
+                              {hosts.length > 0 ? <div>Domaine: {hosts.join(", ")}</div> : null}
+                              {identifiers.length > 0 ? <div>Identifiant: {identifiers.join(" | ")}</div> : null}
+                              {item.sample_source_id ? <div className="field-hint">Source: {item.sample_source_id}</div> : null}
+                              {examples.length > 0 ? (
+                                <div className="field-hint" style={{ display: "grid", gap: 2 }}>
+                                  {examples.map((example, index) => (
+                                    <div key={`${item.source_gite_id}-example-${index}`}>
+                                      {(example.type || "-") + " | " + truncateMiddle(example.url || "-")}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td>
+                            <select
+                              value={sourceImportMapping[item.source_gite_id] ?? item.mapped_to ?? ""}
+                              onChange={(event) =>
+                                setSourceImportMapping((previous) => ({
+                                  ...previous,
+                                  [item.source_gite_id]: event.target.value,
+                                }))
+                              }
+                              disabled={analyzingSourcesImport || importingSources}
+                            >
+                              <option value="">Choisir un gîte</option>
+                              {gites.map((gite) => (
+                                <option key={gite.id} value={gite.id}>
+                                  {gite.nom} ({gite.prefixe_contrat})
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 {sourceImportUnresolvedCount > 0 ? (

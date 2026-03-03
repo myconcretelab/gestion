@@ -59,6 +59,8 @@ const sourcePayloadSchema = z.object({
 const sourceImportItemSchema = sourcePayloadSchema.extend({
   id: z.string().trim().min(1).optional(),
   ordre: z.coerce.number().int().min(0).optional(),
+  gite_nom: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  gite_prefixe: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
 });
 const sourceImportSchema = z.object({
   sources: z.array(sourceImportItemSchema).min(1),
@@ -79,12 +81,32 @@ const cronConfigSchema = z.object({
 const cronImportSchema = z.union([cronConfigSchema, z.object({ config: cronConfigSchema })]);
 type SourceImportItem = z.infer<typeof sourceImportItemSchema>;
 type SourceImportPayload = z.infer<typeof sourceImportSchema>;
+type SourceImportUnknownExample = {
+  source_id: string | null;
+  type: string | null;
+  url: string | null;
+};
 type SourceImportUnknownGite = {
   source_gite_id: string;
   count: number;
   sample_type: string | null;
   sample_url: string | null;
+  sample_source_id: string | null;
+  sample_gite_nom: string | null;
+  sample_gite_prefixe: string | null;
+  sample_types: string[];
+  sample_hosts: string[];
+  examples: SourceImportUnknownExample[];
   mapped_to: string | null;
+};
+
+const extractUrlHost = (url: string | null | undefined) => {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
 };
 
 const parseIsoDateToUtc = (iso: string) => {
@@ -424,6 +446,12 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
       count: number;
       sample_type: string | null;
       sample_url: string | null;
+      sample_source_id: string | null;
+      sample_gite_nom: string | null;
+      sample_gite_prefixe: string | null;
+      sample_types: Set<string>;
+      sample_hosts: Set<string>;
+      examples: SourceImportUnknownExample[];
     }
   >();
 
@@ -439,11 +467,33 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
       count: 0,
       sample_type: null,
       sample_url: null,
+      sample_source_id: null,
+      sample_gite_nom: null,
+      sample_gite_prefixe: null,
+      sample_types: new Set<string>(),
+      sample_hosts: new Set<string>(),
+      examples: [],
     };
+    const normalizedType = row.type.trim();
+    const host = extractUrlHost(row.url);
+    if (normalizedType) previous.sample_types.add(normalizedType);
+    if (host) previous.sample_hosts.add(host);
+    if (previous.examples.length < 4 && !previous.examples.some((example) => example.url === row.url)) {
+      previous.examples.push({
+        source_id: row.id ?? null,
+        type: row.type ?? null,
+        url: row.url ?? null,
+      });
+    }
+
     unknownBySourceId.set(row.gite_id, {
+      ...previous,
       count: previous.count + 1,
       sample_type: previous.sample_type ?? row.type ?? null,
       sample_url: previous.sample_url ?? row.url ?? null,
+      sample_source_id: previous.sample_source_id ?? row.id ?? null,
+      sample_gite_nom: previous.sample_gite_nom ?? row.gite_nom ?? null,
+      sample_gite_prefixe: previous.sample_gite_prefixe ?? row.gite_prefixe ?? null,
     });
 
     const mapped = mapping[row.gite_id];
@@ -460,6 +510,12 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
       count: item.count,
       sample_type: item.sample_type,
       sample_url: item.sample_url,
+      sample_source_id: item.sample_source_id,
+      sample_gite_nom: item.sample_gite_nom,
+      sample_gite_prefixe: item.sample_gite_prefixe,
+      sample_types: [...item.sample_types],
+      sample_hosts: [...item.sample_hosts],
+      examples: item.examples,
       mapped_to: mapped && localGiteIds.has(mapped) ? mapped : null,
     };
   });
@@ -542,6 +598,8 @@ router.get("/ical-sources/export", async (_req, res, next) => {
     const exportRows = sources.map((source) => ({
       id: source.id,
       gite_id: source.gite_id,
+      gite_nom: source.gite?.nom ?? null,
+      gite_prefixe: source.gite?.prefixe_contrat ?? null,
       type: source.type,
       url: source.url,
       include_summary: source.include_summary,
