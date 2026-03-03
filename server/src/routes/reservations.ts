@@ -67,6 +67,12 @@ type ReservationComputation = {
   prixTotal: number;
 };
 
+type ReservationPeriodSegment = {
+  dateEntree: Date;
+  dateSortie: Date;
+  nbNuits: number;
+};
+
 type ImportRawRow = {
   index: number;
   data: Record<string, unknown>;
@@ -255,6 +261,51 @@ const computeReservationFields = (payload: z.infer<typeof reservationPayloadSche
     prixParNuit: prices.prixParNuit,
     prixTotal: prices.prixTotal,
   };
+};
+
+const splitReservationByMonth = (dateEntree: Date, dateSortie: Date): ReservationPeriodSegment[] => {
+  if (dateSortie.getTime() <= dateEntree.getTime()) return [];
+
+  const segments: ReservationPeriodSegment[] = [];
+  let cursor = dateEntree;
+
+  while (cursor.getTime() < dateSortie.getTime()) {
+    const monthStartNext = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    const segmentEnd = monthStartNext.getTime() < dateSortie.getTime() ? monthStartNext : dateSortie;
+    const nbNuits = Math.round((segmentEnd.getTime() - cursor.getTime()) / DAY_MS);
+
+    if (nbNuits > 0) {
+      segments.push({
+        dateEntree: cursor,
+        dateSortie: segmentEnd,
+        nbNuits,
+      });
+    }
+
+    cursor = segmentEnd;
+  }
+
+  return segments;
+};
+
+const allocateAmountByNights = (total: number, segments: ReservationPeriodSegment[]) => {
+  if (segments.length === 0) return [] as number[];
+
+  const roundedTotal = round2(total);
+  const totalNights = segments.reduce((sum, segment) => sum + segment.nbNuits, 0);
+  if (totalNights <= 0) return segments.map(() => 0);
+
+  let allocated = 0;
+  return segments.map((segment, index) => {
+    if (index === segments.length - 1) {
+      const remaining = round2(roundedTotal - allocated);
+      return remaining === 0 ? 0 : remaining;
+    }
+
+    const amount = round2((roundedTotal * segment.nbNuits) / totalNights);
+    allocated = round2(allocated + amount);
+    return amount;
+  });
 };
 
 const normalizeAssociation = (payload: z.infer<typeof reservationPayloadSchema>): ReservationAssociation => {
@@ -926,40 +977,70 @@ router.post("/", async (req, res, next) => {
     const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
 
     const computed = computeReservationFields(payload);
-    const conflicts = await findConflicts({
-      association,
-      dateEntree: computed.dateEntree,
-      dateSortie: computed.dateSortie,
-    });
-    if (conflicts.length > 0) {
-      return res.status(409).json(buildConflictPayload(conflicts));
+    const segments = splitReservationByMonth(computed.dateEntree, computed.dateSortie);
+    if (segments.length === 0) {
+      throw new Error("La date de sortie doit être postérieure à la date d'entrée.");
+    }
+    const conflictById = new Map<string, any>();
+
+    for (const segment of segments) {
+      const conflicts = await findConflicts({
+        association,
+        dateEntree: segment.dateEntree,
+        dateSortie: segment.dateSortie,
+      });
+      for (const conflict of conflicts) {
+        conflictById.set(conflict.id, conflict);
+      }
     }
 
-    const reservation = await prisma.reservation.create({
-      data: {
-        gite_id: association.gite_id,
-        placeholder_id: association.placeholder_id,
-        hote_nom: payload.hote_nom,
-        date_entree: computed.dateEntree,
-        date_sortie: computed.dateSortie,
-        nb_nuits: computed.nbNuits,
-        nb_adultes: payload.nb_adultes,
-        prix_par_nuit: computed.prixParNuit,
-        prix_total: computed.prixTotal,
-        source_paiement,
-        commentaire: payload.commentaire ?? null,
-        frais_optionnels_montant: round2(payload.frais_optionnels_montant ?? 0),
-        frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
-        frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
-        options: encodeJsonField(payload.options ?? {}),
-      },
-      include: {
-        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
-        placeholder: { select: { id: true, abbreviation: true, label: true } },
-      },
-    });
+    if (conflictById.size > 0) {
+      return res.status(409).json(buildConflictPayload([...conflictById.values()]));
+    }
 
-    return res.status(201).json(hydrateReservation(reservation));
+    const priceTotalsBySegment = allocateAmountByNights(computed.prixTotal, segments);
+    const optionalFeesBySegment = allocateAmountByNights(round2(payload.frais_optionnels_montant ?? 0), segments);
+    const encodedOptions = encodeJsonField(payload.options ?? {});
+
+    const createdReservations = await prisma.$transaction(
+      segments.map((segment, index) => {
+        const prixTotal = priceTotalsBySegment[index] ?? 0;
+        const prixParNuit = segment.nbNuits > 0 ? round2(prixTotal / segment.nbNuits) : 0;
+        return prisma.reservation.create({
+          data: {
+            gite_id: association.gite_id,
+            placeholder_id: association.placeholder_id,
+            hote_nom: payload.hote_nom,
+            date_entree: segment.dateEntree,
+            date_sortie: segment.dateSortie,
+            nb_nuits: segment.nbNuits,
+            nb_adultes: payload.nb_adultes,
+            prix_par_nuit: prixParNuit,
+            prix_total: prixTotal,
+            source_paiement,
+            commentaire: payload.commentaire ?? null,
+            frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
+            frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
+            frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
+            options: encodedOptions,
+          },
+          include: {
+            gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+            placeholder: { select: { id: true, abbreviation: true, label: true } },
+          },
+        });
+      })
+    );
+
+    const hydratedCreated = createdReservations.map(hydrateReservation);
+    if (hydratedCreated.length > 1) {
+      return res.status(201).json({
+        ...hydratedCreated[0],
+        created_reservations: hydratedCreated,
+      });
+    }
+
+    return res.status(201).json(hydratedCreated[0]);
   } catch (err) {
     next(err);
   }

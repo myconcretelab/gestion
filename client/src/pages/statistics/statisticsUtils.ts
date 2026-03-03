@@ -33,6 +33,12 @@ export type StatisticsPayload = {
   availableYears: number[];
 };
 
+export type UrssafManagerAmount = {
+  managerId: string;
+  manager: string;
+  amount: number;
+};
+
 export type ParsedStatisticsEntry = StatisticsEntry & {
   debutDate: Date;
 };
@@ -310,12 +316,13 @@ export const computeUrssafByManager = (
   selectedYear: PeriodYear,
   selectedMonth: PeriodMonth
 ) => {
-  const byManager: Record<string, { manager: string; amount: number }> = {};
+  const byManager: Record<string, UrssafManagerAmount> = {};
 
   for (const gite of gites) {
     if (!gite.gestionnaire?.id) continue;
     if (!byManager[gite.gestionnaire.id]) {
       byManager[gite.gestionnaire.id] = {
+        managerId: gite.gestionnaire.id,
         manager: `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}`.trim(),
         amount: 0,
       };
@@ -332,7 +339,6 @@ export const computeUrssafByManager = (
   }
 
   return Object.values(byManager)
-    .map((item) => ({ manager: item.manager, amount: item.amount }))
     .sort((left, right) => right.amount - left.amount || left.manager.localeCompare(right.manager, "fr"));
 };
 

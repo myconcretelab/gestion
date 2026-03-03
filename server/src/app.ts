@@ -11,6 +11,7 @@ import invoicesRouter from "./routes/invoices.js";
 import reservationsRouter from "./routes/reservations.js";
 import statisticsRouter from "./routes/statistics.js";
 import settingsRouter from "./routes/settings.js";
+import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
 
 export const createApp = () => {
   const app = express();
@@ -60,6 +61,7 @@ export const createApp = () => {
   app.use("/api/reservations", reservationsRouter);
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/urssaf-declarations", urssafDeclarationsRouter);
 
   const clientDistCandidates = [
     process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,

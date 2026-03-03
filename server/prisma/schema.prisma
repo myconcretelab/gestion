@@ -68,10 +68,28 @@ model Gestionnaire {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  gites     Gite[]
+  gites               Gite[]
+  urssaf_declarations UrssafDeclaration[]
 
   @@unique([prenom, nom])
   @@map("gestionnaires")
+}
+
+model UrssafDeclaration {
+  id             String       @id @default(cuid())
+  year           Int
+  month          Int
+  gestionnaire_id String
+  declared_at    DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  gestionnaire   Gestionnaire @relation(fields: [gestionnaire_id], references: [id], onDelete: Cascade)
+
+  @@unique([year, month, gestionnaire_id], map: "urssaf_declarations_period_manager_key")
+  @@index([year, month], map: "urssaf_declarations_period_idx")
+  @@index([gestionnaire_id], map: "urssaf_declarations_manager_idx")
+  @@map("urssaf_declarations")
 }
 
 model IcalSource {

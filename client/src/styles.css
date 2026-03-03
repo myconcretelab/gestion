@@ -570,12 +570,85 @@ button.warning {
   margin-bottom: 10px;
 }
 
+.reservations-urssaf-reminder {
+  margin: 8px 0 14px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid #f5c2c7;
+  background: linear-gradient(135deg, #fff3f4 0%, #fff9f2 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.reservations-urssaf-reminder__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #7f1d1d;
+}
+
+.reservations-urssaf-reminder__head strong {
+  font-size: 0.9rem;
+}
+
+.reservations-urssaf-reminder__head span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #9f1239;
+}
+
+.reservations-urssaf-reminder__list {
+  display: grid;
+  gap: 8px;
+}
+
+.reservations-urssaf-reminder__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid #fecdd3;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.reservations-urssaf-reminder__manager {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #881337;
+}
+
+.reservations-urssaf-reminder__amount {
+  font-size: 0.8rem;
+  color: #4c1d95;
+  font-weight: 700;
+}
+
+.reservations-urssaf-reminder__check {
+  min-width: 92px;
+}
+
+@media (max-width: 720px) {
+  .reservations-urssaf-reminder__item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .reservations-month {
   margin-top: 20px;
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 14px;
   background: #ffffff;
+}
+
+.reservations-month--urssaf-pending {
+  border-color: #fda4af;
+  box-shadow: 0 0 0 3px rgba(251, 113, 133, 0.16);
 }
 
 .reservations-month:first-of-type {
@@ -732,6 +805,28 @@ button.warning {
 
 .reservations-col-fees {
   white-space: nowrap;
+}
+
+.reservations-nights-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.reservations-current-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-size: 0.64rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .reservations-fees-cell {
@@ -897,6 +992,15 @@ button.warning {
 
 .reservations-row--editing td {
   background: #fffbeb;
+}
+
+.reservations-row--current:not(.reservations-row--editing) td {
+  background: #f0fdf4;
+}
+
+.reservations-row--current .reservations-total-value,
+.reservations-row--current .reservations-source-inline-trigger {
+  font-weight: 700;
 }
 
 .reservations-row--saved-fade td {
