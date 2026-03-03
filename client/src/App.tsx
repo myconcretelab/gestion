@@ -77,7 +77,7 @@ const App = () => {
       </header>
       <main className="content">
         <Routes>
-          <Route path="/" element={<Navigate to="/contrats" replace />} />
+          <Route path="/" element={<Navigate to="/reservations" replace />} />
           <Route path="/gites" element={<GitesPage />} />
           <Route path="/contrats" element={<ContratsListPage />} />
           <Route path="/contrats/nouveau" element={<ContratFormPage />} />
