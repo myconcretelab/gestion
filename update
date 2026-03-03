@@ -21,6 +21,17 @@ load_env_file "$ROOT_DIR/.env"
 load_env_file "$ROOT_DIR/.env.production"
 load_env_file "$ROOT_DIR/.env.update"
 
+reset_generated_prisma_schema() {
+  local schema_path="server/prisma/postgres/schema.prisma"
+  if ! git ls-files --error-unmatch "$schema_path" >/dev/null 2>&1; then
+    return
+  fi
+  if ! git diff --quiet -- "$schema_path" || ! git diff --cached --quiet -- "$schema_path"; then
+    echo "==> Reset generated Prisma schema (${schema_path})"
+    git restore --staged --worktree -- "$schema_path"
+  fi
+}
+
 has_local_changes() {
   if ! git diff --quiet; then
     return 0
@@ -33,6 +44,8 @@ has_local_changes() {
   fi
   return 1
 }
+
+reset_generated_prisma_schema
 
 STASH_CREATED=0
 if has_local_changes; then
