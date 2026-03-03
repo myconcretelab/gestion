@@ -21,8 +21,37 @@ load_env_file "$ROOT_DIR/.env"
 load_env_file "$ROOT_DIR/.env.production"
 load_env_file "$ROOT_DIR/.env.update"
 
+has_local_changes() {
+  if ! git diff --quiet; then
+    return 0
+  fi
+  if ! git diff --cached --quiet; then
+    return 0
+  fi
+  if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+STASH_CREATED=0
+if has_local_changes; then
+  STASH_CREATED=1
+  STASH_MESSAGE="update-auto-stash-$(date +%Y%m%d-%H%M%S)"
+  echo "==> Local changes detected, stash before pull"
+  git stash push --include-untracked -m "$STASH_MESSAGE" >/dev/null
+fi
+
 echo "==> Pull latest code"
 git pull
+
+if [[ "$STASH_CREATED" == "1" ]]; then
+  echo "==> Reapply stashed changes"
+  if ! git stash pop --index; then
+    echo "==> Warning: stash could not be fully reapplied automatically. Resolve conflicts, then run 'git stash list' if needed."
+    exit 1
+  fi
+fi
 
 NPM_INSTALL_MODE="${NPM_INSTALL_MODE:-ci}"
 

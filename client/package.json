@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "test": "TEST_FILES=$(find tests -type f -name \"*.test.ts\" 2>/dev/null); if [ -z \"$TEST_FILES\" ]; then echo \"No client test files found. Skipping.\"; exit 0; fi; node --import tsx --test $TEST_FILES",
     "preview": "vite preview"
   },
   "dependencies": {

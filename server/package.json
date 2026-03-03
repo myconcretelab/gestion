@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npm run dev:db && tsx watch --clear-screen=false src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test --test-concurrency=1 \"tests/**/*.test.ts\"",
+    "test": "TEST_FILES=$(find tests -type f -name \"*.test.ts\" 2>/dev/null); if [ -z \"$TEST_FILES\" ]; then echo \"No server test files found. Skipping.\"; exit 0; fi; node --import tsx --test --test-concurrency=1 $TEST_FILES",
     "start": "node dist/index.js",
     "migrate": "npm run dev:db",
     "seed": "node scripts/seed.mjs",
