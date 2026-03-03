@@ -467,6 +467,26 @@ const statusLabel = (state: SaveState) => {
   return "";
 };
 
+const needsMonthSplit = (entryValue: string, exitValue: string) => {
+  const entry = new Date(entryValue);
+  const exit = new Date(exitValue);
+  if (Number.isNaN(entry.getTime()) || Number.isNaN(exit.getTime())) return false;
+  if (exit.getTime() <= entry.getTime()) return false;
+
+  let segmentCount = 0;
+  let cursor = entry;
+  while (cursor.getTime() < exit.getTime()) {
+    const monthStartNext = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    const segmentEndTs = Math.min(monthStartNext.getTime(), exit.getTime());
+    if (segmentEndTs <= cursor.getTime()) break;
+    segmentCount += 1;
+    if (segmentCount > 1) return true;
+    cursor = new Date(segmentEndTs);
+  }
+
+  return false;
+};
+
 const formatNightsLabel = (nights: number) => `${nights} nuit${nights > 1 ? "s" : ""}`;
 const formatPluralLabel = (count: number, singular: string, plural: string) => `${count} ${count === 1 ? singular : plural}`;
 const csvEscape = (value: unknown) => {
@@ -501,6 +521,7 @@ const ReservationsPage = () => {
   const [savedRowFade, setSavedRowFade] = useState<Record<string, boolean>>({});
   const [inlineCell, setInlineCell] = useState<InlineCell | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [splittingId, setSplittingId] = useState<string | null>(null);
   const [newRows, setNewRows] = useState<Record<number, ReservationDraft>>({});
   const [insertRowIndexByMonth, setInsertRowIndexByMonth] = useState<Record<number, number | null>>({});
   const [importOpen, setImportOpen] = useState(false);
@@ -828,6 +849,17 @@ const ReservationsPage = () => {
     });
   };
 
+  const clearRowFeedback = (rowId: string) => {
+    setRowState((previous) => {
+      if ((previous[rowId] ?? "idle") === "idle") return previous;
+      return { ...previous, [rowId]: "idle" };
+    });
+    setRowError((previous) => {
+      if (!previous[rowId]) return previous;
+      return { ...previous, [rowId]: "" };
+    });
+  };
+
   const persistExistingRow = async (
     rowId: string,
     draft: ReservationDraft,
@@ -952,6 +984,7 @@ const ReservationsPage = () => {
     options: { autosave?: boolean } = { autosave: true }
   ) => {
     const rowId = reservation.id;
+    clearRowFeedback(rowId);
     setEditingRows((previous) => ({ ...previous, [rowId]: true }));
     setDraft(rowId, updater);
     if (options.autosave !== false) scheduleSave(rowId);
@@ -959,6 +992,7 @@ const ReservationsPage = () => {
 
   const updateInlineField = (reservation: Reservation, updater: (draft: ReservationDraft) => ReservationDraft) => {
     const rowId = reservation.id;
+    clearRowFeedback(rowId);
     setDrafts((previous) => ({
       ...previous,
       [rowId]: updater(previous[rowId] ?? toDraft(reservation)),
@@ -1022,6 +1056,7 @@ const ReservationsPage = () => {
   const closeInlineField = (reservation: Reservation, field: InlineEditableField) => {
     setInlineCell((previous) => (previous?.rowId === reservation.id && previous.field === field ? null : previous));
     clearDraft(reservation.id);
+    clearRowFeedback(reservation.id);
   };
 
   const hasReservationChanges = (reservation: Reservation, draft: ReservationDraft, optionValue?: ContratOptions) =>
@@ -1036,6 +1071,7 @@ const ReservationsPage = () => {
     const rowId = reservation.id;
     const draft = draftOverride ?? draftsRef.current[rowId] ?? toDraft(reservation);
     if (!hasInlineChanges(reservation, draft)) {
+      clearRowFeedback(rowId);
       setInlineCell((previous) => (previous?.rowId === rowId && previous.field === field ? null : previous));
       clearDraft(rowId);
       return;
@@ -1108,6 +1144,56 @@ const ReservationsPage = () => {
       setError((err as Error).message);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const splitReservationByMonth = async (reservation: Reservation) => {
+    if (splittingId) return;
+    if (!needsMonthSplit(reservation.date_entree, reservation.date_sortie)) return;
+
+    const confirmed = window.confirm(`Scinder la réservation de ${reservation.hote_nom} par mois ?`);
+    if (!confirmed) return;
+
+    setSplittingId(reservation.id);
+    clearRowFeedback(reservation.id);
+    if (saveTimers.current[reservation.id]) {
+      window.clearTimeout(saveTimers.current[reservation.id]);
+      delete saveTimers.current[reservation.id];
+    }
+    setRowState((previous) => ({ ...previous, [reservation.id]: "saving" }));
+
+    try {
+      const splitResult = await apiFetch<ReservationCreateResponse>(`/reservations/${reservation.id}/split`, {
+        method: "POST",
+      });
+      const createdReservations =
+        Array.isArray(splitResult.created_reservations) && splitResult.created_reservations.length > 0
+          ? splitResult.created_reservations
+          : [splitResult];
+      setReservations((previous) => {
+        const next = previous.filter((item) => item.id !== reservation.id);
+        const ids = new Set(next.map((item) => item.id));
+        for (const item of createdReservations) {
+          if (ids.has(item.id)) continue;
+          ids.add(item.id);
+          next.push(item);
+        }
+        return next;
+      });
+      clearDraft(reservation.id);
+      setError(null);
+      void loadStatistics();
+    } catch (err) {
+      let message = (err as Error).message;
+      if (isApiError(err) && Array.isArray((err.payload as any)?.conflicts)) {
+        const conflicts = (err.payload as any).conflicts as Array<{ label: string }>;
+        message = `${err.message} ${conflicts.map((conflict) => conflict.label).join(" · ")}`;
+      }
+      setRowState((previous) => ({ ...previous, [reservation.id]: "error" }));
+      setRowError((previous) => ({ ...previous, [reservation.id]: message }));
+      setError(message);
+    } finally {
+      setSplittingId((previous) => (previous === reservation.id ? null : previous));
     }
   };
 
@@ -2500,6 +2586,7 @@ const ReservationsPage = () => {
                       const isDetailsClosing = Boolean(closingDetails[reservation.id]);
                       const isRowSavedFading = Boolean(savedRowFade[reservation.id]);
                       const isCurrentReservation = isReservationInProgress(reservation);
+                      const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
 
@@ -3077,6 +3164,20 @@ const ReservationsPage = () => {
                                   >
                                     ⧉
                                   </button>
+                                  {canSplitByMonth && (
+                                    <button
+                                      className="table-action table-action--neutral"
+                                      onClick={() => splitReservationByMonth(reservation).catch((err) => setError((err as Error).message))}
+                                      title={
+                                        isEditing
+                                          ? "Enregistrez la ligne avant de scinder"
+                                          : "Scinder la réservation par mois"
+                                      }
+                                      disabled={isEditing || splittingId === reservation.id}
+                                    >
+                                      {splittingId === reservation.id ? "Scission..." : "Scinder"}
+                                    </button>
+                                  )}
                                   <button
                                     className={`table-action table-action--neutral ${hasFees ? "reservations-fee-btn--active" : ""}`}
                                     onClick={() => toggleDetails(reservation)}
