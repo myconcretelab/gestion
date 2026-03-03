@@ -499,6 +499,7 @@ button.warning {
 
 .reservations-tab {
   flex: 0 0 auto;
+  cursor: default;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
@@ -540,6 +541,16 @@ button.warning {
 
 .reservations-tab--active:hover {
   border-color: #fb7185;
+}
+
+.reservations-tab--dragging {
+  opacity: 0.55;
+}
+
+.reservations-tab--drag-over {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 @media (max-width: 720px) {
@@ -894,7 +905,7 @@ button.warning {
 
 @keyframes reservations-row-saved-fade {
   from {
-    background: #fffbeb;
+    background: #f0fdf4;
   }
   to {
     background: #ffffff;

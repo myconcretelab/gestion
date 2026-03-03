@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 import { Link } from "react-router-dom";
 import { mergeOptions } from "./shared/rentalForm";
@@ -418,7 +418,6 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions) => {
 
 const statusLabel = (state: SaveState) => {
   if (state === "saving") return "En cours";
-  if (state === "saved") return "Enregistré";
   if (state === "error") return "Erreur";
   return "";
 };
@@ -445,6 +444,9 @@ const ReservationsPage = () => {
   const [month, setMonth] = useState<number | 0>(0);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [draggedGiteId, setDraggedGiteId] = useState<string | null>(null);
+  const [dragOverGiteId, setDragOverGiteId] = useState<string | null>(null);
+  const [reorderingTabs, setReorderingTabs] = useState(false);
   const [editingRows, setEditingRows] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, ReservationDraft>>({});
   const [rowState, setRowState] = useState<Record<string, SaveState>>({});
@@ -569,6 +571,65 @@ const ReservationsPage = () => {
     if (activeTab && gites.some((gite) => gite.id === activeTab)) return;
     setActiveTab(gites[0].id);
   }, [activeTab, gites, reservations]);
+
+  const handleTabDragStart = (event: DragEvent<HTMLButtonElement>, id: string) => {
+    if (reorderingTabs) return;
+    setDraggedGiteId(id);
+    setDragOverGiteId(id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+  };
+
+  const handleTabDragOver = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+    if (reorderingTabs) return;
+    const sourceId = draggedGiteId ?? event.dataTransfer.getData("text/plain");
+    if (!sourceId || sourceId === targetId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dragOverGiteId !== targetId) setDragOverGiteId(targetId);
+  };
+
+  const handleTabDrop = async (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+    event.preventDefault();
+    if (reorderingTabs) return;
+    const sourceId = draggedGiteId ?? event.dataTransfer.getData("text/plain");
+    setDraggedGiteId(null);
+    setDragOverGiteId(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    const fromIndex = gites.findIndex((gite) => gite.id === sourceId);
+    const targetIndex = gites.findIndex((gite) => gite.id === targetId);
+    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return;
+
+    const reordered = [...gites];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    setGites(reordered);
+
+    setReorderingTabs(true);
+    setError(null);
+    try {
+      const updated = await apiFetch<Gite[]>("/gites/reorder", {
+        method: "POST",
+        json: { ids: reordered.map((gite) => gite.id) },
+      });
+      setGites(updated);
+    } catch (err) {
+      setError((err as Error).message);
+      try {
+        await load();
+      } catch (reloadError) {
+        setError((reloadError as Error).message);
+      }
+    } finally {
+      setReorderingTabs(false);
+    }
+  };
+
+  const handleTabDragEnd = () => {
+    setDraggedGiteId(null);
+    setDragOverGiteId(null);
+  };
 
   const visibleReservations = useMemo(() => {
     if (activeTab === ALL_GITES_TAB) {
@@ -1932,19 +1993,21 @@ const ReservationsPage = () => {
         <div className="section-title">Réservations</div>
 
         <div className="reservations-tabs">
-          <button
-            type="button"
-            className={`reservations-tab reservations-tab--all ${activeTab === ALL_GITES_TAB ? "reservations-tab--active" : ""}`}
-            onClick={() => setActiveTab(ALL_GITES_TAB)}
-          >
-            Tous les gîtes
-          </button>
           {gites.map((gite) => (
             <button
               type="button"
               key={gite.id}
-              className={`reservations-tab ${activeTab === gite.id ? "reservations-tab--active" : ""}`}
+              className={`reservations-tab ${activeTab === gite.id ? "reservations-tab--active" : ""} ${
+                draggedGiteId === gite.id ? "reservations-tab--dragging" : ""
+              } ${dragOverGiteId === gite.id && draggedGiteId !== gite.id ? "reservations-tab--drag-over" : ""}`}
+              draggable={!reorderingTabs}
+              onDragStart={(event) => handleTabDragStart(event, gite.id)}
+              onDragOver={(event) => handleTabDragOver(event, gite.id)}
+              onDrop={(event) => void handleTabDrop(event, gite.id)}
+              onDragEnd={handleTabDragEnd}
               onClick={() => setActiveTab(gite.id)}
+              disabled={reorderingTabs}
+              title={reorderingTabs ? "Réorganisation en cours..." : "Glisser-déposer pour réorganiser"}
             >
               {gite.nom}
             </button>
@@ -1958,6 +2021,13 @@ const ReservationsPage = () => {
               Non attribuées
             </button>
           )}
+          <button
+            type="button"
+            className={`reservations-tab reservations-tab--all ${activeTab === ALL_GITES_TAB ? "reservations-tab--active" : ""}`}
+            onClick={() => setActiveTab(ALL_GITES_TAB)}
+          >
+            Tous les gîtes
+          </button>
         </div>
 
         {activeTab === UNASSIGNED_TAB && placeholders.length > 0 && (
@@ -2076,6 +2146,7 @@ const ReservationsPage = () => {
                       const isDetailsExpanded = Boolean(expandedDetails[reservation.id]);
                       const isDetailsClosing = Boolean(closingDetails[reservation.id]);
                       const isRowSavedFading = Boolean(savedRowFade[reservation.id]);
+                      const rowStatusLabel = statusLabel(rowSaveState);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
 
                       return (
@@ -2676,12 +2747,12 @@ const ReservationsPage = () => {
                                   </button>
                                 </div>
                               </div>
-                              {rowSaveState !== "idle" && (
+                              {rowStatusLabel && (
                                 <div
                                   className={`reservations-save-state reservations-save-state--${rowSaveState}`}
                                   title={rowError[reservation.id] ?? ""}
                                 >
-                                  {statusLabel(rowSaveState)}
+                                  {rowStatusLabel}
                                 </div>
                               )}
                             </td>
