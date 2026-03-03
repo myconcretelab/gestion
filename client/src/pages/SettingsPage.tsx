@@ -133,6 +133,23 @@ type IcalSourcesImportResult = {
   updated_count: number;
 };
 
+type IcalSourcesImportPreviewUnknown = {
+  source_gite_id: string;
+  count: number;
+  sample_type: string | null;
+  sample_url: string | null;
+  mapped_to: string | null;
+};
+
+type IcalSourcesImportPreviewResult = {
+  total_count: number;
+  ready_count: number;
+  unresolved_count: number;
+  unknown_gites: IcalSourcesImportPreviewUnknown[];
+  mapping_errors: Array<{ source_gite_id: string; mapped_to: string; message: string }>;
+  can_import: boolean;
+};
+
 type IcalCronExportPayload = {
   version?: number;
   exported_at?: string;
@@ -228,6 +245,11 @@ const SettingsPage = () => {
   const [creatingSource, setCreatingSource] = useState(false);
   const [exportingSources, setExportingSources] = useState(false);
   const [importingSources, setImportingSources] = useState(false);
+  const [analyzingSourcesImport, setAnalyzingSourcesImport] = useState(false);
+  const [sourceImportFileName, setSourceImportFileName] = useState("");
+  const [sourceImportRows, setSourceImportRows] = useState<unknown[] | null>(null);
+  const [sourceImportMapping, setSourceImportMapping] = useState<Record<string, string>>({});
+  const [sourceImportPreview, setSourceImportPreview] = useState<IcalSourcesImportPreviewResult | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const importSourcesInputRef = useRef<HTMLInputElement | null>(null);
@@ -270,6 +292,18 @@ const SettingsPage = () => {
   const selectedHarCount = useMemo(
     () => Object.values(harSelections).filter(Boolean).length,
     [harSelections]
+  );
+  const sourceImportUnknownIds = useMemo(
+    () => (sourceImportPreview?.unknown_gites ?? []).map((item) => item.source_gite_id),
+    [sourceImportPreview]
+  );
+  const sourceImportUnresolvedCount = useMemo(
+    () =>
+      sourceImportUnknownIds.filter((sourceGiteId) => {
+        const target = sourceImportMapping[sourceGiteId];
+        return !target;
+      }).length,
+    [sourceImportMapping, sourceImportUnknownIds]
   );
 
   const loadManagers = async () => {
@@ -485,12 +519,12 @@ const SettingsPage = () => {
     }
   };
 
-  const importIcalSourcesFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleIcalSourcesImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) return;
 
-    setImportingSources(true);
+    setAnalyzingSourcesImport(true);
     setSourceError(null);
     setSourceNotice(null);
     try {
@@ -510,12 +544,11 @@ const SettingsPage = () => {
         throw new Error("Format invalide: utilisez un JSON exporté depuis l'application.");
       }
 
-      const result = await apiFetch<IcalSourcesImportResult>("/settings/ical-sources/import", {
-        method: "POST",
-        json: { sources: sourcesPayload },
-      });
-      await loadSources();
-      setSourceNotice(`Import terminé: ${result.created_count} créée(s), ${result.updated_count} mise(s) à jour.`);
+      setSourceImportRows(sourcesPayload);
+      setSourceImportMapping({});
+      setSourceImportPreview(null);
+      setSourceImportFileName(file.name);
+      setSourceNotice(`Fichier chargé (${sourcesPayload.length} ligne(s)). Cliquez sur "Analyser".`);
     } catch (error: any) {
       if (error instanceof SyntaxError) {
         setSourceError("Le fichier n'est pas un JSON valide.");
@@ -524,6 +557,66 @@ const SettingsPage = () => {
       }
     } finally {
       input.value = "";
+      setAnalyzingSourcesImport(false);
+    }
+  };
+
+  const analyzeIcalSourcesImport = async () => {
+    if (!sourceImportRows || sourceImportRows.length === 0) {
+      setSourceError("Chargez d'abord un fichier d'import.");
+      return;
+    }
+
+    setAnalyzingSourcesImport(true);
+    setSourceError(null);
+    setSourceNotice(null);
+    try {
+      const preview = await apiFetch<IcalSourcesImportPreviewResult>("/settings/ical-sources/import/preview", {
+        method: "POST",
+        json: {
+          sources: sourceImportRows,
+          gite_mapping: sourceImportMapping,
+        },
+      });
+      setSourceImportPreview(preview);
+      if (preview.unresolved_count > 0) {
+        setSourceNotice(`${preview.unresolved_count} gîte(s) introuvable(s): attribuez-les puis importez.`);
+      } else {
+        setSourceNotice("Analyse terminée: prêt à importer.");
+      }
+    } catch (error: any) {
+      setSourceError(error.message);
+    } finally {
+      setAnalyzingSourcesImport(false);
+    }
+  };
+
+  const importIcalSources = async () => {
+    if (!sourceImportRows || sourceImportRows.length === 0) {
+      setSourceError("Chargez d'abord un fichier d'import.");
+      return;
+    }
+
+    setImportingSources(true);
+    setSourceError(null);
+    setSourceNotice(null);
+    try {
+      const result = await apiFetch<IcalSourcesImportResult>("/settings/ical-sources/import", {
+        method: "POST",
+        json: {
+          sources: sourceImportRows,
+          gite_mapping: sourceImportMapping,
+        },
+      });
+      await loadSources();
+      setSourceImportRows(null);
+      setSourceImportMapping({});
+      setSourceImportPreview(null);
+      setSourceImportFileName("");
+      setSourceNotice(`Import terminé: ${result.created_count} créée(s), ${result.updated_count} mise(s) à jour.`);
+    } catch (error: any) {
+      setSourceError(error.message);
+    } finally {
       setImportingSources(false);
     }
   };
@@ -924,9 +1017,9 @@ const SettingsPage = () => {
               type="button"
               className="table-action table-action--neutral gites-tool-button"
               onClick={triggerSourceImport}
-              disabled={importingSources || exportingSources || loadingSources}
+              disabled={analyzingSourcesImport || importingSources || exportingSources || loadingSources}
             >
-              {importingSources ? "Import..." : "Importer"}
+              {analyzingSourcesImport ? "Lecture..." : "Charger fichier"}
             </button>
           </div>
         </div>
@@ -934,9 +1027,101 @@ const SettingsPage = () => {
           ref={importSourcesInputRef}
           type="file"
           accept=".json,application/json"
-          onChange={(event) => void importIcalSourcesFromFile(event)}
+          onChange={(event) => void handleIcalSourcesImportFile(event)}
           style={{ display: "none" }}
         />
+        {sourceImportRows ? (
+          <div className="field-group" style={{ marginBottom: 12 }}>
+            <div className="field-group__header">
+              <div className="field-group__label">Import iCal prêt</div>
+              <div className="field-hint">{sourceImportFileName || "Fichier JSON"}</div>
+            </div>
+            <div className="field-hint">
+              Lignes: {sourceImportRows.length}
+              {sourceImportPreview ? ` | Prêtes: ${sourceImportPreview.ready_count}/${sourceImportPreview.total_count}` : ""}
+            </div>
+            <div className="actions" style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void analyzeIcalSourcesImport()}
+                disabled={analyzingSourcesImport || importingSources}
+              >
+                {analyzingSourcesImport ? "Analyse..." : "Analyser"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void importIcalSources()}
+                disabled={
+                  importingSources ||
+                  analyzingSourcesImport ||
+                  !sourceImportPreview ||
+                  sourceImportUnresolvedCount > 0 ||
+                  sourceImportPreview.mapping_errors.length > 0
+                }
+              >
+                {importingSources ? "Import..." : "Importer"}
+              </button>
+            </div>
+            {sourceImportPreview?.mapping_errors.length ? (
+              <div className="note" style={{ marginTop: 8 }}>
+                Mapping invalide: {sourceImportPreview.mapping_errors.map((item) => item.message).join(" ; ")}
+              </div>
+            ) : null}
+            {sourceImportPreview && sourceImportPreview.unknown_gites.length > 0 ? (
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                <div className="field-hint">
+                  Gîtes introuvables: {sourceImportPreview.unknown_gites.length}. Attribuez un gîte local.
+                </div>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Gîte import</th>
+                      <th>Lignes</th>
+                      <th>Exemple</th>
+                      <th>Attribuer à</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sourceImportPreview.unknown_gites.map((item) => (
+                      <tr key={item.source_gite_id}>
+                        <td>{item.source_gite_id}</td>
+                        <td>{item.count}</td>
+                        <td>
+                          {(item.sample_type || "-") + " | " + (item.sample_url || "-")}
+                        </td>
+                        <td>
+                          <select
+                            value={sourceImportMapping[item.source_gite_id] ?? item.mapped_to ?? ""}
+                            onChange={(event) =>
+                              setSourceImportMapping((previous) => ({
+                                ...previous,
+                                [item.source_gite_id]: event.target.value,
+                              }))
+                            }
+                            disabled={analyzingSourcesImport || importingSources}
+                          >
+                            <option value="">Choisir un gîte</option>
+                            {gites.map((gite) => (
+                              <option key={gite.id} value={gite.id}>
+                                {gite.nom} ({gite.prefixe_contrat})
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {sourceImportUnresolvedCount > 0 ? (
+                  <div className="field-hint">{sourceImportUnresolvedCount} attribution(s) manquante(s).</div>
+                ) : (
+                  <div className="field-hint">Toutes les attributions sont renseignées.</div>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {loadingSources ? (
           <div className="field-hint">Chargement...</div>
         ) : sources.length === 0 ? (
