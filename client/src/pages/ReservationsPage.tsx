@@ -537,6 +537,7 @@ const ReservationsPage = () => {
   const [urssafDeclarationChecks, setUrssafDeclarationChecks] = useState<UrssafDeclarationChecks>({});
   const [savingUrssafDeclarationByManagerId, setSavingUrssafDeclarationByManagerId] = useState<Record<string, boolean>>({});
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
+  const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
 
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
   const reservationOptionsRef = useRef<Record<string, ContratOptions>>({});
@@ -773,6 +774,10 @@ const ReservationsPage = () => {
   }, [month]);
 
   useEffect(() => {
+    setMonthExpandedByIndex({});
+  }, [activeTab, month, year]);
+
+  useEffect(() => {
     if (!activeTab) {
       setStuckMonthHeaders((previous) => (Object.keys(previous).length > 0 ? {} : previous));
       return;
@@ -781,7 +786,7 @@ const ReservationsPage = () => {
     let rafId = 0;
     const updateStickyMonthHeaders = () => {
       const headers = Array.from(
-        document.querySelectorAll<HTMLElement>(".reservations-month__head[data-month-index]")
+        document.querySelectorAll<HTMLElement>(".reservations-month__head--sticky[data-month-index]")
       );
       if (!headers.length) {
         setStuckMonthHeaders((previous) => (Object.keys(previous).length > 0 ? {} : previous));
@@ -833,7 +838,7 @@ const ReservationsPage = () => {
       window.removeEventListener("resize", scheduleUpdate);
       if (rafId) window.cancelAnimationFrame(rafId);
     };
-  }, [activeTab, monthsToRender, reservationsByMonth]);
+  }, [activeTab, monthExpandedByIndex, monthsToRender, reservationsByMonth, year]);
 
   const getRowDraft = (reservation: Reservation) => drafts[reservation.id] ?? toDraft(reservation);
 
@@ -1619,6 +1624,32 @@ const ReservationsPage = () => {
   );
   const showUrssafReminder = previousMonthVisible && pendingUrssafManagers.length > 0;
   const urssafReminderPeriodLabel = `${MONTHS[previousDeclarationPeriod.month - 1]} ${previousDeclarationPeriod.year}`;
+  const currentMonthStartUtc = useMemo(() => {
+    const now = new Date();
+    return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  }, []);
+
+  const isMonthExpandedByDefault = useCallback(
+    (monthIndex: number) => {
+      if (month) return true;
+      const monthStartUtc = Date.UTC(year, monthIndex - 1, 1);
+      return monthStartUtc >= currentMonthStartUtc;
+    },
+    [currentMonthStartUtc, month, year]
+  );
+
+  const setMonthExpanded = useCallback((monthIndex: number, expanded: boolean) => {
+    setMonthExpandedByIndex((previous) => {
+      if (previous[monthIndex] === expanded) return previous;
+      return { ...previous, [monthIndex]: expanded };
+    });
+  }, []);
+
+  const handleMonthHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>, monthIndex: number, isExpanded: boolean) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    setMonthExpanded(monthIndex, !isExpanded);
+  };
 
   const markUrssafDeclarationDone = async (managerId: string) => {
     if (savingUrssafDeclarationByManagerId[managerId]) return;
@@ -2498,17 +2529,28 @@ const ReservationsPage = () => {
             }
             const isPreviousMonthSection = year === previousDeclarationPeriod.year && monthIndex === previousDeclarationPeriod.month;
             const monthHasPendingUrssafReminder = showUrssafReminder && isPreviousMonthSection;
+            const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
+            const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
+            const monthPanelId = `reservations-month-panel-${year}-${monthIndex}`;
 
             return (
               <section
                 className={`reservations-month ${isAllGitesTab ? "reservations-month--all-gites" : ""} ${
                   monthHasPendingUrssafReminder ? "reservations-month--urssaf-pending" : ""
-                }`}
+                } ${!isMonthExpanded ? "reservations-month--collapsed" : ""}`}
                 key={monthIndex}
               >
                 <div
-                  className={`reservations-month__head ${stuckMonthHeaders[monthIndex] ? "reservations-month__head--stuck" : ""}`}
+                  className={`reservations-month__head ${isMonthExpanded ? "reservations-month__head--sticky" : ""} ${
+                    isMonthExpanded && stuckMonthHeaders[monthIndex] ? "reservations-month__head--stuck" : ""
+                  }`}
                   data-month-index={monthIndex}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isMonthExpanded}
+                  aria-controls={monthPanelId}
+                  onClick={() => setMonthExpanded(monthIndex, !isMonthExpanded)}
+                  onKeyDown={(event) => handleMonthHeaderKeyDown(event, monthIndex, isMonthExpanded)}
                 >
                   <div>
                     <div className="section-subtitle">{MONTHS[monthIndex - 1]}</div>
@@ -2519,14 +2561,23 @@ const ReservationsPage = () => {
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
                     </div>
                   </div>
-                  {addAllowed && list.length === 0 && inlineInsertIndex === null && (
-                    <button type="button" className="table-action table-action--neutral" onClick={() => openInlineInsertRow(monthIndex, 0)}>
+                  {isMonthExpanded && addAllowed && list.length === 0 && inlineInsertIndex === null && (
+                    <button
+                      type="button"
+                      className="table-action table-action--neutral"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openInlineInsertRow(monthIndex, 0);
+                      }}
+                    >
                       + Ajouter
                     </button>
                   )}
                 </div>
 
-                <table className="table reservations-table">
+                {isMonthExpanded && (
+                  <div id={monthPanelId}>
+                    <table className="table reservations-table">
                   <colgroup>
                     <col className="reservations-col reservations-col--insert" />
                     <col className="reservations-col reservations-col--host" />
@@ -3578,7 +3629,9 @@ const ReservationsPage = () => {
                       );
                     })}
                   </tbody>
-                </table>
+                    </table>
+                  </div>
+                )}
               </section>
             );
           })}
