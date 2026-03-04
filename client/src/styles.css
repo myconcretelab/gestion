@@ -675,9 +675,7 @@ button.warning {
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
-  position: sticky;
-  top: var(--reservations-month-head-top);
-  z-index: 16;
+  position: relative;
   margin: -4px 0 8px;
   padding: 8px 10px;
   border-radius: 0;
@@ -685,6 +683,22 @@ button.warning {
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(6px);
   transition: box-shadow 220ms ease;
+  cursor: pointer;
+}
+
+.reservations-month__head--sticky {
+  position: sticky;
+  top: var(--reservations-month-head-top);
+  z-index: 16;
+}
+
+.reservations-month__head:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.reservations-month--collapsed .reservations-month__head {
+  margin-bottom: 0;
 }
 
 .reservations-month__head::after {
