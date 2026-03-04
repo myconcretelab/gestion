@@ -114,6 +114,14 @@ type UrssafDeclarationRow = {
   declared_at: string;
 };
 type UrssafDeclarationsByKey = Record<string, UrssafDeclarationRow>;
+type UrssafUndeclaredMonthItem = {
+  month: number;
+  amount: number;
+  managers: Array<{
+    managerId: string;
+    amount: number;
+  }>;
+};
 
 const MONTHS = [
   "Janvier",
@@ -498,6 +506,22 @@ const csvEscape = (value: unknown) => {
   return text;
 };
 const csvAmount = (value: number) => round2(Number(value ?? 0)).toFixed(2).replace(".", ",");
+const copyRoundedAmount = (value: number) => {
+  const text = String(Math.round(Math.max(0, Number(value ?? 0))));
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "absolute";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+};
 
 const ReservationsPage = () => {
   const currentYear = new Date().getUTCFullYear();
@@ -536,7 +560,7 @@ const ReservationsPage = () => {
   const [reservationOptions, setReservationOptions] = useState<Record<string, ContratOptions>>({});
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [urssafDeclarationsByKey, setUrssafDeclarationsByKey] = useState<UrssafDeclarationsByKey>({});
-  const [savingUrssafDeclarationByManagerId, setSavingUrssafDeclarationByManagerId] = useState<Record<string, boolean>>({});
+  const [savingUrssafDeclarationByMonth, setSavingUrssafDeclarationByMonth] = useState<Record<number, boolean>>({});
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
 
@@ -1535,13 +1559,11 @@ const ReservationsPage = () => {
 
   const isAllGitesTab = activeTab === ALL_GITES_TAB;
   const showUnassignedTab = reservations.some((reservation) => !reservation.gite_id);
-  const previousDeclarationPeriod = useMemo(() => {
+  const currentPeriod = useMemo(() => {
     const now = new Date();
-    const previousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1);
     return {
-      year: previousMonth.getUTCFullYear(),
-      month: previousMonth.getUTCMonth() + 1,
+      year: now.getUTCFullYear(),
+      month: now.getUTCMonth() + 1,
     };
   }, []);
 
@@ -1569,26 +1591,6 @@ const ReservationsPage = () => {
     };
   }, [year]);
 
-  const previousMonthUrssafByManager = useMemo(() => {
-    if (!statisticsDataset) return [];
-    return computeUrssafByManager(
-      statisticsDataset.entriesByGite,
-      statisticsDataset.gites,
-      previousDeclarationPeriod.year,
-      previousDeclarationPeriod.month
-    );
-  }, [previousDeclarationPeriod.month, previousDeclarationPeriod.year, statisticsDataset]);
-
-  const managerNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    gites.forEach((gite) => {
-      const manager = gite.gestionnaire;
-      if (!manager?.id || map.has(manager.id)) return;
-      map.set(manager.id, `${manager.prenom} ${manager.nom}`.trim());
-    });
-    return map;
-  }, [gites]);
-
   const activeManagerIds = useMemo(() => {
     if (activeTab === UNASSIGNED_TAB || !activeTab) return [] as string[];
     if (activeTab === ALL_GITES_TAB) {
@@ -1597,22 +1599,6 @@ const ReservationsPage = () => {
     const managerId = giteById.get(activeTab)?.gestionnaire?.id ?? null;
     return managerId ? [managerId] : [];
   }, [activeTab, giteById, gites]);
-
-  const urssafManagersForActiveTab = useMemo(() => {
-    if (activeManagerIds.length === 0) return [];
-    const totalsByManagerId = new Map(previousMonthUrssafByManager.map((item) => [item.managerId, item]));
-    return activeManagerIds
-      .map((managerId) => {
-        const found = totalsByManagerId.get(managerId);
-        if (found) return found;
-        return {
-          managerId,
-          manager: managerNameById.get(managerId) ?? "Gestionnaire",
-          amount: 0,
-        };
-      })
-      .sort((left, right) => right.amount - left.amount || left.manager.localeCompare(right.manager, "fr"));
-  }, [activeManagerIds, managerNameById, previousMonthUrssafByManager]);
 
   const declaredUrssafByMonthForActiveTab = useMemo(() => {
     if (activeManagerIds.length === 0) return new Map<number, { amount: number; count: number }>();
@@ -1629,19 +1615,57 @@ const ReservationsPage = () => {
     return byMonth;
   }, [activeManagerIds, urssafDeclarationsByKey, year]);
 
-  const previousMonthVisible = year === previousDeclarationPeriod.year && monthsToRender.includes(previousDeclarationPeriod.month);
-  const pendingUrssafManagers = useMemo(
-    () =>
-      urssafManagersForActiveTab.filter(
-        (manager) =>
-          !urssafDeclarationsByKey[
-            buildUrssafDeclarationCheckKey(previousDeclarationPeriod.year, previousDeclarationPeriod.month, manager.managerId)
-          ]
-      ),
-    [previousDeclarationPeriod.month, previousDeclarationPeriod.year, urssafDeclarationsByKey, urssafManagersForActiveTab]
-  );
-  const showUrssafReminder = previousMonthVisible && pendingUrssafManagers.length > 0;
-  const urssafReminderPeriodLabel = `${MONTHS[previousDeclarationPeriod.month - 1]} ${previousDeclarationPeriod.year}`;
+  const undeclaredUrssafItemsForActiveTab = useMemo<UrssafUndeclaredMonthItem[]>(() => {
+    const items: UrssafUndeclaredMonthItem[] = [];
+    if (!statisticsDataset) return items;
+    if (activeManagerIds.length === 0) return items;
+    if (year !== currentPeriod.year) return items;
+
+    const activeManagerIdSet = new Set(activeManagerIds);
+    for (let monthIndex = 1; monthIndex < currentPeriod.month; monthIndex += 1) {
+      const monthlyTotalsByManager = computeUrssafByManager(
+        statisticsDataset.entriesByGite,
+        statisticsDataset.gites,
+        year,
+        monthIndex
+      );
+      const undeclaredManagers = monthlyTotalsByManager
+        .filter((manager) => {
+          if (!activeManagerIdSet.has(manager.managerId)) return false;
+          const key = buildUrssafDeclarationCheckKey(year, monthIndex, manager.managerId);
+          return !urssafDeclarationsByKey[key];
+        })
+        .map((manager) => ({
+          managerId: manager.managerId,
+          amount: round2(Math.max(0, Number(manager.amount ?? 0))),
+        }))
+        .filter((manager) => manager.amount > 0);
+
+      if (undeclaredManagers.length === 0) continue;
+
+      const amount = round2(undeclaredManagers.reduce((sum, manager) => sum + manager.amount, 0));
+      if (amount <= 0) continue;
+
+      items.push({
+        month: monthIndex,
+        amount,
+        managers: undeclaredManagers,
+      });
+    }
+
+    return items.sort((left, right) => left.month - right.month);
+  }, [activeManagerIds, currentPeriod.month, currentPeriod.year, statisticsDataset, urssafDeclarationsByKey, year]);
+
+  const undeclaredUrssafByMonthForActiveTab = useMemo(() => {
+    const byMonth = new Map<number, number>();
+    undeclaredUrssafItemsForActiveTab.forEach((item) => {
+      byMonth.set(item.month, item.amount);
+    });
+    return byMonth;
+  }, [undeclaredUrssafItemsForActiveTab]);
+
+  const showUrssafReminder = undeclaredUrssafItemsForActiveTab.length > 0;
+  const urssafReminderPeriodLabel = String(year);
   const currentMonthStartUtc = useMemo(() => {
     const now = new Date();
     return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
@@ -1669,43 +1693,45 @@ const ReservationsPage = () => {
     setMonthExpanded(monthIndex, !isExpanded);
   };
 
-  const markUrssafDeclarationDone = async (managerId: string) => {
-    if (savingUrssafDeclarationByManagerId[managerId]) return;
-    const key = buildUrssafDeclarationCheckKey(previousDeclarationPeriod.year, previousDeclarationPeriod.month, managerId);
-    const managerAmount = round2(
-      Math.max(
-        0,
-        Number(urssafManagersForActiveTab.find((manager) => manager.managerId === managerId)?.amount ?? 0)
-      )
-    );
-    setSavingUrssafDeclarationByManagerId((previous) => ({
+  const markUrssafMonthDeclarationDone = async (item: UrssafUndeclaredMonthItem) => {
+    if (savingUrssafDeclarationByMonth[item.month]) return;
+    setSavingUrssafDeclarationByMonth((previous) => ({
       ...previous,
-      [managerId]: true,
+      [item.month]: true,
     }));
 
     try {
-      const saved = await apiFetch<UrssafDeclarationRow>("/urssaf-declarations", {
-        method: "POST",
-        json: {
-          year: previousDeclarationPeriod.year,
-          month: previousDeclarationPeriod.month,
-          manager_id: managerId,
-          amount: managerAmount,
-        },
+      const savedRows = await Promise.all(
+        item.managers.map((manager) =>
+          apiFetch<UrssafDeclarationRow>("/urssaf-declarations", {
+            method: "POST",
+            json: {
+              year,
+              month: item.month,
+              manager_id: manager.managerId,
+              amount: manager.amount,
+            },
+          })
+        )
+      );
+
+      setUrssafDeclarationsByKey((previous) => {
+        const next = { ...previous };
+        savedRows.forEach((saved) => {
+          const key = buildUrssafDeclarationCheckKey(saved.year, saved.month, saved.manager_id);
+          next[key] = {
+            ...saved,
+            amount: round2(Math.max(0, Number(saved.amount ?? 0))),
+          };
+        });
+        return next;
       });
-      setUrssafDeclarationsByKey((previous) => ({
-        ...previous,
-        [key]: {
-          ...saved,
-          amount: round2(Math.max(0, Number(saved.amount ?? managerAmount))),
-        },
-      }));
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setSavingUrssafDeclarationByManagerId((previous) => ({
+      setSavingUrssafDeclarationByMonth((previous) => ({
         ...previous,
-        [managerId]: false,
+        [item.month]: false,
       }));
     }
   };
@@ -2499,27 +2525,41 @@ const ReservationsPage = () => {
         {activeTab && showUrssafReminder && (
           <div className="reservations-urssaf-reminder">
             <div className="reservations-urssaf-reminder__head">
-              <strong>Déclaration URSSAF en attente: {urssafReminderPeriodLabel}</strong>
-              <span>{formatPluralLabel(pendingUrssafManagers.length, "gestionnaire", "gestionnaires")} à valider</span>
+              <strong>Déclaration URSSAF: {urssafReminderPeriodLabel}</strong>
+              <span>{formatPluralLabel(undeclaredUrssafItemsForActiveTab.length, "mois", "mois")} non déclaré(s)</span>
             </div>
             <div className="reservations-urssaf-reminder__list">
-              {pendingUrssafManagers.map((manager) => (
-                <div key={manager.managerId} className="reservations-urssaf-reminder__item">
+              {undeclaredUrssafItemsForActiveTab.map((item) => (
+                <div key={item.month} className="reservations-urssaf-reminder__item">
                   <div>
-                    <div className="reservations-urssaf-reminder__manager">{manager.manager}</div>
-                    <div className="reservations-urssaf-reminder__amount">{formatEuro(manager.amount)}</div>
+                    <div className="reservations-urssaf-reminder__manager">
+                      {MONTHS[item.month - 1]} {year}
+                    </div>
+                    <div className="reservations-urssaf-reminder__amount">{formatEuro(item.amount)}</div>
                   </div>
-                  <button
-                    type="button"
-                    className="table-action table-action--primary reservations-urssaf-reminder__check"
-                    onClick={() => {
-                      void markUrssafDeclarationDone(manager.managerId);
-                    }}
-                    title={`Valider la déclaration URSSAF de ${manager.manager}`}
-                    disabled={Boolean(savingUrssafDeclarationByManagerId[manager.managerId])}
-                  >
-                    Déclaré
-                  </button>
+                  <div className="reservations-urssaf-reminder__actions">
+                    <button
+                      type="button"
+                      className="table-action table-action--neutral reservations-urssaf-reminder__copy"
+                      onClick={() => {
+                        copyRoundedAmount(item.amount);
+                      }}
+                      title={`Copier le montant URSSAF arrondi pour ${MONTHS[item.month - 1]} ${year}`}
+                    >
+                      Copier
+                    </button>
+                    <button
+                      type="button"
+                      className="table-action table-action--primary reservations-urssaf-reminder__check"
+                      onClick={() => {
+                        void markUrssafMonthDeclarationDone(item);
+                      }}
+                      title={`Valider la déclaration URSSAF de ${MONTHS[item.month - 1]} ${year}`}
+                      disabled={Boolean(savingUrssafDeclarationByMonth[item.month])}
+                    >
+                      Déclaré
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -2555,9 +2595,9 @@ const ReservationsPage = () => {
                 groupedSummaries.set(key, monthSummary(group));
               });
             }
-            const isPreviousMonthSection = year === previousDeclarationPeriod.year && monthIndex === previousDeclarationPeriod.month;
-            const monthHasPendingUrssafReminder = showUrssafReminder && isPreviousMonthSection;
             const declaredUrssafForMonth = declaredUrssafByMonthForActiveTab.get(monthIndex);
+            const undeclaredUrssafForMonth = undeclaredUrssafByMonthForActiveTab.get(monthIndex) ?? 0;
+            const monthHasPendingUrssafReminder = undeclaredUrssafForMonth > 0;
             const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
             const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
             const monthPanelId = `reservations-month-panel-${year}-${monthIndex}`;
@@ -2598,6 +2638,11 @@ const ReservationsPage = () => {
                           )}`}
                         >
                           {formatEuro(declaredUrssafForMonth.amount)} URSSAF déclaré
+                        </span>
+                      ) : null}
+                      {undeclaredUrssafForMonth > 0 ? (
+                        <span className="reservations-summary-pill reservations-summary-pill--urssaf-undeclared">
+                          {formatEuro(undeclaredUrssafForMonth)} URSSAF non déclaré
                         </span>
                       ) : null}
                     </div>
