@@ -637,6 +637,17 @@ button.warning {
   font-weight: 700;
 }
 
+.reservations-urssaf-reminder__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reservations-urssaf-reminder__copy {
+  min-width: 82px;
+}
+
 .reservations-urssaf-reminder__check {
   min-width: 92px;
 }
@@ -645,6 +656,10 @@ button.warning {
   .reservations-urssaf-reminder__item {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .reservations-urssaf-reminder__actions {
+    width: 100%;
   }
 }
 
@@ -797,6 +812,12 @@ button.warning {
   border-color: #e9d5ff;
   background: #faf5ff;
   color: #6b21a8;
+}
+
+.reservations-summary-pill--urssaf-undeclared {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #9f1239;
 }
 
 .reservations-table col.reservations-col--insert {
