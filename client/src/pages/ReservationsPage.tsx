@@ -106,13 +106,14 @@ type ReservationFeesBreakdown = {
   undeclared: number;
 };
 
-type UrssafDeclarationChecks = Record<string, true>;
 type UrssafDeclarationRow = {
   year: number;
   month: number;
   manager_id: string;
+  amount: number;
   declared_at: string;
 };
+type UrssafDeclarationsByKey = Record<string, UrssafDeclarationRow>;
 
 const MONTHS = [
   "Janvier",
@@ -534,7 +535,7 @@ const ReservationsPage = () => {
   const [importing, setImporting] = useState(false);
   const [reservationOptions, setReservationOptions] = useState<Record<string, ContratOptions>>({});
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
-  const [urssafDeclarationChecks, setUrssafDeclarationChecks] = useState<UrssafDeclarationChecks>({});
+  const [urssafDeclarationsByKey, setUrssafDeclarationsByKey] = useState<UrssafDeclarationsByKey>({});
   const [savingUrssafDeclarationByManagerId, setSavingUrssafDeclarationByManagerId] = useState<Record<string, boolean>>({});
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
@@ -1546,16 +1547,18 @@ const ReservationsPage = () => {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<UrssafDeclarationRow[]>(
-      `/urssaf-declarations?year=${previousDeclarationPeriod.year}&month=${previousDeclarationPeriod.month}`
-    )
+    apiFetch<UrssafDeclarationRow[]>(`/urssaf-declarations?year=${year}`)
       .then((rows) => {
         if (cancelled) return;
-        const loadedChecks: UrssafDeclarationChecks = {};
+        const loadedDeclarations: UrssafDeclarationsByKey = {};
         rows.forEach((item) => {
-          loadedChecks[buildUrssafDeclarationCheckKey(item.year, item.month, item.manager_id)] = true;
+          const key = buildUrssafDeclarationCheckKey(item.year, item.month, item.manager_id);
+          loadedDeclarations[key] = {
+            ...item,
+            amount: round2(Math.max(0, Number(item.amount ?? 0))),
+          };
         });
-        setUrssafDeclarationChecks((previous) => ({ ...previous, ...loadedChecks }));
+        setUrssafDeclarationsByKey((previous) => ({ ...previous, ...loadedDeclarations }));
       })
       .catch(() => {
         if (cancelled) return;
@@ -1564,7 +1567,7 @@ const ReservationsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [previousDeclarationPeriod.month, previousDeclarationPeriod.year]);
+  }, [year]);
 
   const previousMonthUrssafByManager = useMemo(() => {
     if (!statisticsDataset) return [];
@@ -1611,16 +1614,31 @@ const ReservationsPage = () => {
       .sort((left, right) => right.amount - left.amount || left.manager.localeCompare(right.manager, "fr"));
   }, [activeManagerIds, managerNameById, previousMonthUrssafByManager]);
 
+  const declaredUrssafByMonthForActiveTab = useMemo(() => {
+    if (activeManagerIds.length === 0) return new Map<number, { amount: number; count: number }>();
+    const activeManagerIdSet = new Set(activeManagerIds);
+    const byMonth = new Map<number, { amount: number; count: number }>();
+    Object.values(urssafDeclarationsByKey).forEach((item) => {
+      if (item.year !== year) return;
+      if (!activeManagerIdSet.has(item.manager_id)) return;
+      const current = byMonth.get(item.month) ?? { amount: 0, count: 0 };
+      current.amount = round2(current.amount + Math.max(0, Number(item.amount ?? 0)));
+      current.count += 1;
+      byMonth.set(item.month, current);
+    });
+    return byMonth;
+  }, [activeManagerIds, urssafDeclarationsByKey, year]);
+
   const previousMonthVisible = year === previousDeclarationPeriod.year && monthsToRender.includes(previousDeclarationPeriod.month);
   const pendingUrssafManagers = useMemo(
     () =>
       urssafManagersForActiveTab.filter(
         (manager) =>
-          !urssafDeclarationChecks[
+          !urssafDeclarationsByKey[
             buildUrssafDeclarationCheckKey(previousDeclarationPeriod.year, previousDeclarationPeriod.month, manager.managerId)
           ]
       ),
-    [previousDeclarationPeriod.month, previousDeclarationPeriod.year, urssafDeclarationChecks, urssafManagersForActiveTab]
+    [previousDeclarationPeriod.month, previousDeclarationPeriod.year, urssafDeclarationsByKey, urssafManagersForActiveTab]
   );
   const showUrssafReminder = previousMonthVisible && pendingUrssafManagers.length > 0;
   const urssafReminderPeriodLabel = `${MONTHS[previousDeclarationPeriod.month - 1]} ${previousDeclarationPeriod.year}`;
@@ -1654,23 +1672,33 @@ const ReservationsPage = () => {
   const markUrssafDeclarationDone = async (managerId: string) => {
     if (savingUrssafDeclarationByManagerId[managerId]) return;
     const key = buildUrssafDeclarationCheckKey(previousDeclarationPeriod.year, previousDeclarationPeriod.month, managerId);
+    const managerAmount = round2(
+      Math.max(
+        0,
+        Number(urssafManagersForActiveTab.find((manager) => manager.managerId === managerId)?.amount ?? 0)
+      )
+    );
     setSavingUrssafDeclarationByManagerId((previous) => ({
       ...previous,
       [managerId]: true,
     }));
 
     try {
-      await apiFetch<UrssafDeclarationRow>("/urssaf-declarations", {
+      const saved = await apiFetch<UrssafDeclarationRow>("/urssaf-declarations", {
         method: "POST",
         json: {
           year: previousDeclarationPeriod.year,
           month: previousDeclarationPeriod.month,
           manager_id: managerId,
+          amount: managerAmount,
         },
       });
-      setUrssafDeclarationChecks((previous) => ({
+      setUrssafDeclarationsByKey((previous) => ({
         ...previous,
-        [key]: true,
+        [key]: {
+          ...saved,
+          amount: round2(Math.max(0, Number(saved.amount ?? managerAmount))),
+        },
       }));
     } catch (err) {
       setError((err as Error).message);
@@ -2529,6 +2557,7 @@ const ReservationsPage = () => {
             }
             const isPreviousMonthSection = year === previousDeclarationPeriod.year && monthIndex === previousDeclarationPeriod.month;
             const monthHasPendingUrssafReminder = showUrssafReminder && isPreviousMonthSection;
+            const declaredUrssafForMonth = declaredUrssafByMonthForActiveTab.get(monthIndex);
             const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
             const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
             const monthPanelId = `reservations-month-panel-${year}-${monthIndex}`;
@@ -2559,6 +2588,18 @@ const ReservationsPage = () => {
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.nights, "nuit", "nuits")}</span>
                       <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
+                      {declaredUrssafForMonth ? (
+                        <span
+                          className="reservations-summary-pill reservations-summary-pill--urssaf"
+                          title={`URSSAF déclaré pour ${formatPluralLabel(
+                            declaredUrssafForMonth.count,
+                            "gestionnaire",
+                            "gestionnaires"
+                          )}`}
+                        >
+                          {formatEuro(declaredUrssafForMonth.amount)} URSSAF déclaré
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   {isMonthExpanded && addAllowed && list.length === 0 && inlineInsertIndex === null && (

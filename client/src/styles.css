@@ -793,6 +793,12 @@ button.warning {
   color: #065f46;
 }
 
+.reservations-summary-pill--urssaf {
+  border-color: #e9d5ff;
+  background: #faf5ff;
+  color: #6b21a8;
+}
+
 .reservations-table col.reservations-col--insert {
   width: 3%;
 }

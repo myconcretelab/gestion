@@ -141,7 +141,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, urssafDeclarations] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -151,6 +151,7 @@ const main = async () => {
         tableNames.has("facture_counters") ? sqlite.factureCounter.findMany() : Promise.resolve([]),
         tableNames.has("reservation_placeholders") ? sqlite.reservationPlaceholder.findMany() : Promise.resolve([]),
         tableNames.has("reservations") ? sqlite.reservation.findMany() : Promise.resolve([]),
+        tableNames.has("urssaf_declarations") ? sqlite.urssafDeclaration.findMany() : Promise.resolve([]),
       ]);
 
     console.log(`Gestionnaires: ${gestionnaires.length}`);
@@ -161,6 +162,7 @@ const main = async () => {
     console.log(`Compteurs factures: ${factureCounters.length}`);
     console.log(`Placeholders reservations: ${placeholders.length}`);
     console.log(`Reservations: ${reservations.length}`);
+    console.log(`Declarations URSSAF: ${urssafDeclarations.length}`);
 
     if (dryRun) return;
 
@@ -169,6 +171,7 @@ const main = async () => {
       await postgres.$transaction([
         postgres.reservation.deleteMany(),
         postgres.reservationPlaceholder.deleteMany(),
+        postgres.urssafDeclaration.deleteMany(),
         postgres.facture.deleteMany(),
         postgres.factureCounter.deleteMany(),
         postgres.contrat.deleteMany(),
@@ -275,6 +278,15 @@ const main = async () => {
         where: { id },
         create: data,
         update,
+      });
+    }
+
+    for (const declaration of urssafDeclarations) {
+      const { id, ...rest } = declaration;
+      await postgres.urssafDeclaration.upsert({
+        where: { id },
+        create: { id, ...rest },
+        update: rest,
       });
     }
 

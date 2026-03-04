@@ -80,6 +80,7 @@ model UrssafDeclaration {
   year            Int
   month           Int
   gestionnaire_id String
+  amount          Decimal      @default(0) @db.Decimal(10,2)
   declared_at     DateTime     @default(now())
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt

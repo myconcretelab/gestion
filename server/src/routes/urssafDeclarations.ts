@@ -9,22 +9,29 @@ const periodSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
 });
 
+const declarationListSchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2200),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+});
+
 const declarationSchema = periodSchema.extend({
   manager_id: z.string().trim().min(1),
+  amount: z.coerce.number().finite().min(0).default(0),
 });
 
 router.get("/", async (req, res, next) => {
   try {
-    const { year, month } = periodSchema.parse(req.query);
+    const { year, month } = declarationListSchema.parse(req.query);
     const declarations = await prisma.urssafDeclaration.findMany({
-      where: { year, month },
+      where: month ? { year, month } : { year },
       select: {
         year: true,
         month: true,
         gestionnaire_id: true,
+        amount: true,
         declared_at: true,
       },
-      orderBy: [{ gestionnaire_id: "asc" }],
+      orderBy: [{ month: "asc" }, { gestionnaire_id: "asc" }],
     });
 
     res.json(
@@ -32,6 +39,7 @@ router.get("/", async (req, res, next) => {
         year: item.year,
         month: item.month,
         manager_id: item.gestionnaire_id,
+        amount: Number(item.amount ?? 0),
         declared_at: item.declared_at,
       }))
     );
@@ -64,15 +72,18 @@ router.post("/", async (req, res, next) => {
         year: payload.year,
         month: payload.month,
         gestionnaire_id: payload.manager_id,
+        amount: payload.amount,
         declared_at: now,
       },
       update: {
+        amount: payload.amount,
         declared_at: now,
       },
       select: {
         year: true,
         month: true,
         gestionnaire_id: true,
+        amount: true,
         declared_at: true,
       },
     });
@@ -81,6 +92,7 @@ router.post("/", async (req, res, next) => {
       year: saved.year,
       month: saved.month,
       manager_id: saved.gestionnaire_id,
+      amount: Number(saved.amount ?? 0),
       declared_at: saved.declared_at,
     });
   } catch (err) {
