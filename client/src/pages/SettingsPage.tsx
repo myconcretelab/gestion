@@ -1070,9 +1070,8 @@ const SettingsPage = () => {
 
       <div className="card">
         <div className="settings-managers-header">
-          <div className="section-title">Sources iCal configurées</div>
+          <div className="section-title">Sources iCal</div>
           <div className="gites-tools">
-            <div className="field-hint">{sources.length} source(s)</div>
             <button
               type="button"
               className="table-action table-action--neutral gites-tool-button"
@@ -1229,101 +1228,104 @@ const SettingsPage = () => {
             ) : null}
           </div>
         ) : null}
-        {loadingSources ? (
-          <div className="field-hint">Chargement...</div>
-        ) : sources.length === 0 ? (
-          <div className="field-hint">Aucune source iCal configurée.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {sources.map((source) => (
-              <div key={source.id} className="field-group">
-                <div className="field-group__header">
-                  <div className="field-group__label">{source.gite?.nom ?? "Gîte inconnu"}</div>
-                  <div className="field-hint">Source #{source.ordre + 1}</div>
-                </div>
-                <div className="grid-2">
-                  <label className="field">
-                    Gîte
-                    <select
-                      value={source.gite_id}
-                      onChange={(event) => updateSourceField(source.id, "gite_id", event.target.value)}
+        <details className="settings-sources-accordion">
+          <summary>Sources iCal configurées ({sources.length})</summary>
+          {loadingSources ? (
+            <div className="field-hint">Chargement...</div>
+          ) : sources.length === 0 ? (
+            <div className="field-hint">Aucune source iCal configurée.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {sources.map((source) => (
+                <div key={source.id} className="field-group">
+                  <div className="field-group__header">
+                    <div className="field-group__label">{source.gite?.nom ?? "Gîte inconnu"}</div>
+                    <div className="field-hint">Source #{source.ordre + 1}</div>
+                  </div>
+                  <div className="grid-2">
+                    <label className="field">
+                      Gîte
+                      <select
+                        value={source.gite_id}
+                        onChange={(event) => updateSourceField(source.id, "gite_id", event.target.value)}
+                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                      >
+                        {gites.map((gite) => (
+                          <option key={gite.id} value={gite.id}>
+                            {gite.nom}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      Type
+                      <input
+                        value={source.type}
+                        onChange={(event) => updateSourceField(source.id, "type", event.target.value)}
+                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                      />
+                    </label>
+                    <label className="field">
+                      URL iCal
+                      <input
+                        value={source.url}
+                        onChange={(event) => updateSourceField(source.id, "url", event.target.value)}
+                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                      />
+                    </label>
+                    <label className="field">
+                      Inclure résumé
+                      <input
+                        value={source.include_summary ?? ""}
+                        onChange={(event) => updateSourceField(source.id, "include_summary", event.target.value)}
+                        placeholder="Reserved, BOOKED"
+                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                      />
+                    </label>
+                    <label className="field">
+                      Exclure résumé
+                      <input
+                        value={source.exclude_summary ?? ""}
+                        onChange={(event) => updateSourceField(source.id, "exclude_summary", event.target.value)}
+                        placeholder="Blocked"
+                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                      />
+                    </label>
+                    <label className="field">
+                      Active
+                      <select
+                        value={source.is_active ? "1" : "0"}
+                        onChange={(event) => updateSourceField(source.id, "is_active", event.target.value === "1")}
+                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                      >
+                        <option value="1">Oui</option>
+                        <option value="0">Non</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="table-action table-action--primary"
+                      onClick={() => void saveSource(source)}
                       disabled={savingSourceId === source.id || deletingSourceId === source.id}
                     >
-                      {gites.map((gite) => (
-                        <option key={gite.id} value={gite.id}>
-                          {gite.nom}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    Type
-                    <input
-                      value={source.type}
-                      onChange={(event) => updateSourceField(source.id, "type", event.target.value)}
-                      disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                    />
-                  </label>
-                  <label className="field">
-                    URL iCal
-                    <input
-                      value={source.url}
-                      onChange={(event) => updateSourceField(source.id, "url", event.target.value)}
-                      disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                    />
-                  </label>
-                  <label className="field">
-                    Inclure résumé
-                    <input
-                      value={source.include_summary ?? ""}
-                      onChange={(event) => updateSourceField(source.id, "include_summary", event.target.value)}
-                      placeholder="Reserved, BOOKED"
-                      disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                    />
-                  </label>
-                  <label className="field">
-                    Exclure résumé
-                    <input
-                      value={source.exclude_summary ?? ""}
-                      onChange={(event) => updateSourceField(source.id, "exclude_summary", event.target.value)}
-                      placeholder="Blocked"
-                      disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                    />
-                  </label>
-                  <label className="field">
-                    Active
-                    <select
-                      value={source.is_active ? "1" : "0"}
-                      onChange={(event) => updateSourceField(source.id, "is_active", event.target.value === "1")}
+                      {savingSourceId === source.id ? "Enregistrement..." : "Enregistrer"}
+                    </button>
+                    <button
+                      type="button"
+                      className="table-action table-action--danger"
+                      onClick={() => void removeSource(source)}
                       disabled={savingSourceId === source.id || deletingSourceId === source.id}
                     >
-                      <option value="1">Oui</option>
-                      <option value="0">Non</option>
-                    </select>
-                  </label>
+                      {deletingSourceId === source.id ? "Suppression..." : "Supprimer"}
+                    </button>
+                  </div>
                 </div>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="table-action table-action--primary"
-                    onClick={() => void saveSource(source)}
-                    disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                  >
-                    {savingSourceId === source.id ? "Enregistrement..." : "Enregistrer"}
-                  </button>
-                  <button
-                    type="button"
-                    className="table-action table-action--danger"
-                    onClick={() => void removeSource(source)}
-                    disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                  >
-                    {deletingSourceId === source.id ? "Suppression..." : "Supprimer"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </details>
       </div>
 
       <div className="card">
