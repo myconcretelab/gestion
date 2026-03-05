@@ -34,6 +34,7 @@ const SOURCE_BY_NORMALIZED_KEY = new Map<string, string>([
 
 const DEFAULT_SOURCE = "A définir";
 const UNKNOWN_HOST = "Hôte inconnu";
+const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 
 export type IcalSourceRow = {
   id: string;
@@ -103,6 +104,8 @@ export type IcalSyncResult = IcalPreviewResult & {
   created_count: number;
   updated_count: number;
   skipped_count: number;
+  to_verify_marked_count: number;
+  to_verify_cleared_count: number;
   per_gite: Record<string, { inserted: number; updated: number; skipped: number }>;
   inserted_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }>;
   updated_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }>;
@@ -171,6 +174,31 @@ const normalizeSource = (rawType: string) => {
   const normalized = SOURCE_BY_NORMALIZED_KEY.get(normalizeTextKey(rawType.trim()));
   return normalized ?? DEFAULT_SOURCE;
 };
+
+const hasIcalToVerifyMarker = (comment: string | null | undefined) => {
+  if (typeof comment !== "string") return false;
+  return comment
+    .split(/\r?\n/)
+    .some((line) => line.trim() === ICAL_TO_VERIFY_MARKER);
+};
+
+const stripIcalToVerifyMarker = (comment: string | null | undefined) => {
+  if (typeof comment !== "string") return "";
+  return comment
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== ICAL_TO_VERIFY_MARKER)
+    .join("\n")
+    .trim();
+};
+
+const mergeIcalToVerifyMarker = (comment: string | null | undefined, enabled: boolean) => {
+  const cleaned = stripIcalToVerifyMarker(comment);
+  if (!enabled) return cleaned || null;
+  return cleaned.length > 0 ? `${ICAL_TO_VERIFY_MARKER}\n${cleaned}` : ICAL_TO_VERIFY_MARKER;
+};
+
+const getReservationPeriodKey = (params: { gite_id: string; date_entree: string; date_sortie: string }) =>
+  `${params.gite_id}|${params.date_entree}|${params.date_sortie}`;
 
 const isUnknownHost = (rawName: string | null | undefined) => {
   if (!rawName) return true;
@@ -469,17 +497,20 @@ const loadParsedIcalReservations = async (onlyActive = true) => {
   };
 };
 
-export const previewIcalReservations = async (): Promise<IcalPreviewResult> => {
-  const { sources, errors, parsed } = await loadParsedIcalReservations(true);
-  const reservations = await buildIcalPreviewItems(parsed);
-
+const buildIcalPreviewResult = async (loaded: Awaited<ReturnType<typeof loadParsedIcalReservations>>) => {
+  const reservations = await buildIcalPreviewItems(loaded.parsed);
   return {
-    fetched_sources: sources.length,
-    parsed_events: parsed.length,
-    errors,
+    fetched_sources: loaded.sources.length,
+    parsed_events: loaded.parsed.length,
+    errors: loaded.errors,
     reservations,
     counts: buildCounts(reservations),
   };
+};
+
+export const previewIcalReservations = async (): Promise<IcalPreviewResult> => {
+  const loaded = await loadParsedIcalReservations(true);
+  return buildIcalPreviewResult(loaded);
 };
 
 const toCreatePayload = (reservation: IcalPreviewItem) => {
@@ -521,8 +552,87 @@ let cronLastRunAt: Date | null = null;
 let cronLastResult: IcalSyncResult | null = null;
 let cronConfig: IcalCronConfig = readIcalCronConfig(buildDefaultIcalCronConfig());
 
+const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof loadParsedIcalReservations>>) => {
+  const giteIds = [...new Set(loaded.sources.map((source) => source.gite_id))];
+  if (giteIds.length === 0) {
+    return { marked_count: 0, cleared_count: 0 };
+  }
+
+  const parsedPeriodKeys = new Set(
+    loaded.parsed.map((item) =>
+      getReservationPeriodKey({
+        gite_id: item.gite_id,
+        date_entree: item.date_entree,
+        date_sortie: item.date_sortie,
+      })
+    )
+  );
+
+  const sourceByGite = new Map<string, Set<string>>();
+  for (const source of loaded.sources) {
+    const current = sourceByGite.get(source.gite_id) ?? new Set<string>();
+    current.add(normalizeSource(source.type));
+    sourceByGite.set(source.gite_id, current);
+  }
+
+  const todayUtc = parseIsoDateToUtc(toIsoDate(new Date())) ?? new Date();
+  const existingReservations = await prisma.reservation.findMany({
+    where: {
+      gite_id: { in: giteIds },
+      date_sortie: { gte: todayUtc },
+    },
+    select: {
+      id: true,
+      gite_id: true,
+      hote_nom: true,
+      date_entree: true,
+      date_sortie: true,
+      source_paiement: true,
+      commentaire: true,
+    },
+  });
+
+  let marked_count = 0;
+  let cleared_count = 0;
+
+  for (const reservation of existingReservations) {
+    const giteId = reservation.gite_id;
+    if (!giteId) continue;
+
+    const managedSources = sourceByGite.get(giteId);
+    if (!managedSources || managedSources.size === 0) continue;
+
+    const hasMarker = hasIcalToVerifyMarker(reservation.commentaire);
+    const normalizedSource = normalizeSource(String(reservation.source_paiement ?? ""));
+    const likelyManagedByIcal =
+      hasMarker || managedSources.has(normalizedSource) || (normalizedSource === DEFAULT_SOURCE && isUnknownHost(reservation.hote_nom));
+    if (!likelyManagedByIcal) continue;
+
+    const periodKey = getReservationPeriodKey({
+      gite_id: giteId,
+      date_entree: toIsoDate(reservation.date_entree),
+      date_sortie: toIsoDate(reservation.date_sortie),
+    });
+    const shouldBeMarked = !parsedPeriodKeys.has(periodKey);
+    const nextComment = mergeIcalToVerifyMarker(reservation.commentaire, shouldBeMarked);
+    const currentComment = typeof reservation.commentaire === "string" ? reservation.commentaire.trim() : null;
+    if (nextComment === currentComment) continue;
+
+    await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { commentaire: nextComment },
+    });
+
+    if (shouldBeMarked) marked_count += 1;
+    else cleared_count += 1;
+  }
+
+  return { marked_count, cleared_count };
+};
+
 const runSync = async (): Promise<IcalSyncResult> => {
-  const preview = await previewIcalReservations();
+  const loaded = await loadParsedIcalReservations(true);
+  const preview = await buildIcalPreviewResult(loaded);
   let created_count = 0;
   let updated_count = 0;
   const inserted_items: IcalSyncResult["inserted_items"] = [];
@@ -585,6 +695,8 @@ const runSync = async (): Promise<IcalSyncResult> => {
     markPerGite(item.gite_nom, "skipped");
   }
 
+  const toVerifySync = await syncMissingReservationsToVerify(loaded);
+
   const skipped_count = preview.counts.existing + preview.counts.conflict;
   return {
     ...preview,
@@ -594,6 +706,8 @@ const runSync = async (): Promise<IcalSyncResult> => {
     per_gite,
     inserted_items,
     updated_items,
+    to_verify_marked_count: toVerifySync.marked_count,
+    to_verify_cleared_count: toVerifySync.cleared_count,
   };
 };
 
