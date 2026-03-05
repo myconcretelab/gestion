@@ -30,6 +30,8 @@ type IcalSyncResult = IcalPreviewResult & {
   created_count: number;
   updated_count: number;
   skipped_count: number;
+  to_verify_marked_count?: number;
+  to_verify_cleared_count?: number;
   per_gite?: Record<string, { inserted: number; updated: number; skipped: number }>;
   inserted_items?: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }>;
 };
@@ -803,8 +805,12 @@ const SettingsPage = () => {
       });
       setIcalPreview(result);
       await Promise.all([loadCronState(), loadImportLog()]);
+      const toVerifyLabel =
+        typeof result.to_verify_marked_count === "number"
+          ? ` ${result.to_verify_marked_count} marquée(s) "A vérifier", ${result.to_verify_cleared_count ?? 0} retirée(s).`
+          : "";
       setIcalNotice(
-        `Synchronisation terminée: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).`
+        `Synchronisation terminée: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).${toVerifyLabel}`
       );
     } catch (error: any) {
       setIcalError(error.message);

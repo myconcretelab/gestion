@@ -969,6 +969,13 @@ button.warning {
   white-space: nowrap;
 }
 
+.reservations-current-pill--to-verify {
+  background: #fef9c3;
+  border-color: #facc15;
+  color: #854d0e;
+  white-space: nowrap;
+}
+
 .reservations-fees-cell {
   display: inline-flex;
   align-items: center;

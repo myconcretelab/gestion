@@ -150,6 +150,7 @@ const RESERVATION_SOURCES = [
 ] as const;
 
 const DEFAULT_RESERVATION_SOURCE = "A définir";
+const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 const ALL_GITES_TAB = "all-gites";
 const UNASSIGNED_TAB = "unassigned";
 const SERVICE_OPTION_KEYS: ReservationServiceOptionKey[] = ["draps", "linge_toilette", "menage", "depart_tardif", "chiens"];
@@ -207,6 +208,28 @@ const normalizeReservationSource = (value: string | null | undefined) => {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return DEFAULT_RESERVATION_SOURCE;
   return SOURCE_BY_NORMALIZED_KEY[normalizeTextKey(trimmed)] ?? DEFAULT_RESERVATION_SOURCE;
+};
+
+const hasIcalToVerifyMarker = (comment: string | null | undefined) => {
+  if (typeof comment !== "string") return false;
+  return comment
+    .split(/\r?\n/)
+    .some((line) => line.trim() === ICAL_TO_VERIFY_MARKER);
+};
+
+const stripIcalToVerifyMarker = (comment: string | null | undefined) => {
+  if (typeof comment !== "string") return "";
+  return comment
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== ICAL_TO_VERIFY_MARKER)
+    .join("\n")
+    .trim();
+};
+
+const buildCommentWithIcalToVerifyMarker = (comment: string, keepMarker: boolean) => {
+  const cleaned = stripIcalToVerifyMarker(comment).trim();
+  if (!keepMarker) return cleaned || null;
+  return cleaned.length > 0 ? `${ICAL_TO_VERIFY_MARKER}\n${cleaned}` : ICAL_TO_VERIFY_MARKER;
 };
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
@@ -443,7 +466,7 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     prix_par_nuit: Number(reservation.prix_par_nuit ?? 0),
     prix_total: Number(reservation.prix_total ?? 0),
     source_paiement: normalizeReservationSource(reservation.source_paiement),
-    commentaire: reservation.commentaire ?? "",
+    commentaire: stripIcalToVerifyMarker(reservation.commentaire),
     frais_optionnels_montant: Number(reservation.frais_optionnels_montant ?? 0),
     frais_optionnels_libelle: reservation.frais_optionnels_libelle ?? "",
     frais_optionnels_declares: Boolean(reservation.frais_optionnels_declares),
@@ -474,7 +497,7 @@ const buildEmptyDraft = (year: number, month: number, giteId: string): Reservati
   });
 };
 
-const toPayload = (draft: ReservationDraft, options?: ContratOptions) => {
+const toPayload = (draft: ReservationDraft, options?: ContratOptions, keepIcalToVerifyMarker = false) => {
   const payload = {
     gite_id: draft.gite_id,
     placeholder_id: draft.placeholder_id,
@@ -486,7 +509,7 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions) => {
     prix_par_nuit: draft.prix_par_nuit,
     prix_total: draft.prix_total,
     source_paiement: normalizeReservationSource(draft.source_paiement),
-    commentaire: draft.commentaire.trim() || null,
+    commentaire: buildCommentWithIcalToVerifyMarker(draft.commentaire, keepIcalToVerifyMarker),
     frais_optionnels_montant: draft.frais_optionnels_montant,
     frais_optionnels_libelle: draft.frais_optionnels_libelle.trim() || null,
     frais_optionnels_declares: draft.frais_optionnels_declares,
@@ -593,11 +616,16 @@ const ReservationsPage = () => {
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
 
+  const reservationsRef = useRef<Reservation[]>([]);
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
   const reservationOptionsRef = useRef<Record<string, ContratOptions>>({});
   const saveTimers = useRef<Record<string, number>>({});
   const detailsCloseTimers = useRef<Record<string, number>>({});
   const savedRowFadeTimers = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    reservationsRef.current = reservations;
+  }, [reservations]);
 
   useEffect(() => {
     draftsRef.current = drafts;
@@ -944,9 +972,11 @@ const ReservationsPage = () => {
 
     try {
       const optionDraft = optionsOverride ?? reservationOptionsRef.current[rowId];
+      const existingReservation = reservationsRef.current.find((item) => item.id === rowId);
+      const keepIcalToVerifyMarker = hasIcalToVerifyMarker(existingReservation?.commentaire);
       const updated = await apiFetch<Reservation>(`/reservations/${rowId}`, {
         method: "PUT",
-        json: toPayload(draft, optionDraft),
+        json: toPayload(draft, optionDraft, keepIcalToVerifyMarker),
       });
 
       setReservations((previous) => previous.map((item) => (item.id === rowId ? updated : item)));
@@ -1119,7 +1149,10 @@ const ReservationsPage = () => {
   };
 
   const hasReservationChanges = (reservation: Reservation, draft: ReservationDraft, optionValue?: ContratOptions) =>
-    JSON.stringify(toPayload(draft, optionValue)) !== JSON.stringify(toPayload(toDraft(reservation), reservation.options));
+    JSON.stringify(toPayload(draft, optionValue, hasIcalToVerifyMarker(reservation.commentaire))) !==
+    JSON.stringify(
+      toPayload(toDraft(reservation), reservation.options, hasIcalToVerifyMarker(reservation.commentaire))
+    );
 
   const hasInlineChanges = (reservation: Reservation, draft: ReservationDraft) => {
     const currentOptions = reservationOptionsRef.current[reservation.id];
@@ -1896,7 +1929,7 @@ const ReservationsPage = () => {
         csvAmount(feesDeclared),
         csvAmount(feesUndeclared),
         reservation.source_paiement ?? "",
-        reservation.commentaire ?? "",
+        stripIcalToVerifyMarker(reservation.commentaire),
       ];
     });
 
@@ -2755,6 +2788,8 @@ const ReservationsPage = () => {
                       const isDepartureToday = isReservationDepartureToday(reservation);
                       const isArrivalTomorrow = isReservationArrivalTomorrow(reservation);
                       const isDepartureTomorrow = isReservationDepartureTomorrow(reservation);
+                      const isIcalToVerify = hasIcalToVerifyMarker(reservation.commentaire);
+                      const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
@@ -2796,8 +2831,11 @@ const ReservationsPage = () => {
                                   +
                                 </button>
                               )}
-                              {isCurrentReservation || isDepartureToday || isArrivalTomorrow || isDepartureTomorrow ? (
+                              {isCurrentReservation || isDepartureToday || isArrivalTomorrow || isDepartureTomorrow || isIcalToVerify ? (
                                 <div className="reservations-row-flags">
+                                  {isIcalToVerify ? (
+                                    <span className="reservations-current-pill reservations-current-pill--to-verify">A vérifier</span>
+                                  ) : null}
                                   {isCurrentReservation && !isDepartureToday && !isDepartureTomorrow ? (
                                     <span className="reservations-current-pill reservations-current-pill--row-start">En cours</span>
                                   ) : null}
@@ -3305,11 +3343,11 @@ const ReservationsPage = () => {
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger reservations-comment-trigger"
-                                  data-full-comment={reservation.commentaire ?? ""}
+                                  data-full-comment={visibleComment}
                                   onClick={() => openInlineField(reservation, "commentaire")}
                                   title="Modifier le commentaire"
                                 >
-                                  {reservation.commentaire ?? ""}
+                                  {visibleComment}
                                 </button>
                               )}
                             </td>
