@@ -225,12 +225,41 @@ const getUtcStartOfToday = () => {
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const getReservationBoundsUtc = (reservation: Reservation): { start: number; end: number } | null => {
+  const start = new Date(reservation.date_entree).getTime();
+  const end = new Date(reservation.date_sortie).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return { start, end };
+};
+
 const isReservationInProgress = (reservation: Reservation) => {
-  const start = new Date(reservation.date_entree);
-  const end = new Date(reservation.date_sortie);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+  const bounds = getReservationBoundsUtc(reservation);
+  if (!bounds) return false;
   const todayUtcStart = getUtcStartOfToday();
-  return start.getTime() <= todayUtcStart && todayUtcStart < end.getTime();
+  return bounds.start <= todayUtcStart && todayUtcStart <= bounds.end;
+};
+
+const isReservationDepartureToday = (reservation: Reservation) => {
+  const bounds = getReservationBoundsUtc(reservation);
+  if (!bounds) return false;
+  const todayUtcStart = getUtcStartOfToday();
+  return bounds.end === todayUtcStart;
+};
+
+const isReservationArrivalTomorrow = (reservation: Reservation) => {
+  const bounds = getReservationBoundsUtc(reservation);
+  if (!bounds) return false;
+  const tomorrowUtcStart = getUtcStartOfToday() + DAY_MS;
+  return bounds.start === tomorrowUtcStart;
+};
+
+const isReservationDepartureTomorrow = (reservation: Reservation) => {
+  const bounds = getReservationBoundsUtc(reservation);
+  if (!bounds) return false;
+  const tomorrowUtcStart = getUtcStartOfToday() + DAY_MS;
+  return bounds.end === tomorrowUtcStart;
 };
 
 const parseInputDate = (value: string): Date | null => {
@@ -2723,6 +2752,9 @@ const ReservationsPage = () => {
                       const isDetailsClosing = Boolean(closingDetails[reservation.id]);
                       const isRowSavedFading = Boolean(savedRowFade[reservation.id]);
                       const isCurrentReservation = isReservationInProgress(reservation);
+                      const isDepartureToday = isReservationDepartureToday(reservation);
+                      const isArrivalTomorrow = isReservationArrivalTomorrow(reservation);
+                      const isDepartureTomorrow = isReservationDepartureTomorrow(reservation);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
@@ -2764,7 +2796,24 @@ const ReservationsPage = () => {
                                   +
                                 </button>
                               )}
-                              {isCurrentReservation ? <span className="reservations-current-pill reservations-current-pill--row-start">En cours</span> : null}
+                              {isCurrentReservation || isDepartureToday || isArrivalTomorrow || isDepartureTomorrow ? (
+                                <div className="reservations-row-flags">
+                                  {isCurrentReservation && !isDepartureToday && !isDepartureTomorrow ? (
+                                    <span className="reservations-current-pill reservations-current-pill--row-start">En cours</span>
+                                  ) : null}
+                                  {isDepartureToday ? (
+                                    <span className="reservations-current-pill reservations-current-pill--departure-today">
+                                      Part aujourd'hui
+                                    </span>
+                                  ) : null}
+                                  {isArrivalTomorrow ? (
+                                    <span className="reservations-current-pill reservations-current-pill--arrival">Arrive demain</span>
+                                  ) : null}
+                                  {isDepartureTomorrow ? (
+                                    <span className="reservations-current-pill reservations-current-pill--departure">Part demain</span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </td>
                             <td className="reservations-host-cell">
                               {isEditing || isInlineFieldActive(reservation.id, "hote_nom") ? (
