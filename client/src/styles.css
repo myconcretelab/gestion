@@ -210,6 +210,16 @@ body {
   gap: 12px;
 }
 
+.settings-sources-accordion {
+  margin-top: 12px;
+}
+
+.settings-sources-accordion > summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
 .contracts-add {
   width: 58px;
   height: 58px;
