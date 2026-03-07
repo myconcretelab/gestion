@@ -51,6 +51,27 @@ Accès:
 - Front: http://localhost:5173
 - API: http://localhost:4000/api
 
+## Intégration Pump
+
+Le repo `contrats` peut maintenant consommer directement l'API locale du repo `pump`.
+
+Variables d'environnement utiles:
+
+- `PUMP_API_BASE_URL=http://localhost:3000/api/reservations`
+- `PUMP_API_KEY=...`
+
+Flux prévu:
+
+1. Dans `pump`, exposer l'API `/api/reservations/*` avec `PUMP_API_KEY`.
+2. Dans `contrats`, ouvrir **Réglages**.
+3. Utiliser la section **Import Pump**:
+   - `Lancer refresh Pump`
+   - `Rafraîchir le statut`
+   - `Analyser la dernière extraction`
+   - `Importer`
+
+`contrats` récupère alors les réservations normalisées depuis `pump`, les prévisualise avec le même moteur que l'ancien import HAR, puis crée ou complète les réservations locales.
+
 ## Génération PDF
 
 - Template principal: `server/templates/contract.html`
