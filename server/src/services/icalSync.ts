@@ -8,6 +8,7 @@ import {
   writeIcalCronConfig,
   type IcalCronConfig,
 } from "./icalCronSettings.js";
+import { isUnknownHostName, normalizeImportedHostName } from "../utils/reservationText.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,7 +34,6 @@ const SOURCE_BY_NORMALIZED_KEY = new Map<string, string>([
 ]);
 
 const DEFAULT_SOURCE = "A définir";
-const UNKNOWN_HOST = "Hôte inconnu";
 const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 
 export type IcalSourceRow = {
@@ -200,12 +200,6 @@ const mergeIcalToVerifyMarker = (comment: string | null | undefined, enabled: bo
 const getReservationPeriodKey = (params: { gite_id: string; date_entree: string; date_sortie: string }) =>
   `${params.gite_id}|${params.date_entree}|${params.date_sortie}`;
 
-const isUnknownHost = (rawName: string | null | undefined) => {
-  if (!rawName) return true;
-  const normalized = normalizeTextKey(rawName);
-  return normalized.length === 0 || normalized.includes("hoteinconnu") || normalized.includes("hostunknown");
-};
-
 const extractHostName = (summary: string) => {
   const cleaned = summary
     .replace(/\b(airbnb|reserved|booked|not available|unavailable|blocked|indisponible|bloque)\b/gi, "")
@@ -324,7 +318,7 @@ const fetchSourceReservations = async (source: IcalSourceRow): Promise<ParsedIca
       description,
       date_entree,
       date_sortie,
-      hote_nom: extractHostName(summary),
+      hote_nom: normalizeImportedHostName(extractHostName(summary)),
     });
   }
 
@@ -360,7 +354,7 @@ const buildUpdateFields = (existing: any, reservation: ParsedIcalReservation) =>
   const fields: Array<"hote_nom" | "source_paiement"> = [];
   const normalizedSource = normalizeSource(reservation.source_type);
 
-  if (isUnknownHost(existing.hote_nom) && reservation.hote_nom) {
+  if (isUnknownHostName(existing.hote_nom) && reservation.hote_nom) {
     fields.push("hote_nom");
   }
 
@@ -524,7 +518,7 @@ const toCreatePayload = (reservation: IcalPreviewItem) => {
   return {
     gite_id: reservation.gite_id,
     placeholder_id: null,
-    hote_nom: reservation.hote_nom ?? UNKNOWN_HOST,
+    hote_nom: normalizeImportedHostName(reservation.hote_nom) ?? "",
     date_entree: dateEntree,
     date_sortie: dateSortie,
     nb_nuits: nights,
@@ -605,7 +599,7 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
     const hasMarker = hasIcalToVerifyMarker(reservation.commentaire);
     const normalizedSource = normalizeSource(String(reservation.source_paiement ?? ""));
     const likelyManagedByIcal =
-      hasMarker || managedSources.has(normalizedSource) || (normalizedSource === DEFAULT_SOURCE && isUnknownHost(reservation.hote_nom));
+      hasMarker || managedSources.has(normalizedSource) || (normalizedSource === DEFAULT_SOURCE && isUnknownHostName(reservation.hote_nom));
     if (!likelyManagedByIcal) continue;
 
     const periodKey = getReservationPeriodKey({

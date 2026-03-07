@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
-import { parseHarReservations } from "../services/harParser.js";
+import { parseHarReservations, type ParsedHarReservation } from "../services/harParser.js";
 import { appendImportLog, buildImportLogEntry, readImportLog, IMPORT_LOG_LIMIT } from "../services/importLog.js";
 import {
   getIcalSyncCronConfig,
@@ -13,12 +13,23 @@ import {
   type IcalSourceRow,
 } from "../services/icalSync.js";
 import type { IcalCronConfig } from "../services/icalCronSettings.js";
+import {
+  getPumpLatestReservations,
+  getPumpRefreshStatus,
+  normalizePumpReservation,
+  triggerPumpRefresh,
+} from "../services/pumpClient.js";
+import {
+  hasMeaningfulImportedComment,
+  isUnknownHostName,
+  normalizeImportedComment,
+  normalizeImportedHostName,
+} from "../utils/reservationText.js";
 
 const router = Router();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SOURCE = "A définir";
-const UNKNOWN_HOST = "Hôte inconnu";
 
 const normalizeTextKey = (value: string) =>
   value
@@ -129,12 +140,6 @@ const parseIsoDateToUtc = (iso: string) => {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
-const isUnknownHost = (name: string | null | undefined) => {
-  if (!name) return true;
-  const normalized = normalizeTextKey(name);
-  return normalized.length === 0 || normalized.includes("hoteinconnu") || normalized.includes("hostunknown");
-};
-
 const normalizeSource = (value: string) => SOURCE_BY_NORMALIZED_KEY.get(normalizeTextKey(value.trim())) ?? DEFAULT_SOURCE;
 
 const extractAirbnbListingId = (url: string) => {
@@ -163,6 +168,17 @@ type HarPreviewItem = {
   existing_id: string | null;
   conflict_id: string | null;
   update_fields: Array<"hote_nom" | "source_paiement" | "commentaire" | "prix_total">;
+};
+
+type HarPreviewResult = {
+  reservations: HarPreviewItem[];
+  counts: {
+    new: number;
+    existing: number;
+    existing_updatable: number;
+    conflict: number;
+    unmapped_listing: number;
+  };
 };
 
 const getHarListingMap = async () => {
@@ -197,9 +213,11 @@ const getHarListingMap = async () => {
 
 const buildHarUpdateData = (existing: any, item: HarPreviewItem) => {
   const data: Record<string, unknown> = {};
+  const normalizedHostName = normalizeImportedHostName(item.hote_nom);
+  const normalizedComment = normalizeImportedComment(item.commentaire);
 
-  if (item.hote_nom && isUnknownHost(existing.hote_nom)) {
-    data.hote_nom = item.hote_nom;
+  if (normalizedHostName && isUnknownHostName(existing.hote_nom)) {
+    data.hote_nom = normalizedHostName;
   }
 
   const hasSource = typeof existing.source_paiement === "string" && existing.source_paiement.trim().length > 0;
@@ -207,9 +225,9 @@ const buildHarUpdateData = (existing: any, item: HarPreviewItem) => {
     data.source_paiement = item.source_type;
   }
 
-  const hasComment = typeof existing.commentaire === "string" && existing.commentaire.trim().length > 0;
-  if (!hasComment && item.commentaire) {
-    data.commentaire = item.commentaire;
+  const hasComment = hasMeaningfulImportedComment(existing.commentaire);
+  if (!hasComment && normalizedComment) {
+    data.commentaire = normalizedComment;
   }
 
   const existingTotal = Number(existing.prix_total ?? 0);
@@ -221,14 +239,15 @@ const buildHarUpdateData = (existing: any, item: HarPreviewItem) => {
   return data;
 };
 
-const buildHarPreview = async (har: unknown) => {
-  const parsed = parseHarReservations(har);
+const buildReservationsPreview = async (parsed: ParsedHarReservation[]) => {
   const listingMap = await getHarListingMap();
   const preview: HarPreviewItem[] = [];
 
   for (const reservation of parsed) {
     const mapped = listingMap.get(reservation.listingId);
     const sourceType = mapped?.source_type ?? (reservation.type === "airbnb" ? "Airbnb" : DEFAULT_SOURCE);
+    const normalizedHostName = normalizeImportedHostName(reservation.name);
+    const normalizedComment = normalizeImportedComment(reservation.comment);
 
     if (!mapped) {
       preview.push({
@@ -241,9 +260,9 @@ const buildHarPreview = async (har: unknown) => {
         check_in: reservation.checkIn,
         check_out: reservation.checkOut,
         nights: reservation.nights,
-        hote_nom: reservation.name,
+        hote_nom: normalizedHostName,
         prix_total: reservation.payout,
-        commentaire: reservation.comment,
+        commentaire: normalizedComment,
         existing_id: null,
         conflict_id: null,
         update_fields: [],
@@ -265,9 +284,9 @@ const buildHarPreview = async (har: unknown) => {
         check_in: reservation.checkIn,
         check_out: reservation.checkOut,
         nights: reservation.nights,
-        hote_nom: reservation.name,
+        hote_nom: normalizedHostName,
         prix_total: reservation.payout,
-        commentaire: reservation.comment,
+        commentaire: normalizedComment,
         existing_id: null,
         conflict_id: null,
         update_fields: [],
@@ -301,9 +320,9 @@ const buildHarPreview = async (har: unknown) => {
         check_in: reservation.checkIn,
         check_out: reservation.checkOut,
         nights: reservation.nights,
-        hote_nom: reservation.name,
+        hote_nom: normalizedHostName,
         prix_total: reservation.payout,
-        commentaire: reservation.comment,
+        commentaire: normalizedComment,
         existing_id: exact.id,
         conflict_id: null,
         update_fields: [],
@@ -320,9 +339,9 @@ const buildHarPreview = async (har: unknown) => {
         check_in: reservation.checkIn,
         check_out: reservation.checkOut,
         nights: reservation.nights,
-        hote_nom: reservation.name,
+        hote_nom: normalizedHostName,
         prix_total: reservation.payout,
-        commentaire: reservation.comment,
+        commentaire: normalizedComment,
         existing_id: exact.id,
         conflict_id: null,
         update_fields: updateFields,
@@ -350,9 +369,9 @@ const buildHarPreview = async (har: unknown) => {
         check_in: reservation.checkIn,
         check_out: reservation.checkOut,
         nights: reservation.nights,
-        hote_nom: reservation.name,
+        hote_nom: normalizedHostName,
         prix_total: reservation.payout,
-        commentaire: reservation.comment,
+        commentaire: normalizedComment,
         existing_id: null,
         conflict_id: conflict.id,
         update_fields: [],
@@ -370,9 +389,9 @@ const buildHarPreview = async (har: unknown) => {
       check_in: reservation.checkIn,
       check_out: reservation.checkOut,
       nights: reservation.nights,
-      hote_nom: reservation.name,
+      hote_nom: normalizedHostName,
       prix_total: reservation.payout,
-      commentaire: reservation.comment,
+      commentaire: normalizedComment,
       existing_id: null,
       conflict_id: null,
       update_fields: [],
@@ -392,6 +411,8 @@ const buildHarPreview = async (har: unknown) => {
     counts,
   };
 };
+
+const buildHarPreview = async (har: unknown) => buildReservationsPreview(parseHarReservations(har));
 
 const buildHarPerGiteSummary = (
   preview: { reservations: HarPreviewItem[] },
@@ -423,6 +444,132 @@ const buildImportLogResponse = (limitRaw: unknown) => {
     total: entries.length,
     limit,
   };
+};
+
+const importPreviewReservations = async (
+  preview: HarPreviewResult,
+  selectedIds: string[] | undefined,
+  importSource: "har" | "pump"
+) => {
+  const selectedSet = selectedIds ? new Set(selectedIds) : null;
+  const importable = preview.reservations.filter((item) => {
+    if (item.status !== "new" && item.status !== "existing_updatable") return false;
+    if (!selectedSet) return true;
+    return selectedSet.has(item.id);
+  });
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  const createdIds = new Set<string>();
+  const updatedIds = new Set<string>();
+  const insertedItems: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
+  const updatedItems: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
+
+  for (const item of importable) {
+    if (item.status === "new" && item.gite_id) {
+      const dateEntree = parseIsoDateToUtc(item.check_in);
+      const dateSortie = parseIsoDateToUtc(item.check_out);
+      if (!dateEntree || !dateSortie) continue;
+
+      const nights = Math.max(1, Math.round((dateSortie.getTime() - dateEntree.getTime()) / DAY_MS));
+      const prixTotal = item.prix_total && item.prix_total > 0 ? round2(item.prix_total) : 0;
+      const prixParNuit = prixTotal > 0 ? round2(prixTotal / nights) : 0;
+
+      await prisma.reservation.create({
+        data: {
+          gite_id: item.gite_id,
+          placeholder_id: null,
+          hote_nom: normalizeImportedHostName(item.hote_nom) ?? "",
+          date_entree: dateEntree,
+          date_sortie: dateSortie,
+          nb_nuits: nights,
+          nb_adultes: 0,
+          prix_par_nuit: prixParNuit,
+          prix_total: prixTotal,
+          source_paiement: item.source_type,
+          commentaire: normalizeImportedComment(item.commentaire),
+          frais_optionnels_montant: 0,
+          frais_optionnels_libelle: null,
+          frais_optionnels_declares: false,
+          options: "{}",
+        },
+      });
+      createdCount += 1;
+      createdIds.add(item.id);
+      insertedItems.push({
+        giteName: item.gite_nom ?? item.listing_id,
+        giteId: item.gite_id,
+        checkIn: item.check_in,
+        checkOut: item.check_out,
+        source: item.source_type,
+      });
+    }
+
+    if (item.status === "existing_updatable" && item.existing_id) {
+      const existing = await prisma.reservation.findUnique({
+        where: { id: item.existing_id },
+        select: {
+          id: true,
+          hote_nom: true,
+          source_paiement: true,
+          commentaire: true,
+          prix_total: true,
+        },
+      });
+      if (!existing) continue;
+
+      const updateData = buildHarUpdateData(existing, item);
+      if (Object.keys(updateData).length === 0) continue;
+
+      await prisma.reservation.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+      updatedCount += 1;
+      updatedIds.add(item.id);
+      updatedItems.push({
+        giteName: item.gite_nom ?? item.listing_id,
+        giteId: item.gite_id ?? "",
+        checkIn: item.check_in,
+        checkOut: item.check_out,
+        source: item.source_type,
+      });
+    }
+  }
+
+  const skippedCount =
+    preview.reservations.length -
+    importable.length +
+    importable.filter((item) => item.status === "existing_updatable" && item.update_fields.length === 0).length;
+
+  const response = {
+    ...preview,
+    selected_count: importable.length,
+    created_count: createdCount,
+    updated_count: updatedCount,
+    skipped_count: Math.max(0, skippedCount),
+  };
+
+  try {
+    appendImportLog(
+      buildImportLogEntry({
+        source: importSource,
+        selectionCount: importable.length,
+        inserted: createdCount,
+        updated: updatedCount,
+        skipped: {
+          unknown: Math.max(0, skippedCount),
+        },
+        perGite: buildHarPerGiteSummary(preview, importable, createdIds, updatedIds),
+        insertedItems,
+        updatedItems,
+      })
+    );
+  } catch {
+    // Ignore import-log write failures
+  }
+
+  return response;
 };
 
 const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
@@ -900,6 +1047,67 @@ router.get("/import-log", (req, res) => {
   res.json(buildImportLogResponse(req.query.limit));
 });
 
+router.get("/pump/status", async (_req, res, next) => {
+  try {
+    const status = await getPumpRefreshStatus();
+    res.json(status);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/refresh", async (_req, res, next) => {
+  try {
+    const result = await triggerPumpRefresh();
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/preview", async (_req, res, next) => {
+  try {
+    const latest = await getPumpLatestReservations();
+    const preview = await buildReservationsPreview(latest.reservations.map(normalizePumpReservation));
+    res.json({
+      ...preview,
+      pump: {
+        session_id: latest.sessionId,
+        status: latest.status,
+        updated_at: latest.updatedAt ?? null,
+        reservation_count: latest.reservationCount,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/import", async (req, res, next) => {
+  try {
+    const payload = z
+      .object({
+        selected_ids: z.array(z.string().trim().min(1)).optional(),
+      })
+      .parse(req.body);
+
+    const latest = await getPumpLatestReservations();
+    const preview = await buildReservationsPreview(latest.reservations.map(normalizePumpReservation));
+    const response = await importPreviewReservations(preview, payload.selected_ids, "pump");
+    res.json({
+      ...response,
+      pump: {
+        session_id: latest.sessionId,
+        status: latest.status,
+        updated_at: latest.updatedAt ?? null,
+        reservation_count: latest.reservationCount,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/har/preview", async (req, res, next) => {
   try {
     const payload = harPayloadSchema.parse(req.body);
@@ -914,125 +1122,7 @@ router.post("/har/import", async (req, res, next) => {
   try {
     const payload = harPayloadSchema.parse(req.body);
     const preview = await buildHarPreview(payload.har);
-
-    const selectedIds = payload.selected_ids ? new Set(payload.selected_ids) : null;
-    const importable = preview.reservations.filter((item) => {
-      if (item.status !== "new" && item.status !== "existing_updatable") return false;
-      if (!selectedIds) return true;
-      return selectedIds.has(item.id);
-    });
-
-    let createdCount = 0;
-    let updatedCount = 0;
-    const createdIds = new Set<string>();
-    const updatedIds = new Set<string>();
-    const insertedItems: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
-    const updatedItems: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
-
-    for (const item of importable) {
-      if (item.status === "new" && item.gite_id) {
-        const dateEntree = parseIsoDateToUtc(item.check_in);
-        const dateSortie = parseIsoDateToUtc(item.check_out);
-        if (!dateEntree || !dateSortie) continue;
-
-        const nights = Math.max(1, Math.round((dateSortie.getTime() - dateEntree.getTime()) / DAY_MS));
-        const prixTotal = item.prix_total && item.prix_total > 0 ? round2(item.prix_total) : 0;
-        const prixParNuit = prixTotal > 0 ? round2(prixTotal / nights) : 0;
-
-        await prisma.reservation.create({
-          data: {
-            gite_id: item.gite_id,
-            placeholder_id: null,
-            hote_nom: item.hote_nom ?? UNKNOWN_HOST,
-            date_entree: dateEntree,
-            date_sortie: dateSortie,
-            nb_nuits: nights,
-            nb_adultes: 0,
-            prix_par_nuit: prixParNuit,
-            prix_total: prixTotal,
-            source_paiement: item.source_type,
-            commentaire: item.commentaire ?? null,
-            frais_optionnels_montant: 0,
-            frais_optionnels_libelle: null,
-            frais_optionnels_declares: false,
-            options: "{}",
-          },
-        });
-        createdCount += 1;
-        createdIds.add(item.id);
-        insertedItems.push({
-          giteName: item.gite_nom ?? item.listing_id,
-          giteId: item.gite_id,
-          checkIn: item.check_in,
-          checkOut: item.check_out,
-          source: item.source_type,
-        });
-      }
-
-      if (item.status === "existing_updatable" && item.existing_id) {
-        const existing = await prisma.reservation.findUnique({
-          where: { id: item.existing_id },
-          select: {
-            id: true,
-            hote_nom: true,
-            source_paiement: true,
-            commentaire: true,
-            prix_total: true,
-          },
-        });
-        if (!existing) continue;
-
-        const updateData = buildHarUpdateData(existing, item);
-        if (Object.keys(updateData).length === 0) continue;
-
-        await prisma.reservation.update({
-          where: { id: existing.id },
-          data: updateData,
-        });
-        updatedCount += 1;
-        updatedIds.add(item.id);
-        updatedItems.push({
-          giteName: item.gite_nom ?? item.listing_id,
-          giteId: item.gite_id ?? "",
-          checkIn: item.check_in,
-          checkOut: item.check_out,
-          source: item.source_type,
-        });
-      }
-    }
-
-    const skippedCount =
-      preview.reservations.length -
-      importable.length +
-      importable.filter((item) => item.status === "existing_updatable" && item.update_fields.length === 0).length;
-
-    const response = {
-      ...preview,
-      selected_count: importable.length,
-      created_count: createdCount,
-      updated_count: updatedCount,
-      skipped_count: Math.max(0, skippedCount),
-    };
-
-    try {
-      appendImportLog(
-        buildImportLogEntry({
-          source: "har",
-          selectionCount: importable.length,
-          inserted: createdCount,
-          updated: updatedCount,
-          skipped: {
-            unknown: Math.max(0, skippedCount),
-          },
-          perGite: buildHarPerGiteSummary(preview, importable, createdIds, updatedIds),
-          insertedItems,
-          updatedItems,
-        })
-      );
-    } catch {
-      // Ignore import-log write failures
-    }
-
+    const response = await importPreviewReservations(preview, payload.selected_ids, "har");
     res.json(response);
   } catch (error) {
     next(error);

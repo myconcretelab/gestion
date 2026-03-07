@@ -1,3 +1,5 @@
+import { normalizeImportedComment } from "../utils/reservationText.js";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type HarRecordBase = {
@@ -220,9 +222,7 @@ const fullName = (firstName: unknown, lastName: unknown) => {
 };
 
 const cleanComment = (value: unknown) => {
-  if (typeof value !== "string") return null;
-  const cleaned = value.replace(/\r?\n/g, " ").replace(/\s{2,}/g, " ").trim();
-  return cleaned.length > 0 ? cleaned : null;
+  return normalizeImportedComment(value);
 };
 
 const buildStableId = (parts: Array<string | number | null | undefined>) =>

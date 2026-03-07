@@ -115,6 +115,30 @@ type HarImportResult = HarPreviewResult & {
   skipped_count: number;
 };
 
+type PumpStatusResult = {
+  sessionId: string | null;
+  status: string;
+  updatedAt?: string | null;
+  reservationCount?: number;
+  errors?: Array<{ message?: string | null }>;
+};
+
+type PumpPreviewResult = HarPreviewResult & {
+  pump?: {
+    session_id: string | null;
+    status: string;
+    updated_at: string | null;
+    reservation_count: number;
+  };
+};
+
+type PumpImportResult = PumpPreviewResult & {
+  selected_count: number;
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+};
+
 type IcalSourceDraft = {
   gite_id: string;
   type: string;
@@ -198,6 +222,7 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "ical-cron") return "ICAL cron";
   if (normalized === "ical-startup") return "ICAL démarrage";
   if (normalized === "har") return "HAR";
+  if (normalized === "pump") return "Pump";
   return source || "Import";
 };
 
@@ -344,6 +369,16 @@ const SettingsPage = () => {
   const [harError, setHarError] = useState<string | null>(null);
   const [harNotice, setHarNotice] = useState<string | null>(null);
 
+  const [pumpStatus, setPumpStatus] = useState<PumpStatusResult | null>(null);
+  const [pumpPreview, setPumpPreview] = useState<PumpPreviewResult | null>(null);
+  const [pumpSelections, setPumpSelections] = useState<Record<string, boolean>>({});
+  const [loadingPumpStatus, setLoadingPumpStatus] = useState(false);
+  const [refreshingPump, setRefreshingPump] = useState(false);
+  const [analyzingPump, setAnalyzingPump] = useState(false);
+  const [importingPump, setImportingPump] = useState(false);
+  const [pumpError, setPumpError] = useState<string | null>(null);
+  const [pumpNotice, setPumpNotice] = useState<string | null>(null);
+
   const [importLog, setImportLog] = useState<ImportLogEntry[]>([]);
   const [loadingImportLog, setLoadingImportLog] = useState(false);
   const [importLogError, setImportLogError] = useState<string | null>(null);
@@ -356,6 +391,10 @@ const SettingsPage = () => {
   const selectedHarCount = useMemo(
     () => Object.values(harSelections).filter(Boolean).length,
     [harSelections]
+  );
+  const selectedPumpCount = useMemo(
+    () => Object.values(pumpSelections).filter(Boolean).length,
+    [pumpSelections]
   );
   const sourceImportUnknownIds = useMemo(
     () => (sourceImportPreview?.unknown_gites ?? []).map((item) => item.source_gite_id),
@@ -409,10 +448,23 @@ const SettingsPage = () => {
     }
   };
 
+  const loadPumpStatus = async () => {
+    setLoadingPumpStatus(true);
+    setPumpError(null);
+    try {
+      const data = await apiFetch<PumpStatusResult>("/settings/pump/status");
+      setPumpStatus(data);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de charger le statut Pump.");
+    } finally {
+      setLoadingPumpStatus(false);
+    }
+  };
+
   useEffect(() => {
     setLoadingManagers(true);
     setLoadingSources(true);
-    Promise.all([loadManagers(), loadSources(), loadCronState(), loadImportLog()])
+    Promise.all([loadManagers(), loadSources(), loadCronState(), loadImportLog(), loadPumpStatus()])
       .catch((error: any) => {
         const message = error?.message ?? "Impossible de charger les paramètres.";
         setManagerError(message);
@@ -901,6 +953,82 @@ const SettingsPage = () => {
       setHarError(error.message);
     } finally {
       setImportingHar(false);
+    }
+  };
+
+  const refreshPump = async () => {
+    setRefreshingPump(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const result = await apiFetch<{ sessionId: string; status: string; message?: string }>("/settings/pump/refresh", {
+        method: "POST",
+      });
+      await loadPumpStatus();
+      setPumpNotice(result.message ?? `Refresh Pump lancé (${result.sessionId}).`);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de lancer le refresh Pump.");
+    } finally {
+      setRefreshingPump(false);
+    }
+  };
+
+  const analyzePump = async () => {
+    setAnalyzingPump(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const result = await apiFetch<PumpPreviewResult>("/settings/pump/preview", {
+        method: "POST",
+      });
+      setPumpPreview(result);
+      const defaults: Record<string, boolean> = {};
+      result.reservations.forEach((item) => {
+        if (isHarImportableStatus(item.status)) {
+          defaults[item.id] = true;
+        }
+      });
+      setPumpSelections(defaults);
+      await loadPumpStatus();
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible d'analyser la dernière extraction Pump.");
+    } finally {
+      setAnalyzingPump(false);
+    }
+  };
+
+  const importPump = async () => {
+    if (!pumpPreview) return;
+
+    const selectedIds = Object.entries(pumpSelections)
+      .filter(([, checked]) => checked)
+      .map(([id]) => id);
+
+    if (selectedIds.length === 0) {
+      setPumpError("Aucune réservation Pump sélectionnée.");
+      return;
+    }
+
+    setImportingPump(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const result = await apiFetch<PumpImportResult>("/settings/pump/import", {
+        method: "POST",
+        json: {
+          selected_ids: selectedIds,
+        },
+      });
+      setPumpPreview(result);
+      await loadImportLog();
+      await loadPumpStatus();
+      setPumpNotice(
+        `Import Pump terminé: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).`
+      );
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible d'importer les réservations Pump.");
+    } finally {
+      setImportingPump(false);
     }
   };
 
@@ -1482,6 +1610,99 @@ const SettingsPage = () => {
             </table>
             {icalPreview.reservations.length > 80 ? (
               <div className="field-hint">Affichage limité aux 80 premières lignes.</div>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="section-title">Import Pump</div>
+        <div className="field-hint">
+          Déclenche un refresh dans le repo <code>pump</code>, lit la dernière extraction via son API locale sécurisée, puis crée ou complète les réservations.
+        </div>
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button type="button" className="secondary" onClick={() => void refreshPump()} disabled={refreshingPump || analyzingPump || importingPump}>
+            {refreshingPump ? "Refresh..." : "Lancer refresh Pump"}
+          </button>
+          <button type="button" className="secondary" onClick={() => void loadPumpStatus()} disabled={loadingPumpStatus || refreshingPump}>
+            {loadingPumpStatus ? "Statut..." : "Rafraîchir le statut"}
+          </button>
+          <button type="button" className="secondary" onClick={() => void analyzePump()} disabled={analyzingPump || importingPump}>
+            {analyzingPump ? "Analyse..." : "Analyser la dernière extraction"}
+          </button>
+          <button type="button" onClick={() => void importPump()} disabled={importingPump || !pumpPreview || selectedPumpCount === 0 || analyzingPump}>
+            {importingPump ? "Import..." : `Importer (${selectedPumpCount})`}
+          </button>
+        </div>
+        {pumpStatus ? (
+          <div className="field-hint" style={{ marginTop: 8 }}>
+            Statut: <strong>{pumpStatus.status}</strong>
+            {pumpStatus.sessionId ? ` | Session: ${pumpStatus.sessionId}` : ""}
+            {typeof pumpStatus.reservationCount === "number" ? ` | Réservations: ${pumpStatus.reservationCount}` : ""}
+            {pumpStatus.updatedAt ? ` | Mis à jour: ${formatIsoDateTimeFr(pumpStatus.updatedAt)}` : ""}
+          </div>
+        ) : null}
+        {pumpNotice && <div className="note note--success">{pumpNotice}</div>}
+        {pumpError && <div className="note">{pumpError}</div>}
+
+        {pumpPreview && (
+          <div style={{ marginTop: 14 }}>
+            <div className="field-hint" style={{ marginBottom: 8 }}>
+              Source Pump: {pumpPreview.pump?.status ?? "-"}
+              {pumpPreview.pump?.session_id ? ` | Session: ${pumpPreview.pump.session_id}` : ""}
+              {pumpPreview.pump?.updated_at ? ` | Mis à jour: ${formatIsoDateTimeFr(pumpPreview.pump.updated_at)}` : ""}
+            </div>
+            <div className="field-hint" style={{ marginBottom: 8 }}>
+              Total: {pumpPreview.reservations.length} | Nouveaux: {pumpPreview.counts.new} | Complétables: {pumpPreview.counts.existing_updatable} | Déjà présents: {pumpPreview.counts.existing} | Conflits: {pumpPreview.counts.conflict} | Listing non mappé: {pumpPreview.counts.unmapped_listing}
+            </div>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Gîte</th>
+                  <th>Dates</th>
+                  <th>Hôte</th>
+                  <th>Prix</th>
+                  <th>Source</th>
+                  <th>Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pumpPreview.reservations.slice(0, 120).map((item) => {
+                  const selectable = isHarImportableStatus(item.status);
+                  return (
+                    <tr key={item.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(pumpSelections[item.id])}
+                          disabled={!selectable || importingPump}
+                          onChange={(event) =>
+                            setPumpSelections((previous) => ({
+                              ...previous,
+                              [item.id]: event.target.checked,
+                            }))
+                          }
+                        />
+                      </td>
+                      <td>{item.gite_nom ?? item.listing_id}</td>
+                      <td>
+                        {formatIsoDateFr(item.check_in)} - {formatIsoDateFr(item.check_out)}
+                      </td>
+                      <td>{item.hote_nom ?? "-"}</td>
+                      <td>{typeof item.prix_total === "number" ? `${item.prix_total.toFixed(2)} €` : "-"}</td>
+                      <td>{item.source_type}</td>
+                      <td>
+                        {harStatusLabelMap[item.status]}
+                        {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {pumpPreview.reservations.length > 120 ? (
+              <div className="field-hint">Affichage limité aux 120 premières lignes.</div>
             ) : null}
           </div>
         )}
