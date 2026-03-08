@@ -51,23 +51,99 @@ const getPumpHeaders = () => {
   return headers;
 };
 
+const extractPumpErrorPayload = async (response: Response) => {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+    return payload.error || payload.message || null;
+  }
+
+  const text = await response.text().catch(() => "");
+  const normalized = text.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const describePumpFetchCause = (value: unknown): string | null => {
+  if (!value || typeof value !== "object") return null;
+
+  const cause = value as {
+    message?: unknown;
+    code?: unknown;
+    errno?: unknown;
+    syscall?: unknown;
+    hostname?: unknown;
+    host?: unknown;
+    port?: unknown;
+    address?: unknown;
+    cause?: unknown;
+  };
+
+  const details = [
+    typeof cause.message === "string" ? cause.message.trim() : null,
+    typeof cause.code === "string" ? `code=${cause.code}` : null,
+    typeof cause.errno === "string" ? `errno=${cause.errno}` : null,
+    typeof cause.syscall === "string" ? `syscall=${cause.syscall}` : null,
+    typeof cause.hostname === "string" ? `hostname=${cause.hostname}` : null,
+    typeof cause.host === "string" ? `host=${cause.host}` : null,
+    typeof cause.address === "string" ? `address=${cause.address}` : null,
+    typeof cause.port === "number" ? `port=${cause.port}` : null,
+  ].filter(Boolean);
+
+  if (details.length > 0) {
+    return details.join(", ");
+  }
+
+  return describePumpFetchCause(cause.cause);
+};
+
+export const buildPumpFetchErrorMessage = (url: string, error: unknown) => {
+  const defaultHint = "Vérifiez PUMP_API_BASE_URL, l'accessibilité réseau entre les services et le certificat TLS si l'URL est en HTTPS.";
+
+  if (!(error instanceof Error)) {
+    return `Échec de connexion à Pump (${url}). ${defaultHint}`;
+  }
+
+  const causeDetails = describePumpFetchCause(error.cause);
+
+  if (error.message.trim().toLowerCase() === "fetch failed") {
+    return `Échec de connexion à Pump (${url}). ${causeDetails ? `Cause: ${causeDetails}. ` : ""}${defaultHint}`;
+  }
+
+  return `Erreur Pump lors de l'appel ${url}: ${error.message}${causeDetails ? ` | Cause: ${causeDetails}` : ""}`;
+};
+
 const pumpFetch = async <T>(path: string, init: RequestInit = {}) => {
   const baseUrl = getPumpBaseUrl();
   if (!baseUrl) {
     throw new Error("PUMP_API_BASE_URL n'est pas configurée.");
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...getPumpHeaders(),
-      ...(init.headers ?? {}),
-    },
-  });
+  const endpoint = `${baseUrl}${path}`;
+
+  try {
+    new URL(endpoint);
+  } catch {
+    throw new Error(`PUMP_API_BASE_URL invalide: ${baseUrl}`);
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(endpoint, {
+      ...init,
+      headers: {
+        ...getPumpHeaders(),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    throw new Error(buildPumpFetchErrorMessage(endpoint, error));
+  }
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(payload.error || `Erreur Pump (${response.status})`);
+    const payloadMessage = await extractPumpErrorPayload(response);
+    throw new Error(payloadMessage || `Erreur Pump (${response.status}) sur ${endpoint}`);
   }
 
   if (response.status === 204) {
