@@ -59,6 +59,10 @@ Variables d'environnement utiles:
 
 - `PUMP_API_BASE_URL=http://localhost:3000/api/reservations`
 - `PUMP_API_KEY=...`
+- `PUMP_IMPORT_CRON_ENABLED=true`
+- `PUMP_IMPORT_CRON_INTERVAL_DAYS=3`
+- `PUMP_IMPORT_CRON_HOUR=10`
+- `PUMP_IMPORT_CRON_MINUTE=0`
 
 Flux prévu:
 
@@ -71,6 +75,8 @@ Flux prévu:
    - `Importer`
 
 `contrats` récupère alors les réservations normalisées depuis `pump`, les prévisualise avec le même moteur que l'ancien import HAR, puis crée ou complète les réservations locales.
+
+Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h.
 
 ## Génération PDF
 
