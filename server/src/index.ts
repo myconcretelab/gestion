@@ -1,11 +1,13 @@
 import { env } from "./config/env.js";
 import { createApp } from "./app.js";
 import { startIcalSyncCron } from "./services/icalSync.js";
+import { startPumpCron } from "./services/pumpCron.js";
 
 const app = createApp();
 
 if (env.NODE_ENV !== "test") {
   startIcalSyncCron();
+  startPumpCron();
 }
 
 app.listen(env.PORT, () => {

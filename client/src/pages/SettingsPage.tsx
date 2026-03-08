@@ -139,6 +139,23 @@ type PumpImportResult = PumpPreviewResult & {
   skipped_count: number;
 };
 
+type PumpCronConfig = {
+  enabled: boolean;
+  interval_days: number;
+  hour: number;
+  minute: number;
+  run_on_start: boolean;
+};
+
+type PumpCronState = {
+  config: PumpCronConfig;
+  running: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_result: PumpImportResult | null;
+  last_error: string | null;
+};
+
 type IcalSourceDraft = {
   gite_id: string;
   type: string;
@@ -223,6 +240,7 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "ical-startup") return "ICAL démarrage";
   if (normalized === "har") return "HAR";
   if (normalized === "pump") return "Pump";
+  if (normalized === "pump-cron") return "Pump cron";
   return source || "Import";
 };
 
@@ -370,9 +388,18 @@ const SettingsPage = () => {
   const [harNotice, setHarNotice] = useState<string | null>(null);
 
   const [pumpStatus, setPumpStatus] = useState<PumpStatusResult | null>(null);
+  const [pumpCronState, setPumpCronState] = useState<PumpCronState | null>(null);
+  const [pumpCronDraft, setPumpCronDraft] = useState<PumpCronConfig>({
+    enabled: true,
+    interval_days: 3,
+    hour: 10,
+    minute: 0,
+    run_on_start: false,
+  });
   const [pumpPreview, setPumpPreview] = useState<PumpPreviewResult | null>(null);
   const [pumpSelections, setPumpSelections] = useState<Record<string, boolean>>({});
   const [loadingPumpStatus, setLoadingPumpStatus] = useState(false);
+  const [savingPumpCron, setSavingPumpCron] = useState(false);
   const [refreshingPump, setRefreshingPump] = useState(false);
   const [analyzingPump, setAnalyzingPump] = useState(false);
   const [importingPump, setImportingPump] = useState(false);
@@ -461,10 +488,16 @@ const SettingsPage = () => {
     }
   };
 
+  const loadPumpCronState = async () => {
+    const data = await apiFetch<PumpCronState>("/settings/pump/cron");
+    setPumpCronState(data);
+    setPumpCronDraft(data.config);
+  };
+
   useEffect(() => {
     setLoadingManagers(true);
     setLoadingSources(true);
-    Promise.all([loadManagers(), loadSources(), loadCronState(), loadImportLog(), loadPumpStatus()])
+    Promise.all([loadManagers(), loadSources(), loadCronState(), loadImportLog(), loadPumpStatus(), loadPumpCronState()])
       .catch((error: any) => {
         const message = error?.message ?? "Impossible de charger les paramètres.";
         setManagerError(message);
@@ -970,6 +1003,25 @@ const SettingsPage = () => {
       setPumpError(error.message ?? "Impossible de lancer le refresh Pump.");
     } finally {
       setRefreshingPump(false);
+    }
+  };
+
+  const savePumpCronConfig = async () => {
+    setSavingPumpCron(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<{ config: PumpCronConfig; state: PumpCronState }>("/settings/pump/cron", {
+        method: "PUT",
+        json: pumpCronDraft,
+      });
+      setPumpCronState(response.state);
+      setPumpCronDraft(response.config);
+      setPumpNotice("Planification Pump enregistrée.");
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible d'enregistrer le cron Pump.");
+    } finally {
+      setSavingPumpCron(false);
     }
   };
 
@@ -1618,19 +1670,124 @@ const SettingsPage = () => {
       <div className="card">
         <div className="section-title">Import Pump</div>
         <div className="field-hint">
-          Déclenche un refresh dans le repo <code>pump</code>, lit la dernière extraction via son API locale sécurisée, puis crée ou complète les réservations.
+          Déclenche un refresh dans le repo <code>pump</code>, attend une extraction exploitable, puis crée ou complète les réservations. Le cron utilise le même enchaînement.
         </div>
+        <div className="field-hint" style={{ marginTop: 8 }}>
+          Cron: {pumpCronState?.config.enabled ? "activé" : "désactivé"}.
+          {" "}
+          Prochain import: {formatIsoDateTimeFr(pumpCronState?.next_run_at ?? null)}.
+          {" "}
+          Dernier import: {formatIsoDateTimeFr(pumpCronState?.last_run_at ?? null)}.
+        </div>
+        <div className="grid-2" style={{ marginTop: 12 }}>
+          <label className="field">
+            Cron actif
+            <select
+              value={pumpCronDraft.enabled ? "1" : "0"}
+              onChange={(event) =>
+                setPumpCronDraft((previous) => ({
+                  ...previous,
+                  enabled: event.target.value === "1",
+                }))
+              }
+              disabled={savingPumpCron}
+            >
+              <option value="1">Oui</option>
+              <option value="0">Non</option>
+            </select>
+          </label>
+          <label className="field">
+            Import au démarrage
+            <select
+              value={pumpCronDraft.run_on_start ? "1" : "0"}
+              onChange={(event) =>
+                setPumpCronDraft((previous) => ({
+                  ...previous,
+                  run_on_start: event.target.value === "1",
+                }))
+              }
+              disabled={savingPumpCron}
+            >
+              <option value="0">Non</option>
+              <option value="1">Oui</option>
+            </select>
+          </label>
+          <label className="field">
+            Tous les X jours
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={pumpCronDraft.interval_days}
+              onChange={(event) =>
+                setPumpCronDraft((previous) => ({
+                  ...previous,
+                  interval_days: Math.min(30, Math.max(1, Number(event.target.value || 1))),
+                }))
+              }
+              disabled={savingPumpCron}
+            />
+          </label>
+          <label className="field">
+            Heure
+            <input
+              type="number"
+              min={0}
+              max={23}
+              value={pumpCronDraft.hour}
+              onChange={(event) =>
+                setPumpCronDraft((previous) => ({
+                  ...previous,
+                  hour: Math.min(23, Math.max(0, Number(event.target.value || 0))),
+                }))
+              }
+              disabled={savingPumpCron}
+            />
+          </label>
+          <label className="field">
+            Minute
+            <input
+              type="number"
+              min={0}
+              max={59}
+              value={pumpCronDraft.minute}
+              onChange={(event) =>
+                setPumpCronDraft((previous) => ({
+                  ...previous,
+                  minute: Math.min(59, Math.max(0, Number(event.target.value || 0))),
+                }))
+              }
+              disabled={savingPumpCron}
+            />
+          </label>
+        </div>
+        {pumpCronState?.running ? (
+          <div className="field-hint" style={{ marginTop: 8 }}>Import Pump automatique en cours.</div>
+        ) : null}
+        {pumpCronState?.last_error ? <div className="note" style={{ marginTop: 8 }}>{pumpCronState.last_error}</div> : null}
         <div className="actions" style={{ marginTop: 12 }}>
-          <button type="button" className="secondary" onClick={() => void refreshPump()} disabled={refreshingPump || analyzingPump || importingPump}>
+          <button type="button" className="secondary" onClick={() => void savePumpCronConfig()} disabled={savingPumpCron || refreshingPump || analyzingPump || importingPump}>
+            {savingPumpCron ? "Enregistrement..." : "Enregistrer le cron"}
+          </button>
+          <button type="button" className="secondary" onClick={() => void refreshPump()} disabled={refreshingPump || analyzingPump || importingPump || savingPumpCron}>
             {refreshingPump ? "Refresh..." : "Lancer refresh Pump"}
           </button>
-          <button type="button" className="secondary" onClick={() => void loadPumpStatus()} disabled={loadingPumpStatus || refreshingPump}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() =>
+              void Promise.all([loadPumpStatus(), loadPumpCronState()]).catch((error: any) =>
+                setPumpError(error.message ?? "Impossible de rafraîchir les informations Pump.")
+              )
+            }
+            disabled={loadingPumpStatus || refreshingPump}
+          >
             {loadingPumpStatus ? "Statut..." : "Rafraîchir le statut"}
           </button>
-          <button type="button" className="secondary" onClick={() => void analyzePump()} disabled={analyzingPump || importingPump}>
+          <button type="button" className="secondary" onClick={() => void analyzePump()} disabled={analyzingPump || importingPump || savingPumpCron}>
             {analyzingPump ? "Analyse..." : "Analyser la dernière extraction"}
           </button>
-          <button type="button" onClick={() => void importPump()} disabled={importingPump || !pumpPreview || selectedPumpCount === 0 || analyzingPump}>
+          <button type="button" onClick={() => void importPump()} disabled={importingPump || !pumpPreview || selectedPumpCount === 0 || analyzingPump || savingPumpCron}>
             {importingPump ? "Import..." : `Importer (${selectedPumpCount})`}
           </button>
         </div>

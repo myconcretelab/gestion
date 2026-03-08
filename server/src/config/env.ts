@@ -72,4 +72,9 @@ export const env = {
   ICAL_SYNC_RUN_ON_START: parseBooleanEnv(process.env.ICAL_SYNC_RUN_ON_START, false),
   ICAL_SYNC_HOUR: parseIntegerEnv(process.env.ICAL_SYNC_HOUR, 3, 0, 23),
   ICAL_SYNC_MINUTE: parseIntegerEnv(process.env.ICAL_SYNC_MINUTE, 15, 0, 59),
+  PUMP_IMPORT_CRON_ENABLED: parseBooleanEnv(process.env.PUMP_IMPORT_CRON_ENABLED, true),
+  PUMP_IMPORT_CRON_RUN_ON_START: parseBooleanEnv(process.env.PUMP_IMPORT_CRON_RUN_ON_START, false),
+  PUMP_IMPORT_CRON_INTERVAL_DAYS: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_INTERVAL_DAYS, 3, 1, 30),
+  PUMP_IMPORT_CRON_HOUR: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_HOUR, 10, 0, 23),
+  PUMP_IMPORT_CRON_MINUTE: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_MINUTE, 0, 0, 59),
 };
