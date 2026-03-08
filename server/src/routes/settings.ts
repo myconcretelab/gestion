@@ -25,6 +25,7 @@ import {
   normalizeImportedComment,
   normalizeImportedHostName,
 } from "../utils/reservationText.js";
+import { resolveImportedReservationSourceType } from "../utils/importedReservationSource.js";
 
 const router = Router();
 
@@ -245,7 +246,10 @@ const buildReservationsPreview = async (parsed: ParsedHarReservation[]) => {
 
   for (const reservation of parsed) {
     const mapped = listingMap.get(reservation.listingId);
-    const sourceType = mapped?.source_type ?? (reservation.type === "airbnb" ? "Airbnb" : DEFAULT_SOURCE);
+    const sourceType = resolveImportedReservationSourceType({
+      reservationType: reservation.type,
+      mappedSourceType: mapped?.source_type,
+    });
     const normalizedHostName = normalizeImportedHostName(reservation.name);
     const normalizedComment = normalizeImportedComment(reservation.comment);
 
