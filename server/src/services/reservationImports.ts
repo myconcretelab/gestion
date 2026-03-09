@@ -102,6 +102,18 @@ const parseIsoDateToUtc = (iso: string) => {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+const getDefaultAdultsByGiteIds = async (giteIds: string[]) => {
+  const uniqueIds = [...new Set(giteIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map<string, number>();
+
+  const gites = await prisma.gite.findMany({
+    where: { id: { in: uniqueIds } },
+    select: { id: true, nb_adultes_habituel: true },
+  });
+
+  return new Map(gites.map((gite) => [gite.id, Math.max(1, Number(gite.nb_adultes_habituel) || 1)]));
+};
+
 const getListingMap = async () => {
   const sources = (await listIcalSources(false)) as IcalSourceRow[];
   const listingMap = new Map<
@@ -365,6 +377,9 @@ export const importPreviewReservations = async (
     if (!selectedSet) return true;
     return selectedSet.has(item.id);
   });
+  const defaultAdultsByGiteId = await getDefaultAdultsByGiteIds(
+    importable.filter((item) => item.status === "new").map((item) => item.gite_id ?? "")
+  );
 
   let createdCount = 0;
   let updatedCount = 0;
@@ -391,7 +406,7 @@ export const importPreviewReservations = async (
           date_entree: dateEntree,
           date_sortie: dateSortie,
           nb_nuits: nights,
-          nb_adultes: 0,
+          nb_adultes: item.gite_id ? (defaultAdultsByGiteId.get(item.gite_id) ?? 1) : 1,
           prix_par_nuit: prixParNuit,
           prix_total: prixTotal,
           source_paiement: item.source_type,

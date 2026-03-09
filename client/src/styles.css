@@ -895,6 +895,11 @@ button.warning {
   overflow: visible;
 }
 
+.reservations-table td.reservations-col-nightly {
+  position: relative;
+  overflow: visible;
+}
+
 .reservations-table td.reservations-col-adults input {
   min-width: 40px;
   padding-left: 6px;
@@ -1122,6 +1127,83 @@ button.warning {
   outline-offset: 1px;
 }
 
+.reservations-nightly-field {
+  position: relative;
+}
+
+.reservations-nightly-field__input {
+  position: relative;
+  z-index: 1;
+}
+
+.reservations-nightly-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 18;
+  min-width: min(220px, calc(100vw - 48px));
+  max-width: min(280px, calc(100vw - 48px));
+  padding: 8px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.reservations-nightly-field:focus-within .reservations-nightly-popover {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.reservations-nightly-popover__label {
+  margin-bottom: 6px;
+  padding-left: 2px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.reservations-nightly-popover__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reservations-nightly-popover__option {
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #1f2937;
+  padding: 5px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
+}
+
+.reservations-nightly-popover__option:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.reservations-nightly-popover__option--active {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
 .reservations-comment-cell {
   position: relative;
   overflow: visible;
@@ -1194,6 +1276,15 @@ button.warning {
   justify-content: flex-end;
 }
 
+.reservations-actions-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
 .reservations-actions-trigger {
   min-width: 32px;
   padding: 5px 8px;
@@ -1237,11 +1328,12 @@ button.warning {
 }
 
 .reservations-save-state {
-  margin-top: 4px;
-  margin-left: auto;
+  margin-top: 0;
+  margin-left: 0;
   width: fit-content;
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   border-radius: 999px;
   padding: 2px 8px;
   border: 1px solid #d1d5db;

@@ -9,6 +9,7 @@ const gite: Gite = {
   prefixe_contrat: "GT",
   adresse_ligne1: "1 rue test",
   capacite_max: 6,
+  nb_adultes_habituel: 6,
   proprietaires_noms: "Proprio",
   proprietaires_adresse: "Adresse proprio",
   telephones: [],

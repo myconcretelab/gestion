@@ -16,12 +16,13 @@ const emptyStringToNull = (value: unknown) => {
   return trimmed.length === 0 ? null : trimmed;
 };
 
-const giteSchema = z.object({
+const giteSchemaShape = {
   nom: z.string().trim().min(1),
   prefixe_contrat: z.string().trim().min(2),
   adresse_ligne1: z.string().trim().min(1),
   adresse_ligne2: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
   capacite_max: z.coerce.number().int().min(1),
+  nb_adultes_habituel: z.coerce.number().int().min(1),
   proprietaires_noms: z.string().trim().min(1),
   proprietaires_adresse: z.string().trim().min(1),
   site_web: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
@@ -47,14 +48,26 @@ const giteSchema = z.object({
   arrhes_taux_defaut: z.coerce.number().min(0).max(1).default(0.2),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
   gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
-});
+};
+
+const validateHabitualAdults = (value: { nb_adultes_habituel: number; capacite_max: number }, ctx: z.RefinementCtx) => {
+  if (value.nb_adultes_habituel > value.capacite_max) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["nb_adultes_habituel"],
+      message: "Le nombre d'adultes habituel ne peut pas dépasser la capacité max.",
+    });
+  }
+};
+
+const giteSchema = z.object(giteSchemaShape).superRefine(validateHabitualAdults);
 const giteReorderSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1),
 });
-const giteImportItemSchema = giteSchema.extend({
+const giteImportItemSchema = z.object(giteSchemaShape).extend({
   id: z.string().trim().min(1).optional(),
   ordre: z.coerce.number().int().min(0).optional(),
-});
+}).superRefine(validateHabitualAdults);
 const giteImportSchema = z.object({
   gites: z.array(giteImportItemSchema).min(1),
 });
@@ -391,6 +404,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         adresse_ligne1: existing.adresse_ligne1,
         adresse_ligne2: existing.adresse_ligne2,
         capacite_max: existing.capacite_max,
+        nb_adultes_habituel: existing.nb_adultes_habituel,
         proprietaires_noms: existing.proprietaires_noms,
         proprietaires_adresse: existing.proprietaires_adresse,
         site_web: existing.site_web,

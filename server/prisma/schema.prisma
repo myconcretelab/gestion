@@ -20,6 +20,7 @@ model Gite {
   adresse_ligne1                       String
   adresse_ligne2                       String?
   capacite_max                         Int
+  nb_adultes_habituel                  Int      @default(1)
   proprietaires_noms                   String
   proprietaires_adresse                String
   site_web                             String?

@@ -309,6 +309,21 @@ const parseInputDate = (value: string): Date | null => {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+const getGiteNightlyPriceSuggestions = (gite: Gite | null) => {
+  const seen = new Set<number>();
+  const suggestions: number[] = [];
+  const rawList = Array.isArray(gite?.prix_nuit_liste) ? gite.prix_nuit_liste : [];
+
+  rawList.forEach((item) => {
+    const value = round2(Math.max(0, Number(item)));
+    if (!Number.isFinite(value) || seen.has(value)) return;
+    seen.add(value);
+    suggestions.push(value);
+  });
+
+  return suggestions;
+};
+
 const computeReservationGuestNights = (reservation: Pick<Reservation, "nb_nuits" | "nb_adultes">) =>
   Math.max(0, Number(reservation.nb_nuits ?? 0)) * Math.max(0, Number(reservation.nb_adultes ?? 0));
 
@@ -1141,6 +1156,13 @@ const ReservationsPage = () => {
     }
   };
 
+  const blurActiveEditingElement = () => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  };
+
   const focusInlineField = (rowId: string, field: InlineEditableField, options: { openPicker?: boolean } = {}) => {
     const element = document.querySelector<HTMLInputElement | HTMLSelectElement>(
       `[data-inline-row-id="${rowId}"][data-inline-field="${field}"]`
@@ -1209,6 +1231,55 @@ const ReservationsPage = () => {
     }
     setInlineCell({ rowId, field });
     focusInlineField(rowId, field, { openPicker: INLINE_PICKER_FIELDS.includes(field) });
+  };
+
+  const selectExistingNightlySuggestion = async (params: {
+    reservation: Reservation;
+    draft: ReservationDraft;
+    price: number;
+    isEditing: boolean;
+  }) => {
+    const { reservation, draft, price, isEditing } = params;
+    const rowId = reservation.id;
+    const nextDraft = recalcDraft(
+      {
+        ...draft,
+        prix_par_nuit: price,
+      },
+      "nightly"
+    );
+
+    setDrafts((previous) => ({
+      ...previous,
+      [rowId]: nextDraft,
+    }));
+
+    if (!isEditing) {
+      await saveInlineField(reservation, "prix_par_nuit", nextDraft);
+      return;
+    }
+
+    clearRowFeedback(rowId);
+    setEditingRows((previous) => ({ ...previous, [rowId]: true }));
+    if (saveTimers.current[rowId]) {
+      window.clearTimeout(saveTimers.current[rowId]);
+      delete saveTimers.current[rowId];
+    }
+    blurActiveEditingElement();
+    await persistExistingRow(rowId, nextDraft);
+  };
+
+  const selectNewRowNightlySuggestion = (monthIndex: number, price: number) => {
+    updateNewRow(monthIndex, (previous) =>
+      recalcDraft(
+        {
+          ...previous,
+          prix_par_nuit: price,
+        },
+        "nightly"
+      )
+    );
+    blurActiveEditingElement();
   };
 
   const handleInlineKeyDown = (
@@ -2120,6 +2191,8 @@ const ReservationsPage = () => {
     const newRowFeesAmount = round2(Math.max(0, newRow.frais_optionnels_montant ?? 0));
     const newRowDeclaredFees = newRow.frais_optionnels_declares ? newRowFeesAmount : 0;
     const newRowUndeclaredFees = newRow.frais_optionnels_declares ? 0 : newRowFeesAmount;
+    const newRowGite = (newRow.gite_id ? giteById.get(newRow.gite_id) : null) ?? activeGite ?? null;
+    const nightlySuggestions = getGiteNightlyPriceSuggestions(newRowGite);
 
     return (
       <tr className={`reservations-new-row ${options.inline ? "reservations-new-row--inline" : ""}`}>
@@ -2239,37 +2312,64 @@ const ReservationsPage = () => {
             }
           />
         </td>
-        <td>
-          <input
-            data-grid-month={monthIndex}
-            data-grid-row={newRowIndex}
-            data-grid-col={5}
-            type="number"
-            min={0}
-            step="0.01"
-            value={newRow.prix_par_nuit}
-            onChange={(event) =>
-              updateNewRow(monthIndex, (prev) =>
-                recalcDraft(
-                  {
-                    ...prev,
-                    prix_par_nuit: round2(Math.max(0, Number(event.target.value))),
-                  },
-                  "nightly"
+        <td className="reservations-col-nightly">
+          <div className="reservations-nightly-field">
+            <input
+              data-grid-month={monthIndex}
+              data-grid-row={newRowIndex}
+              data-grid-col={5}
+              className="reservations-nightly-field__input"
+              type="number"
+              min={0}
+              step="0.01"
+              value={newRow.prix_par_nuit}
+              onChange={(event) =>
+                updateNewRow(monthIndex, (prev) =>
+                  recalcDraft(
+                    {
+                      ...prev,
+                      prix_par_nuit: round2(Math.max(0, Number(event.target.value))),
+                    },
+                    "nightly"
+                  )
                 )
-              )
-            }
-            onKeyDown={(event) =>
-              handleGridKeyDown(event, {
-                monthIndex,
-                rowIndex: newRowIndex,
-                colIndex: 5,
-                rowType: "new",
-                monthRows: list,
-                hasNewRow: addAllowed,
-              })
-            }
-          />
+              }
+              onKeyDown={(event) =>
+                handleGridKeyDown(event, {
+                  monthIndex,
+                  rowIndex: newRowIndex,
+                  colIndex: 5,
+                  rowType: "new",
+                  monthRows: list,
+                  hasNewRow: addAllowed,
+                })
+              }
+            />
+            {nightlySuggestions.length > 0 ? (
+              <div className="reservations-nightly-popover">
+                <div className="reservations-nightly-popover__label">Tarifs du gîte</div>
+                <div className="reservations-nightly-popover__list">
+                  {nightlySuggestions.map((price) => {
+                    const isActive = round2(newRow.prix_par_nuit) === price;
+                    return (
+                      <button
+                        key={price}
+                        type="button"
+                        tabIndex={-1}
+                        className={`reservations-nightly-popover__option ${
+                          isActive ? "reservations-nightly-popover__option--active" : ""
+                        }`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectNewRowNightlySuggestion(monthIndex, price)}
+                      >
+                        {formatEuro(price)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </td>
         <td>
           <input
@@ -2827,6 +2927,7 @@ const ReservationsPage = () => {
                       const rowSaveState = rowState[reservation.id] ?? "idle";
                       const optionDraft = getOptionsDraft(reservation, draft);
                       const optionGite = resolveReservationGite(reservation, draft);
+                      const nightlySuggestions = getGiteNightlyPriceSuggestions(optionGite);
                       const optionPreview = computeReservationOptionsPreview(optionDraft, draft, optionGite);
                       const feeBreakdown = computeReservationFeesBreakdown({
                         reservation,
@@ -3128,22 +3229,35 @@ const ReservationsPage = () => {
                                 </button>
                               )}
                             </td>
-                            <td>
+                            <td className="reservations-col-nightly">
                               {isEditing || isInlineFieldActive(reservation.id, "prix_par_nuit") ? (
-                                <input
-                                  data-grid-month={monthIndex}
-                                  data-grid-row={gridRowIndex}
-                                  data-grid-col={5}
-                                  data-inline-row-id={!isEditing ? reservation.id : undefined}
-                                  data-inline-field={!isEditing ? "prix_par_nuit" : undefined}
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  value={draft.prix_par_nuit}
-                                  autoFocus={!isEditing}
-                                  onChange={(event) => {
-                                    if (!isEditing) {
-                                      updateInlineField(reservation, (prev) =>
+                                <div className="reservations-nightly-field">
+                                  <input
+                                    data-grid-month={monthIndex}
+                                    data-grid-row={gridRowIndex}
+                                    data-grid-col={5}
+                                    data-inline-row-id={!isEditing ? reservation.id : undefined}
+                                    data-inline-field={!isEditing ? "prix_par_nuit" : undefined}
+                                    className="reservations-nightly-field__input"
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={draft.prix_par_nuit}
+                                    autoFocus={!isEditing}
+                                    onChange={(event) => {
+                                      if (!isEditing) {
+                                        updateInlineField(reservation, (prev) =>
+                                          recalcDraft(
+                                            {
+                                              ...prev,
+                                              prix_par_nuit: round2(Math.max(0, Number(event.target.value))),
+                                            },
+                                            "nightly"
+                                          )
+                                        );
+                                        return;
+                                      }
+                                      updateExistingField(reservation, (prev) =>
                                         recalcDraft(
                                           {
                                             ...prev,
@@ -3152,37 +3266,58 @@ const ReservationsPage = () => {
                                           "nightly"
                                         )
                                       );
-                                      return;
-                                    }
-                                    updateExistingField(reservation, (prev) =>
-                                      recalcDraft(
-                                        {
-                                          ...prev,
-                                          prix_par_nuit: round2(Math.max(0, Number(event.target.value))),
-                                        },
-                                        "nightly"
-                                      )
-                                    );
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "prix_par_nuit");
-                                      return;
-                                    }
-                                    handleGridKeyDown(event, {
-                                      monthIndex,
-                                      rowIndex: gridRowIndex,
-                                      colIndex: 5,
-                                      rowType: "existing",
-                                      monthRows: list,
-                                      hasNewRow: hasInlineNewRow,
-                                      reservationId: reservation.id,
-                                    });
-                                  }}
-                                  onBlur={() => {
-                                    if (!isEditing) handleInlineBlur(reservation, "prix_par_nuit");
-                                  }}
-                                />
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (!isEditing) {
+                                        handleInlineKeyDown(event, reservation, "prix_par_nuit");
+                                        return;
+                                      }
+                                      handleGridKeyDown(event, {
+                                        monthIndex,
+                                        rowIndex: gridRowIndex,
+                                        colIndex: 5,
+                                        rowType: "existing",
+                                        monthRows: list,
+                                        hasNewRow: hasInlineNewRow,
+                                        reservationId: reservation.id,
+                                      });
+                                    }}
+                                    onBlur={() => {
+                                      if (!isEditing) handleInlineBlur(reservation, "prix_par_nuit");
+                                    }}
+                                  />
+                                  {nightlySuggestions.length > 0 ? (
+                                    <div className="reservations-nightly-popover">
+                                      <div className="reservations-nightly-popover__label">Tarifs du gîte</div>
+                                      <div className="reservations-nightly-popover__list">
+                                        {nightlySuggestions.map((price) => {
+                                          const isActive = round2(draft.prix_par_nuit) === price;
+                                          return (
+                                            <button
+                                              key={price}
+                                              type="button"
+                                              tabIndex={-1}
+                                              className={`reservations-nightly-popover__option ${
+                                                isActive ? "reservations-nightly-popover__option--active" : ""
+                                              }`}
+                                              onMouseDown={(event) => event.preventDefault()}
+                                              onClick={() =>
+                                                selectExistingNightlySuggestion({
+                                                  reservation,
+                                                  draft,
+                                                  price,
+                                                  isEditing,
+                                                }).catch((err) => setError((err as Error).message))
+                                              }
+                                            >
+                                              {formatEuro(price)}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
                               ) : (
                                 <button
                                   type="button"
@@ -3406,11 +3541,20 @@ const ReservationsPage = () => {
                               )}
                             </td>
                             <td className="table-actions-cell">
-                              <div className="reservations-actions-menu">
-                                <button className="table-action table-action--neutral reservations-actions-trigger" title="Actions">
-                                  ⋯
-                                </button>
-                                <div className="reservations-row-actions">
+                              <div className="reservations-actions-cell">
+                                {rowStatusLabel && (
+                                  <div
+                                    className={`reservations-save-state reservations-save-state--${rowSaveState}`}
+                                    title={rowError[reservation.id] ?? ""}
+                                  >
+                                    {rowStatusLabel}
+                                  </div>
+                                )}
+                                <div className="reservations-actions-menu">
+                                  <button className="table-action table-action--neutral reservations-actions-trigger" title="Actions">
+                                    ⋯
+                                  </button>
+                                  <div className="reservations-row-actions">
                                   <button
                                     className="table-action table-action--neutral"
                                     onClick={() => {
@@ -3490,15 +3634,8 @@ const ReservationsPage = () => {
                                     ×
                                   </button>
                                 </div>
-                              </div>
-                              {rowStatusLabel && (
-                                <div
-                                  className={`reservations-save-state reservations-save-state--${rowSaveState}`}
-                                  title={rowError[reservation.id] ?? ""}
-                                >
-                                  {rowStatusLabel}
                                 </div>
-                              )}
+                              </div>
                             </td>
                           </tr>
                           {(isDetailsExpanded || isDetailsClosing) && (

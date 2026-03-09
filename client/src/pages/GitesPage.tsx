@@ -9,6 +9,7 @@ const emptyForm = {
   adresse_ligne1: "",
   adresse_ligne2: "",
   capacite_max: 1,
+  nb_adultes_habituel: 1,
   proprietaires_noms: "",
   proprietaires_adresse: "",
   site_web: "",
@@ -104,6 +105,7 @@ const GitesPage = () => {
       adresse_ligne1: selected.adresse_ligne1,
       adresse_ligne2: selected.adresse_ligne2 ?? "",
       capacite_max: selected.capacite_max,
+      nb_adultes_habituel: selected.nb_adultes_habituel,
       proprietaires_noms: selected.proprietaires_noms,
       proprietaires_adresse: selected.proprietaires_adresse,
       site_web: selected.site_web ?? "",
@@ -436,6 +438,7 @@ const GitesPage = () => {
               <th>Nom</th>
               <th>Préfixe</th>
               <th>Capacité</th>
+              <th>Adultes hab.</th>
               <th>Gestionnaire</th>
               <th>Contrats</th>
               <th>Factures</th>
@@ -474,6 +477,7 @@ const GitesPage = () => {
                 </td>
                 <td>{gite.prefixe_contrat}</td>
                 <td>{gite.capacite_max}</td>
+                <td>{gite.nb_adultes_habituel}</td>
                 <td>{gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "—"}</td>
                 <td>
                   <span className="badge">{gite.contrats_count ?? 0}</span>
@@ -589,6 +593,14 @@ const GitesPage = () => {
                 type="number"
                 value={form.capacite_max}
                 onChange={(e) => handleChange("capacite_max", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Nombre d'adultes habituel
+              <input
+                type="number"
+                value={form.nb_adultes_habituel}
+                onChange={(e) => handleChange("nb_adultes_habituel", Number(e.target.value))}
               />
             </label>
             <label className="field">
