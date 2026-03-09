@@ -818,6 +818,18 @@ button.warning {
   color: #065f46;
 }
 
+.reservations-summary-pill--guest-nights {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.reservations-summary-pill--guest-nights-declared {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
 .reservations-summary-pill--urssaf {
   border-color: #e9d5ff;
   background: #faf5ff;
@@ -1806,6 +1818,25 @@ button.warning {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 14px;
+  margin-top: 12px;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.checkbox-inline input {
+  margin: 0;
 }
 
 .nights-chip {

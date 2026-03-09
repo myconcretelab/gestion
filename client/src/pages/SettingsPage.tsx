@@ -211,6 +211,11 @@ type IcalCronExportPayload = {
   config: IcalCronConfig;
 };
 
+type DeclarationNightsSettings = {
+  excluded_sources: string[];
+  available_sources: string[];
+};
+
 const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
   gite_id: "",
   type: "Airbnb",
@@ -218,6 +223,11 @@ const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
   include_summary: "",
   exclude_summary: "",
   is_active: true,
+};
+
+const DEFAULT_DECLARATION_NIGHTS_SETTINGS: DeclarationNightsSettings = {
+  excluded_sources: ["Airbnb"],
+  available_sources: ["Airbnb"],
 };
 
 const formatIsoDateFr = (value: string) => {
@@ -253,6 +263,24 @@ const normalizeTextKey = (value: string) =>
 
 const uniqueNonEmpty = (values: Array<string | null | undefined>) =>
   [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+
+const normalizeSourceList = (values: Array<string | null | undefined>) => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  values.forEach((value) => {
+    const label = String(value ?? "").trim();
+    if (!label) return;
+    const key = normalizeTextKey(label);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    normalized.push(label);
+  });
+
+  return normalized;
+};
+
+const parseDeclarationSourcesInput = (value: string) => normalizeSourceList(value.split(/[\n,;]+/g));
 
 const truncateMiddle = (value: string, maxLength = 92) => {
   if (value.length <= maxLength) return value;
@@ -360,6 +388,16 @@ const SettingsPage = () => {
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const importSourcesInputRef = useRef<HTMLInputElement | null>(null);
+  const [declarationNightsSettings, setDeclarationNightsSettings] = useState<DeclarationNightsSettings>(
+    DEFAULT_DECLARATION_NIGHTS_SETTINGS
+  );
+  const [declarationExcludedSourcesDraft, setDeclarationExcludedSourcesDraft] = useState<string[]>(
+    DEFAULT_DECLARATION_NIGHTS_SETTINGS.excluded_sources
+  );
+  const [loadingDeclarationNights, setLoadingDeclarationNights] = useState(true);
+  const [savingDeclarationNights, setSavingDeclarationNights] = useState(false);
+  const [declarationNightsError, setDeclarationNightsError] = useState<string | null>(null);
+  const [declarationNightsNotice, setDeclarationNightsNotice] = useState<string | null>(null);
 
   const [icalPreview, setIcalPreview] = useState<IcalPreviewResult | null>(null);
   const [icalCronState, setIcalCronState] = useState<IcalCronState | null>(null);
@@ -435,6 +473,15 @@ const SettingsPage = () => {
       }).length,
     [sourceImportMapping, sourceImportUnknownIds]
   );
+  const availableDeclarationSources = useMemo(
+    () =>
+      normalizeSourceList([
+        ...declarationNightsSettings.available_sources,
+        ...declarationNightsSettings.excluded_sources,
+        ...declarationExcludedSourcesDraft,
+      ]),
+    [declarationExcludedSourcesDraft, declarationNightsSettings]
+  );
 
   const loadManagers = async () => {
     const data = await apiFetch<Gestionnaire[]>("/managers");
@@ -452,6 +499,27 @@ const SettingsPage = () => {
       ...previous,
       gite_id: previous.gite_id || gitesData[0]?.id || "",
     }));
+  };
+
+  const applyDeclarationNightsSettings = (data: DeclarationNightsSettings) => {
+    const excludedSources = Array.isArray(data.excluded_sources)
+      ? normalizeSourceList(data.excluded_sources)
+      : DEFAULT_DECLARATION_NIGHTS_SETTINGS.excluded_sources;
+    const availableSources = normalizeSourceList([
+      ...(data.available_sources ?? []),
+      ...excludedSources,
+    ]);
+
+    setDeclarationNightsSettings({
+      excluded_sources: excludedSources,
+      available_sources: availableSources,
+    });
+    setDeclarationExcludedSourcesDraft(excludedSources);
+  };
+
+  const loadDeclarationNightsSettings = async () => {
+    const data = await apiFetch<DeclarationNightsSettings>("/settings/declaration-nights");
+    applyDeclarationNightsSettings(data);
   };
 
   const loadCronState = async () => {
@@ -497,17 +565,48 @@ const SettingsPage = () => {
   useEffect(() => {
     setLoadingManagers(true);
     setLoadingSources(true);
-    Promise.all([loadManagers(), loadSources(), loadCronState(), loadImportLog(), loadPumpStatus(), loadPumpCronState()])
+    setLoadingDeclarationNights(true);
+    Promise.all([
+      loadManagers(),
+      loadSources(),
+      loadDeclarationNightsSettings(),
+      loadCronState(),
+      loadImportLog(),
+      loadPumpStatus(),
+      loadPumpCronState(),
+    ])
       .catch((error: any) => {
         const message = error?.message ?? "Impossible de charger les paramètres.";
         setManagerError(message);
         setSourceError(message);
+        setDeclarationNightsError(message);
       })
       .finally(() => {
         setLoadingManagers(false);
         setLoadingSources(false);
+        setLoadingDeclarationNights(false);
       });
   }, []);
+
+  const saveDeclarationNightsSettings = async () => {
+    setSavingDeclarationNights(true);
+    setDeclarationNightsError(null);
+    setDeclarationNightsNotice(null);
+    try {
+      const response = await apiFetch<DeclarationNightsSettings>("/settings/declaration-nights", {
+        method: "PUT",
+        json: {
+          excluded_sources: declarationExcludedSourcesDraft,
+        },
+      });
+      applyDeclarationNightsSettings(response);
+      setDeclarationNightsNotice("Sources d'exclusion enregistrées.");
+    } catch (error: any) {
+      setDeclarationNightsError(error.message ?? "Impossible d'enregistrer les sources exclues.");
+    } finally {
+      setSavingDeclarationNights(false);
+    }
+  };
 
   const createManager = async () => {
     const trimmedPrenom = prenom.trim();
@@ -1089,6 +1188,79 @@ const SettingsPage = () => {
       <div className="card">
         <div className="section-title">Paramètres</div>
         <div className="field-hint">Gestion des gestionnaires, des sources iCal et de l'import HAR.</div>
+      </div>
+
+      <div className="card">
+        <div className="section-title">Nuitées à déclarer</div>
+        <div className="field-hint">
+          Les sources listées ici sont retirées du macaron "Nuitées à déclarer" dans les totaux mensuels.
+        </div>
+        {loadingDeclarationNights ? (
+          <div className="field-hint" style={{ marginTop: 12 }}>
+            Chargement...
+          </div>
+        ) : (
+          <>
+            {availableDeclarationSources.length > 0 ? (
+              <div className="field-group" style={{ marginTop: 16 }}>
+                <div className="field-group__header">
+                  <div className="field-group__label">Sources détectées</div>
+                  <div className="field-hint">Cochez les sources à exclure du total à déclarer.</div>
+                </div>
+                <div className="checkbox-grid">
+                  {availableDeclarationSources.map((source) => {
+                    const checked = declarationExcludedSourcesDraft.some(
+                      (item) => normalizeTextKey(item) === normalizeTextKey(source)
+                    );
+
+                    return (
+                      <label key={source} className="checkbox-inline">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            setDeclarationNightsNotice(null);
+                            setDeclarationNightsError(null);
+                            setDeclarationExcludedSourcesDraft((previous) =>
+                              event.target.checked
+                                ? normalizeSourceList([...previous, source])
+                                : previous.filter((item) => normalizeTextKey(item) !== normalizeTextKey(source))
+                            );
+                          }}
+                          disabled={savingDeclarationNights}
+                        />
+                        <span>{source}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            <label className="field" style={{ marginTop: 16 }}>
+              Sources exclues
+              <textarea
+                rows={4}
+                value={declarationExcludedSourcesDraft.join("\n")}
+                onChange={(event) => {
+                  setDeclarationNightsNotice(null);
+                  setDeclarationNightsError(null);
+                  setDeclarationExcludedSourcesDraft(parseDeclarationSourcesInput(event.target.value));
+                }}
+                placeholder={"Airbnb\nHomeExchange"}
+                disabled={savingDeclarationNights}
+              />
+            </label>
+            <div className="field-hint">Une source par ligne. Les variantes accent/casse sont reconnues.</div>
+            <div className="actions" style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => void saveDeclarationNightsSettings()} disabled={savingDeclarationNights}>
+                {savingDeclarationNights ? "Enregistrement..." : "Enregistrer"}
+              </button>
+            </div>
+            {declarationNightsNotice ? <div className="note note--success">{declarationNightsNotice}</div> : null}
+            {declarationNightsError ? <div className="note">{declarationNightsError}</div> : null}
+          </>
+        )}
       </div>
 
       <div className="card">

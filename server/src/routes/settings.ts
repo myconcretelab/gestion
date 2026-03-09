@@ -24,6 +24,11 @@ import {
 } from "../services/reservationImports.js";
 import { getPumpCronState, updatePumpCronConfig } from "../services/pumpCron.js";
 import type { PumpCronConfig } from "../services/pumpCronSettings.js";
+import {
+  mergeDeclarationNightsSettings,
+  readDeclarationNightsSettings,
+  writeDeclarationNightsSettings,
+} from "../services/declarationNightsSettings.js";
 
 const router = Router();
 
@@ -72,6 +77,9 @@ const pumpCronConfigSchema = z.object({
   minute: z.number().int().min(0).max(59),
   run_on_start: z.boolean().optional(),
 });
+const declarationNightsSettingsSchema = z.object({
+  excluded_sources: z.array(z.string().trim().min(1)).default([]),
+});
 type SourceImportItem = z.infer<typeof sourceImportItemSchema>;
 type SourceImportPayload = z.infer<typeof sourceImportSchema>;
 type SourceImportUnknownExample = {
@@ -100,6 +108,29 @@ const extractUrlHost = (url: string | null | undefined) => {
   } catch {
     return null;
   }
+};
+
+const listDeclarationSources = async () => {
+  const rows = await prisma.reservation.findMany({
+    select: { source_paiement: true },
+    distinct: ["source_paiement"],
+  });
+
+  return [...new Set(rows.map((row) => String(row.source_paiement ?? "").trim()).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right, "fr", { sensitivity: "base" })
+  );
+};
+
+const buildDeclarationNightsSettingsResponse = async () => {
+  const settings = readDeclarationNightsSettings();
+  const availableSources = await listDeclarationSources();
+
+  return {
+    excluded_sources: settings.excluded_sources,
+    available_sources: [...new Set([...settings.excluded_sources, ...availableSources])].sort((left, right) =>
+      left.localeCompare(right, "fr", { sensitivity: "base" })
+    ),
+  };
 };
 
 const buildImportLogResponse = (limitRaw: unknown) => {
@@ -586,6 +617,26 @@ router.post("/ical/sync", async (_req, res, next) => {
 
 router.get("/import-log", (req, res) => {
   res.json(buildImportLogResponse(req.query.limit));
+});
+
+router.get("/declaration-nights", async (_req, res, next) => {
+  try {
+    res.json(await buildDeclarationNightsSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/declaration-nights", async (req, res, next) => {
+  try {
+    const payload = declarationNightsSettingsSchema.parse(req.body);
+    const current = readDeclarationNightsSettings();
+    const nextSettings = mergeDeclarationNightsSettings(current, payload);
+    writeDeclarationNightsSettings(nextSettings);
+    res.json(await buildDeclarationNightsSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get("/pump/cron", (_req, res) => {
