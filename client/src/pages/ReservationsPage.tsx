@@ -10,6 +10,13 @@ import {
 } from "./statistics/statisticsUtils";
 import { apiFetch, isApiError } from "../utils/api";
 import { formatDate, formatEuro } from "../utils/format";
+import {
+  buildSchoolHolidayDateSet,
+  computeReservationHolidayNightCount,
+  getReservationDateRange,
+  getSchoolHolidaySegmentsForMonth,
+  type SchoolHoliday,
+} from "../utils/schoolHolidays";
 import type { ContratOptions, Gite, Reservation, ReservationPlaceholder } from "../utils/types";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -597,6 +604,16 @@ const copyRoundedAmount = (value: number) => {
   document.body.removeChild(textarea);
 };
 
+const scheduleLazyTask = (callback: () => void) => {
+  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+    const id = window.requestIdleCallback(() => callback(), { timeout: 1200 });
+    return () => window.cancelIdleCallback(id);
+  }
+
+  const timeoutId = window.setTimeout(callback, 0);
+  return () => window.clearTimeout(timeoutId);
+};
+
 const ReservationsPage = () => {
   const currentYear = new Date().getUTCFullYear();
   const [gites, setGites] = useState<Gite[]>([]);
@@ -638,6 +655,7 @@ const ReservationsPage = () => {
   const [savingUrssafDeclarationByMonth, setSavingUrssafDeclarationByMonth] = useState<Record<number, boolean>>({});
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
+  const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
 
   const reservationsRef = useRef<Reservation[]>([]);
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
@@ -851,6 +869,61 @@ const ReservationsPage = () => {
     if (!activeTab) return [];
     return reservations.filter((reservation) => reservation.gite_id === activeTab);
   }, [activeTab, reservations]);
+
+  const schoolHolidayRange = useMemo(() => getReservationDateRange(reservations), [reservations]);
+  const schoolHolidayRangeFrom = schoolHolidayRange?.from ?? "";
+  const schoolHolidayRangeTo = schoolHolidayRange?.to ?? "";
+
+  useEffect(() => {
+    if (!schoolHolidayRangeFrom || !schoolHolidayRangeTo) {
+      setSchoolHolidays((previous) => (previous.length > 0 ? [] : previous));
+      return;
+    }
+
+    let cancelled = false;
+    const cancelScheduledFetch = scheduleLazyTask(() => {
+      apiFetch<SchoolHoliday[]>(
+        `/school-holidays?from=${encodeURIComponent(schoolHolidayRangeFrom)}&to=${encodeURIComponent(schoolHolidayRangeTo)}&zone=B`
+      )
+        .then((rows) => {
+          if (cancelled) return;
+          setSchoolHolidays(rows);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSchoolHolidays([]);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelScheduledFetch();
+    };
+  }, [schoolHolidayRangeFrom, schoolHolidayRangeTo]);
+
+  const schoolHolidayDates = useMemo(() => buildSchoolHolidayDateSet(schoolHolidays), [schoolHolidays]);
+
+  const holidayNightsByReservationId = useMemo(() => {
+    const byReservationId = new Map<string, number>();
+    if (schoolHolidayDates.size === 0) return byReservationId;
+
+    visibleReservations.forEach((reservation) => {
+      const holidayNightCount = computeReservationHolidayNightCount(reservation, schoolHolidayDates);
+      if (holidayNightCount > 0) {
+        byReservationId.set(reservation.id, holidayNightCount);
+      }
+    });
+
+    return byReservationId;
+  }, [schoolHolidayDates, visibleReservations]);
+
+  const holidaySegmentsByMonth = useMemo(() => {
+    const byMonth = new Map<number, ReturnType<typeof getSchoolHolidaySegmentsForMonth>>();
+    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+      byMonth.set(monthIndex, getSchoolHolidaySegmentsForMonth(schoolHolidays, year, monthIndex));
+    }
+    return byMonth;
+  }, [schoolHolidays, year]);
 
   const giteOrderById = useMemo(() => {
     const map = new Map<string, number>();
@@ -2807,6 +2880,7 @@ const ReservationsPage = () => {
             }
             const declaredUrssafForMonth = declaredUrssafByMonthForActiveTab.get(monthIndex);
             const undeclaredUrssafForMonth = undeclaredUrssafByMonthForActiveTab.get(monthIndex) ?? 0;
+            const holidaySegments = holidaySegmentsByMonth.get(monthIndex) ?? [];
             const monthHasPendingUrssafReminder = undeclaredUrssafForMonth > 0;
             const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
             const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
@@ -2832,7 +2906,22 @@ const ReservationsPage = () => {
                   onKeyDown={(event) => handleMonthHeaderKeyDown(event, monthIndex, isMonthExpanded)}
                 >
                   <div>
-                    <div className="section-subtitle">{MONTHS[monthIndex - 1]}</div>
+                    <div className="reservations-month__title-row">
+                      <div className="section-subtitle">{MONTHS[monthIndex - 1]}</div>
+                      {holidaySegments.length > 0 ? (
+                        <div className="reservations-month__holiday-list">
+                          {holidaySegments.map((segment) => (
+                            <span
+                              key={segment.key}
+                              className="reservations-month__holiday-item"
+                              title={segment.name ?? "Vacances scolaires"}
+                            >
+                              {segment.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                     <div className="reservations-month__meta">
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.count, "réservation", "réservations")}</span>
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.nights, "nuit", "nuits")}</span>
@@ -2944,6 +3033,7 @@ const ReservationsPage = () => {
                       const isArrivalTomorrow = isReservationArrivalTomorrow(reservation);
                       const isDepartureTomorrow = isReservationDepartureTomorrow(reservation);
                       const isIcalToVerify = hasIcalToVerifyMarker(reservation.commentaire);
+                      const holidayNightCount = holidayNightsByReservationId.get(reservation.id) ?? 0;
                       const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
@@ -2986,7 +3076,12 @@ const ReservationsPage = () => {
                                   +
                                 </button>
                               )}
-                              {isCurrentReservation || isDepartureToday || isArrivalTomorrow || isDepartureTomorrow || isIcalToVerify ? (
+                              {isCurrentReservation ||
+                              isDepartureToday ||
+                              isArrivalTomorrow ||
+                              isDepartureTomorrow ||
+                              isIcalToVerify ||
+                              holidayNightCount > 0 ? (
                                 <div className="reservations-row-flags">
                                   {isIcalToVerify ? (
                                     <span className="reservations-current-pill reservations-current-pill--to-verify">A vérifier</span>
@@ -3004,6 +3099,14 @@ const ReservationsPage = () => {
                                   ) : null}
                                   {isDepartureTomorrow ? (
                                     <span className="reservations-current-pill reservations-current-pill--departure">Part demain</span>
+                                  ) : null}
+                                  {holidayNightCount > 0 ? (
+                                    <span
+                                      className="reservations-current-pill reservations-current-pill--holiday"
+                                      title={`Vacances scolaires zone B: ${formatNightsLabel(holidayNightCount)}`}
+                                    >
+                                      Vacances · {formatNightsLabel(holidayNightCount)}
+                                    </span>
                                   ) : null}
                                 </div>
                               ) : null}

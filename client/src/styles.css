@@ -747,6 +747,30 @@ button.warning {
   opacity: 0.42;
 }
 
+.reservations-month__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 10px;
+}
+
+.reservations-month__holiday-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 0.72rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.reservations-month__holiday-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 0;
+  white-space: nowrap;
+}
+
 .reservations-month__meta {
   display: flex;
   flex-wrap: wrap;
@@ -998,6 +1022,13 @@ button.warning {
 
 .reservations-current-pill--to-verify {
   background: #fef9c3;
+  border-color: #facc15;
+  color: #854d0e;
+  white-space: nowrap;
+}
+
+.reservations-current-pill--holiday {
+  background: #fff7cc;
   border-color: #facc15;
   color: #854d0e;
   white-space: nowrap;
