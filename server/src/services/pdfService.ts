@@ -15,6 +15,11 @@ const MINIMAL_PDF_BUFFER = Buffer.from("%PDF-1.1\n%%EOF\n", "utf-8");
 
 const isPdfGenerationDisabled = () => process.env.SKIP_PDF_GENERATION === "1";
 
+const resolveDrapsTarif = (options: OptionsInput, gite: GiteLike) =>
+  options.draps?.prix_unitaire !== undefined
+    ? toNumber(options.draps.prix_unitaire)
+    : toNumber(gite.options_draps_par_lit);
+
 const writePlaceholderPdf = async (outputPath: string) => {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, MINIMAL_PDF_BUFFER);
@@ -430,7 +435,7 @@ const buildOptionsBandRowsHtml = (params: {
 
   if (options.draps?.enabled) {
     const nbLits = options.draps.nb_lits ?? 0;
-    const tarif = toNumber(gite.options_draps_par_lit);
+    const tarif = resolveDrapsTarif(options, gite);
     const base = round2(tarif * nbLits);
     rows.push(
       `<tr class="band-option"><td>Draps (${nbLits} lit(s) x ${formatEuro(tarif)} / séjour)</td><td>${formatSignedEuro(
@@ -835,7 +840,7 @@ const buildInvoiceOptionsRowsHtml = (params: {
 
   if (options.draps?.enabled) {
     const nbLits = options.draps.nb_lits ?? 0;
-    const tarif = toNumber(gite.options_draps_par_lit);
+    const tarif = resolveDrapsTarif(options, gite);
     const baseAmount = round2(tarif * nbLits);
     addOptionRows({
       label: `Draps (${nbLits} lit(s) x ${formatEuro(tarif)} / séjour)`,

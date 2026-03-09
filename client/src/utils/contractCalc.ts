@@ -41,7 +41,10 @@ export const computeTotals = (params: {
   const totalSansOptions = round2(montantBase - params.remiseMontant);
 
   const gite = params.gite;
-  const drapsTarif = Number(gite?.options_draps_par_lit ?? 0);
+  const drapsTarif =
+    params.options.draps?.prix_unitaire !== undefined
+      ? Number(params.options.draps.prix_unitaire ?? 0)
+      : Number(gite?.options_draps_par_lit ?? 0);
   const lingeTarif = Number(gite?.options_linge_toilette_par_personne ?? 0);
   const menageTarif = Number(gite?.options_menage_forfait ?? 0);
   const departTardifTarif = Number(gite?.options_depart_tardif_forfait ?? 0);

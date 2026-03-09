@@ -241,6 +241,9 @@ model Reservation {
   prix_total               Float
   source_paiement          String?
   commentaire              String?
+  remise_montant           Float                  @default(0)
+  commission_channel_mode  String?                @default("euro")
+  commission_channel_value Float                  @default(0)
   frais_optionnels_montant Float                  @default(0)
   frais_optionnels_libelle String?
   frais_optionnels_declares Boolean               @default(false)

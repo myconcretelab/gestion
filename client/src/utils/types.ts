@@ -83,6 +83,9 @@ export type Reservation = {
   prix_total: number;
   source_paiement?: string | null;
   commentaire?: string | null;
+  remise_montant: number;
+  commission_channel_mode?: "euro" | "percent" | null;
+  commission_channel_value: number;
   frais_optionnels_montant: number;
   frais_optionnels_libelle?: string | null;
   frais_optionnels_declares: boolean;
@@ -94,7 +97,7 @@ export type Reservation = {
 };
 
 export type ContratOptions = {
-  draps?: { enabled: boolean; nb_lits?: number; offert?: boolean; declared?: boolean };
+  draps?: { enabled: boolean; nb_lits?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
   menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
   depart_tardif?: { enabled: boolean; offert?: boolean; declared?: boolean };

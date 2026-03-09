@@ -11,6 +11,14 @@ import {
 import { apiFetch, isApiError } from "../utils/api";
 import { formatDate, formatEuro } from "../utils/format";
 import {
+  computeReservationBaseStayTotalFromAdjustedStay,
+  computeReservationPricingPreview,
+  normalizeReservationCommissionMode,
+  sanitizeReservationAmount,
+  sanitizeReservationCommissionValue,
+  type ReservationCommissionMode,
+} from "../utils/reservationPricing";
+import {
   buildSchoolHolidayDateSet,
   computeReservationHolidayNightCount,
   getReservationDateRange,
@@ -34,10 +42,14 @@ type ReservationDraft = {
   prix_total: number;
   source_paiement: string;
   commentaire: string;
+  remise_montant: number;
+  commission_channel_mode: ReservationCommissionMode;
+  commission_channel_value: number;
   frais_optionnels_montant: number;
   frais_optionnels_libelle: string;
   frais_optionnels_declares: boolean;
   price_driver: "nightly" | "total";
+  pricing_options_total_basis: number;
 };
 
 type ImportPreview = {
@@ -358,7 +370,12 @@ const toNonNegativeInt = (value: unknown, fallback = 0) => {
 
 const buildDefaultReservationOptions = (draft: ReservationDraft): ContratOptions =>
   mergeOptions({
-    draps: { enabled: false, nb_lits: Math.max(1, draft.nb_adultes || 1), offert: false, declared: false },
+    draps: {
+      enabled: false,
+      nb_lits: Math.max(1, draft.nb_adultes || 1),
+      offert: false,
+      declared: false,
+    },
     linge_toilette: { enabled: false, nb_personnes: Math.max(1, draft.nb_adultes || 1), offert: false, declared: false },
     menage: { enabled: false, offert: false, declared: false },
     depart_tardif: { enabled: false, offert: false, declared: false },
@@ -376,10 +393,15 @@ const computeReservationOptionsPreview = (
   const lingeQty = toNonNegativeInt(options.linge_toilette.nb_personnes, 0);
   const chiensQty = toNonNegativeInt(options.chiens.nb, 0);
 
+  const drapsTarif =
+    options.draps.prix_unitaire !== undefined
+      ? round2(Math.max(0, Number(options.draps.prix_unitaire ?? 0)))
+      : round2(Number(gite?.options_draps_par_lit ?? 0));
+
   const draps = options.draps.enabled
     ? options.draps.offert
       ? 0
-      : round2(Number(gite?.options_draps_par_lit ?? 0) * drapsQty)
+      : round2(drapsTarif * drapsQty)
     : 0;
   const linge = options.linge_toilette.enabled
     ? options.linge_toilette.offert
@@ -421,6 +443,81 @@ const computeReservationOptionsPreview = (
     total: round2(draps + linge + menage + departTardif + chiens),
     label: labels.join(" · "),
     byKey,
+  };
+};
+
+const computeReservationPricingDetails = (draft: ReservationDraft, previewOptionsTotal: number) =>
+  computeReservationPricingPreview({
+    baseStayTotal: computeReservationBaseStayTotalFromAdjustedStay({
+      adjustedStayTotal: draft.prix_total,
+      previewOptionsTotal: draft.pricing_options_total_basis,
+      commissionMode: draft.commission_channel_mode,
+      commissionValue: draft.commission_channel_value,
+      remiseMontant: draft.remise_montant,
+    }),
+    nights: draft.nb_nuits,
+    previewOptionsTotal,
+    commissionMode: draft.commission_channel_mode,
+    commissionValue: draft.commission_channel_value,
+    remiseMontant: draft.remise_montant,
+  });
+
+const applyReservationPricingHelpers = (params: {
+  draft: ReservationDraft;
+  previewOptionsTotal: number;
+  commissionMode?: ReservationCommissionMode;
+  commissionValue?: number;
+  remiseMontant?: number;
+}) => {
+  const { draft, previewOptionsTotal } = params;
+  const commissionMode = normalizeReservationCommissionMode(params.commissionMode ?? draft.commission_channel_mode);
+  const commissionValue = sanitizeReservationCommissionValue(
+    params.commissionValue ?? draft.commission_channel_value,
+    commissionMode
+  );
+  const remiseMontant = sanitizeReservationAmount(params.remiseMontant ?? draft.remise_montant);
+  const sanitizedPreviewOptionsTotal = sanitizeReservationAmount(previewOptionsTotal);
+  const baseStayTotal = computeReservationBaseStayTotalFromAdjustedStay({
+    adjustedStayTotal: draft.prix_total,
+    previewOptionsTotal: draft.pricing_options_total_basis,
+    commissionMode: draft.commission_channel_mode,
+    commissionValue: draft.commission_channel_value,
+    remiseMontant: draft.remise_montant,
+  });
+  const pricing = computeReservationPricingPreview({
+    baseStayTotal,
+    nights: draft.nb_nuits,
+    previewOptionsTotal: sanitizedPreviewOptionsTotal,
+    commissionMode,
+    commissionValue,
+    remiseMontant,
+  });
+
+  return {
+    ...draft,
+    prix_total: pricing.adjustedStayTotal,
+    prix_par_nuit: pricing.adjustedNightlyPrice,
+    remise_montant: remiseMontant,
+    commission_channel_mode: commissionMode,
+    commission_channel_value: commissionValue,
+    pricing_options_total_basis: sanitizedPreviewOptionsTotal,
+  };
+};
+
+const buildReservationPricingAdjustedDraft = (params: {
+  draft: ReservationDraft;
+  optionPreview: ReservationOptionsPreview;
+}) => {
+  const { draft, optionPreview } = params;
+  const nextDraft = applyReservationPricingHelpers({
+    draft,
+    previewOptionsTotal: optionPreview.total,
+  });
+
+  return {
+    ...nextDraft,
+    frais_optionnels_montant: optionPreview.total,
+    frais_optionnels_libelle: optionPreview.label,
   };
 };
 
@@ -512,10 +609,17 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     prix_total: Number(reservation.prix_total ?? 0),
     source_paiement: normalizeReservationSource(reservation.source_paiement),
     commentaire: stripIcalToVerifyMarker(reservation.commentaire),
+    remise_montant: sanitizeReservationAmount(reservation.remise_montant ?? 0),
+    commission_channel_mode: normalizeReservationCommissionMode(reservation.commission_channel_mode),
+    commission_channel_value: sanitizeReservationCommissionValue(
+      reservation.commission_channel_value ?? 0,
+      normalizeReservationCommissionMode(reservation.commission_channel_mode)
+    ),
     frais_optionnels_montant: Number(reservation.frais_optionnels_montant ?? 0),
     frais_optionnels_libelle: reservation.frais_optionnels_libelle ?? "",
     frais_optionnels_declares: Boolean(reservation.frais_optionnels_declares),
     price_driver: "nightly",
+    pricing_options_total_basis: Number(reservation.frais_optionnels_montant ?? 0),
   };
   return recalcDraft(draft);
 };
@@ -535,10 +639,14 @@ const buildEmptyDraft = (year: number, month: number, giteId: string): Reservati
     prix_total: 0,
     source_paiement: DEFAULT_RESERVATION_SOURCE,
     commentaire: "",
+    remise_montant: 0,
+    commission_channel_mode: "euro",
+    commission_channel_value: 0,
     frais_optionnels_montant: 0,
     frais_optionnels_libelle: "",
     frais_optionnels_declares: false,
     price_driver: "nightly",
+    pricing_options_total_basis: 0,
   });
 };
 
@@ -555,6 +663,12 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions, keepIcalTo
     prix_total: draft.prix_total,
     source_paiement: normalizeReservationSource(draft.source_paiement),
     commentaire: buildCommentWithIcalToVerifyMarker(draft.commentaire, keepIcalToVerifyMarker),
+    remise_montant: sanitizeReservationAmount(draft.remise_montant),
+    commission_channel_mode: normalizeReservationCommissionMode(draft.commission_channel_mode),
+    commission_channel_value: sanitizeReservationCommissionValue(
+      draft.commission_channel_value,
+      normalizeReservationCommissionMode(draft.commission_channel_mode)
+    ),
     frais_optionnels_montant: draft.frais_optionnels_montant,
     frais_optionnels_libelle: draft.frais_optionnels_libelle.trim() || null,
     frais_optionnels_declares: draft.frais_optionnels_declares,
@@ -1109,12 +1223,29 @@ const ReservationsPage = () => {
     setRowError((previous) => ({ ...previous, [rowId]: "" }));
 
     try {
-      const optionDraft = optionsOverride ?? reservationOptionsRef.current[rowId];
       const existingReservation = reservationsRef.current.find((item) => item.id === rowId);
+      const optionDraft = optionsOverride ?? reservationOptionsRef.current[rowId];
+      let nextDraft = draft;
+      if (existingReservation && optionDraft) {
+        const optionGite = resolveReservationGite(existingReservation, draft);
+        const optionPreview = computeReservationOptionsPreview(optionDraft, draft, optionGite);
+        const enabledDeclarationFlags = [
+          optionDraft.draps?.enabled ? Boolean(optionDraft.draps.declared) : null,
+          optionDraft.linge_toilette?.enabled ? Boolean(optionDraft.linge_toilette.declared) : null,
+          optionDraft.menage?.enabled ? Boolean(optionDraft.menage.declared) : null,
+          optionDraft.depart_tardif?.enabled ? Boolean(optionDraft.depart_tardif.declared) : null,
+          optionDraft.chiens?.enabled ? Boolean(optionDraft.chiens.declared) : null,
+        ].filter((value): value is boolean => value !== null);
+        const allDeclared = enabledDeclarationFlags.length > 0 && enabledDeclarationFlags.every(Boolean);
+        nextDraft = {
+          ...buildReservationPricingAdjustedDraft({ draft, optionPreview }),
+          frais_optionnels_declares: allDeclared,
+        };
+      }
       const keepIcalToVerifyMarker = hasIcalToVerifyMarker(existingReservation?.commentaire);
       const updated = await apiFetch<Reservation>(`/reservations/${rowId}`, {
         method: "PUT",
-        json: toPayload(draft, optionDraft, keepIcalToVerifyMarker),
+        json: toPayload(nextDraft, optionDraft, keepIcalToVerifyMarker),
       });
 
       setReservations((previous) => previous.map((item) => (item.id === rowId ? updated : item)));
@@ -1702,6 +1833,22 @@ const ReservationsPage = () => {
     });
   };
 
+  const setUnitPriceServiceOption = (
+    reservation: Reservation,
+    draft: ReservationDraft,
+    key: "draps",
+    value: number
+  ) => {
+    const amount = round2(Math.max(0, Number(value)));
+    updateReservationOptionsSelection(reservation, draft, (previous) => ({
+      ...previous,
+      draps: {
+        ...previous.draps,
+        prix_unitaire: amount,
+      },
+    }));
+  };
+
   const setDeclaredServiceOption = (
     reservation: Reservation,
     draft: ReservationDraft,
@@ -1735,9 +1882,7 @@ const ReservationsPage = () => {
     const allDeclared = enabledDeclarationFlags.length > 0 && enabledDeclarationFlags.every(Boolean);
 
     const nextDraft: ReservationDraft = {
-      ...draft,
-      frais_optionnels_montant: preview.total,
-      frais_optionnels_libelle: preview.label,
+      ...buildReservationPricingAdjustedDraft({ draft, optionPreview: preview }),
       frais_optionnels_declares: allDeclared,
     };
 
@@ -1760,6 +1905,21 @@ const ReservationsPage = () => {
     setReservationOptions((previous) => ({
       ...previous,
       [reservation.id]: buildDefaultReservationOptions(draft),
+    }));
+    setDrafts((previous) => ({
+      ...previous,
+      [reservation.id]: {
+        ...applyReservationPricingHelpers({
+          draft: previous[reservation.id] ?? draft,
+          previewOptionsTotal: 0,
+          commissionMode: "euro",
+          commissionValue: 0,
+          remiseMontant: 0,
+        }),
+        frais_optionnels_montant: 0,
+        frais_optionnels_libelle: "",
+        frais_optionnels_declares: false,
+      },
     }));
   };
 
@@ -3116,6 +3276,7 @@ const ReservationsPage = () => {
                       const optionGite = resolveReservationGite(reservation, draft);
                       const nightlySuggestions = getGiteNightlyPriceSuggestions(optionGite);
                       const optionPreview = computeReservationOptionsPreview(optionDraft, draft, optionGite);
+                      const pricingDetails = computeReservationPricingDetails(draft, optionPreview.total);
                       const feeBreakdown = computeReservationFeesBreakdown({
                         reservation,
                         draft,
@@ -3688,64 +3849,75 @@ const ReservationsPage = () => {
                               )}
                             </td>
                             <td className="reservations-comment-cell">
-                              {isEditing || isInlineFieldActive(reservation.id, "commentaire") ? (
-                                <textarea
-                                  data-grid-month={monthIndex}
-                                  data-grid-row={gridRowIndex}
-                                  data-grid-col={8}
-                                  className="reservations-comment-editor"
-                                  data-inline-row-id={!isEditing ? reservation.id : undefined}
-                                  data-inline-field={!isEditing ? "commentaire" : undefined}
-                                  rows={1}
-                                  value={draft.commentaire}
-                                  autoFocus={!isEditing}
-                                  ref={resizeCommentTextarea}
-                                  onChange={(event) => {
-                                    resizeCommentTextarea(event.currentTarget);
-                                    if (!isEditing) {
-                                      updateInlineField(reservation, (prev) => ({
-                                        ...prev,
-                                        commentaire: event.target.value,
-                                      }));
-                                      return;
-                                    }
-                                    updateExistingField(reservation, (prev) => ({
-                                      ...prev,
-                                      commentaire: event.target.value,
-                                    }));
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (!isEditing) {
-                                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                                        event.preventDefault();
-                                        saveInlineField(reservation, "commentaire").catch((err) => setError((err as Error).message));
-                                        return;
-                                      }
-                                      if (event.key === "Escape") {
-                                        event.preventDefault();
-                                        closeInlineField(reservation, "commentaire");
-                                      }
-                                      return;
-                                    }
-                                    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                                      event.preventDefault();
-                                      saveExistingRow(reservation.id).catch((err) => setError((err as Error).message));
-                                    }
-                                  }}
-                                  onBlur={() => {
-                                    if (!isEditing) handleInlineBlur(reservation, "commentaire");
-                                  }}
-                                />
+                              {((isEditing && !isDetailsExpanded && !isDetailsClosing) ||
+                                isInlineFieldActive(reservation.id, "commentaire")) ? (
+                                <div className="reservations-comment-field reservations-comment-field--editing">
+                                  <div className="reservations-comment-popover reservations-comment-popover--editing">
+                                    <textarea
+                                      data-grid-month={monthIndex}
+                                      data-grid-row={gridRowIndex}
+                                      data-grid-col={8}
+                                      className="reservations-comment-editor"
+                                      data-inline-row-id={!isEditing ? reservation.id : undefined}
+                                      data-inline-field={!isEditing ? "commentaire" : undefined}
+                                      rows={1}
+                                      value={draft.commentaire}
+                                      autoFocus={!isEditing}
+                                      ref={resizeCommentTextarea}
+                                      onChange={(event) => {
+                                        resizeCommentTextarea(event.currentTarget);
+                                        if (!isEditing) {
+                                          updateInlineField(reservation, (prev) => ({
+                                            ...prev,
+                                            commentaire: event.target.value,
+                                          }));
+                                          return;
+                                        }
+                                        updateExistingField(reservation, (prev) => ({
+                                          ...prev,
+                                          commentaire: event.target.value,
+                                        }));
+                                      }}
+                                      onKeyDown={(event) => {
+                                        if (!isEditing) {
+                                          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                                            event.preventDefault();
+                                            saveInlineField(reservation, "commentaire").catch((err) => setError((err as Error).message));
+                                            return;
+                                          }
+                                          if (event.key === "Escape") {
+                                            event.preventDefault();
+                                            closeInlineField(reservation, "commentaire");
+                                          }
+                                          return;
+                                        }
+                                        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                                          event.preventDefault();
+                                          saveExistingRow(reservation.id).catch((err) => setError((err as Error).message));
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        if (!isEditing) handleInlineBlur(reservation, "commentaire");
+                                      }}
+                                    />
+                                  </div>
+                                </div>
                               ) : (
-                                <button
-                                  type="button"
-                                  className="reservations-source-inline-trigger reservations-comment-trigger"
-                                  data-full-comment={visibleComment}
-                                  onClick={() => openInlineField(reservation, "commentaire")}
-                                  title={visibleComment || "Modifier le commentaire"}
-                                >
-                                  {visibleComment}
-                                </button>
+                                <div className="reservations-comment-field">
+                                  <button
+                                    type="button"
+                                    className="reservations-source-inline-trigger reservations-comment-trigger"
+                                    onClick={() => openInlineField(reservation, "commentaire")}
+                                    title={visibleComment || "Modifier le commentaire"}
+                                  >
+                                    {visibleComment}
+                                  </button>
+                                  {visibleComment && !isDetailsExpanded && !isDetailsClosing ? (
+                                    <div className="reservations-comment-popover" aria-hidden="true">
+                                      <div className="reservations-comment-popover__body">{visibleComment}</div>
+                                    </div>
+                                  ) : null}
+                                </div>
                               )}
                             </td>
                             <td className="table-actions-cell">
@@ -3854,7 +4026,14 @@ const ReservationsPage = () => {
                                     <div className="reservations-options-builder">
                                     <div className="reservations-options-builder__head">
                                       <div>
-                                        <strong>Options contrat/devis</strong>
+                                        <div className="reservations-options-builder__title-row">
+                                          <strong>Options contrat/devis</strong>
+                                          {optionGite && (
+                                            <span className="reservations-options-builder__title-total">
+                                              Total recalculé: {formatEuro(pricingDetails.adjustedTotal)}
+                                            </span>
+                                          )}
+                                        </div>
                                         <div className="field-hint">
                                           {optionGite ? `Tarifs ${optionGite.nom}` : "Associez un gîte pour utiliser les options."}
                                         </div>
@@ -3870,7 +4049,7 @@ const ReservationsPage = () => {
                                             <div className="reservations-option-main">
                                               <span className="reservations-option-title">Draps</span>
                                               <span className="field-hint">
-                                                {formatEuro(optionGite.options_draps_par_lit)} / lit / séjour
+                                                {formatEuro(optionDraft.draps?.prix_unitaire ?? optionGite.options_draps_par_lit)} / lit / séjour
                                               </span>
                                               <div className="reservations-option-switches">
                                                 <div className="switch-group switch-group--table">
@@ -3917,6 +4096,24 @@ const ReservationsPage = () => {
                                                   disabled={!optionDraft.draps?.enabled}
                                                   onChange={(event) =>
                                                     setCountServiceOption(
+                                                      reservation,
+                                                      draft,
+                                                      "draps",
+                                                      Number(event.target.value)
+                                                    )
+                                                  }
+                                                />
+                                              </label>
+                                              <label className="reservations-option-count">
+                                                Prix / lit
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  step="0.01"
+                                                  value={optionDraft.draps?.prix_unitaire ?? optionGite.options_draps_par_lit}
+                                                  disabled={!optionDraft.draps?.enabled}
+                                                  onChange={(event) =>
+                                                    setUnitPriceServiceOption(
                                                       reservation,
                                                       draft,
                                                       "draps",
@@ -4165,6 +4362,82 @@ const ReservationsPage = () => {
                                                 {formatEuro(optionPreview.byKey.chiens)}
                                               </span>
                                             </div>
+                                          </div>
+                                        </div>
+                                        <div className="reservations-pricing-card">
+                                          <div className="reservations-pricing-card__head">
+                                            <strong>Commission channel et réduction</strong>
+                                            <div className="field-hint">Ajuste directement le total et le prix/nuit</div>
+                                          </div>
+                                          <div className="reservations-pricing-card__form">
+                                            <label className="reservations-pricing-card__field">
+                                              <span>Commission</span>
+                                              <div className="reservations-pricing-card__commission-inputs">
+                                                <select
+                                                  value={draft.commission_channel_mode}
+                                                  onChange={(event) => {
+                                                    const nextMode = normalizeReservationCommissionMode(event.target.value);
+                                                    updateExistingField(reservation, (prev) => ({
+                                                      ...applyReservationPricingHelpers({
+                                                        draft: prev,
+                                                        previewOptionsTotal: optionPreview.total,
+                                                        commissionMode: nextMode,
+                                                        commissionValue: prev.commission_channel_value,
+                                                      }),
+                                                    }));
+                                                  }}
+                                                >
+                                                  <option value="euro">Montant €</option>
+                                                  <option value="percent">Pourcentage %</option>
+                                                </select>
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  max={draft.commission_channel_mode === "percent" ? 99.99 : undefined}
+                                                  step="0.01"
+                                                  value={draft.commission_channel_value}
+                                                  onChange={(event) =>
+                                                    updateExistingField(reservation, (prev) => ({
+                                                      ...applyReservationPricingHelpers({
+                                                        draft: prev,
+                                                        previewOptionsTotal: optionPreview.total,
+                                                        commissionValue: Number(event.target.value),
+                                                      }),
+                                                    }))
+                                                  }
+                                                />
+                                              </div>
+                                            </label>
+                                            <label className="reservations-pricing-card__field">
+                                              <span>Réduction offerte</span>
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                step="0.01"
+                                                value={draft.remise_montant}
+                                                onChange={(event) =>
+                                                  updateExistingField(reservation, (prev) => ({
+                                                    ...applyReservationPricingHelpers({
+                                                      draft: prev,
+                                                      previewOptionsTotal: optionPreview.total,
+                                                      remiseMontant: Number(event.target.value),
+                                                    }),
+                                                  }))
+                                                }
+                                              />
+                                            </label>
+                                          </div>
+                                          <div className="reservations-pricing-card__totals">
+                                            <span>Total avant ajustement</span>
+                                            <strong>{formatEuro(pricingDetails.baseTotal)}</strong>
+                                            <span>Commission channel</span>
+                                            <strong>-{formatEuro(pricingDetails.commissionAmount)}</strong>
+                                            <span>Réduction offerte</span>
+                                            <strong>-{formatEuro(draft.remise_montant)}</strong>
+                                            <span>Total recalculé</span>
+                                            <strong>{formatEuro(pricingDetails.adjustedTotal)}</strong>
+                                            <span>Prix/nuit recalculé</span>
+                                            <strong>{formatEuro(pricingDetails.adjustedNightlyPrice)}</strong>
                                           </div>
                                         </div>
                                         <div className="reservations-options-builder__foot">

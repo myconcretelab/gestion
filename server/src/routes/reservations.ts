@@ -5,6 +5,11 @@ import prisma from "../db/prisma.js";
 import { round2, toNumber } from "../utils/money.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { type OptionsInput } from "../services/contractCalculator.js";
+import {
+  normalizeReservationCommissionMode,
+  sanitizeReservationAmount,
+  sanitizeReservationCommissionValue,
+} from "../services/reservationPricing.js";
 import { optionsSchema } from "./shared/rentalDocument.js";
 
 const router = Router();
@@ -35,6 +40,9 @@ const reservationPayloadSchema = z.object({
   price_driver: z.enum(["nightly", "total"]).optional(),
   source_paiement: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   commentaire: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  remise_montant: z.coerce.number().min(0).max(999999).optional().default(0),
+  commission_channel_mode: z.enum(["euro", "percent"]).optional().default("euro"),
+  commission_channel_value: z.coerce.number().min(0).max(999999).optional().default(0),
   frais_optionnels_montant: z.coerce.number().min(0).optional().default(0),
   frais_optionnels_libelle: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   frais_optionnels_declares: z.boolean().optional().default(false),
@@ -379,6 +387,9 @@ const hydrateReservation = (reservation: any) => ({
   ...reservation,
   prix_par_nuit: toNumber(reservation.prix_par_nuit),
   prix_total: toNumber(reservation.prix_total),
+  remise_montant: toNumber(reservation.remise_montant),
+  commission_channel_mode: normalizeReservationCommissionMode(reservation.commission_channel_mode),
+  commission_channel_value: toNumber(reservation.commission_channel_value),
   frais_optionnels_montant: toNumber(reservation.frais_optionnels_montant),
   options: fromJsonString<OptionsInput>(reservation.options, {}),
 });
@@ -1000,6 +1011,11 @@ router.post("/", async (req, res, next) => {
 
     const priceTotalsBySegment = allocateAmountByNights(computed.prixTotal, segments);
     const optionalFeesBySegment = allocateAmountByNights(round2(payload.frais_optionnels_montant ?? 0), segments);
+    const remiseBySegment = allocateAmountByNights(round2(payload.remise_montant ?? 0), segments);
+    const commissionMode = normalizeReservationCommissionMode(payload.commission_channel_mode);
+    const commissionValue = sanitizeReservationCommissionValue(payload.commission_channel_value ?? 0, commissionMode);
+    const commissionBySegment =
+      commissionMode === "euro" ? allocateAmountByNights(round2(commissionValue), segments) : segments.map(() => commissionValue);
     const encodedOptions = encodeJsonField(payload.options ?? {});
 
     const createdReservations = await prisma.$transaction(
@@ -1019,6 +1035,9 @@ router.post("/", async (req, res, next) => {
             prix_total: prixTotal,
             source_paiement,
             commentaire: payload.commentaire ?? null,
+            remise_montant: remiseBySegment[index] ?? 0,
+            commission_channel_mode: commissionMode,
+            commission_channel_value: commissionBySegment[index] ?? 0,
             frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
             frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
             frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
@@ -1090,6 +1109,16 @@ router.post("/:id/split", async (req, res, next) => {
 
     const priceTotalsBySegment = allocateAmountByNights(toNumber(existing.prix_total), segments);
     const optionalFeesBySegment = allocateAmountByNights(toNumber(existing.frais_optionnels_montant), segments);
+    const remiseBySegment = allocateAmountByNights(toNumber(existing.remise_montant), segments);
+    const existingCommissionMode = normalizeReservationCommissionMode(existing.commission_channel_mode);
+    const existingCommissionValue = sanitizeReservationCommissionValue(
+      existing.commission_channel_value,
+      existingCommissionMode
+    );
+    const commissionBySegment =
+      existingCommissionMode === "euro"
+        ? allocateAmountByNights(round2(existingCommissionValue), segments)
+        : segments.map(() => existingCommissionValue);
     const encodedOptions = encodeJsonField(fromJsonString<OptionsInput>(existing.options, {}));
 
     const createdReservations = await prisma.$transaction(async (tx) => {
@@ -1112,6 +1141,9 @@ router.post("/:id/split", async (req, res, next) => {
             prix_total: prixTotal,
             source_paiement: existing.source_paiement,
             commentaire: existing.commentaire,
+            remise_montant: remiseBySegment[index] ?? 0,
+            commission_channel_mode: existingCommissionMode,
+            commission_channel_value: commissionBySegment[index] ?? 0,
             frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
             frais_optionnels_libelle: existing.frais_optionnels_libelle,
             frais_optionnels_declares: existing.frais_optionnels_declares,
@@ -1190,6 +1222,12 @@ router.put("/:id", async (req, res, next) => {
         prix_total: computed.prixTotal,
         source_paiement,
         commentaire: payload.commentaire ?? null,
+        remise_montant: sanitizeReservationAmount(payload.remise_montant ?? 0),
+        commission_channel_mode: normalizeReservationCommissionMode(payload.commission_channel_mode),
+        commission_channel_value: sanitizeReservationCommissionValue(
+          payload.commission_channel_value ?? 0,
+          normalizeReservationCommissionMode(payload.commission_channel_mode)
+        ),
         frais_optionnels_montant: round2(payload.frais_optionnels_montant ?? 0),
         frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
         frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
@@ -1500,6 +1538,9 @@ router.post("/import", async (req, res, next) => {
           prix_total: row.prix_total,
           source_paiement: row.source_paiement,
           commentaire: row.commentaire,
+          remise_montant: 0,
+          commission_channel_mode: "euro",
+          commission_channel_value: 0,
           frais_optionnels_montant: row.frais_optionnels_montant,
           frais_optionnels_libelle: row.frais_optionnels_libelle,
           frais_optionnels_declares: row.frais_optionnels_declares,
@@ -1564,6 +1605,9 @@ router.post("/import", async (req, res, next) => {
           prix_total: computed.prixTotal,
           source_paiement: row.source_paiement,
           commentaire: row.commentaire,
+          remise_montant: 0,
+          commission_channel_mode: "euro",
+          commission_channel_value: 0,
           frais_optionnels_montant: round2(row.frais_optionnels_montant),
           frais_optionnels_libelle: row.frais_optionnels_libelle,
           frais_optionnels_declares: row.frais_optionnels_declares,

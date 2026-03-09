@@ -96,6 +96,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       options_depart_tardif_forfait: 15,
       options_chiens_forfait: 5,
     };
+    let lastCreatedReservationData: any = null;
 
     prisma.gite.findUnique = async () => mockedGite;
     prisma.contratCounter.upsert = async () => ({ lastNumber: 1 });
@@ -116,7 +117,10 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     prisma.facture.update = async ({ data }: any) => ({ id: "f1", numero_facture: "GT-2026-01", ...data });
     prisma.reservation.findUnique = async () => null;
     prisma.reservation.findMany = async () => [];
-    prisma.reservation.create = async () => ({ id: "r1" });
+    prisma.reservation.create = async ({ data }: any) => {
+      lastCreatedReservationData = data;
+      return { id: "r1" };
+    };
     prisma.reservation.update = async ({ where }: any) => ({ id: where.id });
 
     const contractsRouterModule = await import("../src/routes/contracts.ts");
@@ -172,6 +176,9 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(createContractRes.statusCode, 201);
     assert.equal(Number((createContractRes.body as any).solde_montant), 272);
+    assert.equal(Number(lastCreatedReservationData.prix_par_nuit), 100);
+    assert.equal(Number(lastCreatedReservationData.prix_total), 300);
+    assert.equal(Number(lastCreatedReservationData.remise_montant), 10);
 
     const updateContractRes = createMockResponse();
     nextError = null;
