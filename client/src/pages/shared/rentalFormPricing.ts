@@ -102,7 +102,10 @@ export const useRentalFormPricing = (params: {
     return round2(totals.totalSansOptions * arrhesRate);
   }, [totals.totalSansOptions, arrhesRate]);
 
-  const drapsTarif = Number(selectedGite?.options_draps_par_lit ?? 0);
+  const drapsTarif =
+    params.options.draps?.prix_unitaire !== undefined
+      ? Number(params.options.draps.prix_unitaire ?? 0)
+      : Number(selectedGite?.options_draps_par_lit ?? 0);
   const lingeTarif = Number(selectedGite?.options_linge_toilette_par_personne ?? 0);
   const menageTarif = Number(selectedGite?.options_menage_forfait ?? 0);
   const departTardifTarif = Number(selectedGite?.options_depart_tardif_forfait ?? 0);

@@ -241,6 +241,9 @@ model Reservation {
   prix_total                Decimal                  @db.Decimal(10,2)
   source_paiement           String?
   commentaire               String?
+  remise_montant            Decimal                  @default(0) @db.Decimal(10,2)
+  commission_channel_mode   String?                  @default("euro")
+  commission_channel_value  Decimal                  @default(0) @db.Decimal(10,2)
   frais_optionnels_montant  Decimal                  @default(0) @db.Decimal(10,2)
   frais_optionnels_libelle  String?
   frais_optionnels_declares Boolean                  @default(false)

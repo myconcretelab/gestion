@@ -2,7 +2,7 @@ import { differenceInCalendarDays } from "date-fns";
 import { toNumber, round2, type NumericLike } from "../utils/money.js";
 
 export type OptionsInput = {
-  draps?: { enabled: boolean; nb_lits?: number; offert?: boolean; declared?: boolean };
+  draps?: { enabled: boolean; nb_lits?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
   menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
   depart_tardif?: { enabled: boolean; offert?: boolean; declared?: boolean };
@@ -55,7 +55,10 @@ export const computeTotals = (params: {
   const montantBase = round2(nbNuits * params.prixParNuit);
   const totalSansOptions = round2(montantBase - params.remiseMontant);
 
-  const drapsTarif = toNumber(params.gite.options_draps_par_lit);
+  const drapsTarif =
+    params.options.draps?.prix_unitaire !== undefined
+      ? toNumber(params.options.draps.prix_unitaire)
+      : toNumber(params.gite.options_draps_par_lit);
   const lingeTarif = toNumber(params.gite.options_linge_toilette_par_personne);
   const menageTarif = toNumber(params.gite.options_menage_forfait);
   const departTardifTarif = toNumber(params.gite.options_depart_tardif_forfait);

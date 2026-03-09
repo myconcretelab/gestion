@@ -179,7 +179,7 @@ const ContratFormPage = () => {
         setDateFin(toDateInputValue(data.date_sortie));
         setPrixParNuit(Number(data.prix_par_nuit ?? 0));
         setRemiseMode("euro");
-        setRemiseValue("");
+        setRemiseValue(data.remise_montant ? String(data.remise_montant) : "");
         setOptions(mergeOptions(data.options));
         setArrhesAuto(true);
         setArrhesMontant("");
@@ -855,6 +855,17 @@ const ContratFormPage = () => {
                   value={options.draps?.nb_lits ?? 0}
                   disabled={!options.draps?.enabled}
                   onChange={(e) => updateOption("draps", { nb_lits: Number(e.target.value) })}
+                />
+              </label>
+              <label className="field field-inline">
+                Prix / lit
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={options.draps?.prix_unitaire ?? drapsTarif}
+                  disabled={!options.draps?.enabled}
+                  onChange={(e) => updateOption("draps", { prix_unitaire: Number(e.target.value) })}
                 />
               </label>
             </div>

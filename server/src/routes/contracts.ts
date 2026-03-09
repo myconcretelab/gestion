@@ -6,6 +6,7 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { computeTotals, type OptionsInput } from "../services/contractCalculator.js";
 import { generateContractNumber } from "../services/contractNumber.js";
+import { sanitizeReservationAmount } from "../services/reservationPricing.js";
 import {
   generateContractPdf,
   generateContractPreviewHtml,
@@ -199,27 +200,14 @@ const syncReservationFromContract = async (params: {
   const normalizedHost = normalizeTextKey(locataireNom);
   const summary = toReservationOptionsSummary(options);
 
-  const reservationData = {
-    gite_id: giteId,
-    placeholder_id: null,
-    hote_nom: locataireNom,
-    date_entree: dateDebut,
-    date_sortie: dateFin,
-    nb_nuits: nbNuits,
-    nb_adultes: nbAdultes,
-    prix_par_nuit: round2(prixParNuit),
-    prix_total: round2(prixTotal),
-    frais_optionnels_montant: round2(optionsTotal),
-    frais_optionnels_libelle: summary.label || null,
-    frais_optionnels_declares: summary.allDeclared,
-    options: encodeJsonField(options),
-  };
-
   let targetReservationId: string | null = null;
   if (sourceReservationId) {
     const linked = await prisma.reservation.findUnique({
       where: { id: sourceReservationId },
-      select: { id: true, gite_id: true },
+      select: {
+        id: true,
+        gite_id: true,
+      },
     });
     if (linked) {
       if (!linked.gite_id || linked.gite_id === giteId) {
@@ -258,6 +246,24 @@ const syncReservationFromContract = async (params: {
 
     targetReservationId = exactHostAndDates?.id ?? exactDates?.id ?? hostOverlap?.id ?? fallback?.id ?? null;
   }
+
+  const normalizedOptionsTotal = sanitizeReservationAmount(optionsTotal);
+
+  const reservationData = {
+    gite_id: giteId,
+    placeholder_id: null,
+    hote_nom: locataireNom,
+    date_entree: dateDebut,
+    date_sortie: dateFin,
+    nb_nuits: nbNuits,
+    nb_adultes: nbAdultes,
+    prix_par_nuit: round2(prixParNuit),
+    prix_total: round2(prixTotal),
+    frais_optionnels_montant: round2(normalizedOptionsTotal),
+    frais_optionnels_libelle: summary.label || null,
+    frais_optionnels_declares: summary.allDeclared,
+    options: encodeJsonField(options),
+  };
 
   if (targetReservationId) {
     const updated = await prisma.reservation.update({
