@@ -52,6 +52,7 @@ export type IcalSourceRow = {
     nom: string;
     prefixe_contrat: string;
     ordre: number;
+    nb_adultes_habituel: number;
   };
 };
 
@@ -68,6 +69,7 @@ type ParsedIcalReservation = {
   date_entree: string;
   date_sortie: string;
   hote_nom: string | null;
+  nb_adultes_habituel: number;
 };
 
 export type IcalSyncStatus = "new" | "existing" | "existing_updatable" | "conflict";
@@ -319,6 +321,7 @@ const fetchSourceReservations = async (source: IcalSourceRow): Promise<ParsedIca
       date_entree,
       date_sortie,
       hote_nom: normalizeImportedHostName(extractHostName(summary)),
+      nb_adultes_habituel: source.gite.nb_adultes_habituel,
     });
   }
 
@@ -340,6 +343,7 @@ const buildIcalSourceQuery = (onlyActive = true) => ({
         nom: true,
         prefixe_contrat: true,
         ordre: true,
+        nb_adultes_habituel: true,
       },
     },
   },
@@ -522,7 +526,7 @@ const toCreatePayload = (reservation: IcalPreviewItem) => {
     date_entree: dateEntree,
     date_sortie: dateSortie,
     nb_nuits: nights,
-    nb_adultes: 0,
+    nb_adultes: Math.max(1, Number(reservation.nb_adultes_habituel) || 1),
     prix_par_nuit: 0,
     prix_total: 0,
     source_paiement: normalizeSource(reservation.source_type),
