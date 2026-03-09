@@ -12,6 +12,7 @@ import reservationsRouter from "./routes/reservations.js";
 import statisticsRouter from "./routes/statistics.js";
 import settingsRouter from "./routes/settings.js";
 import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
+import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 
 export const createApp = () => {
   const app = express();
@@ -75,6 +76,7 @@ export const createApp = () => {
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/settings", settingsRouter);
   app.use("/api/urssaf-declarations", urssafDeclarationsRouter);
+  app.use("/api/school-holidays", schoolHolidaysRouter);
 
   const clientDistCandidates = [
     process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,
