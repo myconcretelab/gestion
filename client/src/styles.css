@@ -1253,6 +1253,28 @@ button.warning {
   max-height: calc(1.25em * 2);
 }
 
+.reservations-table textarea.reservations-comment-editor {
+  width: 100%;
+  min-width: 0;
+  min-height: calc(1.35em + 14px);
+  line-height: 1.35;
+  resize: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reservations-comment-cell .reservations-comment-editor:focus,
+.reservations-comment-cell .reservations-comment-editor:focus-visible {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  width: min(520px, calc(100vw - 64px));
+  min-height: 96px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
+}
+
 .reservations-comment-trigger[data-full-comment]:not([data-full-comment=""]):hover::after,
 .reservations-comment-trigger[data-full-comment]:not([data-full-comment=""]):focus-visible::after {
   content: attr(data-full-comment);
@@ -1261,7 +1283,8 @@ button.warning {
   top: calc(100% + 6px);
   z-index: 50;
   min-width: 180px;
-  max-width: 420px;
+  width: max-content;
+  max-width: min(720px, calc(100vw - 48px));
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid #d1d5db;
@@ -1270,6 +1293,7 @@ button.warning {
   font-size: 0.78rem;
   line-height: 1.35;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
   pointer-events: none;
 }

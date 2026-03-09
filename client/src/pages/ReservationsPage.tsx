@@ -253,6 +253,12 @@ const buildCommentWithIcalToVerifyMarker = (comment: string, keepMarker: boolean
   return cleaned.length > 0 ? `${ICAL_TO_VERIFY_MARKER}\n${cleaned}` : ICAL_TO_VERIFY_MARKER;
 };
 
+const resizeCommentTextarea = (element: HTMLTextAreaElement | null) => {
+  if (!element) return;
+  element.style.height = "0px";
+  element.style.height = `${element.scrollHeight}px`;
+};
+
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
 const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
@@ -1252,14 +1258,14 @@ const ReservationsPage = () => {
   };
 
   const focusInlineField = (rowId: string, field: InlineEditableField, options: { openPicker?: boolean } = {}) => {
-    const element = document.querySelector<HTMLInputElement | HTMLSelectElement>(
+    const element = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
       `[data-inline-row-id="${rowId}"][data-inline-field="${field}"]`
     );
     if (!element) return;
     element.focus();
 
     const canSelectText = "select" in element && typeof element.select === "function";
-    if (canSelectText && element instanceof HTMLInputElement) {
+    if (canSelectText && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
       element.select();
     }
 
@@ -1371,7 +1377,7 @@ const ReservationsPage = () => {
   };
 
   const handleInlineKeyDown = (
-    event: KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
+    event: KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
     reservation: Reservation,
     field: InlineEditableField
   ) => {
@@ -2603,22 +2609,24 @@ const ReservationsPage = () => {
           </select>
         </td>
         <td>
-          <input
+          <textarea
             data-grid-month={monthIndex}
             data-grid-row={newRowIndex}
             data-grid-col={8}
+            className="reservations-comment-editor"
+            rows={1}
             value={newRow.commentaire}
-            onChange={(event) => updateNewRow(monthIndex, (prev) => ({ ...prev, commentaire: event.target.value }))}
-            onKeyDown={(event) =>
-              handleGridKeyDown(event, {
-                monthIndex,
-                rowIndex: newRowIndex,
-                colIndex: 8,
-                rowType: "new",
-                monthRows: list,
-                hasNewRow: addAllowed,
-              })
-            }
+            ref={resizeCommentTextarea}
+            onChange={(event) => {
+              resizeCommentTextarea(event.currentTarget);
+              updateNewRow(monthIndex, (prev) => ({ ...prev, commentaire: event.target.value }));
+            }}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                addReservation(monthIndex).catch((err) => setError((err as Error).message));
+              }
+            }}
           />
         </td>
         <td className="table-actions-cell">
@@ -3681,15 +3689,19 @@ const ReservationsPage = () => {
                             </td>
                             <td className="reservations-comment-cell">
                               {isEditing || isInlineFieldActive(reservation.id, "commentaire") ? (
-                                <input
+                                <textarea
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
                                   data-grid-col={8}
+                                  className="reservations-comment-editor"
                                   data-inline-row-id={!isEditing ? reservation.id : undefined}
                                   data-inline-field={!isEditing ? "commentaire" : undefined}
+                                  rows={1}
                                   value={draft.commentaire}
                                   autoFocus={!isEditing}
+                                  ref={resizeCommentTextarea}
                                   onChange={(event) => {
+                                    resizeCommentTextarea(event.currentTarget);
                                     if (!isEditing) {
                                       updateInlineField(reservation, (prev) => ({
                                         ...prev,
@@ -3704,18 +3716,21 @@ const ReservationsPage = () => {
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "commentaire");
+                                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                                        event.preventDefault();
+                                        saveInlineField(reservation, "commentaire").catch((err) => setError((err as Error).message));
+                                        return;
+                                      }
+                                      if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        closeInlineField(reservation, "commentaire");
+                                      }
                                       return;
                                     }
-                                    handleGridKeyDown(event, {
-                                      monthIndex,
-                                      rowIndex: gridRowIndex,
-                                      colIndex: 8,
-                                      rowType: "existing",
-                                      monthRows: list,
-                                      hasNewRow: hasInlineNewRow,
-                                      reservationId: reservation.id,
-                                    });
+                                    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                                      event.preventDefault();
+                                      saveExistingRow(reservation.id).catch((err) => setError((err as Error).message));
+                                    }
                                   }}
                                   onBlur={() => {
                                     if (!isEditing) handleInlineBlur(reservation, "commentaire");
@@ -3727,7 +3742,7 @@ const ReservationsPage = () => {
                                   className="reservations-source-inline-trigger reservations-comment-trigger"
                                   data-full-comment={visibleComment}
                                   onClick={() => openInlineField(reservation, "commentaire")}
-                                  title="Modifier le commentaire"
+                                  title={visibleComment || "Modifier le commentaire"}
                                 >
                                   {visibleComment}
                                 </button>
