@@ -179,6 +179,7 @@ const syncReservationFromContract = async (params: {
   nbAdultes: number;
   prixParNuit: number;
   prixTotal: number;
+  remiseMontant: number;
   options: OptionsInput;
   optionsTotal: number;
 }) => {
@@ -193,6 +194,7 @@ const syncReservationFromContract = async (params: {
     nbAdultes,
     prixParNuit,
     prixTotal,
+    remiseMontant,
     options,
     optionsTotal,
   } = params;
@@ -248,6 +250,7 @@ const syncReservationFromContract = async (params: {
   }
 
   const normalizedOptionsTotal = sanitizeReservationAmount(optionsTotal);
+  const normalizedRemiseMontant = sanitizeReservationAmount(remiseMontant);
 
   const reservationData = {
     gite_id: giteId,
@@ -259,6 +262,7 @@ const syncReservationFromContract = async (params: {
     nb_adultes: nbAdultes,
     prix_par_nuit: round2(prixParNuit),
     prix_total: round2(prixTotal),
+    remise_montant: round2(normalizedRemiseMontant),
     frais_optionnels_montant: round2(normalizedOptionsTotal),
     frais_optionnels_libelle: summary.label || null,
     frais_optionnels_declares: summary.allDeclared,
@@ -601,6 +605,7 @@ router.post("/", async (req, res, next) => {
       nbAdultes: data.nb_adultes,
       prixParNuit: data.prix_par_nuit,
       prixTotal: totals.montantBase,
+      remiseMontant: data.remise_montant ?? 0,
       options,
       optionsTotal: totals.optionsTotal,
     });
@@ -710,6 +715,7 @@ router.put("/:id", async (req, res, next) => {
       nbAdultes: data.nb_adultes,
       prixParNuit: data.prix_par_nuit,
       prixTotal: totals.montantBase,
+      remiseMontant: data.remise_montant ?? 0,
       options,
       optionsTotal: totals.optionsTotal,
     });
