@@ -123,6 +123,10 @@ type UrssafUndeclaredMonthItem = {
   }>;
 };
 
+type DeclarationNightsSettings = {
+  excluded_sources: string[];
+};
+
 const MONTHS = [
   "Janvier",
   "Février",
@@ -304,6 +308,9 @@ const parseInputDate = (value: string): Date | null => {
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const computeReservationGuestNights = (reservation: Pick<Reservation, "nb_nuits" | "nb_adultes">) =>
+  Math.max(0, Number(reservation.nb_nuits ?? 0)) * Math.max(0, Number(reservation.nb_adultes ?? 0));
 
 const toNonNegativeInt = (value: unknown, fallback = 0) => {
   const numeric = Number(value);
@@ -611,6 +618,7 @@ const ReservationsPage = () => {
   const [importing, setImporting] = useState(false);
   const [reservationOptions, setReservationOptions] = useState<Record<string, ContratOptions>>({});
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [declarationExcludedSources, setDeclarationExcludedSources] = useState<string[]>(["Airbnb"]);
   const [urssafDeclarationsByKey, setUrssafDeclarationsByKey] = useState<UrssafDeclarationsByKey>({});
   const [savingUrssafDeclarationByMonth, setSavingUrssafDeclarationByMonth] = useState<Record<number, boolean>>({});
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
@@ -647,6 +655,27 @@ const ReservationsPage = () => {
   useEffect(() => {
     void loadStatistics();
   }, [loadStatistics]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    apiFetch<DeclarationNightsSettings>("/settings/declaration-nights")
+      .then((data) => {
+        if (cancelled) return;
+        setDeclarationExcludedSources(
+          Array.isArray(data.excluded_sources)
+            ? [...new Set(data.excluded_sources.map((item) => String(item ?? "").trim()).filter(Boolean))]
+            : []
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1732,6 +1761,10 @@ const ReservationsPage = () => {
     const now = new Date();
     return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
   }, []);
+  const declarationExcludedSourceKeys = useMemo(
+    () => new Set(declarationExcludedSources.map((source) => normalizeTextKey(source)).filter(Boolean)),
+    [declarationExcludedSources]
+  );
 
   const isMonthExpandedByDefault = useCallback(
     (monthIndex: number) => {
@@ -1954,9 +1987,24 @@ const ReservationsPage = () => {
   };
 
   const monthSummary = (list: Reservation[]) => {
+    let guestNights = 0;
+    let declaredGuestNights = 0;
+
+    list.forEach((item) => {
+      const reservationGuestNights = computeReservationGuestNights(item);
+      guestNights += reservationGuestNights;
+
+      const normalizedSource = normalizeTextKey(normalizeReservationSource(item.source_paiement));
+      if (!declarationExcludedSourceKeys.has(normalizedSource)) {
+        declaredGuestNights += reservationGuestNights;
+      }
+    });
+
     return {
       count: list.length,
       nights: list.reduce((acc, item) => acc + item.nb_nuits, 0),
+      guestNights,
+      declaredGuestNights,
       revenue: list.reduce((acc, item) => acc + item.prix_total, 0),
       fees: list.reduce((acc, item) => acc + (item.frais_optionnels_montant ?? 0), 0),
       adults: list.reduce((acc, item) => acc + item.nb_adultes, 0),
@@ -2688,6 +2736,12 @@ const ReservationsPage = () => {
                     <div className="reservations-month__meta">
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.count, "réservation", "réservations")}</span>
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.nights, "nuit", "nuits")}</span>
+                      <span className="reservations-summary-pill reservations-summary-pill--guest-nights">
+                        Total {formatPluralLabel(summary.guestNights, "nuitée", "nuitées")}
+                      </span>
+                      <span className="reservations-summary-pill reservations-summary-pill--guest-nights-declared">
+                        {formatPluralLabel(summary.declaredGuestNights, "nuitée", "nuitées")} à déclarer
+                      </span>
                       <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
                       {declaredUrssafForMonth ? (
