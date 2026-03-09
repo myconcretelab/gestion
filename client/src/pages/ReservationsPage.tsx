@@ -130,6 +130,16 @@ type UrssafUndeclaredMonthItem = {
   }>;
 };
 
+type ReservationsViewSnapshot = {
+  monthExpandedByIndex: Record<number, boolean>;
+  scrollAnchor:
+    | {
+        monthIndex: number;
+        sectionTopInViewport: number;
+      }
+    | null;
+};
+
 type DeclarationNightsSettings = {
   excluded_sources: string[];
 };
@@ -663,6 +673,8 @@ const ReservationsPage = () => {
   const saveTimers = useRef<Record<string, number>>({});
   const detailsCloseTimers = useRef<Record<string, number>>({});
   const savedRowFadeTimers = useRef<Record<string, number>>({});
+  const pendingViewSnapshotRef = useRef<ReservationsViewSnapshot | null>(null);
+  const restoreViewRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     reservationsRef.current = reservations;
@@ -714,6 +726,9 @@ const ReservationsPage = () => {
     return () => {
       Object.values(detailsCloseTimers.current).forEach((timer) => window.clearTimeout(timer));
       Object.values(savedRowFadeTimers.current).forEach((timer) => window.clearTimeout(timer));
+      if (restoreViewRafRef.current) {
+        window.cancelAnimationFrame(restoreViewRafRef.current);
+      }
     };
   }, []);
 
@@ -974,7 +989,7 @@ const ReservationsPage = () => {
 
   useEffect(() => {
     setMonthExpandedByIndex({});
-  }, [activeTab, month, year]);
+  }, [month, year]);
 
   useEffect(() => {
     if (!activeTab) {
@@ -1926,6 +1941,80 @@ const ReservationsPage = () => {
     });
   }, []);
 
+  const captureViewSnapshot = useCallback((): ReservationsViewSnapshot => {
+    const expandedState: Record<number, boolean> = {};
+    monthsToRender.forEach((monthIndex) => {
+      expandedState[monthIndex] = monthExpandedByIndex[monthIndex] ?? isMonthExpandedByDefault(monthIndex);
+    });
+
+    const sections = Array.from(document.querySelectorAll<HTMLElement>(".reservations-month[data-month-index]"));
+    if (!sections.length) {
+      return {
+        monthExpandedByIndex: expandedState,
+        scrollAnchor: null,
+      };
+    }
+
+    const rootStyles = window.getComputedStyle(document.documentElement);
+    const anchorLine = Number.parseFloat(rootStyles.getPropertyValue("--reservations-month-head-top")) || 0;
+    const anchorSection =
+      sections.find((section) => {
+        const rect = section.getBoundingClientRect();
+        return rect.top <= anchorLine && rect.bottom > anchorLine;
+      }) ??
+      sections.find((section) => section.getBoundingClientRect().top >= anchorLine) ??
+      sections[sections.length - 1];
+
+    const monthIndex = Number(anchorSection.dataset.monthIndex);
+    return {
+      monthExpandedByIndex: expandedState,
+      scrollAnchor: Number.isFinite(monthIndex)
+        ? {
+            monthIndex,
+            sectionTopInViewport: anchorSection.getBoundingClientRect().top,
+          }
+        : null,
+    };
+  }, [isMonthExpandedByDefault, monthExpandedByIndex, monthsToRender]);
+
+  const handleTabChange = useCallback(
+    (nextTab: string) => {
+      if (!nextTab || nextTab === activeTab) return;
+      const snapshot = captureViewSnapshot();
+      pendingViewSnapshotRef.current = snapshot;
+      flushSync(() => {
+        setMonthExpandedByIndex(snapshot.monthExpandedByIndex);
+        setActiveTab(nextTab);
+      });
+    },
+    [activeTab, captureViewSnapshot]
+  );
+
+  useEffect(() => {
+    const snapshot = pendingViewSnapshotRef.current;
+    if (!activeTab || !snapshot) return;
+
+    pendingViewSnapshotRef.current = null;
+    if (restoreViewRafRef.current) {
+      window.cancelAnimationFrame(restoreViewRafRef.current);
+    }
+
+    restoreViewRafRef.current = window.requestAnimationFrame(() => {
+      restoreViewRafRef.current = window.requestAnimationFrame(() => {
+        restoreViewRafRef.current = null;
+        if (!snapshot.scrollAnchor) return;
+
+        const section = document.querySelector<HTMLElement>(
+          `.reservations-month[data-month-index="${snapshot.scrollAnchor.monthIndex}"]`
+        );
+        if (!section) return;
+
+        const targetTop = window.scrollY + section.getBoundingClientRect().top - snapshot.scrollAnchor.sectionTopInViewport;
+        window.scrollTo({ top: Math.max(0, targetTop) });
+      });
+    });
+  }, [activeTab, reservationsByMonth]);
+
   const handleMonthHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>, monthIndex: number, isExpanded: boolean) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -2772,7 +2861,7 @@ const ReservationsPage = () => {
               onDragOver={(event) => handleTabDragOver(event, gite.id)}
               onDrop={(event) => void handleTabDrop(event, gite.id)}
               onDragEnd={handleTabDragEnd}
-              onClick={() => setActiveTab(gite.id)}
+              onClick={() => handleTabChange(gite.id)}
               disabled={reorderingTabs}
               title={reorderingTabs ? "Réorganisation en cours..." : "Glisser-déposer pour réorganiser"}
             >
@@ -2783,7 +2872,7 @@ const ReservationsPage = () => {
             <button
               type="button"
               className={`reservations-tab ${activeTab === UNASSIGNED_TAB ? "reservations-tab--active" : ""}`}
-              onClick={() => setActiveTab(UNASSIGNED_TAB)}
+              onClick={() => handleTabChange(UNASSIGNED_TAB)}
             >
               Non attribuées
             </button>
@@ -2791,7 +2880,7 @@ const ReservationsPage = () => {
           <button
             type="button"
             className={`reservations-tab reservations-tab--all ${activeTab === ALL_GITES_TAB ? "reservations-tab--active" : ""}`}
-            onClick={() => setActiveTab(ALL_GITES_TAB)}
+            onClick={() => handleTabChange(ALL_GITES_TAB)}
           >
             Tous les gîtes
           </button>
@@ -2892,6 +2981,7 @@ const ReservationsPage = () => {
                   monthHasPendingUrssafReminder ? "reservations-month--urssaf-pending" : ""
                 } ${!isMonthExpanded ? "reservations-month--collapsed" : ""}`}
                 key={monthIndex}
+                data-month-index={monthIndex}
               >
                 <div
                   className={`reservations-month__head ${isMonthExpanded ? "reservations-month__head--sticky" : ""} ${
