@@ -9,6 +9,11 @@ import {
   type IcalCronConfig,
 } from "./icalCronSettings.js";
 import { isUnknownHostName, normalizeImportedHostName } from "../utils/reservationText.js";
+import {
+  resolveIcalReservationSource,
+  shouldPreferIcalReservation,
+  shouldUpdateIcalReservationSource,
+} from "../utils/icalReservationSource.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -239,16 +244,27 @@ const formatIcalDate = (value: unknown) => {
   return toIsoDate(value);
 };
 
-const pickPreferredReservation = (left: ParsedIcalReservation, right: ParsedIcalReservation) => {
-  const leftSummary = left.summary.toUpperCase();
-  const rightSummary = right.summary.toUpperCase();
-  const leftPreferred = leftSummary.includes("RESERVED") || leftSummary.includes("BOOKED");
-  const rightPreferred = rightSummary.includes("RESERVED") || rightSummary.includes("BOOKED");
+const resolveReservationSource = (reservation: Pick<ParsedIcalReservation, "source_type" | "hote_nom">) =>
+  resolveIcalReservationSource({
+    normalizedSourceType: normalizeSource(reservation.source_type),
+    hostName: reservation.hote_nom,
+  });
 
-  if (leftPreferred && !rightPreferred) return left;
-  if (!leftPreferred && rightPreferred) return right;
-  return left;
-};
+const pickPreferredReservation = (left: ParsedIcalReservation, right: ParsedIcalReservation) =>
+  shouldPreferIcalReservation(
+    {
+      normalizedSourceType: normalizeSource(left.source_type),
+      hostName: left.hote_nom,
+      summary: left.summary,
+    },
+    {
+      normalizedSourceType: normalizeSource(right.source_type),
+      hostName: right.hote_nom,
+      summary: right.summary,
+    }
+  )
+    ? left
+    : right;
 
 const dedupeParsedReservations = (items: ParsedIcalReservation[]) => {
   const byPeriod = new Map<string, ParsedIcalReservation>();
@@ -356,14 +372,19 @@ export const listIcalSources = async (onlyActive = false) => {
 
 const buildUpdateFields = (existing: any, reservation: ParsedIcalReservation) => {
   const fields: Array<"hote_nom" | "source_paiement"> = [];
-  const normalizedSource = normalizeSource(reservation.source_type);
+  const resolvedSource = resolveReservationSource(reservation);
 
   if (isUnknownHostName(existing.hote_nom) && reservation.hote_nom) {
     fields.push("hote_nom");
   }
 
-  const hasSource = typeof existing.source_paiement === "string" && existing.source_paiement.trim().length > 0;
-  if ((!hasSource || existing.source_paiement === DEFAULT_SOURCE) && normalizedSource !== DEFAULT_SOURCE) {
+  if (
+    shouldUpdateIcalReservationSource({
+      currentSource: existing.source_paiement,
+      currentHostName: existing.hote_nom,
+      nextSource: resolvedSource,
+    })
+  ) {
     fields.push("source_paiement");
   }
 
@@ -379,7 +400,7 @@ const buildUpdateData = (existing: any, reservation: ParsedIcalReservation) => {
       continue;
     }
     if (field === "source_paiement") {
-      data.source_paiement = normalizeSource(reservation.source_type);
+      data.source_paiement = resolveReservationSource(reservation);
       continue;
     }
   }
@@ -529,7 +550,7 @@ const toCreatePayload = (reservation: IcalPreviewItem) => {
     nb_adultes: Math.max(1, Number(reservation.nb_adultes_habituel) || 1),
     prix_par_nuit: 0,
     prix_total: 0,
-    source_paiement: normalizeSource(reservation.source_type),
+    source_paiement: resolveReservationSource(reservation),
     commentaire: null,
     frais_optionnels_montant: 0,
     frais_optionnels_libelle: null,
@@ -653,7 +674,7 @@ const runSync = async (): Promise<IcalSyncResult> => {
         giteId: item.gite_id,
         checkIn: item.date_entree,
         checkOut: item.date_sortie,
-        source: normalizeSource(item.source_type),
+        source: resolveReservationSource(item),
       });
       markPerGite(item.gite_nom, "inserted");
       continue;
@@ -685,7 +706,7 @@ const runSync = async (): Promise<IcalSyncResult> => {
         giteId: item.gite_id,
         checkIn: item.date_entree,
         checkOut: item.date_sortie,
-        source: normalizeSource(item.source_type),
+        source: resolveReservationSource(item),
       });
       continue;
     }

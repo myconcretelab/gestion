@@ -37,7 +37,7 @@ export const OccupationGaugeDial = ({
         id={id}
         nrOfLevels={10}
         percent={safeOccupation}
-        colors={highlighted ? ["#d81060", "#d71163"] : ["#d2d2d2", PRIMARY_GAUGE_COLOR]}
+        colors={highlighted ? ["#d81060", "#d71163"] : ["#ffffff", PRIMARY_GAUGE_COLOR]}
         arcWidth={0.23}
         hideText
         needleColor="#2f2b2b"
