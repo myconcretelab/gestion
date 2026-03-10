@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent } from "react";
 import { apiFetch, isApiError } from "../utils/api";
 import type { Gestionnaire, Gite, ReservationPlaceholder } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
@@ -49,6 +49,19 @@ type GitesImportResult = {
 };
 const PLACEHOLDER_FADE_OUT_MS = 320;
 
+const formatManagerLabel = (gite: Gite) =>
+  gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "Gestion directe";
+
+const formatAddressLabel = (gite: Gite) =>
+  [gite.adresse_ligne1, gite.adresse_ligne2].map((part) => part?.trim()).filter(Boolean).join(", ");
+
+const getGiteHighlights = (gite: Gite) =>
+  (gite.caracteristiques ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
 const GitesPage = () => {
   const [gites, setGites] = useState<Gite[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -67,6 +80,7 @@ const GitesPage = () => {
   const [attachingPlaceholderId, setAttachingPlaceholderId] = useState<string | null>(null);
   const [fadingPlaceholderIds, setFadingPlaceholderIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const formCardRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => gites.find((g) => g.id === selectedId) ?? null, [gites, selectedId]);
 
@@ -146,7 +160,7 @@ const GitesPage = () => {
     event.dataTransfer.setData("text/plain", id);
   };
 
-  const handleDragOver = (event: DragEvent<HTMLTableRowElement>, targetId: string) => {
+  const handleDragOver = (event: DragEvent<HTMLElement>, targetId: string) => {
     if (reordering) return;
     const sourceId = draggedId ?? event.dataTransfer.getData("text/plain");
     if (!sourceId || sourceId === targetId) return;
@@ -155,7 +169,7 @@ const GitesPage = () => {
     if (dragOverId !== targetId) setDragOverId(targetId);
   };
 
-  const handleDrop = async (event: DragEvent<HTMLTableRowElement>, targetId: string) => {
+  const handleDrop = async (event: DragEvent<HTMLElement>, targetId: string) => {
     event.preventDefault();
     if (reordering) return;
     const sourceId = draggedId ?? event.dataTransfer.getData("text/plain");
@@ -327,6 +341,17 @@ const GitesPage = () => {
     importInputRef.current?.click();
   };
 
+  const startCreate = () => {
+    setSelectedId(null);
+    setForm(emptyForm);
+    requestAnimationFrame(() => formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const selectGite = (id: string) => {
+    setSelectedId(id);
+    requestAnimationFrame(() => formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   const exportGites = async () => {
     setExportingGites(true);
     setError(null);
@@ -396,10 +421,12 @@ const GitesPage = () => {
 
   return (
     <div>
-      <div className="card">
-        <div className="gites-header">
-          <div className="section-title">Gîtes</div>
+      <div className="gites-listing-shell">
+        <div className="gites-header gites-header--listing">
           <div className="gites-tools">
+            <button type="button" className="gites-primary-action" onClick={startCreate} disabled={loading}>
+              Nouveau gîte
+            </button>
             <input
               ref={importInputRef}
               type="file"
@@ -424,94 +451,151 @@ const GitesPage = () => {
               {importingGites ? "Import..." : "Importer"}
             </button>
           </div>
-        </div>
-        <div className="field-hint gites-reorder-hint">
-          Glisser-déposer un gîte via la poignée pour changer l'ordre d'affichage.
-          {reordering ? " Enregistrement..." : ""}
+          {reordering && <div className="gites-header__status">Enregistrement de l'ordre...</div>}
         </div>
         {notice && <div className="note note--success">{notice}</div>}
         {error && <div className="note">{error}</div>}
-        <table className="table">
-          <thead>
-            <tr>
-              <th className="table-drag-cell">Ordre</th>
-              <th>Nom</th>
-              <th>Préfixe</th>
-              <th>Capacité</th>
-              <th>Adultes hab.</th>
-              <th>Gestionnaire</th>
-              <th>Contrats</th>
-              <th>Factures</th>
-              <th>Réservations</th>
-              <th className="table-actions-cell">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gites.map((gite, index) => (
-              <tr
-                key={gite.id}
-                className={`
-                  ${draggedId === gite.id ? "table-row--dragging" : ""}
-                  ${dragOverId === gite.id && draggedId !== gite.id ? "table-row--drag-over" : ""}
-                `}
-                onDragOver={(event) => handleDragOver(event, gite.id)}
-                onDrop={(event) => void handleDrop(event, gite.id)}
-              >
-                <td className="table-drag-cell">
-                  <button
-                    type="button"
-                    className="drag-handle"
-                    draggable={!reordering}
-                    onDragStart={(event) => handleDragStart(event, gite.id)}
-                    onDragEnd={handleDragEnd}
-                    aria-label={`Réorganiser ${gite.nom}`}
-                    title="Glisser pour réorganiser"
-                    disabled={reordering}
-                  >
-                    ≡
-                  </button>
-                </td>
-                <td className="gite-name-cell">
-                  <span className="gite-color-dot" style={{ backgroundColor: getGiteColor(gite, index) }} />
-                  {gite.nom}
-                </td>
-                <td>{gite.prefixe_contrat}</td>
-                <td>{gite.capacite_max}</td>
-                <td>{gite.nb_adultes_habituel}</td>
-                <td>{gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "—"}</td>
-                <td>
-                  <span className="badge">{gite.contrats_count ?? 0}</span>
-                </td>
-                <td>
-                  <span className="badge">{gite.factures_count ?? 0}</span>
-                </td>
-                <td>
-                  <span className="badge">{gite.reservations_count ?? 0}</span>
-                </td>
-                <td className="table-actions-cell">
-                  <div className="table-actions">
-                    <button className="table-action table-action--neutral" onClick={() => setSelectedId(gite.id)}>
-                      Éditer
-                    </button>
-                    <button className="table-action table-action--neutral" onClick={() => duplicate(gite.id)}>
-                      Dupliquer
-                    </button>
-                    <button className="table-action table-action--danger" onClick={() => remove(gite)}>
-                      Supprimer
-                    </button>
+        {gites.length > 0 ? (
+          <div className="gites-listing-grid">
+            {gites.map((gite, index) => {
+              const accent = getGiteColor(gite, index);
+              const accentStyle = { "--gite-card-accent": accent } as CSSProperties;
+              const managerLabel = formatManagerLabel(gite);
+              const addressLabel = formatAddressLabel(gite);
+              const highlights = getGiteHighlights(gite);
+              const tags = [
+                `${gite.capacite_max} voyageurs`,
+                `${gite.nb_adultes_habituel} adultes`,
+                gite.regle_animaux_acceptes ? "Animaux ok" : null,
+                gite.regle_bois_premiere_flambee ? "Bois inclus" : null,
+              ].filter((tag): tag is string => Boolean(tag));
+
+              return (
+                <article
+                  key={gite.id}
+                  className={[
+                    "gite-listing-card",
+                    selectedId === gite.id ? "gite-listing-card--selected" : "",
+                    draggedId === gite.id ? "gite-listing-card--dragging" : "",
+                    dragOverId === gite.id && draggedId !== gite.id ? "gite-listing-card--drag-over" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  style={accentStyle}
+                  onDragOver={(event) => handleDragOver(event, gite.id)}
+                  onDrop={(event) => void handleDrop(event, gite.id)}
+                >
+                  <div className="gite-listing-card__visual">
+                    <div className="gite-listing-card__visual-top">
+                      <span className="gite-listing-card__pill">{gite.prefixe_contrat}</span>
+                      <button
+                        type="button"
+                        className="drag-handle gite-listing-card__drag"
+                        draggable={!reordering}
+                        onDragStart={(event) => handleDragStart(event, gite.id)}
+                        onDragEnd={handleDragEnd}
+                        aria-label={`Réorganiser ${gite.nom}`}
+                        title="Glisser pour réorganiser"
+                        disabled={reordering}
+                      >
+                        ≡
+                      </button>
+                    </div>
+                    <div className="gite-listing-card__visual-content">
+                      <div className="gite-listing-card__visual-label">Gîte</div>
+                      <div className="gite-listing-card__visual-title">{gite.nom}</div>
+                      <div className="gite-listing-card__visual-meta">{managerLabel}</div>
+                    </div>
                   </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+                  <div className="gite-listing-card__body">
+                    <div className="gite-listing-card__heading">
+                      <p>{addressLabel || "Adresse à compléter"}</p>
+                      <span className="gite-listing-card__manager">{managerLabel}</span>
+                    </div>
+
+                    <div className="gite-listing-card__tags">
+                      {tags.map((tag) => (
+                        <span key={tag} className="gite-listing-card__tag">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="gite-listing-card__stats">
+                      <div>
+                        <strong>{gite.reservations_count ?? 0}</strong>
+                        <span>Réservations</span>
+                      </div>
+                      <div>
+                        <strong>{gite.contrats_count ?? 0}</strong>
+                        <span>Contrats</span>
+                      </div>
+                      <div>
+                        <strong>{gite.factures_count ?? 0}</strong>
+                        <span>Factures</span>
+                      </div>
+                    </div>
+
+                    <div className="gite-listing-card__highlights">
+                      {highlights.length > 0 ? (
+                        highlights.map((item) => (
+                          <div key={item} className="gite-listing-card__highlight">
+                            {item}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="gite-listing-card__highlight gite-listing-card__highlight--muted">
+                          Ajoutez des caractéristiques pour enrichir la fiche PDF.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="gite-listing-card__actions">
+                      <button type="button" className="table-action table-action--primary" onClick={() => selectGite(gite.id)}>
+                        Éditer
+                      </button>
+                      <button type="button" className="table-action table-action--neutral" onClick={() => duplicate(gite.id)}>
+                        Dupliquer
+                      </button>
+                      <button
+                        type="button"
+                        className="table-action table-action--danger table-action--icon"
+                        onClick={() => remove(gite)}
+                        aria-label={`Supprimer ${gite.nom}`}
+                        title={`Supprimer ${gite.nom}`}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                          <path
+                            d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9zm1 11h8a2 2 0 0 0 2-2V8H6v10a2 2 0 0 0 2 2z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="gites-empty-state">
+            <div className="gites-empty-state__title">Aucun gîte pour le moment</div>
+            <div className="field-hint">Créez votre premier gîte pour commencer à générer contrats et factures.</div>
+          </div>
+        )}
       </div>
 
       {placeholders.length > 0 && (
-        <div className="card">
-          <div className="section-title">Réservations non attribuées (placeholders)</div>
-          <div className="field-hint gites-reorder-hint">
-            Lorsqu'un gîte importé n'est pas reconnu, un placeholder est créé. Rattachez-le ici.
+        <div className="card gites-placeholders-card">
+          <div className="gites-placeholders-card__header">
+            <div>
+              <div className="section-title">Réservations non attribuées</div>
+              <div className="field-hint gites-reorder-hint">
+                Lorsqu'un gîte importé n'est pas reconnu, un placeholder est créé. Rattachez-le ici.
+              </div>
+            </div>
+            <div className="gites-placeholders-card__count">{placeholders.length} en attente</div>
           </div>
           <table className="table">
             <thead>
@@ -571,8 +655,14 @@ const GitesPage = () => {
         </div>
       )}
 
-      <div className="card">
-        <div className="section-title">{selected ? "Éditer" : "Créer"} un gîte</div>
+      <div ref={formCardRef} className="card gites-editor-card">
+        <div className="gites-editor-header">
+          <div>
+            <div className="gites-editor-header__eyebrow">{selected ? "Édition en cours" : "Nouveau gîte"}</div>
+            <div className="section-title">{selected ? "Éditer" : "Créer"} un gîte</div>
+          </div>
+          {selected && <div className="gites-editor-header__badge">{selected.prefixe_contrat}</div>}
+        </div>
         <div className="form-section">
           <div className="section-subtitle">Identité du gîte</div>
           <div className="grid-2">
@@ -876,11 +966,11 @@ const GitesPage = () => {
         </div>
 
         <div className="actions" style={{ marginTop: 16 }}>
-          <button onClick={save} disabled={loading}>
+          <button type="button" onClick={save} disabled={loading}>
             {loading ? "Enregistrement..." : "Enregistrer"}
           </button>
           {selected && (
-            <button className="secondary" onClick={() => setSelectedId(null)}>
+            <button type="button" className="secondary" onClick={startCreate}>
               Annuler
             </button>
           )}
