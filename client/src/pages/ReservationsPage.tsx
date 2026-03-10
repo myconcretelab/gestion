@@ -227,6 +227,7 @@ const normalizeTextKey = (value: string) =>
 const SOURCE_BY_NORMALIZED_KEY: Record<string, string> = {
   [normalizeTextKey("Abritel")]: "Abritel",
   [normalizeTextKey("Airbnb")]: "Airbnb",
+  [normalizeTextKey("Airbnb (Not available)")]: "A définir",
   [normalizeTextKey("Chèque")]: "Chèque",
   [normalizeTextKey("Cheques")]: "Chèque",
   [normalizeTextKey("Espèces")]: "Espèces",

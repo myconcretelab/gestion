@@ -2,22 +2,38 @@ import {
   DEFAULT_AIRBNB_IMPORTED_RESERVATION_SOURCE,
   DEFAULT_IMPORTED_RESERVATION_SOURCE,
 } from "./importedReservationSource.js";
-import { isUnknownHostName, normalizeImportedHostName } from "./reservationText.js";
+import { isUnknownHostName, normalizeImportedHostName, normalizeReservationTextKey } from "./reservationText.js";
+
+const AIRBNB_NOT_AVAILABLE_KEY = normalizeReservationTextKey("Airbnb (Not available)");
 
 export const hasBookedSummaryMarker = (summary: string) => {
   const normalized = summary.toUpperCase();
   return normalized.includes("RESERVED") || normalized.includes("BOOKED");
 };
 
+export const hasAirbnbNotAvailableMarker = (summary: string | null | undefined) => {
+  if (typeof summary !== "string") {
+    return false;
+  }
+
+  return normalizeReservationTextKey(summary).includes(AIRBNB_NOT_AVAILABLE_KEY);
+};
+
 export const resolveIcalReservationSource = ({
   normalizedSourceType,
   hostName,
+  summary,
 }: {
   normalizedSourceType: string;
   hostName: string | null | undefined;
+  summary?: string | null | undefined;
 }) => {
   if (normalizedSourceType !== DEFAULT_AIRBNB_IMPORTED_RESERVATION_SOURCE) {
     return normalizedSourceType;
+  }
+
+  if (hasAirbnbNotAvailableMarker(summary)) {
+    return DEFAULT_IMPORTED_RESERVATION_SOURCE;
   }
 
   return normalizeImportedHostName(hostName) ? normalizedSourceType : DEFAULT_IMPORTED_RESERVATION_SOURCE;

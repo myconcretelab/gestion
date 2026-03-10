@@ -138,6 +138,7 @@ const DEFAULT_RESERVATION_SOURCE: ReservationSource = "A définir";
 const SOURCE_BY_NORMALIZED_KEY = new Map<string, ReservationSource>([
   [normalizeTextKey("Abritel"), "Abritel"],
   [normalizeTextKey("Airbnb"), "Airbnb"],
+  [normalizeTextKey("Airbnb (Not available)"), "A définir"],
   [normalizeTextKey("Chèque"), "Chèque"],
   [normalizeTextKey("Cheques"), "Chèque"],
   [normalizeTextKey("Espèces"), "Espèces"],
