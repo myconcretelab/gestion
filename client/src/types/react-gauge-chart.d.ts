@@ -9,6 +9,7 @@ declare module "react-gauge-chart" {
     arcWidth?: number;
     hideText?: boolean;
     needleColor?: string;
+    animate?: boolean;
     style?: CSSProperties;
   };
 

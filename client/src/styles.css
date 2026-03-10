@@ -754,6 +754,19 @@ button.warning {
   gap: 8px 10px;
 }
 
+.reservations-month__head-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.reservations-month__head-side {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
 .reservations-month__holiday-list {
   display: inline-flex;
   flex-wrap: wrap;
@@ -777,6 +790,26 @@ button.warning {
   align-items: center;
   gap: 6px;
   font-size: 0.78rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.reservations-month__occupation {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.reservations-month__occupation .stats-occupation-gauge-item {
+  min-width: 58px;
+}
+
+.reservations-month__occupation .stats-occupation-gauge-item .year {
+  display: none;
+}
+
+.reservations-month__occupation .stats-occupation-gauge-item strong {
+  font-size: 0.72rem;
   color: #6b7280;
   font-weight: 600;
 }
@@ -814,9 +847,16 @@ button.warning {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  width: 100%;
   font-size: 0.74rem;
   font-weight: 600;
   color: #334155;
+}
+
+.reservations-gite-group-row__occupation {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
 }
 
 .reservations-summary-pill {
@@ -2982,6 +3022,19 @@ button.warning {
 }
 
 @media (max-width: 720px) {
+  .reservations-month__head {
+    flex-wrap: wrap;
+  }
+
+  .reservations-month__head-side {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .reservations-month__occupation {
+    justify-content: flex-start;
+  }
+
   .topbar {
     grid-template-columns: 1fr;
     justify-items: start;
