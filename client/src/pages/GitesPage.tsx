@@ -511,7 +511,6 @@ const GitesPage = () => {
                   <div className="gite-listing-card__body">
                     <div className="gite-listing-card__heading">
                       <p>{addressLabel || "Adresse à compléter"}</p>
-                      <span className="gite-listing-card__manager">{managerLabel}</span>
                     </div>
 
                     <div className="gite-listing-card__tags">
@@ -560,15 +559,19 @@ const GitesPage = () => {
                       </button>
                       <button
                         type="button"
-                        className="table-action table-action--danger table-action--icon"
+                        className="table-action table-action--icon gite-listing-card__delete"
                         onClick={() => remove(gite)}
                         aria-label={`Supprimer ${gite.nom}`}
                         title={`Supprimer ${gite.nom}`}
                       >
                         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                           <path
-                            d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9zm1 11h8a2 2 0 0 0 2-2V8H6v10a2 2 0 0 0 2 2z"
-                            fill="currentColor"
+                            d="M9 3h6m-9 3h12m-9 3v7m3-7v7m3-7v7M8 6l.7 11.2a2 2 0 0 0 2 1.8h2.6a2 2 0 0 0 2-1.8L16 6"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="1.5"
                           />
                         </svg>
                       </button>

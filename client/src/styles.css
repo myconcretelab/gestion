@@ -357,7 +357,7 @@ body {
   margin-top: 8px;
   font-size: 0.86rem;
   font-weight: 600;
-  opacity: 0.92;
+  color: color-mix(in srgb, var(--gite-card-accent) 70%, #17324b);
 }
 
 .gite-listing-card__body {
@@ -368,9 +368,7 @@ body {
 
 .gite-listing-card__heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px;
+  gap: 8px;
   min-height: 66px;
 }
 
@@ -384,19 +382,6 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-}
-
-.gite-listing-card__manager {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  padding: 7px 11px;
-  border-radius: 999px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  color: #334155;
-  font-size: 0.74rem;
-  font-weight: 700;
 }
 
 .gite-listing-card__tags {
@@ -474,6 +459,28 @@ body {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.gite-listing-card__delete {
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  border-radius: 10px;
+  background: transparent;
+  border-color: transparent;
+  color: #94a3b8;
+}
+
+.gite-listing-card__delete:hover {
+  background: #fff1f2;
+  color: #be123c;
+  border-color: #ffe4e6;
+  box-shadow: none;
+}
+
+.gite-listing-card__delete svg {
+  width: 14px;
+  height: 14px;
 }
 
 .gites-empty-state {
