@@ -1,5 +1,7 @@
 import GaugeChart from "react-gauge-chart";
 
+const PRIMARY_GAUGE_COLOR = "#ff5a5f";
+
 type OccupationGaugeProps = {
   occupations: Array<{ year: number; occupation: number }>;
   selectedYear: number | "all";
@@ -35,7 +37,7 @@ export const OccupationGaugeDial = ({
         id={id}
         nrOfLevels={10}
         percent={safeOccupation}
-        colors={highlighted ? ["#d81060", "#d71163"] : ["#d2d2d2", "#f7f7f7"]}
+        colors={highlighted ? ["#d81060", "#d71163"] : ["#d2d2d2", PRIMARY_GAUGE_COLOR]}
         arcWidth={0.23}
         hideText
         needleColor="#2f2b2b"
