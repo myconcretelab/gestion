@@ -6,6 +6,7 @@ type IcalPreviewItem = {
   id: string;
   gite_nom: string;
   source_type: string;
+  final_source: string;
   summary: string;
   date_entree: string;
   date_sortie: string;
@@ -1810,7 +1811,8 @@ const SettingsPage = () => {
                 <tr>
                   <th>Gîte</th>
                   <th>Dates</th>
-                  <th>Source</th>
+                  <th>Source iCal</th>
+                  <th>Source finale</th>
                   <th>Statut</th>
                   <th>Résumé</th>
                 </tr>
@@ -1823,6 +1825,7 @@ const SettingsPage = () => {
                       {formatIsoDateFr(item.date_entree)} - {formatIsoDateFr(item.date_sortie)}
                     </td>
                     <td>{item.source_type}</td>
+                    <td>{item.final_source}</td>
                     <td>
                       {statusLabelMap[item.status]}
                       {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}

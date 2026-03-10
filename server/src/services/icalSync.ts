@@ -80,6 +80,7 @@ type ParsedIcalReservation = {
 export type IcalSyncStatus = "new" | "existing" | "existing_updatable" | "conflict";
 
 export type IcalPreviewItem = ParsedIcalReservation & {
+  final_source: string;
   status: IcalSyncStatus;
   existing_id: string | null;
   conflict_id: string | null;
@@ -413,6 +414,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
   const preview: IcalPreviewItem[] = [];
 
   for (const reservation of parsedReservations) {
+    const finalSource = resolveReservationSource(reservation);
     const dateEntree = parseIsoDateToUtc(reservation.date_entree);
     const dateSortie = parseIsoDateToUtc(reservation.date_sortie);
     if (!dateEntree || !dateSortie) continue;
@@ -435,6 +437,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
       const { fields } = buildUpdateData(exact, reservation);
       preview.push({
         ...reservation,
+        final_source: finalSource,
         status: fields.length > 0 ? "existing_updatable" : "existing",
         existing_id: exact.id,
         conflict_id: null,
@@ -455,6 +458,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
     if (conflict) {
       preview.push({
         ...reservation,
+        final_source: finalSource,
         status: "conflict",
         existing_id: null,
         conflict_id: conflict.id,
@@ -465,6 +469,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
 
     preview.push({
       ...reservation,
+      final_source: finalSource,
       status: "new",
       existing_id: null,
       conflict_id: null,
