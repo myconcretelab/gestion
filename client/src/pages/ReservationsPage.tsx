@@ -1159,11 +1159,30 @@ const ReservationsPage = () => {
   }, [gites, visibleReservations, year]);
 
   const occupationByMonth = useMemo(() => {
-    if (!activeTab || activeTab === UNASSIGNED_TAB || activeTab === ALL_GITES_TAB) {
+    if (!activeTab || activeTab === UNASSIGNED_TAB) {
       return new Map<number, number>();
     }
+
+    if (activeTab === ALL_GITES_TAB) {
+      const byMonth = new Map<number, number>();
+      const occupiableGiteCount = gites.length;
+      if (occupiableGiteCount <= 0) return byMonth;
+
+      const occupiableReservations = visibleReservations.filter((reservation) => Boolean(reservation.gite_id));
+      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+        const totalNights = occupiableReservations.reduce(
+          (sum, reservation) => sum + getReservationNightsInMonth(reservation, year, monthIndex),
+          0
+        );
+        const capacity = getDaysInMonth(year, monthIndex) * occupiableGiteCount;
+        byMonth.set(monthIndex, capacity > 0 ? totalNights / capacity : 0);
+      }
+
+      return byMonth;
+    }
+
     return occupationByMonthByGite.get(activeTab) ?? new Map<number, number>();
-  }, [activeTab, occupationByMonthByGite]);
+  }, [activeTab, gites.length, occupationByMonthByGite, visibleReservations, year]);
 
   const monthsToRender = useMemo(() => {
     if (month) return [month];
@@ -1172,7 +1191,7 @@ const ReservationsPage = () => {
 
   useEffect(() => {
     setMonthExpandedByIndex({});
-  }, [month, year]);
+  }, [month]);
 
   useEffect(() => {
     if (!activeTab) {
@@ -2219,6 +2238,19 @@ const ReservationsPage = () => {
     [activeTab, captureViewSnapshot]
   );
 
+  const handleYearChange = useCallback(
+    (nextYear: number) => {
+      if (!Number.isFinite(nextYear) || nextYear === year) return;
+      const snapshot = captureViewSnapshot();
+      pendingViewSnapshotRef.current = snapshot;
+      flushSync(() => {
+        setMonthExpandedByIndex(snapshot.monthExpandedByIndex);
+        setYear(nextYear);
+      });
+    },
+    [captureViewSnapshot, year]
+  );
+
   useEffect(() => {
     const snapshot = pendingViewSnapshotRef.current;
     if (!activeTab || !snapshot) return;
@@ -2869,7 +2901,7 @@ const ReservationsPage = () => {
         <div className="grid-2 reservations-filters-grid">
           <label className="field field--small">
             Année
-            <select value={year} onChange={(event) => setYear(Number(event.target.value))}>
+            <select value={year} onChange={(event) => handleYearChange(Number(event.target.value))}>
               {availableYears.map((value) => (
                 <option key={value} value={value}>
                   {value}
