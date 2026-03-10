@@ -36,6 +36,10 @@ export const resolveIcalReservationSource = ({
     return DEFAULT_IMPORTED_RESERVATION_SOURCE;
   }
 
+  if (hasBookedSummaryMarker(summary ?? "")) {
+    return normalizedSourceType;
+  }
+
   return normalizeImportedHostName(hostName) ? normalizedSourceType : DEFAULT_IMPORTED_RESERVATION_SOURCE;
 };
 

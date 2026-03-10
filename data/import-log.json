@@ -1,0 +1,83 @@
+[
+  {
+    "id": "26ee5ef4-d852-4832-bce3-9bb1fa93845e",
+    "at": "2026-03-10T13:02:05.151Z",
+    "source": "ical-manual",
+    "selectionCount": 6,
+    "inserted": 0,
+    "updated": 6,
+    "skipped": {
+      "duplicate": 0,
+      "invalid": 0,
+      "outsideYear": 0,
+      "unknown": 69
+    },
+    "perGite": {
+      "Edmond": {
+        "inserted": 0,
+        "updated": 0,
+        "skipped": 15
+      },
+      "La Grée": {
+        "inserted": 0,
+        "updated": 1,
+        "skipped": 14
+      },
+      "Le Liberté": {
+        "inserted": 0,
+        "updated": 5,
+        "skipped": 24
+      },
+      "Tante Phonsine": {
+        "inserted": 0,
+        "updated": 0,
+        "skipped": 16
+      }
+    },
+    "insertedItems": [],
+    "updatedItems": [
+      {
+        "giteName": "La Grée",
+        "giteId": "cmm8896fc0000t63ugdvak8m8",
+        "checkIn": "2026-03-09",
+        "checkOut": "2026-03-10",
+        "source": "Airbnb"
+      },
+      {
+        "giteName": "Le Liberté",
+        "giteId": "cmlgwpz040000qhcdnfj20mrx",
+        "checkIn": "2026-07-10",
+        "checkOut": "2026-07-14",
+        "source": "Airbnb"
+      },
+      {
+        "giteName": "Le Liberté",
+        "giteId": "cmlgwpz040000qhcdnfj20mrx",
+        "checkIn": "2026-08-28",
+        "checkOut": "2026-08-30",
+        "source": "Airbnb"
+      },
+      {
+        "giteName": "Le Liberté",
+        "giteId": "cmlgwpz040000qhcdnfj20mrx",
+        "checkIn": "2026-09-11",
+        "checkOut": "2026-09-13",
+        "source": "Airbnb"
+      },
+      {
+        "giteName": "Le Liberté",
+        "giteId": "cmlgwpz040000qhcdnfj20mrx",
+        "checkIn": "2026-09-25",
+        "checkOut": "2026-09-27",
+        "source": "Airbnb"
+      },
+      {
+        "giteName": "Le Liberté",
+        "giteId": "cmlgwpz040000qhcdnfj20mrx",
+        "checkIn": "2026-10-02",
+        "checkOut": "2026-10-04",
+        "source": "Airbnb"
+      }
+    ]
+  }
+]
