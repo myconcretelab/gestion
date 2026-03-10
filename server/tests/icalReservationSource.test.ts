@@ -26,6 +26,15 @@ test("les entrees iCal Airbnb sans nom fiable restent en source 'A définir'", (
   assert.equal(
     resolveIcalReservationSource({
       normalizedSourceType: "Airbnb",
+      summary: "Airbnb (Not available)",
+      hostName: "Marie Motais",
+    }),
+    "A définir"
+  );
+
+  assert.equal(
+    resolveIcalReservationSource({
+      normalizedSourceType: "Airbnb",
       hostName: "Marie Motais",
     }),
     "Airbnb"

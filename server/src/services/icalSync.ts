@@ -244,10 +244,11 @@ const formatIcalDate = (value: unknown) => {
   return toIsoDate(value);
 };
 
-const resolveReservationSource = (reservation: Pick<ParsedIcalReservation, "source_type" | "hote_nom">) =>
+const resolveReservationSource = (reservation: Pick<ParsedIcalReservation, "source_type" | "hote_nom" | "summary">) =>
   resolveIcalReservationSource({
     normalizedSourceType: normalizeSource(reservation.source_type),
     hostName: reservation.hote_nom,
+    summary: reservation.summary,
   });
 
 const pickPreferredReservation = (left: ParsedIcalReservation, right: ParsedIcalReservation) =>
