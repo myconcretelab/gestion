@@ -5,6 +5,49 @@ type OccupationGaugeProps = {
   selectedYear: number | "all";
 };
 
+type OccupationGaugeDialProps = {
+  id: string;
+  occupation: number;
+  label?: string;
+  highlighted: boolean;
+  className?: string;
+  animate?: boolean;
+  size?: {
+    width: number;
+    height: number;
+  };
+};
+
+export const OccupationGaugeDial = ({
+  id,
+  occupation,
+  label,
+  highlighted,
+  className = "",
+  animate = true,
+  size = { width: 64, height: 30 },
+}: OccupationGaugeDialProps) => {
+  const safeOccupation = Math.max(0, Math.min(1, occupation));
+
+  return (
+    <div className={`stats-occupation-gauge-item ${className}`.trim()}>
+      <GaugeChart
+        id={id}
+        nrOfLevels={10}
+        percent={safeOccupation}
+        colors={highlighted ? ["#d81060", "#d71163"] : ["#d2d2d2", "#f7f7f7"]}
+        arcWidth={0.23}
+        hideText
+        needleColor="#2f2b2b"
+        animate={animate}
+        style={size}
+      />
+      {label ? <span className={`year ${highlighted ? "selected" : ""}`}>{label}</span> : null}
+      <strong>{Math.round(safeOccupation * 100)}%</strong>
+    </div>
+  );
+};
+
 const OccupationGauge = ({ occupations, selectedYear }: OccupationGaugeProps) => {
   if (!occupations.length) {
     return <div className="stats-empty-chart">Aucune année disponible.</div>;
@@ -13,22 +56,14 @@ const OccupationGauge = ({ occupations, selectedYear }: OccupationGaugeProps) =>
   return (
     <div className="stats-occupation-gauges">
       {occupations.map(({ year, occupation }) => {
-        const isSelected = year === selectedYear;
         return (
-          <div key={year} className="stats-occupation-gauge-item">
-            <GaugeChart
-              id={`gauge-${year}`}
-              nrOfLevels={10}
-              percent={Math.max(0, Math.min(1, occupation))}
-              colors={isSelected ? ["#d81060", "#d71163"] : ["#d2d2d2", "#f7f7f7"]}
-              arcWidth={0.23}
-              hideText
-              needleColor="#2f2b2b"
-              style={{ width: 64, height: 30 }}
-            />
-            <span className={`year ${isSelected ? "selected" : ""}`}>{year}</span>
-            <strong>{Math.round(Math.max(0, occupation) * 100)}%</strong>
-          </div>
+          <OccupationGaugeDial
+            key={year}
+            id={`gauge-${year}`}
+            occupation={occupation}
+            label={String(year)}
+            highlighted={year === selectedYear}
+          />
         );
       })}
     </div>

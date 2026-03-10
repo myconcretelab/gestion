@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 import { Link } from "react-router-dom";
+import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import { mergeOptions } from "./shared/rentalForm";
 import {
   computeUrssafByManager,
@@ -288,6 +289,13 @@ const getUtcStartOfToday = () => {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const getDaysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+const toUtcDateOnly = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+};
 
 const getReservationBoundsUtc = (reservation: Reservation): { start: number; end: number } | null => {
   const start = new Date(reservation.date_entree).getTime();
@@ -322,6 +330,22 @@ const isReservationDepartureTomorrow = (reservation: Reservation) => {
   if (!bounds) return false;
   const tomorrowUtcStart = getUtcStartOfToday() + DAY_MS;
   return bounds.end === tomorrowUtcStart;
+};
+
+const getReservationNightsInMonth = (reservation: Reservation, year: number, month: number) => {
+  if (normalizeTextKey(reservation.source_paiement ?? "") === "homeexchange") return 0;
+
+  const start = toUtcDateOnly(reservation.date_entree);
+  const end = toUtcDateOnly(reservation.date_sortie);
+  if (!start || !end || end.getTime() <= start.getTime()) return 0;
+
+  const monthStart = Date.UTC(year, month - 1, 1);
+  const monthEnd = Date.UTC(year, month, 1);
+  const overlapStart = Math.max(start.getTime(), monthStart);
+  const overlapEnd = Math.min(end.getTime(), monthEnd);
+
+  if (overlapEnd <= overlapStart) return 0;
+  return Math.round((overlapEnd - overlapStart) / DAY_MS);
 };
 
 const parseInputDate = (value: string): Date | null => {
@@ -1101,6 +1125,45 @@ const ReservationsPage = () => {
 
     return map;
   }, [activeTab, giteOrderById, visibleReservations]);
+
+  const occupationByMonthByGite = useMemo(() => {
+    const byGite = new Map<string, Map<number, number>>();
+    gites.forEach((gite) => {
+      const byMonth = new Map<number, number>();
+      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+        byMonth.set(monthIndex, 0);
+      }
+      byGite.set(gite.id, byMonth);
+    });
+
+    visibleReservations.forEach((reservation) => {
+      if (!reservation.gite_id) return;
+      const byMonth = byGite.get(reservation.gite_id);
+      if (!byMonth) return;
+
+      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+        const current = byMonth.get(monthIndex) ?? 0;
+        byMonth.set(monthIndex, current + getReservationNightsInMonth(reservation, year, monthIndex));
+      }
+    });
+
+    byGite.forEach((byMonth) => {
+      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+        const totalNights = byMonth.get(monthIndex) ?? 0;
+        const capacity = getDaysInMonth(year, monthIndex);
+        byMonth.set(monthIndex, capacity > 0 ? totalNights / capacity : 0);
+      }
+    });
+
+    return byGite;
+  }, [gites, visibleReservations, year]);
+
+  const occupationByMonth = useMemo(() => {
+    if (!activeTab || activeTab === UNASSIGNED_TAB || activeTab === ALL_GITES_TAB) {
+      return new Map<number, number>();
+    }
+    return occupationByMonthByGite.get(activeTab) ?? new Map<number, number>();
+  }, [activeTab, occupationByMonthByGite]);
 
   const monthsToRender = useMemo(() => {
     if (month) return [month];
@@ -3142,6 +3205,7 @@ const ReservationsPage = () => {
             const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
             const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
             const monthPanelId = `reservations-month-panel-${year}-${monthIndex}`;
+            const monthOccupation = occupationByMonth.get(monthIndex) ?? null;
 
             return (
               <section
@@ -3163,7 +3227,7 @@ const ReservationsPage = () => {
                   onClick={() => setMonthExpanded(monthIndex, !isMonthExpanded)}
                   onKeyDown={(event) => handleMonthHeaderKeyDown(event, monthIndex, isMonthExpanded)}
                 >
-                  <div>
+                  <div className="reservations-month__head-main">
                     <div className="reservations-month__title-row">
                       <div className="section-subtitle">{MONTHS[monthIndex - 1]}</div>
                       {holidaySegments.length > 0 ? (
@@ -3210,18 +3274,32 @@ const ReservationsPage = () => {
                       ) : null}
                     </div>
                   </div>
-                  {isMonthExpanded && addAllowed && list.length === 0 && inlineInsertIndex === null && (
-                    <button
-                      type="button"
-                      className="table-action table-action--neutral"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openInlineInsertRow(monthIndex, 0);
-                      }}
-                    >
-                      + Ajouter
-                    </button>
-                  )}
+                  <div className="reservations-month__head-side">
+                    {monthOccupation !== null ? (
+                      <div className="reservations-month__occupation">
+                        <OccupationGaugeDial
+                          id={`reservations-month-occupation-${year}-${monthIndex}-${activeTab}`}
+                          occupation={monthOccupation}
+                          highlighted={false}
+                          animate={false}
+                          size={{ width: 52, height: 24 }}
+                          className="reservations-month__occupation-gauge"
+                        />
+                      </div>
+                    ) : null}
+                    {isMonthExpanded && addAllowed && list.length === 0 && inlineInsertIndex === null && (
+                      <button
+                        type="button"
+                        className="table-action table-action--neutral"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openInlineInsertRow(monthIndex, 0);
+                        }}
+                      >
+                        + Ajouter
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {isMonthExpanded && (
@@ -3265,6 +3343,8 @@ const ReservationsPage = () => {
                       const previousGroupKey = rowIndex > 0 ? list[rowIndex - 1]?.gite_id ?? UNASSIGNED_TAB : null;
                       const showGroupHeader = isAllGitesTab && groupKey !== previousGroupKey;
                       const groupSummary = groupedSummaries.get(groupKey);
+                      const groupOccupation =
+                        groupKey === UNASSIGNED_TAB ? null : (occupationByMonthByGite.get(groupKey)?.get(monthIndex) ?? null);
                       const groupLabel =
                         groupKey === UNASSIGNED_TAB
                           ? "Non attribuées"
@@ -3315,6 +3395,18 @@ const ReservationsPage = () => {
                                     <span className="reservations-summary-pill reservations-summary-pill--revenue">
                                       {formatEuro(groupSummary.revenue)}
                                     </span>
+                                    {groupOccupation !== null ? (
+                                      <div className="reservations-gite-group-row__occupation">
+                                        <OccupationGaugeDial
+                                          id={`reservations-group-occupation-${year}-${monthIndex}-${groupKey}`}
+                                          occupation={groupOccupation}
+                                          highlighted={false}
+                                          animate={false}
+                                          size={{ width: 52, height: 24 }}
+                                          className="reservations-month__occupation-gauge"
+                                        />
+                                      </div>
+                                    ) : null}
                                   </div>
                                 )}
                               </td>
