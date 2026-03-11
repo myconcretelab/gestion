@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { NumericLike } from "./money.js";
 
 export const RESERVATION_ORIGIN_SYSTEMS = ["app", "what-today", "ical", "pump", "har", "csv", "legacy"] as const;
 
@@ -9,8 +10,8 @@ type ReservationOriginLike = {
   export_to_ical?: boolean | null;
   commentaire?: string | null;
   source_paiement?: string | null;
-  prix_total?: number | string | null;
-  prix_par_nuit?: number | string | null;
+  prix_total?: NumericLike | null;
+  prix_par_nuit?: NumericLike | null;
 };
 
 const EXPORTABLE_ORIGINS = new Set<ReservationOriginSystem>(["app", "what-today"]);
@@ -24,7 +25,7 @@ const normalizeTextKey = (value: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "");
 
-const toFiniteNumber = (value: number | string | null | undefined) => {
+const toFiniteNumber = (value: NumericLike | null | undefined) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
