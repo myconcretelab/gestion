@@ -396,7 +396,14 @@ export const importPreviewReservations = async (
   const createdIds = new Set<string>();
   const updatedIds = new Set<string>();
   const insertedItems: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
-  const updatedItems: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
+  const updatedItems: Array<{
+    giteName: string;
+    giteId: string;
+    checkIn: string;
+    checkOut: string;
+    source: string;
+    updatedFields: string[];
+  }> = [];
 
   for (const item of importable) {
     if (item.status === "new" && item.gite_id) {
@@ -471,6 +478,7 @@ export const importPreviewReservations = async (
         checkIn: item.check_in,
         checkOut: item.check_out,
         source: item.source_type,
+        updatedFields: item.update_fields,
       });
     }
   }

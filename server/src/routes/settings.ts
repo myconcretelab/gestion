@@ -29,7 +29,7 @@ import {
   readDeclarationNightsSettings,
   writeDeclarationNightsSettings,
 } from "../services/declarationNightsSettings.js";
-import { generateIcalExportToken } from "../utils/reservationOrigin.js";
+import { generateIcalExportToken, shouldExportReservationToIcal } from "../utils/reservationOrigin.js";
 
 const router = Router();
 
@@ -278,6 +278,31 @@ router.get("/ical-exports", async (_req, res, next) => {
       },
     });
 
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    const from = new Date(todayUtc.getTime() - 24 * 60 * 60 * 1000);
+    const reservationRows = await prisma.reservation.findMany({
+      where: {
+        gite_id: { in: gites.map((gite) => gite.id) },
+        date_sortie: { gte: from },
+      },
+      select: {
+        gite_id: true,
+        origin_system: true,
+        export_to_ical: true,
+        commentaire: true,
+        source_paiement: true,
+        prix_total: true,
+        prix_par_nuit: true,
+      },
+    });
+
+    const exportableCountsByGite = new Map<string, number>();
+    for (const reservation of reservationRows) {
+      if (!reservation.gite_id || !shouldExportReservationToIcal(reservation)) continue;
+      exportableCountsByGite.set(reservation.gite_id, (exportableCountsByGite.get(reservation.gite_id) ?? 0) + 1);
+    }
+
     res.json(
       gites.map((gite) => ({
         id: gite.id,
@@ -286,6 +311,7 @@ router.get("/ical-exports", async (_req, res, next) => {
         ordre: gite.ordre,
         ical_export_token: gite.ical_export_token ?? null,
         reservations_count: gite._count.reservations,
+        exported_reservations_count: exportableCountsByGite.get(gite.id) ?? 0,
       }))
     );
   } catch (error) {

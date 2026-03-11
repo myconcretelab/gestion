@@ -31,6 +31,7 @@ type ImportLogEntryInput = {
     checkIn?: string;
     checkOut?: string;
     source?: string;
+    updatedFields?: string[];
   }>;
 };
 
@@ -61,6 +62,7 @@ export type ImportLogEntry = {
     checkIn: string;
     checkOut: string;
     source: string;
+    updatedFields: string[];
   }>;
 };
 
@@ -104,6 +106,7 @@ export const buildImportLogEntry = (input: ImportLogEntryInput): ImportLogEntry 
           checkIn?: string;
           checkOut?: string;
           source?: string;
+          updatedFields?: string[];
         }>
       | undefined
   ) =>
@@ -114,6 +117,9 @@ export const buildImportLogEntry = (input: ImportLogEntryInput): ImportLogEntry 
           checkIn: String(item.checkIn ?? "").trim(),
           checkOut: String(item.checkOut ?? "").trim(),
           source: String(item.source ?? "").trim(),
+          updatedFields: Array.isArray(item.updatedFields)
+            ? item.updatedFields.map((field) => String(field ?? "").trim()).filter(Boolean)
+            : [],
         }))
       : [];
 
