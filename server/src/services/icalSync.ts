@@ -117,7 +117,14 @@ export type IcalSyncResult = IcalPreviewResult & {
   to_verify_cleared_count: number;
   per_gite: Record<string, { inserted: number; updated: number; skipped: number }>;
   inserted_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }>;
-  updated_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }>;
+  updated_items: Array<{
+    giteName: string;
+    giteId: string;
+    checkIn: string;
+    checkOut: string;
+    source: string;
+    updatedFields: string[];
+  }>;
 };
 
 export type IcalCronState = {
@@ -729,6 +736,7 @@ const runSync = async (): Promise<IcalSyncResult> => {
         checkIn: item.date_entree,
         checkOut: item.date_sortie,
         source: resolveReservationSource(item),
+        updatedFields: item.update_fields,
       });
       continue;
     }

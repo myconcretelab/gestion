@@ -79,6 +79,7 @@ type ImportLogEntry = {
     checkIn?: string;
     checkOut?: string;
     source?: string;
+    updatedFields?: string[];
   }>;
 };
 
@@ -224,6 +225,7 @@ type IcalExportFeed = {
   ordre: number;
   ical_export_token: string | null;
   reservations_count: number;
+  exported_reservations_count: number;
 };
 
 const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
@@ -239,6 +241,9 @@ const DEFAULT_DECLARATION_NIGHTS_SETTINGS: DeclarationNightsSettings = {
   excluded_sources: ["Airbnb"],
   available_sources: ["Airbnb"],
 };
+
+const IMPORT_LOG_VISIBLE_COUNT = 2;
+const IMPORT_LOG_EVENT_VISIBLE_COUNT = 2;
 
 const formatIsoDateFr = (value: string) => {
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -356,6 +361,18 @@ const SOURCE_COLOR_BY_KEY: Record<string, string> = {
 const sourceColor = (source: string | null | undefined) =>
   SOURCE_COLOR_BY_KEY[normalizeTextKey(String(source ?? ""))] ?? "#6B7280";
 
+const IMPORT_LOG_UPDATE_FIELD_LABELS: Record<string, string> = {
+  hote_nom: "hôte",
+  source_paiement: "source",
+  commentaire: "commentaire",
+  prix_total: "prix",
+};
+
+const formatImportLogUpdatedFields = (fields: Array<string | null | undefined> | undefined) => {
+  const labels = uniqueNonEmpty((fields ?? []).map((field) => IMPORT_LOG_UPDATE_FIELD_LABELS[String(field ?? "").trim()] ?? null));
+  return labels.length > 0 ? labels.join(", ") : null;
+};
+
 const isHarImportableStatus = (status: HarPreviewItem["status"]) => status === "new" || status === "existing_updatable";
 
 const statusLabelMap: Record<IcalPreviewItem["status"], string> = {
@@ -463,6 +480,7 @@ const SettingsPage = () => {
   const [pumpNotice, setPumpNotice] = useState<string | null>(null);
 
   const [importLog, setImportLog] = useState<ImportLogEntry[]>([]);
+  const [importLogTotal, setImportLogTotal] = useState(0);
   const [loadingImportLog, setLoadingImportLog] = useState(false);
   const [importLogError, setImportLogError] = useState<string | null>(null);
 
@@ -605,7 +623,7 @@ const SettingsPage = () => {
     setCronDraft(data.config);
   };
 
-  const loadImportLog = async (limit = 10) => {
+  const loadImportLog = async (limit = IMPORT_LOG_VISIBLE_COUNT) => {
     setLoadingImportLog(true);
     setImportLogError(null);
     try {
@@ -613,6 +631,7 @@ const SettingsPage = () => {
         `/settings/import-log?limit=${limit}`
       );
       setImportLog(Array.isArray(data.entries) ? data.entries : []);
+      setImportLogTotal(Number.isFinite(data.total) ? data.total : 0);
     } catch (error: any) {
       setImportLogError(error.message ?? "Impossible de charger le journal des imports.");
     } finally {
@@ -1335,7 +1354,7 @@ const SettingsPage = () => {
           <span className="settings-overview-card__kicker">Exploitation</span>
           <strong className="settings-overview-card__title">Nuitées et journal</strong>
           <span className="settings-overview-card__meta">
-            {declarationExcludedSourcesDraft.length} source(s) exclue(s), {importLog.length} entrée(s) d'import.
+            {declarationExcludedSourcesDraft.length} source(s) exclue(s), {importLogTotal} entrée(s) d'import.
           </span>
         </a>
         <a href="#settings-team" className="settings-overview-card settings-overview-card--sand">
@@ -1466,7 +1485,7 @@ const SettingsPage = () => {
               <div className="field-hint">Aucun import enregistré.</div>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
-                {importLog.map((entry) => (
+                {importLog.slice(0, IMPORT_LOG_VISIBLE_COUNT).map((entry) => (
                   <div key={entry.id} className="field-group">
                     <div className="field-group__header">
                       <div className="field-group__label">{formatImportSource(entry.source)}</div>
@@ -1475,86 +1494,72 @@ const SettingsPage = () => {
                     <div className="field-hint">
                       Sélectionnées: {entry.selectionCount ?? 0} | Ajoutées: {entry.inserted ?? 0} | Mises à jour: {entry.updated ?? 0} | Ignorées: {entry.skipped?.unknown ?? 0}
                     </div>
-                    <div style={{ marginTop: 8 }}>
-                      <div className="field-hint" style={{ marginBottom: 4 }}>Nouvelles réservations</div>
-                      {Array.isArray(entry.insertedItems) && entry.insertedItems.length > 0 ? (
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>Gîte</th>
-                              <th>Dates</th>
-                              <th>Source</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {entry.insertedItems.slice(0, 30).map((item, index) => (
-                              <tr key={`${entry.id}-inserted-${index}`}>
-                                <td>{item.giteName || item.giteId || "-"}</td>
-                                <td>
+                    {Array.isArray(entry.insertedItems) && entry.insertedItems.length > 0 ? (
+                      <div style={{ marginTop: 8 }}>
+                        <div className="field-hint" style={{ marginBottom: 4 }}>Nouvelles réservations</div>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          {entry.insertedItems.slice(0, IMPORT_LOG_EVENT_VISIBLE_COUNT).map((item, index) => (
+                            <div
+                              key={`${entry.id}-inserted-${index}`}
+                              className="field-hint"
+                              style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+                            >
+                              <span style={{ color: "#111827", fontWeight: 600 }}>{item.giteName || item.giteId || "-"}</span>
+                              <span>
+                                {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
+                              </span>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                <span
+                                  style={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: "999px",
+                                    background: sourceColor(item.source),
+                                    border: "1px solid rgba(17, 24, 39, 0.2)",
+                                  }}
+                                />
+                                <span>{item.source || "-"}</span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {Array.isArray(entry.updatedItems) && entry.updatedItems.length > 0 ? (
+                      <div style={{ marginTop: 8 }}>
+                        <div className="field-hint" style={{ marginBottom: 4 }}>Mises à jour</div>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          {entry.updatedItems.slice(0, IMPORT_LOG_EVENT_VISIBLE_COUNT).map((item, index) => {
+                            const updatedFields = formatImportLogUpdatedFields(item.updatedFields);
+                            return (
+                              <div
+                                key={`${entry.id}-updated-${index}`}
+                                className="field-hint"
+                                style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+                              >
+                                <span style={{ color: "#111827", fontWeight: 600 }}>{item.giteName || item.giteId || "-"}</span>
+                                <span>
                                   {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
-                                </td>
-                                <td>
-                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                    <span
-                                      style={{
-                                        width: 10,
-                                        height: 10,
-                                        borderRadius: "999px",
-                                        background: sourceColor(item.source),
-                                        border: "1px solid rgba(17, 24, 39, 0.2)",
-                                      }}
-                                    />
-                                    <span>{item.source || "-"}</span>
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <div className="field-hint">Aucune nouvelle réservation.</div>
-                      )}
-                    </div>
-                    <div style={{ marginTop: 8 }}>
-                      <div className="field-hint" style={{ marginBottom: 4 }}>Mises à jour</div>
-                      {Array.isArray(entry.updatedItems) && entry.updatedItems.length > 0 ? (
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>Gîte</th>
-                              <th>Dates</th>
-                              <th>Source</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {entry.updatedItems.slice(0, 30).map((item, index) => (
-                              <tr key={`${entry.id}-updated-${index}`}>
-                                <td>{item.giteName || item.giteId || "-"}</td>
-                                <td>
-                                  {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
-                                </td>
-                                <td>
-                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                    <span
-                                      style={{
-                                        width: 10,
-                                        height: 10,
-                                        borderRadius: "999px",
-                                        background: sourceColor(item.source),
-                                        border: "1px solid rgba(17, 24, 39, 0.2)",
-                                      }}
-                                    />
-                                    <span>{item.source || "-"}</span>
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <div className="field-hint">Aucune mise à jour.</div>
-                      )}
-                    </div>
+                                </span>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                  <span
+                                    style={{
+                                      width: 10,
+                                      height: 10,
+                                      borderRadius: "999px",
+                                      background: sourceColor(item.source),
+                                      border: "1px solid rgba(17, 24, 39, 0.2)",
+                                    }}
+                                  />
+                                  <span>{item.source || "-"}</span>
+                                </span>
+                                {updatedFields ? <span>Modifié: {updatedFields}</span> : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -2065,7 +2070,9 @@ const SettingsPage = () => {
                       <div className="field-group__label">
                         {feed.nom} ({feed.prefixe_contrat})
                       </div>
-                      <div className="field-hint">{feed.reservations_count} réservation(s)</div>
+                      <div className="field-hint">
+                        {feed.reservations_count} réservation(s) | {feed.exported_reservations_count} exportée(s)
+                      </div>
                     </div>
                     <label className="field">
                       URL iCal publique
