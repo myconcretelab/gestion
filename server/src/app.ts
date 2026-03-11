@@ -41,6 +41,10 @@ export const createApp = () => {
 
   if (env.BASIC_AUTH_PASSWORD) {
     app.use((req, res, next) => {
+      if (/^\/api\/gites\/[^/]+\/calendar\.ics$/i.test(req.path)) {
+        return next();
+      }
+
       const header = req.headers.authorization ?? "";
       if (env.INTEGRATION_API_TOKEN) {
         const bearer = parseBearerToken(header);

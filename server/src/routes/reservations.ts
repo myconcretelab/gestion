@@ -2,6 +2,7 @@ import { Router } from "express";
 import { format } from "date-fns";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { env } from "../config/env.js";
 import { round2, toNumber } from "../utils/money.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { type OptionsInput } from "../services/contractCalculator.js";
@@ -11,6 +12,11 @@ import {
   sanitizeReservationCommissionValue,
 } from "../services/reservationPricing.js";
 import { optionsSchema } from "./shared/rentalDocument.js";
+import {
+  buildReservationOriginData,
+  getReservationOriginSystem,
+  shouldExportReservationToIcal,
+} from "../utils/reservationOrigin.js";
 
 const router = Router();
 
@@ -48,6 +54,12 @@ const reservationPayloadSchema = z.object({
   frais_optionnels_declares: z.boolean().optional().default(false),
   options: optionsSchema.optional().default({}),
 });
+const integrationReservationPayloadSchema = reservationPayloadSchema.extend({
+  origin_reference: z.string().trim().min(1),
+});
+const integrationReservationBatchSchema = z.object({
+  reservations: z.array(integrationReservationPayloadSchema).min(1),
+});
 
 const importPayloadSchema = z.object({
   format: z.enum(["csv", "json"]),
@@ -80,6 +92,9 @@ type ReservationPeriodSegment = {
   dateSortie: Date;
   nbNuits: number;
 };
+
+type ReservationPayload = z.infer<typeof reservationPayloadSchema>;
+type IntegrationReservationPayload = z.infer<typeof integrationReservationPayloadSchema>;
 
 type ImportRawRow = {
   index: number;
@@ -272,6 +287,25 @@ const computeReservationFields = (payload: z.infer<typeof reservationPayloadSche
   };
 };
 
+const parseBearerToken = (authorizationHeader: string | undefined) => {
+  const [type, token] = String(authorizationHeader ?? "").split(" ");
+  if (type !== "Bearer" || !token) return null;
+  return token.trim();
+};
+
+const requireIntegrationToken = (req: any, res: any, next: (err?: unknown) => void) => {
+  if (!env.INTEGRATION_API_TOKEN) {
+    return res.status(503).json({ error: "INTEGRATION_API_TOKEN non configuré." });
+  }
+
+  const token = parseBearerToken(req.headers.authorization);
+  if (!token || token !== env.INTEGRATION_API_TOKEN) {
+    return res.status(401).json({ error: "Token d'intégration invalide." });
+  }
+
+  return next();
+};
+
 const splitReservationByMonth = (dateEntree: Date, dateSortie: Date): ReservationPeriodSegment[] => {
   if (dateSortie.getTime() <= dateEntree.getTime()) return [];
 
@@ -317,6 +351,62 @@ const allocateAmountByNights = (total: number, segments: ReservationPeriodSegmen
   });
 };
 
+const buildReservationSegmentRecords = (
+  payload: ReservationPayload | IntegrationReservationPayload,
+  association: ReservationAssociation,
+  originData?: ReturnType<typeof buildReservationOriginData>
+) => {
+  const computed = computeReservationFields(payload);
+  const segments = splitReservationByMonth(computed.dateEntree, computed.dateSortie);
+  if (segments.length === 0) {
+    throw new Error("La date de sortie doit être postérieure à la date d'entrée.");
+  }
+
+  const priceTotalsBySegment = allocateAmountByNights(computed.prixTotal, segments);
+  const optionalFeesBySegment = allocateAmountByNights(round2(payload.frais_optionnels_montant ?? 0), segments);
+  const remiseBySegment = allocateAmountByNights(round2(payload.remise_montant ?? 0), segments);
+  const commissionMode = normalizeReservationCommissionMode(payload.commission_channel_mode);
+  const commissionValue = sanitizeReservationCommissionValue(payload.commission_channel_value ?? 0, commissionMode);
+  const commissionBySegment =
+    commissionMode === "euro" ? allocateAmountByNights(round2(commissionValue), segments) : segments.map(() => commissionValue);
+  const encodedOptions = encodeJsonField(payload.options ?? {});
+  const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
+
+  return {
+    computed,
+    source_paiement,
+    records: segments.map((segment, index) => {
+      const prixTotal = priceTotalsBySegment[index] ?? 0;
+      const prixParNuit = segment.nbNuits > 0 ? round2(prixTotal / segment.nbNuits) : 0;
+
+      return {
+        segment,
+        data: {
+          gite_id: association.gite_id,
+          placeholder_id: association.placeholder_id,
+          ...(originData ?? {}),
+          hote_nom: payload.hote_nom,
+          date_entree: segment.dateEntree,
+          date_sortie: segment.dateSortie,
+          nb_nuits: segment.nbNuits,
+          nb_adultes: payload.nb_adultes,
+          prix_par_nuit: prixParNuit,
+          prix_total: prixTotal,
+          source_paiement,
+          commentaire: payload.commentaire ?? null,
+          remise_montant: remiseBySegment[index] ?? 0,
+          commission_channel_mode: commissionMode,
+          commission_channel_value: commissionBySegment[index] ?? 0,
+          frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
+          frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
+          frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
+          options: encodedOptions,
+        },
+      };
+    }),
+  };
+};
+
 const normalizeAssociation = (payload: z.infer<typeof reservationPayloadSchema>): ReservationAssociation => {
   const giteId = payload.gite_id ?? null;
   const placeholderId = giteId ? null : payload.placeholder_id ?? null;
@@ -351,6 +441,7 @@ const findConflicts = async (params: {
   dateEntree: Date;
   dateSortie: Date;
   excludeId?: string;
+  excludeIds?: string[];
 }) => {
   const where: any = {
     date_entree: { lt: params.dateSortie },
@@ -359,7 +450,9 @@ const findConflicts = async (params: {
 
   if (params.association.gite_id) where.gite_id = params.association.gite_id;
   if (params.association.placeholder_id) where.placeholder_id = params.association.placeholder_id;
-  if (params.excludeId) where.NOT = { id: params.excludeId };
+  const excludedIds = [...new Set([params.excludeId, ...(params.excludeIds ?? [])].filter(Boolean))];
+  if (excludedIds.length === 1) where.NOT = { id: excludedIds[0] };
+  if (excludedIds.length > 1) where.NOT = { id: { in: excludedIds } };
 
   return prisma.reservation.findMany({
     where,
@@ -386,6 +479,9 @@ const buildConflictPayload = (conflicts: any[]) => ({
 
 const hydrateReservation = (reservation: any) => ({
   ...reservation,
+  origin_system: getReservationOriginSystem(reservation),
+  origin_reference: reservation.origin_reference ?? null,
+  export_to_ical: shouldExportReservationToIcal(reservation),
   prix_par_nuit: toNumber(reservation.prix_par_nuit),
   prix_total: toNumber(reservation.prix_total),
   remise_montant: toNumber(reservation.remise_montant),
@@ -394,6 +490,109 @@ const hydrateReservation = (reservation: any) => ({
   frais_optionnels_montant: toNumber(reservation.frais_optionnels_montant),
   options: fromJsonString<OptionsInput>(reservation.options, {}),
 });
+
+const loadIntegratedReservationRows = async (originReference: string) =>
+  prisma.reservation.findMany({
+    where: {
+      origin_system: "what-today",
+      origin_reference: originReference,
+    },
+    orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+  });
+
+const syncIntegratedReservationRows = async (params: {
+  payload: IntegrationReservationPayload;
+  association: ReservationAssociation;
+  existingRows: any[];
+}) => {
+  const prepared = buildReservationSegmentRecords(
+    params.payload,
+    params.association,
+    buildReservationOriginData({
+      originSystem: "what-today",
+      originReference: params.payload.origin_reference,
+      exportToIcal: true,
+    })
+  );
+  const existingIds = params.existingRows.map((row) => row.id);
+  const conflictById = new Map<string, any>();
+
+  for (const { segment } of prepared.records) {
+    const conflicts = await findConflicts({
+      association: params.association,
+      dateEntree: segment.dateEntree,
+      dateSortie: segment.dateSortie,
+      excludeIds: existingIds,
+    });
+    for (const conflict of conflicts) {
+      conflictById.set(conflict.id, conflict);
+    }
+  }
+
+  if (conflictById.size > 0) {
+    return {
+      conflict: buildConflictPayload([...conflictById.values()]),
+      reservations: null,
+      createdCount: 0,
+      updatedCount: 0,
+    };
+  }
+
+  const reservations = await prisma.$transaction(async (tx) => {
+    const synced: any[] = [];
+
+    for (let index = 0; index < prepared.records.length; index += 1) {
+      const record = prepared.records[index];
+      const existing = params.existingRows[index];
+
+      if (existing) {
+        const updated = await tx.reservation.update({
+          where: { id: existing.id },
+          data: record.data,
+          include: {
+            gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+            placeholder: { select: { id: true, abbreviation: true, label: true } },
+          },
+        });
+        synced.push(updated);
+        continue;
+      }
+
+      const created = await tx.reservation.create({
+        data: record.data,
+        include: {
+          gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+          placeholder: { select: { id: true, abbreviation: true, label: true } },
+        },
+      });
+      synced.push(created);
+    }
+
+    const primaryReservationId = synced[0]?.id ?? null;
+    if (primaryReservationId) {
+      for (const extra of params.existingRows.slice(prepared.records.length)) {
+        await tx.contrat.updateMany({
+          where: { reservation_id: extra.id },
+          data: { reservation_id: primaryReservationId },
+        });
+        await tx.facture.updateMany({
+          where: { reservation_id: extra.id },
+          data: { reservation_id: primaryReservationId },
+        });
+        await tx.reservation.delete({ where: { id: extra.id } });
+      }
+    }
+
+    return synced;
+  });
+
+  return {
+    conflict: null,
+    reservations,
+    createdCount: Math.max(0, prepared.records.length - params.existingRows.length),
+    updatedCount: Math.min(prepared.records.length, params.existingRows.length),
+  };
+};
 
 const toUnix = (value: Date | string) => new Date(value).getTime();
 
@@ -986,16 +1185,14 @@ router.post("/", async (req, res, next) => {
     const payload = reservationPayloadSchema.parse(req.body);
     const association = normalizeAssociation(payload);
     await ensureAssociationExists(association);
-    const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
-
-    const computed = computeReservationFields(payload);
-    const segments = splitReservationByMonth(computed.dateEntree, computed.dateSortie);
-    if (segments.length === 0) {
-      throw new Error("La date de sortie doit être postérieure à la date d'entrée.");
-    }
+    const prepared = buildReservationSegmentRecords(
+      payload,
+      association,
+      buildReservationOriginData({ originSystem: "app", exportToIcal: true })
+    );
     const conflictById = new Map<string, any>();
 
-    for (const segment of segments) {
+    for (const { segment } of prepared.records) {
       const conflicts = await findConflicts({
         association,
         dateEntree: segment.dateEntree,
@@ -1010,40 +1207,10 @@ router.post("/", async (req, res, next) => {
       return res.status(409).json(buildConflictPayload([...conflictById.values()]));
     }
 
-    const priceTotalsBySegment = allocateAmountByNights(computed.prixTotal, segments);
-    const optionalFeesBySegment = allocateAmountByNights(round2(payload.frais_optionnels_montant ?? 0), segments);
-    const remiseBySegment = allocateAmountByNights(round2(payload.remise_montant ?? 0), segments);
-    const commissionMode = normalizeReservationCommissionMode(payload.commission_channel_mode);
-    const commissionValue = sanitizeReservationCommissionValue(payload.commission_channel_value ?? 0, commissionMode);
-    const commissionBySegment =
-      commissionMode === "euro" ? allocateAmountByNights(round2(commissionValue), segments) : segments.map(() => commissionValue);
-    const encodedOptions = encodeJsonField(payload.options ?? {});
-
     const createdReservations = await prisma.$transaction(
-      segments.map((segment, index) => {
-        const prixTotal = priceTotalsBySegment[index] ?? 0;
-        const prixParNuit = segment.nbNuits > 0 ? round2(prixTotal / segment.nbNuits) : 0;
+      prepared.records.map(({ data }) => {
         return prisma.reservation.create({
-          data: {
-            gite_id: association.gite_id,
-            placeholder_id: association.placeholder_id,
-            hote_nom: payload.hote_nom,
-            date_entree: segment.dateEntree,
-            date_sortie: segment.dateSortie,
-            nb_nuits: segment.nbNuits,
-            nb_adultes: payload.nb_adultes,
-            prix_par_nuit: prixParNuit,
-            prix_total: prixTotal,
-            source_paiement,
-            commentaire: payload.commentaire ?? null,
-            remise_montant: remiseBySegment[index] ?? 0,
-            commission_channel_mode: commissionMode,
-            commission_channel_value: commissionBySegment[index] ?? 0,
-            frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
-            frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
-            frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
-            options: encodedOptions,
-          },
+          data,
           include: {
             gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
             placeholder: { select: { id: true, abbreviation: true, label: true } },
@@ -1061,6 +1228,51 @@ router.post("/", async (req, res, next) => {
     }
 
     return res.status(201).json(hydratedCreated[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/integrations/what-today", requireIntegrationToken, async (req, res, next) => {
+  try {
+    const payload = integrationReservationBatchSchema.parse(req.body);
+    const seenOriginReferences = new Set<string>();
+    const results: any[] = [];
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const item of payload.reservations) {
+      if (seenOriginReferences.has(item.origin_reference)) {
+        return res.status(400).json({ error: `Référence externe dupliquée: ${item.origin_reference}` });
+      }
+      seenOriginReferences.add(item.origin_reference);
+
+      const association = normalizeAssociation(item);
+      await ensureAssociationExists(association);
+      const existingRows = await loadIntegratedReservationRows(item.origin_reference);
+      const outcome = await syncIntegratedReservationRows({
+        payload: item,
+        association,
+        existingRows,
+      });
+
+      if (outcome.conflict) {
+        return res.status(409).json({
+          ...outcome.conflict,
+          origin_reference: item.origin_reference,
+        });
+      }
+
+      createdCount += outcome.createdCount;
+      updatedCount += outcome.updatedCount;
+      results.push(...(outcome.reservations ?? []).map(hydrateReservation));
+    }
+
+    return res.status(200).json({
+      created_count: createdCount,
+      updated_count: updatedCount,
+      reservations: results,
+    });
   } catch (err) {
     next(err);
   }
@@ -1133,6 +1345,9 @@ router.post("/:id/split", async (req, res, next) => {
           data: {
             gite_id: association.gite_id,
             placeholder_id: association.placeholder_id,
+            origin_system: existing.origin_system,
+            origin_reference: existing.origin_reference,
+            export_to_ical: existing.export_to_ical,
             hote_nom: existing.hote_nom,
             date_entree: segment.dateEntree,
             date_sortie: segment.dateSortie,
@@ -1597,6 +1812,11 @@ router.post("/import", async (req, res, next) => {
         data: {
           gite_id: association.gite_id,
           placeholder_id: association.placeholder_id,
+          ...buildReservationOriginData({
+            originSystem: "csv",
+            originReference: `${payload.format}-${row.rowNumber}`,
+            exportToIcal: false,
+          }),
           hote_nom: row.hote_nom,
           date_entree: computed.dateEntree,
           date_sortie: computed.dateSortie,

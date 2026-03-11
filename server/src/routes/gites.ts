@@ -5,6 +5,8 @@ import fs from "fs/promises";
 import prisma from "../db/prisma.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
+import { getGiteIcalExport } from "../services/icalExport.js";
+import { generateIcalExportToken } from "../utils/reservationOrigin.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -199,6 +201,7 @@ router.post("/", async (req, res, next) => {
     const gite = await prisma.gite.create({
       data: {
         ordre,
+        ical_export_token: generateIcalExportToken(),
         ...toGitePersistenceData(parsed),
       },
       include: {
@@ -253,6 +256,30 @@ router.get("/export", async (_req, res, next) => {
       exported_at: new Date().toISOString(),
       gites: exportRows,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/calendar.ics", async (req, res, next) => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    if (!token) {
+      return res.status(404).json({ error: "Calendrier introuvable." });
+    }
+
+    const exportFeed = await getGiteIcalExport({
+      giteId: req.params.id,
+      token,
+    });
+    if (!exportFeed) {
+      return res.status(404).json({ error: "Calendrier introuvable." });
+    }
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", `inline; filename="${exportFeed.filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send(exportFeed.body);
   } catch (err) {
     next(err);
   }
@@ -324,6 +351,7 @@ router.post("/import", async (req, res, next) => {
           data: {
             ...(row.id ? { id: row.id } : {}),
             ...data,
+            ical_export_token: generateIcalExportToken(),
             ordre: 0,
           },
         });
@@ -399,6 +427,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
     const duplicated = await prisma.gite.create({
       data: {
         ordre,
+        ical_export_token: generateIcalExportToken(),
         nom: `${existing.nom} (copie)`,
         prefixe_contrat: nextPrefix,
         adresse_ligne1: existing.adresse_ligne1,

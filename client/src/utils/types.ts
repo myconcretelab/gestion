@@ -74,6 +74,9 @@ export type Reservation = {
   id: string;
   gite_id?: string | null;
   placeholder_id?: string | null;
+  origin_system?: "app" | "what-today" | "ical" | "pump" | "har" | "csv" | "legacy" | null;
+  origin_reference?: string | null;
+  export_to_ical?: boolean;
   hote_nom: string;
   date_entree: string;
   date_sortie: string;
