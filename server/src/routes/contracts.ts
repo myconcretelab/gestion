@@ -16,6 +16,7 @@ import {
 import { toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
+import { buildReservationOriginData } from "../utils/reservationOrigin.js";
 import {
   addDays,
   buildDocumentListWhere,
@@ -280,6 +281,7 @@ const syncReservationFromContract = async (params: {
 
   const created = await prisma.reservation.create({
     data: {
+      ...buildReservationOriginData({ originSystem: "app", exportToIcal: true }),
       ...reservationData,
       source_paiement: "A définir",
       commentaire: null,

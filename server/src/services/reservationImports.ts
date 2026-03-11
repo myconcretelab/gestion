@@ -9,6 +9,7 @@ import {
   normalizeImportedHostName,
 } from "../utils/reservationText.js";
 import { resolveImportedReservationSourceType } from "../utils/importedReservationSource.js";
+import { buildReservationOriginData, type ReservationOriginSystem } from "../utils/reservationOrigin.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SOURCE = "A définir";
@@ -101,6 +102,14 @@ const parseIsoDateToUtc = (iso: string) => {
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const resolveImportOriginSystem = (importSource: string): ReservationOriginSystem => {
+  const normalized = importSource.trim().toLowerCase();
+  if (normalized.startsWith("pump")) return "pump";
+  if (normalized === "har") return "har";
+  if (normalized === "csv") return "csv";
+  return "legacy";
+};
 
 const getDefaultAdultsByGiteIds = async (giteIds: string[]) => {
   const uniqueIds = [...new Set(giteIds.filter(Boolean))];
@@ -371,6 +380,7 @@ export const importPreviewReservations = async (
   selectedIds: string[] | undefined,
   importSource: string
 ): Promise<ReservationImportResult> => {
+  const originSystem = resolveImportOriginSystem(importSource);
   const selectedSet = selectedIds ? new Set(selectedIds) : null;
   const importable = preview.reservations.filter((item) => {
     if (item.status !== "new" && item.status !== "existing_updatable") return false;
@@ -402,6 +412,11 @@ export const importPreviewReservations = async (
         data: {
           gite_id: item.gite_id,
           placeholder_id: null,
+          ...buildReservationOriginData({
+            originSystem,
+            originReference: item.id,
+            exportToIcal: false,
+          }),
           hote_nom: normalizeImportedHostName(item.hote_nom) ?? "",
           date_entree: dateEntree,
           date_sortie: dateSortie,

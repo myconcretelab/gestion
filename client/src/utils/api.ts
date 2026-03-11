@@ -24,6 +24,7 @@ export class ApiError extends Error {
 }
 
 export const isApiError = (error: unknown): error is ApiError => error instanceof ApiError;
+export const buildApiUrl = (path: string) => new URL(`${API_BASE}${path}`, window.location.origin).toString();
 
 export const apiFetch = async <T>(path: string, options: ApiOptions = {}): Promise<T> => {
   const response = await fetch(`${API_BASE}${path}`, {

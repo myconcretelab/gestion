@@ -4,6 +4,7 @@ import { generateContractNumber } from "../src/services/contractNumber.js";
 import { generateContractPdf, closeBrowser } from "../src/services/pdfService.js";
 import { getPdfPaths } from "../src/utils/paths.js";
 import { encodeJsonField } from "../src/utils/jsonFields.js";
+import { generateIcalExportToken } from "../src/utils/reservationOrigin.js";
 
 const seed = async () => {
   await prisma.reservation.deleteMany();
@@ -31,6 +32,7 @@ const seed = async () => {
   const giteLib = await prisma.gite.create({
     data: {
       ordre: 0,
+      ical_export_token: generateIcalExportToken(),
       nom: "GITE LE LIBERTÉ",
       prefixe_contrat: "LIB",
       adresse_ligne1: "1 Rue de la Forêt, 35380 Paimpont",
@@ -68,6 +70,7 @@ const seed = async () => {
   const gitePrairie = await prisma.gite.create({
     data: {
       ordre: 1,
+      ical_export_token: generateIcalExportToken(),
       nom: "GITE LA PRAIRIE",
       prefixe_contrat: "PRA",
       adresse_ligne1: "12 Chemin des Sources, 56430 Tréhorenteuc",

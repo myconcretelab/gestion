@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { apiFetch } from "../utils/api";
+import { apiFetch, buildApiUrl } from "../utils/api";
 import type { Gestionnaire, Gite, IcalSource } from "../utils/types";
 
 type IcalPreviewItem = {
@@ -217,6 +217,15 @@ type DeclarationNightsSettings = {
   available_sources: string[];
 };
 
+type IcalExportFeed = {
+  id: string;
+  nom: string;
+  prefixe_contrat: string;
+  ordre: number;
+  ical_export_token: string | null;
+  reservations_count: number;
+};
+
 const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
   gite_id: "",
   type: "Airbnb",
@@ -254,6 +263,9 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "pump-cron") return "Pump cron";
   return source || "Import";
 };
+
+const getIcalExportUrl = (feed: Pick<IcalExportFeed, "id" | "ical_export_token">) =>
+  buildApiUrl(`/gites/${feed.id}/calendar.ics?token=${encodeURIComponent(feed.ical_export_token ?? "")}`);
 
 const normalizeTextKey = (value: string) =>
   value
@@ -375,6 +387,11 @@ const SettingsPage = () => {
   const [managerNotice, setManagerNotice] = useState<string | null>(null);
 
   const [loadingSources, setLoadingSources] = useState(true);
+  const [icalExports, setIcalExports] = useState<IcalExportFeed[]>([]);
+  const [loadingIcalExports, setLoadingIcalExports] = useState(true);
+  const [resettingIcalExportId, setResettingIcalExportId] = useState<string | null>(null);
+  const [icalExportsError, setIcalExportsError] = useState<string | null>(null);
+  const [icalExportsNotice, setIcalExportsNotice] = useState<string | null>(null);
   const [sourceDraft, setSourceDraft] = useState<IcalSourceDraft>(DEFAULT_SOURCE_DRAFT);
   const [savingSourceId, setSavingSourceId] = useState<string | null>(null);
   const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
@@ -483,6 +500,63 @@ const SettingsPage = () => {
       ]),
     [declarationExcludedSourcesDraft, declarationNightsSettings]
   );
+  const activeIcalSourcesCount = useMemo(
+    () => sources.filter((source) => source.is_active).length,
+    [sources]
+  );
+  const readyIcalExportsCount = useMemo(
+    () => icalExports.filter((feed) => Boolean(feed.ical_export_token)).length,
+    [icalExports]
+  );
+  const enabledAutomationCount = useMemo(
+    () => Number(Boolean(icalCronState?.config.enabled)) + Number(Boolean(pumpCronState?.config.enabled)),
+    [icalCronState, pumpCronState]
+  );
+  const groupedIcalSources = useMemo(() => {
+    const giteLookup = new Map(gites.map((gite) => [gite.id, gite]));
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        giteId: string;
+        giteName: string;
+        gitePrefix: string | null;
+        giteOrder: number;
+        sources: IcalSource[];
+      }
+    >();
+
+    sources.forEach((source) => {
+      const resolvedGite = source.gite_id ? giteLookup.get(source.gite_id) : null;
+      const giteId = source.gite?.id ?? resolvedGite?.id ?? source.gite_id ?? `unknown-${source.id}`;
+      const existing = groups.get(giteId);
+
+      if (existing) {
+        existing.sources.push(source);
+        return;
+      }
+
+      groups.set(giteId, {
+        key: giteId,
+        giteId,
+        giteName: source.gite?.nom ?? resolvedGite?.nom ?? "Gîte inconnu",
+        gitePrefix: source.gite?.prefixe_contrat ?? resolvedGite?.prefixe_contrat ?? null,
+        giteOrder: source.gite?.ordre ?? resolvedGite?.ordre ?? Number.MAX_SAFE_INTEGER,
+        sources: [source],
+      });
+    });
+
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        activeCount: group.sources.filter((source) => source.is_active).length,
+        sources: [...group.sources].sort((left, right) => left.ordre - right.ordre),
+      }))
+      .sort((left, right) => {
+        if (left.giteOrder !== right.giteOrder) return left.giteOrder - right.giteOrder;
+        return left.giteName.localeCompare(right.giteName, "fr", { sensitivity: "base" });
+      });
+  }, [gites, sources]);
 
   const loadManagers = async () => {
     const data = await apiFetch<Gestionnaire[]>("/managers");
@@ -490,12 +564,14 @@ const SettingsPage = () => {
   };
 
   const loadSources = async () => {
-    const [gitesData, sourcesData] = await Promise.all([
+    const [gitesData, sourcesData, exportsData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<IcalSource[]>("/settings/ical-sources"),
+      apiFetch<IcalExportFeed[]>("/settings/ical-exports"),
     ]);
     setGites(gitesData);
     setSources(sourcesData);
+    setIcalExports(exportsData);
     setSourceDraft((previous) => ({
       ...previous,
       gite_id: previous.gite_id || gitesData[0]?.id || "",
@@ -566,6 +642,7 @@ const SettingsPage = () => {
   useEffect(() => {
     setLoadingManagers(true);
     setLoadingSources(true);
+    setLoadingIcalExports(true);
     setLoadingDeclarationNights(true);
     Promise.all([
       loadManagers(),
@@ -580,11 +657,13 @@ const SettingsPage = () => {
         const message = error?.message ?? "Impossible de charger les paramètres.";
         setManagerError(message);
         setSourceError(message);
+        setIcalExportsError(message);
         setDeclarationNightsError(message);
       })
       .finally(() => {
         setLoadingManagers(false);
         setLoadingSources(false);
+        setLoadingIcalExports(false);
         setLoadingDeclarationNights(false);
       });
   }, []);
@@ -737,6 +816,39 @@ const SettingsPage = () => {
       setSourceError(error.message);
     } finally {
       setDeletingSourceId(null);
+    }
+  };
+
+  const copyIcalExportUrl = async (feed: IcalExportFeed) => {
+    setIcalExportsError(null);
+    setIcalExportsNotice(null);
+    if (!feed.ical_export_token) {
+      setIcalExportsError("Token iCal manquant pour ce gîte.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(getIcalExportUrl(feed));
+      setIcalExportsNotice(`URL iCal copiée pour ${feed.nom}.`);
+    } catch (error: any) {
+      setIcalExportsError(error?.message ?? "Impossible de copier l'URL iCal.");
+    }
+  };
+
+  const resetIcalExportToken = async (feed: IcalExportFeed) => {
+    if (!confirm(`Régénérer le token iCal de ${feed.nom} ? Les anciennes URL OTA cesseront de fonctionner.`)) return;
+
+    setResettingIcalExportId(feed.id);
+    setIcalExportsError(null);
+    setIcalExportsNotice(null);
+    try {
+      await apiFetch(`/settings/ical-exports/${feed.id}/reset-token`, { method: "POST" });
+      await loadSources();
+      setIcalExportsNotice(`Token iCal régénéré pour ${feed.nom}.`);
+    } catch (error: any) {
+      setIcalExportsError(error.message ?? "Impossible de régénérer le token iCal.");
+    } finally {
+      setResettingIcalExportId(null);
     }
   };
 
@@ -1185,1051 +1297,1264 @@ const SettingsPage = () => {
   };
 
   return (
-    <div>
-      <div className="card">
-        <div className="section-title">Paramètres</div>
-        <div className="field-hint">Gestion des gestionnaires, des sources iCal et de l'import HAR.</div>
-      </div>
-
-      <div className="card">
-        <div className="section-title">Nuitées à déclarer</div>
-        <div className="field-hint">
-          Les sources listées ici sont retirées du macaron "Nuitées à déclarer" dans les totaux mensuels.
+    <div className="settings-page">
+      <section className="card settings-hero">
+        <div className="settings-hero__main">
+          <div className="settings-hero__eyebrow">Tableau de bord</div>
+          <h1 className="settings-hero__title">Paramètres</h1>
+          <p className="settings-hero__text">
+            Une vue plus claire pour piloter l'équipe, la diffusion iCal et les imports externes depuis un seul espace.
+          </p>
         </div>
-        {loadingDeclarationNights ? (
-          <div className="field-hint" style={{ marginTop: 12 }}>
-            Chargement...
+        <div className="settings-hero__stats">
+          <div className="settings-kpi settings-kpi--rose">
+            <span className="settings-kpi__label">Gestionnaires</span>
+            <strong>{gestionnaires.length}</strong>
+            <span className="settings-kpi__detail">{linkedGitesCount} gîte(s) réparti(s)</span>
           </div>
-        ) : (
-          <>
-            {availableDeclarationSources.length > 0 ? (
-              <div className="field-group" style={{ marginTop: 16 }}>
-                <div className="field-group__header">
-                  <div className="field-group__label">Sources détectées</div>
-                  <div className="field-hint">Cochez les sources à exclure du total à déclarer.</div>
-                </div>
-                <div className="checkbox-grid">
-                  {availableDeclarationSources.map((source) => {
-                    const checked = declarationExcludedSourcesDraft.some(
-                      (item) => normalizeTextKey(item) === normalizeTextKey(source)
-                    );
+          <div className="settings-kpi settings-kpi--blue">
+            <span className="settings-kpi__label">Sources iCal</span>
+            <strong>{activeIcalSourcesCount}</strong>
+            <span className="settings-kpi__detail">{sources.length} source(s) configurée(s)</span>
+          </div>
+          <div className="settings-kpi settings-kpi--amber">
+            <span className="settings-kpi__label">Automatisations</span>
+            <strong>{enabledAutomationCount}</strong>
+            <span className="settings-kpi__detail">iCal + Pump actifs</span>
+          </div>
+          <div className="settings-kpi settings-kpi--green">
+            <span className="settings-kpi__label">Exports OTA</span>
+            <strong>{readyIcalExportsCount}</strong>
+            <span className="settings-kpi__detail">{icalExports.length} flux publiables</span>
+          </div>
+        </div>
+      </section>
 
-                    return (
-                      <label key={source} className="checkbox-inline">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            setDeclarationNightsNotice(null);
-                            setDeclarationNightsError(null);
-                            setDeclarationExcludedSourcesDraft((previous) =>
-                              event.target.checked
-                                ? normalizeSourceList([...previous, source])
-                                : previous.filter((item) => normalizeTextKey(item) !== normalizeTextKey(source))
-                            );
-                          }}
-                          disabled={savingDeclarationNights}
-                        />
-                        <span>{source}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+      <section className="settings-overview">
+        <a href="#settings-exploitation" className="settings-overview-card settings-overview-card--rose">
+          <span className="settings-overview-card__kicker">Exploitation</span>
+          <strong className="settings-overview-card__title">Nuitées et journal</strong>
+          <span className="settings-overview-card__meta">
+            {declarationExcludedSourcesDraft.length} source(s) exclue(s), {importLog.length} entrée(s) d'import.
+          </span>
+        </a>
+        <a href="#settings-team" className="settings-overview-card settings-overview-card--sand">
+          <span className="settings-overview-card__kicker">Équipe</span>
+          <strong className="settings-overview-card__title">Gestionnaires</strong>
+          <span className="settings-overview-card__meta">
+            {gestionnaires.length} profil(s), {linkedGitesCount} affectation(s) actives.
+          </span>
+        </a>
+        <a href="#settings-ical" className="settings-overview-card settings-overview-card--blue">
+          <span className="settings-overview-card__kicker">Distribution</span>
+          <strong className="settings-overview-card__title">Écosystème iCal</strong>
+          <span className="settings-overview-card__meta">
+            {sources.length > 0
+              ? `${activeIcalSourcesCount}/${sources.length} sources actives, ${readyIcalExportsCount} export(s) prêts.`
+              : `Aucune source configurée, ${readyIcalExportsCount} export(s) prêt(s).`}
+          </span>
+        </a>
+        <a href="#settings-imports" className="settings-overview-card settings-overview-card--green">
+          <span className="settings-overview-card__kicker">Imports</span>
+          <strong className="settings-overview-card__title">Pump et HAR</strong>
+          <span className="settings-overview-card__meta">
+            Pump {pumpCronState?.config.enabled ? "actif" : "en pause"}, HAR {harFileName ? "chargé" : "à charger"}.
+          </span>
+        </a>
+      </section>
+
+      <section id="settings-exploitation" className="settings-cluster">
+        <div className="settings-cluster__header">
+          <div>
+            <div className="settings-cluster__eyebrow">Exploitation</div>
+            <h2 className="settings-cluster__title">Pilotage quotidien</h2>
+          </div>
+          <p className="settings-cluster__text">
+            Réglez ce qui alimente les totaux mensuels et gardez une trace des imports réellement appliqués.
+          </p>
+        </div>
+        <div className="settings-cluster__grid">
+          <div className="card settings-card settings-card--rose settings-card--span-4">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Totaux mensuels</span>
+              <span className="settings-card__badge">{declarationExcludedSourcesDraft.length} exclue(s)</span>
+            </div>
+            <div className="section-title">Nuitées à déclarer</div>
+            <div className="field-hint">
+              Les sources listées ici sont retirées du macaron "Nuitées à déclarer" dans les totaux mensuels.
+            </div>
+            {loadingDeclarationNights ? (
+              <div className="field-hint" style={{ marginTop: 12 }}>
+                Chargement...
               </div>
-            ) : null}
+            ) : (
+              <>
+                {availableDeclarationSources.length > 0 ? (
+                  <div className="field-group" style={{ marginTop: 16 }}>
+                    <div className="field-group__header">
+                      <div className="field-group__label">Sources détectées</div>
+                      <div className="field-hint">Cochez les sources à exclure du total à déclarer.</div>
+                    </div>
+                    <div className="checkbox-grid">
+                      {availableDeclarationSources.map((source) => {
+                        const checked = declarationExcludedSourcesDraft.some(
+                          (item) => normalizeTextKey(item) === normalizeTextKey(source)
+                        );
 
-            <label className="field" style={{ marginTop: 16 }}>
-              Sources exclues
-              <textarea
-                rows={4}
-                value={declarationExcludedSourcesDraft.join("\n")}
-                onChange={(event) => {
-                  setDeclarationNightsNotice(null);
-                  setDeclarationNightsError(null);
-                  setDeclarationExcludedSourcesDraft(parseDeclarationSourcesInput(event.target.value));
-                }}
-                placeholder={"Airbnb\nHomeExchange"}
-                disabled={savingDeclarationNights}
-              />
-            </label>
-            <div className="field-hint">Une source par ligne. Les variantes accent/casse sont reconnues.</div>
-            <div className="actions" style={{ marginTop: 16 }}>
-              <button type="button" onClick={() => void saveDeclarationNightsSettings()} disabled={savingDeclarationNights}>
-                {savingDeclarationNights ? "Enregistrement..." : "Enregistrer"}
+                        return (
+                          <label key={source} className="checkbox-inline">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(event) => {
+                                setDeclarationNightsNotice(null);
+                                setDeclarationNightsError(null);
+                                setDeclarationExcludedSourcesDraft((previous) =>
+                                  event.target.checked
+                                    ? normalizeSourceList([...previous, source])
+                                    : previous.filter((item) => normalizeTextKey(item) !== normalizeTextKey(source))
+                                );
+                              }}
+                              disabled={savingDeclarationNights}
+                            />
+                            <span>{source}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                <label className="field" style={{ marginTop: 16 }}>
+                  Sources exclues
+                  <textarea
+                    rows={4}
+                    value={declarationExcludedSourcesDraft.join("\n")}
+                    onChange={(event) => {
+                      setDeclarationNightsNotice(null);
+                      setDeclarationNightsError(null);
+                      setDeclarationExcludedSourcesDraft(parseDeclarationSourcesInput(event.target.value));
+                    }}
+                    placeholder={"Airbnb\nHomeExchange"}
+                    disabled={savingDeclarationNights}
+                  />
+                </label>
+                <div className="field-hint">Une source par ligne. Les variantes accent/casse sont reconnues.</div>
+                <div className="actions" style={{ marginTop: 16 }}>
+                  <button type="button" onClick={() => void saveDeclarationNightsSettings()} disabled={savingDeclarationNights}>
+                    {savingDeclarationNights ? "Enregistrement..." : "Enregistrer"}
+                  </button>
+                </div>
+                {declarationNightsNotice ? <div className="note note--success">{declarationNightsNotice}</div> : null}
+                {declarationNightsError ? <div className="note">{declarationNightsError}</div> : null}
+              </>
+            )}
+          </div>
+
+          <div className="card settings-card settings-card--neutral settings-card--span-8">
+            <div className="settings-managers-header">
+              <div>
+                <div className="settings-card__tag">Traçabilité</div>
+                <div className="section-title">Journal des imports</div>
+              </div>
+              <button type="button" className="secondary" onClick={() => void loadImportLog()} disabled={loadingImportLog}>
+                {loadingImportLog ? "Chargement..." : "Rafraîchir"}
               </button>
             </div>
-            {declarationNightsNotice ? <div className="note note--success">{declarationNightsNotice}</div> : null}
-            {declarationNightsError ? <div className="note">{declarationNightsError}</div> : null}
-          </>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="section-title">Ajouter un gestionnaire</div>
-        <div className="grid-2">
-          <label className="field">
-            Prénom
-            <input
-              value={prenom}
-              onChange={(event) => setPrenom(event.target.value)}
-              placeholder="Ex. Marie"
-              disabled={savingManager}
-            />
-          </label>
-          <label className="field">
-            Nom
-            <input
-              value={nom}
-              onChange={(event) => setNom(event.target.value)}
-              placeholder="Ex. Dupont"
-              disabled={savingManager}
-            />
-          </label>
-        </div>
-        <div className="actions" style={{ marginTop: 16 }}>
-          <button type="button" onClick={() => void createManager()} disabled={savingManager}>
-            {savingManager ? "Ajout..." : "Ajouter"}
-          </button>
-        </div>
-        {managerNotice && <div className="note note--success">{managerNotice}</div>}
-        {managerError && <div className="note">{managerError}</div>}
-      </div>
-
-      <div className="card">
-        <div className="settings-managers-header">
-          <div className="section-title">Gestionnaires</div>
-          <div className="field-hint">
-            {gestionnaires.length} gestionnaire(s), {linkedGitesCount} gîte(s) associé(s)
+            {importLogError && <div className="note">{importLogError}</div>}
+            {!importLogError && importLog.length === 0 ? (
+              <div className="field-hint">Aucun import enregistré.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {importLog.map((entry) => (
+                  <div key={entry.id} className="field-group">
+                    <div className="field-group__header">
+                      <div className="field-group__label">{formatImportSource(entry.source)}</div>
+                      <div className="field-hint">{formatIsoDateTimeFr(entry.at)}</div>
+                    </div>
+                    <div className="field-hint">
+                      Sélectionnées: {entry.selectionCount ?? 0} | Ajoutées: {entry.inserted ?? 0} | Mises à jour: {entry.updated ?? 0} | Ignorées: {entry.skipped?.unknown ?? 0}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <div className="field-hint" style={{ marginBottom: 4 }}>Nouvelles réservations</div>
+                      {Array.isArray(entry.insertedItems) && entry.insertedItems.length > 0 ? (
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Gîte</th>
+                              <th>Dates</th>
+                              <th>Source</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entry.insertedItems.slice(0, 30).map((item, index) => (
+                              <tr key={`${entry.id}-inserted-${index}`}>
+                                <td>{item.giteName || item.giteId || "-"}</td>
+                                <td>
+                                  {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
+                                </td>
+                                <td>
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                    <span
+                                      style={{
+                                        width: 10,
+                                        height: 10,
+                                        borderRadius: "999px",
+                                        background: sourceColor(item.source),
+                                        border: "1px solid rgba(17, 24, 39, 0.2)",
+                                      }}
+                                    />
+                                    <span>{item.source || "-"}</span>
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="field-hint">Aucune nouvelle réservation.</div>
+                      )}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <div className="field-hint" style={{ marginBottom: 4 }}>Mises à jour</div>
+                      {Array.isArray(entry.updatedItems) && entry.updatedItems.length > 0 ? (
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Gîte</th>
+                              <th>Dates</th>
+                              <th>Source</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {entry.updatedItems.slice(0, 30).map((item, index) => (
+                              <tr key={`${entry.id}-updated-${index}`}>
+                                <td>{item.giteName || item.giteId || "-"}</td>
+                                <td>
+                                  {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
+                                </td>
+                                <td>
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                    <span
+                                      style={{
+                                        width: 10,
+                                        height: 10,
+                                        borderRadius: "999px",
+                                        background: sourceColor(item.source),
+                                        border: "1px solid rgba(17, 24, 39, 0.2)",
+                                      }}
+                                    />
+                                    <span>{item.source || "-"}</span>
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="field-hint">Aucune mise à jour.</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-        {loadingManagers ? (
-          <div className="field-hint">Chargement...</div>
-        ) : gestionnaires.length === 0 ? (
-          <div className="field-hint">Aucun gestionnaire enregistré.</div>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Prénom</th>
-                <th>Nom</th>
-                <th>Gîtes associés</th>
-                <th className="table-actions-cell">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gestionnaires.map((manager) => (
-                <tr key={manager.id}>
-                  <td>{manager.prenom}</td>
-                  <td>{manager.nom}</td>
-                  <td>
-                    <span className="badge">{manager.gites_count ?? 0}</span>
-                  </td>
-                  <td className="table-actions-cell">
-                    <button
-                      type="button"
-                      className="table-action table-action--danger"
-                      onClick={() => void removeManager(manager)}
-                      disabled={deletingManagerId === manager.id}
-                    >
-                      {deletingManagerId === manager.id ? "Suppression..." : "Supprimer"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      </section>
 
-      <div className="card">
-        <div className="section-title">Ajouter une source iCal</div>
-        <div className="grid-2">
-          <label className="field">
-            Gîte
-            <select
-              value={sourceDraft.gite_id}
-              onChange={(event) => setSourceDraft((previous) => ({ ...previous, gite_id: event.target.value }))}
-              disabled={creatingSource || loadingSources}
-            >
-              <option value="">Choisir</option>
-              {gites.map((gite) => (
-                <option key={gite.id} value={gite.id}>
-                  {gite.nom}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            Type / Source
-            <input
-              value={sourceDraft.type}
-              onChange={(event) => setSourceDraft((previous) => ({ ...previous, type: event.target.value }))}
-              placeholder="Airbnb"
-              disabled={creatingSource}
-            />
-          </label>
-          <label className="field">
-            URL iCal
-            <input
-              value={sourceDraft.url}
-              onChange={(event) => setSourceDraft((previous) => ({ ...previous, url: event.target.value }))}
-              placeholder="https://.../calendar/ical/..."
-              disabled={creatingSource}
-            />
-          </label>
-          <label className="field">
-            Inclure si résumé contient
-            <input
-              value={sourceDraft.include_summary}
-              onChange={(event) => setSourceDraft((previous) => ({ ...previous, include_summary: event.target.value }))}
-              placeholder="Reserved, BOOKED"
-              disabled={creatingSource}
-            />
-          </label>
-          <label className="field">
-            Exclure si résumé contient
-            <input
-              value={sourceDraft.exclude_summary}
-              onChange={(event) => setSourceDraft((previous) => ({ ...previous, exclude_summary: event.target.value }))}
-              placeholder="Blocked"
-              disabled={creatingSource}
-            />
-          </label>
-          <label className="field">
-            Active
-            <select
-              value={sourceDraft.is_active ? "1" : "0"}
-              onChange={(event) =>
-                setSourceDraft((previous) => ({
-                  ...previous,
-                  is_active: event.target.value === "1",
-                }))
-              }
-              disabled={creatingSource}
-            >
-              <option value="1">Oui</option>
-              <option value="0">Non</option>
-            </select>
-          </label>
-        </div>
-        <div className="actions" style={{ marginTop: 16 }}>
-          <button type="button" onClick={() => void createSource()} disabled={creatingSource || loadingSources}>
-            {creatingSource ? "Ajout..." : "Ajouter la source"}
-          </button>
-        </div>
-        {sourceNotice && <div className="note note--success">{sourceNotice}</div>}
-        {sourceError && <div className="note">{sourceError}</div>}
-      </div>
-
-      <div className="card">
-        <div className="settings-managers-header">
-          <div className="section-title">Sources iCal</div>
-          <div className="gites-tools">
-            <button
-              type="button"
-              className="table-action table-action--neutral gites-tool-button"
-              onClick={() => void exportIcalSources()}
-              disabled={exportingSources || importingSources || loadingSources}
-            >
-              {exportingSources ? "Export..." : "Exporter"}
-            </button>
-            <button
-              type="button"
-              className="table-action table-action--neutral gites-tool-button"
-              onClick={triggerSourceImport}
-              disabled={analyzingSourcesImport || importingSources || exportingSources || loadingSources}
-            >
-              {analyzingSourcesImport ? "Lecture..." : "Charger fichier"}
-            </button>
+      <section id="settings-team" className="settings-cluster">
+        <div className="settings-cluster__header">
+          <div>
+            <div className="settings-cluster__eyebrow">Équipe</div>
+            <h2 className="settings-cluster__title">Gestionnaires et répartition</h2>
           </div>
+          <p className="settings-cluster__text">
+            Ajoutez rapidement des gestionnaires et gardez une lecture claire de leur couverture sur les gîtes.
+          </p>
         </div>
-        <input
-          ref={importSourcesInputRef}
-          type="file"
-          accept=".json,application/json"
-          onChange={(event) => void handleIcalSourcesImportFile(event)}
-          style={{ display: "none" }}
-        />
-        {sourceImportRows ? (
-          <div className="field-group" style={{ marginBottom: 12 }}>
-            <div className="field-group__header">
-              <div className="field-group__label">Import iCal prêt</div>
-              <div className="field-hint">{sourceImportFileName || "Fichier JSON"}</div>
+        <div className="settings-cluster__grid">
+          <div className="card settings-card settings-card--sand settings-card--span-4">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Nouveau profil</span>
             </div>
+            <div className="section-title">Ajouter un gestionnaire</div>
+            <div className="grid-2">
+              <label className="field">
+                Prénom
+                <input
+                  value={prenom}
+                  onChange={(event) => setPrenom(event.target.value)}
+                  placeholder="Ex. Marie"
+                  disabled={savingManager}
+                />
+              </label>
+              <label className="field">
+                Nom
+                <input
+                  value={nom}
+                  onChange={(event) => setNom(event.target.value)}
+                  placeholder="Ex. Dupont"
+                  disabled={savingManager}
+                />
+              </label>
+            </div>
+            <div className="actions" style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => void createManager()} disabled={savingManager}>
+                {savingManager ? "Ajout..." : "Ajouter"}
+              </button>
+            </div>
+            {managerNotice && <div className="note note--success">{managerNotice}</div>}
+            {managerError && <div className="note">{managerError}</div>}
+          </div>
+
+          <div className="card settings-card settings-card--neutral settings-card--span-8">
+            <div className="settings-managers-header">
+              <div>
+                <div className="settings-card__tag">Vue d'ensemble</div>
+                <div className="section-title">Gestionnaires</div>
+              </div>
+              <div className="field-hint">
+                {gestionnaires.length} gestionnaire(s), {linkedGitesCount} gîte(s) associé(s)
+              </div>
+            </div>
+            {loadingManagers ? (
+              <div className="field-hint">Chargement...</div>
+            ) : gestionnaires.length === 0 ? (
+              <div className="field-hint">Aucun gestionnaire enregistré.</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Prénom</th>
+                    <th>Nom</th>
+                    <th>Gîtes associés</th>
+                    <th className="table-actions-cell">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gestionnaires.map((manager) => (
+                    <tr key={manager.id}>
+                      <td>{manager.prenom}</td>
+                      <td>{manager.nom}</td>
+                      <td>
+                        <span className="badge">{manager.gites_count ?? 0}</span>
+                      </td>
+                      <td className="table-actions-cell">
+                        <button
+                          type="button"
+                          className="table-action table-action--danger"
+                          onClick={() => void removeManager(manager)}
+                          disabled={deletingManagerId === manager.id}
+                        >
+                          {deletingManagerId === manager.id ? "Suppression..." : "Supprimer"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section id="settings-ical" className="settings-cluster">
+        <div className="settings-cluster__header">
+          <div>
+            <div className="settings-cluster__eyebrow">Distribution</div>
+            <h2 className="settings-cluster__title">Écosystème iCal</h2>
+          </div>
+          <p className="settings-cluster__text">
+            Centralisez vos sources entrantes, vos exports OTA et les automatismes de synchronisation.
+          </p>
+        </div>
+        <div className="settings-cluster__grid">
+          <div className="card settings-card settings-card--blue settings-card--span-4">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Entrée manuelle</span>
+            </div>
+            <div className="section-title">Ajouter une source iCal</div>
+            <div className="grid-2">
+              <label className="field">
+                Gîte
+                <select
+                  value={sourceDraft.gite_id}
+                  onChange={(event) => setSourceDraft((previous) => ({ ...previous, gite_id: event.target.value }))}
+                  disabled={creatingSource || loadingSources}
+                >
+                  <option value="">Choisir</option>
+                  {gites.map((gite) => (
+                    <option key={gite.id} value={gite.id}>
+                      {gite.nom}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Type / Source
+                <input
+                  value={sourceDraft.type}
+                  onChange={(event) => setSourceDraft((previous) => ({ ...previous, type: event.target.value }))}
+                  placeholder="Airbnb"
+                  disabled={creatingSource}
+                />
+              </label>
+              <label className="field">
+                URL iCal
+                <input
+                  value={sourceDraft.url}
+                  onChange={(event) => setSourceDraft((previous) => ({ ...previous, url: event.target.value }))}
+                  placeholder="https://.../calendar/ical/..."
+                  disabled={creatingSource}
+                />
+              </label>
+              <label className="field">
+                Inclure si résumé contient
+                <input
+                  value={sourceDraft.include_summary}
+                  onChange={(event) => setSourceDraft((previous) => ({ ...previous, include_summary: event.target.value }))}
+                  placeholder="Reserved, BOOKED"
+                  disabled={creatingSource}
+                />
+              </label>
+              <label className="field">
+                Exclure si résumé contient
+                <input
+                  value={sourceDraft.exclude_summary}
+                  onChange={(event) => setSourceDraft((previous) => ({ ...previous, exclude_summary: event.target.value }))}
+                  placeholder="Blocked"
+                  disabled={creatingSource}
+                />
+              </label>
+              <label className="field">
+                Active
+                <div className="switch-group settings-switch-row">
+                  <span>{sourceDraft.is_active ? "Active" : "Inactive"}</span>
+                  <label className="switch switch--pink">
+                    <input
+                      type="checkbox"
+                      checked={sourceDraft.is_active}
+                      onChange={(event) =>
+                        setSourceDraft((previous) => ({
+                          ...previous,
+                          is_active: event.target.checked,
+                        }))
+                      }
+                      disabled={creatingSource}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+              </label>
+            </div>
+            <div className="actions" style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => void createSource()} disabled={creatingSource || loadingSources}>
+                {creatingSource ? "Ajout..." : "Ajouter la source"}
+              </button>
+            </div>
+            {sourceNotice && <div className="note note--success">{sourceNotice}</div>}
+            {sourceError && <div className="note">{sourceError}</div>}
+          </div>
+
+          <div className="card settings-card settings-card--neutral settings-card--span-8">
+            <div className="settings-managers-header">
+              <div>
+                <div className="settings-card__tag">Sources entrantes</div>
+                <div className="section-title">Sources iCal</div>
+              </div>
+              <div className="gites-tools">
+                <button
+                  type="button"
+                  className="table-action table-action--neutral gites-tool-button"
+                  onClick={() => void exportIcalSources()}
+                  disabled={exportingSources || importingSources || loadingSources}
+                >
+                  {exportingSources ? "Export..." : "Exporter"}
+                </button>
+                <button
+                  type="button"
+                  className="table-action table-action--neutral gites-tool-button"
+                  onClick={triggerSourceImport}
+                  disabled={analyzingSourcesImport || importingSources || exportingSources || loadingSources}
+                >
+                  {analyzingSourcesImport ? "Lecture..." : "Charger fichier"}
+                </button>
+              </div>
+            </div>
+            <input
+              ref={importSourcesInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => void handleIcalSourcesImportFile(event)}
+              style={{ display: "none" }}
+            />
+            {sourceImportRows ? (
+              <div className="field-group" style={{ marginBottom: 12 }}>
+                <div className="field-group__header">
+                  <div className="field-group__label">Import iCal prêt</div>
+                  <div className="field-hint">{sourceImportFileName || "Fichier JSON"}</div>
+                </div>
+                <div className="field-hint">
+                  Lignes: {sourceImportRows.length}
+                  {sourceImportPreview ? ` | Prêtes: ${sourceImportPreview.ready_count}/${sourceImportPreview.total_count}` : ""}
+                </div>
+                <div className="actions" style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => void analyzeIcalSourcesImport()}
+                    disabled={analyzingSourcesImport || importingSources}
+                  >
+                    {analyzingSourcesImport ? "Analyse..." : "Analyser"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void importIcalSources()}
+                    disabled={
+                      importingSources ||
+                      analyzingSourcesImport ||
+                      !sourceImportPreview ||
+                      sourceImportUnresolvedCount > 0 ||
+                      sourceImportPreview.mapping_errors.length > 0
+                    }
+                  >
+                    {importingSources ? "Import..." : "Importer"}
+                  </button>
+                </div>
+                {sourceImportPreview?.mapping_errors.length ? (
+                  <div className="note" style={{ marginTop: 8 }}>
+                    Mapping invalide: {sourceImportPreview.mapping_errors.map((item) => item.message).join(" ; ")}
+                  </div>
+                ) : null}
+                {sourceImportPreview && sourceImportPreview.unknown_gites.length > 0 ? (
+                  <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                    <div className="field-hint">
+                      Gîtes introuvables: {sourceImportPreview.unknown_gites.length}. Attribuez un gîte local.
+                    </div>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Gîte import</th>
+                          <th>Lignes</th>
+                          <th>Indices</th>
+                          <th>Attribuer à</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sourceImportPreview.unknown_gites.map((item) => {
+                          const examples = getUnknownImportExamples(item);
+                          const types = uniqueNonEmpty(
+                            (item.sample_types && item.sample_types.length > 0 ? item.sample_types : [item.sample_type]) as Array<
+                              string | null | undefined
+                            >
+                          );
+                          const hosts = uniqueNonEmpty(
+                            (item.sample_hosts && item.sample_hosts.length > 0
+                              ? item.sample_hosts
+                              : examples.map((example) => extractUrlHost(example.url))) as Array<string | null | undefined>
+                          );
+                          const identifiers = uniqueNonEmpty(
+                            examples.flatMap((example) => extractIcalUrlIdentifiers(example.url))
+                          );
+                          const importLabel = item.sample_gite_nom
+                            ? `${item.sample_gite_nom}${item.sample_gite_prefixe ? ` (${item.sample_gite_prefixe})` : ""}`
+                            : null;
+
+                          return (
+                            <tr key={item.source_gite_id}>
+                              <td>
+                                <div style={{ display: "grid", gap: 2 }}>
+                                  <div>{importLabel || item.source_gite_id}</div>
+                                  {importLabel ? <div className="field-hint">ID: {item.source_gite_id}</div> : null}
+                                </div>
+                              </td>
+                              <td>{item.count}</td>
+                              <td>
+                                <div style={{ display: "grid", gap: 4 }}>
+                                  {types.length > 0 ? <div>Type: {types.join(", ")}</div> : null}
+                                  {hosts.length > 0 ? <div>Domaine: {hosts.join(", ")}</div> : null}
+                                  {identifiers.length > 0 ? <div>Identifiant: {identifiers.join(" | ")}</div> : null}
+                                  {item.sample_source_id ? <div className="field-hint">Source: {item.sample_source_id}</div> : null}
+                                  {examples.length > 0 ? (
+                                    <div className="field-hint" style={{ display: "grid", gap: 2 }}>
+                                      {examples.map((example, index) => (
+                                        <div key={`${item.source_gite_id}-example-${index}`}>
+                                          {(example.type || "-") + " | " + truncateMiddle(example.url || "-")}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td>
+                                <select
+                                  value={sourceImportMapping[item.source_gite_id] ?? item.mapped_to ?? ""}
+                                  onChange={(event) =>
+                                    setSourceImportMapping((previous) => ({
+                                      ...previous,
+                                      [item.source_gite_id]: event.target.value,
+                                    }))
+                                  }
+                                  disabled={analyzingSourcesImport || importingSources}
+                                >
+                                  <option value="">Choisir un gîte</option>
+                                  {gites.map((gite) => (
+                                    <option key={gite.id} value={gite.id}>
+                                      {gite.nom} ({gite.prefixe_contrat})
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {sourceImportUnresolvedCount > 0 ? (
+                      <div className="field-hint">{sourceImportUnresolvedCount} attribution(s) manquante(s).</div>
+                    ) : (
+                      <div className="field-hint">Toutes les attributions sont renseignées.</div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <details className="settings-sources-accordion">
+              <summary>Sources iCal configurées ({sources.length})</summary>
+              {loadingSources ? (
+                <div className="field-hint">Chargement...</div>
+              ) : sources.length === 0 ? (
+                <div className="field-hint">Aucune source iCal configurée.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {groupedIcalSources.map((group) => (
+                    <div key={group.key} className="settings-source-group">
+                      <div className="settings-source-group__header">
+                        <div>
+                          <div className="settings-source-group__eyebrow">{group.gitePrefix || "Gîte"}</div>
+                          <div className="settings-source-group__title">{group.giteName}</div>
+                          <div className="settings-source-group__meta">
+                            {group.sources.length} source(s) | {group.activeCount} active(s)
+                          </div>
+                        </div>
+                        <span className="settings-card__badge">
+                          {group.activeCount}/{group.sources.length} actives
+                        </span>
+                      </div>
+                      <div style={{ display: "grid", gap: 12 }}>
+                        {group.sources.map((source) => (
+                          <div key={source.id} className="field-group">
+                            <div className="field-group__header">
+                              <div className="field-group__label">{source.type || "Source iCal"}</div>
+                              <div className="field-hint">Source #{source.ordre + 1}</div>
+                            </div>
+                            <div className="grid-2">
+                              <label className="field">
+                                Gîte
+                                <select
+                                  value={source.gite_id}
+                                  onChange={(event) => updateSourceField(source.id, "gite_id", event.target.value)}
+                                  disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                                >
+                                  {gites.map((gite) => (
+                                    <option key={gite.id} value={gite.id}>
+                                      {gite.nom}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="field">
+                                Type
+                                <input
+                                  value={source.type}
+                                  onChange={(event) => updateSourceField(source.id, "type", event.target.value)}
+                                  disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                                />
+                              </label>
+                              <label className="field">
+                                URL iCal
+                                <input
+                                  value={source.url}
+                                  onChange={(event) => updateSourceField(source.id, "url", event.target.value)}
+                                  disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                                />
+                              </label>
+                              <label className="field">
+                                Inclure résumé
+                                <input
+                                  value={source.include_summary ?? ""}
+                                  onChange={(event) => updateSourceField(source.id, "include_summary", event.target.value)}
+                                  placeholder="Reserved, BOOKED"
+                                  disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                                />
+                              </label>
+                              <label className="field">
+                                Exclure résumé
+                                <input
+                                  value={source.exclude_summary ?? ""}
+                                  onChange={(event) => updateSourceField(source.id, "exclude_summary", event.target.value)}
+                                  placeholder="Blocked"
+                                  disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                                />
+                              </label>
+                              <label className="field">
+                                Active
+                                <div className="switch-group settings-switch-row">
+                                  <span>{source.is_active ? "Active" : "Inactive"}</span>
+                                  <label className="switch switch--pink">
+                                    <input
+                                      type="checkbox"
+                                      checked={source.is_active}
+                                      onChange={(event) =>
+                                        updateSourceField(source.id, "is_active", event.target.checked)
+                                      }
+                                      disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                                    />
+                                    <span className="slider" />
+                                  </label>
+                                </div>
+                              </label>
+                            </div>
+                            <div className="actions">
+                              <button
+                                type="button"
+                                className="table-action table-action--primary"
+                                onClick={() => void saveSource(source)}
+                                disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                              >
+                                {savingSourceId === source.id ? "Enregistrement..." : "Enregistrer"}
+                              </button>
+                              <button
+                                type="button"
+                                className="table-action table-action--danger"
+                                onClick={() => void removeSource(source)}
+                                disabled={savingSourceId === source.id || deletingSourceId === source.id}
+                              >
+                                {deletingSourceId === source.id ? "Suppression..." : "Supprimer"}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </details>
+          </div>
+
+          <div className="card settings-card settings-card--blue settings-card--span-5">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Publication OTA</span>
+              <span className="settings-card__badge">{readyIcalExportsCount} prêt(s)</span>
+            </div>
+            <div className="section-title">Exports iCal OTA</div>
             <div className="field-hint">
-              Lignes: {sourceImportRows.length}
-              {sourceImportPreview ? ` | Prêtes: ${sourceImportPreview.ready_count}/${sourceImportPreview.total_count}` : ""}
+              Publie les réservations locales et celles insérées par <code>what-today</code>. Les réservations importées depuis iCal, Pump ou CSV ne sont pas réémises.
             </div>
-            <div className="actions" style={{ marginTop: 10 }}>
+            {icalExportsNotice && <div className="note note--success">{icalExportsNotice}</div>}
+            {icalExportsError && <div className="note">{icalExportsError}</div>}
+            {loadingIcalExports ? (
+              <div className="field-hint" style={{ marginTop: 10 }}>Chargement...</div>
+            ) : (
+              <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+                {icalExports.map((feed) => (
+                  <div key={feed.id} className="field-group">
+                    <div className="field-group__header">
+                      <div className="field-group__label">
+                        {feed.nom} ({feed.prefixe_contrat})
+                      </div>
+                      <div className="field-hint">{feed.reservations_count} réservation(s)</div>
+                    </div>
+                    <label className="field">
+                      URL iCal publique
+                      <input value={feed.ical_export_token ? getIcalExportUrl(feed) : ""} readOnly />
+                    </label>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="table-action table-action--neutral"
+                        onClick={() => void copyIcalExportUrl(feed)}
+                        disabled={!feed.ical_export_token || resettingIcalExportId === feed.id}
+                      >
+                        Copier l'URL
+                      </button>
+                      <button
+                        type="button"
+                        className="table-action table-action--danger"
+                        onClick={() => void resetIcalExportToken(feed)}
+                        disabled={resettingIcalExportId === feed.id}
+                      >
+                        {resettingIcalExportId === feed.id ? "Régénération..." : "Régénérer le token"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card settings-card settings-card--blue settings-card--span-7">
+            <div className="settings-managers-header">
+              <div>
+                <div className="settings-card__tag">Automatisation</div>
+                <div className="section-title">Synchronisation iCal</div>
+              </div>
+              <div className="gites-tools">
+                <button
+                  type="button"
+                  className="table-action table-action--neutral gites-tool-button"
+                  onClick={() => void exportIcalCronConfig()}
+                  disabled={exportingCron || importingCron || savingCron || syncingIcal || loadingIcalPreview}
+                >
+                  {exportingCron ? "Export..." : "Exporter paramètres"}
+                </button>
+                <button
+                  type="button"
+                  className="table-action table-action--neutral gites-tool-button"
+                  onClick={triggerCronImport}
+                  disabled={importingCron || exportingCron || savingCron || syncingIcal || loadingIcalPreview}
+                >
+                  {importingCron ? "Import..." : "Importer paramètres"}
+                </button>
+              </div>
+            </div>
+            <input
+              ref={importCronInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => void importIcalCronConfigFromFile(event)}
+              style={{ display: "none" }}
+            />
+            <div className="field-hint">
+              Cron: {icalCronState?.config.enabled ? "activé" : "désactivé"}. Prochain passage: {formatIsoDateTimeFr(icalCronState?.next_run_at ?? null)}. Dernier passage: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
+            </div>
+            <div className="grid-2" style={{ marginTop: 12 }}>
+              <label className="field">
+                Cron actif
+                <select
+                  value={cronDraft.enabled ? "1" : "0"}
+                  onChange={(event) =>
+                    setCronDraft((previous) => ({
+                      ...previous,
+                      enabled: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingCron}
+                >
+                  <option value="1">Oui</option>
+                  <option value="0">Non</option>
+                </select>
+              </label>
+              <label className="field">
+                Synchroniser au démarrage
+                <select
+                  value={cronDraft.run_on_start ? "1" : "0"}
+                  onChange={(event) =>
+                    setCronDraft((previous) => ({
+                      ...previous,
+                      run_on_start: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingCron}
+                >
+                  <option value="0">Non</option>
+                  <option value="1">Oui</option>
+                </select>
+              </label>
+              <label className="field">
+                Heure
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={cronDraft.hour}
+                  onChange={(event) =>
+                    setCronDraft((previous) => ({
+                      ...previous,
+                      hour: Math.min(23, Math.max(0, Number(event.target.value || 0))),
+                    }))
+                  }
+                  disabled={savingCron}
+                />
+              </label>
+              <label className="field">
+                Minute
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={cronDraft.minute}
+                  onChange={(event) =>
+                    setCronDraft((previous) => ({
+                      ...previous,
+                      minute: Math.min(59, Math.max(0, Number(event.target.value || 0))),
+                    }))
+                  }
+                  disabled={savingCron}
+                />
+              </label>
+            </div>
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button type="button" className="secondary" onClick={() => void saveCronConfig()} disabled={savingCron || syncingIcal || loadingIcalPreview}>
+                {savingCron ? "Enregistrement..." : "Enregistrer le cron"}
+              </button>
+              <button type="button" className="secondary" onClick={() => void runIcalPreview()} disabled={loadingIcalPreview || syncingIcal}>
+                {loadingIcalPreview ? "Lecture iCal..." : "Prévisualiser iCal"}
+              </button>
+              <button type="button" onClick={() => void runIcalSync()} disabled={syncingIcal || loadingIcalPreview}>
+                {syncingIcal ? "Synchronisation..." : "Synchroniser maintenant"}
+              </button>
+            </div>
+            {icalNotice && <div className="note note--success">{icalNotice}</div>}
+            {icalError && <div className="note">{icalError}</div>}
+            {icalPreview && (
+              <div style={{ marginTop: 14 }}>
+                <div className="field-hint" style={{ marginBottom: 8 }}>
+                  Sources lues: {icalPreview.fetched_sources} | Événements: {icalPreview.parsed_events} | Nouveaux: {icalPreview.counts.new} | Complétables: {icalPreview.counts.existing_updatable} | Conflits: {icalPreview.counts.conflict}
+                </div>
+                {icalPreview.errors.length > 0 ? (
+                  <div className="note" style={{ marginBottom: 10 }}>
+                    {icalPreview.errors.length} source(s) en erreur: {icalPreview.errors.map((error) => `${error.gite_nom} (${error.message})`).join(" ; ")}
+                  </div>
+                ) : null}
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Gîte</th>
+                      <th>Dates</th>
+                      <th>Source iCal</th>
+                      <th>Source finale</th>
+                      <th>Statut</th>
+                      <th>Résumé</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {icalPreview.reservations.slice(0, 80).map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.gite_nom}</td>
+                        <td>
+                          {formatIsoDateFr(item.date_entree)} - {formatIsoDateFr(item.date_sortie)}
+                        </td>
+                        <td>{item.source_type}</td>
+                        <td>{item.final_source}</td>
+                        <td>
+                          {statusLabelMap[item.status]}
+                          {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
+                        </td>
+                        <td>{item.summary || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {icalPreview.reservations.length > 80 ? (
+                  <div className="field-hint">Affichage limité aux 80 premières lignes.</div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section id="settings-imports" className="settings-cluster">
+        <div className="settings-cluster__header">
+          <div>
+            <div className="settings-cluster__eyebrow">Imports externes</div>
+            <h2 className="settings-cluster__title">Pump et HAR</h2>
+          </div>
+          <p className="settings-cluster__text">
+            Deux circuits d'intégration dans un même thème: l'automatique pour Pump, le ciblé pour les fichiers HAR.
+          </p>
+        </div>
+        <div className="settings-cluster__grid">
+          <div className="card settings-card settings-card--green settings-card--span-7">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Import automatisé</span>
+              <span className="settings-card__badge">{pumpCronState?.config.enabled ? "Actif" : "En pause"}</span>
+            </div>
+            <div className="section-title">Import Pump</div>
+            <div className="field-hint">
+              Déclenche un refresh dans le repo <code>pump</code>, attend une extraction exploitable, puis crée ou complète les réservations. Le cron utilise le même enchaînement.
+            </div>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Cron: {pumpCronState?.config.enabled ? "activé" : "désactivé"}. Prochain import: {formatIsoDateTimeFr(pumpCronState?.next_run_at ?? null)}. Dernier import: {formatIsoDateTimeFr(pumpCronState?.last_run_at ?? null)}.
+            </div>
+            <div className="grid-2" style={{ marginTop: 12 }}>
+              <label className="field">
+                Cron actif
+                <select
+                  value={pumpCronDraft.enabled ? "1" : "0"}
+                  onChange={(event) =>
+                    setPumpCronDraft((previous) => ({
+                      ...previous,
+                      enabled: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingPumpCron}
+                >
+                  <option value="1">Oui</option>
+                  <option value="0">Non</option>
+                </select>
+              </label>
+              <label className="field">
+                Import au démarrage
+                <select
+                  value={pumpCronDraft.run_on_start ? "1" : "0"}
+                  onChange={(event) =>
+                    setPumpCronDraft((previous) => ({
+                      ...previous,
+                      run_on_start: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingPumpCron}
+                >
+                  <option value="0">Non</option>
+                  <option value="1">Oui</option>
+                </select>
+              </label>
+              <label className="field">
+                Tous les X jours
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={pumpCronDraft.interval_days}
+                  onChange={(event) =>
+                    setPumpCronDraft((previous) => ({
+                      ...previous,
+                      interval_days: Math.min(30, Math.max(1, Number(event.target.value || 1))),
+                    }))
+                  }
+                  disabled={savingPumpCron}
+                />
+              </label>
+              <label className="field">
+                Heure
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={pumpCronDraft.hour}
+                  onChange={(event) =>
+                    setPumpCronDraft((previous) => ({
+                      ...previous,
+                      hour: Math.min(23, Math.max(0, Number(event.target.value || 0))),
+                    }))
+                  }
+                  disabled={savingPumpCron}
+                />
+              </label>
+              <label className="field">
+                Minute
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={pumpCronDraft.minute}
+                  onChange={(event) =>
+                    setPumpCronDraft((previous) => ({
+                      ...previous,
+                      minute: Math.min(59, Math.max(0, Number(event.target.value || 0))),
+                    }))
+                  }
+                  disabled={savingPumpCron}
+                />
+              </label>
+            </div>
+            {pumpCronState?.running ? (
+              <div className="field-hint" style={{ marginTop: 8 }}>Import Pump automatique en cours.</div>
+            ) : null}
+            {pumpCronState?.last_error ? <div className="note" style={{ marginTop: 8 }}>{pumpCronState.last_error}</div> : null}
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button type="button" className="secondary" onClick={() => void savePumpCronConfig()} disabled={savingPumpCron || refreshingPump || analyzingPump || importingPump}>
+                {savingPumpCron ? "Enregistrement..." : "Enregistrer le cron"}
+              </button>
+              <button type="button" className="secondary" onClick={() => void refreshPump()} disabled={refreshingPump || analyzingPump || importingPump || savingPumpCron}>
+                {refreshingPump ? "Refresh..." : "Lancer refresh Pump"}
+              </button>
               <button
                 type="button"
                 className="secondary"
-                onClick={() => void analyzeIcalSourcesImport()}
-                disabled={analyzingSourcesImport || importingSources}
-              >
-                {analyzingSourcesImport ? "Analyse..." : "Analyser"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void importIcalSources()}
-                disabled={
-                  importingSources ||
-                  analyzingSourcesImport ||
-                  !sourceImportPreview ||
-                  sourceImportUnresolvedCount > 0 ||
-                  sourceImportPreview.mapping_errors.length > 0
+                onClick={() =>
+                  void Promise.all([loadPumpStatus(), loadPumpCronState()]).catch((error: any) =>
+                    setPumpError(error.message ?? "Impossible de rafraîchir les informations Pump.")
+                  )
                 }
+                disabled={loadingPumpStatus || refreshingPump}
               >
-                {importingSources ? "Import..." : "Importer"}
+                {loadingPumpStatus ? "Statut..." : "Rafraîchir le statut"}
+              </button>
+              <button type="button" className="secondary" onClick={() => void analyzePump()} disabled={analyzingPump || importingPump || savingPumpCron}>
+                {analyzingPump ? "Analyse..." : "Analyser la dernière extraction"}
+              </button>
+              <button type="button" onClick={() => void importPump()} disabled={importingPump || !pumpPreview || selectedPumpCount === 0 || analyzingPump || savingPumpCron}>
+                {importingPump ? "Import..." : `Importer (${selectedPumpCount})`}
               </button>
             </div>
-            {sourceImportPreview?.mapping_errors.length ? (
-              <div className="note" style={{ marginTop: 8 }}>
-                Mapping invalide: {sourceImportPreview.mapping_errors.map((item) => item.message).join(" ; ")}
+            {pumpStatus ? (
+              <div className="field-hint" style={{ marginTop: 8 }}>
+                Statut: <strong>{pumpStatus.status}</strong>
+                {pumpStatus.sessionId ? ` | Session: ${pumpStatus.sessionId}` : ""}
+                {typeof pumpStatus.reservationCount === "number" ? ` | Réservations: ${pumpStatus.reservationCount}` : ""}
+                {pumpStatus.updatedAt ? ` | Mis à jour: ${formatIsoDateTimeFr(pumpStatus.updatedAt)}` : ""}
               </div>
             ) : null}
-            {sourceImportPreview && sourceImportPreview.unknown_gites.length > 0 ? (
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <div className="field-hint">
-                  Gîtes introuvables: {sourceImportPreview.unknown_gites.length}. Attribuez un gîte local.
+            {pumpNotice && <div className="note note--success">{pumpNotice}</div>}
+            {pumpError && <div className="note">{pumpError}</div>}
+
+            {pumpPreview && (
+              <div style={{ marginTop: 14 }}>
+                <div className="field-hint" style={{ marginBottom: 8 }}>
+                  Source Pump: {pumpPreview.pump?.status ?? "-"}
+                  {pumpPreview.pump?.session_id ? ` | Session: ${pumpPreview.pump.session_id}` : ""}
+                  {pumpPreview.pump?.updated_at ? ` | Mis à jour: ${formatIsoDateTimeFr(pumpPreview.pump.updated_at)}` : ""}
+                </div>
+                <div className="field-hint" style={{ marginBottom: 8 }}>
+                  Total: {pumpPreview.reservations.length} | Nouveaux: {pumpPreview.counts.new} | Complétables: {pumpPreview.counts.existing_updatable} | Déjà présents: {pumpPreview.counts.existing} | Conflits: {pumpPreview.counts.conflict} | Listing non mappé: {pumpPreview.counts.unmapped_listing}
                 </div>
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Gîte import</th>
-                      <th>Lignes</th>
-                      <th>Indices</th>
-                      <th>Attribuer à</th>
+                      <th></th>
+                      <th>Gîte</th>
+                      <th>Dates</th>
+                      <th>Hôte</th>
+                      <th>Prix</th>
+                      <th>Source</th>
+                      <th>Statut</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sourceImportPreview.unknown_gites.map((item) => {
-                      const examples = getUnknownImportExamples(item);
-                      const types = uniqueNonEmpty(
-                        (item.sample_types && item.sample_types.length > 0 ? item.sample_types : [item.sample_type]) as Array<
-                          string | null | undefined
-                        >
-                      );
-                      const hosts = uniqueNonEmpty(
-                        (item.sample_hosts && item.sample_hosts.length > 0
-                          ? item.sample_hosts
-                          : examples.map((example) => extractUrlHost(example.url))) as Array<string | null | undefined>
-                      );
-                      const identifiers = uniqueNonEmpty(
-                        examples.flatMap((example) => extractIcalUrlIdentifiers(example.url))
-                      );
-                      const importLabel = item.sample_gite_nom
-                        ? `${item.sample_gite_nom}${item.sample_gite_prefixe ? ` (${item.sample_gite_prefixe})` : ""}`
-                        : null;
-
+                    {pumpPreview.reservations.slice(0, 120).map((item) => {
+                      const selectable = isHarImportableStatus(item.status);
                       return (
-                        <tr key={item.source_gite_id}>
+                        <tr key={item.id}>
                           <td>
-                            <div style={{ display: "grid", gap: 2 }}>
-                              <div>{importLabel || item.source_gite_id}</div>
-                              {importLabel ? <div className="field-hint">ID: {item.source_gite_id}</div> : null}
-                            </div>
-                          </td>
-                          <td>{item.count}</td>
-                          <td>
-                            <div style={{ display: "grid", gap: 4 }}>
-                              {types.length > 0 ? <div>Type: {types.join(", ")}</div> : null}
-                              {hosts.length > 0 ? <div>Domaine: {hosts.join(", ")}</div> : null}
-                              {identifiers.length > 0 ? <div>Identifiant: {identifiers.join(" | ")}</div> : null}
-                              {item.sample_source_id ? <div className="field-hint">Source: {item.sample_source_id}</div> : null}
-                              {examples.length > 0 ? (
-                                <div className="field-hint" style={{ display: "grid", gap: 2 }}>
-                                  {examples.map((example, index) => (
-                                    <div key={`${item.source_gite_id}-example-${index}`}>
-                                      {(example.type || "-") + " | " + truncateMiddle(example.url || "-")}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td>
-                            <select
-                              value={sourceImportMapping[item.source_gite_id] ?? item.mapped_to ?? ""}
+                            <input
+                              type="checkbox"
+                              checked={Boolean(pumpSelections[item.id])}
+                              disabled={!selectable || importingPump}
                               onChange={(event) =>
-                                setSourceImportMapping((previous) => ({
+                                setPumpSelections((previous) => ({
                                   ...previous,
-                                  [item.source_gite_id]: event.target.value,
+                                  [item.id]: event.target.checked,
                                 }))
                               }
-                              disabled={analyzingSourcesImport || importingSources}
-                            >
-                              <option value="">Choisir un gîte</option>
-                              {gites.map((gite) => (
-                                <option key={gite.id} value={gite.id}>
-                                  {gite.nom} ({gite.prefixe_contrat})
-                                </option>
-                              ))}
-                            </select>
+                            />
+                          </td>
+                          <td>{item.gite_nom ?? item.listing_id}</td>
+                          <td>
+                            {formatIsoDateFr(item.check_in)} - {formatIsoDateFr(item.check_out)}
+                          </td>
+                          <td>{item.hote_nom ?? "-"}</td>
+                          <td>{typeof item.prix_total === "number" ? `${item.prix_total.toFixed(2)} €` : "-"}</td>
+                          <td>{item.source_type}</td>
+                          <td>
+                            {harStatusLabelMap[item.status]}
+                            {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
-                {sourceImportUnresolvedCount > 0 ? (
-                  <div className="field-hint">{sourceImportUnresolvedCount} attribution(s) manquante(s).</div>
-                ) : (
-                  <div className="field-hint">Toutes les attributions sont renseignées.</div>
-                )}
+                {pumpPreview.reservations.length > 120 ? (
+                  <div className="field-hint">Affichage limité aux 120 premières lignes.</div>
+                ) : null}
               </div>
-            ) : null}
+            )}
           </div>
-        ) : null}
-        <details className="settings-sources-accordion">
-          <summary>Sources iCal configurées ({sources.length})</summary>
-          {loadingSources ? (
-            <div className="field-hint">Chargement...</div>
-          ) : sources.length === 0 ? (
-            <div className="field-hint">Aucune source iCal configurée.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {sources.map((source) => (
-                <div key={source.id} className="field-group">
-                  <div className="field-group__header">
-                    <div className="field-group__label">{source.gite?.nom ?? "Gîte inconnu"}</div>
-                    <div className="field-hint">Source #{source.ordre + 1}</div>
-                  </div>
-                  <div className="grid-2">
-                    <label className="field">
-                      Gîte
-                      <select
-                        value={source.gite_id}
-                        onChange={(event) => updateSourceField(source.id, "gite_id", event.target.value)}
-                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                      >
-                        {gites.map((gite) => (
-                          <option key={gite.id} value={gite.id}>
-                            {gite.nom}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="field">
-                      Type
-                      <input
-                        value={source.type}
-                        onChange={(event) => updateSourceField(source.id, "type", event.target.value)}
-                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                      />
-                    </label>
-                    <label className="field">
-                      URL iCal
-                      <input
-                        value={source.url}
-                        onChange={(event) => updateSourceField(source.id, "url", event.target.value)}
-                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                      />
-                    </label>
-                    <label className="field">
-                      Inclure résumé
-                      <input
-                        value={source.include_summary ?? ""}
-                        onChange={(event) => updateSourceField(source.id, "include_summary", event.target.value)}
-                        placeholder="Reserved, BOOKED"
-                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                      />
-                    </label>
-                    <label className="field">
-                      Exclure résumé
-                      <input
-                        value={source.exclude_summary ?? ""}
-                        onChange={(event) => updateSourceField(source.id, "exclude_summary", event.target.value)}
-                        placeholder="Blocked"
-                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                      />
-                    </label>
-                    <label className="field">
-                      Active
-                      <select
-                        value={source.is_active ? "1" : "0"}
-                        onChange={(event) => updateSourceField(source.id, "is_active", event.target.value === "1")}
-                        disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                      >
-                        <option value="1">Oui</option>
-                        <option value="0">Non</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="table-action table-action--primary"
-                      onClick={() => void saveSource(source)}
-                      disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                    >
-                      {savingSourceId === source.id ? "Enregistrement..." : "Enregistrer"}
-                    </button>
-                    <button
-                      type="button"
-                      className="table-action table-action--danger"
-                      onClick={() => void removeSource(source)}
-                      disabled={savingSourceId === source.id || deletingSourceId === source.id}
-                    >
-                      {deletingSourceId === source.id ? "Suppression..." : "Supprimer"}
-                    </button>
-                  </div>
+
+          <div className="card settings-card settings-card--green settings-card--span-5">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Analyse ciblée</span>
+              <span className="settings-card__badge">{harFileName ? "Fichier prêt" : "En attente"}</span>
+            </div>
+            <div className="section-title">Analyse HAR</div>
+            <div className="field-hint">
+              Analyse d'un fichier HAR Airbnb pour créer ou compléter des réservations (nom, source, prix, commentaire).
+            </div>
+            <div className="actions" style={{ marginTop: 12 }}>
+              <label className="table-action table-action--neutral" style={{ cursor: "pointer" }}>
+                Charger un HAR
+                <input
+                  type="file"
+                  accept=".har,application/json"
+                  onChange={(event) => void handleHarFile(event)}
+                  style={{ display: "none" }}
+                />
+              </label>
+              <button type="button" className="secondary" onClick={() => void analyzeHar()} disabled={analyzingHar || !harPayload || importingHar}>
+                {analyzingHar ? "Analyse..." : "Analyser"}
+              </button>
+              <button type="button" onClick={() => void importHar()} disabled={importingHar || !harPreview || selectedHarCount === 0 || analyzingHar}>
+                {importingHar ? "Import..." : `Importer (${selectedHarCount})`}
+              </button>
+            </div>
+            {harFileName ? <div className="field-hint" style={{ marginTop: 8 }}>Fichier: {harFileName}</div> : null}
+            {harNotice && <div className="note note--success">{harNotice}</div>}
+            {harError && <div className="note">{harError}</div>}
+
+            {harPreview && (
+              <div style={{ marginTop: 14 }}>
+                <div className="field-hint" style={{ marginBottom: 8 }}>
+                  Total: {harPreview.reservations.length} | Nouveaux: {harPreview.counts.new} | Complétables: {harPreview.counts.existing_updatable} | Déjà présents: {harPreview.counts.existing} | Conflits: {harPreview.counts.conflict} | Listing non mappé: {harPreview.counts.unmapped_listing}
                 </div>
-              ))}
-            </div>
-          )}
-        </details>
-      </div>
-
-      <div className="card">
-        <div className="settings-managers-header">
-          <div className="section-title">Synchronisation iCal</div>
-          <div className="gites-tools">
-            <button
-              type="button"
-              className="table-action table-action--neutral gites-tool-button"
-              onClick={() => void exportIcalCronConfig()}
-              disabled={exportingCron || importingCron || savingCron || syncingIcal || loadingIcalPreview}
-            >
-              {exportingCron ? "Export..." : "Exporter paramètres"}
-            </button>
-            <button
-              type="button"
-              className="table-action table-action--neutral gites-tool-button"
-              onClick={triggerCronImport}
-              disabled={importingCron || exportingCron || savingCron || syncingIcal || loadingIcalPreview}
-            >
-              {importingCron ? "Import..." : "Importer paramètres"}
-            </button>
-          </div>
-        </div>
-        <input
-          ref={importCronInputRef}
-          type="file"
-          accept=".json,application/json"
-          onChange={(event) => void importIcalCronConfigFromFile(event)}
-          style={{ display: "none" }}
-        />
-        <div className="field-hint">
-          Cron: {icalCronState?.config.enabled ? "activé" : "désactivé"}.
-          {" "}
-          Prochain passage: {formatIsoDateTimeFr(icalCronState?.next_run_at ?? null)}.
-          {" "}
-          Dernier passage: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
-        </div>
-        <div className="grid-2" style={{ marginTop: 12 }}>
-          <label className="field">
-            Cron actif
-            <select
-              value={cronDraft.enabled ? "1" : "0"}
-              onChange={(event) =>
-                setCronDraft((previous) => ({
-                  ...previous,
-                  enabled: event.target.value === "1",
-                }))
-              }
-              disabled={savingCron}
-            >
-              <option value="1">Oui</option>
-              <option value="0">Non</option>
-            </select>
-          </label>
-          <label className="field">
-            Synchroniser au démarrage
-            <select
-              value={cronDraft.run_on_start ? "1" : "0"}
-              onChange={(event) =>
-                setCronDraft((previous) => ({
-                  ...previous,
-                  run_on_start: event.target.value === "1",
-                }))
-              }
-              disabled={savingCron}
-            >
-              <option value="0">Non</option>
-              <option value="1">Oui</option>
-            </select>
-          </label>
-          <label className="field">
-            Heure
-            <input
-              type="number"
-              min={0}
-              max={23}
-              value={cronDraft.hour}
-              onChange={(event) =>
-                setCronDraft((previous) => ({
-                  ...previous,
-                  hour: Math.min(23, Math.max(0, Number(event.target.value || 0))),
-                }))
-              }
-              disabled={savingCron}
-            />
-          </label>
-          <label className="field">
-            Minute
-            <input
-              type="number"
-              min={0}
-              max={59}
-              value={cronDraft.minute}
-              onChange={(event) =>
-                setCronDraft((previous) => ({
-                  ...previous,
-                  minute: Math.min(59, Math.max(0, Number(event.target.value || 0))),
-                }))
-              }
-              disabled={savingCron}
-            />
-          </label>
-        </div>
-        <div className="actions" style={{ marginTop: 12 }}>
-          <button type="button" className="secondary" onClick={() => void saveCronConfig()} disabled={savingCron || syncingIcal || loadingIcalPreview}>
-            {savingCron ? "Enregistrement..." : "Enregistrer le cron"}
-          </button>
-          <button type="button" className="secondary" onClick={() => void runIcalPreview()} disabled={loadingIcalPreview || syncingIcal}>
-            {loadingIcalPreview ? "Lecture iCal..." : "Prévisualiser iCal"}
-          </button>
-          <button type="button" onClick={() => void runIcalSync()} disabled={syncingIcal || loadingIcalPreview}>
-            {syncingIcal ? "Synchronisation..." : "Synchroniser maintenant"}
-          </button>
-        </div>
-        {icalNotice && <div className="note note--success">{icalNotice}</div>}
-        {icalError && <div className="note">{icalError}</div>}
-        {icalPreview && (
-          <div style={{ marginTop: 14 }}>
-            <div className="field-hint" style={{ marginBottom: 8 }}>
-              Sources lues: {icalPreview.fetched_sources} | Événements: {icalPreview.parsed_events} | Nouveaux: {icalPreview.counts.new} | Complétables: {icalPreview.counts.existing_updatable} | Conflits: {icalPreview.counts.conflict}
-            </div>
-            {icalPreview.errors.length > 0 ? (
-              <div className="note" style={{ marginBottom: 10 }}>
-                {icalPreview.errors.length} source(s) en erreur: {icalPreview.errors.map((error) => `${error.gite_nom} (${error.message})`).join(" ; ")}
-              </div>
-            ) : null}
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Gîte</th>
-                  <th>Dates</th>
-                  <th>Source iCal</th>
-                  <th>Source finale</th>
-                  <th>Statut</th>
-                  <th>Résumé</th>
-                </tr>
-              </thead>
-              <tbody>
-                {icalPreview.reservations.slice(0, 80).map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.gite_nom}</td>
-                    <td>
-                      {formatIsoDateFr(item.date_entree)} - {formatIsoDateFr(item.date_sortie)}
-                    </td>
-                    <td>{item.source_type}</td>
-                    <td>{item.final_source}</td>
-                    <td>
-                      {statusLabelMap[item.status]}
-                      {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
-                    </td>
-                    <td>{item.summary || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {icalPreview.reservations.length > 80 ? (
-              <div className="field-hint">Affichage limité aux 80 premières lignes.</div>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="section-title">Import Pump</div>
-        <div className="field-hint">
-          Déclenche un refresh dans le repo <code>pump</code>, attend une extraction exploitable, puis crée ou complète les réservations. Le cron utilise le même enchaînement.
-        </div>
-        <div className="field-hint" style={{ marginTop: 8 }}>
-          Cron: {pumpCronState?.config.enabled ? "activé" : "désactivé"}.
-          {" "}
-          Prochain import: {formatIsoDateTimeFr(pumpCronState?.next_run_at ?? null)}.
-          {" "}
-          Dernier import: {formatIsoDateTimeFr(pumpCronState?.last_run_at ?? null)}.
-        </div>
-        <div className="grid-2" style={{ marginTop: 12 }}>
-          <label className="field">
-            Cron actif
-            <select
-              value={pumpCronDraft.enabled ? "1" : "0"}
-              onChange={(event) =>
-                setPumpCronDraft((previous) => ({
-                  ...previous,
-                  enabled: event.target.value === "1",
-                }))
-              }
-              disabled={savingPumpCron}
-            >
-              <option value="1">Oui</option>
-              <option value="0">Non</option>
-            </select>
-          </label>
-          <label className="field">
-            Import au démarrage
-            <select
-              value={pumpCronDraft.run_on_start ? "1" : "0"}
-              onChange={(event) =>
-                setPumpCronDraft((previous) => ({
-                  ...previous,
-                  run_on_start: event.target.value === "1",
-                }))
-              }
-              disabled={savingPumpCron}
-            >
-              <option value="0">Non</option>
-              <option value="1">Oui</option>
-            </select>
-          </label>
-          <label className="field">
-            Tous les X jours
-            <input
-              type="number"
-              min={1}
-              max={30}
-              value={pumpCronDraft.interval_days}
-              onChange={(event) =>
-                setPumpCronDraft((previous) => ({
-                  ...previous,
-                  interval_days: Math.min(30, Math.max(1, Number(event.target.value || 1))),
-                }))
-              }
-              disabled={savingPumpCron}
-            />
-          </label>
-          <label className="field">
-            Heure
-            <input
-              type="number"
-              min={0}
-              max={23}
-              value={pumpCronDraft.hour}
-              onChange={(event) =>
-                setPumpCronDraft((previous) => ({
-                  ...previous,
-                  hour: Math.min(23, Math.max(0, Number(event.target.value || 0))),
-                }))
-              }
-              disabled={savingPumpCron}
-            />
-          </label>
-          <label className="field">
-            Minute
-            <input
-              type="number"
-              min={0}
-              max={59}
-              value={pumpCronDraft.minute}
-              onChange={(event) =>
-                setPumpCronDraft((previous) => ({
-                  ...previous,
-                  minute: Math.min(59, Math.max(0, Number(event.target.value || 0))),
-                }))
-              }
-              disabled={savingPumpCron}
-            />
-          </label>
-        </div>
-        {pumpCronState?.running ? (
-          <div className="field-hint" style={{ marginTop: 8 }}>Import Pump automatique en cours.</div>
-        ) : null}
-        {pumpCronState?.last_error ? <div className="note" style={{ marginTop: 8 }}>{pumpCronState.last_error}</div> : null}
-        <div className="actions" style={{ marginTop: 12 }}>
-          <button type="button" className="secondary" onClick={() => void savePumpCronConfig()} disabled={savingPumpCron || refreshingPump || analyzingPump || importingPump}>
-            {savingPumpCron ? "Enregistrement..." : "Enregistrer le cron"}
-          </button>
-          <button type="button" className="secondary" onClick={() => void refreshPump()} disabled={refreshingPump || analyzingPump || importingPump || savingPumpCron}>
-            {refreshingPump ? "Refresh..." : "Lancer refresh Pump"}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() =>
-              void Promise.all([loadPumpStatus(), loadPumpCronState()]).catch((error: any) =>
-                setPumpError(error.message ?? "Impossible de rafraîchir les informations Pump.")
-              )
-            }
-            disabled={loadingPumpStatus || refreshingPump}
-          >
-            {loadingPumpStatus ? "Statut..." : "Rafraîchir le statut"}
-          </button>
-          <button type="button" className="secondary" onClick={() => void analyzePump()} disabled={analyzingPump || importingPump || savingPumpCron}>
-            {analyzingPump ? "Analyse..." : "Analyser la dernière extraction"}
-          </button>
-          <button type="button" onClick={() => void importPump()} disabled={importingPump || !pumpPreview || selectedPumpCount === 0 || analyzingPump || savingPumpCron}>
-            {importingPump ? "Import..." : `Importer (${selectedPumpCount})`}
-          </button>
-        </div>
-        {pumpStatus ? (
-          <div className="field-hint" style={{ marginTop: 8 }}>
-            Statut: <strong>{pumpStatus.status}</strong>
-            {pumpStatus.sessionId ? ` | Session: ${pumpStatus.sessionId}` : ""}
-            {typeof pumpStatus.reservationCount === "number" ? ` | Réservations: ${pumpStatus.reservationCount}` : ""}
-            {pumpStatus.updatedAt ? ` | Mis à jour: ${formatIsoDateTimeFr(pumpStatus.updatedAt)}` : ""}
-          </div>
-        ) : null}
-        {pumpNotice && <div className="note note--success">{pumpNotice}</div>}
-        {pumpError && <div className="note">{pumpError}</div>}
-
-        {pumpPreview && (
-          <div style={{ marginTop: 14 }}>
-            <div className="field-hint" style={{ marginBottom: 8 }}>
-              Source Pump: {pumpPreview.pump?.status ?? "-"}
-              {pumpPreview.pump?.session_id ? ` | Session: ${pumpPreview.pump.session_id}` : ""}
-              {pumpPreview.pump?.updated_at ? ` | Mis à jour: ${formatIsoDateTimeFr(pumpPreview.pump.updated_at)}` : ""}
-            </div>
-            <div className="field-hint" style={{ marginBottom: 8 }}>
-              Total: {pumpPreview.reservations.length} | Nouveaux: {pumpPreview.counts.new} | Complétables: {pumpPreview.counts.existing_updatable} | Déjà présents: {pumpPreview.counts.existing} | Conflits: {pumpPreview.counts.conflict} | Listing non mappé: {pumpPreview.counts.unmapped_listing}
-            </div>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Gîte</th>
-                  <th>Dates</th>
-                  <th>Hôte</th>
-                  <th>Prix</th>
-                  <th>Source</th>
-                  <th>Statut</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pumpPreview.reservations.slice(0, 120).map((item) => {
-                  const selectable = isHarImportableStatus(item.status);
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(pumpSelections[item.id])}
-                          disabled={!selectable || importingPump}
-                          onChange={(event) =>
-                            setPumpSelections((previous) => ({
-                              ...previous,
-                              [item.id]: event.target.checked,
-                            }))
-                          }
-                        />
-                      </td>
-                      <td>{item.gite_nom ?? item.listing_id}</td>
-                      <td>
-                        {formatIsoDateFr(item.check_in)} - {formatIsoDateFr(item.check_out)}
-                      </td>
-                      <td>{item.hote_nom ?? "-"}</td>
-                      <td>{typeof item.prix_total === "number" ? `${item.prix_total.toFixed(2)} €` : "-"}</td>
-                      <td>{item.source_type}</td>
-                      <td>
-                        {harStatusLabelMap[item.status]}
-                        {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
-                      </td>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>Gîte</th>
+                      <th>Dates</th>
+                      <th>Hôte</th>
+                      <th>Prix</th>
+                      <th>Source</th>
+                      <th>Statut</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {pumpPreview.reservations.length > 120 ? (
-              <div className="field-hint">Affichage limité aux 120 premières lignes.</div>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="section-title">Analyse HAR</div>
-        <div className="field-hint">
-          Analyse d'un fichier HAR Airbnb pour créer ou compléter des réservations (nom, source, prix, commentaire).
-        </div>
-        <div className="actions" style={{ marginTop: 12 }}>
-          <label className="table-action table-action--neutral" style={{ cursor: "pointer" }}>
-            Charger un HAR
-            <input
-              type="file"
-              accept=".har,application/json"
-              onChange={(event) => void handleHarFile(event)}
-              style={{ display: "none" }}
-            />
-          </label>
-          <button type="button" className="secondary" onClick={() => void analyzeHar()} disabled={analyzingHar || !harPayload || importingHar}>
-            {analyzingHar ? "Analyse..." : "Analyser"}
-          </button>
-          <button type="button" onClick={() => void importHar()} disabled={importingHar || !harPreview || selectedHarCount === 0 || analyzingHar}>
-            {importingHar ? "Import..." : `Importer (${selectedHarCount})`}
-          </button>
-        </div>
-        {harFileName ? <div className="field-hint" style={{ marginTop: 8 }}>Fichier: {harFileName}</div> : null}
-        {harNotice && <div className="note note--success">{harNotice}</div>}
-        {harError && <div className="note">{harError}</div>}
-
-        {harPreview && (
-          <div style={{ marginTop: 14 }}>
-            <div className="field-hint" style={{ marginBottom: 8 }}>
-              Total: {harPreview.reservations.length} | Nouveaux: {harPreview.counts.new} | Complétables: {harPreview.counts.existing_updatable} | Déjà présents: {harPreview.counts.existing} | Conflits: {harPreview.counts.conflict} | Listing non mappé: {harPreview.counts.unmapped_listing}
-            </div>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Gîte</th>
-                  <th>Dates</th>
-                  <th>Hôte</th>
-                  <th>Prix</th>
-                  <th>Source</th>
-                  <th>Statut</th>
-                </tr>
-              </thead>
-              <tbody>
-                {harPreview.reservations.slice(0, 120).map((item) => {
-                  const selectable = isHarImportableStatus(item.status);
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(harSelections[item.id])}
-                          disabled={!selectable || importingHar}
-                          onChange={(event) =>
-                            setHarSelections((previous) => ({
-                              ...previous,
-                              [item.id]: event.target.checked,
-                            }))
-                          }
-                        />
-                      </td>
-                      <td>{item.gite_nom ?? item.listing_id}</td>
-                      <td>
-                        {formatIsoDateFr(item.check_in)} - {formatIsoDateFr(item.check_out)}
-                      </td>
-                      <td>{item.hote_nom ?? "-"}</td>
-                      <td>{typeof item.prix_total === "number" ? `${item.prix_total.toFixed(2)} €` : "-"}</td>
-                      <td>{item.source_type}</td>
-                      <td>
-                        {harStatusLabelMap[item.status]}
-                        {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {harPreview.reservations.length > 120 ? (
-              <div className="field-hint">Affichage limité aux 120 premières lignes.</div>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="settings-managers-header">
-          <div className="section-title">Journal des imports</div>
-          <button type="button" className="secondary" onClick={() => void loadImportLog()} disabled={loadingImportLog}>
-            {loadingImportLog ? "Chargement..." : "Rafraîchir"}
-          </button>
-        </div>
-        {importLogError && <div className="note">{importLogError}</div>}
-        {!importLogError && importLog.length === 0 ? (
-          <div className="field-hint">Aucun import enregistré.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {importLog.map((entry) => (
-              <div key={entry.id} className="field-group">
-                <div className="field-group__header">
-                  <div className="field-group__label">{formatImportSource(entry.source)}</div>
-                  <div className="field-hint">{formatIsoDateTimeFr(entry.at)}</div>
-                </div>
-                <div className="field-hint">
-                  Sélectionnées: {entry.selectionCount ?? 0} | Ajoutées: {entry.inserted ?? 0} | Mises à jour: {entry.updated ?? 0} | Ignorées: {entry.skipped?.unknown ?? 0}
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <div className="field-hint" style={{ marginBottom: 4 }}>Nouvelles réservations</div>
-                  {Array.isArray(entry.insertedItems) && entry.insertedItems.length > 0 ? (
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Gîte</th>
-                          <th>Dates</th>
-                          <th>Source</th>
+                  </thead>
+                  <tbody>
+                    {harPreview.reservations.slice(0, 120).map((item) => {
+                      const selectable = isHarImportableStatus(item.status);
+                      return (
+                        <tr key={item.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(harSelections[item.id])}
+                              disabled={!selectable || importingHar}
+                              onChange={(event) =>
+                                setHarSelections((previous) => ({
+                                  ...previous,
+                                  [item.id]: event.target.checked,
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>{item.gite_nom ?? item.listing_id}</td>
+                          <td>
+                            {formatIsoDateFr(item.check_in)} - {formatIsoDateFr(item.check_out)}
+                          </td>
+                          <td>{item.hote_nom ?? "-"}</td>
+                          <td>{typeof item.prix_total === "number" ? `${item.prix_total.toFixed(2)} €` : "-"}</td>
+                          <td>{item.source_type}</td>
+                          <td>
+                            {harStatusLabelMap[item.status]}
+                            {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {entry.insertedItems.slice(0, 30).map((item, index) => (
-                          <tr key={`${entry.id}-inserted-${index}`}>
-                            <td>{item.giteName || item.giteId || "-"}</td>
-                            <td>
-                              {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
-                            </td>
-                            <td>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                <span
-                                  style={{
-                                    width: 10,
-                                    height: 10,
-                                    borderRadius: "999px",
-                                    background: sourceColor(item.source),
-                                    border: "1px solid rgba(17, 24, 39, 0.2)",
-                                  }}
-                                />
-                                <span>{item.source || "-"}</span>
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div className="field-hint">Aucune nouvelle réservation.</div>
-                  )}
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <div className="field-hint" style={{ marginBottom: 4 }}>Mises à jour</div>
-                  {Array.isArray(entry.updatedItems) && entry.updatedItems.length > 0 ? (
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Gîte</th>
-                          <th>Dates</th>
-                          <th>Source</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {entry.updatedItems.slice(0, 30).map((item, index) => (
-                          <tr key={`${entry.id}-updated-${index}`}>
-                            <td>{item.giteName || item.giteId || "-"}</td>
-                            <td>
-                              {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
-                            </td>
-                            <td>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                <span
-                                  style={{
-                                    width: 10,
-                                    height: 10,
-                                    borderRadius: "999px",
-                                    background: sourceColor(item.source),
-                                    border: "1px solid rgba(17, 24, 39, 0.2)",
-                                  }}
-                                />
-                                <span>{item.source || "-"}</span>
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div className="field-hint">Aucune mise à jour.</div>
-                  )}
-                </div>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {harPreview.reservations.length > 120 ? (
+                  <div className="field-hint">Affichage limité aux 120 premières lignes.</div>
+                ) : null}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      </section>
     </div>
   );
 };

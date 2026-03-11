@@ -45,6 +45,7 @@ model Gite {
   arrhes_taux_defaut                   Float  @default(0.2)
   prix_nuit_liste                      String?
   caracteristiques                     String?
+  ical_export_token                    String?
   gestionnaire_id                      String?
   createdAt                            DateTime @default(now())
   updatedAt                            DateTime @updatedAt
@@ -58,6 +59,7 @@ model Gite {
   facture_counters                     FactureCounter[]
 
   @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
+  @@index([ical_export_token], map: "gites_ical_export_token_idx")
   @@index([ordre], map: "gites_ordre_idx")
   @@map("gites")
 }
@@ -232,6 +234,9 @@ model Reservation {
   id                       String                  @id @default(cuid())
   gite_id                  String?
   placeholder_id           String?
+  origin_system            String?
+  origin_reference         String?
+  export_to_ical           Boolean?
   hote_nom                 String
   date_entree              DateTime
   date_sortie              DateTime
@@ -255,6 +260,8 @@ model Reservation {
   placeholder              ReservationPlaceholder? @relation(fields: [placeholder_id], references: [id])
 
   @@index([gite_id, date_entree])
+  @@index([gite_id, export_to_ical, date_entree], map: "reservations_gite_export_to_ical_date_entree_idx")
+  @@index([origin_system, origin_reference], map: "reservations_origin_system_origin_reference_idx")
   @@index([placeholder_id, date_entree])
   @@map("reservations")
 }

@@ -29,6 +29,7 @@ import {
   readDeclarationNightsSettings,
   writeDeclarationNightsSettings,
 } from "../services/declarationNightsSettings.js";
+import { generateIcalExportToken } from "../utils/reservationOrigin.js";
 
 const router = Router();
 
@@ -258,6 +259,61 @@ router.get("/ical-sources", async (_req, res, next) => {
   try {
     const sources = await listIcalSources(false);
     res.json(sources);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/ical-exports", async (_req, res, next) => {
+  try {
+    const gites = await prisma.gite.findMany({
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      select: {
+        id: true,
+        nom: true,
+        prefixe_contrat: true,
+        ordre: true,
+        ical_export_token: true,
+        _count: { select: { reservations: true } },
+      },
+    });
+
+    res.json(
+      gites.map((gite) => ({
+        id: gite.id,
+        nom: gite.nom,
+        prefixe_contrat: gite.prefixe_contrat,
+        ordre: gite.ordre,
+        ical_export_token: gite.ical_export_token ?? null,
+        reservations_count: gite._count.reservations,
+      }))
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/ical-exports/:giteId/reset-token", async (req, res, next) => {
+  try {
+    const gite = await prisma.gite.update({
+      where: { id: req.params.giteId },
+      data: { ical_export_token: generateIcalExportToken() },
+      select: {
+        id: true,
+        nom: true,
+        prefixe_contrat: true,
+        ordre: true,
+        ical_export_token: true,
+      },
+    });
+
+    res.json({
+      id: gite.id,
+      nom: gite.nom,
+      prefixe_contrat: gite.prefixe_contrat,
+      ordre: gite.ordre,
+      ical_export_token: gite.ical_export_token,
+    });
   } catch (error) {
     next(error);
   }

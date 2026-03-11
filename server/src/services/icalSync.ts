@@ -14,6 +14,7 @@ import {
   shouldPreferIcalReservation,
   shouldUpdateIcalReservationSource,
 } from "../utils/icalReservationSource.js";
+import { buildReservationOriginData, getReservationOriginSystem } from "../utils/reservationOrigin.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -549,6 +550,11 @@ const toCreatePayload = (reservation: IcalPreviewItem) => {
   return {
     gite_id: reservation.gite_id,
     placeholder_id: null,
+    ...buildReservationOriginData({
+      originSystem: "ical",
+      originReference: reservation.uid || reservation.id,
+      exportToIcal: false,
+    }),
     hote_nom: normalizeImportedHostName(reservation.hote_nom) ?? "",
     date_entree: dateEntree,
     date_sortie: dateSortie,
@@ -612,6 +618,8 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       hote_nom: true,
       date_entree: true,
       date_sortie: true,
+      origin_system: true,
+      export_to_ical: true,
       source_paiement: true,
       commentaire: true,
     },
@@ -627,10 +635,18 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
     const managedSources = sourceByGite.get(giteId);
     if (!managedSources || managedSources.size === 0) continue;
 
+    const originSystem = getReservationOriginSystem(reservation);
+    if (originSystem === "app" || originSystem === "what-today") {
+      continue;
+    }
+
     const hasMarker = hasIcalToVerifyMarker(reservation.commentaire);
     const normalizedSource = normalizeSource(String(reservation.source_paiement ?? ""));
     const likelyManagedByIcal =
-      hasMarker || managedSources.has(normalizedSource) || (normalizedSource === DEFAULT_SOURCE && isUnknownHostName(reservation.hote_nom));
+      originSystem === "ical" ||
+      hasMarker ||
+      managedSources.has(normalizedSource) ||
+      (normalizedSource === DEFAULT_SOURCE && isUnknownHostName(reservation.hote_nom));
     if (!likelyManagedByIcal) continue;
 
     const periodKey = getReservationPeriodKey({
