@@ -210,7 +210,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       gite_id: "g1",
       locataire_nom: "Client Facture",
       locataire_adresse: "Adresse",
-      locataire_tel: "0700000001",
+      locataire_tel: "",
       nb_adultes: 2,
       nb_enfants_2_17: 1,
       date_debut: "2026-03-01",

@@ -39,7 +39,7 @@ const invoiceSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
   locataire_adresse: z.string().optional().default(""),
-  locataire_tel: z.string().min(1),
+  locataire_tel: z.string().trim().optional().default(""),
   nb_adultes: z.number().int().min(1),
   nb_enfants_2_17: z.number().int().min(0),
   date_debut: z.string().min(1),
