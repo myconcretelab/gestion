@@ -543,31 +543,72 @@ const SettingsPage = () => {
     () => icalExports.filter((feed) => Boolean(feed.ical_export_token)).length,
     [icalExports]
   );
-  const enabledAutomationCount = useMemo(
-    () => Number(Boolean(icalCronState?.config.enabled)) + Number(Boolean(pumpCronState?.config.enabled)),
-    [icalCronState, pumpCronState]
-  );
-  const importHeroSummary = useMemo(() => {
-    if (loadingImportLog && importLog.length === 0 && importLogTotal === 0) {
-      return "Chargement des derniers imports...";
-    }
-    if (importLogError && importLog.length === 0) {
-      return "Le journal des imports est indisponible pour le moment.";
-    }
-    if (importLog.length === 0) {
-      return "Aucun import enregistré pour l'instant. Les prochains imports iCal, Pump ou HAR apparaîtront ici avec leur date, leur heure et leur volume.";
-    }
-
+  const importHeroStats = useMemo(() => {
     const totalImports = importLogTotal > 0 ? importLogTotal : importLog.length;
-    const latestImport = importLog[0];
+    const latestImport = importLog[0] ?? null;
     const previousImport = importLog[1] ?? null;
-    const latestSummary = `Dernier import ${formatImportSource(latestImport.source)} le ${formatDateFr(latestImport.at)} à ${formatTimeFr(latestImport.at)}: ${latestImport.selectionCount ?? 0} réservation(s) sélectionnée(s), ${latestImport.inserted ?? 0} ajoutée(s), ${latestImport.updated ?? 0} mise(s) à jour.`;
 
-    if (!previousImport) {
-      return `${totalImports} import(s) enregistré(s). ${latestSummary}`;
+    if (!latestImport) {
+      return [
+        {
+          label: "Source",
+          value: loadingImportLog ? "..." : "-",
+          detail: importLogError ? "journal indisponible" : "aucun import récent",
+          tone: "rose",
+        },
+        {
+          label: "Date",
+          value: loadingImportLog ? "..." : "-",
+          detail: "dernier passage",
+          tone: "blue",
+        },
+        {
+          label: "Heure",
+          value: loadingImportLog ? "..." : "-",
+          detail: "dernier passage",
+          tone: "amber",
+        },
+        {
+          label: "Imports",
+          value: String(totalImports),
+          detail: importLogError ? "journal indisponible" : "historique vide",
+          tone: "green",
+        },
+      ] as const;
     }
 
-    return `${totalImports} import(s) enregistré(s). ${latestSummary} Précédent ${formatImportSource(previousImport.source)} le ${formatDateFr(previousImport.at)} à ${formatTimeFr(previousImport.at)}.`;
+    const latestSource = formatImportSource(latestImport.source);
+    const latestDate = formatDateFr(latestImport.at);
+    const latestTime = formatTimeFr(latestImport.at);
+    const latestVolume = `${latestImport.selectionCount ?? 0} sélectionnée(s)`;
+    const latestChanges = `${latestImport.inserted ?? 0} ajoutée(s) • ${latestImport.updated ?? 0} mise(s) à jour`;
+
+    return [
+      {
+        label: "Source",
+        value: latestSource,
+        detail: previousImport ? `précédent ${formatImportSource(previousImport.source)}` : "dernier import",
+        tone: "rose",
+      },
+      {
+        label: "Date",
+        value: latestDate,
+        detail: previousImport ? formatDateFr(previousImport.at) : "dernier passage",
+        tone: "blue",
+      },
+      {
+        label: "Heure",
+        value: latestTime,
+        detail: latestVolume,
+        tone: "amber",
+      },
+      {
+        label: "Imports",
+        value: String(totalImports),
+        detail: latestChanges,
+        tone: "green",
+      },
+    ] as const;
   }, [importLog, importLogError, importLogTotal, loadingImportLog]);
   const groupedIcalSources = useMemo(() => {
     const giteLookup = new Map(gites.map((gite) => [gite.id, gite]));
@@ -1360,29 +1401,28 @@ const SettingsPage = () => {
         <div className="settings-hero__main">
           <div className="settings-hero__eyebrow">Tableau de bord</div>
           <h1 className="settings-hero__title">Paramètres</h1>
-          <p className="settings-hero__text">{importHeroSummary}</p>
+          <p className="settings-hero__text">
+            Une vue plus claire pour piloter l'équipe, la diffusion iCal et les imports externes depuis un seul espace.
+          </p>
         </div>
         <div className="settings-hero__stats">
-          <div className="settings-kpi settings-kpi--rose">
-            <span className="settings-kpi__label">Gestionnaires</span>
-            <strong>{gestionnaires.length}</strong>
-            <span className="settings-kpi__detail">{linkedGitesCount} gîte(s) réparti(s)</span>
-          </div>
-          <div className="settings-kpi settings-kpi--blue">
-            <span className="settings-kpi__label">Sources iCal</span>
-            <strong>{activeIcalSourcesCount}</strong>
-            <span className="settings-kpi__detail">{sources.length} source(s) configurée(s)</span>
-          </div>
-          <div className="settings-kpi settings-kpi--amber">
-            <span className="settings-kpi__label">Automatisations</span>
-            <strong>{enabledAutomationCount}</strong>
-            <span className="settings-kpi__detail">iCal + Pump actifs</span>
-          </div>
-          <div className="settings-kpi settings-kpi--green">
-            <span className="settings-kpi__label">Exports OTA</span>
-            <strong>{readyIcalExportsCount}</strong>
-            <span className="settings-kpi__detail">{icalExports.length} flux publiables</span>
-          </div>
+          {importHeroStats.map((item) => (
+            <div key={item.label} className={`settings-kpi settings-kpi--${item.tone}`}>
+              <span className="settings-kpi__label">{item.label}</span>
+              <strong
+                className={[
+                  "settings-kpi__value",
+                  item.value.length > 10 ? "settings-kpi__value--compact" : "",
+                  item.value.length > 14 ? "settings-kpi__value--dense" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {item.value}
+              </strong>
+              <span className="settings-kpi__detail">{item.detail}</span>
+            </div>
+          ))}
         </div>
       </section>
 

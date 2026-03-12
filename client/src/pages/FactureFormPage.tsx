@@ -556,7 +556,7 @@ const FactureFormPage = () => {
             {renderFieldError("locataire_adresse")}
           </label>
           <label className={getFieldClassName("locataire_tel")}>
-            Téléphone client
+            Téléphone client (optionnel)
             <input
               value={locataireTel}
               onChange={(e) => {

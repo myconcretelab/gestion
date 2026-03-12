@@ -935,6 +935,8 @@ const buildInvoiceHtml = async (params: {
   const soldeLabel = statutPaiement === "reglee" ? "Montant déjà payé" : "Reste à régler";
   const nbNuits = params.totals.nbNuits;
   const nightsLabel = formatCountLabel(nbNuits, "nuit");
+  const clientTel = params.invoice.locataire_tel.trim();
+  const clientTelLineHtml = clientTel ? `<div class="line">Téléphone: ${escapeHtml(clientTel)}</div>` : "";
   const occupancyLabel = `${formatCountLabel(params.invoice.nb_adultes, "adulte")}, ${formatCountLabel(
     params.invoice.nb_enfants_2_17,
     "enfant"
@@ -961,7 +963,7 @@ const buildInvoiceHtml = async (params: {
     proprietairesContactHtml: buildProprietairesContactHtml(params.gite),
     clientNom: params.invoice.locataire_nom,
     clientAdresseHtml: buildLocataireAdresseHtml(params.invoice.locataire_adresse),
-    clientTel: params.invoice.locataire_tel,
+    clientTelLineHtml,
     periodStart: formatOptionalDate(params.invoice.date_debut),
     periodEnd: formatOptionalDate(params.invoice.date_fin),
     nightsLabel,

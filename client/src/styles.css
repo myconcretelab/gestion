@@ -655,17 +655,31 @@ body {
 
 .settings-kpi {
   display: grid;
-  gap: 4px;
-  padding: 18px;
+  align-content: start;
+  gap: 8px;
+  min-height: 148px;
+  padding: 20px;
   border-radius: 20px;
   border: 1px solid transparent;
   background: #f8fafc;
 }
 
-.settings-kpi strong {
-  font-size: 2rem;
-  line-height: 1;
+.settings-kpi__value {
+  font-size: clamp(1.45rem, 1.5vw + 0.9rem, 2rem);
+  line-height: 1.05;
   letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.settings-kpi__value--compact {
+  font-size: clamp(1.15rem, 1vw + 0.9rem, 1.45rem);
+  line-height: 1.15;
+}
+
+.settings-kpi__value--dense {
+  font-size: 1.05rem;
+  line-height: 1.2;
 }
 
 .settings-kpi__label {
@@ -677,7 +691,9 @@ body {
 .settings-kpi__detail {
   font-size: 0.78rem;
   font-weight: 600;
+  line-height: 1.45;
   color: #64748b;
+  text-wrap: balance;
 }
 
 .settings-kpi--rose {
