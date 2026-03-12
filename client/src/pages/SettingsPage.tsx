@@ -251,6 +251,23 @@ const formatIsoDateFr = (value: string) => {
   return parsed.toLocaleDateString("fr-FR");
 };
 
+const formatDateFr = (value: string | null) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("fr-FR");
+};
+
+const formatTimeFr = (value: string | null) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 const formatIsoDateTimeFr = (value: string | null) => {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -530,6 +547,28 @@ const SettingsPage = () => {
     () => Number(Boolean(icalCronState?.config.enabled)) + Number(Boolean(pumpCronState?.config.enabled)),
     [icalCronState, pumpCronState]
   );
+  const importHeroSummary = useMemo(() => {
+    if (loadingImportLog && importLog.length === 0 && importLogTotal === 0) {
+      return "Chargement des derniers imports...";
+    }
+    if (importLogError && importLog.length === 0) {
+      return "Le journal des imports est indisponible pour le moment.";
+    }
+    if (importLog.length === 0) {
+      return "Aucun import enregistré pour l'instant. Les prochains imports iCal, Pump ou HAR apparaîtront ici avec leur date, leur heure et leur volume.";
+    }
+
+    const totalImports = importLogTotal > 0 ? importLogTotal : importLog.length;
+    const latestImport = importLog[0];
+    const previousImport = importLog[1] ?? null;
+    const latestSummary = `Dernier import ${formatImportSource(latestImport.source)} le ${formatDateFr(latestImport.at)} à ${formatTimeFr(latestImport.at)}: ${latestImport.selectionCount ?? 0} réservation(s) sélectionnée(s), ${latestImport.inserted ?? 0} ajoutée(s), ${latestImport.updated ?? 0} mise(s) à jour.`;
+
+    if (!previousImport) {
+      return `${totalImports} import(s) enregistré(s). ${latestSummary}`;
+    }
+
+    return `${totalImports} import(s) enregistré(s). ${latestSummary} Précédent ${formatImportSource(previousImport.source)} le ${formatDateFr(previousImport.at)} à ${formatTimeFr(previousImport.at)}.`;
+  }, [importLog, importLogError, importLogTotal, loadingImportLog]);
   const groupedIcalSources = useMemo(() => {
     const giteLookup = new Map(gites.map((gite) => [gite.id, gite]));
     const groups = new Map<
@@ -1321,9 +1360,7 @@ const SettingsPage = () => {
         <div className="settings-hero__main">
           <div className="settings-hero__eyebrow">Tableau de bord</div>
           <h1 className="settings-hero__title">Paramètres</h1>
-          <p className="settings-hero__text">
-            Une vue plus claire pour piloter l'équipe, la diffusion iCal et les imports externes depuis un seul espace.
-          </p>
+          <p className="settings-hero__text">{importHeroSummary}</p>
         </div>
         <div className="settings-hero__stats">
           <div className="settings-kpi settings-kpi--rose">
