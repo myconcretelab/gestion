@@ -93,8 +93,22 @@ const previewSchema = z.object({
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
 });
 
+const hydrateContractMoneyFields = (contract: any) => ({
+  ...contract,
+  prix_par_nuit: toNumber(contract.prix_par_nuit),
+  remise_montant: toNumber(contract.remise_montant),
+  taxe_sejour_calculee:
+    contract.taxe_sejour_calculee === null || contract.taxe_sejour_calculee === undefined
+      ? contract.taxe_sejour_calculee
+      : toNumber(contract.taxe_sejour_calculee),
+  arrhes_montant: toNumber(contract.arrhes_montant),
+  solde_montant: toNumber(contract.solde_montant),
+  caution_montant: toNumber(contract.caution_montant),
+  cheque_menage_montant: toNumber(contract.cheque_menage_montant),
+});
+
 const hydrateContract = (contrat: any) => ({
-  ...contrat,
+  ...hydrateContractMoneyFields(contrat),
   options: fromJsonString<OptionsInput>(contrat.options, {}),
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,

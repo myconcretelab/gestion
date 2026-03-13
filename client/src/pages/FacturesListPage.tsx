@@ -126,44 +126,47 @@ const FacturesListPage = () => {
             </tr>
           </thead>
           <tbody>
-            {factures.map((facture) => (
-              <tr key={facture.id}>
-                <td>
-                  {formatDate(facture.date_debut)} - {formatDate(facture.date_fin)}
-                </td>
-                <td>{facture.gite?.nom ?? ""}</td>
-                <td>{facture.locataire_nom}</td>
-                <td>{formatEuro((facture.solde_montant ?? 0) + (facture.arrhes_montant ?? 0))}</td>
-                <td>
-                  <div className="switch-group switch-group--table">
-                    <label className="switch">
-                      <input
-                        type="checkbox"
-                        checked={facture.statut_paiement === "reglee"}
-                        disabled={Boolean(statusUpdating[facture.id])}
-                        onChange={() => togglePayment(facture)}
-                      />
-                      <span className="slider" />
-                    </label>
-                    <span>{facture.statut_paiement === "reglee" ? "Oui" : "Non"}</span>
-                  </div>
-                </td>
-                <td className="table-actions-cell">
-                  <div className="table-actions">
-                    <Link className="table-action table-action--neutral" to={`/factures/${facture.id}`}>
-                      Détails
-                    </Link>
-                    <button
-                      className="table-action table-action--danger"
-                      onClick={() => remove(facture)}
-                      disabled={deletingId === facture.id}
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {factures.map((facture) => {
+              const totalMontant = Number(facture.solde_montant ?? 0) + Number(facture.arrhes_montant ?? 0);
+              return (
+                <tr key={facture.id}>
+                  <td>
+                    {formatDate(facture.date_debut)} - {formatDate(facture.date_fin)}
+                  </td>
+                  <td>{facture.gite?.nom ?? ""}</td>
+                  <td>{facture.locataire_nom}</td>
+                  <td>{formatEuro(totalMontant)}</td>
+                  <td>
+                    <div className="switch-group switch-group--table">
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={facture.statut_paiement === "reglee"}
+                          disabled={Boolean(statusUpdating[facture.id])}
+                          onChange={() => togglePayment(facture)}
+                        />
+                        <span className="slider" />
+                      </label>
+                      <span>{facture.statut_paiement === "reglee" ? "Oui" : "Non"}</span>
+                    </div>
+                  </td>
+                  <td className="table-actions-cell">
+                    <div className="table-actions">
+                      <Link className="table-action table-action--neutral" to={`/factures/${facture.id}`}>
+                        Détails
+                      </Link>
+                      <button
+                        className="table-action table-action--danger"
+                        onClick={() => remove(facture)}
+                        disabled={deletingId === facture.id}
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

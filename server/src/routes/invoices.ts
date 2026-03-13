@@ -90,8 +90,22 @@ const previewSchema = z.object({
   statut_paiement: z.enum(["non_reglee", "reglee"]).optional(),
 });
 
+const hydrateInvoiceMoneyFields = (invoice: any) => ({
+  ...invoice,
+  prix_par_nuit: toNumber(invoice.prix_par_nuit),
+  remise_montant: toNumber(invoice.remise_montant),
+  taxe_sejour_calculee:
+    invoice.taxe_sejour_calculee === null || invoice.taxe_sejour_calculee === undefined
+      ? invoice.taxe_sejour_calculee
+      : toNumber(invoice.taxe_sejour_calculee),
+  arrhes_montant: toNumber(invoice.arrhes_montant),
+  solde_montant: toNumber(invoice.solde_montant),
+  caution_montant: toNumber(invoice.caution_montant),
+  cheque_menage_montant: toNumber(invoice.cheque_menage_montant),
+});
+
 const hydrateInvoice = (contrat: any) => ({
-  ...contrat,
+  ...hydrateInvoiceMoneyFields(contrat),
   options: fromJsonString<OptionsInput>(contrat.options, {}),
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,

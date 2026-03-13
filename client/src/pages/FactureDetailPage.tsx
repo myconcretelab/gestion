@@ -36,6 +36,7 @@ const FactureDetailPage = () => {
   if (!facture) return <div>Chargement...</div>;
 
   const isPaid = facture.statut_paiement === "reglee";
+  const totalMontant = Number(facture.solde_montant ?? 0) + Number(facture.arrhes_montant ?? 0);
   const phoneHref = facture.locataire_tel ? facture.locataire_tel.replace(/\s+/g, "") : "";
   const pdfVersion = facture.date_derniere_modif ?? facture.date_creation ?? Date.now();
   const pdfUrl = `/api/invoices/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
@@ -89,9 +90,7 @@ const FactureDetailPage = () => {
 
           <div className={`arrhes-card ${isPaid ? "arrhes-card--paid" : "arrhes-card--pending"}`}>
             <div className="arrhes-label">Paiement</div>
-            <div className="arrhes-amount">
-              {formatEuro((facture.solde_montant ?? 0) + (facture.arrhes_montant ?? 0))}
-            </div>
+            <div className="arrhes-amount">{formatEuro(totalMontant)}</div>
             <div className={`arrhes-status ${isPaid ? "arrhes-status--paid" : "arrhes-status--pending"}`}>
               {isPaid ? "Réglée" : "En attente"}
             </div>
