@@ -8,326 +8,655 @@
         size: A4;
         margin: 0;
       }
+
+      :root {
+        --paper: #fbf8f0;
+        --paper-strong: #f4ecdc;
+        --ink: #2f2a22;
+        --ink-soft: #62584d;
+        --sage: #8d9d7f;
+        --sage-deep: #6d7c63;
+        --olive: #b8ab57;
+        --coral: #ef735d;
+        --rose: #efddd5;
+        --line: rgba(115, 97, 70, 0.24);
+        --line-strong: rgba(109, 124, 99, 0.45);
+        --shadow: rgba(94, 74, 48, 0.08);
+      }
+
       * {
         box-sizing: border-box;
       }
+
       body {
         margin: 0;
-        font-family: "Helvetica Neue", Arial, sans-serif;
-        font-size: 10.5pt;
-        line-height: 1.3;
-        color: #111;
-        background: #fff;
+        font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+        font-size: 10.3pt;
+        line-height: 1.4;
+        color: var(--ink);
+        background: var(--paper);
       }
+
       .page {
+        position: relative;
         width: 100%;
         min-height: 297mm;
-        padding: 11.2mm 11.2mm 12mm;
+        padding: 12.5mm 12.2mm 12.4mm;
         display: flex;
         flex-direction: column;
-        gap: 5.8mm;
+        gap: 5.1mm;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.92) 0, rgba(255, 255, 255, 0) 35%),
+          linear-gradient(180deg, #fffdf8 0%, #fbf8f0 100%);
       }
-      .top {
+
+      .page > * {
+        position: relative;
+        z-index: 1;
+      }
+
+      .motif {
+        position: absolute;
+        z-index: 0;
+        width: 66mm;
+        height: 53mm;
+        opacity: 0.46;
+      }
+
+      .motif--top {
+        top: -8mm;
+        right: -7mm;
+      }
+
+      .motif--bottom {
+        bottom: -10mm;
+        left: -9mm;
+        transform: rotate(184deg);
+      }
+
+      .hero {
         display: grid;
-        grid-template-columns: 1.45fr 1fr;
-        gap: 8.4mm;
+        grid-template-columns: minmax(0, 1.5fr) 69mm;
+        gap: 7.2mm;
         align-items: start;
       }
-      .kicker {
-        font-size: 8.8pt;
-        color: #444;
+
+      .section-title,
+      .meta-label,
+      .bank-title,
+      th {
         text-transform: uppercase;
-        letter-spacing: 0.11em;
+        letter-spacing: 0.16em;
+        font-size: 7.8pt;
         font-weight: 700;
+        color: var(--sage-deep);
       }
-      .title {
-        margin: 1mm 0 0;
-        font-family: "Times New Roman", Times, serif;
-        font-size: 22pt;
-        letter-spacing: 0.6px;
-        line-height: 1.08;
+
+      .brand-logo {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.1mm;
+        color: var(--sage-deep);
+        line-height: 0.92;
+        text-shadow: 0 0.3mm 0 rgba(255, 255, 255, 0.7);
       }
-      .title-number {
-        display: inline-block;
-        margin-left: 1.2mm;
-        font-size: 16.2pt;
-        color: #666;
-        letter-spacing: 0.3px;
-        white-space: nowrap;
+
+      .brand-logo__small,
+      .brand-logo__tiny,
+      .brand-logo__large {
+        font-family: "Snell Roundhand", "Brush Script MT", "Lucida Handwriting", cursive;
+        font-weight: 600;
       }
+
+      .brand-logo__small {
+        font-size: 24pt;
+      }
+
+      .brand-logo__tiny {
+        position: relative;
+        align-self: center;
+        padding: 0 12mm;
+        font-size: 16pt;
+      }
+
+      .brand-logo__tiny::before,
+      .brand-logo__tiny::after {
+        content: "";
+        position: absolute;
+        top: 54%;
+        width: 9.4mm;
+        border-top: 1px solid rgba(109, 124, 99, 0.65);
+      }
+
+      .brand-logo__tiny::before {
+        left: 0;
+        border-radius: 100% 0 0 100%;
+        transform: translateY(-50%) rotate(-5deg);
+      }
+
+      .brand-logo__tiny::after {
+        right: 0;
+        border-radius: 0 100% 100% 0;
+        transform: translateY(-50%) rotate(5deg);
+      }
+
+      .brand-logo__large {
+        margin-top: -1mm;
+        font-size: 31pt;
+      }
+
       .subtitle {
-        margin-top: 0.8mm;
-        font-family: "Times New Roman", Times, serif;
-        font-size: 13.2pt;
+        margin-top: 3.1mm;
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+        font-size: 13.4pt;
         font-weight: 700;
-        letter-spacing: 0.2px;
+        color: var(--ink);
       }
-      .muted {
-        color: #444;
-        font-size: 9.3pt;
+
+      .muted,
+      .line,
+      p {
+        color: var(--ink-soft);
+        font-size: 9.4pt;
       }
+
+      p {
+        margin: 0 0 1.5mm;
+      }
+
+      .hero-main .line,
+      .hero-main .muted {
+        margin-bottom: 0.7mm;
+      }
+
+      .host-block {
+        margin-top: 2.5mm;
+        padding-top: 2.5mm;
+        max-width: 105mm;
+        border-top: 1px solid rgba(109, 124, 99, 0.22);
+      }
+
+      .link {
+        color: var(--ink-soft);
+        font-size: 9.2pt;
+      }
+
       .box {
-        border: 1px solid #222;
-        padding: 4mm 4.4mm;
-        background: #fff;
-        border-radius: 0;
+        border: 1px solid var(--line);
+        border-radius: 4mm;
+        padding: 4.2mm 4.6mm;
+        background: rgba(255, 253, 248, 0.96);
+        box-shadow: 0 1.4mm 4mm var(--shadow);
       }
-      .box--meta {
-        border: none;
-        padding: 0;
-        background: transparent;
+
+      .invoice-summary {
+        padding: 4.6mm 4.8mm;
+        background: rgba(255, 253, 248, 0.97);
+        border-color: rgba(184, 171, 87, 0.3);
       }
+
+      .invoice-number {
+        margin: 1.5mm 0 3.4mm;
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+        font-size: 18.5pt;
+        line-height: 1.08;
+        color: var(--ink);
+      }
+
+      .invoice-number span {
+        display: block;
+        margin-top: 0.9mm;
+        font-size: 12.4pt;
+        letter-spacing: 0.07em;
+        color: var(--coral);
+      }
+
       .meta-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 2.8mm 3.8mm;
+        gap: 3mm;
       }
+
       .meta-grid.meta-grid--single {
         grid-template-columns: minmax(0, 1fr);
       }
-      .meta-label {
-        display: block;
-        font-size: 8pt;
-        color: #444;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 700;
-      }
+
       .meta-value {
         display: block;
-        margin-top: 0.8mm;
-        font-size: 10pt;
+        margin-top: 0.9mm;
+        font-size: 10.2pt;
         font-weight: 700;
+        color: var(--ink);
       }
-      .section-title {
-        margin: 0 0 2.2mm;
-        font-size: 8.5pt;
-        color: #444;
-        text-transform: uppercase;
-        letter-spacing: 0.11em;
-        font-weight: 700;
-      }
-      .line {
-        margin: 1mm 0;
-        font-size: 10pt;
-      }
-      .client-period {
+
+      .info-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 5mm;
+        grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+        gap: 4.8mm;
       }
-      .period-panel {
-        border-top: 2px solid #444;
-        border-bottom: 1px solid #777;
-        padding: 3.3mm 0.4mm 3mm;
+
+      .section-title {
+        margin: 0 0 2.3mm;
       }
-      .period-main {
-        font-family: "Times New Roman", Times, serif;
-        font-size: 15pt;
+
+      .stay-card {
+        background: rgba(255, 253, 248, 0.98);
+        border-color: rgba(239, 115, 93, 0.24);
+      }
+
+      .stay-dates {
+        display: grid;
+        gap: 1mm;
+      }
+
+      .stay-date-row {
+        display: grid;
+        grid-template-columns: 10mm minmax(0, 1fr);
+        align-items: baseline;
+        column-gap: 2.3mm;
+      }
+
+      .stay-date-label {
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+        font-size: 11.2pt;
+        font-weight: 600;
+        color: var(--sage-deep);
+        text-transform: lowercase;
+      }
+
+      .stay-date-value {
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+        font-size: 18.8pt;
         font-weight: 700;
-        letter-spacing: 0.4px;
-        margin-bottom: 1.3mm;
+        line-height: 1.02;
+        color: var(--ink);
       }
-      .period-dates {
-        font-size: 11pt;
-        font-weight: 700;
-        line-height: 1.15;
+
+      .stay-meta {
+        margin-top: 3mm;
+        padding-top: 2.4mm;
+        border-top: 1px solid rgba(239, 115, 93, 0.18);
       }
-      .period-sub {
-        margin-top: 1.5mm;
-        font-size: 9.2pt;
-        color: #333;
+
+      .stay-meta-line {
+        font-size: 9.3pt;
+        font-weight: 600;
+        color: var(--ink-soft);
       }
+
+      .stay-meta-line + .stay-meta-line {
+        margin-top: 0.8mm;
+      }
+
+      .details-card {
+        padding-bottom: 3.8mm;
+      }
+
       table {
         width: 100%;
         border-collapse: collapse;
       }
+
       th,
       td {
-        padding: 1.6mm 1mm;
-        border-bottom: 1px solid #d3d3d3;
-        font-size: 9.7pt;
+        padding: 1.9mm 1.2mm;
+        border-bottom: 1px solid rgba(115, 97, 70, 0.14);
       }
+
       th {
         text-align: left;
-        color: #444;
-        font-size: 8.2pt;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
+        border-bottom-color: rgba(109, 124, 99, 0.26);
       }
+
+      td {
+        font-size: 9.5pt;
+        color: var(--ink);
+      }
+
       td:last-child,
       th:last-child {
         text-align: right;
       }
-      .totals {
-        margin-left: auto;
-        margin-top: 2.8mm;
-        width: 74mm;
+
+      tbody tr:last-child td {
+        border-bottom-color: rgba(115, 97, 70, 0.18);
       }
-      .totals td {
-        border-bottom: none;
-        padding: 1mm 0;
-      }
-      .totals tr.total td {
-        border-top: 1px solid #444;
-        padding-top: 1.8mm;
-        font-size: 12pt;
-        font-weight: 700;
-      }
-      .bank-footer {
-        margin-top: auto;
-        padding-top: 2.8mm;
-        border-top: 1px solid #d3d3d3;
-      }
-      .bank-title {
-        margin: 0 0 1.6mm;
-        font-size: 8pt;
-        color: #666;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        font-weight: 700;
-      }
-      .iban {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 2.2mm 3.2mm;
-      }
-      .iban-item {
-        min-width: 0;
-      }
-      .iban-item .meta-label {
-        font-size: 7.8pt;
-      }
-      .iban-item .meta-value {
-        margin-top: 0.4mm;
-        font-size: 9.1pt;
-      }
-      p {
-        margin: 0 0 1.4mm;
-        font-size: 9.8pt;
-      }
+
       .invoice-muted {
-        color: #555;
+        color: var(--ink-soft);
       }
+
       .invoice-row-offered td {
-        font-size: 9.1pt;
-        color: #555;
+        color: var(--sage-deep);
+        font-size: 9.05pt;
       }
+
       .invoice-remise-reason {
         margin-top: 0.5mm;
-        font-size: 8.3pt;
-        color: #555;
-        font-style: italic;
-      }
-      .invoice-row-taxe-sejour td {
-        color: #666;
+        color: var(--ink-soft);
+        font-size: 8.4pt;
         font-style: italic;
       }
 
+      .invoice-row-taxe-sejour td {
+        color: var(--ink-soft);
+        font-style: italic;
+      }
+
+      .totals {
+        margin-left: auto;
+        margin-top: 3mm;
+        width: 76mm;
+      }
+
+      .totals td {
+        padding: 1.1mm 0;
+        border-bottom: none;
+      }
+
+      .totals tr.total td {
+        padding: 2.2mm 0 0;
+        border-top: 1px solid var(--line-strong);
+        font-size: 12.2pt;
+        font-weight: 700;
+      }
+
+      .totals tr.total td:last-child {
+        color: var(--coral);
+      }
+
+      .bank-footer {
+        margin-top: auto;
+        padding-top: 4mm;
+        background:
+          linear-gradient(180deg, rgba(141, 157, 127, 0.1) 0%, rgba(255, 253, 248, 0.96) 42%),
+          rgba(255, 253, 248, 0.98);
+      }
+
+      .bank-title {
+        margin: 0 0 2mm;
+      }
+
+      .iban {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3mm 4mm;
+      }
+
+      .iban-item {
+        min-width: 0;
+      }
+
+      .iban-item .meta-label {
+        font-size: 7.2pt;
+      }
+
+      .iban-item .meta-value {
+        margin-top: 0.7mm;
+        font-size: 9.1pt;
+        word-break: break-word;
+      }
+
       body.compact-sections .page {
-        gap: 4mm;
+        gap: 4.1mm;
       }
+
       body.compact-density .page {
-        padding: 8.8mm 8.8mm 9.6mm;
+        padding: 9.8mm 9.8mm 10mm;
       }
-      body.compact-density .top {
-        gap: 6mm;
+
+      body.compact-density .hero,
+      body.compact-density .info-grid {
+        gap: 4.2mm;
       }
+
       body.compact-density .box {
-        padding: 2.5mm 3mm;
+        padding: 3mm 3.4mm;
       }
-      body.compact-density .box.box--meta {
-        padding: 0;
+
+      body.compact-density .stay-meta {
+        margin-top: 2.2mm;
+        padding-top: 1.8mm;
       }
+
       body.compact-density th,
       body.compact-density td {
-        padding-top: 1.1mm;
-        padding-bottom: 1.1mm;
+        padding-top: 1.25mm;
+        padding-bottom: 1.25mm;
       }
+
       body.compact-text {
         font-size: 10pt;
       }
-      body.compact-text .title {
+
+      body.compact-text .brand-logo__small {
+        font-size: 22pt;
+      }
+
+      body.compact-text .brand-logo__tiny {
+        font-size: 14.5pt;
+      }
+
+      body.compact-text .brand-logo__large {
+        font-size: 28pt;
+      }
+
+      body.compact-text .invoice-number {
+        font-size: 17pt;
+      }
+
+      body.compact-text .period-main {
+        font-size: 14.4pt;
+      }
+
+      body.compact-text .stay-date-value {
+        font-size: 17pt;
+      }
+
+      body.compact-text .stay-date-label {
+        font-size: 10.4pt;
+      }
+
+      body.compact-final {
+        font-size: 9.7pt;
+        line-height: 1.3;
+      }
+
+      body.compact-final .hero {
+        grid-template-columns: minmax(0, 1.52fr) 64mm;
+      }
+
+      body.compact-final .invoice-number {
+        margin-bottom: 2.5mm;
+      }
+
+      body.compact-final .totals {
+        width: 72mm;
+      }
+
+      body.compact-spacing .page {
+        gap: 3.3mm;
+      }
+
+      body.compact-spacing .section-title {
+        margin-bottom: 1.4mm;
+      }
+
+      body.compact-spacing .host-block {
+        margin-top: 1.8mm;
+        padding-top: 1.8mm;
+      }
+
+      body.compact-spacing .totals {
+        margin-top: 1.6mm;
+      }
+
+      body.compact-margins .page {
+        padding: 8.6mm 8.5mm 8.8mm;
+      }
+
+      body.compact-margins .hero {
+        gap: 3.8mm;
+      }
+
+      body.compact-margins .brand-logo__small {
         font-size: 20.5pt;
       }
-      body.compact-text .title-number {
-        font-size: 15pt;
+
+      body.compact-margins .brand-logo__large {
+        font-size: 25.5pt;
       }
-      body.compact-text .subtitle {
-        font-size: 12.2pt;
-      }
-      body.compact-text .period-main {
-        font-size: 13.7pt;
-      }
-      body.compact-final {
-        font-size: 9.8pt;
-        line-height: 1.2;
-      }
-      body.compact-final .title {
-        font-size: 19pt;
-      }
-      body.compact-final .title-number {
-        font-size: 14pt;
-      }
-      body.compact-final .client-period {
-        gap: 3.4mm;
-      }
-      body.compact-final .period-dates {
-        font-size: 10.2pt;
-      }
-      body.compact-spacing .page {
-        gap: 3.2mm;
-      }
-      body.compact-spacing .section-title {
-        margin-bottom: 1.1mm;
-      }
-      body.compact-spacing .totals {
-        margin-top: 1.4mm;
-      }
-      body.compact-margins .page {
-        padding: 7.8mm 7.8mm 8.4mm;
-      }
-      body.compact-margins .top {
-        gap: 4.8mm;
-      }
-      body.compact-margins .title {
-        font-size: 18.5pt;
-      }
-      body.compact-margins .title-number {
+
+      body.compact-margins .period-main {
         font-size: 13.5pt;
       }
-      body.compact-margins .period-main {
-        font-size: 12.7pt;
+
+      body.compact-margins .stay-date-value {
+        font-size: 15.6pt;
       }
 
       @media screen {
         body.preview {
-          background: #f4f3f0;
+          background:
+            radial-gradient(circle at top, rgba(184, 171, 87, 0.16), transparent 45%),
+            #efe8d8;
           padding: 24px 0;
         }
+
         body.preview .page {
           width: 100%;
           max-width: 210mm;
           min-height: 297mm;
           margin: 0 auto 24px;
-          background: #fff;
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+          box-shadow: 0 16px 42px rgba(58, 42, 22, 0.15);
         }
       }
     </style>
   </head>
   <body {{{bodyAttrs}}}>
     <div class="page">
-      <div class="top">
-        <div>
-          <h1 class="title">FACTURE <span class="title-number">{{invoiceNumber}}</span></h1>
+      <svg class="motif motif--top" viewBox="0 0 220 180" aria-hidden="true">
+        <path
+          d="M16 148c22-20 40-41 59-62 20-23 43-42 70-55 22-11 42-17 59-20"
+          fill="none"
+          stroke="#b8ab57"
+          stroke-linecap="round"
+          stroke-width="3.5"
+        />
+        <path d="M50 132c-4-13 1-24 14-33" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M89 103c14-7 24-18 32-31" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M131 74c14-2 25-8 35-17" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
+        <ellipse cx="57" cy="117" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-35 57 117)" />
+        <ellipse cx="101" cy="91" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-22 101 91)" />
+        <ellipse cx="143" cy="60" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-14 143 60)" />
+        <g fill="#ef735d">
+          <circle cx="32" cy="135" r="8" />
+          <circle cx="44" cy="124" r="8" />
+          <circle cx="57" cy="134" r="8" />
+          <circle cx="45" cy="146" r="8" />
+          <circle cx="45" cy="135" r="6.2" fill="#f4ecdc" />
+          <circle cx="106" cy="84" r="10" />
+          <circle cx="120" cy="71" r="10" />
+          <circle cx="135" cy="83" r="10" />
+          <circle cx="120" cy="97" r="10" />
+          <circle cx="120" cy="84" r="8.1" fill="#f4ecdc" />
+          <circle cx="166" cy="47" r="6" />
+          <circle cx="175" cy="39" r="6" />
+          <circle cx="184" cy="47" r="6" />
+          <circle cx="175" cy="56" r="6" />
+          <circle cx="175" cy="47" r="4.3" fill="#f4ecdc" />
+        </g>
+        <g fill="#efddd5">
+          <circle cx="82" cy="132" r="6" />
+          <circle cx="90" cy="125" r="6" />
+          <circle cx="99" cy="132" r="6" />
+          <circle cx="90" cy="140" r="6" />
+          <circle cx="90" cy="132" r="4.3" fill="#fbf8f0" />
+          <circle cx="149" cy="95" r="5.3" />
+          <circle cx="156" cy="89" r="5.3" />
+          <circle cx="163" cy="95" r="5.3" />
+          <circle cx="156" cy="102" r="5.3" />
+          <circle cx="156" cy="95" r="3.6" fill="#fbf8f0" />
+        </g>
+        <g fill="#b8ab57">
+          <circle cx="71" cy="108" r="2.8" />
+          <circle cx="75" cy="100" r="2.8" />
+          <circle cx="170" cy="78" r="3.1" />
+          <circle cx="176" cy="71" r="3.1" />
+        </g>
+      </svg>
+
+      <svg class="motif motif--bottom" viewBox="0 0 220 180" aria-hidden="true">
+        <path
+          d="M16 148c22-20 40-41 59-62 20-23 43-42 70-55 22-11 42-17 59-20"
+          fill="none"
+          stroke="#b8ab57"
+          stroke-linecap="round"
+          stroke-width="3.5"
+        />
+        <path d="M50 132c-4-13 1-24 14-33" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M89 103c14-7 24-18 32-31" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M131 74c14-2 25-8 35-17" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
+        <ellipse cx="57" cy="117" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-35 57 117)" />
+        <ellipse cx="101" cy="91" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-22 101 91)" />
+        <ellipse cx="143" cy="60" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-14 143 60)" />
+        <g fill="#ef735d">
+          <circle cx="32" cy="135" r="8" />
+          <circle cx="44" cy="124" r="8" />
+          <circle cx="57" cy="134" r="8" />
+          <circle cx="45" cy="146" r="8" />
+          <circle cx="45" cy="135" r="6.2" fill="#f4ecdc" />
+          <circle cx="106" cy="84" r="10" />
+          <circle cx="120" cy="71" r="10" />
+          <circle cx="135" cy="83" r="10" />
+          <circle cx="120" cy="97" r="10" />
+          <circle cx="120" cy="84" r="8.1" fill="#f4ecdc" />
+          <circle cx="166" cy="47" r="6" />
+          <circle cx="175" cy="39" r="6" />
+          <circle cx="184" cy="47" r="6" />
+          <circle cx="175" cy="56" r="6" />
+          <circle cx="175" cy="47" r="4.3" fill="#f4ecdc" />
+        </g>
+        <g fill="#efddd5">
+          <circle cx="82" cy="132" r="6" />
+          <circle cx="90" cy="125" r="6" />
+          <circle cx="99" cy="132" r="6" />
+          <circle cx="90" cy="140" r="6" />
+          <circle cx="90" cy="132" r="4.3" fill="#fbf8f0" />
+          <circle cx="149" cy="95" r="5.3" />
+          <circle cx="156" cy="89" r="5.3" />
+          <circle cx="163" cy="95" r="5.3" />
+          <circle cx="156" cy="102" r="5.3" />
+          <circle cx="156" cy="95" r="3.6" fill="#fbf8f0" />
+        </g>
+        <g fill="#b8ab57">
+          <circle cx="71" cy="108" r="2.8" />
+          <circle cx="75" cy="100" r="2.8" />
+          <circle cx="170" cy="78" r="3.1" />
+          <circle cx="176" cy="71" r="3.1" />
+        </g>
+      </svg>
+
+      <div class="hero">
+        <div class="hero-main">
+          <div class="brand-logo" aria-label="Les gîtes de Brocéliande">
+            <span class="brand-logo__small">les gîtes</span>
+            <span class="brand-logo__tiny">de</span>
+            <span class="brand-logo__large">Brocéliande</span>
+          </div>
           <div class="subtitle">{{giteName}}</div>
           <div class="muted">{{giteAdresse}}</div>
-          <div class="muted" style="margin-top: 1.8mm;">{{proprietairesNoms}}</div>
-          <div class="muted">{{proprietairesAdresse}}</div>
-          {{{proprietairesContactHtml}}}
+          <div class="host-block">
+            <div class="muted">{{proprietairesNoms}}</div>
+            <div class="muted">{{proprietairesAdresse}}</div>
+            {{{proprietairesContactHtml}}}
+          </div>
         </div>
-        <div class="box box--meta">
+
+        <div class="box invoice-summary">
+          <div class="invoice-number">FACTURE<span>{{invoiceNumber}}</span></div>
           <div class="meta-grid {{metaGridClass}}">
             <div>
               <span class="meta-label">Émise le</span>
@@ -338,7 +667,7 @@
         </div>
       </div>
 
-      <div class="client-period">
+      <div class="info-grid">
         <div class="box">
           <div class="section-title">Client</div>
           <div class="line"><strong>{{clientNom}}</strong></div>
@@ -346,14 +675,25 @@
           {{{clientTelLineHtml}}}
         </div>
 
-        <div class="period-panel">
-          <div class="period-main">du {{periodStart}} au {{periodEnd}}</div>
-          <div class="period-sub">{{nightsLabel}}</div>
-          <div class="period-sub">{{occupancyLabel}}</div>
+        <div class="box stay-card">
+          <div class="stay-dates">
+            <div class="stay-date-row">
+              <span class="stay-date-label">du</span>
+              <span class="stay-date-value">{{periodStart}}</span>
+            </div>
+            <div class="stay-date-row">
+              <span class="stay-date-label">au</span>
+              <span class="stay-date-value">{{periodEnd}}</span>
+            </div>
+          </div>
+          <div class="stay-meta">
+            <div class="stay-meta-line">{{nightsLabel}}</div>
+            <div class="stay-meta-line">{{occupancyLabel}}</div>
+          </div>
         </div>
       </div>
 
-      <div class="box">
+      <div class="box details-card">
         <div class="section-title">Détail de facturation</div>
         <table>
           <thead>
@@ -391,7 +731,7 @@
 
       {{{notesBlockHtml}}}
 
-      <div class="bank-footer">
+      <div class="box bank-footer">
         <div class="bank-title">Coordonnées bancaires</div>
         <div class="iban">
           <div class="iban-item">

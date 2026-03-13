@@ -42,7 +42,7 @@ const restoreEnvVar = (key: string, value: string | undefined) => {
   else process.env[key] = value;
 };
 
-const getRouteHandler = (router: any, method: "post" | "put", routePath: string) => {
+const getRouteHandler = (router: any, method: "get" | "post" | "put", routePath: string) => {
   const layer = router.stack.find(
     (item: any) => item.route?.path === routePath && item.route?.methods?.[method]
   );
@@ -289,5 +289,124 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
 
     await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("API hydrate les montants de contrat/facture en nombres", async () => {
+  const prismaModule = await import("../src/db/prisma.ts");
+  const prisma = prismaModule.default as any;
+
+  const original = {
+    contratFindUnique: prisma.contrat.findUnique,
+    factureFindUnique: prisma.facture.findUnique,
+  };
+
+  try {
+    prisma.contrat.findUnique = async () => ({
+      id: "c1",
+      numero_contrat: "GT-2026-000001",
+      gite_id: "g1",
+      date_creation: "2026-03-12T00:00:00.000Z",
+      date_derniere_modif: "2026-03-13T00:00:00.000Z",
+      locataire_nom: "Client Contrat",
+      locataire_adresse: "Adresse",
+      locataire_tel: "0700000000",
+      nb_adultes: 2,
+      nb_enfants_2_17: 0,
+      date_debut: "2026-03-08T00:00:00.000Z",
+      heure_arrivee: "17:00",
+      date_fin: "2026-03-13T00:00:00.000Z",
+      heure_depart: "12:00",
+      nb_nuits: 5,
+      prix_par_nuit: "70.00",
+      remise_montant: "0.00",
+      taxe_sejour_calculee: "10.00",
+      options: "{}",
+      arrhes_montant: "0.00",
+      arrhes_date_limite: "2026-02-15T00:00:00.000Z",
+      solde_montant: "350.00",
+      caution_montant: "500.00",
+      cheque_menage_montant: "500.00",
+      afficher_caution_phrase: true,
+      afficher_cheque_menage_phrase: true,
+      clauses: "{}",
+      pdf_path: "test.pdf",
+      statut_paiement_arrhes: "non_recu",
+      notes: null,
+      reservation_id: null,
+    });
+
+    prisma.facture.findUnique = async () => ({
+      id: "f1",
+      numero_facture: "PH-2026-02",
+      gite_id: "g1",
+      date_creation: "2026-03-12T00:00:00.000Z",
+      date_derniere_modif: "2026-03-13T00:00:00.000Z",
+      locataire_nom: "Marie Motais",
+      locataire_adresse: "Adresse",
+      locataire_tel: "",
+      nb_adultes: 2,
+      nb_enfants_2_17: 0,
+      date_debut: "2026-03-08T00:00:00.000Z",
+      heure_arrivee: "17:00",
+      date_fin: "2026-03-13T00:00:00.000Z",
+      heure_depart: "12:00",
+      nb_nuits: 5,
+      prix_par_nuit: "70.00",
+      remise_montant: "0.00",
+      taxe_sejour_calculee: "10.00",
+      options: "{}",
+      arrhes_montant: "0.00",
+      arrhes_date_limite: "2026-02-15T00:00:00.000Z",
+      solde_montant: "350.00",
+      caution_montant: "0.00",
+      cheque_menage_montant: "0.00",
+      afficher_caution_phrase: false,
+      afficher_cheque_menage_phrase: false,
+      clauses: "{}",
+      pdf_path: "test.pdf",
+      statut_paiement: "non_reglee",
+      notes: null,
+      reservation_id: null,
+    });
+
+    const contractsRouterModule = await import("../src/routes/contracts.ts");
+    const invoicesRouterModule = await import("../src/routes/invoices.ts");
+
+    const contractGet = getRouteHandler(contractsRouterModule.default, "get", "/:id");
+    const invoiceGet = getRouteHandler(invoicesRouterModule.default, "get", "/:id");
+
+    const contractRes = createMockResponse();
+    let nextError: unknown = null;
+    await contractGet(
+      { body: {}, params: { id: "c1" }, query: {} },
+      contractRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal(contractRes.statusCode, 200);
+    assert.equal(typeof (contractRes.body as any).solde_montant, "number");
+    assert.equal(typeof (contractRes.body as any).arrhes_montant, "number");
+    assert.equal((contractRes.body as any).solde_montant + (contractRes.body as any).arrhes_montant, 350);
+
+    const invoiceRes = createMockResponse();
+    nextError = null;
+    await invoiceGet(
+      { body: {}, params: { id: "f1" }, query: {} },
+      invoiceRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal(invoiceRes.statusCode, 200);
+    assert.equal(typeof (invoiceRes.body as any).solde_montant, "number");
+    assert.equal(typeof (invoiceRes.body as any).arrhes_montant, "number");
+    assert.equal((invoiceRes.body as any).solde_montant + (invoiceRes.body as any).arrhes_montant, 350);
+  } finally {
+    prisma.contrat.findUnique = original.contratFindUnique;
+    prisma.facture.findUnique = original.factureFindUnique;
   }
 });
