@@ -334,7 +334,7 @@ const isReservationDepartureToday = (reservation: Reservation, now = new Date())
 
 const getDepartureTodayPillLabel = (reservation: Reservation, now = new Date()) => {
   if (!isReservationDepartureToday(reservation, now)) return null;
-  return now.getHours() < DEPARTURE_TODAY_SWITCH_HOUR ? "Part aujourd'hui" : "Est parti ce matin";
+  return now.getHours() < DEPARTURE_TODAY_SWITCH_HOUR ? "Part aujourd'hui" : "Parti ce matin";
 };
 
 const isReservationArrivalTomorrow = (reservation: Reservation, now = new Date()) => {
