@@ -284,12 +284,12 @@ const toInputDate = (value: string) => {
   return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
 };
 
-const getUtcStartOfToday = () => {
-  const now = new Date();
+const getUtcStartOfToday = (now = new Date()) => {
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ARRIVAL_TODAY_SWITCH_HOUR = 17;
 const getDaysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 
 const toUtcDateOnly = (value: string) => {
@@ -305,31 +305,43 @@ const getReservationBoundsUtc = (reservation: Reservation): { start: number; end
   return { start, end };
 };
 
-const isReservationInProgress = (reservation: Reservation) => {
+const isReservationInProgress = (reservation: Reservation, now = new Date()) => {
   const bounds = getReservationBoundsUtc(reservation);
   if (!bounds) return false;
-  const todayUtcStart = getUtcStartOfToday();
+  const todayUtcStart = getUtcStartOfToday(now);
   return bounds.start <= todayUtcStart && todayUtcStart <= bounds.end;
 };
 
-const isReservationDepartureToday = (reservation: Reservation) => {
+const isReservationArrivalToday = (reservation: Reservation, now = new Date()) => {
   const bounds = getReservationBoundsUtc(reservation);
   if (!bounds) return false;
-  const todayUtcStart = getUtcStartOfToday();
+  const todayUtcStart = getUtcStartOfToday(now);
+  return bounds.start === todayUtcStart;
+};
+
+const shouldShowArrivalTodayPill = (reservation: Reservation, now = new Date()) => {
+  if (!isReservationArrivalToday(reservation, now)) return false;
+  return now.getHours() < ARRIVAL_TODAY_SWITCH_HOUR;
+};
+
+const isReservationDepartureToday = (reservation: Reservation, now = new Date()) => {
+  const bounds = getReservationBoundsUtc(reservation);
+  if (!bounds) return false;
+  const todayUtcStart = getUtcStartOfToday(now);
   return bounds.end === todayUtcStart;
 };
 
-const isReservationArrivalTomorrow = (reservation: Reservation) => {
+const isReservationArrivalTomorrow = (reservation: Reservation, now = new Date()) => {
   const bounds = getReservationBoundsUtc(reservation);
   if (!bounds) return false;
-  const tomorrowUtcStart = getUtcStartOfToday() + DAY_MS;
+  const tomorrowUtcStart = getUtcStartOfToday(now) + DAY_MS;
   return bounds.start === tomorrowUtcStart;
 };
 
-const isReservationDepartureTomorrow = (reservation: Reservation) => {
+const isReservationDepartureTomorrow = (reservation: Reservation, now = new Date()) => {
   const bounds = getReservationBoundsUtc(reservation);
   if (!bounds) return false;
-  const tomorrowUtcStart = getUtcStartOfToday() + DAY_MS;
+  const tomorrowUtcStart = getUtcStartOfToday(now) + DAY_MS;
   return bounds.end === tomorrowUtcStart;
 };
 
@@ -811,6 +823,7 @@ const ReservationsPage = () => {
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   const reservationsRef = useRef<Reservation[]>([]);
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
@@ -832,6 +845,27 @@ const ReservationsPage = () => {
   useEffect(() => {
     reservationOptionsRef.current = reservationOptions;
   }, [reservationOptions]);
+
+  useEffect(() => {
+    let timeoutId: number | null = null;
+
+    const scheduleNextTick = () => {
+      const now = new Date();
+      const delay = Math.max(250, (60 - now.getSeconds()) * 1000 - now.getMilliseconds());
+      timeoutId = window.setTimeout(() => {
+        setCurrentTimeMs(Date.now());
+        scheduleNextTick();
+      }, delay);
+    };
+
+    scheduleNextTick();
+
+    return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, []);
 
   const loadStatistics = useCallback(async () => {
     try {
@@ -1781,6 +1815,7 @@ const ReservationsPage = () => {
   };
 
   const activeGite = gites.find((gite) => gite.id === activeTab) ?? null;
+  const currentTime = new Date(currentTimeMs);
   const giteById = useMemo(() => {
     const map = new Map<string, Gite>();
     gites.forEach((gite) => map.set(gite.id, gite));
@@ -3400,10 +3435,11 @@ const ReservationsPage = () => {
                       const isDetailsExpanded = Boolean(expandedDetails[reservation.id]);
                       const isDetailsClosing = Boolean(closingDetails[reservation.id]);
                       const isRowSavedFading = Boolean(savedRowFade[reservation.id]);
-                      const isCurrentReservation = isReservationInProgress(reservation);
-                      const isDepartureToday = isReservationDepartureToday(reservation);
-                      const isArrivalTomorrow = isReservationArrivalTomorrow(reservation);
-                      const isDepartureTomorrow = isReservationDepartureTomorrow(reservation);
+                      const isCurrentReservation = isReservationInProgress(reservation, currentTime);
+                      const isArrivalToday = shouldShowArrivalTodayPill(reservation, currentTime);
+                      const isDepartureToday = isReservationDepartureToday(reservation, currentTime);
+                      const isArrivalTomorrow = isReservationArrivalTomorrow(reservation, currentTime);
+                      const isDepartureTomorrow = isReservationDepartureTomorrow(reservation, currentTime);
                       const isIcalToVerify = hasIcalToVerifyMarker(reservation.commentaire);
                       const holidayNightCount = holidayNightsByReservationId.get(reservation.id) ?? 0;
                       const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
@@ -3461,6 +3497,7 @@ const ReservationsPage = () => {
                                 </button>
                               )}
                               {isCurrentReservation ||
+                              isArrivalToday ||
                               isDepartureToday ||
                               isArrivalTomorrow ||
                               isDepartureTomorrow ||
@@ -3470,7 +3507,12 @@ const ReservationsPage = () => {
                                   {isIcalToVerify ? (
                                     <span className="reservations-current-pill reservations-current-pill--to-verify">A vérifier</span>
                                   ) : null}
-                                  {isCurrentReservation && !isDepartureToday && !isDepartureTomorrow ? (
+                                  {isArrivalToday ? (
+                                    <span className="reservations-current-pill reservations-current-pill--arrival">
+                                      Arrive aujourd'hui
+                                    </span>
+                                  ) : null}
+                                  {isCurrentReservation && !isArrivalToday && !isDepartureToday && !isDepartureTomorrow ? (
                                     <span className="reservations-current-pill reservations-current-pill--row-start">En cours</span>
                                   ) : null}
                                   {isDepartureToday ? (
