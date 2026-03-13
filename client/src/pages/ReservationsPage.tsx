@@ -290,6 +290,7 @@ const getUtcStartOfToday = (now = new Date()) => {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ARRIVAL_TODAY_SWITCH_HOUR = 17;
+const DEPARTURE_TODAY_SWITCH_HOUR = 12;
 const getDaysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 
 const toUtcDateOnly = (value: string) => {
@@ -329,6 +330,11 @@ const isReservationDepartureToday = (reservation: Reservation, now = new Date())
   if (!bounds) return false;
   const todayUtcStart = getUtcStartOfToday(now);
   return bounds.end === todayUtcStart;
+};
+
+const getDepartureTodayPillLabel = (reservation: Reservation, now = new Date()) => {
+  if (!isReservationDepartureToday(reservation, now)) return null;
+  return now.getHours() < DEPARTURE_TODAY_SWITCH_HOUR ? "Part aujourd'hui" : "Est parti ce matin";
 };
 
 const isReservationArrivalTomorrow = (reservation: Reservation, now = new Date()) => {
@@ -3438,6 +3444,7 @@ const ReservationsPage = () => {
                       const isCurrentReservation = isReservationInProgress(reservation, currentTime);
                       const isArrivalToday = shouldShowArrivalTodayPill(reservation, currentTime);
                       const isDepartureToday = isReservationDepartureToday(reservation, currentTime);
+                      const departureTodayLabel = getDepartureTodayPillLabel(reservation, currentTime);
                       const isArrivalTomorrow = isReservationArrivalTomorrow(reservation, currentTime);
                       const isDepartureTomorrow = isReservationDepartureTomorrow(reservation, currentTime);
                       const isIcalToVerify = hasIcalToVerifyMarker(reservation.commentaire);
@@ -3517,7 +3524,7 @@ const ReservationsPage = () => {
                                   ) : null}
                                   {isDepartureToday ? (
                                     <span className="reservations-current-pill reservations-current-pill--departure-today">
-                                      Part aujourd'hui
+                                      {departureTodayLabel}
                                     </span>
                                   ) : null}
                                   {isArrivalTomorrow ? (
