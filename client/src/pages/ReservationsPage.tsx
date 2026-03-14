@@ -4202,6 +4202,18 @@ const ReservationsPage = () => {
                                   >
                                     €
                                   </button>
+                                  {reservation.airbnb_url && (
+                                    <a
+                                      className="table-action table-action--neutral"
+                                      href={reservation.airbnb_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Ouvrir la réservation Airbnb"
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      AB
+                                    </a>
+                                  )}
                                   {reservation.gite_id && (
                                     <Link
                                       className="table-action table-action--neutral"

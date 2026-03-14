@@ -237,6 +237,7 @@ model Reservation {
   origin_system            String?
   origin_reference         String?
   export_to_ical           Boolean?
+  airbnb_url               String?
   hote_nom                 String
   date_entree              DateTime
   date_sortie              DateTime

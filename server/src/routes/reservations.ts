@@ -37,6 +37,7 @@ const optionalNumberField = z.preprocess((value) => {
 const reservationPayloadSchema = z.object({
   gite_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
   placeholder_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
+  airbnb_url: z.preprocess(emptyStringToNull, z.string().trim().url().nullable()).optional(),
   hote_nom: z.string().trim().min(1),
   date_entree: z.string().trim().min(1),
   date_sortie: z.string().trim().min(1),
@@ -385,6 +386,7 @@ const buildReservationSegmentRecords = (
           gite_id: association.gite_id,
           placeholder_id: association.placeholder_id,
           ...(originData ?? {}),
+          airbnb_url: payload.airbnb_url ?? null,
           hote_nom: payload.hote_nom,
           date_entree: segment.dateEntree,
           date_sortie: segment.dateSortie,
@@ -1348,6 +1350,7 @@ router.post("/:id/split", async (req, res, next) => {
             origin_system: existing.origin_system,
             origin_reference: existing.origin_reference,
             export_to_ical: existing.export_to_ical,
+            airbnb_url: existing.airbnb_url,
             hote_nom: existing.hote_nom,
             date_entree: segment.dateEntree,
             date_sortie: segment.dateSortie,
@@ -1429,6 +1432,7 @@ router.put("/:id", async (req, res, next) => {
       data: {
         gite_id: association.gite_id,
         placeholder_id: association.placeholder_id,
+        airbnb_url: payload.airbnb_url !== undefined ? payload.airbnb_url ?? null : existing.airbnb_url,
         hote_nom: payload.hote_nom,
         date_entree: computed.dateEntree,
         date_sortie: computed.dateSortie,

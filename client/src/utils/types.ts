@@ -77,6 +77,7 @@ export type Reservation = {
   origin_system?: "app" | "what-today" | "ical" | "pump" | "har" | "csv" | "legacy" | null;
   origin_reference?: string | null;
   export_to_ical?: boolean;
+  airbnb_url?: string | null;
   hote_nom: string;
   date_entree: string;
   date_sortie: string;
