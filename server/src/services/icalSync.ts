@@ -14,6 +14,7 @@ import {
   shouldPreferIcalReservation,
   shouldUpdateIcalReservationSource,
 } from "../utils/icalReservationSource.js";
+import { extractAirbnbReservationUrl } from "../utils/airbnbReservationUrl.js";
 import { buildReservationOriginData, getReservationOriginSystem } from "../utils/reservationOrigin.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -72,6 +73,7 @@ type ParsedIcalReservation = {
   uid: string;
   summary: string;
   description: string;
+  airbnb_url: string | null;
   date_entree: string;
   date_sortie: string;
   hote_nom: string | null;
@@ -85,7 +87,7 @@ export type IcalPreviewItem = ParsedIcalReservation & {
   status: IcalSyncStatus;
   existing_id: string | null;
   conflict_id: string | null;
-  update_fields: Array<"hote_nom" | "source_paiement">;
+  update_fields: Array<"airbnb_url" | "hote_nom" | "source_paiement">;
 };
 
 export type IcalSourceError = {
@@ -344,6 +346,7 @@ const fetchSourceReservations = async (source: IcalSourceRow): Promise<ParsedIca
       uid,
       summary,
       description,
+      airbnb_url: source.type.trim().toLowerCase() === "airbnb" ? extractAirbnbReservationUrl(description) : null,
       date_entree,
       date_sortie,
       hote_nom: normalizeImportedHostName(extractHostName(summary)),
@@ -381,11 +384,15 @@ export const listIcalSources = async (onlyActive = false) => {
 };
 
 const buildUpdateFields = (existing: any, reservation: ParsedIcalReservation) => {
-  const fields: Array<"hote_nom" | "source_paiement"> = [];
+  const fields: Array<"airbnb_url" | "hote_nom" | "source_paiement"> = [];
   const resolvedSource = resolveReservationSource(reservation);
 
   if (isUnknownHostName(existing.hote_nom) && reservation.hote_nom) {
     fields.push("hote_nom");
+  }
+
+  if (reservation.airbnb_url && reservation.airbnb_url !== existing.airbnb_url) {
+    fields.push("airbnb_url");
   }
 
   if (
@@ -405,6 +412,10 @@ const buildUpdateData = (existing: any, reservation: ParsedIcalReservation) => {
   const fields = buildUpdateFields(existing, reservation);
   const data: Record<string, unknown> = {};
   for (const field of fields) {
+    if (field === "airbnb_url") {
+      data.airbnb_url = reservation.airbnb_url;
+      continue;
+    }
     if (field === "hote_nom" && reservation.hote_nom) {
       data.hote_nom = reservation.hote_nom;
       continue;
@@ -434,6 +445,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
         date_sortie: dateSortie,
       },
       select: {
+        airbnb_url: true,
         id: true,
         hote_nom: true,
         source_paiement: true,
@@ -570,6 +582,7 @@ const toCreatePayload = (reservation: IcalPreviewItem) => {
     prix_par_nuit: 0,
     prix_total: 0,
     source_paiement: resolveReservationSource(reservation),
+    airbnb_url: reservation.airbnb_url,
     commentaire: null,
     frais_optionnels_montant: 0,
     frais_optionnels_libelle: null,
@@ -713,6 +726,7 @@ const runSync = async (): Promise<IcalSyncResult> => {
       const existing = await prisma.reservation.findUnique({
         where: { id: item.existing_id },
         select: {
+          airbnb_url: true,
           id: true,
           hote_nom: true,
           source_paiement: true,

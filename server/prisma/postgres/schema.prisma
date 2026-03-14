@@ -232,6 +232,7 @@ model Reservation {
   id                        String                   @id @default(cuid())
   gite_id                   String?
   placeholder_id            String?
+  airbnb_url                String?
   hote_nom                  String
   date_entree               DateTime
   date_sortie               DateTime
