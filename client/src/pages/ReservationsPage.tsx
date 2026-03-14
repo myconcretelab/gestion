@@ -310,6 +310,12 @@ const isReservationInProgress = (reservation: Reservation, now = new Date()) => 
   const bounds = getReservationBoundsUtc(reservation);
   if (!bounds) return false;
   const todayUtcStart = getUtcStartOfToday(now);
+  if (bounds.start === todayUtcStart && now.getHours() < ARRIVAL_TODAY_SWITCH_HOUR) {
+    return false;
+  }
+  if (bounds.end === todayUtcStart && now.getHours() >= DEPARTURE_TODAY_SWITCH_HOUR) {
+    return false;
+  }
   return bounds.start <= todayUtcStart && todayUtcStart <= bounds.end;
 };
 
@@ -1177,7 +1183,7 @@ const ReservationsPage = () => {
       byGite.set(gite.id, byMonth);
     });
 
-    visibleReservations.forEach((reservation) => {
+    reservations.forEach((reservation) => {
       if (!reservation.gite_id) return;
       const byMonth = byGite.get(reservation.gite_id);
       if (!byMonth) return;
@@ -1197,7 +1203,7 @@ const ReservationsPage = () => {
     });
 
     return byGite;
-  }, [gites, visibleReservations, year]);
+  }, [gites, reservations, year]);
 
   const occupationByMonth = useMemo(() => {
     if (!activeTab || activeTab === UNASSIGNED_TAB) {
@@ -1224,6 +1230,36 @@ const ReservationsPage = () => {
 
     return occupationByMonthByGite.get(activeTab) ?? new Map<number, number>();
   }, [activeTab, gites.length, occupationByMonthByGite, visibleReservations, year]);
+  const topOccupationGiteIdByMonth = useMemo(() => {
+    const leadersByMonth = new Map<number, string | null>();
+
+    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+      let bestOccupation = -1;
+      let leaderId: string | null = null;
+
+      for (const gite of gites) {
+        const occupation = occupationByMonthByGite.get(gite.id)?.get(monthIndex) ?? 0;
+
+        if (occupation > bestOccupation + 1e-6) {
+          bestOccupation = occupation;
+          leaderId = gite.id;
+          continue;
+        }
+
+        if (Math.abs(occupation - bestOccupation) <= 1e-6 && leaderId) {
+          const currentLeaderOrder = giteOrderById.get(leaderId) ?? Number.MAX_SAFE_INTEGER;
+          const challengerOrder = giteOrderById.get(gite.id) ?? Number.MAX_SAFE_INTEGER;
+          if (challengerOrder < currentLeaderOrder) {
+            leaderId = gite.id;
+          }
+        }
+      }
+
+      leadersByMonth.set(monthIndex, bestOccupation > 0 ? leaderId : null);
+    }
+
+    return leadersByMonth;
+  }, [giteOrderById, gites, occupationByMonthByGite]);
 
   const monthsToRender = useMemo(() => {
     if (month) return [month];
@@ -3280,6 +3316,9 @@ const ReservationsPage = () => {
             const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
             const monthPanelId = `reservations-month-panel-${year}-${monthIndex}`;
             const monthOccupation = occupationByMonth.get(monthIndex) ?? null;
+            const topOccupationGiteId = topOccupationGiteIdByMonth.get(monthIndex) ?? null;
+            const isActiveGiteMonthLeader =
+              activeTab !== ALL_GITES_TAB && activeTab !== UNASSIGNED_TAB && topOccupationGiteId === activeTab;
 
             return (
               <section
@@ -3358,6 +3397,7 @@ const ReservationsPage = () => {
                           animate={false}
                           size={{ width: 52, height: 24 }}
                           className="reservations-month__occupation-gauge"
+                          showLeaderBadge={isActiveGiteMonthLeader}
                         />
                       </div>
                     ) : null}
@@ -3480,6 +3520,7 @@ const ReservationsPage = () => {
                                           animate={false}
                                           size={{ width: 52, height: 24 }}
                                           className="reservations-month__occupation-gauge"
+                                          showLeaderBadge={topOccupationGiteId === groupKey}
                                         />
                                       </div>
                                     ) : null}

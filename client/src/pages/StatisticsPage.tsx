@@ -8,6 +8,7 @@ import {
   computeAveragePrice,
   computeAverageReservations,
   computeChequeVirementNightsByGite,
+  computeOccupation,
   computeGiteStats,
   computeGlobalStats,
   computeUrssafByManager,
@@ -204,6 +205,39 @@ const StatisticsPage = () => {
     () => computeChequeVirementNightsByGite(entriesByGite, gites, selectedYear, selectedMonth),
     [entriesByGite, gites, selectedMonth, selectedYear]
   );
+  const topOccupationGiteId = useMemo(() => {
+    if (!selectedMonth || selectedYear === "all") return null;
+
+    let bestOccupation = -1;
+    let leaderId: string | null = null;
+
+    for (const [index, gite] of gites.entries()) {
+      const occupation = computeOccupation(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth);
+
+      if (occupation > bestOccupation + 1e-6) {
+        bestOccupation = occupation;
+        leaderId = gite.id;
+        continue;
+      }
+
+      if (Math.abs(occupation - bestOccupation) <= 1e-6 && leaderId) {
+        const currentLeader = gites.find((item) => item.id === leaderId);
+        const currentLeaderOrder =
+          typeof currentLeader?.ordre === "number" ? currentLeader.ordre : gites.findIndex((item) => item.id === leaderId) + 1;
+        const challengerOrder = typeof gite.ordre === "number" ? gite.ordre : index + 1;
+
+        if (challengerOrder < currentLeaderOrder) {
+          leaderId = gite.id;
+        }
+      }
+    }
+
+    if (bestOccupation <= 0) {
+      return null;
+    }
+
+    return leaderId;
+  }, [entriesByGite, gites, selectedMonth, selectedYear]);
 
   const chartGroups = useMemo(
     () =>
@@ -397,7 +431,11 @@ const StatisticsPage = () => {
                 </div>
                 <div>
                   <p className="stats-subtitle">Taux d'occupation</p>
-                  <OccupationGauge occupations={occupations} selectedYear={selectedYear} />
+                  <OccupationGauge
+                    occupations={occupations}
+                    selectedYear={selectedYear}
+                    crownedYear={selectedMonth && selectedYear !== "all" && topOccupationGiteId === gite.id ? selectedYear : null}
+                  />
                 </div>
               </div>
             </article>
