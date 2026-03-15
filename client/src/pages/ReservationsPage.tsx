@@ -673,29 +673,36 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
   return recalcDraft(draft);
 };
 
-const buildEmptyDraft = (year: number, month: number, giteId: string): ReservationDraft => {
-  const entry = `${year}-${pad2(month)}-01`;
-  const exit = `${year}-${pad2(month)}-02`;
+const buildEmptyDraft = (
+  year: number,
+  month: number,
+  gite: Gite | null,
+  overrides: Partial<ReservationDraft> = {}
+): ReservationDraft => {
+  const entry = overrides.date_entree ?? `${year}-${pad2(month)}-01`;
+  const exit = overrides.date_sortie ?? `${year}-${pad2(month)}-02`;
+  const nightlyPrice = overrides.prix_par_nuit ?? getGiteNightlyPriceSuggestions(gite)[0] ?? 0;
+  const defaultAdults = overrides.nb_adultes ?? Math.max(0, Number(gite?.nb_adultes_habituel ?? 0));
   return recalcDraft({
-    gite_id: giteId,
-    placeholder_id: null,
-    hote_nom: "",
+    gite_id: overrides.gite_id ?? gite?.id ?? "",
+    placeholder_id: overrides.placeholder_id ?? null,
+    hote_nom: overrides.hote_nom ?? "",
     date_entree: entry,
     date_sortie: exit,
     nb_nuits: 1,
-    nb_adultes: 0,
-    prix_par_nuit: 0,
-    prix_total: 0,
-    source_paiement: DEFAULT_RESERVATION_SOURCE,
-    commentaire: "",
-    remise_montant: 0,
-    commission_channel_mode: "euro",
-    commission_channel_value: 0,
-    frais_optionnels_montant: 0,
-    frais_optionnels_libelle: "",
-    frais_optionnels_declares: false,
-    price_driver: "nightly",
-    pricing_options_total_basis: 0,
+    nb_adultes: defaultAdults,
+    prix_par_nuit: nightlyPrice,
+    prix_total: overrides.prix_total ?? 0,
+    source_paiement: overrides.source_paiement ?? DEFAULT_RESERVATION_SOURCE,
+    commentaire: overrides.commentaire ?? "",
+    remise_montant: overrides.remise_montant ?? 0,
+    commission_channel_mode: overrides.commission_channel_mode ?? "euro",
+    commission_channel_value: overrides.commission_channel_value ?? 0,
+    frais_optionnels_montant: overrides.frais_optionnels_montant ?? 0,
+    frais_optionnels_libelle: overrides.frais_optionnels_libelle ?? "",
+    frais_optionnels_declares: overrides.frais_optionnels_declares ?? false,
+    price_driver: overrides.price_driver ?? "nightly",
+    pricing_options_total_basis: overrides.pricing_options_total_basis ?? 0,
   });
 };
 
@@ -849,12 +856,16 @@ const ReservationsPage = () => {
   const restoreViewRafRef = useRef<number | null>(null);
   const linkedFocusTimerRef = useRef<number | null>(null);
   const handledLinkedFocusRef = useRef<string | null>(null);
+  const handledCalendarInsertRef = useRef<string | null>(null);
 
   const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const requestedFocusReservationId = locationParams.get("focus");
   const requestedTab = locationParams.get("tab");
   const requestedYear = locationParams.get("year");
   const requestedMonth = locationParams.get("month");
+  const requestedCreateEntry = locationParams.get("entry");
+  const requestedCreateExit = locationParams.get("exit");
+  const requestedCreateMode = locationParams.get("create");
 
   useEffect(() => {
     reservationsRef.current = reservations;
@@ -991,13 +1002,31 @@ const ReservationsPage = () => {
     setReservations(reservationsData);
     setAvailableYears([...new Set([currentYear, ...yearsData])].sort((a, b) => b - a));
 
-    if (!activeTab) {
-      if (gitesData[0]?.id) {
-        setActiveTab(gitesData[0].id);
-      } else if (reservationsData.some((item) => !item.gite_id)) {
-        setActiveTab(UNASSIGNED_TAB);
+    setActiveTab((current) => {
+      if (current) return current;
+
+      if (requestedTab === UNASSIGNED_TAB && reservationsData.some((item) => !item.gite_id)) {
+        return UNASSIGNED_TAB;
       }
-    }
+
+      if (requestedTab === ALL_GITES_TAB) {
+        return ALL_GITES_TAB;
+      }
+
+      if (requestedTab && gitesData.some((gite) => gite.id === requestedTab)) {
+        return requestedTab;
+      }
+
+      if (gitesData[0]?.id) {
+        return gitesData[0].id;
+      }
+
+      if (reservationsData.some((item) => !item.gite_id)) {
+        return UNASSIGNED_TAB;
+      }
+
+      return current;
+    });
   };
 
   useEffect(() => {
@@ -1816,10 +1845,10 @@ const ReservationsPage = () => {
   };
 
   const ensureNewRow = (monthIndex: number): ReservationDraft => {
-    const giteId = activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeTab : "";
     const existing = newRows[monthIndex];
     if (existing) return existing;
-    const created = buildEmptyDraft(year, monthIndex, giteId);
+    const currentGite = activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeGite : null;
+    const created = buildEmptyDraft(year, monthIndex, currentGite);
     setNewRows((previous) => ({ ...previous, [monthIndex]: created }));
     return created;
   };
@@ -1827,8 +1856,7 @@ const ReservationsPage = () => {
   const updateNewRow = (monthIndex: number, updater: (draft: ReservationDraft) => ReservationDraft) => {
     setNewRows((previous) => {
       const base =
-        previous[monthIndex] ??
-        buildEmptyDraft(year, monthIndex, activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeTab : "");
+        previous[monthIndex] ?? buildEmptyDraft(year, monthIndex, activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeGite : null);
       return {
         ...previous,
         [monthIndex]: updater(base),
@@ -1872,7 +1900,7 @@ const ReservationsPage = () => {
       if (activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB) {
         setNewRows((previous) => ({
           ...previous,
-          [monthIndex]: buildEmptyDraft(year, monthIndex, activeTab),
+          [monthIndex]: buildEmptyDraft(year, monthIndex, activeGite),
         }));
       }
       setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: null }));
@@ -2702,6 +2730,64 @@ const ReservationsPage = () => {
     }, 0);
   };
 
+  useEffect(() => {
+    if (requestedCreateMode !== "1" || !requestedCreateEntry || !requestedCreateExit) {
+      handledCalendarInsertRef.current = null;
+      return;
+    }
+
+    if (requestedTab && activeTab !== requestedTab) return;
+    if (!activeGite?.id || activeTab === ALL_GITES_TAB || activeTab === UNASSIGNED_TAB) return;
+
+    const entryDate = parseInputDate(requestedCreateEntry);
+    const exitDate = parseInputDate(requestedCreateExit);
+    if (!entryDate || !exitDate || exitDate.getTime() <= entryDate.getTime()) return;
+
+    const requestedCreateMonthIndex = entryDate.getUTCMonth() + 1;
+    if (month && month !== requestedCreateMonthIndex) return;
+
+    const isExpanded = monthExpandedByIndex[requestedCreateMonthIndex] ?? isMonthExpandedByDefault(requestedCreateMonthIndex);
+    if (!isExpanded) {
+      setMonthExpanded(requestedCreateMonthIndex, true);
+      return;
+    }
+
+    const createSignature = `${location.key}:${activeTab}:${requestedCreateEntry}:${requestedCreateExit}`;
+    if (handledCalendarInsertRef.current === createSignature) return;
+
+    const monthRows = reservationsByMonth.get(requestedCreateMonthIndex) ?? [];
+    const insertIndex = monthRows.findIndex((reservation) => {
+      const reservationEntry = toUtcDateOnly(reservation.date_entree);
+      return reservationEntry ? reservationEntry.getTime() >= entryDate.getTime() : false;
+    });
+    const nextInsertIndex = insertIndex >= 0 ? insertIndex : monthRows.length;
+
+    const nextDraft = buildEmptyDraft(year, requestedCreateMonthIndex, activeGite, {
+      date_entree: requestedCreateEntry,
+      date_sortie: requestedCreateExit,
+    });
+
+    handledCalendarInsertRef.current = createSignature;
+    setError(null);
+    setNewRows((previous) => ({ ...previous, [requestedCreateMonthIndex]: nextDraft }));
+    setInsertRowIndexByMonth((previous) => ({ ...previous, [requestedCreateMonthIndex]: nextInsertIndex }));
+    focusGridCell(requestedCreateMonthIndex, nextInsertIndex, 0);
+  }, [
+    activeGite,
+    activeTab,
+    isMonthExpandedByDefault,
+    location.key,
+    month,
+    monthExpandedByIndex,
+    requestedCreateEntry,
+    requestedCreateExit,
+    requestedCreateMode,
+    requestedTab,
+    reservationsByMonth,
+    setMonthExpanded,
+    year,
+  ]);
+
   const ensureEditableExistingRow = (reservation: Reservation) => {
     setEditingRows((previous) => ({ ...previous, [reservation.id]: true }));
     setDrafts((previous) => ({
@@ -3381,7 +3467,7 @@ const ReservationsPage = () => {
             const list = reservationsByMonth.get(monthIndex) ?? [];
             const summary = monthSummary(list);
             const addAllowed = activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB && Boolean(activeGite?.id);
-            const newRow = newRows[monthIndex] ?? (addAllowed && activeGite ? buildEmptyDraft(year, monthIndex, activeGite.id) : null);
+            const newRow = newRows[monthIndex] ?? (addAllowed && activeGite ? buildEmptyDraft(year, monthIndex, activeGite) : null);
             const rawInsertIndex = insertRowIndexByMonth[monthIndex];
             const inlineInsertIndex =
               addAllowed && typeof rawInsertIndex === "number" && rawInsertIndex >= 0 && rawInsertIndex <= list.length
