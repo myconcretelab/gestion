@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { apiFetch, buildApiUrl } from "../utils/api";
+import {
+  DEFAULT_PAYMENT_SOURCE_COLORS,
+  buildPaymentColorMap,
+  getPaymentColor,
+  normalizePaymentHexColor,
+  normalizePaymentLabel,
+} from "../utils/paymentColors";
 import type { Gestionnaire, Gite, IcalSource } from "../utils/types";
 
 type IcalPreviewItem = {
@@ -218,6 +225,11 @@ type DeclarationNightsSettings = {
   available_sources: string[];
 };
 
+type SourceColorSettings = {
+  colors: Record<string, string>;
+  available_sources: string[];
+};
+
 type IcalExportFeed = {
   id: string;
   nom: string;
@@ -240,6 +252,11 @@ const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
 const DEFAULT_DECLARATION_NIGHTS_SETTINGS: DeclarationNightsSettings = {
   excluded_sources: ["Airbnb"],
   available_sources: ["Airbnb"],
+};
+
+const DEFAULT_SOURCE_COLOR_SETTINGS: SourceColorSettings = {
+  colors: { ...DEFAULT_PAYMENT_SOURCE_COLORS },
+  available_sources: Object.keys(DEFAULT_PAYMENT_SOURCE_COLORS),
 };
 
 const IMPORT_LOG_VISIBLE_COUNT = 2;
@@ -364,20 +381,6 @@ const getUnknownImportExamples = (item: IcalSourcesImportPreviewUnknown): IcalSo
   return [];
 };
 
-const SOURCE_COLOR_BY_KEY: Record<string, string> = {
-  [normalizeTextKey("Airbnb")]: "#E11D48",
-  [normalizeTextKey("Abritel")]: "#0EA5E9",
-  [normalizeTextKey("Gites de France")]: "#16A34A",
-  [normalizeTextKey("HomeExchange")]: "#7C3AED",
-  [normalizeTextKey("Virement")]: "#1D4ED8",
-  [normalizeTextKey("Chèque")]: "#B45309",
-  [normalizeTextKey("Espèces")]: "#CA8A04",
-  [normalizeTextKey("A définir")]: "#6B7280",
-};
-
-const sourceColor = (source: string | null | undefined) =>
-  SOURCE_COLOR_BY_KEY[normalizeTextKey(String(source ?? ""))] ?? "#6B7280";
-
 const IMPORT_LOG_UPDATE_FIELD_LABELS: Record<string, string> = {
   hote_nom: "hôte",
   source_paiement: "source",
@@ -450,6 +453,14 @@ const SettingsPage = () => {
   const [savingDeclarationNights, setSavingDeclarationNights] = useState(false);
   const [declarationNightsError, setDeclarationNightsError] = useState<string | null>(null);
   const [declarationNightsNotice, setDeclarationNightsNotice] = useState<string | null>(null);
+  const [sourceColorSettings, setSourceColorSettings] = useState<SourceColorSettings>(DEFAULT_SOURCE_COLOR_SETTINGS);
+  const [sourceColorDraft, setSourceColorDraft] = useState<Record<string, string>>(DEFAULT_SOURCE_COLOR_SETTINGS.colors);
+  const [loadingSourceColors, setLoadingSourceColors] = useState(true);
+  const [savingSourceColors, setSavingSourceColors] = useState(false);
+  const [sourceColorError, setSourceColorError] = useState<string | null>(null);
+  const [sourceColorNotice, setSourceColorNotice] = useState<string | null>(null);
+  const [newSourceColorLabel, setNewSourceColorLabel] = useState("");
+  const [newSourceColorValue, setNewSourceColorValue] = useState("#D3D3D3");
 
   const [icalPreview, setIcalPreview] = useState<IcalPreviewResult | null>(null);
   const [icalCronState, setIcalCronState] = useState<IcalCronState | null>(null);
@@ -534,6 +545,26 @@ const SettingsPage = () => {
         ...declarationExcludedSourcesDraft,
       ]),
     [declarationExcludedSourcesDraft, declarationNightsSettings]
+  );
+  const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColorDraft), [sourceColorDraft]);
+  const availableSourceColorLabels = useMemo(
+    () =>
+      normalizeSourceList([
+        ...Object.keys(DEFAULT_PAYMENT_SOURCE_COLORS),
+        ...sourceColorSettings.available_sources,
+        ...Object.keys(sourceColorSettings.colors ?? {}),
+        ...Object.keys(sourceColorDraft),
+      ]),
+    [sourceColorDraft, sourceColorSettings]
+  );
+  const customizedSourceColorCount = useMemo(
+    () =>
+      Object.entries(sourceColorDraft).filter(([label, color]) => {
+        const normalizedColor = normalizePaymentHexColor(color);
+        const defaultColor = getPaymentColor(label, DEFAULT_PAYMENT_SOURCE_COLORS);
+        return Boolean(normalizedColor) && normalizedColor !== defaultColor;
+      }).length,
+    [sourceColorDraft]
   );
   const activeIcalSourcesCount = useMemo(
     () => sources.filter((source) => source.is_active).length,
@@ -697,6 +728,34 @@ const SettingsPage = () => {
     applyDeclarationNightsSettings(data);
   };
 
+  const applySourceColorSettings = (data: SourceColorSettings) => {
+    const colors = Object.fromEntries(
+      Object.entries(data.colors ?? {}).flatMap(([label, color]) => {
+        const trimmedLabel = String(label ?? "").trim();
+        const normalizedColor = normalizePaymentHexColor(color);
+        if (!trimmedLabel || !normalizedColor) return [];
+        return [[trimmedLabel, normalizedColor]];
+      })
+    );
+
+    const availableSources = normalizeSourceList([
+      ...Object.keys(DEFAULT_PAYMENT_SOURCE_COLORS),
+      ...(data.available_sources ?? []),
+      ...Object.keys(colors),
+    ]);
+
+    setSourceColorSettings({
+      colors: colors,
+      available_sources: availableSources,
+    });
+    setSourceColorDraft(colors);
+  };
+
+  const loadSourceColorSettings = async () => {
+    const data = await apiFetch<SourceColorSettings>("/settings/source-colors");
+    applySourceColorSettings(data);
+  };
+
   const loadCronState = async () => {
     const data = await apiFetch<IcalCronState>("/settings/ical/cron");
     setIcalCronState(data);
@@ -743,10 +802,12 @@ const SettingsPage = () => {
     setLoadingSources(true);
     setLoadingIcalExports(true);
     setLoadingDeclarationNights(true);
+    setLoadingSourceColors(true);
     Promise.all([
       loadManagers(),
       loadSources(),
       loadDeclarationNightsSettings(),
+      loadSourceColorSettings(),
       loadCronState(),
       loadImportLog(),
       loadPumpStatus(),
@@ -758,12 +819,14 @@ const SettingsPage = () => {
         setSourceError(message);
         setIcalExportsError(message);
         setDeclarationNightsError(message);
+        setSourceColorError(message);
       })
       .finally(() => {
         setLoadingManagers(false);
         setLoadingSources(false);
         setLoadingIcalExports(false);
         setLoadingDeclarationNights(false);
+        setLoadingSourceColors(false);
       });
   }, []);
 
@@ -785,6 +848,66 @@ const SettingsPage = () => {
     } finally {
       setSavingDeclarationNights(false);
     }
+  };
+
+  const saveSourceColorSettings = async () => {
+    setSavingSourceColors(true);
+    setSourceColorError(null);
+    setSourceColorNotice(null);
+    try {
+      const invalidEntry = Object.entries(sourceColorDraft).find(
+        ([label, color]) => String(label ?? "").trim() && !normalizePaymentHexColor(color)
+      );
+      if (invalidEntry) {
+        setSourceColorError(`Couleur invalide pour "${invalidEntry[0]}". Utilisez un format #RRGGBB.`);
+        return;
+      }
+
+      const response = await apiFetch<SourceColorSettings>("/settings/source-colors", {
+        method: "PUT",
+        json: {
+          colors: Object.fromEntries(
+            Object.entries(sourceColorDraft).flatMap(([label, color]) => {
+              const trimmedLabel = String(label ?? "").trim();
+              const normalizedColor = normalizePaymentHexColor(color);
+              if (!trimmedLabel || !normalizedColor) return [];
+              return [[trimmedLabel, normalizedColor]];
+            })
+          ),
+        },
+      });
+      applySourceColorSettings(response);
+      setSourceColorNotice("Couleurs des sources enregistrées.");
+    } catch (error: any) {
+      setSourceColorError(error.message ?? "Impossible d'enregistrer les couleurs des sources.");
+    } finally {
+      setSavingSourceColors(false);
+    }
+  };
+
+  const addSourceColorLabel = () => {
+    const label = newSourceColorLabel.trim();
+    const normalizedColor = normalizePaymentHexColor(newSourceColorValue);
+    if (!label) {
+      setSourceColorError("Renseignez un libellé de source.");
+      return;
+    }
+    if (!normalizedColor) {
+      setSourceColorError("Choisissez une couleur valide.");
+      return;
+    }
+
+    setSourceColorError(null);
+    setSourceColorNotice(null);
+    setSourceColorDraft((previous) => ({
+      ...previous,
+      [label]: normalizedColor,
+    }));
+    setSourceColorSettings((previous) => ({
+      ...previous,
+      available_sources: normalizeSourceList([...previous.available_sources, label]),
+    }));
+    setNewSourceColorLabel("");
   };
 
   const createManager = async () => {
@@ -1547,6 +1670,126 @@ const SettingsPage = () => {
             )}
           </div>
 
+          <div className="card settings-card settings-card--sand settings-card--span-4">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Palette</span>
+              <span className="settings-card__badge">{customizedSourceColorCount} personnalisée(s)</span>
+            </div>
+            <div className="section-title">Couleurs des sources</div>
+            <div className="field-hint">
+              Personnalisez les couleurs utilisées dans le calendrier et la répartition des paiements.
+            </div>
+            {loadingSourceColors ? (
+              <div className="field-hint" style={{ marginTop: 12 }}>
+                Chargement...
+              </div>
+            ) : (
+              <>
+                <div className="settings-source-colors" style={{ marginTop: 16 }}>
+                  {availableSourceColorLabels.map((source) => {
+                    const color = sourceColorDraft[source] ?? getPaymentColor(source, DEFAULT_PAYMENT_SOURCE_COLORS);
+                    const hasDefaultColor = Object.keys(DEFAULT_PAYMENT_SOURCE_COLORS).some(
+                      (label) => normalizeTextKey(label) === normalizeTextKey(source)
+                    );
+                    return (
+                      <div key={source} className="settings-source-color-row">
+                        <div className="settings-source-color-row__label">
+                          <span className="settings-source-color-row__swatch" style={{ backgroundColor: color }} />
+                          <span>{source}</span>
+                        </div>
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(event) => {
+                            setSourceColorError(null);
+                            setSourceColorNotice(null);
+                            setSourceColorDraft((previous) => ({
+                              ...previous,
+                              [source]: event.target.value.toUpperCase(),
+                            }));
+                          }}
+                          disabled={savingSourceColors}
+                        />
+                        <input
+                          type="text"
+                          value={color}
+                          onChange={(event) => {
+                            setSourceColorError(null);
+                            setSourceColorNotice(null);
+                            setSourceColorDraft((previous) => ({
+                              ...previous,
+                              [source]: event.target.value.toUpperCase(),
+                            }));
+                          }}
+                          placeholder="#FFFFFF"
+                          disabled={savingSourceColors}
+                        />
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            setSourceColorError(null);
+                            setSourceColorNotice(null);
+                            setSourceColorDraft((previous) => {
+                              if (!hasDefaultColor) {
+                                const next = { ...previous };
+                                delete next[source];
+                                return next;
+                              }
+                              return {
+                                ...previous,
+                                [source]: getPaymentColor(source, DEFAULT_PAYMENT_SOURCE_COLORS),
+                              };
+                            });
+                          }}
+                          disabled={savingSourceColors}
+                        >
+                          {hasDefaultColor ? "Défaut" : "Retirer"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="field-group" style={{ marginTop: 16 }}>
+                  <div className="field-group__header">
+                    <div className="field-group__label">Ajouter une source</div>
+                    <div className="field-hint">Ajoutez un libellé si une source n'apparaît pas encore.</div>
+                  </div>
+                  <div className="settings-source-color-add">
+                    <input
+                      value={newSourceColorLabel}
+                      onChange={(event) => {
+                        setSourceColorError(null);
+                        setSourceColorNotice(null);
+                        setNewSourceColorLabel(event.target.value);
+                      }}
+                      placeholder="Ex: Booking"
+                      disabled={savingSourceColors}
+                    />
+                    <input
+                      type="color"
+                      value={newSourceColorValue}
+                      onChange={(event) => setNewSourceColorValue(event.target.value.toUpperCase())}
+                      disabled={savingSourceColors}
+                    />
+                    <button type="button" className="secondary" onClick={addSourceColorLabel} disabled={savingSourceColors}>
+                      Ajouter
+                    </button>
+                  </div>
+                </div>
+
+                <div className="actions" style={{ marginTop: 16 }}>
+                  <button type="button" onClick={() => void saveSourceColorSettings()} disabled={savingSourceColors}>
+                    {savingSourceColors ? "Enregistrement..." : "Enregistrer"}
+                  </button>
+                </div>
+                {sourceColorNotice ? <div className="note note--success">{sourceColorNotice}</div> : null}
+                {sourceColorError ? <div className="note">{sourceColorError}</div> : null}
+              </>
+            )}
+          </div>
+
           <div className="card settings-card settings-card--neutral settings-card--span-8">
             <div className="settings-managers-header">
               <div>
@@ -1591,7 +1834,7 @@ const SettingsPage = () => {
                                     width: 10,
                                     height: 10,
                                     borderRadius: "999px",
-                                    background: sourceColor(item.source),
+                                    background: getPaymentColor(item.source, paymentColorMap),
                                     border: "1px solid rgba(17, 24, 39, 0.2)",
                                   }}
                                 />
@@ -1624,7 +1867,7 @@ const SettingsPage = () => {
                                       width: 10,
                                       height: 10,
                                       borderRadius: "999px",
-                                      background: sourceColor(item.source),
+                                      background: getPaymentColor(item.source, paymentColorMap),
                                       border: "1px solid rgba(17, 24, 39, 0.2)",
                                     }}
                                   />

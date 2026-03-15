@@ -7,6 +7,7 @@ import FacturesListPage from "./pages/FacturesListPage";
 import FactureFormPage from "./pages/FactureFormPage";
 import FactureDetailPage from "./pages/FactureDetailPage";
 import ReservationsPage from "./pages/ReservationsPage";
+import CalendrierPage from "./pages/CalendrierPage";
 import StatisticsPage from "./pages/StatisticsPage";
 import SettingsPage from "./pages/SettingsPage";
 
@@ -21,6 +22,9 @@ const App = () => {
   const isReservationsSection =
     location.pathname === "/reservations" ||
     location.pathname.startsWith("/reservations/");
+  const isCalendarSection =
+    location.pathname === "/calendrier" ||
+    location.pathname.startsWith("/calendrier/");
   const isStatsSection =
     location.pathname === "/statistiques" ||
     location.pathname.startsWith("/statistiques/");
@@ -39,6 +43,13 @@ const App = () => {
             aria-current={isReservationsSection ? "page" : undefined}
           >
             Réservations
+          </NavLink>
+          <NavLink
+            to="/calendrier"
+            className={() => (isCalendarSection ? "active" : undefined)}
+            aria-current={isCalendarSection ? "page" : undefined}
+          >
+            Calendrier
           </NavLink>
           <NavLink
             to="/contrats"
@@ -88,6 +99,7 @@ const App = () => {
           <Route path="/factures/:id/edition" element={<FactureFormPage />} />
           <Route path="/factures/:id" element={<FactureDetailPage />} />
           <Route path="/reservations" element={<ReservationsPage />} />
+          <Route path="/calendrier" element={<CalendrierPage />} />
           <Route path="/statistiques" element={<StatisticsPage />} />
           <Route path="/parametres" element={<SettingsPage />} />
         </Routes>

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import { mergeOptions } from "./shared/rentalForm";
 import {
@@ -795,6 +795,7 @@ const scheduleLazyTask = (callback: () => void) => {
 
 const ReservationsPage = () => {
   const currentYear = new Date().getUTCFullYear();
+  const location = useLocation();
   const [gites, setGites] = useState<Gite[]>([]);
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -836,6 +837,7 @@ const ReservationsPage = () => {
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+  const [linkedFocusReservationId, setLinkedFocusReservationId] = useState<string | null>(null);
 
   const reservationsRef = useRef<Reservation[]>([]);
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
@@ -845,10 +847,26 @@ const ReservationsPage = () => {
   const savedRowFadeTimers = useRef<Record<string, number>>({});
   const pendingViewSnapshotRef = useRef<ReservationsViewSnapshot | null>(null);
   const restoreViewRafRef = useRef<number | null>(null);
+  const linkedFocusTimerRef = useRef<number | null>(null);
+  const handledLinkedFocusRef = useRef<string | null>(null);
+
+  const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const requestedFocusReservationId = locationParams.get("focus");
+  const requestedTab = locationParams.get("tab");
+  const requestedYear = locationParams.get("year");
+  const requestedMonth = locationParams.get("month");
 
   useEffect(() => {
     reservationsRef.current = reservations;
   }, [reservations]);
+
+  useEffect(() => {
+    return () => {
+      if (linkedFocusTimerRef.current) {
+        window.clearTimeout(linkedFocusTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     draftsRef.current = drafts;
@@ -988,6 +1006,18 @@ const ReservationsPage = () => {
   }, [year, month, q]);
 
   useEffect(() => {
+    const nextYear = requestedYear ? Number.parseInt(requestedYear, 10) : NaN;
+    if (Number.isFinite(nextYear) && nextYear > 0 && nextYear !== year) {
+      setYear(nextYear);
+    }
+
+    const nextMonth = requestedMonth ? Number.parseInt(requestedMonth, 10) : NaN;
+    if (Number.isFinite(nextMonth) && nextMonth >= 0 && nextMonth <= 12 && nextMonth !== month) {
+      setMonth(nextMonth as number | 0);
+    }
+  }, [month, requestedMonth, requestedYear, year]);
+
+  useEffect(() => {
     // Any display filter change should discard pending inline insertion state.
     setInsertRowIndexByMonth({});
     setNewRows({});
@@ -1005,6 +1035,18 @@ const ReservationsPage = () => {
     if (activeTab && gites.some((gite) => gite.id === activeTab)) return;
     setActiveTab(gites[0].id);
   }, [activeTab, gites, reservations]);
+
+  useEffect(() => {
+    if (!requestedTab) return;
+    if (requestedTab === UNASSIGNED_TAB || requestedTab === ALL_GITES_TAB) {
+      if (activeTab !== requestedTab) setActiveTab(requestedTab);
+      return;
+    }
+    if (!gites.some((gite) => gite.id === requestedTab)) return;
+    if (activeTab !== requestedTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [activeTab, gites, requestedTab]);
 
   const handleTabDragStart = (event: DragEvent<HTMLButtonElement>, id: string) => {
     if (reorderingTabs) return;
@@ -2354,6 +2396,61 @@ const ReservationsPage = () => {
     });
   }, [activeTab, reservationsByMonth]);
 
+  useEffect(() => {
+    if (!requestedFocusReservationId) {
+      handledLinkedFocusRef.current = null;
+      return;
+    }
+
+    const targetReservation = reservations.find((reservation) => reservation.id === requestedFocusReservationId);
+    if (!targetReservation) return;
+
+    const targetTab = targetReservation.gite_id ?? UNASSIGNED_TAB;
+    if (requestedTab && activeTab !== requestedTab) return;
+    if (!requestedTab && activeTab !== targetTab) return;
+
+    const targetMonth = toUtcDateOnly(targetReservation.date_entree)?.getUTCMonth();
+    if (targetMonth !== null && targetMonth !== undefined) {
+      const monthIndex = targetMonth + 1;
+      const isExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedByDefault(monthIndex);
+      if (!isExpanded) {
+        setMonthExpanded(monthIndex, true);
+        return;
+      }
+    }
+
+    const focusSignature = `${location.key}:${requestedFocusReservationId}`;
+    if (handledLinkedFocusRef.current === focusSignature) return;
+
+    let rafId = window.requestAnimationFrame(() => {
+      const targetRow = document.getElementById(`reservation-${requestedFocusReservationId}`);
+      if (!targetRow) return;
+
+      handledLinkedFocusRef.current = focusSignature;
+      targetRow.scrollIntoView({ block: "center", behavior: "smooth" });
+      setLinkedFocusReservationId(requestedFocusReservationId);
+      if (linkedFocusTimerRef.current) {
+        window.clearTimeout(linkedFocusTimerRef.current);
+      }
+      linkedFocusTimerRef.current = window.setTimeout(() => {
+        setLinkedFocusReservationId((current) => (current === requestedFocusReservationId ? null : current));
+      }, 2200);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [
+    activeTab,
+    isMonthExpandedByDefault,
+    location.key,
+    monthExpandedByIndex,
+    requestedFocusReservationId,
+    requestedTab,
+    reservations,
+    setMonthExpanded,
+  ]);
+
   const handleMonthHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>, monthIndex: number, isExpanded: boolean) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -3530,9 +3627,12 @@ const ReservationsPage = () => {
                             </tr>
                           )}
                           <tr
+                            id={`reservation-${reservation.id}`}
                             className={`reservations-row ${isEditing ? "reservations-row--editing" : ""} ${
                               isRowSavedFading ? "reservations-row--saved-fade" : ""
-                            } ${isCurrentReservation ? "reservations-row--current" : ""}`}
+                            } ${isCurrentReservation ? "reservations-row--current" : ""} ${
+                              linkedFocusReservationId === reservation.id ? "reservations-row--linked-focus" : ""
+                            }`}
                           >
                             <td className="reservations-insert-cell">
                               {addAllowed && (
