@@ -2,6 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "r
 import { apiFetch, isApiError } from "../utils/api";
 import { formatEuro } from "../utils/format";
 import { getGiteColor } from "../utils/giteColors";
+import { DEFAULT_PAYMENT_SOURCE_COLORS } from "../utils/paymentColors";
 import {
   computeAverageCA,
   computeAverageNights,
@@ -31,6 +32,9 @@ type PeriodYear = number | "all";
 type PeriodMonth = number | "";
 type ChartSelection = "Tous" | string | number;
 type AverageMode = "current" | "full";
+type SourceColorSettings = {
+  colors: Record<string, string>;
+};
 
 const MONTHS = [
   { value: "", label: "-- année entière --" },
@@ -150,13 +154,18 @@ const StatisticsPage = () => {
   const [showUrssaf, setShowUrssaf] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [avgMode, setAvgMode] = useState<AverageMode>("current");
+  const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const payload = await apiFetch<StatisticsPayload>("/statistics");
+      const [payload, colorSettings] = await Promise.all([
+        apiFetch<StatisticsPayload>("/statistics"),
+        apiFetch<SourceColorSettings>("/settings/source-colors"),
+      ]);
       setDataset(parseStatisticsPayload(payload));
+      setSourceColors(colorSettings.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
     } catch (err) {
       if (isApiError(err)) setError(err.message);
       else setError("Impossible de charger les statistiques.");
@@ -427,7 +436,7 @@ const StatisticsPage = () => {
               <div className="stats-gite-bottom charty">
                 <div>
                   <p className="stats-subtitle">Répartition des paiements</p>
-                  <PaymentPieChart payments={stats.payments} />
+                  <PaymentPieChart payments={stats.payments} sourceColors={sourceColors} />
                 </div>
                 <div>
                   <p className="stats-subtitle">Taux d'occupation</p>

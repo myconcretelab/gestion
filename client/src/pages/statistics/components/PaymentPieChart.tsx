@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { formatEuro } from "../../../utils/format";
-import { getPaymentColor } from "../statisticsUtils";
+import { buildPaymentColorMap, getPaymentColorFromMap } from "../../../utils/paymentColors";
 
 type PaymentPieChartProps = {
   payments: Record<string, number>;
+  sourceColors?: Record<string, string>;
 };
 
-const PaymentPieChart = ({ payments }: PaymentPieChartProps) => {
+const PaymentPieChart = ({ payments, sourceColors }: PaymentPieChartProps) => {
   const [activeLegend, setActiveLegend] = useState<string | null>(null);
+  const paymentColorMap = buildPaymentColorMap(sourceColors);
   const data = Object.entries(payments || {}).map(([name, value]) => ({
     name,
     value: Math.round(value * 100) / 100,
@@ -62,7 +64,7 @@ const PaymentPieChart = ({ payments }: PaymentPieChartProps) => {
           isAnimationActive
         >
           {data.map((entry) => (
-            <Cell key={entry.name} fill={getPaymentColor(entry.name)} />
+            <Cell key={entry.name} fill={getPaymentColorFromMap(entry.name, paymentColorMap)} />
           ))}
         </Pie>
         <Legend

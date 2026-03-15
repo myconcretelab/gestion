@@ -29,6 +29,11 @@ import {
   readDeclarationNightsSettings,
   writeDeclarationNightsSettings,
 } from "../services/declarationNightsSettings.js";
+import {
+  mergeSourceColorSettings,
+  readSourceColorSettings,
+  writeSourceColorSettings,
+} from "../services/sourceColorSettings.js";
 import { generateIcalExportToken, shouldExportReservationToIcal } from "../utils/reservationOrigin.js";
 
 const router = Router();
@@ -81,6 +86,9 @@ const pumpCronConfigSchema = z.object({
 const declarationNightsSettingsSchema = z.object({
   excluded_sources: z.array(z.string().trim().min(1)).default([]),
 });
+const sourceColorSettingsSchema = z.object({
+  colors: z.record(z.string().trim().min(1), z.string().trim().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)).default({}),
+});
 type SourceImportItem = z.infer<typeof sourceImportItemSchema>;
 type SourceImportPayload = z.infer<typeof sourceImportSchema>;
 type SourceImportUnknownExample = {
@@ -129,6 +137,19 @@ const buildDeclarationNightsSettingsResponse = async () => {
   return {
     excluded_sources: settings.excluded_sources,
     available_sources: [...new Set([...settings.excluded_sources, ...availableSources])].sort((left, right) =>
+      left.localeCompare(right, "fr", { sensitivity: "base" })
+    ),
+  };
+};
+
+const buildSourceColorSettingsResponse = async () => {
+  const settings = readSourceColorSettings();
+  const availableSources = await listDeclarationSources();
+  const configuredSources = Object.keys(settings.colors ?? {}).map((value) => String(value ?? "").trim()).filter(Boolean);
+
+  return {
+    colors: settings.colors,
+    available_sources: [...new Set([...availableSources, ...configuredSources])].sort((left, right) =>
       left.localeCompare(right, "fr", { sensitivity: "base" })
     ),
   };
@@ -709,6 +730,14 @@ router.get("/declaration-nights", async (_req, res, next) => {
   }
 });
 
+router.get("/source-colors", async (_req, res, next) => {
+  try {
+    res.json(await buildSourceColorSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put("/declaration-nights", async (req, res, next) => {
   try {
     const payload = declarationNightsSettingsSchema.parse(req.body);
@@ -716,6 +745,18 @@ router.put("/declaration-nights", async (req, res, next) => {
     const nextSettings = mergeDeclarationNightsSettings(current, payload);
     writeDeclarationNightsSettings(nextSettings);
     res.json(await buildDeclarationNightsSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/source-colors", async (req, res, next) => {
+  try {
+    const payload = sourceColorSettingsSchema.parse(req.body ?? {});
+    const current = readSourceColorSettings();
+    const merged = mergeSourceColorSettings(current, payload);
+    writeSourceColorSettings(merged);
+    res.json(await buildSourceColorSettingsResponse());
   } catch (error) {
     next(error);
   }

@@ -1,3 +1,5 @@
+import { getPaymentColor } from "../../utils/paymentColors";
+
 export type StatisticsGite = {
   id: string;
   nom: string;
@@ -365,15 +367,4 @@ export const computeChequeVirementNightsByGite = (
   return nights;
 };
 
-export const getPaymentColor = (label: string) => {
-  const payment = normalizeLabel(label);
-  if (payment.includes("airbnb")) return "#ff1920";
-  if (payment.includes("abritel")) return "#2d8cff";
-  if (payment.includes("gites de france")) return "#ffd700";
-  if (payment.includes("cheque") || payment.includes("chq")) return "#258aa0";
-  if (payment.includes("virement")) return "#247595";
-  if (payment.includes("especes")) return "#ef18c8";
-  if (payment.includes("a definir") || payment.includes("indefini")) return "#d3d3d3";
-  if (payment.includes("virmnt/chq")) return "#258aa0";
-  return "#d3d3d3";
-};
+export { getPaymentColor };
