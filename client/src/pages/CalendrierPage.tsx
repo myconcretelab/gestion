@@ -75,6 +75,14 @@ type CalendarMonthData = {
 type HoveredReservationState = {
   reservationId: string;
   monthIndex: number;
+  weekIndex: number;
+  segmentKey: string;
+} | null;
+
+type SelectedDateRange = {
+  monthIndex: number;
+  startIso: string;
+  endIso: string;
 } | null;
 
 type SourceColorSettings = {
@@ -287,6 +295,7 @@ const CalendrierPage = () => {
   const [year, setYear] = useState(currentYear);
   const [activeMonthIndex, setActiveMonthIndex] = useState(currentMonthIndex);
   const [hoveredReservation, setHoveredReservation] = useState<HoveredReservationState>(null);
+  const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -342,6 +351,7 @@ const CalendrierPage = () => {
 
   useEffect(() => {
     setHoveredReservation(null);
+    setSelectedDateRange(null);
   }, [selectedGiteId, year]);
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
@@ -398,6 +408,87 @@ const CalendrierPage = () => {
       month: calendarMonths[hoveredReservation.monthIndex] ?? null,
     };
   }, [calendarMonths, hoveredReservation, reservationsForGite]);
+
+  const selectableDateSetsByMonth = useMemo(() => {
+    const map = new Map<number, Set<string>>();
+    for (const monthData of calendarMonths) {
+      const selectableDates = new Set<string>();
+      monthData.weeks.forEach((week) => {
+        week.days.forEach((day) => {
+          if (day.isCurrentMonth && !day.isOccupied && !day.isPast) {
+            selectableDates.add(day.isoDate);
+          }
+        });
+      });
+      map.set(monthData.index, selectableDates);
+    }
+    return map;
+  }, [calendarMonths]);
+
+  const isSelectableDateRange = useCallback(
+    (monthIndex: number, startIso: string, endIso: string) => {
+      const selectableDates = selectableDateSetsByMonth.get(monthIndex);
+      if (!selectableDates?.size) return false;
+
+      for (let cursor = parseIsoDate(startIso); cursor.getTime() <= parseIsoDate(endIso).getTime(); cursor = addUtcDays(cursor, 1)) {
+        if (!selectableDates.has(toIsoDate(cursor))) return false;
+      }
+
+      return true;
+    },
+    [selectableDateSetsByMonth]
+  );
+
+  const toggleDateSelection = useCallback(
+    (monthIndex: number, isoDate: string) => {
+      const selectableDates = selectableDateSetsByMonth.get(monthIndex);
+      if (!selectableDates?.has(isoDate)) return;
+
+      setSelectedDateRange((current) => {
+        if (!current || current.monthIndex !== monthIndex) {
+          return { monthIndex, startIso: isoDate, endIso: isoDate };
+        }
+
+        if (current.startIso === isoDate && current.endIso === isoDate) {
+          return null;
+        }
+
+        if (isoDate >= current.startIso && isoDate <= current.endIso) {
+          return { monthIndex, startIso: isoDate, endIso: isoDate };
+        }
+
+        const nextStartIso = isoDate < current.startIso ? isoDate : current.startIso;
+        const nextEndIso = isoDate > current.endIso ? isoDate : current.endIso;
+
+        if (!isSelectableDateRange(monthIndex, nextStartIso, nextEndIso)) {
+          return { monthIndex, startIso: isoDate, endIso: isoDate };
+        }
+
+        return {
+          monthIndex,
+          startIso: nextStartIso,
+          endIso: nextEndIso,
+        };
+      });
+    },
+    [isSelectableDateRange, selectableDateSetsByMonth]
+  );
+
+  const openReservationInsertFromSelection = useCallback(
+    (monthNumber: number) => {
+      if (!selectedDateRange || !selectedGiteId) return;
+
+      const params = new URLSearchParams();
+      params.set("create", "1");
+      params.set("entry", selectedDateRange.startIso);
+      params.set("exit", toIsoDate(addUtcDays(parseIsoDate(selectedDateRange.endIso), 1)));
+      params.set("year", String(year));
+      params.set("month", String(monthNumber));
+      params.set("tab", selectedGiteId);
+      navigate(`/reservations?${params.toString()}`);
+    },
+    [navigate, selectedDateRange, selectedGiteId, year]
+  );
 
   const scrollToMonth = useCallback((monthIndex: number, behavior: ScrollBehavior = "smooth") => {
     const container = boardScrollRef.current;
@@ -600,6 +691,8 @@ const CalendrierPage = () => {
             <div className="calendar-months">
               {calendarMonths.map((monthData) => {
                 const shouldRenderSegments = renderedMonthIndexes.has(monthData.index);
+                const selectedRangeForMonth =
+                  selectedDateRange?.monthIndex === monthData.index ? selectedDateRange : null;
 
                 return (
                   <section
@@ -623,132 +716,187 @@ const CalendrierPage = () => {
 
                     <div className="calendar-weeks">
                       {monthData.weeks.map((week) => (
-                        <section key={`${monthData.monthNumber}-${week.index}`} className="calendar-week" aria-label={`Semaine ${week.index + 1}`}>
+                        <section
+                          key={`${monthData.monthNumber}-${week.index}`}
+                          className={`calendar-week${
+                            hoveredReservation?.monthIndex === monthData.index && hoveredReservation.weekIndex === week.index
+                              ? " calendar-week--overlay-active"
+                              : ""
+                          }`}
+                          aria-label={`Semaine ${week.index + 1}`}
+                        >
                           <div className="calendar-week__days">
-                            {week.days.map((day) => (
-                              <article
-                                key={day.isoDate}
-                                className={[
-                                  "calendar-day",
-                                  day.isCurrentMonth ? "" : "calendar-day--ghost",
-                                  day.isOccupied ? "calendar-day--occupied" : "",
-                                  day.isPast ? "calendar-day--past" : "",
-                                  day.isConnectedToPrevious ? "calendar-day--occupied-connected-left" : "",
-                                  day.isConnectedToNext ? "calendar-day--occupied-connected-right" : "",
-                                  day.isToday ? "calendar-day--today" : "",
-                                ]
-                                  .filter(Boolean)
-                                  .join(" ")}
-                              >
-                                {day.isCurrentMonth ? (
-                                  <div className="calendar-day__number-wrap">
-                                    <span className="calendar-day__number">{day.dayNumber}</span>
-                                  </div>
-                                ) : null}
-                              </article>
-                            ))}
+                            {week.days.map((day) => {
+                              const isSelectable = day.isCurrentMonth && !day.isOccupied && !day.isPast;
+                              const isSelected =
+                                selectedRangeForMonth !== null &&
+                                day.isoDate >= selectedRangeForMonth.startIso &&
+                                day.isoDate <= selectedRangeForMonth.endIso;
+                              const isSelectionEnd = selectedRangeForMonth?.endIso === day.isoDate;
+
+                              return (
+                                <article
+                                  key={day.isoDate}
+                                  className={[
+                                    "calendar-day",
+                                    day.isCurrentMonth ? "" : "calendar-day--ghost",
+                                    day.isOccupied ? "calendar-day--occupied" : "",
+                                    day.isPast ? "calendar-day--past" : "",
+                                    day.isConnectedToPrevious ? "calendar-day--occupied-connected-left" : "",
+                                    day.isConnectedToNext ? "calendar-day--occupied-connected-right" : "",
+                                    day.isToday ? "calendar-day--today" : "",
+                                    isSelectable ? "calendar-day--selectable" : "",
+                                    isSelected ? "calendar-day--selected" : "",
+                                    isSelectionEnd ? "calendar-day--selection-end" : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                  onClick={isSelectable ? () => toggleDateSelection(monthData.index, day.isoDate) : undefined}
+                                  onKeyDown={
+                                    isSelectable
+                                      ? (event) => {
+                                          if (event.key !== "Enter" && event.key !== " ") return;
+                                          event.preventDefault();
+                                          toggleDateSelection(monthData.index, day.isoDate);
+                                        }
+                                      : undefined
+                                  }
+                                  tabIndex={isSelectable ? 0 : undefined}
+                                  aria-pressed={isSelectable ? isSelected : undefined}
+                                >
+                                  {day.isCurrentMonth ? (
+                                    <>
+                                      <div className="calendar-day__number-wrap">
+                                        <span className="calendar-day__number">{day.dayNumber}</span>
+                                      </div>
+                                      {isSelectionEnd ? (
+                                        <button
+                                          type="button"
+                                          className="calendar-day__add-button"
+                                          aria-label="Créer une réservation sur ces dates"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            openReservationInsertFromSelection(monthData.monthNumber);
+                                          }}
+                                        >
+                                          +
+                                        </button>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                </article>
+                              );
+                            })}
                           </div>
 
                           {shouldRenderSegments ? (
                             <div className="calendar-week__segments">
-                              {week.segments.map((segment) => (
-                                <div
-                                  key={`${segment.id}-${monthData.monthNumber}-${week.index}-${segment.startColumn}`}
-                                  className={[
-                                    "calendar-reservation",
-                                    segment.showLabel ? "" : "calendar-reservation--continuation",
-                                    segment.isPast ? "calendar-reservation--past" : "",
-                                    hoveredReservation?.reservationId === segment.reservation.id ? "calendar-reservation--hovered" : "",
-                                    segment.continuesFromPreviousWeek ? "calendar-reservation--continues-from-previous" : "",
-                                    segment.continuesToNextWeek ? "calendar-reservation--continues-to-next" : "",
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                  style={
-                                    {
-                                      gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
-                                      "--calendar-reservation-bg": getPaymentColorFromMap(segment.reservation.source_paiement, paymentColorMap),
-                                      "--calendar-reservation-fg": getPaymentTextColorFromMap(segment.reservation.source_paiement, paymentColorMap),
-                                    } as CSSProperties
-                                  }
-                                  onMouseEnter={() =>
-                                    setHoveredReservation({
-                                      reservationId: segment.reservation.id,
-                                      monthIndex: monthData.index,
-                                    })
-                                  }
-                                  onMouseLeave={() =>
-                                    setHoveredReservation((current) => (current?.reservationId === segment.reservation.id ? null : current))
-                                  }
-                                  onFocus={() =>
-                                    setHoveredReservation({
-                                      reservationId: segment.reservation.id,
-                                      monthIndex: monthData.index,
-                                    })
-                                  }
-                                  onBlur={() =>
-                                    setHoveredReservation((current) => (current?.reservationId === segment.reservation.id ? null : current))
-                                  }
-                                  onClick={() => {
-                                    const params = new URLSearchParams();
-                                    params.set("focus", segment.reservation.id);
-                                    params.set("year", String(year));
-                                    params.set("month", String(monthData.monthNumber));
-                                    if (segment.reservation.gite_id) {
-                                      params.set("tab", segment.reservation.gite_id);
+                              {week.segments.map((segment) => {
+                                const segmentKey = `${segment.id}-${monthData.monthNumber}-${week.index}-${segment.startColumn}`;
+
+                                return (
+                                  <div
+                                    key={segmentKey}
+                                    className={[
+                                      "calendar-reservation",
+                                      segment.showLabel ? "" : "calendar-reservation--continuation",
+                                      segment.isPast ? "calendar-reservation--past" : "",
+                                      hoveredReservation?.segmentKey === segmentKey ? "calendar-reservation--hovered" : "",
+                                      segment.continuesFromPreviousWeek ? "calendar-reservation--continues-from-previous" : "",
+                                      segment.continuesToNextWeek ? "calendar-reservation--continues-to-next" : "",
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ")}
+                                    style={
+                                      {
+                                        gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
+                                        "--calendar-reservation-bg": getPaymentColorFromMap(segment.reservation.source_paiement, paymentColorMap),
+                                        "--calendar-reservation-fg": getPaymentTextColorFromMap(segment.reservation.source_paiement, paymentColorMap),
+                                      } as CSSProperties
                                     }
-                                    navigate(`/reservations?${params.toString()}#reservation-${segment.reservation.id}`);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key !== "Enter" && event.key !== " ") return;
-                                    event.preventDefault();
-                                    const params = new URLSearchParams();
-                                    params.set("focus", segment.reservation.id);
-                                    params.set("year", String(year));
-                                    params.set("month", String(monthData.monthNumber));
-                                    if (segment.reservation.gite_id) {
-                                      params.set("tab", segment.reservation.gite_id);
+                                    onMouseEnter={() =>
+                                      setHoveredReservation({
+                                        reservationId: segment.reservation.id,
+                                        monthIndex: monthData.index,
+                                        weekIndex: week.index,
+                                        segmentKey,
+                                      })
                                     }
-                                    navigate(`/reservations?${params.toString()}#reservation-${segment.reservation.id}`);
-                                  }}
-                                  tabIndex={0}
-                                >
-                                  {segment.showLabel ? (
-                                    <>
-                                      <span className="calendar-reservation__content">
-                                        <strong className="calendar-reservation__label">{segment.label}</strong>
-                                        <span className="calendar-reservation__price">{formatEuro(segment.reservation.prix_total)}</span>
-                                      </span>
-                                      <div className="calendar-reservation__popover" role="tooltip">
-                                        <div className="calendar-reservation__popover-title">{segment.reservation.hote_nom}</div>
-                                        <div className="calendar-reservation__popover-row">
-                                          <span>Séjour</span>
-                                          <strong>
-                                            {formatShortDate(segment.reservation.date_entree)} → {formatShortDate(segment.reservation.date_sortie)}
-                                          </strong>
+                                    onMouseLeave={() =>
+                                      setHoveredReservation((current) => (current?.segmentKey === segmentKey ? null : current))
+                                    }
+                                    onFocus={() =>
+                                      setHoveredReservation({
+                                        reservationId: segment.reservation.id,
+                                        monthIndex: monthData.index,
+                                        weekIndex: week.index,
+                                        segmentKey,
+                                      })
+                                    }
+                                    onBlur={() =>
+                                      setHoveredReservation((current) => (current?.segmentKey === segmentKey ? null : current))
+                                    }
+                                    onClick={() => {
+                                      const params = new URLSearchParams();
+                                      params.set("focus", segment.reservation.id);
+                                      params.set("year", String(year));
+                                      params.set("month", String(monthData.monthNumber));
+                                      if (segment.reservation.gite_id) {
+                                        params.set("tab", segment.reservation.gite_id);
+                                      }
+                                      navigate(`/reservations?${params.toString()}#reservation-${segment.reservation.id}`);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key !== "Enter" && event.key !== " ") return;
+                                      event.preventDefault();
+                                      const params = new URLSearchParams();
+                                      params.set("focus", segment.reservation.id);
+                                      params.set("year", String(year));
+                                      params.set("month", String(monthData.monthNumber));
+                                      if (segment.reservation.gite_id) {
+                                        params.set("tab", segment.reservation.gite_id);
+                                      }
+                                      navigate(`/reservations?${params.toString()}#reservation-${segment.reservation.id}`);
+                                    }}
+                                    tabIndex={0}
+                                  >
+                                    {segment.showLabel ? (
+                                      <>
+                                        <span className="calendar-reservation__content">
+                                          <strong className="calendar-reservation__label">{segment.label}</strong>
+                                          <span className="calendar-reservation__price">{formatEuro(segment.reservation.prix_total)}</span>
+                                        </span>
+                                        <div className="calendar-reservation__popover" role="tooltip">
+                                          <div className="calendar-reservation__popover-title">{segment.reservation.hote_nom}</div>
+                                          <div className="calendar-reservation__popover-row">
+                                            <span>Séjour</span>
+                                            <strong>
+                                              {formatShortDate(segment.reservation.date_entree)} → {formatShortDate(segment.reservation.date_sortie)}
+                                            </strong>
+                                          </div>
+                                          <div className="calendar-reservation__popover-row">
+                                            <span>Voyageurs</span>
+                                            <strong>
+                                              {segment.reservation.nb_adultes} adulte{segment.reservation.nb_adultes > 1 ? "s" : ""}
+                                            </strong>
+                                          </div>
+                                          <div className="calendar-reservation__popover-row">
+                                            <span>Montant</span>
+                                            <strong>{formatEuro(segment.reservation.prix_total)}</strong>
+                                          </div>
+                                          <div className="calendar-reservation__popover-row">
+                                            <span>Source</span>
+                                            <strong>{segment.reservation.source_paiement || "Non renseignée"}</strong>
+                                          </div>
+                                          {segment.reservation.commentaire ? (
+                                            <p className="calendar-reservation__popover-note">{segment.reservation.commentaire}</p>
+                                          ) : null}
                                         </div>
-                                        <div className="calendar-reservation__popover-row">
-                                          <span>Voyageurs</span>
-                                          <strong>
-                                            {segment.reservation.nb_adultes} adulte{segment.reservation.nb_adultes > 1 ? "s" : ""}
-                                          </strong>
-                                        </div>
-                                        <div className="calendar-reservation__popover-row">
-                                          <span>Montant</span>
-                                          <strong>{formatEuro(segment.reservation.prix_total)}</strong>
-                                        </div>
-                                        <div className="calendar-reservation__popover-row">
-                                          <span>Source</span>
-                                          <strong>{segment.reservation.source_paiement || "Non renseignée"}</strong>
-                                        </div>
-                                        {segment.reservation.commentaire ? (
-                                          <p className="calendar-reservation__popover-note">{segment.reservation.commentaire}</p>
-                                        ) : null}
-                                      </div>
-                                    </>
-                                  ) : null}
-                                </div>
-                              ))}
+                                      </>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
                             </div>
                           ) : null}
                         </section>

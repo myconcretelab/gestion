@@ -11,6 +11,9 @@
   --border: #e5e7eb;
   --card: #ffffff;
   --accent: #ff5a5f;
+  --primary: #ff5a5f;
+  --primary-soft: #ffe5e6;
+  --primary-strong: rgba(255, 90, 95, 0.24);
   --accent-dark: #e0484d;
   --accent-soft: #ffe5e6;
   --nav: #ffffff;
@@ -312,6 +315,11 @@
 .calendar-week {
   position: relative;
   padding: 0 var(--calendar-week-side-padding);
+  z-index: 0;
+}
+
+.calendar-week--overlay-active {
+  z-index: 8;
 }
 
 .calendar-week + .calendar-week {
@@ -342,6 +350,17 @@
   border-radius: 28px;
   background: #ffffff;
   transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.calendar-day--selectable {
+  cursor: pointer;
+}
+
+.calendar-day--selectable:hover,
+.calendar-day--selectable:focus-visible {
+  border-color: color-mix(in srgb, var(--primary-strong) 52%, #f1ede8 48%);
+  background: color-mix(in srgb, var(--primary-soft) 28%, #ffffff 72%);
+  outline: none;
 }
 
 .calendar-day--ghost {
@@ -421,6 +440,15 @@
   z-index: 1;
 }
 
+.calendar-day--selected {
+  border-color: color-mix(in srgb, var(--primary-strong) 66%, #f1ede8 34%);
+  background: color-mix(in srgb, var(--primary-soft) 52%, #ffffff 48%);
+}
+
+.calendar-day--selected.calendar-day--today::after {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 60%, #ffffff 40%);
+}
+
 .calendar-day__number-wrap {
   position: relative;
   z-index: 1;
@@ -450,6 +478,29 @@
   color: #ffffff;
 }
 
+.calendar-day__add-button {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--primary, #ff5a5f);
+  color: #ffffff;
+  font-size: 1.3rem;
+  line-height: 1;
+  font-weight: 300;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+.calendar-day__add-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.98);
+}
+
 .calendar-reservation {
   position: relative;
   pointer-events: auto;
@@ -467,10 +518,13 @@
   background: var(--calendar-reservation-bg, #d3d3d3);
   color: var(--calendar-reservation-fg, #111827);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.calendar-reservation:not(.calendar-reservation--continues-to-next) {
+  margin-right: -16px;
 }
 
 .calendar-reservation--continuation {
@@ -488,32 +542,36 @@
 }
 
 .calendar-reservation--past {
-  opacity: 0.46;
-  filter: saturate(0.3);
+  border-color: color-mix(in srgb, var(--calendar-reservation-bg, #d3d3d3) 32%, #d1d5db 68%);
+  background: color-mix(in srgb, var(--calendar-reservation-bg, #d3d3d3) 44%, #ffffff 56%);
+  color: color-mix(in srgb, var(--calendar-reservation-fg, #111827) 58%, #ffffff 42%);
   box-shadow: none;
 }
 
 .calendar-reservation:focus-visible {
   outline: none;
+  z-index: 60;
 }
 
 .calendar-reservation:hover {
   filter: brightness(0.98);
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+  z-index: 60;
 }
 
 .calendar-reservation--past:hover {
-  filter: saturate(0.3) brightness(0.98);
+  filter: brightness(0.98);
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
 }
 
 .calendar-reservation--hovered {
   filter: brightness(0.98);
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+  z-index: 60;
 }
 
 .calendar-reservation--past.calendar-reservation--hovered {
-  filter: saturate(0.3) brightness(0.98);
+  filter: brightness(0.98);
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
 }
 
@@ -524,6 +582,7 @@
   gap: 12px;
   width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .calendar-reservation__label {
@@ -541,6 +600,7 @@
   font-size: 0.66rem;
   font-weight: 400;
   opacity: 0.88;
+  margin-right: 15px;
 }
 
 @container (max-width: 168px) {
@@ -570,7 +630,7 @@
   transform: translateY(6px);
   pointer-events: none;
   transition: opacity 160ms ease, transform 160ms ease;
-  z-index: 8;
+  z-index: 80;
 }
 
 .calendar-reservation:hover .calendar-reservation__popover,
@@ -849,12 +909,24 @@
     font-size: 0.92rem;
   }
 
+  .calendar-day__add-button {
+    right: 8px;
+    bottom: 8px;
+    width: 28px;
+    height: 28px;
+    font-size: 1.2rem;
+  }
+
   .calendar-reservation {
     min-height: var(--calendar-reservation-height);
     padding: 0 12px;
     border-radius: 14px;
     gap: 8px;
     font-size: 0.74rem;
+  }
+
+  .calendar-reservation:not(.calendar-reservation--continues-to-next) {
+    margin-right: -14px;
   }
 
   .calendar-reservation--continuation {
@@ -3456,11 +3528,11 @@ button.warning {
 }
 
 .reservations-new-row td {
-  background: #eff6ff;
+  background: var(--primary-soft);
 }
 
 .reservations-new-row--inline td {
-  background: #e9f2ff;
+  background: color-mix(in srgb, var(--primary-soft) 82%, #ffffff 18%);
 }
 
 .reservations-total-value {
