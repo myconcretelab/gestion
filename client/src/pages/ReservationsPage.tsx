@@ -185,6 +185,7 @@ const RESERVATION_SOURCES = [
 
 const DEFAULT_RESERVATION_SOURCE = "A définir";
 const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
+const UNKNOWN_HOST_NAME = "Hôte inconnu";
 const ALL_GITES_TAB = "all-gites";
 const UNASSIGNED_TAB = "unassigned";
 const SERVICE_OPTION_KEYS: ReservationServiceOptionKey[] = ["draps", "linge_toilette", "menage", "depart_tardif", "chiens"];
@@ -243,6 +244,11 @@ const normalizeReservationSource = (value: string | null | undefined) => {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return DEFAULT_RESERVATION_SOURCE;
   return SOURCE_BY_NORMALIZED_KEY[normalizeTextKey(trimmed)] ?? DEFAULT_RESERVATION_SOURCE;
+};
+
+const getEditableHostName = (value: string | null | undefined) => {
+  const trimmed = String(value ?? "").trim();
+  return trimmed || UNKNOWN_HOST_NAME;
 };
 
 const hasIcalToVerifyMarker = (comment: string | null | undefined) => {
@@ -649,7 +655,7 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     id: reservation.id,
     gite_id: reservation.gite_id ?? null,
     placeholder_id: reservation.placeholder_id ?? null,
-    hote_nom: reservation.hote_nom,
+    hote_nom: getEditableHostName(reservation.hote_nom),
     date_entree: toInputDate(reservation.date_entree),
     date_sortie: toInputDate(reservation.date_sortie),
     nb_nuits: reservation.nb_nuits,
@@ -1779,7 +1785,7 @@ const ReservationsPage = () => {
   };
 
   const removeReservation = async (reservation: Reservation) => {
-    const confirmed = window.confirm(`Supprimer la réservation de ${reservation.hote_nom} ?`);
+    const confirmed = window.confirm(`Supprimer la réservation de ${getEditableHostName(reservation.hote_nom)} ?`);
     if (!confirmed) return;
 
     setDeletingId(reservation.id);
@@ -1798,7 +1804,7 @@ const ReservationsPage = () => {
     if (splittingId) return;
     if (!needsMonthSplit(reservation.date_entree, reservation.date_sortie)) return;
 
-    const confirmed = window.confirm(`Scinder la réservation de ${reservation.hote_nom} par mois ?`);
+    const confirmed = window.confirm(`Scinder la réservation de ${getEditableHostName(reservation.hote_nom)} par mois ?`);
     if (!confirmed) return;
 
     setSplittingId(reservation.id);
@@ -3814,7 +3820,7 @@ const ReservationsPage = () => {
                                   onClick={() => openInlineField(reservation, "hote_nom")}
                                   title="Modifier l'hôte"
                                 >
-                                  {reservation.hote_nom}
+                                  {getEditableHostName(reservation.hote_nom)}
                                 </button>
                               )}
                             </td>

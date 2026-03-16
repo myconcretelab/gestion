@@ -7,6 +7,7 @@ import {
   isUnknownHostName,
   normalizeImportedComment,
   normalizeImportedHostName,
+  toImportedReservationHostName,
 } from "../utils/reservationText.js";
 import { resolveImportedReservationSourceType } from "../utils/importedReservationSource.js";
 import { buildReservationOriginData, type ReservationOriginSystem } from "../utils/reservationOrigin.js";
@@ -424,7 +425,7 @@ export const importPreviewReservations = async (
             originReference: item.id,
             exportToIcal: false,
           }),
-          hote_nom: normalizeImportedHostName(item.hote_nom) ?? "",
+          hote_nom: toImportedReservationHostName(item.hote_nom),
           date_entree: dateEntree,
           date_sortie: dateSortie,
           nb_nuits: nights,

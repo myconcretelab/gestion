@@ -26,9 +26,20 @@ const MONTHS = [
   "Décembre",
 ] as const;
 
-const WEEKDAYS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."] as const;
+const WEEKDAYS = [
+  { full: "lun.", short: "L" },
+  { full: "mar.", short: "M" },
+  { full: "mer.", short: "M" },
+  { full: "jeu.", short: "J" },
+  { full: "ven.", short: "V" },
+  { full: "sam.", short: "S" },
+  { full: "dim.", short: "D" },
+] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const BOARD_MONTH_SCROLL_OFFSET = 104;
+const MOBILE_CALENDAR_BREAKPOINT = 760;
+const DEFAULT_MONTH_SCROLL_OFFSET = 104;
+const DEFAULT_DAY_SCROLL_OFFSET = 76;
+const DEFAULT_MOBILE_TOPBAR_OFFSET = 56;
 const RENDERED_MONTH_RADIUS = 2;
 
 type CalendarDay = {
@@ -89,7 +100,19 @@ type SourceColorSettings = {
   colors: Record<string, string>;
 };
 
+type PendingCalendarScrollTarget =
+  | { kind: "month"; value: number }
+  | { kind: "date"; value: string };
+
+type QuickReservationDraft = {
+  hote_nom: string;
+  nb_adultes: number;
+  prix_par_nuit: string;
+  commentaire: string;
+};
+
 const normalizeIsoDate = (value: string) => value.slice(0, 10);
+const round2 = (value: number) => Math.round(value * 100) / 100;
 
 const parseIsoDate = (value: string) => {
   const normalized = normalizeIsoDate(value);
@@ -101,6 +124,21 @@ const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
 
 const addUtcDays = (value: Date, days: number) => new Date(value.getTime() + days * DAY_MS);
 
+const getGiteNightlyPriceSuggestions = (gite: Gite | null) => {
+  const seen = new Set<number>();
+  const suggestions: number[] = [];
+  const rawList = Array.isArray(gite?.prix_nuit_liste) ? gite.prix_nuit_liste : [];
+
+  rawList.forEach((item) => {
+    const nextValue = round2(Math.max(0, Number(item)));
+    if (!Number.isFinite(nextValue) || seen.has(nextValue)) return;
+    seen.add(nextValue);
+    suggestions.push(nextValue);
+  });
+
+  return suggestions;
+};
+
 const haveSharedReservationId = (leftIds: string[] | undefined, rightIds: string[] | undefined) => {
   if (!leftIds?.length || !rightIds?.length) return false;
   return leftIds.some((id) => rightIds.includes(id));
@@ -110,6 +148,13 @@ const formatShortDate = (value: string) =>
   parseIsoDate(value).toLocaleDateString("fr-FR", {
     day: "numeric",
     month: "short",
+    timeZone: "UTC",
+  });
+
+const formatLongDate = (value: string) =>
+  parseIsoDate(value).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
     timeZone: "UTC",
   });
 
@@ -145,6 +190,14 @@ const hexToRgba = (hex: string, alpha: number) => {
   const b = Number.parseInt(normalized.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
+
+const getContainerScrollTargetTop = (container: HTMLElement, target: HTMLElement, offset: number) =>
+  Math.max(target.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - offset, 0);
+
+const getViewportScrollTop = () => window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+
+const getViewportScrollTargetTop = (target: HTMLElement, offset: number) =>
+  Math.max(target.getBoundingClientRect().top + getViewportScrollTop() - offset, 0);
 
 const buildCalendarMonthData = ({
   year,
@@ -296,45 +349,120 @@ const CalendrierPage = () => {
   const [activeMonthIndex, setActiveMonthIndex] = useState(currentMonthIndex);
   const [hoveredReservation, setHoveredReservation] = useState<HoveredReservationState>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
+  const [quickReservationDraft, setQuickReservationDraft] = useState<QuickReservationDraft | null>(null);
+  const [quickReservationOpen, setQuickReservationOpen] = useState(false);
+  const [quickReservationSaving, setQuickReservationSaving] = useState(false);
+  const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`).matches : false
+  );
+  const [viewportStickyOffsets, setViewportStickyOffsets] = useState({
+    topbar: DEFAULT_MOBILE_TOPBAR_OFFSET,
+    hero: 0,
+  });
 
+  const heroRef = useRef<HTMLElement | null>(null);
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
+  const weekdaysRef = useRef<HTMLDivElement | null>(null);
   const monthSectionRefs = useRef<Record<number, HTMLElement | null>>({});
-  const pendingScrollTargetRef = useRef<number | null>(currentMonthIndex);
+  const dayRefs = useRef<Record<string, HTMLElement | null>>({});
+  const pendingScrollTargetRef = useRef<PendingCalendarScrollTarget | null>({
+    kind: "date",
+    value: todayIso,
+  });
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [gitesData, reservationsData, sourceColorSettings] = await Promise.all([
+        apiFetch<Gite[]>("/gites"),
+        apiFetch<Reservation[]>("/reservations"),
+        apiFetch<SourceColorSettings>("/settings/source-colors"),
+      ]);
+
+      setGites(gitesData);
+      setReservations(reservationsData);
+      setSourceColors(sourceColorSettings.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
+      setSelectedGiteId((previous) => previous || gitesData[0]?.id || "");
+    } catch (err) {
+      if (isApiError(err)) setError(err.message);
+      else setError("Impossible de charger le calendrier.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    void loadData();
+  }, [loadData]);
 
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [gitesData, reservationsData, sourceColorSettings] = await Promise.all([
-          apiFetch<Gite[]>("/gites"),
-          apiFetch<Reservation[]>("/reservations"),
-          apiFetch<SourceColorSettings>("/settings/source-colors"),
-        ]);
-
-        if (cancelled) return;
-        setGites(gitesData);
-        setReservations(reservationsData);
-        setSourceColors(sourceColorSettings.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
-        setSelectedGiteId((previous) => previous || gitesData[0]?.id || "");
-      } catch (err) {
-        if (cancelled) return;
-        if (isApiError(err)) setError(err.message);
-        else setError("Impossible de charger le calendrier.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`);
+    const updateScrollMode = (matches: boolean) => {
+      setUsesViewportScroll((current) => (current === matches ? current : matches));
     };
 
-    void loadData();
+    updateScrollMode(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      updateScrollMode(event.matches);
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
 
     return () => {
-      cancelled = true;
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const heroNode = heroRef.current;
+    const topbarNode = document.querySelector(".topbar");
+    if (!heroNode) return;
+
+    const updateStickyOffsets = () => {
+      const nextTopbar = Math.round(topbarNode?.getBoundingClientRect().height ?? DEFAULT_MOBILE_TOPBAR_OFFSET);
+      const nextHero = Math.round(heroNode.getBoundingClientRect().height);
+
+      setViewportStickyOffsets((current) => {
+        if (current.topbar === nextTopbar && current.hero === nextHero) {
+          return current;
+        }
+
+        return {
+          topbar: nextTopbar,
+          hero: nextHero,
+        };
+      });
+    };
+
+    updateStickyOffsets();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateStickyOffsets, { passive: true });
+
+      return () => {
+        window.removeEventListener("resize", updateStickyOffsets);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateStickyOffsets();
+    });
+
+    resizeObserver.observe(heroNode);
+    if (topbarNode instanceof HTMLElement) {
+      resizeObserver.observe(topbarNode);
+    }
+    window.addEventListener("resize", updateStickyOffsets, { passive: true });
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateStickyOffsets);
     };
   }, []);
 
@@ -354,18 +482,62 @@ const CalendrierPage = () => {
     setSelectedDateRange(null);
   }, [selectedGiteId, year]);
 
+  useEffect(() => {
+    if (selectedDateRange) return;
+    setQuickReservationOpen(false);
+    setQuickReservationDraft(null);
+    setQuickReservationError(null);
+  }, [selectedDateRange]);
+
+  useEffect(() => {
+    if (!quickReservationOpen || !usesViewportScroll) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !quickReservationSaving) {
+        setQuickReservationOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [quickReservationOpen, quickReservationSaving, usesViewportScroll]);
+
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
   const accentColor = selectedGite ? getGiteColor(selectedGite) : "#ff5a5f";
   const todayDate = useMemo(() => parseIsoDate(todayIso), [todayIso]);
+  const selectedRangeExitIso = useMemo(
+    () => (selectedDateRange ? toIsoDate(addUtcDays(parseIsoDate(selectedDateRange.endIso), 1)) : ""),
+    [selectedDateRange]
+  );
+  const selectedRangeNights = useMemo(() => {
+    if (!selectedDateRange || !selectedRangeExitIso) return 0;
+    return Math.round((parseIsoDate(selectedRangeExitIso).getTime() - parseIsoDate(selectedDateRange.startIso).getTime()) / DAY_MS);
+  }, [selectedDateRange, selectedRangeExitIso]);
+  const selectedRangeSummary = useMemo(() => {
+    if (!selectedDateRange || !selectedRangeExitIso) return "";
+    return `${formatLongDate(selectedDateRange.startIso)} → ${formatLongDate(selectedRangeExitIso)}`;
+  }, [selectedDateRange, selectedRangeExitIso]);
+  const quickReservationNightlySuggestions = useMemo(() => getGiteNightlyPriceSuggestions(selectedGite), [selectedGite]);
+  const quickReservationSuggestedNightly = quickReservationNightlySuggestions[0] ?? 0;
+  const canUseQuickReservation = usesViewportScroll && Boolean(selectedDateRange && selectedGiteId);
   const pageStyle = useMemo(
     () =>
       ({
         "--calendar-accent": accentColor,
         "--calendar-accent-soft": hexToRgba(accentColor, 0.12),
         "--calendar-accent-strong": hexToRgba(accentColor, 0.24),
+        "--calendar-mobile-topbar-offset": `${viewportStickyOffsets.topbar}px`,
+        "--calendar-mobile-sticky-offset": `${viewportStickyOffsets.topbar + viewportStickyOffsets.hero}px`,
       }) as CSSProperties,
-    [accentColor]
+    [accentColor, viewportStickyOffsets.hero, viewportStickyOffsets.topbar]
   );
 
   const reservationsForGite = useMemo(
@@ -474,6 +646,19 @@ const CalendrierPage = () => {
     [isSelectableDateRange, selectableDateSetsByMonth]
   );
 
+  const buildQuickReservationDraft = useCallback((): QuickReservationDraft | null => {
+    if (!selectedDateRange || !selectedGiteId) return null;
+
+    const defaultAdults = Math.max(1, selectedGite?.nb_adultes_habituel ?? 2);
+
+    return {
+      hote_nom: "",
+      nb_adultes: defaultAdults,
+      prix_par_nuit: quickReservationSuggestedNightly > 0 ? String(quickReservationSuggestedNightly) : "",
+      commentaire: "",
+    };
+  }, [quickReservationSuggestedNightly, selectedDateRange, selectedGite, selectedGiteId]);
+
   const openReservationInsertFromSelection = useCallback(
     (monthNumber: number) => {
       if (!selectedDateRange || !selectedGiteId) return;
@@ -490,47 +675,208 @@ const CalendrierPage = () => {
     [navigate, selectedDateRange, selectedGiteId, year]
   );
 
-  const scrollToMonth = useCallback((monthIndex: number, behavior: ScrollBehavior = "smooth") => {
-    const container = boardScrollRef.current;
-    const target = monthSectionRefs.current[monthIndex];
-    if (!container || !target) return;
+  const openQuickReservationSheet = useCallback(() => {
+    const nextDraft = buildQuickReservationDraft();
+    if (!nextDraft) return;
+    setQuickReservationDraft(nextDraft);
+    setQuickReservationError(null);
+    setQuickReservationOpen(true);
+  }, [buildQuickReservationDraft]);
 
-    container.scrollTo({
-      top: Math.max(target.offsetTop - BOARD_MONTH_SCROLL_OFFSET, 0),
-      behavior,
-    });
+  const handleReservationInsertFromSelection = useCallback(
+    (monthNumber: number) => {
+      if (usesViewportScroll) {
+        openQuickReservationSheet();
+        return;
+      }
+
+      openReservationInsertFromSelection(monthNumber);
+    },
+    [openQuickReservationSheet, openReservationInsertFromSelection, usesViewportScroll]
+  );
+
+  const handleQuickReservationFieldChange = useCallback(
+    (field: keyof QuickReservationDraft, value: string | number) => {
+      setQuickReservationDraft((current) => (current ? { ...current, [field]: value } : current));
+    },
+    []
+  );
+
+  const saveQuickReservation = useCallback(async () => {
+    if (!selectedDateRange || !selectedRangeExitIso || !selectedGiteId || !quickReservationDraft || quickReservationSaving) return;
+
+    const hostName = quickReservationDraft.hote_nom.trim();
+    const nightly = Number.parseFloat(String(quickReservationDraft.prix_par_nuit).replace(",", "."));
+    const adults = Math.max(0, Math.trunc(Number(quickReservationDraft.nb_adultes) || 0));
+
+    if (!hostName) {
+      setQuickReservationError("Renseigne le nom de l'hôte.");
+      return;
+    }
+
+    if (!Number.isFinite(nightly) || nightly < 0) {
+      setQuickReservationError("Renseigne un prix par nuit valide.");
+      return;
+    }
+
+    setQuickReservationSaving(true);
+    setQuickReservationError(null);
+
+    try {
+      await apiFetch<Reservation>("/reservations", {
+        method: "POST",
+        json: {
+          gite_id: selectedGiteId,
+          hote_nom: hostName,
+          date_entree: selectedDateRange.startIso,
+          date_sortie: selectedRangeExitIso,
+          nb_adultes: adults,
+          prix_par_nuit: round2(nightly),
+          price_driver: "nightly",
+          commentaire: quickReservationDraft.commentaire.trim() || undefined,
+        },
+      });
+
+      await loadData();
+      setQuickReservationOpen(false);
+      setQuickReservationDraft(null);
+      setSelectedDateRange(null);
+    } catch (err) {
+      if (isApiError(err)) {
+        setQuickReservationError(err.message);
+      } else {
+        setQuickReservationError("Impossible d'enregistrer la réservation.");
+      }
+    } finally {
+      setQuickReservationSaving(false);
+    }
+  }, [
+    loadData,
+    quickReservationDraft,
+    quickReservationSaving,
+    selectedDateRange,
+    selectedGiteId,
+    selectedRangeExitIso,
+  ]);
+
+  const quickReservationComputedTotal = useMemo(() => {
+    if (!quickReservationDraft || selectedRangeNights <= 0) return null;
+    const nightly = Number.parseFloat(String(quickReservationDraft.prix_par_nuit).replace(",", "."));
+    if (!Number.isFinite(nightly) || nightly < 0) return null;
+    return round2(nightly * selectedRangeNights);
+  }, [quickReservationDraft, selectedRangeNights]);
+
+  const getScrollOffset = useCallback(
+    (kind: "month" | "date") => {
+      const stickyHeight = weekdaysRef.current?.getBoundingClientRect().height ?? 0;
+      const viewportChromeOffset = usesViewportScroll ? viewportStickyOffsets.topbar + viewportStickyOffsets.hero : 0;
+      if (stickyHeight <= 0) {
+        return (kind === "month" ? DEFAULT_MONTH_SCROLL_OFFSET : DEFAULT_DAY_SCROLL_OFFSET) + viewportChromeOffset;
+      }
+
+      return viewportChromeOffset + stickyHeight + (kind === "month" ? 18 : 10);
+    },
+    [usesViewportScroll, viewportStickyOffsets.hero, viewportStickyOffsets.topbar]
+  );
+
+  const scrollToMonth = useCallback((monthIndex: number, behavior: ScrollBehavior = "smooth") => {
+    const target = monthSectionRefs.current[monthIndex];
+    if (!target) return false;
+
+    const topOffset = getScrollOffset("month");
+
+    if (usesViewportScroll) {
+      window.scrollTo({
+        top: getViewportScrollTargetTop(target, topOffset),
+        behavior,
+      });
+    } else {
+      const container = boardScrollRef.current;
+      if (!container) return false;
+
+      container.scrollTo({
+        top: getContainerScrollTargetTop(container, target, topOffset),
+        behavior,
+      });
+    }
+
     setActiveMonthIndex(monthIndex);
-  }, []);
+    return true;
+  }, [getScrollOffset, usesViewportScroll]);
+
+  const scrollToDate = useCallback(
+    (isoDate: string, behavior: ScrollBehavior = "smooth") => {
+      const target = dayRefs.current[isoDate];
+      if (!target) return false;
+
+      const topOffset = getScrollOffset("date");
+
+      if (usesViewportScroll) {
+        window.scrollTo({
+          top: getViewportScrollTargetTop(target, topOffset),
+          behavior,
+        });
+      } else {
+        const container = boardScrollRef.current;
+        if (!container) return false;
+
+        container.scrollTo({
+          top: getContainerScrollTargetTop(container, target, topOffset),
+          behavior,
+        });
+      }
+
+      setActiveMonthIndex(parseIsoDate(isoDate).getUTCMonth());
+      return true;
+    },
+    [getScrollOffset, usesViewportScroll]
+  );
 
   useEffect(() => {
     if (loading || !calendarMonths.length) return;
-    const targetMonthIndex = pendingScrollTargetRef.current;
-    if (targetMonthIndex == null) return;
+    if (pendingScrollTargetRef.current == null) return;
 
-    const frameId = window.requestAnimationFrame(() => {
-      scrollToMonth(targetMonthIndex, "auto");
-      pendingScrollTargetRef.current = null;
-    });
+    let frameId = 0;
+
+    const runPendingScroll = () => {
+      const target = pendingScrollTargetRef.current;
+      if (target == null) return;
+
+      const didScroll = target.kind === "date" ? scrollToDate(target.value, "auto") : scrollToMonth(target.value, "auto");
+
+      if (didScroll) {
+        pendingScrollTargetRef.current = null;
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(runPendingScroll);
+    };
+
+    frameId = window.requestAnimationFrame(runPendingScroll);
 
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [calendarMonths.length, loading, scrollToMonth, year]);
+  }, [calendarMonths.length, loading, scrollToDate, scrollToMonth, year]);
 
   useEffect(() => {
-    const container = boardScrollRef.current;
-    if (!container || !calendarMonths.length) return;
-
     let frameId = 0;
 
     const updateVisibleMonth = () => {
-      const currentTop = container.scrollTop + BOARD_MONTH_SCROLL_OFFSET;
+      const currentTop = usesViewportScroll
+        ? getViewportScrollTop() + getScrollOffset("month")
+        : (() => {
+            const container = boardScrollRef.current;
+            if (!container) return 0;
+            return container.scrollTop + getScrollOffset("month");
+          })();
       let nextActiveMonthIndex = 0;
 
       for (const monthData of calendarMonths) {
         const section = monthSectionRefs.current[monthData.index];
         if (!section) continue;
-        if (section.offsetTop <= currentTop) nextActiveMonthIndex = monthData.index;
+        const sectionTop = usesViewportScroll ? getViewportScrollTargetTop(section, 0) : section.offsetTop;
+        if (sectionTop <= currentTop) nextActiveMonthIndex = monthData.index;
         else break;
       }
 
@@ -546,13 +892,18 @@ const CalendrierPage = () => {
     };
 
     updateVisibleMonth();
-    container.addEventListener("scroll", handleScroll, { passive: true });
+    const scrollTarget: Window | HTMLDivElement | null = usesViewportScroll ? window : boardScrollRef.current;
+    if (!scrollTarget) return;
+
+    scrollTarget.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleScroll, { passive: true });
 
     return () => {
-      container.removeEventListener("scroll", handleScroll);
+      scrollTarget.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [calendarMonths, selectedGiteId]);
+  }, [calendarMonths, getScrollOffset, selectedGiteId, usesViewportScroll]);
 
   useEffect(() => {
     if (!hoveredReservation) return;
@@ -588,8 +939,8 @@ const CalendrierPage = () => {
   }
 
   return (
-    <div className="calendar-page" style={pageStyle}>
-      <section className="card calendar-hero">
+    <div className={`calendar-page${canUseQuickReservation ? " calendar-page--quick-create-visible" : ""}`} style={pageStyle}>
+      <section ref={heroRef} className="card calendar-hero">
         <div className="calendar-hero__header">
           <label className="calendar-month-trigger">
             <span>{MONTHS[activeMonthIndex].toLocaleLowerCase("fr-FR")}</span>
@@ -636,7 +987,7 @@ const CalendrierPage = () => {
                 type="button"
                 className="calendar-year-switch__button"
                 onClick={() => {
-                  pendingScrollTargetRef.current = activeMonthIndex;
+                  pendingScrollTargetRef.current = { kind: "month", value: activeMonthIndex };
                   setYear((value) => value - 1);
                 }}
                 aria-label="Année précédente"
@@ -648,7 +999,7 @@ const CalendrierPage = () => {
                 type="button"
                 className="calendar-year-switch__button"
                 onClick={() => {
-                  pendingScrollTargetRef.current = activeMonthIndex;
+                  pendingScrollTargetRef.current = { kind: "month", value: activeMonthIndex };
                   setYear((value) => value + 1);
                 }}
                 aria-label="Année suivante"
@@ -663,9 +1014,11 @@ const CalendrierPage = () => {
               onClick={() => {
                 if (year === currentYear) {
                   pendingScrollTargetRef.current = null;
-                  scrollToMonth(currentMonthIndex);
+                  if (!scrollToDate(todayIso)) {
+                    scrollToMonth(currentMonthIndex);
+                  }
                 } else {
-                  pendingScrollTargetRef.current = currentMonthIndex;
+                  pendingScrollTargetRef.current = { kind: "date", value: todayIso };
                   setYear(currentYear);
                 }
                 setHoveredReservation(null);
@@ -680,10 +1033,13 @@ const CalendrierPage = () => {
       <div className="calendar-layout">
         <section className="card calendar-board">
           <div ref={boardScrollRef} className="calendar-board__scroll">
-            <div className="calendar-weekdays" role="row">
+            <div ref={weekdaysRef} className="calendar-weekdays" role="row">
               {WEEKDAYS.map((day) => (
-                <div key={day} className="calendar-weekdays__item" role="columnheader">
-                  {day}
+                <div key={day.full} className="calendar-weekdays__item" role="columnheader" aria-label={day.full}>
+                  <span className="calendar-weekdays__item-full">{day.full}</span>
+                  <span className="calendar-weekdays__item-short" aria-hidden="true">
+                    {day.short}
+                  </span>
                 </div>
               ))}
             </div>
@@ -737,6 +1093,10 @@ const CalendrierPage = () => {
                               return (
                                 <article
                                   key={day.isoDate}
+                                  ref={(node) => {
+                                    if (!day.isCurrentMonth) return;
+                                    dayRefs.current[day.isoDate] = node;
+                                  }}
                                   className={[
                                     "calendar-day",
                                     day.isCurrentMonth ? "" : "calendar-day--ghost",
@@ -776,7 +1136,7 @@ const CalendrierPage = () => {
                                           aria-label="Créer une réservation sur ces dates"
                                           onClick={(event) => {
                                             event.stopPropagation();
-                                            openReservationInsertFromSelection(monthData.monthNumber);
+                                            handleReservationInsertFromSelection(monthData.monthNumber);
                                           }}
                                         >
                                           +
@@ -958,11 +1318,162 @@ const CalendrierPage = () => {
                 ) : null}
               </article>
             ) : (
-              <p className="calendar-sidebar__empty">Survolez une barre de réservation pour afficher ici les détails du séjour.</p>
+              <p className="calendar-sidebar__empty">Touchez ou survolez une réservation pour consulter rapidement les détails du séjour.</p>
             )}
           </section>
         </aside>
       </div>
+
+      {canUseQuickReservation ? (
+        <div className="calendar-quick-create-bar" role="status" aria-live="polite">
+          <div className="calendar-quick-create-bar__content">
+            <strong>{selectedRangeNights} nuit{selectedRangeNights > 1 ? "s" : ""}</strong>
+            <span>{selectedRangeSummary}</span>
+          </div>
+          <div className="calendar-quick-create-bar__actions">
+            <button type="button" className="calendar-quick-create-bar__ghost" onClick={() => setSelectedDateRange(null)}>
+              Effacer
+            </button>
+            <button type="button" className="calendar-quick-create-bar__primary" onClick={openQuickReservationSheet}>
+              Ajouter
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {usesViewportScroll && quickReservationOpen && quickReservationDraft && selectedDateRange ? (
+        <div
+          className="calendar-quick-create-sheet"
+          role="presentation"
+          onClick={() => {
+            if (quickReservationSaving) return;
+            setQuickReservationOpen(false);
+          }}
+        >
+          <section
+            className="calendar-quick-create-sheet__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-quick-create-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="calendar-quick-create-sheet__handle" aria-hidden="true" />
+            <div className="calendar-quick-create-sheet__header">
+              <div>
+                <p className="calendar-quick-create-sheet__eyebrow">{selectedGite?.nom ?? "Réservation"}</p>
+                <h2 id="calendar-quick-create-title">Nouvelle réservation</h2>
+              </div>
+              <button
+                type="button"
+                className="calendar-quick-create-sheet__close"
+                aria-label="Fermer la création rapide"
+                onClick={() => setQuickReservationOpen(false)}
+                disabled={quickReservationSaving}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="calendar-quick-create-sheet__summary">
+              <strong>{selectedRangeNights} nuit{selectedRangeNights > 1 ? "s" : ""}</strong>
+              <span>
+                {formatShortDate(selectedDateRange.startIso)} → {formatShortDate(selectedRangeExitIso)}
+              </span>
+            </div>
+
+            {quickReservationError ? <p className="calendar-quick-create-sheet__error">{quickReservationError}</p> : null}
+
+            <div className="calendar-quick-create-sheet__form">
+              <label className="field field--small">
+                Hôte
+                <input
+                  type="text"
+                  value={quickReservationDraft.hote_nom}
+                  placeholder="Nom du voyageur"
+                  onChange={(event) => handleQuickReservationFieldChange("hote_nom", event.target.value)}
+                  autoFocus
+                />
+              </label>
+
+              <div className="calendar-quick-create-sheet__grid">
+                <label className="field field--small">
+                  Adultes
+                  <input
+                    type="number"
+                    min={0}
+                    value={quickReservationDraft.nb_adultes}
+                    onChange={(event) => handleQuickReservationFieldChange("nb_adultes", Math.max(0, Number(event.target.value)))}
+                  />
+                </label>
+
+                <label className="field field--small">
+                  Prix / nuit
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    value={quickReservationDraft.prix_par_nuit}
+                    onChange={(event) => handleQuickReservationFieldChange("prix_par_nuit", event.target.value)}
+                  />
+                </label>
+              </div>
+
+              {quickReservationNightlySuggestions.length > 0 ? (
+                <div className="calendar-quick-create-sheet__prices">
+                  <span>Tarifs du gîte</span>
+                  <div className="calendar-quick-create-sheet__price-list">
+                    {quickReservationNightlySuggestions.map((price) => {
+                      const isActive = round2(Number(quickReservationDraft.prix_par_nuit) || 0) === price;
+                      return (
+                        <button
+                          key={price}
+                          type="button"
+                          className={`calendar-quick-create-sheet__price-chip${
+                            isActive ? " calendar-quick-create-sheet__price-chip--active" : ""
+                          }`}
+                          onClick={() => handleQuickReservationFieldChange("prix_par_nuit", String(price))}
+                        >
+                          {formatEuro(price)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="calendar-quick-create-sheet__computed-total">
+                <span>Total calculé</span>
+                <strong>{quickReservationComputedTotal !== null ? formatEuro(quickReservationComputedTotal) : "A calculer"}</strong>
+              </div>
+
+              <label className="field field--small">
+                Note
+                <textarea
+                  rows={2}
+                  value={quickReservationDraft.commentaire}
+                  placeholder="Optionnel"
+                  onChange={(event) => handleQuickReservationFieldChange("commentaire", event.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="calendar-quick-create-sheet__footer">
+              <button
+                type="button"
+                className="calendar-quick-create-sheet__link"
+                onClick={() => openReservationInsertFromSelection(selectedDateRange.monthIndex + 1)}
+                disabled={quickReservationSaving}
+              >
+                Ouvrir la fiche complète
+              </button>
+              <button type="button" className="calendar-quick-create-sheet__submit" onClick={saveQuickReservation} disabled={quickReservationSaving}>
+                {quickReservationSaving ? "Enregistrement..." : "Enregistrer"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 };

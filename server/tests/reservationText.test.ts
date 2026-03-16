@@ -5,6 +5,8 @@ import {
   isUnknownHostName,
   normalizeImportedComment,
   normalizeImportedHostName,
+  toImportedReservationHostName,
+  UNKNOWN_HOST_NAME,
 } from "../src/utils/reservationText.ts";
 
 test("normalizeImportedComment ignore les placeholders de commentaire non significatifs", () => {
@@ -22,4 +24,10 @@ test("normalizeImportedHostName traite 'Hôte inconnu' comme vide logique", () =
   assert.equal(isUnknownHostName("Hôte inconnu"), true);
   assert.equal(isUnknownHostName(""), true);
   assert.equal(isUnknownHostName("Marie Motais"), false);
+});
+
+test("toImportedReservationHostName fournit un fallback éditable quand le nom importé est absent", () => {
+  assert.equal(toImportedReservationHostName(""), UNKNOWN_HOST_NAME);
+  assert.equal(toImportedReservationHostName(" host unknown "), UNKNOWN_HOST_NAME);
+  assert.equal(toImportedReservationHostName("Marie Motais"), "Marie Motais");
 });
