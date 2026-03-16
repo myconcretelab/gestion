@@ -4,8 +4,7 @@ import { env } from "../config/env.js";
 
 export type IcalCronConfig = {
   enabled: boolean;
-  hour: number;
-  minute: number;
+  interval_hours: number;
   run_on_start: boolean;
 };
 
@@ -32,15 +31,24 @@ const toBoolean = (value: unknown, fallback: boolean) => {
 
 export const buildDefaultIcalCronConfig = (): IcalCronConfig => ({
   enabled: env.ICAL_SYNC_ENABLED,
-  hour: env.ICAL_SYNC_HOUR,
-  minute: env.ICAL_SYNC_MINUTE,
+  interval_hours: env.ICAL_SYNC_INTERVAL_HOURS,
   run_on_start: env.ICAL_SYNC_RUN_ON_START,
 });
 
-const normalizeConfig = (input: Partial<IcalCronConfig>, fallback: IcalCronConfig): IcalCronConfig => ({
+type LegacyIcalCronConfig = {
+  enabled?: unknown;
+  hour?: unknown;
+  minute?: unknown;
+  run_on_start?: unknown;
+};
+
+type IcalCronConfigInput = Partial<IcalCronConfig> & LegacyIcalCronConfig;
+
+const hasLegacyDailyTiming = (input: IcalCronConfigInput) => "hour" in input || "minute" in input;
+
+export const normalizeIcalCronConfig = (input: IcalCronConfigInput, fallback: IcalCronConfig): IcalCronConfig => ({
   enabled: toBoolean(input.enabled, fallback.enabled),
-  hour: clampInteger(input.hour, fallback.hour, 0, 23),
-  minute: clampInteger(input.minute, fallback.minute, 0, 59),
+  interval_hours: clampInteger(input.interval_hours, hasLegacyDailyTiming(input) ? 24 : fallback.interval_hours, 1, 168),
   run_on_start: toBoolean(input.run_on_start, fallback.run_on_start),
 });
 
@@ -59,8 +67,8 @@ export const readIcalCronConfig = (fallback?: IcalCronConfig): IcalCronConfig =>
   try {
     const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
     if (!raw.trim()) return defaults;
-    const parsed = JSON.parse(raw) as Partial<IcalCronConfig>;
-    return normalizeConfig(parsed, defaults);
+    const parsed = JSON.parse(raw) as IcalCronConfigInput;
+    return normalizeIcalCronConfig(parsed, defaults);
   } catch {
     return defaults;
   }
@@ -72,4 +80,4 @@ export const writeIcalCronConfig = (config: IcalCronConfig) => {
 };
 
 export const mergeIcalCronConfig = (current: IcalCronConfig, patch: Partial<IcalCronConfig>) =>
-  normalizeConfig(patch, current);
+  normalizeIcalCronConfig(patch, current);

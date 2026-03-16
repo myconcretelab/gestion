@@ -18,6 +18,7 @@ import { extractAirbnbReservationUrl } from "../utils/airbnbReservationUrl.js";
 import { buildReservationOriginData, getReservationOriginSystem } from "../utils/reservationOrigin.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 const normalizeTextKey = (value: string) =>
   value
@@ -812,18 +813,13 @@ export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalS
   return activeSyncPromise;
 };
 
-const computeNextRunDate = (hour: number, minute: number) => {
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(hour, minute, 0, 0);
-  if (next.getTime() <= now.getTime()) {
-    next.setDate(next.getDate() + 1);
-  }
-  return next;
+const computeNextRunDate = (intervalHours: number) => {
+  const delayMs = Math.max(5_000, intervalHours * HOUR_MS);
+  return new Date(Date.now() + delayMs);
 };
 
-const scheduleNextCronRun = (hour: number, minute: number) => {
-  cronNextRunAt = computeNextRunDate(hour, minute);
+const scheduleNextCronRun = (intervalHours: number) => {
+  cronNextRunAt = computeNextRunDate(intervalHours);
   const waitMs = Math.max(5_000, cronNextRunAt.getTime() - Date.now());
 
   cronTimer = setTimeout(async () => {
@@ -835,7 +831,7 @@ const scheduleNextCronRun = (hour: number, minute: number) => {
       console.error("[ical-sync] Cron execution failed:", error instanceof Error ? error.message : error);
     } finally {
       cronRunning = false;
-      scheduleNextCronRun(hour, minute);
+      scheduleNextCronRun(intervalHours);
     }
   }, waitMs);
 };
@@ -848,7 +844,7 @@ const applyCronConfig = (config: IcalCronConfig) => {
   cronNextRunAt = null;
 
   if (config.enabled) {
-    scheduleNextCronRun(config.hour, config.minute);
+    scheduleNextCronRun(config.interval_hours);
   }
 };
 

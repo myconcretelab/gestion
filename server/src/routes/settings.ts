@@ -69,12 +69,25 @@ const harPayloadSchema = z.object({
   selected_ids: z.array(z.string().trim().min(1)).optional(),
 });
 
-const cronConfigSchema = z.object({
+const intervalCronConfigSchema = z.object({
+  enabled: z.boolean(),
+  interval_hours: z.number().int().min(1).max(168),
+  run_on_start: z.boolean().optional(),
+});
+const legacyCronConfigSchema = z.object({
   enabled: z.boolean(),
   hour: z.number().int().min(0).max(23),
   minute: z.number().int().min(0).max(59),
   run_on_start: z.boolean().optional(),
 });
+const normalizeCronConfigPayload = (
+  payload: z.infer<typeof intervalCronConfigSchema> | z.infer<typeof legacyCronConfigSchema>
+): IcalCronConfig => ({
+  enabled: payload.enabled,
+  interval_hours: "interval_hours" in payload ? payload.interval_hours : 24,
+  run_on_start: payload.run_on_start ?? false,
+});
+const cronConfigSchema = z.union([intervalCronConfigSchema, legacyCronConfigSchema]).transform(normalizeCronConfigPayload);
 const cronImportSchema = z.union([cronConfigSchema, z.object({ config: cronConfigSchema })]);
 const pumpCronConfigSchema = z.object({
   enabled: z.boolean(),
