@@ -172,7 +172,7 @@ const ContratFormPage = () => {
         setGiteId(data.gite_id);
         setLocataireNom(data.hote_nom);
         setLocataireAdresse("");
-        setLocataireTel("");
+        setLocataireTel(data.telephone ?? "");
         setNbAdultes(Math.max(1, data.nb_adultes ?? 1));
         setNbEnfants(0);
         setDateDebut(toDateInputValue(data.date_entree));

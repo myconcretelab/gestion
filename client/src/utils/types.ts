@@ -79,6 +79,7 @@ export type Reservation = {
   export_to_ical?: boolean;
   airbnb_url?: string | null;
   hote_nom: string;
+  telephone?: string | null;
   date_entree: string;
   date_sortie: string;
   nb_nuits: number;

@@ -35,6 +35,7 @@ type ReservationDraft = {
   gite_id: string | null;
   placeholder_id: string | null;
   hote_nom: string;
+  telephone: string;
   date_entree: string;
   date_sortie: string;
   nb_nuits: number;
@@ -76,6 +77,7 @@ type ReservationCreateResponse = Reservation & {
 
 type ImportColumnField =
   | "hote_nom"
+  | "telephone"
   | "date_entree"
   | "date_sortie"
   | "nb_adultes"
@@ -205,6 +207,7 @@ const ROW_SAVED_FADE_MS = 900;
 
 const IMPORT_COLUMN_FIELDS: Array<{ key: ImportColumnField; label: string; required?: boolean }> = [
   { key: "hote_nom", label: "Nom de l'hôte", required: true },
+  { key: "telephone", label: "N° téléphone" },
   { key: "date_entree", label: "Date d'entrée", required: true },
   { key: "date_sortie", label: "Date de sortie", required: true },
   { key: "nb_adultes", label: "Nb adultes" },
@@ -249,6 +252,11 @@ const normalizeReservationSource = (value: string | null | undefined) => {
 const getEditableHostName = (value: string | null | undefined) => {
   const trimmed = String(value ?? "").trim();
   return trimmed || UNKNOWN_HOST_NAME;
+};
+
+const buildTelephoneHref = (value: string | null | undefined) => {
+  const normalized = String(value ?? "").trim().replace(/[^+\d]/g, "");
+  return normalized ? `tel:${normalized}` : null;
 };
 
 const hasIcalToVerifyMarker = (comment: string | null | undefined) => {
@@ -656,6 +664,7 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     gite_id: reservation.gite_id ?? null,
     placeholder_id: reservation.placeholder_id ?? null,
     hote_nom: getEditableHostName(reservation.hote_nom),
+    telephone: reservation.telephone ?? "",
     date_entree: toInputDate(reservation.date_entree),
     date_sortie: toInputDate(reservation.date_sortie),
     nb_nuits: reservation.nb_nuits,
@@ -693,6 +702,7 @@ const buildEmptyDraft = (
     gite_id: overrides.gite_id ?? gite?.id ?? "",
     placeholder_id: overrides.placeholder_id ?? null,
     hote_nom: overrides.hote_nom ?? "",
+    telephone: overrides.telephone ?? "",
     date_entree: entry,
     date_sortie: exit,
     nb_nuits: 1,
@@ -717,6 +727,7 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions, keepIcalTo
     gite_id: draft.gite_id,
     placeholder_id: draft.placeholder_id,
     hote_nom: draft.hote_nom.trim(),
+    telephone: draft.telephone.trim() || null,
     date_entree: draft.date_entree,
     date_sortie: draft.date_sortie,
     nb_adultes: draft.nb_adultes,
@@ -2627,6 +2638,7 @@ const ReservationsPage = () => {
       "Gîte",
       "Placeholder",
       "Hôte",
+      "Téléphone",
       "Entrée",
       "Sortie",
       "Nuits",
@@ -2655,6 +2667,7 @@ const ReservationsPage = () => {
         giteName,
         placeholderLabel,
         reservation.hote_nom,
+        reservation.telephone ?? "",
         formatDate(reservation.date_entree),
         formatDate(reservation.date_sortie),
         String(reservation.nb_nuits),
@@ -2726,8 +2739,8 @@ const ReservationsPage = () => {
     }, 0);
   };
 
-  const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) => {
-    window.setTimeout(() => {
+const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) => {
+  window.setTimeout(() => {
       const selector = `[data-grid-month="${monthIndex}"][data-grid-row="${rowIndex}"][data-grid-col="2"]`;
       const element = document.querySelector<HTMLInputElement>(selector);
       if (!element) return;
@@ -3190,8 +3203,12 @@ const ReservationsPage = () => {
           </label>
 
           <label className="field">
-            Recherche (hôte, dates, source)
-            <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="ex: Martin, 12/07/2026, Airbnb" />
+            Recherche (hôte, téléphone, dates, source)
+            <input
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+              placeholder="ex: Martin, 0612345678, 12/07/2026, Airbnb"
+            />
           </label>
 
           <div className="field reservations-import-actions">
@@ -3681,6 +3698,7 @@ const ReservationsPage = () => {
                       const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
+                      const telephoneHref = buildTelephoneHref(reservation.telephone);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
 
                       return (
@@ -4404,6 +4422,16 @@ const ReservationsPage = () => {
                                       onClick={(event) => event.stopPropagation()}
                                     >
                                       AB
+                                    </a>
+                                  )}
+                                  {telephoneHref && (
+                                    <a
+                                      className="table-action table-action--neutral"
+                                      href={telephoneHref}
+                                      title={reservation.telephone ?? "Appeler"}
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      ☎
                                     </a>
                                   )}
                                   {reservation.gite_id && (
