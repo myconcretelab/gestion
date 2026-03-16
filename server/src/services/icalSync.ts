@@ -8,7 +8,7 @@ import {
   writeIcalCronConfig,
   type IcalCronConfig,
 } from "./icalCronSettings.js";
-import { isUnknownHostName, normalizeImportedHostName } from "../utils/reservationText.js";
+import { isUnknownHostName, normalizeImportedHostName, toImportedReservationHostName } from "../utils/reservationText.js";
 import {
   resolveIcalReservationSource,
   shouldPreferIcalReservation,
@@ -574,7 +574,7 @@ const toCreatePayload = (reservation: IcalPreviewItem) => {
       originReference: reservation.uid || reservation.id,
       exportToIcal: false,
     }),
-    hote_nom: normalizeImportedHostName(reservation.hote_nom) ?? "",
+    hote_nom: toImportedReservationHostName(reservation.hote_nom),
     date_entree: dateEntree,
     date_sortie: dateSortie,
     nb_nuits: nights,

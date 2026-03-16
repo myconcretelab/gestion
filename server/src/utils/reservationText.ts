@@ -5,6 +5,8 @@ export const normalizeReservationTextKey = (value: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "");
 
+export const UNKNOWN_HOST_NAME = "Hôte inconnu";
+
 const COMMENT_PLACEHOLDER_KEYS = new Set([
   normalizeReservationTextKey("Reserved"),
   normalizeReservationTextKey("Airbnb (Not available)"),
@@ -36,6 +38,8 @@ export const normalizeImportedHostName = (value: unknown) => {
 
   return trimmed;
 };
+
+export const toImportedReservationHostName = (value: unknown) => normalizeImportedHostName(value) ?? UNKNOWN_HOST_NAME;
 
 export const normalizeImportedComment = (value: unknown) => {
   if (typeof value !== "string") {
