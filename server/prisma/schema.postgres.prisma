@@ -239,6 +239,7 @@ model Reservation {
   export_to_ical            Boolean?
   airbnb_url                String?
   hote_nom                  String
+  telephone                 String?
   date_entree               DateTime
   date_sortie               DateTime
   nb_nuits                  Int

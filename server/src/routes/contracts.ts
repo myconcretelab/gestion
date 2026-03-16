@@ -188,6 +188,7 @@ const syncReservationFromContract = async (params: {
   existingReservationId?: string | null;
   giteId: string;
   locataireNom: string;
+  locataireTel: string;
   dateDebut: Date;
   dateFin: Date;
   nbNuits: number;
@@ -203,6 +204,7 @@ const syncReservationFromContract = async (params: {
     existingReservationId,
     giteId,
     locataireNom,
+    locataireTel,
     dateDebut,
     dateFin,
     nbNuits,
@@ -271,6 +273,7 @@ const syncReservationFromContract = async (params: {
     gite_id: giteId,
     placeholder_id: null,
     hote_nom: locataireNom,
+    telephone: locataireTel.trim() || null,
     date_entree: dateDebut,
     date_sortie: dateFin,
     nb_nuits: nbNuits,
@@ -615,6 +618,7 @@ router.post("/", async (req, res, next) => {
       explicitReservationId: data.reservation_id ?? null,
       giteId: data.gite_id,
       locataireNom: data.locataire_nom,
+      locataireTel: data.locataire_tel,
       dateDebut,
       dateFin,
       nbNuits: totals.nbNuits,
@@ -725,6 +729,7 @@ router.put("/:id", async (req, res, next) => {
       existingReservationId: existing.reservation_id ?? null,
       giteId: data.gite_id,
       locataireNom: data.locataire_nom,
+      locataireTel: data.locataire_tel,
       dateDebut,
       dateFin,
       nbNuits: totals.nbNuits,
