@@ -47,8 +47,7 @@ type IcalSyncResult = IcalPreviewResult & {
 type IcalCronState = {
   config: {
     enabled: boolean;
-    hour: number;
-    minute: number;
+    interval_hours: number;
     run_on_start: boolean;
   };
   running: boolean;
@@ -466,8 +465,7 @@ const SettingsPage = () => {
   const [icalCronState, setIcalCronState] = useState<IcalCronState | null>(null);
   const [cronDraft, setCronDraft] = useState<IcalCronConfig>({
     enabled: true,
-    hour: 3,
-    minute: 15,
+    interval_hours: 24,
     run_on_start: false,
   });
   const [savingCron, setSavingCron] = useState(false);
@@ -2455,11 +2453,11 @@ const SettingsPage = () => {
               style={{ display: "none" }}
             />
             <div className="field-hint">
-              Cron: {icalCronState?.config.enabled ? "activé" : "désactivé"}. Prochain passage: {formatIsoDateTimeFr(icalCronState?.next_run_at ?? null)}. Dernier passage: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
+              Minuterie: {icalCronState?.config.enabled ? "activée" : "désactivée"}. Intervalle: {icalCronState?.config.interval_hours ?? cronDraft.interval_hours}h. Prochain passage: {formatIsoDateTimeFr(icalCronState?.next_run_at ?? null)}. Dernier passage: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
             </div>
             <div className="grid-2" style={{ marginTop: 12 }}>
               <label className="field">
-                Cron actif
+                Minuterie active
                 <select
                   value={cronDraft.enabled ? "1" : "0"}
                   onChange={(event) =>
@@ -2491,32 +2489,16 @@ const SettingsPage = () => {
                 </select>
               </label>
               <label className="field">
-                Heure
+                Toutes les ... heures
                 <input
                   type="number"
-                  min={0}
-                  max={23}
-                  value={cronDraft.hour}
+                  min={1}
+                  max={168}
+                  value={cronDraft.interval_hours}
                   onChange={(event) =>
                     setCronDraft((previous) => ({
                       ...previous,
-                      hour: Math.min(23, Math.max(0, Number(event.target.value || 0))),
-                    }))
-                  }
-                  disabled={savingCron}
-                />
-              </label>
-              <label className="field">
-                Minute
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={cronDraft.minute}
-                  onChange={(event) =>
-                    setCronDraft((previous) => ({
-                      ...previous,
-                      minute: Math.min(59, Math.max(0, Number(event.target.value || 0))),
+                      interval_hours: Math.min(168, Math.max(1, Number(event.target.value || 1))),
                     }))
                   }
                   disabled={savingCron}
@@ -2525,7 +2507,7 @@ const SettingsPage = () => {
             </div>
             <div className="actions" style={{ marginTop: 12 }}>
               <button type="button" className="secondary" onClick={() => void saveCronConfig()} disabled={savingCron || syncingIcal || loadingIcalPreview}>
-                {savingCron ? "Enregistrement..." : "Enregistrer le cron"}
+                {savingCron ? "Enregistrement..." : "Enregistrer la minuterie"}
               </button>
               <button type="button" className="secondary" onClick={() => void runIcalPreview()} disabled={loadingIcalPreview || syncingIcal}>
                 {loadingIcalPreview ? "Lecture iCal..." : "Prévisualiser iCal"}

@@ -70,6 +70,7 @@ export const env = {
   PDF_SUBDIR: process.env.PDF_SUBDIR ?? "pdfs",
   ICAL_SYNC_ENABLED: parseBooleanEnv(process.env.ICAL_SYNC_ENABLED, true),
   ICAL_SYNC_RUN_ON_START: parseBooleanEnv(process.env.ICAL_SYNC_RUN_ON_START, false),
+  ICAL_SYNC_INTERVAL_HOURS: parseIntegerEnv(process.env.ICAL_SYNC_INTERVAL_HOURS, 24, 1, 168),
   ICAL_SYNC_HOUR: parseIntegerEnv(process.env.ICAL_SYNC_HOUR, 3, 0, 23),
   ICAL_SYNC_MINUTE: parseIntegerEnv(process.env.ICAL_SYNC_MINUTE, 15, 0, 59),
   PUMP_IMPORT_CRON_ENABLED: parseBooleanEnv(process.env.PUMP_IMPORT_CRON_ENABLED, true),
