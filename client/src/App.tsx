@@ -1,17 +1,18 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
-import GitesPage from "./pages/GitesPage";
-import ContratsListPage from "./pages/ContratsListPage";
-import ContratFormPage from "./pages/ContratFormPage";
-import ContratDetailPage from "./pages/ContratDetailPage";
-import FacturesListPage from "./pages/FacturesListPage";
-import FactureFormPage from "./pages/FactureFormPage";
-import FactureDetailPage from "./pages/FactureDetailPage";
-import ReservationsPage from "./pages/ReservationsPage";
-import CalendrierPage from "./pages/CalendrierPage";
-import StatisticsPage from "./pages/StatisticsPage";
-import SettingsPage from "./pages/SettingsPage";
-import TodayPage from "./pages/TodayPage";
+
+const GitesPage = lazy(() => import("./pages/GitesPage"));
+const ContratsListPage = lazy(() => import("./pages/ContratsListPage"));
+const ContratFormPage = lazy(() => import("./pages/ContratFormPage"));
+const ContratDetailPage = lazy(() => import("./pages/ContratDetailPage"));
+const FacturesListPage = lazy(() => import("./pages/FacturesListPage"));
+const FactureFormPage = lazy(() => import("./pages/FactureFormPage"));
+const FactureDetailPage = lazy(() => import("./pages/FactureDetailPage"));
+const ReservationsPage = lazy(() => import("./pages/ReservationsPage"));
+const CalendrierPage = lazy(() => import("./pages/CalendrierPage"));
+const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const TodayPage = lazy(() => import("./pages/TodayPage"));
 
 const MenuIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -198,23 +199,25 @@ const App = () => {
         </nav>
       </header>
       <main className="content">
-        <Routes>
-          <Route path="/" element={<Navigate to="/aujourdhui" replace />} />
-          <Route path="/aujourdhui" element={<TodayPage />} />
-          <Route path="/gites" element={<GitesPage />} />
-          <Route path="/contrats" element={<ContratsListPage />} />
-          <Route path="/contrats/nouveau" element={<ContratFormPage />} />
-          <Route path="/contrats/:id/edition" element={<ContratFormPage />} />
-          <Route path="/contrats/:id" element={<ContratDetailPage />} />
-          <Route path="/factures" element={<FacturesListPage />} />
-          <Route path="/factures/nouvelle" element={<FactureFormPage />} />
-          <Route path="/factures/:id/edition" element={<FactureFormPage />} />
-          <Route path="/factures/:id" element={<FactureDetailPage />} />
-          <Route path="/reservations" element={<ReservationsPage />} />
-          <Route path="/calendrier" element={<CalendrierPage />} />
-          <Route path="/statistiques" element={<StatisticsPage />} />
-          <Route path="/parametres" element={<SettingsPage />} />
-        </Routes>
+        <Suspense fallback={<div className="card">Chargement...</div>}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/aujourdhui" replace />} />
+            <Route path="/aujourdhui" element={<TodayPage />} />
+            <Route path="/gites" element={<GitesPage />} />
+            <Route path="/contrats" element={<ContratsListPage />} />
+            <Route path="/contrats/nouveau" element={<ContratFormPage />} />
+            <Route path="/contrats/:id/edition" element={<ContratFormPage />} />
+            <Route path="/contrats/:id" element={<ContratDetailPage />} />
+            <Route path="/factures" element={<FacturesListPage />} />
+            <Route path="/factures/nouvelle" element={<FactureFormPage />} />
+            <Route path="/factures/:id/edition" element={<FactureFormPage />} />
+            <Route path="/factures/:id" element={<FactureDetailPage />} />
+            <Route path="/reservations" element={<ReservationsPage />} />
+            <Route path="/calendrier" element={<CalendrierPage />} />
+            <Route path="/statistiques" element={<StatisticsPage />} />
+            <Route path="/parametres" element={<SettingsPage />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

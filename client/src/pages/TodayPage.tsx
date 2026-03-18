@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
+import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import { apiFetch } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -187,11 +188,10 @@ const getEventSummaryLabel = (event: TodayEvent) => {
 };
 
 const buildReservationFocusHref = (event: TodayEvent) => {
-  const date = parseIsoDate(event.dateIso);
+  const reservationStartDate = parseIsoDate(event.primaryReservation.date_entree);
   const params = new URLSearchParams();
   params.set("focus", event.primaryReservation.id);
-  params.set("year", String(date.getUTCFullYear()));
-  params.set("month", String(date.getUTCMonth() + 1));
+  params.set("year", String(reservationStartDate.getUTCFullYear()));
   params.set("tab", event.giteId);
   return `/reservations?${params.toString()}#reservation-${event.primaryReservation.id}`;
 };
@@ -352,12 +352,14 @@ const TodayPage = () => {
       Array.from({ length: totalDays }, (_, index) => {
         const date = addUtcDays(todayDate, index);
         const iso = toIsoDate(date);
+        const weekday = date.getUTCDay();
         return {
           iso,
           shortLabel: date.toLocaleDateString("fr-FR", { weekday: "short", timeZone: "UTC" }),
           dayNumber: date.toLocaleDateString("fr-FR", { day: "numeric", timeZone: "UTC" }),
           isToday: iso === todayIso,
           isTomorrow: iso === tomorrowIso,
+          isWeekend: weekday === 0 || weekday === 6,
         };
       }),
     [todayDate, todayIso, tomorrowIso, totalDays]
@@ -435,6 +437,24 @@ const TodayPage = () => {
       ).length,
     [reservations, todayDate]
   );
+  const currentViewOccupation = useMemo(() => {
+    const totalSlots = timelineRows.length * totalDays;
+    if (totalSlots <= 0) {
+      return {
+        occupiedSlots: 0,
+        totalSlots: 0,
+        rate: 0,
+      };
+    }
+
+    const occupiedSlots = timelineRows.reduce((sum, row) => sum + row.blockedDateIsos.size, 0);
+
+    return {
+      occupiedSlots,
+      totalSlots,
+      rate: occupiedSlots / totalSlots,
+    };
+  }, [timelineRows, totalDays]);
 
   const evenWeek = useMemo(() => getWeekNumber(todayDate) % 2 === 0, [todayDate]);
   const mauronTrashColor = evenWeek ? TRASH_COLORS.yellow : TRASH_COLORS.darkGreen;
@@ -497,14 +517,53 @@ const TodayPage = () => {
   return (
     <div className="today-page">
       <section className="card today-calendar-card">
+        <div className="today-section-head today-section-head--calendar">
+          <div>
+            <div className="section-title">Calendrier</div>
+            <div className="field-hint">
+              {totalDays} jours glissants · {gites.length} gîte{gites.length > 1 ? "s" : ""}
+            </div>
+          </div>
+          <div className="today-calendar-occupation" title={`${currentViewOccupation.occupiedSlots} jours occupés sur ${currentViewOccupation.totalSlots}`}>
+            <div className="today-calendar-occupation__copy">
+              <span>Remplissage vue</span>
+              <strong>
+                {currentViewOccupation.occupiedSlots}/{currentViewOccupation.totalSlots}
+              </strong>
+            </div>
+            <OccupationGaugeDial
+              id={`today-view-occupation-${todayIso}`}
+              occupation={currentViewOccupation.rate}
+              highlighted={false}
+              animate={false}
+              size={{ width: 56, height: 26 }}
+              className="today-calendar-occupation__gauge"
+            />
+          </div>
+        </div>
         <div className="today-timeline__viewport">
           <div className="today-timeline today-timeline__content">
+            <div className="today-timeline__weekend-bands" aria-hidden="true">
+              {days.map((day) => (
+                <span
+                  key={`${day.iso}:weekend-band`}
+                  className={[
+                    "today-timeline__weekend-band",
+                    day.isWeekend ? "today-timeline__weekend-band--visible" : "",
+                    day.isToday ? "today-timeline__weekend-band--today" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                />
+              ))}
+            </div>
             <div className="today-timeline__header">
               {days.map((day) => (
                 <div
                   key={day.iso}
                   className={[
                     "today-timeline__day",
+                    day.isWeekend ? "today-timeline__day--weekend" : "",
                     day.isToday ? "today-timeline__day--today" : "",
                     day.isTomorrow ? "today-timeline__day--tomorrow" : "",
                   ]

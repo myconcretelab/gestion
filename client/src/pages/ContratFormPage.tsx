@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { apiFetch } from "../utils/api";
-import type { Contrat, ContratOptions, Gite, Reservation } from "../utils/types";
+import { apiFetch, isAbortError } from "../utils/api";
+import type { Contrat, ContratOptions, Reservation } from "../utils/types";
 import { formatEuro } from "../utils/format";
 import {
   addDays,
@@ -13,6 +13,9 @@ import {
   nightsBetweenInputs,
   toDateInputValue,
 } from "./shared/rentalForm";
+import DocumentPreviewFrame from "./shared/DocumentPreviewFrame";
+import { buildReservationDocumentPrefill, isDocumentDateRangeValid, useDocumentGites } from "./shared/documentFormShared";
+import { useDocumentFieldErrors } from "./shared/useDocumentFieldErrors";
 import { type RuleOptionKey, type ServiceOptionKey, useRentalFormPricing } from "./shared/rentalFormPricing";
 import { useHtmlPreview } from "./shared/useHtmlPreview";
 import { useDocumentSubmit } from "./shared/useDocumentSubmit";
@@ -64,7 +67,6 @@ const ContratFormPage = () => {
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
   const fromReservationId = (searchParams.get("fromReservationId") ?? "").trim();
-  const [gites, setGites] = useState<Gite[]>([]);
   const [giteId, setGiteId] = useState("");
   const [locataireNom, setLocataireNom] = useState("");
   const [locataireAdresse, setLocataireAdresse] = useState("");
@@ -101,6 +103,10 @@ const ContratFormPage = () => {
   const [loadingFromReservation, setLoadingFromReservation] = useState(false);
   const [sourceReservationLabel, setSourceReservationLabel] = useState<string | null>(null);
   const [linkedReservationId, setLinkedReservationId] = useState<string | null>(null);
+  const gites = useDocumentGites({
+    setSelectedGiteId: setGiteId,
+    setError,
+  });
 
   const minDateFin = useMemo(() => {
     if (!dateDebut) return undefined;
@@ -110,19 +116,14 @@ const ContratFormPage = () => {
   const nbNuitsSelection = useMemo(() => nightsBetweenInputs(dateDebut, dateFin), [dateDebut, dateFin]);
 
   useEffect(() => {
-    apiFetch<Gite[]>("/gites")
-      .then((data) => {
-        setGites(data);
-        if (!giteId && data[0]) setGiteId(data[0].id);
-      })
-      .catch((err) => setError(err.message));
-  }, []);
-
-  useEffect(() => {
     if (!isEdit || !id) return;
+
+    const controller = new AbortController();
+    let active = true;
     setLoadingContract(true);
-    apiFetch<Contrat>(`/contracts/${id}`)
+    apiFetch<Contrat>(`/contracts/${id}`, { signal: controller.signal })
       .then((data) => {
+        if (!active) return;
         setEditingContract(data);
         setGiteId(data.gite_id);
         setLocataireNom(data.locataire_nom);
@@ -153,45 +154,67 @@ const ContratFormPage = () => {
         setLinkedReservationId(data.reservation_id ?? null);
         setSourceReservationLabel(null);
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoadingContract(false));
+      .catch((err) => {
+        if (!active || isAbortError(err)) return;
+        setError(err instanceof Error ? err.message : "Erreur lors du chargement du contrat.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoadingContract(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [id, isEdit]);
 
   useEffect(() => {
     if (isEdit || !fromReservationId) return;
+
+    const controller = new AbortController();
+    let active = true;
     setError(null);
     setLoadingFromReservation(true);
     setSourceReservationLabel(null);
-    apiFetch<Reservation>(`/reservations/prefill/${fromReservationId}`)
+    apiFetch<Reservation>(`/reservations/prefill/${fromReservationId}`, { signal: controller.signal })
       .then((data) => {
-        if (!data.gite_id) {
-          throw new Error("La réservation sélectionnée n'est pas rattachée à un gîte.");
-        }
-        setLinkedReservationId(data.id);
+        if (!active) return;
+        const prefill = buildReservationDocumentPrefill(data);
+        setLinkedReservationId(prefill.linkedReservationId);
         setSourceReservationLabel(data.hote_nom);
-        setGiteId(data.gite_id);
-        setLocataireNom(data.hote_nom);
-        setLocataireAdresse("");
-        setLocataireTel(data.telephone ?? "");
-        setNbAdultes(Math.max(1, data.nb_adultes ?? 1));
-        setNbEnfants(0);
-        setDateDebut(toDateInputValue(data.date_entree));
-        setDateFin(toDateInputValue(data.date_sortie));
-        setPrixParNuit(Number(data.prix_par_nuit ?? 0));
+        setGiteId(prefill.giteId);
+        setLocataireNom(prefill.locataireNom);
+        setLocataireAdresse(prefill.locataireAdresse);
+        setLocataireTel(prefill.locataireTel);
+        setNbAdultes(prefill.nbAdultes);
+        setNbEnfants(prefill.nbEnfants);
+        setDateDebut(prefill.dateDebut);
+        setDateFin(prefill.dateFin);
+        setPrixParNuit(prefill.prixParNuit);
         setRemiseMode("euro");
-        setRemiseValue(data.remise_montant ? String(data.remise_montant) : "");
-        setOptions(mergeOptions(data.options));
+        setRemiseValue(prefill.remiseValue);
+        setOptions(prefill.options);
         setArrhesAuto(true);
         setArrhesMontant("");
         setClausesText("");
         setStatutArrhes("non_recu");
       })
       .catch((err) => {
+        if (!active || isAbortError(err)) return;
         setLinkedReservationId(null);
         setSourceReservationLabel(null);
-        setError(err.message);
+        setError(err instanceof Error ? err.message : "Erreur lors du préremplissage.");
       })
-      .finally(() => setLoadingFromReservation(false));
+      .finally(() => {
+        if (!active) return;
+        setLoadingFromReservation(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [isEdit, fromReservationId]);
 
   useEffect(() => {
@@ -353,11 +376,7 @@ const ContratFormPage = () => {
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
 
   const previewDatesValid = useMemo(() => {
-    if (!dateDebut || !dateFin) return false;
-    const start = new Date(dateDebut);
-    const end = new Date(dateFin);
-    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return false;
-    return end > start;
+    return isDocumentDateRangeValid(dateDebut, dateFin);
   }, [dateDebut, dateFin]);
 
   const previewReady = Boolean(giteId && (!dateDebut || !dateFin || previewDatesValid));
@@ -384,23 +403,7 @@ const ContratFormPage = () => {
           }
         : null;
 
-  const clearFieldError = (field: ContractFieldKey) => {
-    setFieldErrors((previous) => {
-      if (!previous[field]) return previous;
-      const next = { ...previous };
-      delete next[field];
-      return next;
-    });
-  };
-
-  const getFieldClassName = (field: ContractFieldKey, className = "field") =>
-    `${className}${fieldErrors[field] ? " field--error" : ""}`;
-
-  const renderFieldError = (field: ContractFieldKey) => {
-    const message = fieldErrors[field];
-    if (!message) return null;
-    return <div className="field-error">{message}</div>;
-  };
+  const { clearFieldError, getFieldClassName, renderFieldError } = useDocumentFieldErrors(fieldErrors, setFieldErrors);
 
   useEffect(() => {
     if (createdContract && createdPayloadKey && payloadKey !== createdPayloadKey) {
@@ -1093,7 +1096,7 @@ const ContratFormPage = () => {
         </div>
         <div className="preview-shell">
           {previewHtml ? (
-            <iframe className="preview-frame" title="Prévisualisation contrat" srcDoc={previewHtml} />
+            <DocumentPreviewFrame html={previewHtml} title="Prévisualisation contrat" />
           ) : (
             <div className="preview-placeholder">
               {!giteId

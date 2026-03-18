@@ -1,4 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import { formatEuro } from "../utils/format";
@@ -105,6 +106,13 @@ type PendingCalendarScrollTarget =
   | { kind: "month"; value: number }
   | { kind: "date"; value: string };
 
+type FloatingPopoverLayout = {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+} | null;
+
 type QuickReservationDraft = {
   hote_nom: string;
   telephone: string;
@@ -125,6 +133,7 @@ type QuickReservationSmsSettings = {
 
 const normalizeIsoDate = (value: string) => value.slice(0, 10);
 const round2 = (value: number) => Math.round(value * 100) / 100;
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 const parseIsoDate = (value: string) => {
   const normalized = normalizeIsoDate(value);
@@ -406,6 +415,7 @@ const CalendrierPage = () => {
   const [year, setYear] = useState(currentYear);
   const [activeMonthIndex, setActiveMonthIndex] = useState(currentMonthIndex);
   const [hoveredReservation, setHoveredReservation] = useState<HoveredReservationState>(null);
+  const [floatingPopoverLayout, setFloatingPopoverLayout] = useState<FloatingPopoverLayout>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
   const [quickReservationDraft, setQuickReservationDraft] = useState<QuickReservationDraft | null>(null);
   const [quickReservationOpen, setQuickReservationOpen] = useState(false);
@@ -430,6 +440,7 @@ const CalendrierPage = () => {
   const weekdaysRef = useRef<HTMLDivElement | null>(null);
   const monthSectionRefs = useRef<Record<number, HTMLElement | null>>({});
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
+  const segmentRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const pendingScrollTargetRef = useRef<PendingCalendarScrollTarget | null>({
     kind: "date",
     value: todayIso,
@@ -750,6 +761,23 @@ const CalendrierPage = () => {
     [navigate, selectedDateRange, selectedGiteId, year]
   );
 
+  const openReservationInListing = useCallback(
+    (reservation: Reservation, options?: { monthNumber?: number; year?: number }) => {
+      const params = new URLSearchParams();
+      const reservationStartDate = parseIsoDate(reservation.date_entree);
+      params.set("focus", reservation.id);
+      params.set("year", String(options?.year ?? reservationStartDate.getUTCFullYear()));
+      if (options?.monthNumber) {
+        params.set("month", String(options.monthNumber));
+      }
+      if (reservation.gite_id) {
+        params.set("tab", reservation.gite_id);
+      }
+      navigate(`/reservations?${params.toString()}#reservation-${reservation.id}`);
+    },
+    [navigate]
+  );
+
   const openQuickReservationSheet = useCallback(() => {
     const nextDraft = buildQuickReservationDraft();
     if (!nextDraft) return;
@@ -1050,10 +1078,82 @@ const CalendrierPage = () => {
   }, [calendarMonths, getScrollOffset, selectedGiteId, usesViewportScroll]);
 
   useEffect(() => {
-    if (!hoveredReservation) return;
-    if (hoveredReservation.monthIndex === activeMonthIndex) return;
-    setHoveredReservation(null);
-  }, [activeMonthIndex, hoveredReservation]);
+    if (usesViewportScroll || !hoveredReservation?.segmentKey) {
+      setFloatingPopoverLayout((current) => (current === null ? current : null));
+      return;
+    }
+
+    let frameId = 0;
+
+    const updateFloatingPopoverLayout = () => {
+      const target = segmentRefs.current[hoveredReservation.segmentKey];
+      if (!target || !target.isConnected) {
+        setFloatingPopoverLayout((current) => (current === null ? current : null));
+        return;
+      }
+
+      const rect = target.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const horizontalMargin = 12;
+      const verticalMargin = 12;
+      const gap = 12;
+      const width = Math.min(320, Math.max(260, viewportWidth - horizontalMargin * 2));
+      const maxLeft = Math.max(horizontalMargin, viewportWidth - width - horizontalMargin);
+      const top = Math.max(verticalMargin, rect.bottom + gap);
+      const left = clamp(rect.left, horizontalMargin, maxLeft);
+      const maxHeight = Math.max(96, viewportHeight - top - verticalMargin);
+      const isOffscreen = rect.bottom < 0 || rect.top > viewportHeight || rect.right < 0 || rect.left > viewportWidth;
+
+      if (isOffscreen) {
+        setFloatingPopoverLayout((current) => (current === null ? current : null));
+        return;
+      }
+
+      setFloatingPopoverLayout((current) => {
+        if (
+          current &&
+          current.top === top &&
+          current.left === left &&
+          current.width === width &&
+          current.maxHeight === maxHeight
+        ) {
+          return current;
+        }
+
+        return {
+          top,
+          left,
+          width,
+          maxHeight,
+        };
+      });
+    };
+
+    const scheduleLayoutUpdate = () => {
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        updateFloatingPopoverLayout();
+      });
+    };
+
+    updateFloatingPopoverLayout();
+
+    const boardScrollNode = boardScrollRef.current;
+    boardScrollNode?.addEventListener("scroll", scheduleLayoutUpdate, { passive: true });
+    window.addEventListener("scroll", scheduleLayoutUpdate, { passive: true });
+    window.addEventListener("resize", scheduleLayoutUpdate, { passive: true });
+
+    return () => {
+      boardScrollNode?.removeEventListener("scroll", scheduleLayoutUpdate);
+      window.removeEventListener("scroll", scheduleLayoutUpdate);
+      window.removeEventListener("resize", scheduleLayoutUpdate);
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [hoveredReservation?.segmentKey, usesViewportScroll]);
 
   if (loading) {
     return (
@@ -1301,6 +1401,9 @@ const CalendrierPage = () => {
                                 return (
                                   <div
                                     key={segmentKey}
+                                    ref={(node) => {
+                                      segmentRefs.current[segmentKey] = node;
+                                    }}
                                     className={[
                                       "calendar-reservation",
                                       segment.showLabel ? "" : "calendar-reservation--continuation",
@@ -1340,28 +1443,21 @@ const CalendrierPage = () => {
                                     onBlur={() =>
                                       setHoveredReservation((current) => (current?.segmentKey === segmentKey ? null : current))
                                     }
-                                    onClick={() => {
-                                      const params = new URLSearchParams();
-                                      params.set("focus", segment.reservation.id);
-                                      params.set("year", String(year));
-                                      params.set("month", String(monthData.monthNumber));
-                                      if (segment.reservation.gite_id) {
-                                        params.set("tab", segment.reservation.gite_id);
-                                      }
-                                      navigate(`/reservations?${params.toString()}#reservation-${segment.reservation.id}`);
-                                    }}
+                                    onClick={() =>
+                                      openReservationInListing(segment.reservation, {
+                                        monthNumber: monthData.monthNumber,
+                                        year,
+                                      })
+                                    }
                                     onKeyDown={(event) => {
                                       if (event.key !== "Enter" && event.key !== " ") return;
                                       event.preventDefault();
-                                      const params = new URLSearchParams();
-                                      params.set("focus", segment.reservation.id);
-                                      params.set("year", String(year));
-                                      params.set("month", String(monthData.monthNumber));
-                                      if (segment.reservation.gite_id) {
-                                        params.set("tab", segment.reservation.gite_id);
-                                      }
-                                      navigate(`/reservations?${params.toString()}#reservation-${segment.reservation.id}`);
+                                      openReservationInListing(segment.reservation, {
+                                        monthNumber: monthData.monthNumber,
+                                        year,
+                                      });
                                     }}
+                                    aria-describedby={hoveredReservation?.segmentKey === segmentKey ? "calendar-floating-popover" : undefined}
                                     tabIndex={0}
                                   >
                                     {segment.showLabel ? (
@@ -1370,32 +1466,6 @@ const CalendrierPage = () => {
                                           <strong className="calendar-reservation__label">{segment.label}</strong>
                                           <span className="calendar-reservation__price">{formatEuro(segment.reservation.prix_total)}</span>
                                         </span>
-                                        <div className="calendar-reservation__popover" role="tooltip">
-                                          <div className="calendar-reservation__popover-title">{segment.reservation.hote_nom}</div>
-                                          <div className="calendar-reservation__popover-row">
-                                            <span>Séjour</span>
-                                            <strong>
-                                              {formatShortDate(segment.reservation.date_entree)} → {formatShortDate(segment.reservation.date_sortie)}
-                                            </strong>
-                                          </div>
-                                          <div className="calendar-reservation__popover-row">
-                                            <span>Voyageurs</span>
-                                            <strong>
-                                              {segment.reservation.nb_adultes} adulte{segment.reservation.nb_adultes > 1 ? "s" : ""}
-                                            </strong>
-                                          </div>
-                                          <div className="calendar-reservation__popover-row">
-                                            <span>Montant</span>
-                                            <strong>{formatEuro(segment.reservation.prix_total)}</strong>
-                                          </div>
-                                          <div className="calendar-reservation__popover-row">
-                                            <span>Source</span>
-                                            <strong>{segment.reservation.source_paiement || "Non renseignée"}</strong>
-                                          </div>
-                                          {segment.reservation.commentaire ? (
-                                            <p className="calendar-reservation__popover-note">{segment.reservation.commentaire}</p>
-                                          ) : null}
-                                        </div>
                                       </>
                                     ) : null}
                                   </div>
@@ -1484,6 +1554,50 @@ const CalendrierPage = () => {
           </div>
         </div>
       ) : null}
+
+      {!usesViewportScroll && hoveredReservationDetails?.reservation && floatingPopoverLayout
+        ? createPortal(
+            <div
+              id="calendar-floating-popover"
+              className="calendar-floating-popover"
+              role="tooltip"
+              style={{
+                top: floatingPopoverLayout.top,
+                left: floatingPopoverLayout.left,
+                width: floatingPopoverLayout.width,
+                maxHeight: floatingPopoverLayout.maxHeight,
+              }}
+            >
+              <div className="calendar-floating-popover__title">{hoveredReservationDetails.reservation.hote_nom}</div>
+              <div className="calendar-floating-popover__row">
+                <span>Séjour</span>
+                <strong>
+                  {formatShortDate(hoveredReservationDetails.reservation.date_entree)} →{" "}
+                  {formatShortDate(hoveredReservationDetails.reservation.date_sortie)}
+                </strong>
+              </div>
+              <div className="calendar-floating-popover__row">
+                <span>Voyageurs</span>
+                <strong>
+                  {hoveredReservationDetails.reservation.nb_adultes} adulte
+                  {hoveredReservationDetails.reservation.nb_adultes > 1 ? "s" : ""}
+                </strong>
+              </div>
+              <div className="calendar-floating-popover__row">
+                <span>Montant</span>
+                <strong>{formatEuro(hoveredReservationDetails.reservation.prix_total)}</strong>
+              </div>
+              <div className="calendar-floating-popover__row">
+                <span>Source</span>
+                <strong>{hoveredReservationDetails.reservation.source_paiement || "Non renseignée"}</strong>
+              </div>
+              {hoveredReservationDetails.reservation.commentaire ? (
+                <p className="calendar-floating-popover__note">{hoveredReservationDetails.reservation.commentaire}</p>
+              ) : null}
+            </div>,
+            document.body
+          )
+        : null}
 
       {usesViewportScroll && quickReservationOpen && quickReservationDraft && selectedDateRange ? (
         <div
