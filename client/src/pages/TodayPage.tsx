@@ -7,6 +7,7 @@ import {
   buildPaymentColorMap,
   getPaymentColorFromMap,
 } from "../utils/paymentColors";
+import { buildSmsHref } from "../utils/sms";
 import type { Gestionnaire, Gite, Reservation } from "../utils/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -692,7 +693,7 @@ const TodayPage = () => {
                   ? getPaymentColorFromMap(event.source, paymentColorMap)
                   : getGiteColor(event.primaryReservation.gite);
                 const phoneHref = phone ? `tel:${phone.replace(/[^+\d]/g, "")}` : null;
-                const smsHref = phone ? `sms:${phone.replace(/[^+\d]/g, "")}` : null;
+                const smsHref = buildSmsHref(phone);
 
                 return (
                   <article
