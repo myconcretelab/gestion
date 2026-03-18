@@ -1,5 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { apiFetch, isAbortError } from "./utils/api";
+import { RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT } from "./utils/recentImportsBadge";
 
 const GitesPage = lazy(() => import("./pages/GitesPage"));
 const ContratsListPage = lazy(() => import("./pages/ContratsListPage"));
@@ -22,9 +24,15 @@ const MenuIcon = () => (
   </svg>
 );
 
+type RecentImportedReservationsCountPayload = {
+  count: number;
+  since: string;
+};
+
 const App = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [recentImportedReservationsCount, setRecentImportedReservationsCount] = useState(0);
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -97,10 +105,65 @@ const App = () => {
   const desktopOverflowItems = navItems.filter((item) => item.desktopOverflow);
   const mobilePrimaryItems = navItems.filter((item) => item.mobilePrimary);
   const mobileOverflowItems = navItems.filter((item) => !item.mobilePrimary);
+  const reservationBadgeLabel =
+    recentImportedReservationsCount > 0
+      ? `${recentImportedReservationsCount} création${recentImportedReservationsCount > 1 ? "s" : ""} importée${recentImportedReservationsCount > 1 ? "s" : ""} via iCal ou Pump sur les dernières 24 heures`
+      : null;
 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadRecentImportedReservationsCount = async () => {
+      try {
+        const payload = await apiFetch<RecentImportedReservationsCountPayload>("/reservations/recent-imports/count", {
+          signal: controller.signal,
+        });
+        setRecentImportedReservationsCount(Math.max(0, Number(payload.count) || 0));
+      } catch (error) {
+        if (!isAbortError(error)) {
+          setRecentImportedReservationsCount(0);
+          console.error(error);
+        }
+      }
+    };
+
+    loadRecentImportedReservationsCount();
+
+    const handleRecentImportedReservationsCreated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ createdCount?: number }>;
+      const createdCount = Math.max(0, Number(customEvent.detail?.createdCount) || 0);
+      if (createdCount <= 0) return;
+      setRecentImportedReservationsCount((current) => current + createdCount);
+    };
+
+    window.addEventListener(
+      RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT,
+      handleRecentImportedReservationsCreated as EventListener
+    );
+
+    return () => {
+      controller.abort();
+      window.removeEventListener(
+        RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT,
+        handleRecentImportedReservationsCreated as EventListener
+      );
+    };
+  }, []);
+
+  const renderNavLabel = (item: { to: string; label: string; mobileLabel?: string }) => (
+    <span className="nav-item-label">
+      <span className="nav__label">{item.mobileLabel ?? item.label}</span>
+      {item.to === "/reservations" && recentImportedReservationsCount > 0 ? (
+        <span className="nav-badge" aria-label={reservationBadgeLabel ?? undefined} title={reservationBadgeLabel ?? undefined}>
+          {recentImportedReservationsCount}
+        </span>
+      ) : null}
+    </span>
+  );
 
   return (
     <div className="app">
@@ -121,7 +184,7 @@ const App = () => {
               aria-label={item.label}
               title={item.label}
             >
-              <span className="nav__label">{item.mobileLabel ?? item.label}</span>
+              {renderNavLabel(item)}
             </NavLink>
           ))}
         </nav>
@@ -151,7 +214,7 @@ const App = () => {
               className={() => (item.isActive ? "active" : undefined)}
               aria-current={item.isActive ? "page" : undefined}
             >
-              {item.label}
+              {renderNavLabel(item)}
             </NavLink>
           ))}
         </nav>
@@ -163,7 +226,7 @@ const App = () => {
               className={() => `topbar-mobile-links__item${item.isActive ? " topbar-mobile-links__item--active" : ""}`}
               aria-current={item.isActive ? "page" : undefined}
             >
-              {item.mobileLabel ?? item.label}
+              {renderNavLabel(item)}
             </NavLink>
           ))}
         </div>
@@ -193,7 +256,7 @@ const App = () => {
               className={() => (item.isActive ? "active" : undefined)}
               aria-current={item.isActive ? "page" : undefined}
             >
-              {item.label}
+              {renderNavLabel(item)}
             </NavLink>
           ))}
         </nav>

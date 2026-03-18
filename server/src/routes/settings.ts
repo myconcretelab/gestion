@@ -119,6 +119,12 @@ const smsTextSettingsSchema = z.object({
     )
     .default([]),
 });
+
+const getIcalExportWindowStart = () => {
+  const todayUtc = new Date();
+  todayUtc.setUTCHours(0, 0, 0, 0);
+  return new Date(todayUtc.getTime() - 24 * 60 * 60 * 1000);
+};
 type SourceImportItem = z.infer<typeof sourceImportItemSchema>;
 type SourceImportPayload = z.infer<typeof sourceImportSchema>;
 type SourceImportUnknownExample = {
@@ -336,9 +342,7 @@ router.get("/ical-exports", async (_req, res, next) => {
       },
     });
 
-    const todayUtc = new Date();
-    todayUtc.setUTCHours(0, 0, 0, 0);
-    const from = new Date(todayUtc.getTime() - 24 * 60 * 60 * 1000);
+    const from = getIcalExportWindowStart();
     const reservationRows = await prisma.reservation.findMany({
       where: {
         gite_id: { in: gites.map((gite) => gite.id) },
@@ -372,6 +376,64 @@ router.get("/ical-exports", async (_req, res, next) => {
         exported_reservations_count: exportableCountsByGite.get(gite.id) ?? 0,
       }))
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/ical-exports/:giteId/reset", async (req, res, next) => {
+  try {
+    const gite = await prisma.gite.findUnique({
+      where: { id: req.params.giteId },
+      select: {
+        id: true,
+        nom: true,
+      },
+    });
+    if (!gite) {
+      return res.status(404).json({ error: "Gîte introuvable." });
+    }
+
+    const from = getIcalExportWindowStart();
+    const reservationRows = await prisma.reservation.findMany({
+      where: {
+        gite_id: gite.id,
+        date_sortie: { gte: from },
+      },
+      select: {
+        id: true,
+        gite_id: true,
+        origin_system: true,
+        export_to_ical: true,
+        commentaire: true,
+        source_paiement: true,
+        prix_total: true,
+        prix_par_nuit: true,
+      },
+    });
+
+    const exportableReservationIds = reservationRows
+      .filter((reservation) => shouldExportReservationToIcal(reservation))
+      .map((reservation) => reservation.id);
+
+    let reset_count = 0;
+    if (exportableReservationIds.length > 0) {
+      const result = await prisma.reservation.updateMany({
+        where: {
+          id: { in: exportableReservationIds },
+        },
+        data: {
+          export_to_ical: false,
+        },
+      });
+      reset_count = result.count;
+    }
+
+    res.json({
+      gite_id: gite.id,
+      gite_nom: gite.nom,
+      reset_count,
+    });
   } catch (error) {
     next(error);
   }

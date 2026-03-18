@@ -2710,6 +2710,28 @@ body {
   padding: 8px 4px 12px;
 }
 
+.nav-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-badge {
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.38rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e11d48;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
 .nav a::after {
   content: "";
   position: absolute;
@@ -2763,6 +2785,10 @@ body {
   text-decoration: none;
   font-weight: 600;
   text-align: right;
+}
+
+.overflow-nav a .nav-item-label {
+  justify-content: flex-end;
 }
 
 .overflow-nav a.active {
@@ -6773,6 +6799,17 @@ button.warning {
     font-size: 0.84rem;
     white-space: nowrap;
     text-align: center;
+  }
+
+  .topbar-mobile-links__item .nav-item-label {
+    gap: 6px;
+  }
+
+  .topbar-mobile-links__item .nav-badge {
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.32rem;
+    font-size: 0.68rem;
   }
 
   .topbar-mobile-links__item--active {
