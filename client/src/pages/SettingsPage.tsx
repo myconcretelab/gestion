@@ -284,7 +284,9 @@ const DEFAULT_SMS_TEXT_SETTINGS: SmsTextSettings = {
   ],
 };
 
-const IMPORT_LOG_VISIBLE_COUNT = 2;
+const IMPORT_LOG_FETCH_COUNT = 20;
+const IMPORT_LOG_VISIBLE_COUNT = 5;
+const IMPORT_LOG_VISIBLE_STEP = 5;
 const IMPORT_LOG_EVENT_VISIBLE_COUNT = 2;
 
 const formatIsoDateFr = (value: string) => {
@@ -543,6 +545,7 @@ const SettingsPage = () => {
 
   const [importLog, setImportLog] = useState<ImportLogEntry[]>([]);
   const [importLogTotal, setImportLogTotal] = useState(0);
+  const [importLogVisibleCount, setImportLogVisibleCount] = useState(IMPORT_LOG_VISIBLE_COUNT);
   const [loadingImportLog, setLoadingImportLog] = useState(false);
   const [importLogError, setImportLogError] = useState<string | null>(null);
 
@@ -818,7 +821,7 @@ const SettingsPage = () => {
     setCronDraft(data.config);
   };
 
-  const loadImportLog = async (limit = IMPORT_LOG_VISIBLE_COUNT) => {
+  const loadImportLog = async (limit = IMPORT_LOG_FETCH_COUNT) => {
     setLoadingImportLog(true);
     setImportLogError(null);
     try {
@@ -827,6 +830,7 @@ const SettingsPage = () => {
       );
       setImportLog(Array.isArray(data.entries) ? data.entries : []);
       setImportLogTotal(Number.isFinite(data.total) ? data.total : 0);
+      setImportLogVisibleCount((previous) => Math.max(IMPORT_LOG_VISIBLE_COUNT, previous));
     } catch (error: any) {
       setImportLogError(error.message ?? "Impossible de charger le journal des imports.");
     } finally {
@@ -2039,7 +2043,7 @@ const SettingsPage = () => {
               <div className="field-hint">Aucun import enregistré.</div>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
-                {importLog.slice(0, IMPORT_LOG_VISIBLE_COUNT).map((entry) => (
+                {importLog.slice(0, importLogVisibleCount).map((entry) => (
                   <div key={entry.id} className="field-group">
                     <div className="field-group__header">
                       <div className="field-group__label">{formatImportSource(entry.source)}</div>
@@ -2116,6 +2120,17 @@ const SettingsPage = () => {
                     ) : null}
                   </div>
                 ))}
+                {importLog.length > importLogVisibleCount ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setImportLogVisibleCount((previous) => Math.min(importLog.length, previous + IMPORT_LOG_VISIBLE_STEP));
+                    }}
+                  >
+                    Afficher plus ({importLog.length - importLogVisibleCount} restante{importLog.length - importLogVisibleCount > 1 ? "s" : ""})
+                  </button>
+                ) : null}
               </div>
             )}
           </div>
