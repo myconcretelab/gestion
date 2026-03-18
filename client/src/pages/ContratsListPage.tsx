@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiFetch } from "../utils/api";
+import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
 import { formatDate } from "../utils/format";
+import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const ContratsListPage = () => {
   const [contrats, setContrats] = useState<Contrat[]>([]);
@@ -23,19 +24,46 @@ const ContratsListPage = () => {
     if (to) params.set("to", to);
     return params.toString();
   }, [q, giteId, from, to]);
-
-  const load = async () => {
-    const [contratsData, gitesData] = await Promise.all([
-      apiFetch<Contrat[]>(`/contracts${queryString ? `?${queryString}` : ""}`),
-      apiFetch<Gite[]>("/gites"),
-    ]);
-    setContrats(contratsData);
-    setGites(gitesData);
-  };
+  const debouncedQueryString = useDebouncedValue(queryString, 250);
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
-  }, [queryString]);
+    const controller = new AbortController();
+
+    apiFetch<Gite[]>("/gites", { signal: controller.signal })
+      .then((gitesData) => {
+        setError(null);
+        setGites(gitesData);
+      })
+      .catch((err) => {
+        if (isAbortError(err)) return;
+        setError(err instanceof Error ? err.message : "Erreur lors du chargement des gîtes.");
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setError(null);
+
+    apiFetch<Contrat[]>(`/contracts${debouncedQueryString ? `?${debouncedQueryString}` : ""}`, {
+      signal: controller.signal,
+    })
+      .then((contratsData) => {
+        setError(null);
+        setContrats(contratsData);
+      })
+      .catch((err) => {
+        if (isAbortError(err)) return;
+        setError(err instanceof Error ? err.message : "Erreur lors du chargement des contrats.");
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [debouncedQueryString]);
 
   const toggleArrhes = async (contrat: Contrat) => {
     const nextStatus = contrat.statut_paiement_arrhes === "recu" ? "non_recu" : "recu";

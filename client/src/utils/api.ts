@@ -24,16 +24,21 @@ export class ApiError extends Error {
 }
 
 export const isApiError = (error: unknown): error is ApiError => error instanceof ApiError;
+export const isAbortError = (error: unknown) =>
+  error instanceof DOMException
+    ? error.name === "AbortError"
+    : typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 export const buildApiUrl = (path: string) => new URL(`${API_BASE}${path}`, window.location.origin).toString();
 
 export const apiFetch = async <T>(path: string, options: ApiOptions = {}): Promise<T> => {
+  const hasJsonBody = options.json !== undefined;
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
       ...(options.headers ?? {}),
     },
-    body: options.json ? JSON.stringify(options.json) : options.body,
+    body: hasJsonBody ? JSON.stringify(options.json) : options.body,
   });
 
   if (!response.ok) {

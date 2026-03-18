@@ -874,6 +874,8 @@ const ReservationsPage = () => {
   const linkedFocusTimerRef = useRef<number | null>(null);
   const handledLinkedFocusRef = useRef<string | null>(null);
   const handledCalendarInsertRef = useRef<string | null>(null);
+  const appliedLocationYearMonthKeyRef = useRef<string | null>(null);
+  const appliedLocationTabKeyRef = useRef<string | null>(null);
 
   const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const requestedFocusReservationId = locationParams.get("focus");
@@ -1052,16 +1054,19 @@ const ReservationsPage = () => {
   }, [year, month, q]);
 
   useEffect(() => {
+    if (appliedLocationYearMonthKeyRef.current === location.key) return;
+    appliedLocationYearMonthKeyRef.current = location.key;
+
     const nextYear = requestedYear ? Number.parseInt(requestedYear, 10) : NaN;
-    if (Number.isFinite(nextYear) && nextYear > 0 && nextYear !== year) {
+    if (Number.isFinite(nextYear) && nextYear > 0) {
       setYear(nextYear);
     }
 
     const nextMonth = requestedMonth ? Number.parseInt(requestedMonth, 10) : NaN;
-    if (Number.isFinite(nextMonth) && nextMonth >= 0 && nextMonth <= 12 && nextMonth !== month) {
+    if (Number.isFinite(nextMonth) && nextMonth >= 0 && nextMonth <= 12) {
       setMonth(nextMonth as number | 0);
     }
-  }, [month, requestedMonth, requestedYear, year]);
+  }, [location.key, requestedMonth, requestedYear]);
 
   useEffect(() => {
     // Any display filter change should discard pending inline insertion state.
@@ -1083,16 +1088,23 @@ const ReservationsPage = () => {
   }, [activeTab, gites, reservations]);
 
   useEffect(() => {
-    if (!requestedTab) return;
-    if (requestedTab === UNASSIGNED_TAB || requestedTab === ALL_GITES_TAB) {
-      if (activeTab !== requestedTab) setActiveTab(requestedTab);
+    if (appliedLocationTabKeyRef.current === location.key) return;
+    if (!requestedTab) {
+      appliedLocationTabKeyRef.current = location.key;
       return;
     }
-    if (!gites.some((gite) => gite.id === requestedTab)) return;
-    if (activeTab !== requestedTab) {
+
+    if (requestedTab === UNASSIGNED_TAB || requestedTab === ALL_GITES_TAB) {
       setActiveTab(requestedTab);
+      appliedLocationTabKeyRef.current = location.key;
+      return;
     }
-  }, [activeTab, gites, requestedTab]);
+
+    if (!gites.some((gite) => gite.id === requestedTab)) return;
+
+    setActiveTab(requestedTab);
+    appliedLocationTabKeyRef.current = location.key;
+  }, [gites, location.key, requestedTab]);
 
   const handleTabDragStart = (event: DragEvent<HTMLButtonElement>, id: string) => {
     if (reorderingTabs) return;

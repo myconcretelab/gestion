@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiFetch } from "../utils/api";
+import { apiFetch, isAbortError } from "../utils/api";
 import type { Facture, Gite } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
+import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const FacturesListPage = () => {
   const [factures, setFactures] = useState<Facture[]>([]);
@@ -23,19 +24,46 @@ const FacturesListPage = () => {
     if (to) params.set("to", to);
     return params.toString();
   }, [q, giteId, from, to]);
-
-  const load = async () => {
-    const [facturesData, gitesData] = await Promise.all([
-      apiFetch<Facture[]>(`/invoices${queryString ? `?${queryString}` : ""}`),
-      apiFetch<Gite[]>("/gites"),
-    ]);
-    setFactures(facturesData);
-    setGites(gitesData);
-  };
+  const debouncedQueryString = useDebouncedValue(queryString, 250);
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
-  }, [queryString]);
+    const controller = new AbortController();
+
+    apiFetch<Gite[]>("/gites", { signal: controller.signal })
+      .then((gitesData) => {
+        setError(null);
+        setGites(gitesData);
+      })
+      .catch((err) => {
+        if (isAbortError(err)) return;
+        setError(err instanceof Error ? err.message : "Erreur lors du chargement des gîtes.");
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setError(null);
+
+    apiFetch<Facture[]>(`/invoices${debouncedQueryString ? `?${debouncedQueryString}` : ""}`, {
+      signal: controller.signal,
+    })
+      .then((facturesData) => {
+        setError(null);
+        setFactures(facturesData);
+      })
+      .catch((err) => {
+        if (isAbortError(err)) return;
+        setError(err instanceof Error ? err.message : "Erreur lors du chargement des factures.");
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [debouncedQueryString]);
 
   const togglePayment = async (facture: Facture) => {
     const nextStatus = facture.statut_paiement === "reglee" ? "non_reglee" : "reglee";
