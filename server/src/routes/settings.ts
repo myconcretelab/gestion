@@ -34,6 +34,12 @@ import {
   readSourceColorSettings,
   writeSourceColorSettings,
 } from "../services/sourceColorSettings.js";
+import {
+  buildDefaultSmsTextSettings,
+  mergeSmsTextSettings,
+  readSmsTextSettings,
+  writeSmsTextSettings,
+} from "../services/smsTextSettings.js";
 import { generateIcalExportToken, shouldExportReservationToIcal } from "../utils/reservationOrigin.js";
 
 const router = Router();
@@ -102,6 +108,17 @@ const declarationNightsSettingsSchema = z.object({
 const sourceColorSettingsSchema = z.object({
   colors: z.record(z.string().trim().min(1), z.string().trim().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)).default({}),
 });
+const smsTextSettingsSchema = z.object({
+  texts: z
+    .array(
+      z.object({
+        id: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+        title: z.string().trim().min(1),
+        text: z.string().trim().min(1),
+      })
+    )
+    .default([]),
+});
 type SourceImportItem = z.infer<typeof sourceImportItemSchema>;
 type SourceImportPayload = z.infer<typeof sourceImportSchema>;
 type SourceImportUnknownExample = {
@@ -165,6 +182,13 @@ const buildSourceColorSettingsResponse = async () => {
     available_sources: [...new Set([...availableSources, ...configuredSources])].sort((left, right) =>
       left.localeCompare(right, "fr", { sensitivity: "base" })
     ),
+  };
+};
+
+const buildSmsTextSettingsResponse = () => {
+  const settings = readSmsTextSettings(buildDefaultSmsTextSettings());
+  return {
+    texts: settings.texts,
   };
 };
 
@@ -751,6 +775,14 @@ router.get("/source-colors", async (_req, res, next) => {
   }
 });
 
+router.get("/sms-texts", (_req, res, next) => {
+  try {
+    res.json(buildSmsTextSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put("/declaration-nights", async (req, res, next) => {
   try {
     const payload = declarationNightsSettingsSchema.parse(req.body);
@@ -770,6 +802,24 @@ router.put("/source-colors", async (req, res, next) => {
     const merged = mergeSourceColorSettings(current, payload);
     writeSourceColorSettings(merged);
     res.json(await buildSourceColorSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/sms-texts", (req, res, next) => {
+  try {
+    const payload = smsTextSettingsSchema.parse(req.body ?? {});
+    const current = readSmsTextSettings(buildDefaultSmsTextSettings());
+    const merged = mergeSmsTextSettings(current, {
+      texts: payload.texts.map((item) => ({
+        id: item.id ?? "",
+        title: item.title,
+        text: item.text,
+      })),
+    });
+    writeSmsTextSettings(merged);
+    res.json(buildSmsTextSettingsResponse());
   } catch (error) {
     next(error);
   }
