@@ -11,8 +11,7 @@ import ReservationsPage from "./pages/ReservationsPage";
 import CalendrierPage from "./pages/CalendrierPage";
 import StatisticsPage from "./pages/StatisticsPage";
 import SettingsPage from "./pages/SettingsPage";
-
-const MOBILE_NAV_BREAKPOINT = 760;
+import TodayPage from "./pages/TodayPage";
 
 const MenuIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -25,9 +24,6 @@ const MenuIcon = () => (
 const App = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [useMobileHome, setUseMobileHome] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia(`(max-width: ${MOBILE_NAV_BREAKPOINT}px)`).matches : false
-  );
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -37,6 +33,9 @@ const App = () => {
   const isReservationsSection =
     location.pathname === "/reservations" ||
     location.pathname.startsWith("/reservations/");
+  const isTodaySection =
+    location.pathname === "/aujourdhui" ||
+    location.pathname.startsWith("/aujourdhui/");
   const isCalendarSection =
     location.pathname === "/calendrier" ||
     location.pathname.startsWith("/calendrier/");
@@ -48,6 +47,12 @@ const App = () => {
     location.pathname.startsWith("/parametres/");
   const navItems = [
     {
+      to: "/aujourdhui",
+      label: "Aujourd'hui",
+      isActive: isTodaySection,
+      mobilePrimary: true,
+    },
+    {
       to: "/reservations",
       label: "Réservations",
       isActive: isReservationsSection,
@@ -56,7 +61,7 @@ const App = () => {
       to: "/calendrier",
       label: "Calendrier",
       isActive: isCalendarSection,
-      mobileText: true,
+      mobilePrimary: true,
     },
     {
       to: "/contrats",
@@ -72,43 +77,29 @@ const App = () => {
       to: "/gites",
       label: "Gîtes",
       isActive: location.pathname === "/gites" || location.pathname.startsWith("/gites/"),
+      desktopOverflow: true,
     },
     {
       to: "/statistiques",
       label: "Statistiques",
       isActive: isStatsSection,
+      desktopOverflow: true,
     },
     {
       to: "/parametres",
       label: "Paramètres",
       isActive: isSettingsSection,
+      desktopOverflow: true,
     },
   ];
-  const mobilePrimaryItem = navItems.find((item) => item.mobileText) ?? navItems[0];
-  const mobileSecondaryItems = navItems.filter((item) => item !== mobilePrimaryItem);
+  const desktopPrimaryItems = navItems.filter((item) => !item.desktopOverflow);
+  const desktopOverflowItems = navItems.filter((item) => item.desktopOverflow);
+  const mobilePrimaryItems = navItems.filter((item) => item.mobilePrimary);
+  const mobileOverflowItems = navItems.filter((item) => !item.mobilePrimary);
 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_NAV_BREAKPOINT}px)`);
-    const updateMobileHome = (matches: boolean) => {
-      setUseMobileHome((current) => (current === matches ? current : matches));
-    };
-
-    updateMobileHome(mediaQuery.matches);
-
-    const handleChange = (event: MediaQueryListEvent) => {
-      updateMobileHome(event.matches);
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange);
-    };
-  }, []);
 
   return (
     <div className="app">
@@ -120,7 +111,7 @@ const App = () => {
           <span className="brand-label">Contrats Gîtes</span>
         </div>
         <nav className="nav">
-          {navItems.map((item) => (
+          {desktopPrimaryItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -133,19 +124,12 @@ const App = () => {
             </NavLink>
           ))}
         </nav>
-        <div className="topbar-mobile">
-          <NavLink
-            to={mobilePrimaryItem.to}
-            className={() => `topbar-mobile__primary${mobilePrimaryItem.isActive ? " topbar-mobile__primary--active" : ""}`}
-            aria-current={mobilePrimaryItem.isActive ? "page" : undefined}
-          >
-            {mobilePrimaryItem.mobileLabel ?? mobilePrimaryItem.label}
-          </NavLink>
+        <div className="topbar-desktop-menu">
           <button
             type="button"
-            className={`topbar-menu-button${mobileMenuOpen ? " topbar-menu-button--active" : ""}`}
+            className={`topbar-menu-button topbar-menu-button--desktop${mobileMenuOpen ? " topbar-menu-button--active" : ""}`}
             aria-expanded={mobileMenuOpen}
-            aria-controls="mobile-navigation"
+            aria-controls="desktop-navigation-overflow"
             aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
             onClick={() => setMobileMenuOpen((current) => !current)}
           >
@@ -154,8 +138,54 @@ const App = () => {
             </span>
           </button>
         </div>
-        <nav id="mobile-navigation" className={`mobile-nav${mobileMenuOpen ? " mobile-nav--open" : ""}`} aria-label="Navigation mobile">
-          {mobileSecondaryItems.map((item) => (
+        <nav
+          id="desktop-navigation-overflow"
+          className={`overflow-nav overflow-nav--desktop${mobileMenuOpen ? " overflow-nav--open" : ""}`}
+          aria-label="Navigation secondaire"
+        >
+          {desktopOverflowItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={() => (item.isActive ? "active" : undefined)}
+              aria-current={item.isActive ? "page" : undefined}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="topbar-mobile-links">
+          {mobilePrimaryItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={() => `topbar-mobile-links__item${item.isActive ? " topbar-mobile-links__item--active" : ""}`}
+              aria-current={item.isActive ? "page" : undefined}
+            >
+              {item.mobileLabel ?? item.label}
+            </NavLink>
+          ))}
+        </div>
+        <div className="topbar-mobile-menu">
+          <button
+            type="button"
+            className={`topbar-menu-button topbar-menu-button--mobile${mobileMenuOpen ? " topbar-menu-button--active" : ""}`}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navigation-overflow"
+            aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
+            onClick={() => setMobileMenuOpen((current) => !current)}
+          >
+            <span className="topbar-menu-button__icon" aria-hidden="true">
+              <MenuIcon />
+            </span>
+          </button>
+        </div>
+        <nav
+          id="mobile-navigation-overflow"
+          className={`overflow-nav overflow-nav--mobile${mobileMenuOpen ? " overflow-nav--open" : ""}`}
+          aria-label="Navigation mobile"
+        >
+          {mobileOverflowItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -169,7 +199,8 @@ const App = () => {
       </header>
       <main className="content">
         <Routes>
-          <Route path="/" element={<Navigate to={useMobileHome ? "/calendrier" : "/reservations"} replace />} />
+          <Route path="/" element={<Navigate to="/aujourdhui" replace />} />
+          <Route path="/aujourdhui" element={<TodayPage />} />
           <Route path="/gites" element={<GitesPage />} />
           <Route path="/contrats" element={<ContratsListPage />} />
           <Route path="/contrats/nouveau" element={<ContratFormPage />} />

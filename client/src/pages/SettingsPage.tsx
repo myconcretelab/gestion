@@ -229,6 +229,16 @@ type SourceColorSettings = {
   available_sources: string[];
 };
 
+type SmsTextItem = {
+  id: string;
+  title: string;
+  text: string;
+};
+
+type SmsTextSettings = {
+  texts: SmsTextItem[];
+};
+
 type IcalExportFeed = {
   id: string;
   nom: string;
@@ -256,6 +266,21 @@ const DEFAULT_DECLARATION_NIGHTS_SETTINGS: DeclarationNightsSettings = {
 const DEFAULT_SOURCE_COLOR_SETTINGS: SourceColorSettings = {
   colors: { ...DEFAULT_PAYMENT_SOURCE_COLORS },
   available_sources: Object.keys(DEFAULT_PAYMENT_SOURCE_COLORS),
+};
+
+const DEFAULT_SMS_TEXT_SETTINGS: SmsTextSettings = {
+  texts: [
+    {
+      id: "bedding-cleaning",
+      title: "Draps/ménage",
+      text: "Comme indiqué, je vous laisse prendre vos draps, serviettes et faire le ménage avant de partir.",
+    },
+    {
+      id: "bedding-option",
+      title: "Option Draps/Serviettes",
+      text: "Vous pourrez prendre l'option draps à 15€ par lit si vous ne souhaitez pas emporter votre linge.",
+    },
+  ],
 };
 
 const IMPORT_LOG_VISIBLE_COUNT = 2;
@@ -332,6 +357,9 @@ const normalizeSourceList = (values: Array<string | null | undefined>) => {
 };
 
 const parseDeclarationSourcesInput = (value: string) => normalizeSourceList(value.split(/[\n,;]+/g));
+
+const createSmsTextDraftId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `sms-text-${Math.random().toString(36).slice(2, 10)}`;
 
 const truncateMiddle = (value: string, maxLength = 92) => {
   if (value.length <= maxLength) return value;
@@ -460,6 +488,12 @@ const SettingsPage = () => {
   const [sourceColorNotice, setSourceColorNotice] = useState<string | null>(null);
   const [newSourceColorLabel, setNewSourceColorLabel] = useState("");
   const [newSourceColorValue, setNewSourceColorValue] = useState("#D3D3D3");
+  const [smsTextSettings, setSmsTextSettings] = useState<SmsTextSettings>(DEFAULT_SMS_TEXT_SETTINGS);
+  const [smsTextDraft, setSmsTextDraft] = useState<SmsTextItem[]>(DEFAULT_SMS_TEXT_SETTINGS.texts);
+  const [loadingSmsTexts, setLoadingSmsTexts] = useState(true);
+  const [savingSmsTexts, setSavingSmsTexts] = useState(false);
+  const [smsTextError, setSmsTextError] = useState<string | null>(null);
+  const [smsTextNotice, setSmsTextNotice] = useState<string | null>(null);
 
   const [icalPreview, setIcalPreview] = useState<IcalPreviewResult | null>(null);
   const [icalCronState, setIcalCronState] = useState<IcalCronState | null>(null);
@@ -564,6 +598,7 @@ const SettingsPage = () => {
       }).length,
     [sourceColorDraft]
   );
+  const smsTextCount = useMemo(() => smsTextDraft.filter((item) => item.title.trim() && item.text.trim()).length, [smsTextDraft]);
   const activeIcalSourcesCount = useMemo(
     () => sources.filter((source) => source.is_active).length,
     [sources]
@@ -754,6 +789,27 @@ const SettingsPage = () => {
     applySourceColorSettings(data);
   };
 
+  const applySmsTextSettings = (data: SmsTextSettings) => {
+    const normalizedTexts = Array.isArray(data.texts)
+      ? data.texts
+          .map((item, index) => ({
+            id: String(item?.id ?? "").trim() || `sms-text-${index + 1}`,
+            title: String(item?.title ?? "").trim(),
+            text: String(item?.text ?? "").trim(),
+          }))
+          .filter((item) => item.title && item.text)
+      : [];
+
+    const nextTexts = normalizedTexts.length > 0 ? normalizedTexts : DEFAULT_SMS_TEXT_SETTINGS.texts;
+    setSmsTextSettings({ texts: nextTexts });
+    setSmsTextDraft(nextTexts);
+  };
+
+  const loadSmsTextSettings = async () => {
+    const data = await apiFetch<SmsTextSettings>("/settings/sms-texts");
+    applySmsTextSettings(data);
+  };
+
   const loadCronState = async () => {
     const data = await apiFetch<IcalCronState>("/settings/ical/cron");
     setIcalCronState(data);
@@ -801,11 +857,13 @@ const SettingsPage = () => {
     setLoadingIcalExports(true);
     setLoadingDeclarationNights(true);
     setLoadingSourceColors(true);
+    setLoadingSmsTexts(true);
     Promise.all([
       loadManagers(),
       loadSources(),
       loadDeclarationNightsSettings(),
       loadSourceColorSettings(),
+      loadSmsTextSettings(),
       loadCronState(),
       loadImportLog(),
       loadPumpStatus(),
@@ -818,6 +876,7 @@ const SettingsPage = () => {
         setIcalExportsError(message);
         setDeclarationNightsError(message);
         setSourceColorError(message);
+        setSmsTextError(message);
       })
       .finally(() => {
         setLoadingManagers(false);
@@ -825,6 +884,7 @@ const SettingsPage = () => {
         setLoadingIcalExports(false);
         setLoadingDeclarationNights(false);
         setLoadingSourceColors(false);
+        setLoadingSmsTexts(false);
       });
   }, []);
 
@@ -906,6 +966,46 @@ const SettingsPage = () => {
       available_sources: normalizeSourceList([...previous.available_sources, label]),
     }));
     setNewSourceColorLabel("");
+  };
+
+  const saveSmsTextSettings = async () => {
+    setSavingSmsTexts(true);
+    setSmsTextError(null);
+    setSmsTextNotice(null);
+
+    try {
+      const sanitizedTexts = smsTextDraft
+        .map((item, index) => ({
+          id: String(item.id ?? "").trim() || `sms-text-${index + 1}`,
+          title: item.title.trim(),
+          text: item.text.trim(),
+        }))
+        .filter((item) => item.title || item.text);
+
+      if (sanitizedTexts.length === 0) {
+        setSmsTextError("Ajoutez au moins un texte SMS.");
+        return;
+      }
+
+      const invalidItem = sanitizedTexts.find((item) => !item.title || !item.text);
+      if (invalidItem) {
+        setSmsTextError("Chaque texte SMS doit avoir un titre et un contenu.");
+        return;
+      }
+
+      const response = await apiFetch<SmsTextSettings>("/settings/sms-texts", {
+        method: "PUT",
+        json: {
+          texts: sanitizedTexts,
+        },
+      });
+      applySmsTextSettings(response);
+      setSmsTextNotice("Textes SMS enregistrés.");
+    } catch (error: any) {
+      setSmsTextError(error.message ?? "Impossible d'enregistrer les textes SMS.");
+    } finally {
+      setSavingSmsTexts(false);
+    }
   };
 
   const createManager = async () => {
@@ -1668,7 +1768,7 @@ const SettingsPage = () => {
             )}
           </div>
 
-          <div className="card settings-card settings-card--sand settings-card--span-4">
+          <div className="card settings-card settings-card--sand settings-card--span-8">
             <div className="settings-card__topline">
               <span className="settings-card__tag">Palette</span>
               <span className="settings-card__badge">{customizedSourceColorCount} personnalisée(s)</span>
@@ -1784,6 +1884,112 @@ const SettingsPage = () => {
                 </div>
                 {sourceColorNotice ? <div className="note note--success">{sourceColorNotice}</div> : null}
                 {sourceColorError ? <div className="note">{sourceColorError}</div> : null}
+              </>
+            )}
+          </div>
+
+          <div className="card settings-card settings-card--blue settings-card--span-4">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">SMS</span>
+              <span className="settings-card__badge">{smsTextCount} texte(s)</span>
+            </div>
+            <div className="section-title">Textes optionnels</div>
+            <div className="field-hint">
+              Ces textes alimentent les switches du bloc SMS dans la prise de réservation mobile.
+            </div>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              {smsTextSettings.texts.length} texte(s) actuellement enregistrés.
+            </div>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Variables disponibles: {"{nom}"}, {"{gite}"}, {"{adresse}"}, {"{dateDebut}"}, {"{dateFin}"}, {"{nbNuits}"},{" "}
+              {"{heureArrivee}"}, {"{heureDepart}"}
+            </div>
+            {loadingSmsTexts ? (
+              <div className="field-hint" style={{ marginTop: 12 }}>
+                Chargement...
+              </div>
+            ) : (
+              <>
+                <div className="settings-sms-texts" style={{ marginTop: 16 }}>
+                  {smsTextDraft.map((item, index) => (
+                    <div key={item.id} className="settings-sms-text-row">
+                      <div className="settings-sms-text-row__header">
+                        <strong>Texte {index + 1}</strong>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            setSmsTextError(null);
+                            setSmsTextNotice(null);
+                            setSmsTextDraft((previous) => previous.filter((entry) => entry.id !== item.id));
+                          }}
+                          disabled={savingSmsTexts || smsTextDraft.length <= 1}
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                      <label className="field">
+                        Titre
+                        <input
+                          type="text"
+                          value={item.title}
+                          onChange={(event) => {
+                            setSmsTextError(null);
+                            setSmsTextNotice(null);
+                            setSmsTextDraft((previous) =>
+                              previous.map((entry) =>
+                                entry.id === item.id ? { ...entry, title: event.target.value } : entry
+                              )
+                            );
+                          }}
+                          placeholder="Ex: Adresse du gîte"
+                          disabled={savingSmsTexts}
+                        />
+                      </label>
+                      <label className="field">
+                        Texte
+                        <textarea
+                          rows={3}
+                          value={item.text}
+                          onChange={(event) => {
+                            setSmsTextError(null);
+                            setSmsTextNotice(null);
+                            setSmsTextDraft((previous) =>
+                              previous.map((entry) =>
+                                entry.id === item.id ? { ...entry, text: event.target.value } : entry
+                              )
+                            );
+                          }}
+                          placeholder="Contenu du SMS"
+                          disabled={savingSmsTexts}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="actions" style={{ marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setSmsTextError(null);
+                      setSmsTextNotice(null);
+                      setSmsTextDraft((previous) => [
+                        ...previous,
+                        { id: createSmsTextDraftId(), title: "", text: "" },
+                      ]);
+                    }}
+                    disabled={savingSmsTexts}
+                  >
+                    Ajouter un texte
+                  </button>
+                  <button type="button" onClick={() => void saveSmsTextSettings()} disabled={savingSmsTexts}>
+                    {savingSmsTexts ? "Enregistrement..." : "Enregistrer"}
+                  </button>
+                </div>
+                {smsTextNotice ? <div className="note note--success">{smsTextNotice}</div> : null}
+                {smsTextError ? <div className="note">{smsTextError}</div> : null}
               </>
             )}
           </div>
