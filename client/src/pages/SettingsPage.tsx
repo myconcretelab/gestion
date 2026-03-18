@@ -2594,8 +2594,19 @@ const SettingsPage = () => {
                       <div className="field-group__label">
                         {feed.nom} ({feed.prefixe_contrat})
                       </div>
-                      <div className="field-hint">
-                        {feed.reservations_count} réservation(s) | {feed.exported_reservations_count} exportée(s)
+                      <div className="settings-ical-export__meta">
+                        <span
+                          className={
+                            feed.exported_reservations_count > 0
+                              ? "settings-ical-export__badge"
+                              : "settings-ical-export__badge settings-ical-export__badge--empty"
+                          }
+                        >
+                          {feed.exported_reservations_count} résa iCal
+                        </span>
+                        <div className="field-hint">
+                          {feed.reservations_count} réservation(s) | {feed.exported_reservations_count} exportée(s)
+                        </div>
                       </div>
                     </div>
                     <label className="field">
