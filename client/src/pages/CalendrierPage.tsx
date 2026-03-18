@@ -9,6 +9,7 @@ import {
   getPaymentColorFromMap,
   getPaymentTextColorFromMap,
 } from "../utils/paymentColors";
+import { buildSmsHref } from "../utils/sms";
 import type { Gite, Reservation } from "../utils/types";
 
 const MONTHS = [
@@ -905,9 +906,8 @@ const CalendrierPage = () => {
   ]);
 
   const quickReservationSmsHref = useMemo(() => {
-    const digits = quickReservationDraft ? getQuickReservationSmsPhoneDigits(quickReservationDraft.telephone) : "";
-    if (!digits) return null;
-    return `sms:${digits}?body=${encodeURIComponent(quickReservationSmsText)}`;
+    const phone = quickReservationDraft ? getQuickReservationSmsPhoneDigits(quickReservationDraft.telephone) : "";
+    return buildSmsHref(phone, quickReservationSmsText);
   }, [quickReservationDraft, quickReservationSmsText]);
 
   const getScrollOffset = useCallback(
