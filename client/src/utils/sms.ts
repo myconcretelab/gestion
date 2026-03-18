@@ -18,3 +18,8 @@ export const buildSmsHref = (phone: string, body?: string) => {
   const separator = isAppleMobileDevice() ? "&" : "?";
   return `sms:${recipient}${separator}body=${encodeURIComponent(message)}`;
 };
+
+export const buildTelephoneHref = (phone: string | null | undefined) => {
+  const recipient = String(phone ?? "").replace(/[^+\d]/g, "");
+  return recipient ? `tel:${recipient}` : null;
+};
