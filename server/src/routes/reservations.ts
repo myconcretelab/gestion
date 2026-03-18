@@ -1105,6 +1105,22 @@ router.get("/years", async (_req, res, next) => {
   }
 });
 
+router.get("/recent-imports/count", async (_req, res, next) => {
+  try {
+    const since = new Date(Date.now() - DAY_MS);
+    const count = await prisma.reservation.count({
+      where: {
+        origin_system: { in: ["ical", "pump"] },
+        createdAt: { gte: since },
+      },
+    });
+
+    res.json({ count, since: since.toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/", async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";

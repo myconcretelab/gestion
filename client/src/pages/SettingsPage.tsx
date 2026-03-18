@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { apiFetch, buildApiUrl } from "../utils/api";
+import { dispatchRecentImportedReservationsCreated } from "../utils/recentImportsBadge";
 import {
   DEFAULT_PAYMENT_SOURCE_COLORS,
   buildPaymentColorMap,
@@ -454,6 +455,7 @@ const SettingsPage = () => {
   const [icalExports, setIcalExports] = useState<IcalExportFeed[]>([]);
   const [loadingIcalExports, setLoadingIcalExports] = useState(true);
   const [resettingIcalExportId, setResettingIcalExportId] = useState<string | null>(null);
+  const [resettingIcalExportReservationsId, setResettingIcalExportReservationsId] = useState<string | null>(null);
   const [icalExportsError, setIcalExportsError] = useState<string | null>(null);
   const [icalExportsNotice, setIcalExportsNotice] = useState<string | null>(null);
   const [sourceDraft, setSourceDraft] = useState<IcalSourceDraft>(DEFAULT_SOURCE_DRAFT);
@@ -1172,6 +1174,32 @@ const SettingsPage = () => {
     }
   };
 
+  const resetIcalExportReservations = async (feed: IcalExportFeed) => {
+    if (
+      !confirm(
+        `Reset OTA pour ${feed.nom} ? Toutes les réservations actuellement prévues pour cet iCal passeront à non exportées. Le macaron retombera à 0 jusqu'à la prochaine création de réservation.`
+      )
+    ) {
+      return;
+    }
+
+    setResettingIcalExportReservationsId(feed.id);
+    setIcalExportsError(null);
+    setIcalExportsNotice(null);
+    try {
+      const result = await apiFetch<{ gite_id: string; gite_nom: string; reset_count: number }>(
+        `/settings/ical-exports/${feed.id}/reset`,
+        { method: "POST" }
+      );
+      await loadSources();
+      setIcalExportsNotice(`${result.reset_count} réservation(s) retirée(s) de l'export OTA pour ${result.gite_nom}.`);
+    } catch (error: any) {
+      setIcalExportsError(error.message ?? "Impossible de reset l'export OTA.");
+    } finally {
+      setResettingIcalExportReservationsId(null);
+    }
+  };
+
   const triggerSourceImport = () => {
     importSourcesInputRef.current?.click();
   };
@@ -1429,6 +1457,7 @@ const SettingsPage = () => {
       setIcalNotice(
         `Synchronisation terminée: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).${toVerifyLabel}`
       );
+      dispatchRecentImportedReservationsCreated(result.created_count);
     } catch (error: any) {
       setIcalError(error.message);
     } finally {
@@ -1609,6 +1638,7 @@ const SettingsPage = () => {
       setPumpNotice(
         `Import Pump terminé: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).`
       );
+      dispatchRecentImportedReservationsCreated(result.created_count);
     } catch (error: any) {
       setPumpError(error.message ?? "Impossible d'importer les réservations Pump.");
     } finally {
@@ -2618,15 +2648,33 @@ const SettingsPage = () => {
                         type="button"
                         className="table-action table-action--neutral"
                         onClick={() => void copyIcalExportUrl(feed)}
-                        disabled={!feed.ical_export_token || resettingIcalExportId === feed.id}
+                        disabled={
+                          !feed.ical_export_token ||
+                          resettingIcalExportId === feed.id ||
+                          resettingIcalExportReservationsId === feed.id
+                        }
                       >
                         Copier l'URL
                       </button>
                       <button
                         type="button"
+                        className="table-action table-action--neutral"
+                        onClick={() => void resetIcalExportReservations(feed)}
+                        disabled={
+                          feed.exported_reservations_count === 0 ||
+                          resettingIcalExportId === feed.id ||
+                          resettingIcalExportReservationsId === feed.id
+                        }
+                      >
+                        {resettingIcalExportReservationsId === feed.id ? "Reset..." : "Reset OTA"}
+                      </button>
+                      <button
+                        type="button"
                         className="table-action table-action--danger"
                         onClick={() => void resetIcalExportToken(feed)}
-                        disabled={resettingIcalExportId === feed.id}
+                        disabled={
+                          resettingIcalExportId === feed.id || resettingIcalExportReservationsId === feed.id
+                        }
                       >
                         {resettingIcalExportId === feed.id ? "Régénération..." : "Régénérer le token"}
                       </button>
