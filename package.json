@@ -14,6 +14,7 @@
     "dev:reset": "npm run dev:reset -w server",
     "prod:migrate": "npm run prod:migrate -w server",
     "prod:generate": "npm run prod:generate -w server",
+    "cron:ical": "npm run cron:ical -w server",
     "db:studio": "npm run db:studio -w server",
     "prisma:generate": "npm run prisma:generate -w server",
     "prisma:use:sqlite": "npm run prisma:use:sqlite -w server",

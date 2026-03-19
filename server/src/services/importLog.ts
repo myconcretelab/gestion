@@ -8,6 +8,8 @@ const IMPORT_LOG_FILE = path.join(env.DATA_DIR, "import-log.json");
 
 type ImportLogEntryInput = {
   source: string;
+  status?: "success" | "error";
+  errorMessage?: string | null;
   selectionCount: number;
   inserted: number;
   updated: number;
@@ -39,6 +41,8 @@ export type ImportLogEntry = {
   id: string;
   at: string;
   source: string;
+  status: "success" | "error";
+  errorMessage: string | null;
   selectionCount: number;
   inserted: number;
   updated: number;
@@ -76,6 +80,11 @@ const toNumber = (value: unknown) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
   return Math.max(0, Math.round(parsed));
+};
+
+const normalizeStatus = (value: unknown): "success" | "error" => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "error" ? "error" : "success";
 };
 
 export const readImportLog = (): ImportLogEntry[] => {
@@ -139,6 +148,8 @@ export const buildImportLogEntry = (input: ImportLogEntryInput): ImportLogEntry 
     id: crypto.randomUUID(),
     at: new Date().toISOString(),
     source: String(input.source || "import").trim() || "import",
+    status: normalizeStatus(input.status),
+    errorMessage: String(input.errorMessage ?? "").trim() || null,
     selectionCount: toNumber(input.selectionCount),
     inserted: toNumber(input.inserted),
     updated: toNumber(input.updated),

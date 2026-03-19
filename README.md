@@ -78,6 +78,29 @@ Flux prévu:
 
 Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h.
 
+## Synchronisation iCal
+
+La synchronisation iCal n'utilise plus de minuteur en mémoire dans le process Node. Le serveur stocke la configuration et l'état du dernier passage, mais c'est un cron externe qui doit lancer le job:
+
+```bash
+npm run cron:ical
+```
+
+Le job:
+
+- lit la configuration iCal enregistrée dans **Réglages**
+- exécute la synchro seulement si elle est due
+- verrouille l'exécution pour éviter les chevauchements
+- journalise aussi les échecs dans **Traçabilité > Journal des imports**
+
+Exemple de crontab, toutes les 5 minutes:
+
+```cron
+*/5 * * * * cd /path/to/contrats && /usr/bin/npm run cron:ical >> /var/log/contrats-ical-cron.log 2>&1
+```
+
+Le pas de 5 minutes permet de garder un intervalle métier piloté par l'application (`ICAL_SYNC_INTERVAL_HOURS` / Réglages) sans devoir modifier la crontab à chaque changement.
+
 ## Génération PDF
 
 - Template principal: `server/templates/contract.html`
@@ -105,6 +128,9 @@ SEED_SKIP_PDF=1 npm run seed
 - (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` (et conserve `node_modules`)
 - (optionnel) `BASIC_AUTH_PASSWORD=...`
 - (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
+- (optionnel) `ICAL_SYNC_ENABLED=true`
+- (optionnel) `ICAL_SYNC_RUN_ON_START=false`
+- (optionnel) `ICAL_SYNC_INTERVAL_HOURS=6`
 - (optionnel) `RESTART_CMD=...` ou `ALWAYSDATA_API_TOKEN` + `ALWAYSDATA_ACCOUNT` + `ALWAYSDATA_SITE_ID` pour que `./update` redemarre le serveur
 
 Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
@@ -127,6 +153,12 @@ npm run prod:migrate
 
 ```bash
 npm run start
+```
+
+3bis. Configurer le cron externe iCal sur l'hébergement:
+
+```cron
+*/5 * * * * cd /home/USER/app/contrats && /usr/bin/npm run cron:ical >> /home/USER/logs/contrats-ical-cron.log 2>&1
 ```
 
 4. PDFs: les fichiers sont stockes dans `server/data/pdfs/YYYY/MM/` par defaut. Assurez-vous que le dossier `server/data/` (ou la variable `DATA_DIR`) est sur un volume persistant et accessible en ecriture par le processus AlwaysData.

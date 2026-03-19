@@ -8,6 +8,15 @@ import {
   writeIcalCronConfig,
   type IcalCronConfig,
 } from "./icalCronSettings.js";
+import {
+  acquireIcalCronLock,
+  computeIcalCronNextRunAt,
+  isIcalCronDue,
+  readIcalCronRunState,
+  releaseIcalCronLock,
+  updateIcalCronRunState,
+  type IcalCronRunStatus,
+} from "./icalCronRunState.js";
 import { isUnknownHostName, normalizeImportedHostName, toImportedReservationHostName } from "../utils/reservationText.js";
 import {
   resolveIcalReservationSource,
@@ -18,8 +27,6 @@ import { extractAirbnbReservationUrl } from "../utils/airbnbReservationUrl.js";
 import { buildReservationOriginData, getReservationOriginSystem } from "../utils/reservationOrigin.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
-
 const normalizeTextKey = (value: string) =>
   value
     .toLowerCase()
@@ -132,9 +139,13 @@ export type IcalSyncResult = IcalPreviewResult & {
 
 export type IcalCronState = {
   config: IcalCronConfig;
+  scheduler: "external";
   running: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
+  last_success_at: string | null;
+  last_status: IcalCronRunStatus;
+  last_error: string | null;
   last_result: IcalSyncResult | null;
 };
 
@@ -597,11 +608,6 @@ type SyncOptions = {
 };
 
 let activeSyncPromise: Promise<IcalSyncResult> | null = null;
-let cronTimer: NodeJS.Timeout | null = null;
-let cronRunning = false;
-let cronNextRunAt: Date | null = null;
-let cronLastRunAt: Date | null = null;
-let cronLastResult: IcalSyncResult | null = null;
 let cronConfig: IcalCronConfig = readIcalCronConfig(buildDefaultIcalCronConfig());
 
 const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof loadParsedIcalReservations>>) => {
@@ -779,33 +785,57 @@ export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalS
   if (activeSyncPromise) return activeSyncPromise;
 
   activeSyncPromise = (async () => {
-    const result = await runSync();
-    cronLastRunAt = new Date();
-    cronLastResult = result;
+    try {
+      const result = await runSync();
 
-    if (options?.log_source) {
-      try {
-        appendImportLog(
-          buildImportLogEntry({
-            source: options.log_source,
-            selectionCount: result.counts.new + result.counts.existing_updatable,
-            inserted: result.created_count,
-            updated: result.updated_count,
-            skipped: {
-              unknown: result.skipped_count,
-            },
-            perGite: result.per_gite,
-            insertedItems: result.inserted_items,
-            updatedItems: result.updated_items,
-          })
-        );
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("[ical-sync] Failed to write import log:", error instanceof Error ? error.message : error);
+      if (options?.log_source) {
+        try {
+          appendImportLog(
+            buildImportLogEntry({
+              source: options.log_source,
+              status: "success",
+              selectionCount: result.counts.new + result.counts.existing_updatable,
+              inserted: result.created_count,
+              updated: result.updated_count,
+              skipped: {
+                unknown: result.skipped_count,
+              },
+              perGite: result.per_gite,
+              insertedItems: result.inserted_items,
+              updatedItems: result.updated_items,
+            })
+          );
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error("[ical-sync] Failed to write import log:", error instanceof Error ? error.message : error);
+        }
       }
-    }
 
-    return result;
+      return result;
+    } catch (error) {
+      if (options?.log_source) {
+        try {
+          appendImportLog(
+            buildImportLogEntry({
+              source: options.log_source,
+              status: "error",
+              errorMessage: error instanceof Error ? error.message : "Erreur inconnue lors de la synchronisation iCal.",
+              selectionCount: 0,
+              inserted: 0,
+              updated: 0,
+              skipped: {
+                unknown: 0,
+              },
+            })
+          );
+        } catch (logError) {
+          // eslint-disable-next-line no-console
+          console.error("[ical-sync] Failed to write import log:", logError instanceof Error ? logError.message : logError);
+        }
+      }
+
+      throw error;
+    }
   })().finally(() => {
     activeSyncPromise = null;
   });
@@ -813,72 +843,101 @@ export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalS
   return activeSyncPromise;
 };
 
-const computeNextRunDate = (intervalHours: number) => {
-  const delayMs = Math.max(5_000, intervalHours * HOUR_MS);
-  return new Date(Date.now() + delayMs);
+type ScheduledIcalSyncRun = {
+  status: "success" | "skipped-disabled" | "skipped-not-due" | "skipped-running";
+  result: IcalSyncResult | null;
 };
 
-const scheduleNextCronRun = (intervalHours: number) => {
-  cronNextRunAt = computeNextRunDate(intervalHours);
-  const waitMs = Math.max(5_000, cronNextRunAt.getTime() - Date.now());
+export const runScheduledIcalSync = async (options?: {
+  force?: boolean;
+  source?: "ical-cron" | "ical-startup";
+}): Promise<ScheduledIcalSyncRun> => {
+  const source = options?.source ?? "ical-cron";
+  const state = readIcalCronRunState();
 
-  cronTimer = setTimeout(async () => {
-    cronRunning = true;
-    try {
-      await syncIcalReservations({ log_source: "ical-cron" });
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[ical-sync] Cron execution failed:", error instanceof Error ? error.message : error);
-    } finally {
-      cronRunning = false;
-      scheduleNextCronRun(intervalHours);
-    }
-  }, waitMs);
-};
-
-const applyCronConfig = (config: IcalCronConfig) => {
-  if (cronTimer) {
-    clearTimeout(cronTimer);
-    cronTimer = null;
+  if (!options?.force && !cronConfig.enabled) {
+    return { status: "skipped-disabled", result: null };
   }
-  cronNextRunAt = null;
 
-  if (config.enabled) {
-    scheduleNextCronRun(config.interval_hours);
+  if (!options?.force && !isIcalCronDue(cronConfig, state)) {
+    return { status: "skipped-not-due", result: null };
   }
-};
 
-export const stopIcalSyncCron = () => {
-  if (cronTimer) {
-    clearTimeout(cronTimer);
-    cronTimer = null;
+  if (!acquireIcalCronLock()) {
+    return { status: "skipped-running", result: null };
   }
-  cronNextRunAt = null;
-};
 
-export const startIcalSyncCron = () => {
-  applyCronConfig(cronConfig);
-  if (cronConfig.run_on_start) {
-    void syncIcalReservations({ log_source: "ical-startup" }).catch((error) => {
-      // eslint-disable-next-line no-console
-      console.error("[ical-sync] Startup sync failed:", error instanceof Error ? error.message : error);
+  const startedAt = new Date().toISOString();
+  updateIcalCronRunState({
+    running: true,
+    last_started_at: startedAt,
+    last_status: "running",
+    last_error: null,
+  });
+
+  try {
+    const result = await syncIcalReservations({ log_source: source });
+    const finishedAt = new Date().toISOString();
+    updateIcalCronRunState({
+      running: false,
+      last_run_at: finishedAt,
+      last_success_at: finishedAt,
+      last_status: "success",
+      last_error: null,
     });
+    return {
+      status: "success",
+      result,
+    };
+  } catch (error) {
+    const finishedAt = new Date().toISOString();
+    const message = error instanceof Error ? error.message : "Erreur inconnue lors de la synchronisation iCal.";
+    updateIcalCronRunState({
+      running: false,
+      last_run_at: finishedAt,
+      last_status: "error",
+      last_error: message,
+    });
+    throw error;
+  } finally {
+    releaseIcalCronLock();
   }
+};
+
+export const runIcalSyncOnStartIfEnabled = () => {
+  if (!cronConfig.run_on_start) return;
+
+  void runScheduledIcalSync({ force: true, source: "ical-startup" }).catch((error) => {
+    // eslint-disable-next-line no-console
+    console.error("[ical-sync] Startup sync failed:", error instanceof Error ? error.message : error);
+  });
 };
 
 export const updateIcalSyncCronConfig = async (patch: Partial<IcalCronConfig>) => {
   cronConfig = mergeIcalCronConfig(cronConfig, patch);
   writeIcalCronConfig(cronConfig);
-  applyCronConfig(cronConfig);
   return cronConfig;
 };
 
 export const getIcalSyncCronConfig = () => cronConfig;
 
-export const getIcalCronState = (): IcalCronState => ({
-  config: cronConfig,
-  running: cronRunning || Boolean(activeSyncPromise),
-  next_run_at: cronNextRunAt ? cronNextRunAt.toISOString() : null,
-  last_run_at: cronLastRunAt ? cronLastRunAt.toISOString() : null,
-  last_result: cronLastResult,
-});
+export const getIcalCronState = (): IcalCronState => {
+  const persistedState = readIcalCronRunState();
+  const running = persistedState.running || Boolean(activeSyncPromise);
+  const effectiveState = {
+    ...persistedState,
+    running,
+  };
+
+  return {
+    config: cronConfig,
+    scheduler: "external",
+    running,
+    next_run_at: computeIcalCronNextRunAt(cronConfig, effectiveState),
+    last_run_at: persistedState.last_run_at,
+    last_success_at: persistedState.last_success_at,
+    last_status: persistedState.last_status,
+    last_error: persistedState.last_error,
+    last_result: null,
+  };
+};
