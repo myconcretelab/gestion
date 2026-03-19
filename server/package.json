@@ -19,7 +19,9 @@
     "prod:generate": "npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma",
     "db:studio": "npm run prisma:use:sqlite && node scripts/prisma.mjs studio",
     "db:migrate:sqlite-to-postgres": "npm run prisma:use:sqlite && node scripts/prisma.mjs generate --schema prisma/schema.sqlite.prisma && npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma && tsx scripts/migrate-sqlite-to-postgres.ts --from=sqlite --to=postgres",
-    "import:what-today:icals": "tsx scripts/import-what-today-icals.ts"
+    "import:what-today:icals": "tsx scripts/import-what-today-icals.ts",
+    "cron:ical": "node dist/cli/run-ical-sync-cron.js",
+    "cron:ical:dev": "tsx src/cli/run-ical-sync-cron.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",

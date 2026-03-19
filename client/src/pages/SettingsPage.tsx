@@ -51,9 +51,13 @@ type IcalCronState = {
     interval_hours: number;
     run_on_start: boolean;
   };
+  scheduler: "external";
   running: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
+  last_success_at?: string | null;
+  last_status?: "idle" | "running" | "success" | "error";
+  last_error?: string | null;
   last_result: IcalSyncResult | null;
 };
 
@@ -63,6 +67,8 @@ type ImportLogEntry = {
   id: string;
   at: string;
   source: string;
+  status?: "success" | "error";
+  errorMessage?: string | null;
   selectionCount: number;
   inserted: number;
   updated: number;
@@ -329,6 +335,9 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "pump-cron") return "Pump cron";
   return source || "Import";
 };
+
+const formatImportLogTitle = (entry: Pick<ImportLogEntry, "source" | "status">) =>
+  entry.status === "error" ? `${formatImportSource(entry.source)} · échec` : formatImportSource(entry.source);
 
 const getIcalExportUrl = (feed: Pick<IcalExportFeed, "id" | "ical_export_token">) =>
   buildApiUrl(`/gites/${feed.id}/calendar.ics?token=${encodeURIComponent(feed.ical_export_token ?? "")}`);
@@ -646,17 +655,23 @@ const SettingsPage = () => {
       ] as const;
     }
 
-    const latestSource = formatImportSource(latestImport.source);
+    const latestSource = formatImportLogTitle(latestImport);
     const latestDate = formatDateFr(latestImport.at);
     const latestTime = formatTimeFr(latestImport.at);
-    const latestVolume = `${latestImport.selectionCount ?? 0} sélectionnée(s)`;
-    const latestChanges = `${latestImport.inserted ?? 0} ajoutée(s) • ${latestImport.updated ?? 0} mise(s) à jour`;
+    const latestVolume =
+      latestImport.status === "error"
+        ? latestImport.errorMessage || "échec du dernier import"
+        : `${latestImport.selectionCount ?? 0} sélectionnée(s)`;
+    const latestChanges =
+      latestImport.status === "error"
+        ? "aucune donnée importée"
+        : `${latestImport.inserted ?? 0} ajoutée(s) • ${latestImport.updated ?? 0} mise(s) à jour`;
 
     return [
       {
         label: "Source",
         value: latestSource,
-        detail: previousImport ? `précédent ${formatImportSource(previousImport.source)}` : "dernier import",
+        detail: previousImport ? `précédent ${formatImportLogTitle(previousImport)}` : "dernier import",
         tone: "rose",
       },
       {
@@ -2046,11 +2061,13 @@ const SettingsPage = () => {
                 {importLog.slice(0, importLogVisibleCount).map((entry) => (
                   <div key={entry.id} className="field-group">
                     <div className="field-group__header">
-                      <div className="field-group__label">{formatImportSource(entry.source)}</div>
+                      <div className="field-group__label">{formatImportLogTitle(entry)}</div>
                       <div className="field-hint">{formatIsoDateTimeFr(entry.at)}</div>
                     </div>
                     <div className="field-hint">
-                      Sélectionnées: {entry.selectionCount ?? 0} | Ajoutées: {entry.inserted ?? 0} | Mises à jour: {entry.updated ?? 0} | Ignorées: {entry.skipped?.unknown ?? 0}
+                      {entry.status === "error"
+                        ? `Erreur: ${entry.errorMessage || "Erreur inconnue lors de l'import."}`
+                        : `Sélectionnées: ${entry.selectionCount ?? 0} | Ajoutées: ${entry.inserted ?? 0} | Mises à jour: ${entry.updated ?? 0} | Ignorées: ${entry.skipped?.unknown ?? 0}`}
                     </div>
                     {Array.isArray(entry.insertedItems) && entry.insertedItems.length > 0 ? (
                       <div style={{ marginTop: 8 }}>
@@ -2733,11 +2750,21 @@ const SettingsPage = () => {
               style={{ display: "none" }}
             />
             <div className="field-hint">
-              Minuterie: {icalCronState?.config.enabled ? "activée" : "désactivée"}. Intervalle: {icalCronState?.config.interval_hours ?? cronDraft.interval_hours}h. Prochain passage: {formatIsoDateTimeFr(icalCronState?.next_run_at ?? null)}. Dernier passage: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
+              Cron externe: {icalCronState?.config.enabled ? "activé" : "désactivé"}. Intervalle métier: {icalCronState?.config.interval_hours ?? cronDraft.interval_hours}h. Prochain passage théorique: {formatIsoDateTimeFr(icalCronState?.next_run_at ?? null)}. Dernière tentative: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
             </div>
+            {icalCronState?.last_success_at ? (
+              <div className="field-hint" style={{ marginTop: 6 }}>
+                Dernier succès: {formatIsoDateTimeFr(icalCronState.last_success_at)}
+              </div>
+            ) : null}
+            {icalCronState?.last_error ? (
+              <div className="note" style={{ marginTop: 8 }}>
+                Dernière erreur cron: {icalCronState.last_error}
+              </div>
+            ) : null}
             <div className="grid-2" style={{ marginTop: 12 }}>
               <label className="field">
-                Minuterie active
+                Cron externe actif
                 <select
                   value={cronDraft.enabled ? "1" : "0"}
                   onChange={(event) =>
@@ -2787,7 +2814,7 @@ const SettingsPage = () => {
             </div>
             <div className="actions" style={{ marginTop: 12 }}>
               <button type="button" className="secondary" onClick={() => void saveCronConfig()} disabled={savingCron || syncingIcal || loadingIcalPreview}>
-                {savingCron ? "Enregistrement..." : "Enregistrer la minuterie"}
+                {savingCron ? "Enregistrement..." : "Enregistrer le cron"}
               </button>
               <button type="button" className="secondary" onClick={() => void runIcalPreview()} disabled={loadingIcalPreview || syncingIcal}>
                 {loadingIcalPreview ? "Lecture iCal..." : "Prévisualiser iCal"}
