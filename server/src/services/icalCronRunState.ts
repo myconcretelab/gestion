@@ -1,9 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
-import { buildDefaultIcalCronConfig, readIcalCronConfig, type IcalCronConfig } from "./icalCronSettings.js";
 
-const HOUR_MS = 60 * 60 * 1_000;
 const STATE_FILE = path.join(env.DATA_DIR, "ical-cron-state.json");
 const LOCK_FILE = path.join(env.DATA_DIR, "ical-cron.lock");
 
@@ -102,32 +100,6 @@ export const updateIcalCronRunState = (patch: Partial<PersistedIcalCronRunState>
   };
   writeIcalCronRunState(next);
   return next;
-};
-
-export const computeIcalCronNextRunAt = (
-  config: IcalCronConfig,
-  state: PersistedIcalCronRunState,
-  now = new Date()
-) => {
-  if (!config.enabled || state.running) return null;
-  if (!state.last_run_at) return now.toISOString();
-
-  const lastRunAt = new Date(state.last_run_at);
-  if (Number.isNaN(lastRunAt.getTime())) return now.toISOString();
-  return new Date(lastRunAt.getTime() + config.interval_hours * HOUR_MS).toISOString();
-};
-
-export const isIcalCronDue = (
-  config: IcalCronConfig = readIcalCronConfig(buildDefaultIcalCronConfig()),
-  state: PersistedIcalCronRunState = readIcalCronRunState(),
-  now = new Date()
-) => {
-  if (!config.enabled || state.running) return false;
-  const nextRunAt = computeIcalCronNextRunAt(config, state, now);
-  if (!nextRunAt) return false;
-  const parsed = new Date(nextRunAt);
-  if (Number.isNaN(parsed.getTime())) return true;
-  return parsed.getTime() <= now.getTime();
 };
 
 const readLock = (): IcalCronLock | null => {

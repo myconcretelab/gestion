@@ -14,6 +14,7 @@ import settingsRouter from "./routes/settings.js";
 import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
 import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
+import { hasValidCronTriggerToken, parseBearerToken } from "./utils/cronTriggerAuth.js";
 
 export const createApp = () => {
   const app = express();
@@ -34,15 +35,13 @@ export const createApp = () => {
     })
   );
 
-  const parseBearerToken = (authorizationHeader: string) => {
-    const [type, token] = authorizationHeader.split(" ");
-    if (type !== "Bearer" || !token) return null;
-    return token.trim();
-  };
-
   if (env.BASIC_AUTH_PASSWORD) {
     app.use((req, res, next) => {
       if (/^\/api\/gites\/[^/]+\/calendar\.ics$/i.test(req.path)) {
+        return next();
+      }
+
+      if (/^\/api\/settings\/ical\/cron\/run$/i.test(req.path) && hasValidCronTriggerToken(req)) {
         return next();
       }
 

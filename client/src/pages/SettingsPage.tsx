@@ -48,12 +48,10 @@ type IcalSyncResult = IcalPreviewResult & {
 type IcalCronState = {
   config: {
     enabled: boolean;
-    interval_hours: number;
-    run_on_start: boolean;
+    auto_sync_on_app_load: boolean;
   };
   scheduler: "external";
   running: boolean;
-  next_run_at: string | null;
   last_run_at: string | null;
   last_success_at?: string | null;
   last_status?: "idle" | "running" | "success" | "error";
@@ -512,8 +510,7 @@ const SettingsPage = () => {
   const [icalCronState, setIcalCronState] = useState<IcalCronState | null>(null);
   const [cronDraft, setCronDraft] = useState<IcalCronConfig>({
     enabled: true,
-    interval_hours: 24,
-    run_on_start: false,
+    auto_sync_on_app_load: false,
   });
   const [savingCron, setSavingCron] = useState(false);
   const [loadingIcalPreview, setLoadingIcalPreview] = useState(false);
@@ -2750,7 +2747,9 @@ const SettingsPage = () => {
               style={{ display: "none" }}
             />
             <div className="field-hint">
-              Cron externe: {icalCronState?.config.enabled ? "activé" : "désactivé"}. Intervalle métier: {icalCronState?.config.interval_hours ?? cronDraft.interval_hours}h. Prochain passage théorique: {formatIsoDateTimeFr(icalCronState?.next_run_at ?? null)}. Dernière tentative: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
+              Déclenchement iCal par URL externe Alwaysdata. Statut cron: {icalCronState?.config.enabled ? "activé" : "désactivé"}.
+              {" "}Import auto au chargement: {icalCronState?.config.auto_sync_on_app_load ? "activé" : "désactivé"}.
+              {" "}Dernière tentative: {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
             </div>
             {icalCronState?.last_success_at ? (
               <div className="field-hint" style={{ marginTop: 6 }}>
@@ -2762,6 +2761,9 @@ const SettingsPage = () => {
                 Dernière erreur cron: {icalCronState.last_error}
               </div>
             ) : null}
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Déclenchement externe possible via URL HTTP Alwaysdata sur <code>/api/settings/ical/cron/run?token=...</code>.
+            </div>
             <div className="grid-2" style={{ marginTop: 12 }}>
               <label className="field">
                 Cron externe actif
@@ -2780,36 +2782,20 @@ const SettingsPage = () => {
                 </select>
               </label>
               <label className="field">
-                Synchroniser au démarrage
+                Import auto au chargement
                 <select
-                  value={cronDraft.run_on_start ? "1" : "0"}
+                  value={cronDraft.auto_sync_on_app_load ? "1" : "0"}
                   onChange={(event) =>
                     setCronDraft((previous) => ({
                       ...previous,
-                      run_on_start: event.target.value === "1",
+                      auto_sync_on_app_load: event.target.value === "1",
                     }))
                   }
                   disabled={savingCron}
                 >
-                  <option value="0">Non</option>
                   <option value="1">Oui</option>
+                  <option value="0">Non</option>
                 </select>
-              </label>
-              <label className="field">
-                Toutes les ... heures
-                <input
-                  type="number"
-                  min={1}
-                  max={168}
-                  value={cronDraft.interval_hours}
-                  onChange={(event) =>
-                    setCronDraft((previous) => ({
-                      ...previous,
-                      interval_hours: Math.min(168, Math.max(1, Number(event.target.value || 1))),
-                    }))
-                  }
-                  disabled={savingCron}
-                />
               </label>
             </div>
             <div className="actions" style={{ marginTop: 12 }}>

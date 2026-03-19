@@ -1,6 +1,6 @@
 import ical from "node-ical";
 import prisma from "../db/prisma.js";
-import { appendImportLog, buildImportLogEntry } from "./importLog.js";
+import { appendImportLog, buildImportLogEntry, readImportLog } from "./importLog.js";
 import {
   buildDefaultIcalCronConfig,
   mergeIcalCronConfig,
@@ -10,8 +10,6 @@ import {
 } from "./icalCronSettings.js";
 import {
   acquireIcalCronLock,
-  computeIcalCronNextRunAt,
-  isIcalCronDue,
   readIcalCronRunState,
   releaseIcalCronLock,
   updateIcalCronRunState,
@@ -50,6 +48,8 @@ const SOURCE_BY_NORMALIZED_KEY = new Map<string, string>([
 
 const DEFAULT_SOURCE = "A définir";
 const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
+const AUTO_SYNC_GUARD_WINDOW_MS = 10 * 60 * 1000;
+const AUTO_SYNC_LOG_SOURCES = new Set(["ical-manual", "ical-cron", "ical-startup"]);
 
 export type IcalSourceRow = {
   id: string;
@@ -141,12 +141,24 @@ export type IcalCronState = {
   config: IcalCronConfig;
   scheduler: "external";
   running: boolean;
-  next_run_at: string | null;
   last_run_at: string | null;
   last_success_at: string | null;
   last_status: IcalCronRunStatus;
   last_error: string | null;
   last_result: IcalSyncResult | null;
+};
+
+export type IcalAutoSyncStatus =
+  | "success"
+  | "skipped-disabled"
+  | "skipped-no-sources"
+  | "skipped-recent"
+  | "shared-running";
+
+export type IcalAutoSyncResponse = {
+  status: IcalAutoSyncStatus;
+  summary: IcalSyncResult | null;
+  message: string;
 };
 
 const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
@@ -610,6 +622,27 @@ type SyncOptions = {
 let activeSyncPromise: Promise<IcalSyncResult> | null = null;
 let cronConfig: IcalCronConfig = readIcalCronConfig(buildDefaultIcalCronConfig());
 
+const buildAutoSyncMessage = (status: IcalAutoSyncStatus, summary?: IcalSyncResult | null) => {
+  if (status === "skipped-disabled") return "Import iCal auto desactive.";
+  if (status === "skipped-no-sources") return "Aucune source iCal active.";
+  if (status === "skipped-recent") return "Import iCal recent deja effectue.";
+  if (status === "shared-running") return "Import iCal deja en cours.";
+
+  if (!summary) return "Import iCal termine.";
+  if (summary.created_count <= 0 && summary.updated_count <= 0) return "iCal a jour.";
+  return `${summary.created_count} ajout(s), ${summary.updated_count} mise(s) a jour`;
+};
+
+const hasRecentIcalImportWithinGuardWindow = () => {
+  const threshold = Date.now() - AUTO_SYNC_GUARD_WINDOW_MS;
+
+  return readImportLog().some((entry) => {
+    if (!AUTO_SYNC_LOG_SOURCES.has(String(entry.source ?? "").trim())) return false;
+    const executedAt = Date.parse(String(entry.at ?? ""));
+    return Number.isFinite(executedAt) && executedAt >= threshold;
+  });
+};
+
 const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof loadParsedIcalReservations>>) => {
   const giteIds = [...new Set(loaded.sources.map((source) => source.gite_id))];
   if (giteIds.length === 0) {
@@ -843,24 +876,59 @@ export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalS
   return activeSyncPromise;
 };
 
+export const runAppLoadIcalSync = async (): Promise<IcalAutoSyncResponse> => {
+  if (!cronConfig.auto_sync_on_app_load) {
+    return {
+      status: "skipped-disabled",
+      summary: null,
+      message: buildAutoSyncMessage("skipped-disabled"),
+    };
+  }
+
+  const activeSources = await listIcalSources(true);
+  if (activeSources.length === 0) {
+    return {
+      status: "skipped-no-sources",
+      summary: null,
+      message: buildAutoSyncMessage("skipped-no-sources"),
+    };
+  }
+
+  if (activeSyncPromise) {
+    const summary = await activeSyncPromise;
+    return {
+      status: "shared-running",
+      summary,
+      message: buildAutoSyncMessage("shared-running", summary),
+    };
+  }
+
+  if (hasRecentIcalImportWithinGuardWindow()) {
+    return {
+      status: "skipped-recent",
+      summary: null,
+      message: buildAutoSyncMessage("skipped-recent"),
+    };
+  }
+
+  const summary = await syncIcalReservations({ log_source: "ical-startup" });
+  return {
+    status: "success",
+    summary,
+    message: buildAutoSyncMessage("success", summary),
+  };
+};
+
 type ScheduledIcalSyncRun = {
-  status: "success" | "skipped-disabled" | "skipped-not-due" | "skipped-running";
+  status: "success" | "skipped-disabled" | "skipped-running";
   result: IcalSyncResult | null;
 };
 
-export const runScheduledIcalSync = async (options?: {
-  force?: boolean;
-  source?: "ical-cron" | "ical-startup";
-}): Promise<ScheduledIcalSyncRun> => {
+export const runScheduledIcalSync = async (options?: { source?: "ical-cron" }): Promise<ScheduledIcalSyncRun> => {
   const source = options?.source ?? "ical-cron";
-  const state = readIcalCronRunState();
 
-  if (!options?.force && !cronConfig.enabled) {
+  if (!cronConfig.enabled) {
     return { status: "skipped-disabled", result: null };
-  }
-
-  if (!options?.force && !isIcalCronDue(cronConfig, state)) {
-    return { status: "skipped-not-due", result: null };
   }
 
   if (!acquireIcalCronLock()) {
@@ -904,15 +972,6 @@ export const runScheduledIcalSync = async (options?: {
   }
 };
 
-export const runIcalSyncOnStartIfEnabled = () => {
-  if (!cronConfig.run_on_start) return;
-
-  void runScheduledIcalSync({ force: true, source: "ical-startup" }).catch((error) => {
-    // eslint-disable-next-line no-console
-    console.error("[ical-sync] Startup sync failed:", error instanceof Error ? error.message : error);
-  });
-};
-
 export const updateIcalSyncCronConfig = async (patch: Partial<IcalCronConfig>) => {
   cronConfig = mergeIcalCronConfig(cronConfig, patch);
   writeIcalCronConfig(cronConfig);
@@ -924,16 +983,11 @@ export const getIcalSyncCronConfig = () => cronConfig;
 export const getIcalCronState = (): IcalCronState => {
   const persistedState = readIcalCronRunState();
   const running = persistedState.running || Boolean(activeSyncPromise);
-  const effectiveState = {
-    ...persistedState,
-    running,
-  };
 
   return {
     config: cronConfig,
     scheduler: "external",
     running,
-    next_run_at: computeIcalCronNextRunAt(cronConfig, effectiveState),
     last_run_at: persistedState.last_run_at,
     last_success_at: persistedState.last_success_at,
     last_status: persistedState.last_status,

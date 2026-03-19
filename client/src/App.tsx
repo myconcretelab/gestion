@@ -29,10 +29,94 @@ type RecentImportedReservationsCountPayload = {
   since: string;
 };
 
+type IcalAutoSyncResultSummary = {
+  created_count: number;
+  updated_count: number;
+};
+
+type IcalAutoSyncResponse = {
+  status: "success" | "skipped-disabled" | "skipped-no-sources" | "skipped-recent" | "shared-running";
+  summary: IcalAutoSyncResultSummary | null;
+  message: string;
+};
+
+type IcalAutoSyncNotice = {
+  status: IcalAutoSyncResponse["status"] | "running" | "error";
+  tone: "neutral" | "success" | "error";
+  message: string;
+};
+
+const ICAL_AUTO_SYNC_SESSION_KEY = "ical-auto-sync-attempted";
+let appLoadIcalAutoSyncPromise: Promise<IcalAutoSyncResponse> | null = null;
+
+const buildIcalAutoSyncNotice = (result: IcalAutoSyncResponse): IcalAutoSyncNotice => {
+  if ((result.status === "success" || result.status === "shared-running") && result.summary) {
+    if (result.summary.created_count <= 0 && result.summary.updated_count <= 0) {
+      return {
+        status: result.status,
+        tone: "success",
+        message: "iCal a jour",
+      };
+    }
+
+    return {
+      status: result.status,
+      tone: "success",
+      message: `${result.summary.created_count} ajout(s), ${result.summary.updated_count} mise(s) a jour`,
+    };
+  }
+
+  if (result.status === "skipped-no-sources") {
+    return {
+      status: result.status,
+      tone: "neutral",
+      message: "Aucune source iCal active",
+    };
+  }
+
+  if (result.status === "skipped-recent") {
+    return {
+      status: result.status,
+      tone: "neutral",
+      message: "Import iCal recent deja lance",
+    };
+  }
+
+  if (result.status === "shared-running") {
+    return {
+      status: result.status,
+      tone: "neutral",
+      message: "Import iCal deja en cours",
+    };
+  }
+
+  return {
+    status: result.status,
+    tone: "neutral",
+    message: "Import iCal auto desactive",
+  };
+};
+
+const getAppLoadIcalAutoSyncPromise = () => {
+  if (typeof window === "undefined") return null;
+  if (window.sessionStorage.getItem(ICAL_AUTO_SYNC_SESSION_KEY) !== "1") {
+    window.sessionStorage.setItem(ICAL_AUTO_SYNC_SESSION_KEY, "1");
+  }
+
+  if (!appLoadIcalAutoSyncPromise) {
+    appLoadIcalAutoSyncPromise = apiFetch<IcalAutoSyncResponse>("/settings/ical/auto-sync", {
+      method: "POST",
+    });
+  }
+
+  return appLoadIcalAutoSyncPromise;
+};
+
 const App = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [recentImportedReservationsCount, setRecentImportedReservationsCount] = useState(0);
+  const [icalAutoSyncNotice, setIcalAutoSyncNotice] = useState<IcalAutoSyncNotice | null>(null);
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -109,6 +193,19 @@ const App = () => {
     recentImportedReservationsCount > 0
       ? `${recentImportedReservationsCount} création${recentImportedReservationsCount > 1 ? "s" : ""} importée${recentImportedReservationsCount > 1 ? "s" : ""} via iCal ou Pump sur les dernières 24 heures`
       : null;
+  const loadRecentImportedReservationsCount = async (signal?: AbortSignal) => {
+    try {
+      const payload = await apiFetch<RecentImportedReservationsCountPayload>("/reservations/recent-imports/count", {
+        signal,
+      });
+      setRecentImportedReservationsCount(Math.max(0, Number(payload.count) || 0));
+    } catch (error) {
+      if (!isAbortError(error)) {
+        setRecentImportedReservationsCount(0);
+        console.error(error);
+      }
+    }
+  };
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -116,22 +213,7 @@ const App = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-
-    const loadRecentImportedReservationsCount = async () => {
-      try {
-        const payload = await apiFetch<RecentImportedReservationsCountPayload>("/reservations/recent-imports/count", {
-          signal: controller.signal,
-        });
-        setRecentImportedReservationsCount(Math.max(0, Number(payload.count) || 0));
-      } catch (error) {
-        if (!isAbortError(error)) {
-          setRecentImportedReservationsCount(0);
-          console.error(error);
-        }
-      }
-    };
-
-    loadRecentImportedReservationsCount();
+    void loadRecentImportedReservationsCount(controller.signal);
 
     const handleRecentImportedReservationsCreated = (event: Event) => {
       const customEvent = event as CustomEvent<{ createdCount?: number }>;
@@ -153,6 +235,64 @@ const App = () => {
       );
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hasAttempted = window.sessionStorage.getItem(ICAL_AUTO_SYNC_SESSION_KEY) === "1";
+    if (hasAttempted && !appLoadIcalAutoSyncPromise) return;
+    let active = true;
+
+    const runAutoSync = async () => {
+      setIcalAutoSyncNotice({
+        status: "running",
+        tone: "neutral",
+        message: "Import iCal...",
+      });
+
+      try {
+        const promise = getAppLoadIcalAutoSyncPromise();
+        if (!promise) return;
+        const result = await promise;
+        if (!active) return;
+        setIcalAutoSyncNotice(buildIcalAutoSyncNotice(result));
+        if (result.status === "success" || result.status === "shared-running") {
+          void loadRecentImportedReservationsCount();
+        }
+      } catch (error) {
+        if (!active || isAbortError(error)) return;
+        setIcalAutoSyncNotice({
+          status: "error",
+          tone: "error",
+          message: "Echec import iCal",
+        });
+      }
+    };
+
+    void runAutoSync();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!icalAutoSyncNotice || icalAutoSyncNotice.status === "running") return;
+
+    const timeoutMs =
+      icalAutoSyncNotice.status === "error"
+        ? 5200
+        : icalAutoSyncNotice.status === "success" || icalAutoSyncNotice.status === "shared-running"
+          ? 4200
+          : 2600;
+
+    const timeoutId = window.setTimeout(() => {
+      setIcalAutoSyncNotice((current) => (current === icalAutoSyncNotice ? null : current));
+    }, timeoutMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [icalAutoSyncNotice]);
 
   const renderNavLabel = (item: { to: string; label: string; mobileLabel?: string }) => (
     <span className="nav-item-label">
@@ -282,6 +422,16 @@ const App = () => {
           </Routes>
         </Suspense>
       </main>
+      {icalAutoSyncNotice ? (
+        <div
+          className={`app-sync-notice app-sync-notice--${icalAutoSyncNotice.tone}`}
+          role={icalAutoSyncNotice.status === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span className="app-sync-notice__label">iCal</span>
+          <span>{icalAutoSyncNotice.message}</span>
+        </div>
+      ) : null}
     </div>
   );
 };

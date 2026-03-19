@@ -7,6 +7,8 @@ import {
   getIcalCronState,
   listIcalSources,
   previewIcalReservations,
+  runAppLoadIcalSync,
+  runScheduledIcalSync,
   syncIcalReservations,
   updateIcalSyncCronConfig,
 } from "../services/icalSync.js";
@@ -40,6 +42,7 @@ import {
   readSmsTextSettings,
   writeSmsTextSettings,
 } from "../services/smsTextSettings.js";
+import { getCronTriggerToken, hasValidCronTriggerToken } from "../utils/cronTriggerAuth.js";
 import { generateIcalExportToken, shouldExportReservationToIcal } from "../utils/reservationOrigin.js";
 
 const router = Router();
@@ -75,25 +78,16 @@ const harPayloadSchema = z.object({
   selected_ids: z.array(z.string().trim().min(1)).optional(),
 });
 
-const intervalCronConfigSchema = z.object({
-  enabled: z.boolean(),
-  interval_hours: z.number().int().min(1).max(168),
-  run_on_start: z.boolean().optional(),
-});
-const legacyCronConfigSchema = z.object({
-  enabled: z.boolean(),
-  hour: z.number().int().min(0).max(23),
-  minute: z.number().int().min(0).max(59),
-  run_on_start: z.boolean().optional(),
-});
-const normalizeCronConfigPayload = (
-  payload: z.infer<typeof intervalCronConfigSchema> | z.infer<typeof legacyCronConfigSchema>
-): IcalCronConfig => ({
-  enabled: payload.enabled,
-  interval_hours: "interval_hours" in payload ? payload.interval_hours : 24,
-  run_on_start: payload.run_on_start ?? false,
-});
-const cronConfigSchema = z.union([intervalCronConfigSchema, legacyCronConfigSchema]).transform(normalizeCronConfigPayload);
+const cronConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    auto_sync_on_app_load: z.boolean().optional(),
+  })
+  .passthrough()
+  .transform((payload): IcalCronConfig => ({
+    enabled: payload.enabled,
+    auto_sync_on_app_load: payload.auto_sync_on_app_load ?? false,
+  }));
 const cronImportSchema = z.union([cronConfigSchema, z.object({ config: cronConfigSchema })]);
 const pumpCronConfigSchema = z.object({
   enabled: z.boolean(),
@@ -207,6 +201,20 @@ const buildImportLogResponse = (limitRaw: unknown) => {
     total: entries.length,
     limit,
   };
+};
+
+const requireCronTriggerToken = (req: any, res: any, next: (err?: unknown) => void) => {
+  if (!getCronTriggerToken()) {
+    return res.status(503).json({
+      error: "CRON_TRIGGER_TOKEN ou INTEGRATION_API_TOKEN non configuré.",
+    });
+  }
+
+  if (!hasValidCronTriggerToken(req)) {
+    return res.status(401).json({ error: "Token cron invalide." });
+  }
+
+  return next();
 };
 
 const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
@@ -816,6 +824,32 @@ router.post("/ical/sync", async (_req, res, next) => {
     next(error);
   }
 });
+
+router.post("/ical/auto-sync", async (_req, res, next) => {
+  try {
+    const result = await runAppLoadIcalSync();
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+const runIcalCronHttp = async (_req: any, res: any, next: (err?: unknown) => void) => {
+  try {
+    const outcome = await runScheduledIcalSync();
+    res.json({
+      ok: outcome.status === "success",
+      status: outcome.status,
+      state: getIcalCronState(),
+      summary: outcome.result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+router.get("/ical/cron/run", requireCronTriggerToken, runIcalCronHttp);
+router.post("/ical/cron/run", requireCronTriggerToken, runIcalCronHttp);
 
 router.get("/import-log", (req, res) => {
   res.json(buildImportLogResponse(req.query.limit));

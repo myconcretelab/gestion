@@ -2812,6 +2812,45 @@ body {
   padding: 20px 24px 32px;
 }
 
+.app-sync-notice {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 90;
+  max-width: min(320px, calc(100vw - 28px));
+  padding: 11px 14px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: rgba(17, 24, 39, 0.92);
+  color: #f9fafb;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.2);
+  backdrop-filter: blur(14px);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.app-sync-notice--success {
+  background: rgba(12, 74, 44, 0.94);
+}
+
+.app-sync-notice--error {
+  background: rgba(127, 29, 29, 0.95);
+}
+
+.app-sync-notice__label {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .card {
   background: var(--card);
   border-radius: 18px;
@@ -6840,6 +6879,15 @@ button.warning {
   .content {
     padding: 16px 14px 24px;
   }
+
+  .app-sync-notice {
+    right: 12px;
+    bottom: 12px;
+    max-width: calc(100vw - 24px);
+    padding: 10px 12px;
+    font-size: 0.82rem;
+  }
+
   .summary-wrap {
     grid-template-columns: 1fr;
   }

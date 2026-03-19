@@ -4,19 +4,10 @@ import { env } from "../config/env.js";
 
 export type IcalCronConfig = {
   enabled: boolean;
-  interval_hours: number;
-  run_on_start: boolean;
+  auto_sync_on_app_load: boolean;
 };
 
 const SETTINGS_FILE = path.join(env.DATA_DIR, "ical-cron-settings.json");
-
-const clampInteger = (value: unknown, fallback: number, min: number, max: number) => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  const rounded = Math.round(parsed);
-  if (rounded < min || rounded > max) return fallback;
-  return rounded;
-};
 
 const toBoolean = (value: unknown, fallback: boolean) => {
   if (typeof value === "boolean") return value;
@@ -31,25 +22,19 @@ const toBoolean = (value: unknown, fallback: boolean) => {
 
 export const buildDefaultIcalCronConfig = (): IcalCronConfig => ({
   enabled: env.ICAL_SYNC_ENABLED,
-  interval_hours: env.ICAL_SYNC_INTERVAL_HOURS,
-  run_on_start: env.ICAL_SYNC_RUN_ON_START,
+  auto_sync_on_app_load: false,
 });
 
-type LegacyIcalCronConfig = {
-  enabled?: unknown;
+type IcalCronConfigInput = Partial<IcalCronConfig> & {
   hour?: unknown;
   minute?: unknown;
+  interval_hours?: unknown;
   run_on_start?: unknown;
 };
 
-type IcalCronConfigInput = Partial<IcalCronConfig> & LegacyIcalCronConfig;
-
-const hasLegacyDailyTiming = (input: IcalCronConfigInput) => "hour" in input || "minute" in input;
-
 export const normalizeIcalCronConfig = (input: IcalCronConfigInput, fallback: IcalCronConfig): IcalCronConfig => ({
   enabled: toBoolean(input.enabled, fallback.enabled),
-  interval_hours: clampInteger(input.interval_hours, hasLegacyDailyTiming(input) ? 24 : fallback.interval_hours, 1, 168),
-  run_on_start: toBoolean(input.run_on_start, fallback.run_on_start),
+  auto_sync_on_app_load: toBoolean(input.auto_sync_on_app_load, fallback.auto_sync_on_app_load),
 });
 
 const ensureDataDir = () => {

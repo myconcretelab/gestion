@@ -80,26 +80,20 @@ Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, 
 
 ## Synchronisation iCal
 
-La synchronisation iCal n'utilise plus de minuteur en mémoire dans le process Node. Le serveur stocke la configuration et l'état du dernier passage, mais c'est un cron externe qui doit lancer le job:
+La synchronisation iCal n'utilise plus de minuteur en mémoire dans le process Node. Le serveur stocke la configuration et l'état du dernier passage, mais c'est un cron externe qui doit lancer le job.
 
-```bash
-npm run cron:ical
-```
+Le déclenchement se fait via l'URL HTTP Alwaysdata:
 
-Le job:
+- `https://votre-domaine/api/settings/ical/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN`
+
+Le déclenchement HTTP accepte `CRON_TRIGGER_TOKEN` et, par repli, `INTEGRATION_API_TOKEN`. Il passe aussi la Basic Auth globale si le token URL est valide.
+
+Le job déclenché par l'URL:
 
 - lit la configuration iCal enregistrée dans **Réglages**
-- exécute la synchro seulement si elle est due
+- exécute immédiatement la synchro si elle est activée
 - verrouille l'exécution pour éviter les chevauchements
 - journalise aussi les échecs dans **Traçabilité > Journal des imports**
-
-Exemple de crontab, toutes les 5 minutes:
-
-```cron
-*/5 * * * * cd /path/to/contrats && /usr/bin/npm run cron:ical >> /var/log/contrats-ical-cron.log 2>&1
-```
-
-Le pas de 5 minutes permet de garder un intervalle métier piloté par l'application (`ICAL_SYNC_INTERVAL_HOURS` / Réglages) sans devoir modifier la crontab à chaque changement.
 
 ## Génération PDF
 
@@ -129,8 +123,7 @@ SEED_SKIP_PDF=1 npm run seed
 - (optionnel) `BASIC_AUTH_PASSWORD=...`
 - (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
 - (optionnel) `ICAL_SYNC_ENABLED=true`
-- (optionnel) `ICAL_SYNC_RUN_ON_START=false`
-- (optionnel) `ICAL_SYNC_INTERVAL_HOURS=6`
+- (optionnel) `CRON_TRIGGER_TOKEN=...` pour déclencher le cron iCal via URL HTTP
 - (optionnel) `RESTART_CMD=...` ou `ALWAYSDATA_API_TOKEN` + `ALWAYSDATA_ACCOUNT` + `ALWAYSDATA_SITE_ID` pour que `./update` redemarre le serveur
 
 Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
@@ -155,10 +148,10 @@ npm run prod:migrate
 npm run start
 ```
 
-3bis. Configurer le cron externe iCal sur l'hébergement:
+3bis. Configurer l'URL du cron iCal dans Alwaysdata:
 
-```cron
-*/5 * * * * cd /home/USER/app/contrats && /usr/bin/npm run cron:ical >> /home/USER/logs/contrats-ical-cron.log 2>&1
+```text
+https://votre-domaine/api/settings/ical/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN
 ```
 
 4. PDFs: les fichiers sont stockes dans `server/data/pdfs/YYYY/MM/` par defaut. Assurez-vous que le dossier `server/data/` (ou la variable `DATA_DIR`) est sur un volume persistant et accessible en ecriture par le processus AlwaysData.

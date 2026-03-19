@@ -62,6 +62,7 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV ?? "development",
   BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD ?? "",
   INTEGRATION_API_TOKEN: process.env.INTEGRATION_API_TOKEN ?? "",
+  CRON_TRIGGER_TOKEN: process.env.CRON_TRIGGER_TOKEN ?? "",
   PUMP_API_BASE_URL: process.env.PUMP_API_BASE_URL ?? "http://localhost:3000/api/reservations",
   PUMP_API_KEY: process.env.PUMP_API_KEY ?? "",
   DEFAULT_ARRHES_RATE: Number(process.env.DEFAULT_ARRHES_RATE ?? 0.2),
