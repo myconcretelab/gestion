@@ -1,6 +1,11 @@
 import { env } from "../config/env.js";
 import type { ParsedHarReservation } from "./harParser.js";
 import { normalizeImportedComment, normalizeImportedHostName } from "../utils/reservationText.js";
+import {
+  getLocalPumpLatestReservations,
+  getLocalPumpRefreshStatus,
+  triggerLocalPumpRefresh,
+} from "./pumpAutomation.js";
 
 type PumpLatestReservation = {
   id?: string;
@@ -27,6 +32,7 @@ export type PumpStatusResponse = {
   updatedAt?: string | null;
   reservationCount?: number;
   errors?: Array<{ message?: string | null }>;
+  results?: Record<string, unknown> | null;
 };
 
 export type PumpLatestResponse = {
@@ -35,33 +41,10 @@ export type PumpLatestResponse = {
   updatedAt?: string | null;
   reservationCount: number;
   reservations: PumpLatestReservation[];
-};
-
-const getPumpBaseUrl = () => String(env.PUMP_API_BASE_URL || "").trim().replace(/\/+$/, "");
-
-const getPumpHeaders = () => {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+  stats?: {
+    inspectedResponses: number;
+    matchedResponses: number;
   };
-
-  if (env.PUMP_API_KEY) {
-    headers["x-api-key"] = env.PUMP_API_KEY;
-  }
-
-  return headers;
-};
-
-const extractPumpErrorPayload = async (response: Response) => {
-  const contentType = response.headers.get("content-type") ?? "";
-
-  if (contentType.includes("application/json")) {
-    const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
-    return payload.error || payload.message || null;
-  }
-
-  const text = await response.text().catch(() => "");
-  const normalized = text.trim();
-  return normalized.length > 0 ? normalized : null;
 };
 
 const describePumpFetchCause = (value: unknown): string | null => {
@@ -113,46 +96,6 @@ export const buildPumpFetchErrorMessage = (url: string, error: unknown) => {
   return `Erreur Pump lors de l'appel ${url}: ${error.message}${causeDetails ? ` | Cause: ${causeDetails}` : ""}`;
 };
 
-const pumpFetch = async <T>(path: string, init: RequestInit = {}) => {
-  const baseUrl = getPumpBaseUrl();
-  if (!baseUrl) {
-    throw new Error("PUMP_API_BASE_URL n'est pas configurée.");
-  }
-
-  const endpoint = `${baseUrl}${path}`;
-
-  try {
-    new URL(endpoint);
-  } catch {
-    throw new Error(`PUMP_API_BASE_URL invalide: ${baseUrl}`);
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(endpoint, {
-      ...init,
-      headers: {
-        ...getPumpHeaders(),
-        ...(init.headers ?? {}),
-      },
-    });
-  } catch (error) {
-    throw new Error(buildPumpFetchErrorMessage(endpoint, error));
-  }
-
-  if (!response.ok) {
-    const payloadMessage = await extractPumpErrorPayload(response);
-    throw new Error(payloadMessage || `Erreur Pump (${response.status}) sur ${endpoint}`);
-  }
-
-  if (response.status === 204) {
-    return {} as T;
-  }
-
-  return (await response.json()) as T;
-};
-
 const normalizeString = (value: unknown) => {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -188,11 +131,14 @@ export const normalizePumpReservation = (reservation: PumpLatestReservation): Pa
   };
 };
 
-export const getPumpLatestReservations = () => pumpFetch<PumpLatestResponse>("/latest");
+export const getPumpLatestReservations = async () => {
+  const latest = await getLocalPumpLatestReservations();
+  return {
+    ...latest,
+    reservations: latest.reservations as PumpLatestReservation[],
+  } satisfies PumpLatestResponse;
+};
 
-export const getPumpRefreshStatus = () => pumpFetch<PumpStatusResponse>("/status");
+export const getPumpRefreshStatus = (): Promise<PumpStatusResponse> => getLocalPumpRefreshStatus();
 
-export const triggerPumpRefresh = () =>
-  pumpFetch<{ success: boolean; sessionId: string; status: string; message?: string }>("/refresh", {
-    method: "POST",
-  });
+export const triggerPumpRefresh = () => triggerLocalPumpRefresh();
