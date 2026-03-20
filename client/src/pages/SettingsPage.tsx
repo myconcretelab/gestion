@@ -134,6 +134,7 @@ type PumpStatusResult = {
   updatedAt?: string | null;
   reservationCount?: number;
   errors?: Array<{ message?: string | null }>;
+  results?: Record<string, unknown> | null;
 };
 
 type PumpPreviewResult = HarPreviewResult & {
@@ -167,6 +168,69 @@ type PumpCronState = {
   last_run_at: string | null;
   last_result: PumpImportResult | null;
   last_error: string | null;
+};
+
+type PumpAutomationFilterRule = {
+  type: string;
+  pattern?: string;
+  negate?: boolean;
+};
+
+type PumpAutomationConfig = {
+  baseUrl: string;
+  username: string;
+  hasOTP: boolean;
+  persistSession: boolean;
+  manualScrollMode: boolean;
+  manualScrollDuration: number;
+  scrollSelector: string;
+  scrollCount: number;
+  scrollDistance: number;
+  scrollDelay: number;
+  waitBeforeScroll: number;
+  enableHAR: boolean;
+  outputFolder: string;
+  filterRules: {
+    inclusive: PumpAutomationFilterRule[];
+    exclusive: PumpAutomationFilterRule[];
+  };
+  loginStrategy: "simple" | "multi-step";
+  advancedSelectors: {
+    usernameInput: string;
+    passwordInput: string;
+    submitButton: string;
+    emailFirstButton: string;
+    continueAfterUsernameButton: string;
+    finalSubmitButton: string;
+  };
+};
+
+type PumpConfigSaveResult = {
+  config: PumpAutomationConfig;
+};
+
+type PumpSessionImportResult = {
+  success: boolean;
+  storageStateId: string;
+  filename: string;
+  relativePath: string;
+};
+
+type PumpConnectionTestResult = {
+  success: boolean;
+  result?: {
+    success?: boolean;
+    method?: string;
+  };
+};
+
+type PumpScrollTargetTestResult = {
+  success: boolean;
+  result?: {
+    selector?: string | null;
+    relation?: string;
+    isHorizontallyScrollable?: boolean;
+  };
 };
 
 type IcalSourceDraft = {
@@ -520,6 +584,8 @@ const SettingsPage = () => {
   const [icalError, setIcalError] = useState<string | null>(null);
   const [icalNotice, setIcalNotice] = useState<string | null>(null);
   const importCronInputRef = useRef<HTMLInputElement | null>(null);
+  const importPumpConfigInputRef = useRef<HTMLInputElement | null>(null);
+  const importPumpSessionInputRef = useRef<HTMLInputElement | null>(null);
 
   const [harPayload, setHarPayload] = useState<unknown | null>(null);
   const [harFileName, setHarFileName] = useState<string>("");
@@ -531,6 +597,38 @@ const SettingsPage = () => {
   const [harNotice, setHarNotice] = useState<string | null>(null);
 
   const [pumpStatus, setPumpStatus] = useState<PumpStatusResult | null>(null);
+  const [pumpConfig, setPumpConfig] = useState<PumpAutomationConfig | null>(null);
+  const [pumpConfigDraft, setPumpConfigDraft] = useState<PumpAutomationConfig>({
+    baseUrl: "https://www.airbnb.fr/hosting/multicalendar",
+    username: "",
+    hasOTP: false,
+    persistSession: true,
+    manualScrollMode: false,
+    manualScrollDuration: 20000,
+    scrollSelector: "",
+    scrollCount: 5,
+    scrollDistance: 500,
+    scrollDelay: 1000,
+    waitBeforeScroll: 2000,
+    enableHAR: false,
+    outputFolder: "",
+    filterRules: {
+      inclusive: [],
+      exclusive: [],
+    },
+    loginStrategy: "simple",
+    advancedSelectors: {
+      usernameInput: 'input[type="email"], input[type="text"][placeholder*="email"], input[name*="email"]',
+      passwordInput: 'input[type="password"]',
+      submitButton: 'button[type="submit"], button:has-text("Login"), button:has-text("Sign in")',
+      emailFirstButton:
+        'button:has-text("Continuer avec un email"), button:has-text("Continuer avec un e-mail"), button:has-text("Continue with email")',
+      continueAfterUsernameButton:
+        'button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Suivant"), button:has-text("Next"), button[type="submit"]',
+      finalSubmitButton:
+        'button:has-text("Connexion"), button:has-text("Se connecter"), button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Sign in"), button:has-text("Log in"), button[type="submit"]',
+    },
+  });
   const [pumpCronState, setPumpCronState] = useState<PumpCronState | null>(null);
   const [pumpCronDraft, setPumpCronDraft] = useState<PumpCronConfig>({
     enabled: true,
@@ -541,8 +639,14 @@ const SettingsPage = () => {
   });
   const [pumpPreview, setPumpPreview] = useState<PumpPreviewResult | null>(null);
   const [pumpSelections, setPumpSelections] = useState<Record<string, boolean>>({});
+  const [loadingPumpConfig, setLoadingPumpConfig] = useState(false);
+  const [importingPumpConfig, setImportingPumpConfig] = useState(false);
+  const [importingPumpSession, setImportingPumpSession] = useState(false);
+  const [savingPumpConfig, setSavingPumpConfig] = useState(false);
   const [loadingPumpStatus, setLoadingPumpStatus] = useState(false);
   const [savingPumpCron, setSavingPumpCron] = useState(false);
+  const [testingPumpConnection, setTestingPumpConnection] = useState(false);
+  const [testingPumpScrollTarget, setTestingPumpScrollTarget] = useState(false);
   const [refreshingPump, setRefreshingPump] = useState(false);
   const [analyzingPump, setAnalyzingPump] = useState(false);
   const [importingPump, setImportingPump] = useState(false);
@@ -567,6 +671,10 @@ const SettingsPage = () => {
   const selectedPumpCount = useMemo(
     () => Object.values(pumpSelections).filter(Boolean).length,
     [pumpSelections]
+  );
+  const pumpConfigReady = useMemo(
+    () => Boolean(pumpConfigDraft.baseUrl.trim() && pumpConfigDraft.scrollSelector.trim()),
+    [pumpConfigDraft.baseUrl, pumpConfigDraft.scrollSelector]
   );
   const sourceImportUnknownIds = useMemo(
     () => (sourceImportPreview?.unknown_gites ?? []).map((item) => item.source_gite_id),
@@ -863,6 +971,20 @@ const SettingsPage = () => {
     }
   };
 
+  const loadPumpConfig = async () => {
+    setLoadingPumpConfig(true);
+    setPumpError(null);
+    try {
+      const data = await apiFetch<PumpAutomationConfig>("/settings/pump/config");
+      setPumpConfig(data);
+      setPumpConfigDraft(data);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de charger la configuration Pump.");
+    } finally {
+      setLoadingPumpConfig(false);
+    }
+  };
+
   const loadPumpCronState = async () => {
     const data = await apiFetch<PumpCronState>("/settings/pump/cron");
     setPumpCronState(data);
@@ -884,6 +1006,7 @@ const SettingsPage = () => {
       loadSmsTextSettings(),
       loadCronState(),
       loadImportLog(),
+      loadPumpConfig(),
       loadPumpStatus(),
       loadPumpCronState(),
     ])
@@ -1455,6 +1578,83 @@ const SettingsPage = () => {
     }
   };
 
+  const triggerPumpConfigImport = () => {
+    importPumpConfigInputRef.current?.click();
+  };
+
+  const triggerPumpSessionImport = () => {
+    importPumpSessionInputRef.current?.click();
+  };
+
+  const importPumpConfigFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setImportingPumpConfig(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+      const source =
+        parsed && typeof parsed === "object" && "config" in parsed && (parsed as { config?: unknown }).config
+          ? (parsed as { config: unknown }).config
+          : parsed;
+
+      const response = await apiFetch<PumpConfigSaveResult>("/settings/pump/config/import", {
+        method: "POST",
+        json: {
+          config: source,
+        },
+      });
+      setPumpConfig(response.config);
+      setPumpConfigDraft(response.config);
+      setPumpNotice(`Configuration Pump importée depuis ${file.name}.`);
+    } catch (error: any) {
+      if (error instanceof SyntaxError) {
+        setPumpError("Le fichier de configuration Pump n'est pas un JSON valide.");
+      } else {
+        setPumpError(error.message ?? "Impossible d'importer la configuration Pump.");
+      }
+    } finally {
+      input.value = "";
+      setImportingPumpConfig(false);
+    }
+  };
+
+  const importPumpSessionFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setImportingPumpSession(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+      const response = await apiFetch<PumpSessionImportResult>("/settings/pump/session/import", {
+        method: "POST",
+        json: {
+          storageState: parsed,
+          filename: file.name,
+        },
+      });
+      const persistHint = pumpConfigDraft.persistSession ? "" : ' Activez "Session persistée" pour l’utiliser.';
+      setPumpNotice(`Session persistée importée vers ${response.relativePath}.${persistHint}`);
+    } catch (error: any) {
+      if (error instanceof SyntaxError) {
+        setPumpError("Le fichier de session persistée n'est pas un JSON valide.");
+      } else {
+        setPumpError(error.message ?? "Impossible d'importer la session persistée.");
+      }
+    } finally {
+      input.value = "";
+      setImportingPumpSession(false);
+    }
+  };
+
   const runIcalSync = async () => {
     setSyncingIcal(true);
     setIcalError(null);
@@ -1580,6 +1780,61 @@ const SettingsPage = () => {
       setPumpError(error.message ?? "Impossible de lancer le refresh Pump.");
     } finally {
       setRefreshingPump(false);
+    }
+  };
+
+  const savePumpConfig = async () => {
+    setSavingPumpConfig(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<PumpConfigSaveResult>("/settings/pump/config", {
+        method: "PUT",
+        json: pumpConfigDraft,
+      });
+      setPumpConfig(response.config);
+      setPumpConfigDraft(response.config);
+      setPumpNotice("Configuration Pump enregistrée.");
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible d'enregistrer la configuration Pump.");
+    } finally {
+      setSavingPumpConfig(false);
+    }
+  };
+
+  const testPumpConnection = async () => {
+    setTestingPumpConnection(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const result = await apiFetch<PumpConnectionTestResult>("/settings/pump/config/test-connection", {
+        method: "POST",
+        json: pumpConfigDraft,
+      });
+      const method = result.result?.method ? ` (${result.result.method})` : "";
+      setPumpNotice(`Connexion Pump validée${method}.`);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de tester la connexion Pump.");
+    } finally {
+      setTestingPumpConnection(false);
+    }
+  };
+
+  const testPumpScrollTarget = async () => {
+    setTestingPumpScrollTarget(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const result = await apiFetch<PumpScrollTargetTestResult>("/settings/pump/config/test-scroll-target", {
+        method: "POST",
+        json: pumpConfigDraft,
+      });
+      const selector = result.result?.selector ? ` ${result.result.selector}` : "";
+      setPumpNotice(`Zone de scroll Pump validée${selector}.`);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de tester la zone de scroll Pump.");
+    } finally {
+      setTestingPumpScrollTarget(false);
     }
   };
 
@@ -2873,11 +3128,415 @@ const SettingsPage = () => {
           <div className="card settings-card settings-card--green settings-card--span-7">
             <div className="settings-card__topline">
               <span className="settings-card__tag">Import automatisé</span>
-              <span className="settings-card__badge">{pumpCronState?.config.enabled ? "Actif" : "En pause"}</span>
+              <span className="settings-card__badge">{pumpConfigReady ? "Configuré" : "À configurer"}</span>
             </div>
             <div className="section-title">Import Pump</div>
             <div className="field-hint">
-              Déclenche un refresh dans le repo <code>pump</code>, attend une extraction exploitable, puis crée ou complète les réservations. Le cron utilise le même enchaînement.
+              Déclenche un refresh dans l'automatisation Pump locale, attend une extraction exploitable, puis crée ou complète les réservations. Le cron utilise le même enchaînement.
+            </div>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Configuration: {pumpConfigDraft.baseUrl ? pumpConfigDraft.baseUrl : "URL absente"}{pumpConfigDraft.username ? ` | Compte: ${pumpConfigDraft.username}` : ""}{pumpConfigDraft.scrollSelector ? ` | Scroll: ${pumpConfigDraft.scrollSelector}` : ""}
+            </div>
+            <input
+              ref={importPumpConfigInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => void importPumpConfigFromFile(event)}
+              style={{ display: "none" }}
+            />
+            <input
+              ref={importPumpSessionInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={(event) => void importPumpSessionFromFile(event)}
+              style={{ display: "none" }}
+            />
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={triggerPumpConfigImport}
+                disabled={importingPumpConfig || savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+              >
+                {importingPumpConfig ? "Import config..." : "Importer config Pump"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={triggerPumpSessionImport}
+                disabled={importingPumpSession || savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+              >
+                {importingPumpSession ? "Import session..." : "Importer session persistée"}
+              </button>
+            </div>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Import JSON compatible avec l'ancien Pump: configuration <code>last.json</code> et storage state Playwright.
+            </div>
+            <div className="grid-2" style={{ marginTop: 12 }}>
+              <label className="field">
+                URL Airbnb
+                <input
+                  type="url"
+                  value={pumpConfigDraft.baseUrl}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      baseUrl: event.target.value,
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  placeholder="https://www.airbnb.fr/hosting/multicalendar"
+                />
+              </label>
+              <label className="field">
+                Email / username
+                <input
+                  type="text"
+                  value={pumpConfigDraft.username}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      username: event.target.value,
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  placeholder="compte@exemple.com"
+                />
+              </label>
+              <label className="field">
+                Stratégie de login
+                <select
+                  value={pumpConfigDraft.loginStrategy}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      loginStrategy: event.target.value as PumpAutomationConfig["loginStrategy"],
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                >
+                  <option value="simple">Simple</option>
+                  <option value="multi-step">Multi-step</option>
+                </select>
+              </label>
+              <label className="field">
+                Sélecteur de scroll
+                <input
+                  type="text"
+                  value={pumpConfigDraft.scrollSelector}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      scrollSelector: event.target.value,
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  placeholder=".v2-multi-calendar__grid"
+                />
+              </label>
+              <label className="field">
+                2FA / OTP
+                <select
+                  value={pumpConfigDraft.hasOTP ? "1" : "0"}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      hasOTP: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                >
+                  <option value="0">Non</option>
+                  <option value="1">Oui</option>
+                </select>
+              </label>
+              <label className="field">
+                Session persistée
+                <select
+                  value={pumpConfigDraft.persistSession ? "1" : "0"}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      persistSession: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                >
+                  <option value="1">Oui</option>
+                  <option value="0">Non</option>
+                </select>
+              </label>
+              <label className="field">
+                Attente avant scroll (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={120000}
+                  value={pumpConfigDraft.waitBeforeScroll}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      waitBeforeScroll: Math.min(120000, Math.max(0, Number(event.target.value || 0))),
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                />
+              </label>
+              <label className="field">
+                Nombre de scrolls
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={pumpConfigDraft.scrollCount}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      scrollCount: Math.min(500, Math.max(1, Number(event.target.value || 1))),
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                />
+              </label>
+              <label className="field">
+                Distance de scroll
+                <input
+                  type="number"
+                  min={1}
+                  max={20000}
+                  value={pumpConfigDraft.scrollDistance}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      scrollDistance: Math.min(20000, Math.max(1, Number(event.target.value || 1))),
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                />
+              </label>
+              <label className="field">
+                Délai entre scrolls (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={120000}
+                  value={pumpConfigDraft.scrollDelay}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      scrollDelay: Math.min(120000, Math.max(0, Number(event.target.value || 0))),
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                />
+              </label>
+              <label className="field">
+                Scroll manuel
+                <select
+                  value={pumpConfigDraft.manualScrollMode ? "1" : "0"}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      manualScrollMode: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                >
+                  <option value="0">Non</option>
+                  <option value="1">Oui</option>
+                </select>
+              </label>
+              <label className="field">
+                Durée scroll manuel (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={600000}
+                  value={pumpConfigDraft.manualScrollDuration}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      manualScrollDuration: Math.min(600000, Math.max(0, Number(event.target.value || 0))),
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget || !pumpConfigDraft.manualScrollMode}
+                />
+              </label>
+              <label className="field">
+                Export HAR
+                <select
+                  value={pumpConfigDraft.enableHAR ? "1" : "0"}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      enableHAR: event.target.value === "1",
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                >
+                  <option value="0">Non</option>
+                  <option value="1">Oui</option>
+                </select>
+              </label>
+              <label className="field">
+                Dossier de sortie optionnel
+                <input
+                  type="text"
+                  value={pumpConfigDraft.outputFolder}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      outputFolder: event.target.value,
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  placeholder="/chemin/vers/un/dossier"
+                />
+              </label>
+            </div>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Le mot de passe n'est pas édité ici. Pour rafraîchir une session expirée, renseignez <code>PUMP_SESSION_PASSWORD</code> côté serveur puis testez la connexion.
+            </div>
+            <details className="settings-sources-accordion" style={{ marginTop: 12 }}>
+              <summary>Sélecteurs avancés</summary>
+              <div className="grid-2" style={{ marginTop: 12 }}>
+                <label className="field">
+                  Champ username
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.usernameInput}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          usernameInput: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Champ mot de passe
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.passwordInput}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          passwordInput: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Bouton submit
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.submitButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          submitButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Bouton email-first
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.emailFirstButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          emailFirstButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Bouton après username
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.continueAfterUsernameButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          continueAfterUsernameButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Bouton final
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.finalSubmitButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          finalSubmitButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+              </div>
+            </details>
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void savePumpConfig()}
+                disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+              >
+                {savingPumpConfig ? "Enregistrement..." : "Enregistrer la configuration"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void testPumpConnection()}
+                disabled={testingPumpConnection || savingPumpConfig || !pumpConfigReady}
+              >
+                {testingPumpConnection ? "Test..." : "Tester la connexion"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void testPumpScrollTarget()}
+                disabled={testingPumpScrollTarget || savingPumpConfig || !pumpConfigReady}
+              >
+                {testingPumpScrollTarget ? "Test..." : "Tester la zone de scroll"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void loadPumpConfig()}
+                disabled={loadingPumpConfig || savingPumpConfig || importingPumpConfig || importingPumpSession}
+              >
+                {loadingPumpConfig ? "Chargement..." : "Recharger la configuration"}
+              </button>
             </div>
             <div className="field-hint" style={{ marginTop: 8 }}>
               Cron: {pumpCronState?.config.enabled ? "activé" : "désactivé"}. Prochain import: {formatIsoDateTimeFr(pumpCronState?.next_run_at ?? null)}. Dernier import: {formatIsoDateTimeFr(pumpCronState?.last_run_at ?? null)}.
@@ -2969,28 +3628,28 @@ const SettingsPage = () => {
             ) : null}
             {pumpCronState?.last_error ? <div className="note" style={{ marginTop: 8 }}>{pumpCronState.last_error}</div> : null}
             <div className="actions" style={{ marginTop: 12 }}>
-              <button type="button" className="secondary" onClick={() => void savePumpCronConfig()} disabled={savingPumpCron || refreshingPump || analyzingPump || importingPump}>
+              <button type="button" className="secondary" onClick={() => void savePumpCronConfig()} disabled={savingPumpCron || refreshingPump || analyzingPump || importingPump || savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}>
                 {savingPumpCron ? "Enregistrement..." : "Enregistrer le cron"}
               </button>
-              <button type="button" className="secondary" onClick={() => void refreshPump()} disabled={refreshingPump || analyzingPump || importingPump || savingPumpCron}>
+              <button type="button" className="secondary" onClick={() => void refreshPump()} disabled={refreshingPump || analyzingPump || importingPump || savingPumpCron || savingPumpConfig || testingPumpConnection || testingPumpScrollTarget || !pumpConfigReady}>
                 {refreshingPump ? "Refresh..." : "Lancer refresh Pump"}
               </button>
               <button
                 type="button"
                 className="secondary"
                 onClick={() =>
-                  void Promise.all([loadPumpStatus(), loadPumpCronState()]).catch((error: any) =>
+                  void Promise.all([loadPumpConfig(), loadPumpStatus(), loadPumpCronState()]).catch((error: any) =>
                     setPumpError(error.message ?? "Impossible de rafraîchir les informations Pump.")
                   )
                 }
-                disabled={loadingPumpStatus || refreshingPump}
+                disabled={loadingPumpStatus || loadingPumpConfig || refreshingPump || importingPumpConfig || importingPumpSession}
               >
                 {loadingPumpStatus ? "Statut..." : "Rafraîchir le statut"}
               </button>
-              <button type="button" className="secondary" onClick={() => void analyzePump()} disabled={analyzingPump || importingPump || savingPumpCron}>
+              <button type="button" className="secondary" onClick={() => void analyzePump()} disabled={analyzingPump || importingPump || savingPumpCron || savingPumpConfig || !pumpConfigReady}>
                 {analyzingPump ? "Analyse..." : "Analyser la dernière extraction"}
               </button>
-              <button type="button" onClick={() => void importPump()} disabled={importingPump || !pumpPreview || selectedPumpCount === 0 || analyzingPump || savingPumpCron}>
+              <button type="button" onClick={() => void importPump()} disabled={importingPump || !pumpPreview || selectedPumpCount === 0 || analyzingPump || savingPumpCron || savingPumpConfig}>
                 {importingPump ? "Import..." : `Importer (${selectedPumpCount})`}
               </button>
             </div>

@@ -1,7 +1,7 @@
 import path from "path";
 import { env } from "../config/env.js";
 
-const resolveDataDir = () =>
+export const resolveDataDir = () =>
   path.isAbsolute(env.DATA_DIR) ? env.DATA_DIR : path.join(process.cwd(), env.DATA_DIR);
 
 export const getPdfPaths = (numeroContrat: string, dateReference: Date) => {

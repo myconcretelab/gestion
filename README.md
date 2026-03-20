@@ -53,12 +53,15 @@ Accès:
 
 ## Intégration Pump
 
-Le repo `contrats` peut maintenant consommer directement l'API locale du repo `pump`.
+Le repo `contrats` embarque maintenant sa propre automatisation Pump côté serveur.
 
 Variables d'environnement utiles:
 
-- `PUMP_API_BASE_URL=http://localhost:3000/api/reservations`
-- `PUMP_API_KEY=...`
+- `PUMP_BASE_URL=https://www.airbnb.fr/hosting/multicalendar`
+- `PUMP_USERNAME=...`
+- `PUMP_SESSION_PASSWORD=...`
+- `PUMP_SCROLL_SELECTOR=...`
+- `PUMP_LOGIN_STRATEGY=simple` ou `multi-step`
 - `PUMP_IMPORT_CRON_ENABLED=true`
 - `PUMP_IMPORT_CRON_INTERVAL_DAYS=3`
 - `PUMP_IMPORT_CRON_HOUR=10`
@@ -66,15 +69,15 @@ Variables d'environnement utiles:
 
 Flux prévu:
 
-1. Dans `pump`, exposer l'API `/api/reservations/*` avec `PUMP_API_KEY`.
-2. Dans `contrats`, ouvrir **Réglages**.
+1. Configurer l'automatisation Pump locale dans `contrats`.
+2. Ouvrir **Réglages**.
 3. Utiliser la section **Import Pump**:
    - `Lancer refresh Pump`
    - `Rafraîchir le statut`
    - `Analyser la dernière extraction`
    - `Importer`
 
-`contrats` récupère alors les réservations normalisées depuis `pump`, les prévisualise avec le même moteur que l'ancien import HAR, puis crée ou complète les réservations locales.
+`contrats` exécute alors la capture Airbnb localement, extrait les réservations normalisées, les prévisualise avec le même moteur que l'ancien import HAR, puis crée ou complète les réservations locales.
 
 Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h.
 

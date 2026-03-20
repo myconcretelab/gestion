@@ -20,6 +20,15 @@ import {
   triggerPumpRefresh,
 } from "../services/pumpClient.js";
 import {
+  getPumpAutomationConfig,
+  importPersistedPumpSession,
+  importPumpAutomationConfig,
+  testPumpAutomationConnection,
+  testPumpAutomationScrollTarget,
+  updatePumpAutomationConfig,
+} from "../services/pumpAutomation.js";
+import type { PumpAutomationConfig } from "../services/pumpAutomationConfig.js";
+import {
   buildHarPreview,
   buildReservationsPreview,
   importPreviewReservations,
@@ -95,6 +104,43 @@ const pumpCronConfigSchema = z.object({
   hour: z.number().int().min(0).max(23),
   minute: z.number().int().min(0).max(59),
   run_on_start: z.boolean().optional(),
+});
+const pumpAutomationConfigSchema = z.object({
+  baseUrl: z.string().trim().url("URL Pump invalide."),
+  username: z.string().trim().default(""),
+  hasOTP: z.boolean().default(false),
+  persistSession: z.boolean().default(true),
+  manualScrollMode: z.boolean().default(false),
+  manualScrollDuration: z.number().int().min(0).max(600000).default(20000),
+  scrollSelector: z.string().trim().min(1, "scrollSelector est requis."),
+  scrollCount: z.number().int().min(1).max(500).default(5),
+  scrollDistance: z.number().int().min(1).max(20000).default(500),
+  scrollDelay: z.number().int().min(0).max(120000).default(1000),
+  waitBeforeScroll: z.number().int().min(0).max(120000).default(2000),
+  enableHAR: z.boolean().default(false),
+  outputFolder: z.string().trim().default(""),
+  loginStrategy: z.enum(["simple", "multi-step"]).default("simple"),
+  filterRules: z
+    .object({
+      inclusive: z.array(z.object({ type: z.string().trim().min(1), pattern: z.string().optional(), negate: z.boolean().optional() })).default([]),
+      exclusive: z.array(z.object({ type: z.string().trim().min(1), pattern: z.string().optional(), negate: z.boolean().optional() })).default([]),
+    })
+    .default({ inclusive: [], exclusive: [] }),
+  advancedSelectors: z.object({
+    usernameInput: z.string().trim().min(1),
+    passwordInput: z.string().trim().min(1),
+    submitButton: z.string().trim().min(1),
+    emailFirstButton: z.string().trim().min(1),
+    continueAfterUsernameButton: z.string().trim().min(1),
+    finalSubmitButton: z.string().trim().min(1),
+  }),
+});
+const pumpAutomationConfigImportSchema = z.object({
+  config: z.any(),
+});
+const pumpStorageStateImportSchema = z.object({
+  storageState: z.any(),
+  filename: z.string().trim().optional(),
 });
 const declarationNightsSettingsSchema = z.object({
   excluded_sources: z.array(z.string().trim().min(1)).default([]),
@@ -923,6 +969,69 @@ router.put("/sms-texts", (req, res, next) => {
 
 router.get("/pump/cron", (_req, res) => {
   res.json(getPumpCronState());
+});
+
+router.get("/pump/config", (_req, res) => {
+  res.json(getPumpAutomationConfig());
+});
+
+router.put("/pump/config", (req, res, next) => {
+  try {
+    const payload = pumpAutomationConfigSchema.parse(req.body) as PumpAutomationConfig;
+    const config = updatePumpAutomationConfig(payload);
+    res.json({
+      config,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/config/import", (req, res, next) => {
+  try {
+    const payload = pumpAutomationConfigImportSchema.parse(req.body);
+    const config = importPumpAutomationConfig(payload.config);
+    res.json({
+      config,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/config/test-connection", async (_req, res, next) => {
+  try {
+    const payload = pumpAutomationConfigSchema.partial().parse(_req.body ?? {});
+    const result = await testPumpAutomationConnection(payload);
+    res.json({ success: true, result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/config/test-scroll-target", async (_req, res, next) => {
+  try {
+    const payload = pumpAutomationConfigSchema.partial().parse(_req.body ?? {});
+    const result = await testPumpAutomationScrollTarget(payload);
+    res.json({ success: true, result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/session/import", (req, res, next) => {
+  try {
+    const payload = pumpStorageStateImportSchema.parse(req.body);
+    const result = importPersistedPumpSession(payload.storageState, {
+      filename: payload.filename,
+    });
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.put("/pump/cron", async (req, res, next) => {
