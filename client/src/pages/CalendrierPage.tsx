@@ -379,13 +379,7 @@ const buildCalendarMonthData = ({
       const weekEnd = addUtcDays(gridStart, weekIndex * 7 + 7);
       const segmentEndExclusive = new Date(Math.min(reservationEnd.getTime(), weekEnd.getTime()));
       const segments = segmentsByWeek.get(weekIndex) ?? [];
-      const splitPoints: Date[] = [];
-
-      if (cursor.getTime() < todayDate.getTime() && segmentEndExclusive.getTime() > todayDate.getTime()) {
-        splitPoints.push(todayDate);
-      }
-
-      const segmentPoints = [cursor, ...splitPoints, segmentEndExclusive];
+      const segmentPoints = [cursor, segmentEndExclusive];
 
       for (let pointIndex = 0; pointIndex < segmentPoints.length - 1; pointIndex += 1) {
         const partStart = segmentPoints[pointIndex];

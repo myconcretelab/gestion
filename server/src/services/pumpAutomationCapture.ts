@@ -306,6 +306,8 @@ const getScrollableInfo = async (page: Page, selector: string) =>
     };
   }, selector);
 
+// Keep this callback free of named inner helpers: tsx/esbuild injects `__name(...)`
+// for nested functions, and Playwright executes the serialized callback in the page.
 const resolveHorizontalScrollTarget = async (page: Page, selector: string): Promise<ResolvedScrollTarget> =>
   page.evaluate((sel): ResolvedScrollTarget => {
     const root = document.querySelector(sel);
@@ -313,39 +315,27 @@ const resolveHorizontalScrollTarget = async (page: Page, selector: string): Prom
       return { exists: false, found: false, selector: null, isHorizontallyScrollable: false };
     }
 
-    const toCssSelector = (el: Element | null): string | null => {
-      if (!el) return null;
-      if (el.id) return `#${CSS.escape(el.id)}`;
+    const candidatesToInspect: Array<{ el: Element; relation: string; depth: number }> = [{ el: root, relation: "self", depth: 0 }];
 
-      const parts: string[] = [];
-      let current: Element | null = el;
-      while (current && current !== document.body) {
-        let part = current.tagName.toLowerCase();
-        if (current.classList.length > 0) {
-          part += `.${Array.from(current.classList)
-            .slice(0, 3)
-            .map((name) => CSS.escape(name))
-            .join(".")}`;
-        }
+    let current = root.parentElement;
+    let parentDepth = 1;
+    while (current && parentDepth <= 6) {
+      candidatesToInspect.push({ el: current, relation: "parent", depth: parentDepth });
+      current = current.parentElement;
+      parentDepth += 1;
+    }
 
-        const currentTagName = current.tagName;
-        const parent: Element | null = current.parentElement;
-        if (parent) {
-          const siblings = Array.from(parent.children).filter(
-            (child): child is Element => child instanceof Element && child.tagName === currentTagName
-          );
-          if (siblings.length > 1) {
-            part += `:nth-of-type(${siblings.indexOf(current) + 1})`;
-          }
-        }
-
-        parts.unshift(part);
-        current = parent;
+    const queue = Array.from(root.children).map((child) => ({ el: child as Element, depth: 1 }));
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) break;
+      candidatesToInspect.push({ el: item.el, relation: "child", depth: item.depth });
+      if (item.depth < 6) {
+        queue.push(...Array.from(item.el.children).map((child) => ({ el: child as Element, depth: item.depth + 1 })));
       }
-      return parts.join(" > ");
-    };
+    }
 
-    const getInfo = (el: Element, relation: string, depth: number) => {
+    const candidates = candidatesToInspect.map(({ el, relation, depth }) => {
       const style = window.getComputedStyle(el);
       const overflowX = style.overflowX;
       const isHorizontallyScrollable = el.scrollWidth > el.clientWidth + 1;
@@ -375,12 +365,45 @@ const resolveHorizontalScrollTarget = async (page: Page, selector: string): Prom
         Math.max(relationWeight, 0) +
         overflowWeight;
 
+      const cssSelector = ((node: Element | null): string | null => {
+        if (!node) return null;
+        if (node.id) return `#${CSS.escape(node.id)}`;
+
+        const parts: string[] = [];
+        let selectorNode: Element | null = node;
+        while (selectorNode && selectorNode !== document.body) {
+          const currentNode: Element = selectorNode;
+          let part = currentNode.tagName.toLowerCase();
+          if (currentNode.classList.length > 0) {
+            part += `.${Array.from(currentNode.classList)
+              .slice(0, 3)
+              .map((name: string) => CSS.escape(name))
+              .join(".")}`;
+          }
+
+          const parentElement: Element | null = currentNode.parentElement;
+          if (parentElement) {
+            const siblings = Array.from(parentElement.children).filter(
+              (child): child is Element => child instanceof Element && child.tagName === currentNode.tagName
+            );
+            if (siblings.length > 1) {
+              part += `:nth-of-type(${siblings.indexOf(currentNode) + 1})`;
+            }
+          }
+
+          parts.unshift(part);
+          selectorNode = parentElement;
+        }
+
+        return parts.join(" > ");
+      })(el);
+
       return {
         exists: true,
         found: true,
         relation,
         depth,
-        selector: toCssSelector(el),
+        selector: cssSelector,
         tagName: el.tagName.toLowerCase(),
         overflowX,
         isVisible,
@@ -392,36 +415,16 @@ const resolveHorizontalScrollTarget = async (page: Page, selector: string): Prom
         isVerticallyScrollable: el.scrollHeight > el.clientHeight + 1,
         canScrollProgrammatically,
         score,
-      };
-    };
+      } satisfies ResolvedScrollTarget;
+    });
 
-    const selfInfo = getInfo(root, "self", 0);
-    const candidates = [selfInfo];
-
-    let current = root.parentElement;
-    let depth = 1;
-    while (current && depth <= 6) {
-      candidates.push(getInfo(current, "parent", depth));
-      current = current.parentElement;
-      depth += 1;
-    }
-
-      const queue = Array.from(root.children).map((child) => ({ el: child as Element, depth: 1 }));
-    while (queue.length > 0) {
-      const item = queue.shift();
-      if (!item) break;
-      candidates.push(getInfo(item.el, "child", item.depth));
-      if (item.depth < 6) {
-        queue.push(...Array.from(item.el.children).map((child) => ({ el: child, depth: item.depth + 1 })));
-      }
-    }
-
+    const selfInfo = candidates[0] as ResolvedScrollTarget;
     const bestCandidate = candidates
       .filter((candidate) => candidate.isHorizontallyScrollable)
-      .sort((a, b) => b.score - a.score)[0];
+      .sort((left, right) => right.score - left.score)[0];
 
-      return (bestCandidate || selfInfo) as ResolvedScrollTarget;
-    }, selector);
+    return bestCandidate || selfInfo;
+  }, selector);
 
 const scrollWithDirectModification = async (page: Page, selector: string, config: PumpAutomationConfig) => {
   for (let i = 0; i < config.scrollCount; i += 1) {
