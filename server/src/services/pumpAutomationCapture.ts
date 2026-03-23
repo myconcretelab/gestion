@@ -170,7 +170,7 @@ const fillRequiredField = async (
   return selector;
 };
 
-const checkIfLoginRequired = async (page: Page, config: PumpAutomationConfig) => {
+export const checkIfLoginRequired = async (page: Page, config: PumpAutomationConfig) => {
   const selectors = [
     config.advancedSelectors.usernameInput,
     config.advancedSelectors.passwordInput,
@@ -826,9 +826,18 @@ export class PumpPlaywrightSession {
     this.isAuthenticated = false;
   }
 
-  async initialize() {
+  async initialize(
+    launchOverrides: Partial<{
+      headless: boolean;
+      args: string[];
+    }> = {}
+  ) {
     const launchOptions = resolvePlaywrightLaunchOptions();
-    this.browser = await chromium.launch(launchOptions);
+    this.browser = await chromium.launch({
+      ...launchOptions,
+      ...launchOverrides,
+      args: launchOverrides.args ?? launchOptions.args,
+    });
     this.context = await this.createContext();
     this.page = await this.context.newPage();
     if (shouldForceHeadlessWithoutDisplay() && launchOptions.headless) {
@@ -868,6 +877,12 @@ export class PumpPlaywrightSession {
     if (!loginRequired && this.loadedPersistedState) {
       this.isAuthenticated = true;
       return { success: true, method: "persisted" };
+    }
+
+    if (this.config.authMode === "persisted-only") {
+      throw new Error(
+        "Session Airbnb expirée ou absente. Le mode phase 1 utilise uniquement une session persistée importée depuis le local."
+      );
     }
 
     const result =

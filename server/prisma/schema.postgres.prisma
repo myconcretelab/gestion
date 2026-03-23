@@ -45,6 +45,7 @@ model Gite {
   arrhes_taux_defaut                   Decimal  @default(0.2) @db.Decimal(5,4)
   prix_nuit_liste                      Json?
   caracteristiques                     String?
+  airbnb_listing_id                    String?
   ical_export_token                    String?
   gestionnaire_id                      String?
   createdAt                            DateTime @default(now())

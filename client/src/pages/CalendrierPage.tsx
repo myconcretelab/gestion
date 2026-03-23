@@ -2,6 +2,11 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
+import {
+  handleAirbnbCalendarRefreshFailure,
+  waitForAirbnbCalendarRefreshJob,
+  type AirbnbCalendarRefreshCreateStatus,
+} from "../utils/airbnbCalendarRefresh";
 import { formatEuro } from "../utils/format";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -123,6 +128,11 @@ type QuickReservationDraft = {
   prix_par_nuit: string;
   source_paiement: string;
   commentaire: string;
+};
+
+type ReservationCreateResponse = Reservation & {
+  created_reservations?: Reservation[];
+  airbnb_calendar_refresh?: AirbnbCalendarRefreshCreateStatus;
 };
 
 type QuickReservationSmsSnippet = {
@@ -453,6 +463,7 @@ const CalendrierPage = () => {
   const [mobileActionReservationId, setMobileActionReservationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [airbnbRefreshError, setAirbnbRefreshError] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`).matches : false
   );
@@ -471,6 +482,7 @@ const CalendrierPage = () => {
     kind: "date",
     value: todayIso,
   });
+  const airbnbCalendarRefreshControllersRef = useRef<AbortController[]>([]);
 
   const loadData = useCallback(async () => {
     try {
@@ -504,6 +516,36 @@ const CalendrierPage = () => {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    return () => {
+      airbnbCalendarRefreshControllersRef.current.forEach((controller) => controller.abort());
+    };
+  }, []);
+
+  const startAirbnbCalendarRefreshPolling = useCallback((refresh: AirbnbCalendarRefreshCreateStatus | undefined) => {
+    if (!refresh || refresh.status !== "queued" || !refresh.job_id) return;
+
+    const controller = new AbortController();
+    airbnbCalendarRefreshControllersRef.current.push(controller);
+
+    void waitForAirbnbCalendarRefreshJob(refresh.job_id, {
+      signal: controller.signal,
+    })
+      .then((status) => {
+        if (status.status === "failed") {
+          setAirbnbRefreshError(status.message ?? "Le rafraîchissement Airbnb a échoué.");
+        }
+      })
+      .catch((error) => {
+        handleAirbnbCalendarRefreshFailure(error, (message) => setAirbnbRefreshError(message));
+      })
+      .finally(() => {
+        airbnbCalendarRefreshControllersRef.current = airbnbCalendarRefreshControllersRef.current.filter(
+          (current) => current !== controller
+        );
+      });
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`);
@@ -960,6 +1002,7 @@ const CalendrierPage = () => {
 
     setQuickReservationSaving(true);
     setQuickReservationError(null);
+    setAirbnbRefreshError(null);
 
     try {
       if (quickReservationMode === "edit") {
@@ -994,7 +1037,7 @@ const CalendrierPage = () => {
           },
         });
       } else {
-        await apiFetch<Reservation>("/reservations", {
+        const created = await apiFetch<ReservationCreateResponse>("/reservations", {
           method: "POST",
           json: {
             gite_id: selectedGiteId,
@@ -1009,6 +1052,7 @@ const CalendrierPage = () => {
             commentaire: quickReservationDraft.commentaire.trim() || undefined,
           },
         });
+        startAirbnbCalendarRefreshPolling(created.airbnb_calendar_refresh);
       }
 
       await loadData();
@@ -1033,6 +1077,7 @@ const CalendrierPage = () => {
     quickReservationMode,
     quickReservationSaving,
     selectedGiteId,
+    startAirbnbCalendarRefreshPolling,
   ]);
 
   const quickReservationComputedTotal = useMemo(() => {
@@ -1378,6 +1423,7 @@ const CalendrierPage = () => {
 
   return (
     <div className={`calendar-page${canUseQuickReservation ? " calendar-page--quick-create-visible" : ""}`} style={pageStyle}>
+      {airbnbRefreshError ? <div className="note">{airbnbRefreshError}</div> : null}
       <section ref={heroRef} className="card calendar-hero">
         <div className="calendar-hero__header">
           <label className="calendar-month-trigger">

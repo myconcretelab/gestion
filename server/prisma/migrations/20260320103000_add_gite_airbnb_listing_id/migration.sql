@@ -1,0 +1,3 @@
+-- No-op for SQLite.
+-- The preceding 20260320091800_ical table redefinition now preserves/materializes
+-- "airbnb_listing_id" so fresh databases and Prisma shadow databases stay aligned.

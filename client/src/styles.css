@@ -2626,6 +2626,71 @@ body {
   align-items: center;
 }
 
+.pump-indicator {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.pump-indicator--success {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.pump-indicator--warning {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fde68a;
+}
+
+.pump-indicator--danger {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
+.pump-indicator--neutral {
+  color: #475569;
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.pump-indicator__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.pump-indicator__dot--success {
+  background: #16a34a;
+}
+
+.pump-indicator__dot--warning {
+  background: #d97706;
+}
+
+.pump-indicator__dot--danger {
+  background: #dc2626;
+}
+
+.pump-indicator__dot--neutral {
+  background: #64748b;
+}
+
+.pump-indicator__label {
+  line-height: 1;
+}
+
 .nav {
   justify-self: center;
   display: flex;
@@ -2768,6 +2833,61 @@ body {
   box-shadow: none;
   backdrop-filter: blur(8px);
   z-index: 60;
+}
+
+.pump-health-card {
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+}
+
+.pump-health-card--success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.pump-health-card--warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.pump-health-card--danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.pump-health-card--neutral {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.pump-health-card__headline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pump-health-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.pump-health-dot--success {
+  background: #16a34a;
+}
+
+.pump-health-dot--warning {
+  background: #d97706;
+}
+
+.pump-health-dot--danger {
+  background: #dc2626;
+}
+
+.pump-health-dot--neutral {
+  background: #64748b;
 }
 
 .overflow-nav--desktop {
@@ -6805,6 +6925,15 @@ button.warning {
   }
 
   .brand-label {
+    display: none;
+  }
+
+  .pump-indicator {
+    min-height: 28px;
+    padding: 0 8px;
+  }
+
+  .pump-indicator__label {
     display: none;
   }
 

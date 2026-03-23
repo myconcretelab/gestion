@@ -10,6 +10,11 @@ import {
   type StatisticsPayload,
 } from "./statistics/statisticsUtils";
 import { apiFetch, isApiError } from "../utils/api";
+import {
+  handleAirbnbCalendarRefreshFailure,
+  waitForAirbnbCalendarRefreshJob,
+  type AirbnbCalendarRefreshCreateStatus,
+} from "../utils/airbnbCalendarRefresh";
 import { formatDate, formatEuro } from "../utils/format";
 import {
   computeReservationBaseStayTotalFromAdjustedStay,
@@ -73,6 +78,7 @@ type ImportPreview = {
 
 type ReservationCreateResponse = Reservation & {
   created_reservations?: Reservation[];
+  airbnb_calendar_refresh?: AirbnbCalendarRefreshCreateStatus;
 };
 
 type ImportColumnField =
@@ -872,6 +878,7 @@ const ReservationsPage = () => {
   const pendingViewSnapshotRef = useRef<ReservationsViewSnapshot | null>(null);
   const restoreViewRafRef = useRef<number | null>(null);
   const linkedFocusTimerRef = useRef<number | null>(null);
+  const airbnbCalendarRefreshControllersRef = useRef<AbortController[]>([]);
   const handledLinkedFocusRef = useRef<string | null>(null);
   const handledCalendarInsertRef = useRef<string | null>(null);
   const appliedLocationYearMonthKeyRef = useRef<string | null>(null);
@@ -965,6 +972,7 @@ const ReservationsPage = () => {
     return () => {
       Object.values(detailsCloseTimers.current).forEach((timer) => window.clearTimeout(timer));
       Object.values(savedRowFadeTimers.current).forEach((timer) => window.clearTimeout(timer));
+      airbnbCalendarRefreshControllersRef.current.forEach((controller) => controller.abort());
       if (restoreViewRafRef.current) {
         window.cancelAnimationFrame(restoreViewRafRef.current);
       }
@@ -1105,6 +1113,30 @@ const ReservationsPage = () => {
     setActiveTab(requestedTab);
     appliedLocationTabKeyRef.current = location.key;
   }, [gites, location.key, requestedTab]);
+
+  const startAirbnbCalendarRefreshPolling = useCallback((refresh: AirbnbCalendarRefreshCreateStatus | undefined) => {
+    if (!refresh || refresh.status !== "queued" || !refresh.job_id) return;
+
+    const controller = new AbortController();
+    airbnbCalendarRefreshControllersRef.current.push(controller);
+
+    void waitForAirbnbCalendarRefreshJob(refresh.job_id, {
+      signal: controller.signal,
+    })
+      .then((status) => {
+        if (status.status === "failed") {
+          setError(status.message ?? "Le rafraîchissement Airbnb a échoué.");
+        }
+      })
+      .catch((error) => {
+        handleAirbnbCalendarRefreshFailure(error, (message) => setError(message));
+      })
+      .finally(() => {
+        airbnbCalendarRefreshControllersRef.current = airbnbCalendarRefreshControllersRef.current.filter(
+          (current) => current !== controller
+        );
+      });
+  }, []);
 
   const handleTabDragStart = (event: DragEvent<HTMLButtonElement>, id: string) => {
     if (reorderingTabs) return;
@@ -1893,7 +1925,7 @@ const ReservationsPage = () => {
     });
   };
 
-  const addReservation = async (monthIndex: number) => {
+  const addReservation = useCallback(async (monthIndex: number) => {
     const draft = newRows[monthIndex] ?? ensureNewRow(monthIndex);
 
     if (!draft.hote_nom.trim()) {
@@ -1934,13 +1966,14 @@ const ReservationsPage = () => {
       }
       setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: null }));
       setError(null);
+      startAirbnbCalendarRefreshPolling(created.airbnb_calendar_refresh);
     } catch (err) {
       const nextError = isApiError(err) && Array.isArray((err.payload as any)?.conflicts)
         ? `${err.message} ${((err.payload as any).conflicts as Array<{ label: string }>).map((item) => item.label).join(" · ")}`
         : (err as Error).message;
       setError(nextError);
     }
-  };
+  }, [activeGite, activeTab, month, newRows, startAirbnbCalendarRefreshPolling, year]);
 
   const duplicateIntoNewRow = (reservation: Reservation, monthIndex: number, rowIndex: number) => {
     const source = toDraft(reservation);

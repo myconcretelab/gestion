@@ -7,6 +7,11 @@ import { round2, toNumber } from "../utils/money.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { type OptionsInput } from "../services/contractCalculator.js";
 import {
+  getAirbnbCalendarRefreshJobStatus,
+  queueAirbnbCalendarRefresh,
+  type AirbnbCalendarRefreshCreateResult,
+} from "../services/airbnbCalendarRefresh.js";
+import {
   normalizeReservationCommissionMode,
   sanitizeReservationAmount,
   sanitizeReservationCommissionValue,
@@ -233,6 +238,82 @@ const parseDateInput = (value: string, label: string) => {
 };
 
 const formatDateFr = (value: Date | string) => format(new Date(value), "dd/MM/yyyy");
+
+const normalizeForwardedHeader = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const [first] = value.split(",");
+  const trimmed = first?.trim();
+  return trimmed ? trimmed : null;
+};
+
+const buildRequestOrigin = (req: any) => {
+  const forwardedProto = normalizeForwardedHeader(req.headers?.["x-forwarded-proto"]);
+  const forwardedHost = normalizeForwardedHeader(req.headers?.["x-forwarded-host"]);
+  const protocol = forwardedProto ?? req.protocol ?? "http";
+  const host =
+    forwardedHost ??
+    (typeof req.get === "function" ? req.get("host") : null) ??
+    (typeof req.headers?.host === "string" ? req.headers.host : null);
+
+  if (host) {
+    return `${protocol}://${host}`;
+  }
+
+  return env.CLIENT_ORIGIN;
+};
+
+const buildGiteIcalPublicUrl = (req: any, giteId: string, token: string) => {
+  const origin = buildRequestOrigin(req);
+  return new URL(`/api/gites/${giteId}/calendar.ics?token=${encodeURIComponent(token)}`, origin).toString();
+};
+
+const buildAirbnbCalendarRefreshCreateResult = async (
+  req: any,
+  association: ReservationAssociation
+): Promise<AirbnbCalendarRefreshCreateResult> => {
+  try {
+    if (!association.gite_id) {
+      return {
+        status: "skipped",
+        message: "Réservation sans gîte: aucun rafraîchissement Airbnb à lancer.",
+      };
+    }
+
+    const gite = await prisma.gite.findUnique({
+      where: { id: association.gite_id },
+      select: {
+        id: true,
+        airbnb_listing_id: true,
+        ical_export_token: true,
+      },
+    });
+
+    if (!gite?.airbnb_listing_id) {
+      return {
+        status: "skipped",
+        message: "Le gîte n'a pas d'ID Airbnb configuré.",
+      };
+    }
+
+    if (!gite.ical_export_token) {
+      return {
+        status: "skipped",
+        message: "Le gîte n'a pas de flux iCal exportable.",
+      };
+    }
+
+    return queueAirbnbCalendarRefresh({
+      giteId: gite.id,
+      listingId: gite.airbnb_listing_id,
+      icalUrl: buildGiteIcalPublicUrl(req, gite.id, gite.ical_export_token),
+    });
+  } catch (error) {
+    return {
+      status: "skipped",
+      message: error instanceof Error ? error.message : "Le rafraîchissement Airbnb n'a pas pu être préparé.",
+    };
+  }
+};
 
 const computePrices = (
   nights: number,
@@ -1121,6 +1202,19 @@ router.get("/recent-imports/count", async (_req, res, next) => {
   }
 });
 
+router.get("/airbnb-calendar-refresh/:jobId", async (req, res, next) => {
+  try {
+    const status = getAirbnbCalendarRefreshJobStatus(req.params.jobId);
+    if (!status) {
+      return res.status(404).json({ error: "Job de rafraîchissement Airbnb introuvable." });
+    }
+
+    return res.json(status);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/", async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
@@ -1248,14 +1342,19 @@ router.post("/", async (req, res, next) => {
     );
 
     const hydratedCreated = createdReservations.map(hydrateReservation);
+    const airbnbCalendarRefresh = await buildAirbnbCalendarRefreshCreateResult(req, association);
     if (hydratedCreated.length > 1) {
       return res.status(201).json({
         ...hydratedCreated[0],
         created_reservations: hydratedCreated,
+        airbnb_calendar_refresh: airbnbCalendarRefresh,
       });
     }
 
-    return res.status(201).json(hydratedCreated[0]);
+    return res.status(201).json({
+      ...hydratedCreated[0],
+      airbnb_calendar_refresh: airbnbCalendarRefresh,
+    });
   } catch (err) {
     next(err);
   }

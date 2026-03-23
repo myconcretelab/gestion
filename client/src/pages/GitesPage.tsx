@@ -15,6 +15,7 @@ const emptyForm = {
   site_web: "",
   email: "",
   caracteristiques: "",
+  airbnb_listing_id: "",
   telephones: "",
   taxe_sejour_par_personne_par_nuit: 0,
   iban: "",
@@ -125,6 +126,7 @@ const GitesPage = () => {
       site_web: selected.site_web ?? "",
       email: selected.email ?? "",
       caracteristiques: selected.caracteristiques ?? "",
+      airbnb_listing_id: selected.airbnb_listing_id ?? "",
       telephones: Array.isArray(selected.telephones) ? selected.telephones.join(", ") : "",
       taxe_sejour_par_personne_par_nuit: selected.taxe_sejour_par_personne_par_nuit,
       iban: selected.iban,
@@ -709,6 +711,14 @@ const GitesPage = () => {
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="field">
+              ID Airbnb
+              <input
+                value={form.airbnb_listing_id}
+                onChange={(e) => handleChange("airbnb_listing_id", e.target.value)}
+                placeholder="48504640"
+              />
             </label>
           </div>
         </div>

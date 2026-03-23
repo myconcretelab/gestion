@@ -45,6 +45,7 @@ model Gite {
   arrhes_taux_defaut                   Float  @default(0.2)
   prix_nuit_liste                      String?
   caracteristiques                     String?
+  airbnb_listing_id                    String?
   ical_export_token                    String?
   gestionnaire_id                      String?
   createdAt                            DateTime @default(now())

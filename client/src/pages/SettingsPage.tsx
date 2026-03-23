@@ -163,6 +163,7 @@ type PumpCronConfig = {
 
 type PumpCronState = {
   config: PumpCronConfig;
+  scheduler: "internal" | "external";
   running: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
@@ -179,6 +180,7 @@ type PumpAutomationFilterRule = {
 type PumpAutomationConfig = {
   baseUrl: string;
   username: string;
+  authMode: "persisted-only" | "legacy-auto-login";
   hasOTP: boolean;
   persistSession: boolean;
   manualScrollMode: boolean;
@@ -202,6 +204,12 @@ type PumpAutomationConfig = {
     emailFirstButton: string;
     continueAfterUsernameButton: string;
     finalSubmitButton: string;
+    accountChooserContinueButton: string;
+    calendarSourceCard: string;
+    calendarSourceEditButton: string;
+    calendarSourceRefreshButton: string;
+    calendarSourceUrlField: string;
+    calendarSourceCloseButton: string;
   };
 };
 
@@ -214,6 +222,43 @@ type PumpSessionImportResult = {
   storageStateId: string;
   filename: string;
   relativePath: string;
+};
+
+type PumpSessionExportResult = PumpSessionImportResult & {
+  storageState: unknown;
+};
+
+type PumpHealthResult = {
+  status: "connected" | "stale" | "auth_required" | "refresh_failed" | "disabled";
+  tone: "success" | "warning" | "danger" | "neutral";
+  label: string;
+  summary: string;
+  recommendedAction: string | null;
+  sessionFileExists: boolean;
+  sessionFileUpdatedAt: string | null;
+  storageStateId: string | null;
+  storageStateRelativePath: string | null;
+  latestSessionStatus: string | null;
+  lastSuccessfulRefreshAt: string | null;
+  latestError: string | null;
+  cronEnabled: boolean;
+  cronScheduler: "internal" | "external";
+  staleAfterHours: number;
+};
+
+type PumpSessionCaptureResult = {
+  captureId: string;
+  status: "idle" | "starting" | "waiting_for_login" | "saving" | "saved" | "failed" | "cancelled" | "timed_out";
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  message: string;
+  error: string | null;
+  currentUrl: string | null;
+  storageStateId: string | null;
+  storageStateRelativePath: string | null;
+  active: boolean;
+  available: boolean;
 };
 
 type PumpConnectionTestResult = {
@@ -601,6 +646,7 @@ const SettingsPage = () => {
   const [pumpConfigDraft, setPumpConfigDraft] = useState<PumpAutomationConfig>({
     baseUrl: "https://www.airbnb.fr/hosting/multicalendar",
     username: "",
+    authMode: "persisted-only",
     hasOTP: false,
     persistSession: true,
     manualScrollMode: false,
@@ -627,6 +673,18 @@ const SettingsPage = () => {
         'button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Suivant"), button:has-text("Next"), button[type="submit"]',
       finalSubmitButton:
         'button:has-text("Connexion"), button:has-text("Se connecter"), button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Sign in"), button:has-text("Log in"), button[type="submit"]',
+      accountChooserContinueButton:
+        'button:has-text("Continuer"), [role="button"]:has-text("Continuer"), button:has-text("Continue"), [role="button"]:has-text("Continue")',
+      calendarSourceCard:
+        'div:has(button:has-text("Actualiser")), div:has(button:has-text("Refresh")), article:has(button:has-text("Actualiser")), article:has(button:has-text("Refresh"))',
+      calendarSourceEditButton:
+        'button:has-text("Modifier"), [role="button"]:has-text("Modifier"), button:has-text("Edit"), [role="button"]:has-text("Edit")',
+      calendarSourceRefreshButton:
+        'button:has-text("Actualiser"), [role="button"]:has-text("Actualiser"), button:has-text("Refresh"), [role="button"]:has-text("Refresh")',
+      calendarSourceUrlField:
+        'input[type="url"], input[readonly], input[value*="ical"], input[value*="/calendar/"], textarea',
+      calendarSourceCloseButton:
+        'button:has-text("Fermer"), [role="button"]:has-text("Fermer"), button:has-text("Close"), [role="button"]:has-text("Close"), [aria-label*="Fermer"], [aria-label*="Close"]',
     },
   });
   const [pumpCronState, setPumpCronState] = useState<PumpCronState | null>(null);
@@ -638,10 +696,15 @@ const SettingsPage = () => {
     run_on_start: false,
   });
   const [pumpPreview, setPumpPreview] = useState<PumpPreviewResult | null>(null);
+  const [pumpHealth, setPumpHealth] = useState<PumpHealthResult | null>(null);
+  const [pumpSessionCapture, setPumpSessionCapture] = useState<PumpSessionCaptureResult | null>(null);
   const [pumpSelections, setPumpSelections] = useState<Record<string, boolean>>({});
   const [loadingPumpConfig, setLoadingPumpConfig] = useState(false);
   const [importingPumpConfig, setImportingPumpConfig] = useState(false);
   const [importingPumpSession, setImportingPumpSession] = useState(false);
+  const [exportingPumpSession, setExportingPumpSession] = useState(false);
+  const [startingPumpSessionCapture, setStartingPumpSessionCapture] = useState(false);
+  const [cancellingPumpSessionCapture, setCancellingPumpSessionCapture] = useState(false);
   const [savingPumpConfig, setSavingPumpConfig] = useState(false);
   const [loadingPumpStatus, setLoadingPumpStatus] = useState(false);
   const [savingPumpCron, setSavingPumpCron] = useState(false);
@@ -971,6 +1034,24 @@ const SettingsPage = () => {
     }
   };
 
+  const loadPumpHealth = async () => {
+    try {
+      const data = await apiFetch<PumpHealthResult>("/settings/pump/health");
+      setPumpHealth(data);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de charger l'état de connexion Pump.");
+    }
+  };
+
+  const loadPumpSessionCaptureStatus = async () => {
+    try {
+      const data = await apiFetch<PumpSessionCaptureResult>("/settings/pump/session/capture/status");
+      setPumpSessionCapture(data);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de charger l'état de capture Pump.");
+    }
+  };
+
   const loadPumpConfig = async () => {
     setLoadingPumpConfig(true);
     setPumpError(null);
@@ -1008,6 +1089,8 @@ const SettingsPage = () => {
       loadImportLog(),
       loadPumpConfig(),
       loadPumpStatus(),
+      loadPumpHealth(),
+      loadPumpSessionCaptureStatus(),
       loadPumpCronState(),
     ])
       .catch((error: any) => {
@@ -1028,6 +1111,24 @@ const SettingsPage = () => {
         setLoadingSmsTexts(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (!pumpSessionCapture?.active) return;
+    const intervalId = window.setInterval(() => {
+      void loadPumpSessionCaptureStatus();
+    }, 1500);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [pumpSessionCapture?.active]);
+
+  useEffect(() => {
+    if (!pumpSessionCapture || pumpSessionCapture.active) return;
+    if (pumpSessionCapture.status === "saved") {
+      void Promise.all([loadPumpHealth(), loadPumpStatus()]).catch(() => undefined);
+    }
+  }, [pumpSessionCapture]);
 
   const saveDeclarationNightsSettings = async () => {
     setSavingDeclarationNights(true);
@@ -1643,6 +1744,7 @@ const SettingsPage = () => {
       });
       const persistHint = pumpConfigDraft.persistSession ? "" : ' Activez "Session persistée" pour l’utiliser.';
       setPumpNotice(`Session persistée importée vers ${response.relativePath}.${persistHint}`);
+      await loadPumpHealth();
     } catch (error: any) {
       if (error instanceof SyntaxError) {
         setPumpError("Le fichier de session persistée n'est pas un JSON valide.");
@@ -1652,6 +1754,63 @@ const SettingsPage = () => {
     } finally {
       input.value = "";
       setImportingPumpSession(false);
+    }
+  };
+
+  const exportPumpSession = async () => {
+    setExportingPumpSession(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<PumpSessionExportResult>("/settings/pump/session/export");
+      const blob = new Blob([JSON.stringify(response.storageState, null, 2)], { type: "application/json" });
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = response.filename || `${response.storageStateId || "pump-session"}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(objectUrl);
+      setPumpNotice(`Session persistée exportée depuis ${response.relativePath}.`);
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible d'exporter la session persistée.");
+    } finally {
+      setExportingPumpSession(false);
+    }
+  };
+
+  const startPumpSessionCapture = async () => {
+    setStartingPumpSessionCapture(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<PumpSessionCaptureResult>("/settings/pump/session/capture/start", {
+        method: "POST",
+      });
+      setPumpSessionCapture(response);
+      setPumpNotice("Navigateur de capture Pump lancé. Connectez-vous dans la fenêtre ouverte.");
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible de lancer la capture interactive Pump.");
+    } finally {
+      setStartingPumpSessionCapture(false);
+    }
+  };
+
+  const cancelPumpSessionCapture = async () => {
+    setCancellingPumpSessionCapture(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<PumpSessionCaptureResult>("/settings/pump/session/capture/cancel", {
+        method: "POST",
+      });
+      setPumpSessionCapture(response);
+      setPumpNotice("Demande d'annulation envoyée à la capture Pump.");
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible d'annuler la capture interactive Pump.");
+    } finally {
+      setCancellingPumpSessionCapture(false);
     }
   };
 
@@ -1774,7 +1933,7 @@ const SettingsPage = () => {
       const result = await apiFetch<{ sessionId: string; status: string; message?: string }>("/settings/pump/refresh", {
         method: "POST",
       });
-      await loadPumpStatus();
+      await Promise.all([loadPumpStatus(), loadPumpHealth()]);
       setPumpNotice(result.message ?? `Refresh Pump lancé (${result.sessionId}).`);
     } catch (error: any) {
       setPumpError(error.message ?? "Impossible de lancer le refresh Pump.");
@@ -1794,6 +1953,7 @@ const SettingsPage = () => {
       });
       setPumpConfig(response.config);
       setPumpConfigDraft(response.config);
+      await loadPumpHealth();
       setPumpNotice("Configuration Pump enregistrée.");
     } catch (error: any) {
       setPumpError(error.message ?? "Impossible d'enregistrer la configuration Pump.");
@@ -1849,6 +2009,7 @@ const SettingsPage = () => {
       });
       setPumpCronState(response.state);
       setPumpCronDraft(response.config);
+      await loadPumpHealth();
       setPumpNotice("Planification Pump enregistrée.");
     } catch (error: any) {
       setPumpError(error.message ?? "Impossible d'enregistrer le cron Pump.");
@@ -1873,7 +2034,7 @@ const SettingsPage = () => {
         }
       });
       setPumpSelections(defaults);
-      await loadPumpStatus();
+      await Promise.all([loadPumpStatus(), loadPumpHealth()]);
     } catch (error: any) {
       setPumpError(error.message ?? "Impossible d'analyser la dernière extraction Pump.");
     } finally {
@@ -1905,7 +2066,7 @@ const SettingsPage = () => {
       });
       setPumpPreview(result);
       await loadImportLog();
-      await loadPumpStatus();
+      await Promise.all([loadPumpStatus(), loadPumpHealth()]);
       setPumpNotice(
         `Import Pump terminé: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).`
       );
@@ -3168,10 +3329,72 @@ const SettingsPage = () => {
               >
                 {importingPumpSession ? "Import session..." : "Importer session persistée"}
               </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void exportPumpSession()}
+                disabled={exportingPumpSession || importingPumpSession || savingPumpConfig}
+              >
+                {exportingPumpSession ? "Export..." : "Exporter session persistée"}
+              </button>
             </div>
             <div className="field-hint" style={{ marginTop: 8 }}>
               Import JSON compatible avec l'ancien Pump: configuration <code>last.json</code> et storage state Playwright.
             </div>
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void startPumpSessionCapture()}
+                disabled={
+                  startingPumpSessionCapture ||
+                  cancellingPumpSessionCapture ||
+                  Boolean(pumpSessionCapture?.active) ||
+                  savingPumpConfig ||
+                  importingPumpSession
+                }
+              >
+                {startingPumpSessionCapture ? "Ouverture..." : "Ouvrir le navigateur de capture"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void cancelPumpSessionCapture()}
+                disabled={!pumpSessionCapture?.active || cancellingPumpSessionCapture}
+              >
+                {cancellingPumpSessionCapture ? "Annulation..." : "Annuler la capture"}
+              </button>
+            </div>
+            {pumpSessionCapture ? (
+              <div className="pump-health-card pump-health-card--neutral" style={{ marginTop: 12 }}>
+                <div className="pump-health-card__headline">
+                  <span className="pump-health-dot pump-health-dot--neutral" aria-hidden="true" />
+                  <strong>
+                    Capture interactive: {pumpSessionCapture.active ? "en cours" : pumpSessionCapture.status}
+                  </strong>
+                </div>
+                <div className="field-hint" style={{ marginTop: 6 }}>
+                  {pumpSessionCapture.available
+                    ? pumpSessionCapture.message
+                    : "Disponible uniquement en local avec navigateur visible."}
+                </div>
+                {pumpSessionCapture.currentUrl ? (
+                  <div className="field-hint" style={{ marginTop: 6 }}>
+                    URL courante: {pumpSessionCapture.currentUrl}
+                  </div>
+                ) : null}
+                {pumpSessionCapture.storageStateRelativePath ? (
+                  <div className="field-hint" style={{ marginTop: 6 }}>
+                    Session sauvegardée: {pumpSessionCapture.storageStateRelativePath}
+                  </div>
+                ) : null}
+                {pumpSessionCapture.error ? (
+                  <div className="field-hint" style={{ marginTop: 6 }}>
+                    Erreur: {pumpSessionCapture.error}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="grid-2" style={{ marginTop: 12 }}>
               <label className="field">
                 URL Airbnb
@@ -3202,6 +3425,22 @@ const SettingsPage = () => {
                   disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
                   placeholder="compte@exemple.com"
                 />
+              </label>
+              <label className="field">
+                Mode d'authentification
+                <select
+                  value={pumpConfigDraft.authMode}
+                  onChange={(event) =>
+                    setPumpConfigDraft((previous) => ({
+                      ...previous,
+                      authMode: event.target.value as PumpAutomationConfig["authMode"],
+                    }))
+                  }
+                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                >
+                  <option value="persisted-only">Session persistée uniquement</option>
+                  <option value="legacy-auto-login">Legacy auto-login</option>
+                </select>
               </label>
               <label className="field">
                 Stratégie de login
@@ -3395,7 +3634,10 @@ const SettingsPage = () => {
               </label>
             </div>
             <div className="field-hint" style={{ marginTop: 8 }}>
-              Le mot de passe n'est pas édité ici. Pour rafraîchir une session expirée, renseignez <code>PUMP_SESSION_PASSWORD</code> côté serveur puis testez la connexion.
+              Le mode recommandé est <code>persisted-only</code>: le serveur réutilise une session Playwright existante et n'essaie plus de reconstruire la connexion via les boutons Airbnb.
+            </div>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Le mot de passe n'est utilisé que pour le mode legacy. En phase 1, privilégiez l'import/export de session persistée.
             </div>
             <details className="settings-sources-accordion" style={{ marginTop: 12 }}>
               <summary>Sélecteurs avancés</summary>
@@ -3502,6 +3744,108 @@ const SettingsPage = () => {
                     disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
                   />
                 </label>
+                <label className="field">
+                  Bouton compte persistant
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.accountChooserContinueButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          accountChooserContinueButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Carte source calendrier
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.calendarSourceCard}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          calendarSourceCard: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Bouton modifier source
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.calendarSourceEditButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          calendarSourceEditButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Bouton actualiser source
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.calendarSourceRefreshButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          calendarSourceRefreshButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Champ URL source
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.calendarSourceUrlField}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          calendarSourceUrlField: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
+                <label className="field">
+                  Bouton fermer source
+                  <textarea
+                    rows={2}
+                    value={pumpConfigDraft.advancedSelectors.calendarSourceCloseButton}
+                    onChange={(event) =>
+                      setPumpConfigDraft((previous) => ({
+                        ...previous,
+                        advancedSelectors: {
+                          ...previous.advancedSelectors,
+                          calendarSourceCloseButton: event.target.value,
+                        },
+                      }))
+                    }
+                    disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                  />
+                </label>
               </div>
             </details>
             <div className="actions" style={{ marginTop: 12 }}>
@@ -3539,7 +3883,7 @@ const SettingsPage = () => {
               </button>
             </div>
             <div className="field-hint" style={{ marginTop: 8 }}>
-              Cron: {pumpCronState?.config.enabled ? "activé" : "désactivé"}. Prochain import: {formatIsoDateTimeFr(pumpCronState?.next_run_at ?? null)}. Dernier import: {formatIsoDateTimeFr(pumpCronState?.last_run_at ?? null)}.
+              Cron: {pumpCronState?.config.enabled ? "activé" : "désactivé"} ({pumpCronState?.scheduler === "external" ? "déclenchement externe" : "mémoire serveur"}). Prochain import: {formatIsoDateTimeFr(pumpCronState?.next_run_at ?? null)}. Dernier import: {formatIsoDateTimeFr(pumpCronState?.last_run_at ?? null)}.
             </div>
             <div className="grid-2" style={{ marginTop: 12 }}>
               <label className="field">
@@ -3638,7 +3982,7 @@ const SettingsPage = () => {
                 type="button"
                 className="secondary"
                 onClick={() =>
-                  void Promise.all([loadPumpConfig(), loadPumpStatus(), loadPumpCronState()]).catch((error: any) =>
+                  void Promise.all([loadPumpConfig(), loadPumpStatus(), loadPumpHealth(), loadPumpCronState()]).catch((error: any) =>
                     setPumpError(error.message ?? "Impossible de rafraîchir les informations Pump.")
                   )
                 }
@@ -3659,6 +4003,32 @@ const SettingsPage = () => {
                 {pumpStatus.sessionId ? ` | Session: ${pumpStatus.sessionId}` : ""}
                 {typeof pumpStatus.reservationCount === "number" ? ` | Réservations: ${pumpStatus.reservationCount}` : ""}
                 {pumpStatus.updatedAt ? ` | Mis à jour: ${formatIsoDateTimeFr(pumpStatus.updatedAt)}` : ""}
+              </div>
+            ) : null}
+            {pumpHealth ? (
+              <div className={`pump-health-card pump-health-card--${pumpHealth.tone}`} style={{ marginTop: 12 }}>
+                <div className="pump-health-card__headline">
+                  <span className={`pump-health-dot pump-health-dot--${pumpHealth.tone}`} aria-hidden="true" />
+                  <strong>{pumpHealth.label}</strong>
+                </div>
+                <div className="field-hint" style={{ marginTop: 6 }}>
+                  {pumpHealth.summary}
+                  {pumpHealth.storageStateId ? ` | Session: ${pumpHealth.storageStateId}` : ""}
+                  {pumpHealth.sessionFileUpdatedAt ? ` | Fichier: ${formatIsoDateTimeFr(pumpHealth.sessionFileUpdatedAt)}` : ""}
+                </div>
+                <div className="field-hint" style={{ marginTop: 6 }}>
+                  Dernier refresh OK: {formatIsoDateTimeFr(pumpHealth.lastSuccessfulRefreshAt)} | Scheduler: {pumpHealth.cronScheduler === "external" ? "externe" : "interne"} | Fenêtre stale: {pumpHealth.staleAfterHours}h
+                </div>
+                {pumpHealth.recommendedAction ? (
+                  <div className="field-hint" style={{ marginTop: 6 }}>
+                    Action: {pumpHealth.recommendedAction}
+                  </div>
+                ) : null}
+                {pumpHealth.latestError ? (
+                  <div className="field-hint" style={{ marginTop: 6 }}>
+                    Dernière erreur: {pumpHealth.latestError}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {pumpNotice && <div className="note note--success">{pumpNotice}</div>}

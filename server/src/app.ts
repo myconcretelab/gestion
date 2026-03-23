@@ -41,7 +41,10 @@ export const createApp = () => {
         return next();
       }
 
-      if (/^\/api\/settings\/ical\/cron\/run$/i.test(req.path) && hasValidCronTriggerToken(req)) {
+      if (
+        (/^\/api\/settings\/ical\/cron\/run$/i.test(req.path) || /^\/api\/settings\/pump\/cron\/run$/i.test(req.path)) &&
+        hasValidCronTriggerToken(req)
+      ) {
         return next();
       }
 
