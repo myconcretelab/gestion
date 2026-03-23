@@ -325,10 +325,14 @@ const App = () => {
   }, [icalAutoSyncNotice]);
 
   const renderNavLabel = (item: { to: string; label: string; mobileLabel?: string }) => (
-    <span className="nav-item-label">
+    <span className={`nav-item-label${item.to === "/reservations" ? " nav-item-label--with-badge" : ""}`}>
       <span className="nav__label">{item.mobileLabel ?? item.label}</span>
       {item.to === "/reservations" && recentImportedReservationsCount > 0 ? (
-        <span className="nav-badge" aria-label={reservationBadgeLabel ?? undefined} title={reservationBadgeLabel ?? undefined}>
+        <span
+          className="nav-badge nav-badge--reservation"
+          aria-label={reservationBadgeLabel ?? undefined}
+          title={reservationBadgeLabel ?? undefined}
+        >
           {recentImportedReservationsCount}
         </span>
       ) : null}
@@ -350,7 +354,6 @@ const App = () => {
               aria-label={`Statut Pump: ${pumpHealthNotice.label}`}
             >
               <span className={`pump-indicator__dot pump-indicator__dot--${pumpHealthNotice.tone}`} aria-hidden="true" />
-              <span className="pump-indicator__label">Pump</span>
             </span>
           ) : null}
         </div>

@@ -2627,46 +2627,44 @@ body {
 }
 
 .pump-indicator {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
+  position: absolute;
+  top: 50%;
+  right: 64px;
+  z-index: 2;
+  width: 10px;
+  height: 10px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border: 1px solid transparent;
+  justify-content: center;
+  gap: 0;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .pump-indicator--success {
   color: #166534;
-  background: #dcfce7;
-  border-color: #bbf7d0;
 }
 
 .pump-indicator--warning {
   color: #92400e;
-  background: #fef3c7;
-  border-color: #fde68a;
 }
 
 .pump-indicator--danger {
   color: #991b1b;
-  background: #fee2e2;
-  border-color: #fecaca;
 }
 
 .pump-indicator--neutral {
   color: #475569;
-  background: #e2e8f0;
-  border-color: #cbd5e1;
 }
 
 .pump-indicator__dot {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
   flex: 0 0 auto;
 }
@@ -2688,7 +2686,7 @@ body {
 }
 
 .pump-indicator__label {
-  line-height: 1;
+  display: none;
 }
 
 .nav {
@@ -2726,9 +2724,11 @@ body {
 }
 
 .topbar-menu-button {
-  width: 28px;
+  width: auto;
   min-height: 28px;
   padding: 0;
+  border-radius: 0;
+  box-shadow: none;
   cursor: pointer;
 }
 
@@ -2756,11 +2756,11 @@ body {
 }
 
 .topbar-menu-button__icon svg {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.35;
+  stroke-width: 2.7;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2781,6 +2781,11 @@ body {
   gap: 8px;
 }
 
+.nav-item-label--with-badge {
+  position: relative;
+  gap: 0;
+}
+
 .nav-badge {
   min-width: 1.4rem;
   height: 1.4rem;
@@ -2795,6 +2800,17 @@ body {
   font-weight: 800;
   line-height: 1;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
+.nav-badge--reservation {
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.24rem;
+  margin-left: 0.12rem;
+  font-size: 0.58rem;
+  box-shadow: none;
+  transform: translateY(-0.5em);
+  vertical-align: super;
 }
 
 .nav a::after {
@@ -6904,7 +6920,7 @@ button.warning {
     grid-template-columns: auto 1fr auto;
     justify-items: stretch;
     gap: 10px;
-    padding: 10px 14px;
+    padding: 34px 14px 10px;
     position: sticky;
     top: 0;
     z-index: 40;
@@ -6929,12 +6945,14 @@ button.warning {
   }
 
   .pump-indicator {
-    min-height: 28px;
-    padding: 0 8px;
+    right: 58px;
+    width: 8px;
+    height: 8px;
   }
 
-  .pump-indicator__label {
-    display: none;
+  .pump-indicator__dot {
+    width: 8px;
+    height: 8px;
   }
 
   .nav {
@@ -6970,7 +6988,7 @@ button.warning {
   }
 
   .topbar-mobile-links__item .nav-item-label {
-    gap: 6px;
+    gap: 0;
   }
 
   .topbar-mobile-links__item .nav-badge {
@@ -6978,6 +6996,14 @@ button.warning {
     height: 1.25rem;
     padding: 0 0.32rem;
     font-size: 0.68rem;
+  }
+
+  .topbar-mobile-links__item .nav-badge--reservation {
+    min-width: 0.92rem;
+    height: 0.92rem;
+    padding: 0 0.18rem;
+    font-size: 0.52rem;
+    transform: translateY(-0.58em);
   }
 
   .topbar-mobile-links__item--active {
@@ -6991,7 +7017,7 @@ button.warning {
   }
 
   .topbar-menu-button--mobile {
-    width: 36px;
+    width: auto;
     min-height: 36px;
   }
 

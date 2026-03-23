@@ -1905,6 +1905,8 @@ const ReservationsPage = () => {
     }
   };
 
+  const activeGite = gites.find((gite) => gite.id === activeTab) ?? null;
+
   const ensureNewRow = (monthIndex: number): ReservationDraft => {
     const existing = newRows[monthIndex];
     if (existing) return existing;
@@ -1988,7 +1990,6 @@ const ReservationsPage = () => {
     setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: rowIndex + 1 }));
   };
 
-  const activeGite = gites.find((gite) => gite.id === activeTab) ?? null;
   const currentTime = new Date(currentTimeMs);
   const giteById = useMemo(() => {
     const map = new Map<string, Gite>();
