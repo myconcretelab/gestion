@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
-import { readImportLog, IMPORT_LOG_LIMIT } from "../services/importLog.js";
+import { readTraceabilityLog, IMPORT_LOG_LIMIT } from "../services/importLog.js";
 import {
   getIcalSyncCronConfig,
   getIcalCronState,
@@ -30,7 +30,6 @@ import {
 } from "../services/pumpAutomation.js";
 import type { PumpAutomationConfig } from "../services/pumpAutomationConfig.js";
 import {
-  buildHarPreview,
   buildReservationsPreview,
   importPreviewReservations,
 } from "../services/reservationImports.js";
@@ -89,11 +88,6 @@ const sourceImportSchema = z.object({
   gite_mapping: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
 });
 
-const harPayloadSchema = z.object({
-  har: z.any(),
-  selected_ids: z.array(z.string().trim().min(1)).optional(),
-});
-
 const cronConfigSchema = z
   .object({
     enabled: z.boolean(),
@@ -125,7 +119,6 @@ const pumpAutomationConfigSchema = z.object({
   scrollDistance: z.number().int().min(1).max(20000).default(500),
   scrollDelay: z.number().int().min(0).max(120000).default(1000),
   waitBeforeScroll: z.number().int().min(0).max(120000).default(2000),
-  enableHAR: z.boolean().default(false),
   outputFolder: z.string().trim().default(""),
   loginStrategy: z.enum(["simple", "multi-step"]).default("simple"),
   filterRules: z
@@ -255,7 +248,7 @@ const buildSmsTextSettingsResponse = () => {
 const buildImportLogResponse = (limitRaw: unknown) => {
   const rawLimit = typeof limitRaw === "string" ? Number.parseInt(limitRaw, 10) : Number(limitRaw);
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, IMPORT_LOG_LIMIT) : 5;
-  const entries = readImportLog();
+  const entries = readTraceabilityLog();
   return {
     entries: entries.slice(0, limit),
     total: entries.length,
@@ -1177,27 +1170,6 @@ router.post("/pump/import", async (req, res, next) => {
         reservation_count: latest.reservationCount,
       },
     });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/har/preview", async (req, res, next) => {
-  try {
-    const payload = harPayloadSchema.parse(req.body);
-    const preview = await buildHarPreview(payload.har);
-    res.json(preview);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/har/import", async (req, res, next) => {
-  try {
-    const payload = harPayloadSchema.parse(req.body);
-    const preview = await buildHarPreview(payload.har);
-    const response = await importPreviewReservations(preview, payload.selected_ids, "har");
-    res.json(response);
   } catch (error) {
     next(error);
   }

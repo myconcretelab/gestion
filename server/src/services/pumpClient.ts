@@ -1,5 +1,5 @@
 import { env } from "../config/env.js";
-import type { ParsedHarReservation } from "./harParser.js";
+import type { ParsedImportedReservation } from "./reservationImports.js";
 import { normalizeImportedComment, normalizeImportedHostName } from "../utils/reservationText.js";
 import {
   getLocalPumpLatestReservations,
@@ -102,7 +102,7 @@ const normalizeString = (value: unknown) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-export const normalizePumpReservation = (reservation: PumpLatestReservation): ParsedHarReservation => {
+export const normalizePumpReservation = (reservation: PumpLatestReservation): ParsedImportedReservation => {
   const listingId = normalizeString(reservation.listingId ?? reservation.listing_id) ?? "";
   const checkIn = normalizeString(reservation.checkIn ?? reservation.check_in) ?? "";
   const checkOut = normalizeString(reservation.checkOut ?? reservation.check_out) ?? "";

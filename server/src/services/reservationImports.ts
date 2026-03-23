@@ -1,5 +1,4 @@
 import prisma from "../db/prisma.js";
-import { parseHarReservations, type ParsedHarReservation } from "./harParser.js";
 import { appendImportLog, buildImportLogEntry } from "./importLog.js";
 import { listIcalSources, type IcalSourceRow } from "./icalSync.js";
 import {
@@ -9,7 +8,10 @@ import {
   normalizeImportedHostName,
   toImportedReservationHostName,
 } from "../utils/reservationText.js";
-import { resolveImportedReservationSourceType } from "../utils/importedReservationSource.js";
+import {
+  resolveImportedReservationSourceType,
+  type ImportedReservationType,
+} from "../utils/importedReservationSource.js";
 import { buildReservationOriginData, type ReservationOriginSystem } from "../utils/reservationOrigin.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -51,6 +53,18 @@ export type ReservationImportResult = ReservationImportPreview & {
   created_count: number;
   updated_count: number;
   skipped_count: number;
+};
+
+export type ParsedImportedReservation = {
+  id: string;
+  listingId: string;
+  type: ImportedReservationType;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  name: string | null;
+  payout: number | null;
+  comment: string | null;
 };
 
 const normalizeTextKey = (value: string) =>
@@ -107,7 +121,6 @@ const round2 = (value: number) => Math.round(value * 100) / 100;
 const resolveImportOriginSystem = (importSource: string): ReservationOriginSystem => {
   const normalized = importSource.trim().toLowerCase();
   if (normalized.startsWith("pump")) return "pump";
-  if (normalized === "har") return "har";
   if (normalized === "csv") return "csv";
   return "legacy";
 };
@@ -179,7 +192,9 @@ const buildUpdateData = (existing: any, item: ReservationImportPreviewItem) => {
   return data;
 };
 
-export const buildReservationsPreview = async (parsed: ParsedHarReservation[]): Promise<ReservationImportPreview> => {
+export const buildReservationsPreview = async (
+  parsed: ParsedImportedReservation[]
+): Promise<ReservationImportPreview> => {
   const listingMap = await getListingMap();
   const preview: ReservationImportPreviewItem[] = [];
 
@@ -352,8 +367,6 @@ export const buildReservationsPreview = async (parsed: ParsedHarReservation[]): 
     },
   };
 };
-
-export const buildHarPreview = async (har: unknown) => buildReservationsPreview(parseHarReservations(har));
 
 const buildPerGiteSummary = (
   preview: ReservationImportPreview,

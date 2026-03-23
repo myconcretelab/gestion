@@ -3742,6 +3742,100 @@ body {
   font-weight: 700;
 }
 
+.settings-accordion__icon {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.settings-accordion__icon::before,
+.settings-accordion__icon::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: #0f172a;
+  transform: translate(-50%, -50%);
+  transition: transform 160ms ease;
+}
+
+.settings-accordion__icon::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.settings-cluster-accordion > summary,
+.settings-card-accordion > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.settings-cluster-accordion > summary::-webkit-details-marker,
+.settings-card-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-cluster-accordion > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-radius: 24px;
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.settings-cluster-accordion__summary-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-cluster-accordion__content {
+  margin-top: 16px;
+}
+
+.settings-cluster-accordion[open] > summary,
+.settings-card-accordion[open] > summary {
+  border-color: #cbd5e1;
+}
+
+.settings-cluster-accordion[open] > summary .settings-accordion__icon::after,
+.settings-card-accordion[open] > summary .settings-accordion__icon::after {
+  transform: translate(-50%, -50%) rotate(0deg);
+}
+
+.settings-card-accordion {
+  padding: 0;
+}
+
+.settings-card-accordion__summary {
+  padding: 22px;
+}
+
+.settings-card-accordion__content {
+  display: grid;
+  gap: 16px;
+  padding: 0 22px 22px;
+}
+
+.settings-card-accordion__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-card-accordion[open] .settings-card-accordion__summary {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
 .settings-source-group {
   display: grid;
   gap: 14px;

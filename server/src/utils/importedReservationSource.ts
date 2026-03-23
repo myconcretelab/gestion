@@ -1,4 +1,4 @@
-type ImportedReservationType = "airbnb" | "personal";
+export type ImportedReservationType = "airbnb" | "personal";
 
 export const DEFAULT_IMPORTED_RESERVATION_SOURCE = "A définir";
 export const DEFAULT_AIRBNB_IMPORTED_RESERVATION_SOURCE = "Airbnb";

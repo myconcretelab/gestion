@@ -88,7 +88,7 @@ En phase 1, le mode recommandé est `persisted-only`: `contrats` réutilise une 
 
 En local, le bouton `Ouvrir le navigateur de capture` lance un navigateur visible, attend votre connexion Airbnb, puis sauvegarde automatiquement le `storageState` réutilisé ensuite par Pump.
 
-`contrats` exécute alors la capture Airbnb localement, extrait les réservations normalisées, les prévisualise avec le même moteur que l'ancien import HAR, puis crée ou complète les réservations locales.
+`contrats` exécute alors la capture Airbnb localement, extrait les réservations normalisées, les prévisualise, puis crée ou complète les réservations locales.
 
 Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h. En production, vous pouvez utiliser le mode `external` et déclencher:
 
