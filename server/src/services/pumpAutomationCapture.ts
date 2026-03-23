@@ -1147,69 +1147,6 @@ export class PumpSessionSaver {
     );
   }
 
-  saveHAR(networkCapture: PumpNetworkCapture) {
-    if (!this.config.enableHAR) return;
-    const filepath = path.join(this.baseDir, "session.har");
-    fs.writeFileSync(
-      filepath,
-      JSON.stringify(
-        {
-          log: {
-            version: "1.2.0",
-            creator: {
-              name: "contrats-pump-local",
-              version: "1.0.0",
-            },
-            entries: networkCapture.getResponses().map((response) => ({
-              startedDateTime: response.timestamp,
-              time: 0,
-              request: {
-                method: response.method,
-                url: response.url,
-                httpVersion: "HTTP/1.1",
-                headers: Object.entries(response.requestHeaders || {}).map(([name, value]) => ({
-                  name,
-                  value: String(value),
-                })),
-                queryString: [],
-                cookies: [],
-                headersSize: -1,
-                bodySize: -1,
-              },
-              response: {
-                status: response.status,
-                statusText: "",
-                httpVersion: "HTTP/1.1",
-                headers: Object.entries(response.headers || {}).map(([name, value]) => ({
-                  name,
-                  value: String(value),
-                })),
-                cookies: [],
-                content: {
-                  size: 0,
-                  mimeType: response.contentType || "application/octet-stream",
-                  text: response.body ? JSON.stringify(response.body) : "",
-                },
-                redirectURL: "",
-                headersSize: -1,
-                bodySize: -1,
-              },
-              cache: {},
-              timings: {
-                wait: 0,
-                receive: 0,
-                send: 0,
-              },
-            })),
-          },
-        },
-        null,
-        2
-      ),
-      "utf-8"
-    );
-  }
-
   saveResponsesLog(networkCapture: PumpNetworkCapture) {
     const filepath = path.join(this.logsDir, "responses.log");
     const lines = networkCapture.getResponses().map(
@@ -1240,7 +1177,6 @@ export const persistCapturedSession = (
 
   saver.saveMetadata(networkCapture);
   saver.saveSessionSummary(networkCapture, errors, duration);
-  saver.saveHAR(networkCapture);
   saver.saveResponsesLog(networkCapture);
 
   return {

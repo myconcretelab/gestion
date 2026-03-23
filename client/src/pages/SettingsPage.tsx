@@ -94,7 +94,7 @@ type ImportLogEntry = {
   }>;
 };
 
-type HarPreviewItem = {
+type ImportPreviewItem = {
   id: string;
   listing_id: string;
   gite_id: string | null;
@@ -110,8 +110,8 @@ type HarPreviewItem = {
   update_fields: string[];
 };
 
-type HarPreviewResult = {
-  reservations: HarPreviewItem[];
+type ImportPreviewResult = {
+  reservations: ImportPreviewItem[];
   counts: {
     new: number;
     existing: number;
@@ -119,13 +119,6 @@ type HarPreviewResult = {
     conflict: number;
     unmapped_listing: number;
   };
-};
-
-type HarImportResult = HarPreviewResult & {
-  selected_count: number;
-  created_count: number;
-  updated_count: number;
-  skipped_count: number;
 };
 
 type PumpStatusResult = {
@@ -137,7 +130,7 @@ type PumpStatusResult = {
   results?: Record<string, unknown> | null;
 };
 
-type PumpPreviewResult = HarPreviewResult & {
+type PumpPreviewResult = ImportPreviewResult & {
   pump?: {
     session_id: string | null;
     status: string;
@@ -190,7 +183,6 @@ type PumpAutomationConfig = {
   scrollDistance: number;
   scrollDelay: number;
   waitBeforeScroll: number;
-  enableHAR: boolean;
   outputFolder: string;
   filterRules: {
     inclusive: PumpAutomationFilterRule[];
@@ -333,6 +325,12 @@ type IcalCronExportPayload = {
   config: IcalCronConfig;
 };
 
+type PumpConfigExportPayload = {
+  version?: number;
+  exported_at?: string;
+  config: PumpAutomationConfig;
+};
+
 type DeclarationNightsSettings = {
   excluded_sources: string[];
   available_sources: string[];
@@ -437,14 +435,29 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "ical-manual") return "ICAL manuel";
   if (normalized === "ical-cron") return "ICAL cron";
   if (normalized === "ical-startup") return "ICAL démarrage";
-  if (normalized === "har") return "HAR";
   if (normalized === "pump") return "Pump";
   if (normalized === "pump-cron") return "Pump cron";
+  if (normalized === "pump-refresh") return "Pump refresh";
   return source || "Import";
 };
 
 const formatImportLogTitle = (entry: Pick<ImportLogEntry, "source" | "status">) =>
   entry.status === "error" ? `${formatImportSource(entry.source)} · échec` : formatImportSource(entry.source);
+
+const isPumpRefreshImportSource = (source: string | null | undefined) =>
+  String(source ?? "").trim().toLowerCase() === "pump-refresh";
+
+const formatImportLogSummary = (entry: ImportLogEntry) => {
+  if (entry.status === "error") {
+    return `Erreur: ${entry.errorMessage || "Erreur inconnue lors de l'import."}`;
+  }
+
+  if (isPumpRefreshImportSource(entry.source)) {
+    return `Réservations extraites: ${entry.selectionCount ?? 0}`;
+  }
+
+  return `Sélectionnées: ${entry.selectionCount ?? 0} | Ajoutées: ${entry.inserted ?? 0} | Mises à jour: ${entry.updated ?? 0} | Ignorées: ${entry.skipped?.unknown ?? 0}`;
+};
 
 const getIcalExportUrl = (feed: Pick<IcalExportFeed, "id" | "ical_export_token">) =>
   buildApiUrl(`/gites/${feed.id}/calendar.ics?token=${encodeURIComponent(feed.ical_export_token ?? "")}`);
@@ -539,7 +552,8 @@ const formatImportLogUpdatedFields = (fields: Array<string | null | undefined> |
   return labels.length > 0 ? labels.join(", ") : null;
 };
 
-const isHarImportableStatus = (status: HarPreviewItem["status"]) => status === "new" || status === "existing_updatable";
+const isImportablePreviewStatus = (status: ImportPreviewItem["status"]) =>
+  status === "new" || status === "existing_updatable";
 
 const statusLabelMap: Record<IcalPreviewItem["status"], string> = {
   new: "Nouveau",
@@ -548,7 +562,7 @@ const statusLabelMap: Record<IcalPreviewItem["status"], string> = {
   conflict: "Conflit",
 };
 
-const harStatusLabelMap: Record<HarPreviewItem["status"], string> = {
+const importPreviewStatusLabelMap: Record<ImportPreviewItem["status"], string> = {
   new: "Nouveau",
   existing: "Déjà présent",
   existing_updatable: "Complétable",
@@ -632,15 +646,6 @@ const SettingsPage = () => {
   const importPumpConfigInputRef = useRef<HTMLInputElement | null>(null);
   const importPumpSessionInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [harPayload, setHarPayload] = useState<unknown | null>(null);
-  const [harFileName, setHarFileName] = useState<string>("");
-  const [harPreview, setHarPreview] = useState<HarPreviewResult | null>(null);
-  const [harSelections, setHarSelections] = useState<Record<string, boolean>>({});
-  const [analyzingHar, setAnalyzingHar] = useState(false);
-  const [importingHar, setImportingHar] = useState(false);
-  const [harError, setHarError] = useState<string | null>(null);
-  const [harNotice, setHarNotice] = useState<string | null>(null);
-
   const [pumpStatus, setPumpStatus] = useState<PumpStatusResult | null>(null);
   const [pumpConfig, setPumpConfig] = useState<PumpAutomationConfig | null>(null);
   const [pumpConfigDraft, setPumpConfigDraft] = useState<PumpAutomationConfig>({
@@ -656,7 +661,6 @@ const SettingsPage = () => {
     scrollDistance: 500,
     scrollDelay: 1000,
     waitBeforeScroll: 2000,
-    enableHAR: false,
     outputFolder: "",
     filterRules: {
       inclusive: [],
@@ -701,6 +705,7 @@ const SettingsPage = () => {
   const [pumpSelections, setPumpSelections] = useState<Record<string, boolean>>({});
   const [loadingPumpConfig, setLoadingPumpConfig] = useState(false);
   const [importingPumpConfig, setImportingPumpConfig] = useState(false);
+  const [exportingPumpConfig, setExportingPumpConfig] = useState(false);
   const [importingPumpSession, setImportingPumpSession] = useState(false);
   const [exportingPumpSession, setExportingPumpSession] = useState(false);
   const [startingPumpSessionCapture, setStartingPumpSessionCapture] = useState(false);
@@ -725,11 +730,6 @@ const SettingsPage = () => {
   const linkedGitesCount = useMemo(
     () => gestionnaires.reduce((sum, item) => sum + Number(item.gites_count ?? 0), 0),
     [gestionnaires]
-  );
-
-  const selectedHarCount = useMemo(
-    () => Object.values(harSelections).filter(Boolean).length,
-    [harSelections]
   );
   const selectedPumpCount = useMemo(
     () => Object.values(pumpSelections).filter(Boolean).length,
@@ -1687,6 +1687,34 @@ const SettingsPage = () => {
     importPumpSessionInputRef.current?.click();
   };
 
+  const exportPumpConfig = async () => {
+    setExportingPumpConfig(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const payload: PumpConfigExportPayload = {
+        version: 1,
+        exported_at: new Date().toISOString(),
+        config: pumpConfigDraft,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const objectUrl = window.URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `pump-config-export-${stamp}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(objectUrl);
+      setPumpNotice("Configuration Pump exportée.");
+    } catch (error: any) {
+      setPumpError(error.message ?? "Impossible d'exporter la configuration Pump.");
+    } finally {
+      setExportingPumpConfig(false);
+    }
+  };
+
   const importPumpConfigFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
@@ -1840,91 +1868,6 @@ const SettingsPage = () => {
     }
   };
 
-  const handleHarFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setHarError(null);
-    setHarNotice(null);
-    setHarPreview(null);
-    setHarSelections({});
-
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      setHarPayload(parsed);
-      setHarFileName(file.name);
-    } catch {
-      setHarPayload(null);
-      setHarFileName("");
-      setHarError("Le fichier HAR est invalide (JSON non lisible).");
-    }
-  };
-
-  const analyzeHar = async () => {
-    if (!harPayload) {
-      setHarError("Chargez d'abord un fichier HAR.");
-      return;
-    }
-
-    setAnalyzingHar(true);
-    setHarError(null);
-    setHarNotice(null);
-    try {
-      const result = await apiFetch<HarPreviewResult>("/settings/har/preview", {
-        method: "POST",
-        json: { har: harPayload },
-      });
-      setHarPreview(result);
-      const defaults: Record<string, boolean> = {};
-      result.reservations.forEach((item) => {
-        if (isHarImportableStatus(item.status)) {
-          defaults[item.id] = true;
-        }
-      });
-      setHarSelections(defaults);
-    } catch (error: any) {
-      setHarError(error.message);
-    } finally {
-      setAnalyzingHar(false);
-    }
-  };
-
-  const importHar = async () => {
-    if (!harPayload || !harPreview) return;
-
-    const selectedIds = Object.entries(harSelections)
-      .filter(([, checked]) => checked)
-      .map(([id]) => id);
-
-    if (selectedIds.length === 0) {
-      setHarError("Aucune réservation HAR sélectionnée.");
-      return;
-    }
-
-    setImportingHar(true);
-    setHarError(null);
-    setHarNotice(null);
-    try {
-      const result = await apiFetch<HarImportResult>("/settings/har/import", {
-        method: "POST",
-        json: {
-          har: harPayload,
-          selected_ids: selectedIds,
-        },
-      });
-      setHarPreview(result);
-      await loadImportLog();
-      setHarNotice(
-        `Import HAR terminé: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).`
-      );
-    } catch (error: any) {
-      setHarError(error.message);
-    } finally {
-      setImportingHar(false);
-    }
-  };
-
   const refreshPump = async () => {
     setRefreshingPump(true);
     setPumpError(null);
@@ -2027,12 +1970,12 @@ const SettingsPage = () => {
         method: "POST",
       });
       setPumpPreview(result);
-      const defaults: Record<string, boolean> = {};
-      result.reservations.forEach((item) => {
-        if (isHarImportableStatus(item.status)) {
-          defaults[item.id] = true;
-        }
-      });
+        const defaults: Record<string, boolean> = {};
+        result.reservations.forEach((item) => {
+          if (isImportablePreviewStatus(item.status)) {
+            defaults[item.id] = true;
+          }
+        });
       setPumpSelections(defaults);
       await Promise.all([loadPumpStatus(), loadPumpHealth()]);
     } catch (error: any) {
@@ -2109,39 +2052,6 @@ const SettingsPage = () => {
         </div>
       </section>
 
-      <section className="settings-overview">
-        <a href="#settings-exploitation" className="settings-overview-card settings-overview-card--rose">
-          <span className="settings-overview-card__kicker">Exploitation</span>
-          <strong className="settings-overview-card__title">Nuitées et journal</strong>
-          <span className="settings-overview-card__meta">
-            {declarationExcludedSourcesDraft.length} source(s) exclue(s), {importLogTotal} entrée(s) d'import.
-          </span>
-        </a>
-        <a href="#settings-team" className="settings-overview-card settings-overview-card--sand">
-          <span className="settings-overview-card__kicker">Équipe</span>
-          <strong className="settings-overview-card__title">Gestionnaires</strong>
-          <span className="settings-overview-card__meta">
-            {gestionnaires.length} profil(s), {linkedGitesCount} affectation(s) actives.
-          </span>
-        </a>
-        <a href="#settings-ical" className="settings-overview-card settings-overview-card--blue">
-          <span className="settings-overview-card__kicker">Distribution</span>
-          <strong className="settings-overview-card__title">Écosystème iCal</strong>
-          <span className="settings-overview-card__meta">
-            {sources.length > 0
-              ? `${activeIcalSourcesCount}/${sources.length} sources actives, ${readyIcalExportsCount} export(s) prêts.`
-              : `Aucune source configurée, ${readyIcalExportsCount} export(s) prêt(s).`}
-          </span>
-        </a>
-        <a href="#settings-imports" className="settings-overview-card settings-overview-card--green">
-          <span className="settings-overview-card__kicker">Imports</span>
-          <strong className="settings-overview-card__title">Pump et HAR</strong>
-          <span className="settings-overview-card__meta">
-            Pump {pumpCronState?.config.enabled ? "actif" : "en pause"}, HAR {harFileName ? "chargé" : "à charger"}.
-          </span>
-        </a>
-      </section>
-
       <section id="settings-exploitation" className="settings-cluster">
         <div className="settings-cluster__header">
           <div>
@@ -2153,200 +2063,108 @@ const SettingsPage = () => {
           </p>
         </div>
         <div className="settings-cluster__grid">
-          <div className="card settings-card settings-card--rose settings-card--span-4">
-            <div className="settings-card__topline">
-              <span className="settings-card__tag">Totaux mensuels</span>
-              <span className="settings-card__badge">{declarationExcludedSourcesDraft.length} exclue(s)</span>
-            </div>
-            <div className="section-title">Nuitées à déclarer</div>
-            <div className="field-hint">
-              Les sources listées ici sont retirées du macaron "Nuitées à déclarer" dans les totaux mensuels.
-            </div>
-            {loadingDeclarationNights ? (
-              <div className="field-hint" style={{ marginTop: 12 }}>
-                Chargement...
+          <div className="card settings-card settings-card--neutral settings-card--span-8">
+            <div className="settings-managers-header">
+              <div>
+                <div className="settings-card__tag">Traçabilité</div>
+                <div className="section-title">Journal des imports</div>
               </div>
+              <button type="button" className="secondary" onClick={() => void loadImportLog()} disabled={loadingImportLog}>
+                {loadingImportLog ? "Chargement..." : "Rafraîchir"}
+              </button>
+            </div>
+            {importLogError && <div className="note">{importLogError}</div>}
+            {!importLogError && importLog.length === 0 ? (
+              <div className="field-hint">Aucun import enregistré.</div>
             ) : (
-              <>
-                {availableDeclarationSources.length > 0 ? (
-                  <div className="field-group" style={{ marginTop: 16 }}>
+              <div style={{ display: "grid", gap: 10 }}>
+                {importLog.slice(0, importLogVisibleCount).map((entry) => (
+                  <div key={entry.id} className="field-group">
                     <div className="field-group__header">
-                      <div className="field-group__label">Sources détectées</div>
-                      <div className="field-hint">Cochez les sources à exclure du total à déclarer.</div>
+                      <div className="field-group__label">{formatImportLogTitle(entry)}</div>
+                      <div className="field-hint">{formatIsoDateTimeFr(entry.at)}</div>
                     </div>
-                    <div className="checkbox-grid">
-                      {availableDeclarationSources.map((source) => {
-                        const checked = declarationExcludedSourcesDraft.some(
-                          (item) => normalizeTextKey(item) === normalizeTextKey(source)
-                        );
-
-                        return (
-                          <label key={source} className="checkbox-inline">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(event) => {
-                                setDeclarationNightsNotice(null);
-                                setDeclarationNightsError(null);
-                                setDeclarationExcludedSourcesDraft((previous) =>
-                                  event.target.checked
-                                    ? normalizeSourceList([...previous, source])
-                                    : previous.filter((item) => normalizeTextKey(item) !== normalizeTextKey(source))
-                                );
-                              }}
-                              disabled={savingDeclarationNights}
-                            />
-                            <span>{source}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-
-                <label className="field" style={{ marginTop: 16 }}>
-                  Sources exclues
-                  <textarea
-                    rows={4}
-                    value={declarationExcludedSourcesDraft.join("\n")}
-                    onChange={(event) => {
-                      setDeclarationNightsNotice(null);
-                      setDeclarationNightsError(null);
-                      setDeclarationExcludedSourcesDraft(parseDeclarationSourcesInput(event.target.value));
-                    }}
-                    placeholder={"Airbnb\nHomeExchange"}
-                    disabled={savingDeclarationNights}
-                  />
-                </label>
-                <div className="field-hint">Une source par ligne. Les variantes accent/casse sont reconnues.</div>
-                <div className="actions" style={{ marginTop: 16 }}>
-                  <button type="button" onClick={() => void saveDeclarationNightsSettings()} disabled={savingDeclarationNights}>
-                    {savingDeclarationNights ? "Enregistrement..." : "Enregistrer"}
-                  </button>
-                </div>
-                {declarationNightsNotice ? <div className="note note--success">{declarationNightsNotice}</div> : null}
-                {declarationNightsError ? <div className="note">{declarationNightsError}</div> : null}
-              </>
-            )}
-          </div>
-
-          <div className="card settings-card settings-card--sand settings-card--span-8">
-            <div className="settings-card__topline">
-              <span className="settings-card__tag">Palette</span>
-              <span className="settings-card__badge">{customizedSourceColorCount} personnalisée(s)</span>
-            </div>
-            <div className="section-title">Couleurs des sources</div>
-            <div className="field-hint">
-              Personnalisez les couleurs utilisées dans le calendrier et la répartition des paiements.
-            </div>
-            {loadingSourceColors ? (
-              <div className="field-hint" style={{ marginTop: 12 }}>
-                Chargement...
-              </div>
-            ) : (
-              <>
-                <div className="settings-source-colors" style={{ marginTop: 16 }}>
-                  {availableSourceColorLabels.map((source) => {
-                    const color = sourceColorDraft[source] ?? getPaymentColor(source, DEFAULT_PAYMENT_SOURCE_COLORS);
-                    const hasDefaultColor = Object.keys(DEFAULT_PAYMENT_SOURCE_COLORS).some(
-                      (label) => normalizeTextKey(label) === normalizeTextKey(source)
-                    );
-                    return (
-                      <div key={source} className="settings-source-color-row">
-                        <div className="settings-source-color-row__label">
-                          <span className="settings-source-color-row__swatch" style={{ backgroundColor: color }} />
-                          <span>{source}</span>
+                    <div className="field-hint">{formatImportLogSummary(entry)}</div>
+                    {Array.isArray(entry.insertedItems) && entry.insertedItems.length > 0 ? (
+                      <div style={{ marginTop: 8 }}>
+                        <div className="field-hint" style={{ marginBottom: 4 }}>Nouvelles réservations</div>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          {entry.insertedItems.slice(0, IMPORT_LOG_EVENT_VISIBLE_COUNT).map((item, index) => (
+                            <div
+                              key={`${entry.id}-inserted-${index}`}
+                              className="field-hint"
+                              style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+                            >
+                              <span style={{ color: "#111827", fontWeight: 600 }}>{item.giteName || item.giteId || "-"}</span>
+                              <span>
+                                {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
+                              </span>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                <span
+                                  style={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: "999px",
+                                    background: getPaymentColor(item.source, paymentColorMap),
+                                    border: "1px solid rgba(17, 24, 39, 0.2)",
+                                  }}
+                                />
+                                <span>{item.source || "-"}</span>
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                        <input
-                          type="color"
-                          value={color}
-                          onChange={(event) => {
-                            setSourceColorError(null);
-                            setSourceColorNotice(null);
-                            setSourceColorDraft((previous) => ({
-                              ...previous,
-                              [source]: event.target.value.toUpperCase(),
-                            }));
-                          }}
-                          disabled={savingSourceColors}
-                        />
-                        <input
-                          type="text"
-                          value={color}
-                          onChange={(event) => {
-                            setSourceColorError(null);
-                            setSourceColorNotice(null);
-                            setSourceColorDraft((previous) => ({
-                              ...previous,
-                              [source]: event.target.value.toUpperCase(),
-                            }));
-                          }}
-                          placeholder="#FFFFFF"
-                          disabled={savingSourceColors}
-                        />
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => {
-                            setSourceColorError(null);
-                            setSourceColorNotice(null);
-                            setSourceColorDraft((previous) => {
-                              if (!hasDefaultColor) {
-                                const next = { ...previous };
-                                delete next[source];
-                                return next;
-                              }
-                              return {
-                                ...previous,
-                                [source]: getPaymentColor(source, DEFAULT_PAYMENT_SOURCE_COLORS),
-                              };
-                            });
-                          }}
-                          disabled={savingSourceColors}
-                        >
-                          {hasDefaultColor ? "Défaut" : "Retirer"}
-                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-
-                <div className="field-group" style={{ marginTop: 16 }}>
-                  <div className="field-group__header">
-                    <div className="field-group__label">Ajouter une source</div>
-                    <div className="field-hint">Ajoutez un libellé si une source n'apparaît pas encore.</div>
+                    ) : null}
+                    {Array.isArray(entry.updatedItems) && entry.updatedItems.length > 0 ? (
+                      <div style={{ marginTop: 8 }}>
+                        <div className="field-hint" style={{ marginBottom: 4 }}>Mises à jour</div>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          {entry.updatedItems.slice(0, IMPORT_LOG_EVENT_VISIBLE_COUNT).map((item, index) => {
+                            const updatedFields = formatImportLogUpdatedFields(item.updatedFields);
+                            return (
+                              <div
+                                key={`${entry.id}-updated-${index}`}
+                                className="field-hint"
+                                style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+                              >
+                                <span style={{ color: "#111827", fontWeight: 600 }}>{item.giteName || item.giteId || "-"}</span>
+                                <span>
+                                  {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
+                                </span>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                  <span
+                                    style={{
+                                      width: 10,
+                                      height: 10,
+                                      borderRadius: "999px",
+                                      background: getPaymentColor(item.source, paymentColorMap),
+                                      border: "1px solid rgba(17, 24, 39, 0.2)",
+                                    }}
+                                  />
+                                  <span>{item.source || "-"}</span>
+                                </span>
+                                {updatedFields ? <span>Modifié: {updatedFields}</span> : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="settings-source-color-add">
-                    <input
-                      value={newSourceColorLabel}
-                      onChange={(event) => {
-                        setSourceColorError(null);
-                        setSourceColorNotice(null);
-                        setNewSourceColorLabel(event.target.value);
-                      }}
-                      placeholder="Ex: Booking"
-                      disabled={savingSourceColors}
-                    />
-                    <input
-                      type="color"
-                      value={newSourceColorValue}
-                      onChange={(event) => setNewSourceColorValue(event.target.value.toUpperCase())}
-                      disabled={savingSourceColors}
-                    />
-                    <button type="button" className="secondary" onClick={addSourceColorLabel} disabled={savingSourceColors}>
-                      Ajouter
-                    </button>
-                  </div>
-                </div>
-
-                <div className="actions" style={{ marginTop: 16 }}>
-                  <button type="button" onClick={() => void saveSourceColorSettings()} disabled={savingSourceColors}>
-                    {savingSourceColors ? "Enregistrement..." : "Enregistrer"}
+                ))}
+                {importLog.length > importLogVisibleCount ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setImportLogVisibleCount((previous) => Math.min(importLog.length, previous + IMPORT_LOG_VISIBLE_STEP));
+                    }}
+                  >
+                    Afficher plus ({importLog.length - importLogVisibleCount} restante{importLog.length - importLogVisibleCount > 1 ? "s" : ""})
                   </button>
-                </div>
-                {sourceColorNotice ? <div className="note note--success">{sourceColorNotice}</div> : null}
-                {sourceColorError ? <div className="note">{sourceColorError}</div> : null}
-              </>
+                ) : null}
+              </div>
             )}
           </div>
 
@@ -2456,128 +2274,262 @@ const SettingsPage = () => {
             )}
           </div>
 
-          <div className="card settings-card settings-card--neutral settings-card--span-8">
-            <div className="settings-managers-header">
-              <div>
-                <div className="settings-card__tag">Traçabilité</div>
-                <div className="section-title">Journal des imports</div>
+          <details className="card settings-card settings-card--rose settings-card--span-4 settings-card-accordion">
+            <summary className="settings-card-accordion__summary">
+              <div className="settings-card__topline">
+                <span className="settings-card__tag">Totaux mensuels</span>
+                <div className="settings-card-accordion__meta">
+                  <span className="settings-card__badge">{declarationExcludedSourcesDraft.length} exclue(s)</span>
+                  <span className="settings-accordion__icon" aria-hidden="true" />
+                </div>
               </div>
-              <button type="button" className="secondary" onClick={() => void loadImportLog()} disabled={loadingImportLog}>
-                {loadingImportLog ? "Chargement..." : "Rafraîchir"}
-              </button>
-            </div>
-            {importLogError && <div className="note">{importLogError}</div>}
-            {!importLogError && importLog.length === 0 ? (
-              <div className="field-hint">Aucun import enregistré.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {importLog.slice(0, importLogVisibleCount).map((entry) => (
-                  <div key={entry.id} className="field-group">
-                    <div className="field-group__header">
-                      <div className="field-group__label">{formatImportLogTitle(entry)}</div>
-                      <div className="field-hint">{formatIsoDateTimeFr(entry.at)}</div>
-                    </div>
-                    <div className="field-hint">
-                      {entry.status === "error"
-                        ? `Erreur: ${entry.errorMessage || "Erreur inconnue lors de l'import."}`
-                        : `Sélectionnées: ${entry.selectionCount ?? 0} | Ajoutées: ${entry.inserted ?? 0} | Mises à jour: ${entry.updated ?? 0} | Ignorées: ${entry.skipped?.unknown ?? 0}`}
-                    </div>
-                    {Array.isArray(entry.insertedItems) && entry.insertedItems.length > 0 ? (
-                      <div style={{ marginTop: 8 }}>
-                        <div className="field-hint" style={{ marginBottom: 4 }}>Nouvelles réservations</div>
-                        <div style={{ display: "grid", gap: 4 }}>
-                          {entry.insertedItems.slice(0, IMPORT_LOG_EVENT_VISIBLE_COUNT).map((item, index) => (
-                            <div
-                              key={`${entry.id}-inserted-${index}`}
-                              className="field-hint"
-                              style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
-                            >
-                              <span style={{ color: "#111827", fontWeight: 600 }}>{item.giteName || item.giteId || "-"}</span>
-                              <span>
-                                {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
-                              </span>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                <span
-                                  style={{
-                                    width: 10,
-                                    height: 10,
-                                    borderRadius: "999px",
-                                    background: getPaymentColor(item.source, paymentColorMap),
-                                    border: "1px solid rgba(17, 24, 39, 0.2)",
-                                  }}
-                                />
-                                <span>{item.source || "-"}</span>
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+              <div className="section-title">Nuitées à déclarer</div>
+              <div className="field-hint">
+                Les sources listées ici sont retirées du macaron "Nuitées à déclarer" dans les totaux mensuels.
+              </div>
+            </summary>
+            <div className="settings-card-accordion__content">
+              {loadingDeclarationNights ? (
+                <div className="field-hint">Chargement...</div>
+              ) : (
+                <>
+                  {availableDeclarationSources.length > 0 ? (
+                    <div className="field-group">
+                      <div className="field-group__header">
+                        <div className="field-group__label">Sources détectées</div>
+                        <div className="field-hint">Cochez les sources à exclure du total à déclarer.</div>
                       </div>
-                    ) : null}
-                    {Array.isArray(entry.updatedItems) && entry.updatedItems.length > 0 ? (
-                      <div style={{ marginTop: 8 }}>
-                        <div className="field-hint" style={{ marginBottom: 4 }}>Mises à jour</div>
-                        <div style={{ display: "grid", gap: 4 }}>
-                          {entry.updatedItems.slice(0, IMPORT_LOG_EVENT_VISIBLE_COUNT).map((item, index) => {
-                            const updatedFields = formatImportLogUpdatedFields(item.updatedFields);
-                            return (
-                              <div
-                                key={`${entry.id}-updated-${index}`}
-                                className="field-hint"
-                                style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
-                              >
-                                <span style={{ color: "#111827", fontWeight: 600 }}>{item.giteName || item.giteId || "-"}</span>
-                                <span>
-                                  {item.checkIn ? formatIsoDateFr(item.checkIn) : "-"} - {item.checkOut ? formatIsoDateFr(item.checkOut) : "-"}
-                                </span>
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                  <span
-                                    style={{
-                                      width: 10,
-                                      height: 10,
-                                      borderRadius: "999px",
-                                      background: getPaymentColor(item.source, paymentColorMap),
-                                      border: "1px solid rgba(17, 24, 39, 0.2)",
-                                    }}
-                                  />
-                                  <span>{item.source || "-"}</span>
-                                </span>
-                                {updatedFields ? <span>Modifié: {updatedFields}</span> : null}
-                              </div>
-                            );
-                          })}
-                        </div>
+                      <div className="checkbox-grid">
+                        {availableDeclarationSources.map((source) => {
+                          const checked = declarationExcludedSourcesDraft.some(
+                            (item) => normalizeTextKey(item) === normalizeTextKey(source)
+                          );
+
+                          return (
+                            <label key={source} className="checkbox-inline">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => {
+                                  setDeclarationNightsNotice(null);
+                                  setDeclarationNightsError(null);
+                                  setDeclarationExcludedSourcesDraft((previous) =>
+                                    event.target.checked
+                                      ? normalizeSourceList([...previous, source])
+                                      : previous.filter((item) => normalizeTextKey(item) !== normalizeTextKey(source))
+                                  );
+                                }}
+                                disabled={savingDeclarationNights}
+                              />
+                              <span>{source}</span>
+                            </label>
+                          );
+                        })}
                       </div>
-                    ) : null}
+                    </div>
+                  ) : null}
+
+                  <label className="field">
+                    Sources exclues
+                    <textarea
+                      rows={4}
+                      value={declarationExcludedSourcesDraft.join("\n")}
+                      onChange={(event) => {
+                        setDeclarationNightsNotice(null);
+                        setDeclarationNightsError(null);
+                        setDeclarationExcludedSourcesDraft(parseDeclarationSourcesInput(event.target.value));
+                      }}
+                      placeholder={"Airbnb\nHomeExchange"}
+                      disabled={savingDeclarationNights}
+                    />
+                  </label>
+                  <div className="field-hint">Une source par ligne. Les variantes accent/casse sont reconnues.</div>
+                  <div className="actions">
+                    <button type="button" onClick={() => void saveDeclarationNightsSettings()} disabled={savingDeclarationNights}>
+                      {savingDeclarationNights ? "Enregistrement..." : "Enregistrer"}
+                    </button>
                   </div>
-                ))}
-                {importLog.length > importLogVisibleCount ? (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => {
-                      setImportLogVisibleCount((previous) => Math.min(importLog.length, previous + IMPORT_LOG_VISIBLE_STEP));
-                    }}
-                  >
-                    Afficher plus ({importLog.length - importLogVisibleCount} restante{importLog.length - importLogVisibleCount > 1 ? "s" : ""})
-                  </button>
-                ) : null}
+                  {declarationNightsNotice ? <div className="note note--success">{declarationNightsNotice}</div> : null}
+                  {declarationNightsError ? <div className="note">{declarationNightsError}</div> : null}
+                </>
+              )}
+            </div>
+          </details>
+
+          <details className="card settings-card settings-card--sand settings-card--span-8 settings-card-accordion">
+            <summary className="settings-card-accordion__summary">
+              <div className="settings-card__topline">
+                <span className="settings-card__tag">Palette</span>
+                <div className="settings-card-accordion__meta">
+                  <span className="settings-card__badge">{customizedSourceColorCount} personnalisée(s)</span>
+                  <span className="settings-accordion__icon" aria-hidden="true" />
+                </div>
               </div>
-            )}
-          </div>
+              <div className="section-title">Couleurs des sources</div>
+              <div className="field-hint">
+                Personnalisez les couleurs utilisées dans le calendrier et la répartition des paiements.
+              </div>
+            </summary>
+            <div className="settings-card-accordion__content">
+              {loadingSourceColors ? (
+                <div className="field-hint">Chargement...</div>
+              ) : (
+                <>
+                  <div className="settings-source-colors">
+                    {availableSourceColorLabels.map((source) => {
+                      const color = sourceColorDraft[source] ?? getPaymentColor(source, DEFAULT_PAYMENT_SOURCE_COLORS);
+                      const hasDefaultColor = Object.keys(DEFAULT_PAYMENT_SOURCE_COLORS).some(
+                        (label) => normalizeTextKey(label) === normalizeTextKey(source)
+                      );
+                      return (
+                        <div key={source} className="settings-source-color-row">
+                          <div className="settings-source-color-row__label">
+                            <span className="settings-source-color-row__swatch" style={{ backgroundColor: color }} />
+                            <span>{source}</span>
+                          </div>
+                          <input
+                            type="color"
+                            value={color}
+                            onChange={(event) => {
+                              setSourceColorError(null);
+                              setSourceColorNotice(null);
+                              setSourceColorDraft((previous) => ({
+                                ...previous,
+                                [source]: event.target.value.toUpperCase(),
+                              }));
+                            }}
+                            disabled={savingSourceColors}
+                          />
+                          <input
+                            type="text"
+                            value={color}
+                            onChange={(event) => {
+                              setSourceColorError(null);
+                              setSourceColorNotice(null);
+                              setSourceColorDraft((previous) => ({
+                                ...previous,
+                                [source]: event.target.value.toUpperCase(),
+                              }));
+                            }}
+                            placeholder="#FFFFFF"
+                            disabled={savingSourceColors}
+                          />
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => {
+                              setSourceColorError(null);
+                              setSourceColorNotice(null);
+                              setSourceColorDraft((previous) => {
+                                if (!hasDefaultColor) {
+                                  const next = { ...previous };
+                                  delete next[source];
+                                  return next;
+                                }
+                                return {
+                                  ...previous,
+                                  [source]: getPaymentColor(source, DEFAULT_PAYMENT_SOURCE_COLORS),
+                                };
+                              });
+                            }}
+                            disabled={savingSourceColors}
+                          >
+                            {hasDefaultColor ? "Défaut" : "Retirer"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="field-group">
+                    <div className="field-group__header">
+                      <div className="field-group__label">Ajouter une source</div>
+                      <div className="field-hint">Ajoutez un libellé si une source n'apparaît pas encore.</div>
+                    </div>
+                    <div className="settings-source-color-add">
+                      <input
+                        value={newSourceColorLabel}
+                        onChange={(event) => {
+                          setSourceColorError(null);
+                          setSourceColorNotice(null);
+                          setNewSourceColorLabel(event.target.value);
+                        }}
+                        placeholder="Ex: Booking"
+                        disabled={savingSourceColors}
+                      />
+                      <input
+                        type="color"
+                        value={newSourceColorValue}
+                        onChange={(event) => setNewSourceColorValue(event.target.value.toUpperCase())}
+                        disabled={savingSourceColors}
+                      />
+                      <button type="button" className="secondary" onClick={addSourceColorLabel} disabled={savingSourceColors}>
+                        Ajouter
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="actions">
+                    <button type="button" onClick={() => void saveSourceColorSettings()} disabled={savingSourceColors}>
+                      {savingSourceColors ? "Enregistrement..." : "Enregistrer"}
+                    </button>
+                  </div>
+                  {sourceColorNotice ? <div className="note note--success">{sourceColorNotice}</div> : null}
+                  {sourceColorError ? <div className="note">{sourceColorError}</div> : null}
+                </>
+              )}
+            </div>
+          </details>
         </div>
       </section>
 
-      <section id="settings-team" className="settings-cluster">
-        <div className="settings-cluster__header">
-          <div>
-            <div className="settings-cluster__eyebrow">Équipe</div>
-            <h2 className="settings-cluster__title">Gestionnaires et répartition</h2>
+      <section className="settings-overview">
+        <a href="#settings-exploitation" className="settings-overview-card settings-overview-card--rose">
+          <span className="settings-overview-card__kicker">Exploitation</span>
+          <strong className="settings-overview-card__title">Nuitées et journal</strong>
+          <span className="settings-overview-card__meta">
+            {declarationExcludedSourcesDraft.length} source(s) exclue(s), {importLogTotal} entrée(s) d'import.
+          </span>
+        </a>
+        <a href="#settings-team" className="settings-overview-card settings-overview-card--sand">
+          <span className="settings-overview-card__kicker">Équipe</span>
+          <strong className="settings-overview-card__title">Gestionnaires</strong>
+          <span className="settings-overview-card__meta">
+            {gestionnaires.length} profil(s), {linkedGitesCount} affectation(s) actives.
+          </span>
+        </a>
+        <a href="#settings-ical" className="settings-overview-card settings-overview-card--blue">
+          <span className="settings-overview-card__kicker">Distribution</span>
+          <strong className="settings-overview-card__title">Écosystème iCal</strong>
+          <span className="settings-overview-card__meta">
+            {sources.length > 0
+              ? `${activeIcalSourcesCount}/${sources.length} sources actives, ${readyIcalExportsCount} export(s) prêts.`
+              : `Aucune source configurée, ${readyIcalExportsCount} export(s) prêt(s).`}
+          </span>
+        </a>
+        <a href="#settings-imports" className="settings-overview-card settings-overview-card--green">
+          <span className="settings-overview-card__kicker">Imports</span>
+          <strong className="settings-overview-card__title">Pump</strong>
+          <span className="settings-overview-card__meta">
+            Pump {pumpCronState?.config.enabled ? "actif" : "en pause"}, extraction {pumpPreview ? "analysée" : "à lancer"}.
+          </span>
+        </a>
+      </section>
+
+      <details id="settings-team" className="settings-cluster settings-cluster-accordion">
+        <summary className="settings-cluster-accordion__summary">
+          <div className="settings-cluster-accordion__summary-main">
+            <div>
+              <div className="settings-cluster__eyebrow">Équipe</div>
+              <h2 className="settings-cluster__title">Gestionnaires et répartition</h2>
+            </div>
+            <p className="settings-cluster__text">
+              Ajoutez rapidement des gestionnaires et gardez une lecture claire de leur couverture sur les gîtes.
+            </p>
           </div>
-          <p className="settings-cluster__text">
-            Ajoutez rapidement des gestionnaires et gardez une lecture claire de leur couverture sur les gîtes.
-          </p>
-        </div>
-        <div className="settings-cluster__grid">
+          <span className="settings-accordion__icon" aria-hidden="true" />
+        </summary>
+        <div className="settings-cluster__grid settings-cluster-accordion__content">
           <div className="card settings-card settings-card--sand settings-card--span-4">
             <div className="settings-card__topline">
               <span className="settings-card__tag">Nouveau profil</span>
@@ -2661,19 +2613,22 @@ const SettingsPage = () => {
             )}
           </div>
         </div>
-      </section>
+      </details>
 
-      <section id="settings-ical" className="settings-cluster">
-        <div className="settings-cluster__header">
-          <div>
-            <div className="settings-cluster__eyebrow">Distribution</div>
-            <h2 className="settings-cluster__title">Écosystème iCal</h2>
+      <details id="settings-ical" className="settings-cluster settings-cluster-accordion">
+        <summary className="settings-cluster-accordion__summary">
+          <div className="settings-cluster-accordion__summary-main">
+            <div>
+              <div className="settings-cluster__eyebrow">Distribution</div>
+              <h2 className="settings-cluster__title">Écosystème iCal</h2>
+            </div>
+            <p className="settings-cluster__text">
+              Centralisez vos sources entrantes, vos exports OTA et les automatismes de synchronisation.
+            </p>
           </div>
-          <p className="settings-cluster__text">
-            Centralisez vos sources entrantes, vos exports OTA et les automatismes de synchronisation.
-          </p>
-        </div>
-        <div className="settings-cluster__grid">
+          <span className="settings-accordion__icon" aria-hidden="true" />
+        </summary>
+        <div className="settings-cluster__grid settings-cluster-accordion__content">
           <div className="card settings-card settings-card--blue settings-card--span-4">
             <div className="settings-card__topline">
               <span className="settings-card__tag">Entrée manuelle</span>
@@ -3273,20 +3228,23 @@ const SettingsPage = () => {
             )}
           </div>
         </div>
-      </section>
+      </details>
 
-      <section id="settings-imports" className="settings-cluster">
-        <div className="settings-cluster__header">
-          <div>
-            <div className="settings-cluster__eyebrow">Imports externes</div>
-            <h2 className="settings-cluster__title">Pump et HAR</h2>
+      <details id="settings-imports" className="settings-cluster settings-cluster-accordion">
+        <summary className="settings-cluster-accordion__summary">
+          <div className="settings-cluster-accordion__summary-main">
+            <div>
+              <div className="settings-cluster__eyebrow">Imports externes</div>
+              <h2 className="settings-cluster__title">Pump</h2>
+            </div>
+            <p className="settings-cluster__text">
+              Déclenchement, contrôle de session et import des réservations Pump depuis un seul espace.
+            </p>
           </div>
-          <p className="settings-cluster__text">
-            Deux circuits d'intégration dans un même thème: l'automatique pour Pump, le ciblé pour les fichiers HAR.
-          </p>
-        </div>
-        <div className="settings-cluster__grid">
-          <div className="card settings-card settings-card--green settings-card--span-7">
+          <span className="settings-accordion__icon" aria-hidden="true" />
+        </summary>
+        <div className="settings-cluster__grid settings-cluster-accordion__content">
+          <div className="card settings-card settings-card--green settings-card--span-8">
             <div className="settings-card__topline">
               <span className="settings-card__tag">Import automatisé</span>
               <span className="settings-card__badge">{pumpConfigReady ? "Configuré" : "À configurer"}</span>
@@ -3316,8 +3274,16 @@ const SettingsPage = () => {
               <button
                 type="button"
                 className="secondary"
+                onClick={() => void exportPumpConfig()}
+                disabled={exportingPumpConfig || importingPumpConfig || savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+              >
+                {exportingPumpConfig ? "Export config..." : "Exporter config Pump"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
                 onClick={triggerPumpConfigImport}
-                disabled={importingPumpConfig || savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
+                disabled={importingPumpConfig || exportingPumpConfig || savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
               >
                 {importingPumpConfig ? "Import config..." : "Importer config Pump"}
               </button>
@@ -3600,22 +3566,6 @@ const SettingsPage = () => {
                   }
                   disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget || !pumpConfigDraft.manualScrollMode}
                 />
-              </label>
-              <label className="field">
-                Export HAR
-                <select
-                  value={pumpConfigDraft.enableHAR ? "1" : "0"}
-                  onChange={(event) =>
-                    setPumpConfigDraft((previous) => ({
-                      ...previous,
-                      enableHAR: event.target.value === "1",
-                    }))
-                  }
-                  disabled={savingPumpConfig || testingPumpConnection || testingPumpScrollTarget}
-                >
-                  <option value="0">Non</option>
-                  <option value="1">Oui</option>
-                </select>
               </label>
               <label className="field">
                 Dossier de sortie optionnel
@@ -4058,7 +4008,7 @@ const SettingsPage = () => {
                   </thead>
                   <tbody>
                     {pumpPreview.reservations.slice(0, 120).map((item) => {
-                      const selectable = isHarImportableStatus(item.status);
+                      const selectable = isImportablePreviewStatus(item.status);
                       return (
                         <tr key={item.id}>
                           <td>
@@ -4082,7 +4032,7 @@ const SettingsPage = () => {
                           <td>{typeof item.prix_total === "number" ? `${item.prix_total.toFixed(2)} €` : "-"}</td>
                           <td>{item.source_type}</td>
                           <td>
-                            {harStatusLabelMap[item.status]}
+                            {importPreviewStatusLabelMap[item.status]}
                             {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
                           </td>
                         </tr>
@@ -4097,95 +4047,8 @@ const SettingsPage = () => {
             )}
           </div>
 
-          <div className="card settings-card settings-card--green settings-card--span-5">
-            <div className="settings-card__topline">
-              <span className="settings-card__tag">Analyse ciblée</span>
-              <span className="settings-card__badge">{harFileName ? "Fichier prêt" : "En attente"}</span>
-            </div>
-            <div className="section-title">Analyse HAR</div>
-            <div className="field-hint">
-              Analyse d'un fichier HAR Airbnb pour créer ou compléter des réservations (nom, source, prix, commentaire).
-            </div>
-            <div className="actions" style={{ marginTop: 12 }}>
-              <label className="table-action table-action--neutral" style={{ cursor: "pointer" }}>
-                Charger un HAR
-                <input
-                  type="file"
-                  accept=".har,application/json"
-                  onChange={(event) => void handleHarFile(event)}
-                  style={{ display: "none" }}
-                />
-              </label>
-              <button type="button" className="secondary" onClick={() => void analyzeHar()} disabled={analyzingHar || !harPayload || importingHar}>
-                {analyzingHar ? "Analyse..." : "Analyser"}
-              </button>
-              <button type="button" onClick={() => void importHar()} disabled={importingHar || !harPreview || selectedHarCount === 0 || analyzingHar}>
-                {importingHar ? "Import..." : `Importer (${selectedHarCount})`}
-              </button>
-            </div>
-            {harFileName ? <div className="field-hint" style={{ marginTop: 8 }}>Fichier: {harFileName}</div> : null}
-            {harNotice && <div className="note note--success">{harNotice}</div>}
-            {harError && <div className="note">{harError}</div>}
-
-            {harPreview && (
-              <div style={{ marginTop: 14 }}>
-                <div className="field-hint" style={{ marginBottom: 8 }}>
-                  Total: {harPreview.reservations.length} | Nouveaux: {harPreview.counts.new} | Complétables: {harPreview.counts.existing_updatable} | Déjà présents: {harPreview.counts.existing} | Conflits: {harPreview.counts.conflict} | Listing non mappé: {harPreview.counts.unmapped_listing}
-                </div>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th></th>
-                      <th>Gîte</th>
-                      <th>Dates</th>
-                      <th>Hôte</th>
-                      <th>Prix</th>
-                      <th>Source</th>
-                      <th>Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {harPreview.reservations.slice(0, 120).map((item) => {
-                      const selectable = isHarImportableStatus(item.status);
-                      return (
-                        <tr key={item.id}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(harSelections[item.id])}
-                              disabled={!selectable || importingHar}
-                              onChange={(event) =>
-                                setHarSelections((previous) => ({
-                                  ...previous,
-                                  [item.id]: event.target.checked,
-                                }))
-                              }
-                            />
-                          </td>
-                          <td>{item.gite_nom ?? item.listing_id}</td>
-                          <td>
-                            {formatIsoDateFr(item.check_in)} - {formatIsoDateFr(item.check_out)}
-                          </td>
-                          <td>{item.hote_nom ?? "-"}</td>
-                          <td>{typeof item.prix_total === "number" ? `${item.prix_total.toFixed(2)} €` : "-"}</td>
-                          <td>{item.source_type}</td>
-                          <td>
-                            {harStatusLabelMap[item.status]}
-                            {item.update_fields.length > 0 ? ` (${item.update_fields.join(", ")})` : ""}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {harPreview.reservations.length > 120 ? (
-                  <div className="field-hint">Affichage limité aux 120 premières lignes.</div>
-                ) : null}
-              </div>
-            )}
-          </div>
         </div>
-      </section>
+      </details>
     </div>
   );
 };

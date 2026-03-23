@@ -81,7 +81,6 @@ export const env = {
   PUMP_SCROLL_DISTANCE: parseIntegerEnv(process.env.PUMP_SCROLL_DISTANCE, 500, 1, 20_000),
   PUMP_SCROLL_DELAY: parseIntegerEnv(process.env.PUMP_SCROLL_DELAY, 1_000, 0, 120_000),
   PUMP_WAIT_BEFORE_SCROLL: parseIntegerEnv(process.env.PUMP_WAIT_BEFORE_SCROLL, 2_000, 0, 120_000),
-  PUMP_ENABLE_HAR: parseBooleanEnv(process.env.PUMP_ENABLE_HAR, false),
   PUMP_OUTPUT_FOLDER: process.env.PUMP_OUTPUT_FOLDER ?? "",
   PUMP_HEALTH_STALE_AFTER_HOURS: parseIntegerEnv(process.env.PUMP_HEALTH_STALE_AFTER_HOURS, 96, 1, 24 * 30),
   PUMP_LOGIN_STRATEGY:

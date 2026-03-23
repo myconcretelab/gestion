@@ -22,7 +22,6 @@ export type PumpAutomationConfig = {
   scrollDistance: number;
   scrollDelay: number;
   waitBeforeScroll: number;
-  enableHAR: boolean;
   outputFolder: string;
   filterRules: {
     inclusive: PumpFilterRule[];
@@ -175,7 +174,6 @@ export const buildDefaultPumpAutomationConfig = (): PumpAutomationConfig => ({
   scrollDistance: env.PUMP_SCROLL_DISTANCE,
   scrollDelay: env.PUMP_SCROLL_DELAY,
   waitBeforeScroll: env.PUMP_WAIT_BEFORE_SCROLL,
-  enableHAR: env.PUMP_ENABLE_HAR,
   outputFolder: env.PUMP_OUTPUT_FOLDER,
   filterRules: {
     inclusive: [],
@@ -213,7 +211,6 @@ export const normalizePumpAutomationConfig = (
     scrollDistance: toInteger(source.scrollDistance, defaults.scrollDistance, 1, 20_000),
     scrollDelay: toInteger(source.scrollDelay, defaults.scrollDelay, 0, 120_000),
     waitBeforeScroll: toInteger(source.waitBeforeScroll, defaults.waitBeforeScroll, 0, 120_000),
-    enableHAR: toBoolean(source.enableHAR, defaults.enableHAR),
     outputFolder: toTrimmedString(source.outputFolder, defaults.outputFolder),
     filterRules: normalizeFilterRules(source.filterRules),
     loginStrategy:
