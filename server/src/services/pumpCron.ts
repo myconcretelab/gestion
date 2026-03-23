@@ -5,6 +5,7 @@ import {
   writePumpCronConfig,
   type PumpCronConfig,
 } from "./pumpCronSettings.js";
+import { env } from "../config/env.js";
 import { buildReservationsPreview, importPreviewReservations, type ReservationImportResult } from "./reservationImports.js";
 import { getPumpLatestReservations, getPumpRefreshStatus, normalizePumpReservation, triggerPumpRefresh } from "./pumpClient.js";
 
@@ -25,6 +26,7 @@ type PumpCronRunResult = ReservationImportResult & {
 
 export type PumpCronState = {
   config: PumpCronConfig;
+  scheduler: "internal" | "external";
   running: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
@@ -145,7 +147,7 @@ const applyCronConfig = (config: PumpCronConfig) => {
   }
   cronNextRunAt = null;
 
-  if (config.enabled) {
+  if (config.enabled && env.PUMP_IMPORT_CRON_SCHEDULER === "internal") {
     scheduleNextCronRun(config);
   }
 };
@@ -181,6 +183,9 @@ export const runPumpCronImport = async (): Promise<PumpCronRunResult> => {
 
 export const startPumpCron = () => {
   applyCronConfig(cronConfig);
+  if (env.PUMP_IMPORT_CRON_SCHEDULER === "external") {
+    return;
+  }
   if (cronConfig.run_on_start) {
     cronRunning = true;
     void runPumpCronImport()
@@ -214,6 +219,7 @@ export const getPumpCronConfig = () => cronConfig;
 
 export const getPumpCronState = (): PumpCronState => ({
   config: cronConfig,
+  scheduler: env.PUMP_IMPORT_CRON_SCHEDULER as PumpCronState["scheduler"],
   running: cronRunning || Boolean(activeImportPromise),
   next_run_at: cronNextRunAt ? cronNextRunAt.toISOString() : null,
   last_run_at: cronLastRunAt ? cronLastRunAt.toISOString() : null,

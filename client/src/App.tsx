@@ -46,6 +46,13 @@ type IcalAutoSyncNotice = {
   message: string;
 };
 
+type PumpHealthNotice = {
+  status: "connected" | "stale" | "auth_required" | "refresh_failed" | "disabled";
+  tone: "success" | "warning" | "danger" | "neutral";
+  label: string;
+  summary: string;
+};
+
 const ICAL_AUTO_SYNC_SESSION_KEY = "ical-auto-sync-attempted";
 let appLoadIcalAutoSyncPromise: Promise<IcalAutoSyncResponse> | null = null;
 
@@ -117,6 +124,7 @@ const App = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [recentImportedReservationsCount, setRecentImportedReservationsCount] = useState(0);
   const [icalAutoSyncNotice, setIcalAutoSyncNotice] = useState<IcalAutoSyncNotice | null>(null);
+  const [pumpHealthNotice, setPumpHealthNotice] = useState<PumpHealthNotice | null>(null);
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -207,6 +215,23 @@ const App = () => {
     }
   };
 
+  const loadPumpHealth = async (signal?: AbortSignal) => {
+    try {
+      const payload = await apiFetch<PumpHealthNotice>("/settings/pump/health", { signal });
+      setPumpHealthNotice(payload);
+    } catch (error) {
+      if (!isAbortError(error)) {
+        setPumpHealthNotice({
+          status: "refresh_failed",
+          tone: "danger",
+          label: "Pump indisponible",
+          summary: "Impossible de charger l'etat Pump.",
+        });
+        console.error(error);
+      }
+    }
+  };
+
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
@@ -214,6 +239,10 @@ const App = () => {
   useEffect(() => {
     const controller = new AbortController();
     void loadRecentImportedReservationsCount(controller.signal);
+    void loadPumpHealth(controller.signal);
+    const pollId = window.setInterval(() => {
+      void loadPumpHealth();
+    }, 60_000);
 
     const handleRecentImportedReservationsCreated = (event: Event) => {
       const customEvent = event as CustomEvent<{ createdCount?: number }>;
@@ -229,6 +258,7 @@ const App = () => {
 
     return () => {
       controller.abort();
+      window.clearInterval(pollId);
       window.removeEventListener(
         RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT,
         handleRecentImportedReservationsCreated as EventListener
@@ -313,6 +343,16 @@ const App = () => {
             CG
           </span>
           <span className="brand-label">Contrats Gîtes</span>
+          {pumpHealthNotice ? (
+            <span
+              className={`pump-indicator pump-indicator--${pumpHealthNotice.tone}`}
+              title={`Pump: ${pumpHealthNotice.label}. ${pumpHealthNotice.summary}`}
+              aria-label={`Statut Pump: ${pumpHealthNotice.label}`}
+            >
+              <span className={`pump-indicator__dot pump-indicator__dot--${pumpHealthNotice.tone}`} aria-hidden="true" />
+              <span className="pump-indicator__label">Pump</span>
+            </span>
+          ) : null}
         </div>
         <nav className="nav">
           {desktopPrimaryItems.map((item) => (

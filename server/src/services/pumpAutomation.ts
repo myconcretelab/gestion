@@ -25,6 +25,7 @@ import {
   type PumpLatestExtraction,
   type PumpLatestReservation,
 } from "./pumpAutomationExtraction.js";
+import { syncPumpHealthAlerts } from "./pumpHealth.js";
 
 export type PumpStatusResponse = {
   sessionId: string | null;
@@ -134,6 +135,9 @@ const listSessions = (limit = 20) =>
 
 const getPumpPassword = () => env.PUMP_SESSION_PASSWORD || "";
 
+const getConfiguredStorageStatePath = (config: Pick<PumpAutomationConfig, "baseUrl" | "username">) =>
+  path.join(storageStatesRoot, `${getPumpStorageStateId(config)}.json`);
+
 const sanitizeSessionStatusResponse = (session: ActiveSessionState | null) => {
   if (!session) return null;
   return {
@@ -240,6 +244,9 @@ const executeSession = async (sessionId: string, password: string) => {
   } finally {
     await playwright.close();
     networkCapture.stop();
+    await syncPumpHealthAlerts(`pump-refresh:${sessionData.status}`).catch((error) => {
+      logError("Unable to sync Pump health alerts.", error);
+    });
     scheduleSessionCleanup(sessionId);
   }
 };
@@ -312,6 +319,31 @@ export const importPersistedPumpSession = (
     storageStateId,
     filename: path.basename(targetPath),
     relativePath: path.relative(process.cwd(), targetPath),
+  };
+};
+
+export const exportPersistedPumpSession = () => {
+  ensurePumpDirectories();
+  const currentConfig = getPumpAutomationConfig();
+
+  if (!currentConfig.baseUrl.trim() || !currentConfig.username.trim()) {
+    throw new Error("La configuration Pump doit contenir l'URL Airbnb et le compte avant l'export.");
+  }
+
+  const storageStateId = getPumpStorageStateId(currentConfig);
+  const targetPath = getConfiguredStorageStatePath(currentConfig);
+  if (!fs.existsSync(targetPath)) {
+    throw new Error("Aucune session persistée Pump n'est disponible pour cet export.");
+  }
+
+  const raw = fs.readFileSync(targetPath, "utf-8");
+  const storageState = JSON.parse(raw) as unknown;
+
+  return {
+    storageStateId,
+    filename: path.basename(targetPath),
+    relativePath: path.relative(process.cwd(), targetPath),
+    storageState,
   };
 };
 

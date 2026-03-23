@@ -20,6 +20,7 @@ import {
   triggerPumpRefresh,
 } from "../services/pumpClient.js";
 import {
+  exportPersistedPumpSession,
   getPumpAutomationConfig,
   importPersistedPumpSession,
   importPumpAutomationConfig,
@@ -33,8 +34,14 @@ import {
   buildReservationsPreview,
   importPreviewReservations,
 } from "../services/reservationImports.js";
-import { getPumpCronState, updatePumpCronConfig } from "../services/pumpCron.js";
+import { getPumpCronState, runPumpCronImport, updatePumpCronConfig } from "../services/pumpCron.js";
 import type { PumpCronConfig } from "../services/pumpCronSettings.js";
+import { getPumpConnectionHealth, syncPumpHealthAlerts } from "../services/pumpHealth.js";
+import {
+  cancelPumpSessionCapture,
+  getPumpSessionCaptureStatus,
+  startPumpSessionCapture,
+} from "../services/pumpSessionCapture.js";
 import {
   mergeDeclarationNightsSettings,
   readDeclarationNightsSettings,
@@ -108,6 +115,7 @@ const pumpCronConfigSchema = z.object({
 const pumpAutomationConfigSchema = z.object({
   baseUrl: z.string().trim().url("URL Pump invalide."),
   username: z.string().trim().default(""),
+  authMode: z.enum(["persisted-only", "legacy-auto-login"]).default("persisted-only"),
   hasOTP: z.boolean().default(false),
   persistSession: z.boolean().default(true),
   manualScrollMode: z.boolean().default(false),
@@ -133,6 +141,12 @@ const pumpAutomationConfigSchema = z.object({
     emailFirstButton: z.string().trim().min(1),
     continueAfterUsernameButton: z.string().trim().min(1),
     finalSubmitButton: z.string().trim().min(1),
+    accountChooserContinueButton: z.string().trim().min(1),
+    calendarSourceCard: z.string().trim().min(1),
+    calendarSourceEditButton: z.string().trim().min(1),
+    calendarSourceRefreshButton: z.string().trim().min(1),
+    calendarSourceUrlField: z.string().trim().min(1),
+    calendarSourceCloseButton: z.string().trim().min(1),
   }),
 });
 const pumpAutomationConfigImportSchema = z.object({
@@ -1025,10 +1039,43 @@ router.post("/pump/session/import", (req, res, next) => {
     const result = importPersistedPumpSession(payload.storageState, {
       filename: payload.filename,
     });
+    void syncPumpHealthAlerts("pump-session-import").catch(() => undefined);
     res.json({
       success: true,
       ...result,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/pump/session/export", (_req, res, next) => {
+  try {
+    const exported = exportPersistedPumpSession();
+    res.json({
+      success: true,
+      ...exported,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/pump/session/capture/status", (_req, res) => {
+  res.json(getPumpSessionCaptureStatus());
+});
+
+router.post("/pump/session/capture/start", (_req, res, next) => {
+  try {
+    res.json(startPumpSessionCapture());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/session/capture/cancel", async (_req, res, next) => {
+  try {
+    res.json(await cancelPumpSessionCapture());
   } catch (error) {
     next(error);
   }
@@ -1056,6 +1103,15 @@ router.get("/pump/status", async (_req, res, next) => {
   }
 });
 
+router.get("/pump/health", async (_req, res, next) => {
+  try {
+    const health = await getPumpConnectionHealth();
+    res.json(health);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/pump/refresh", async (_req, res, next) => {
   try {
     const result = await triggerPumpRefresh();
@@ -1064,6 +1120,24 @@ router.post("/pump/refresh", async (_req, res, next) => {
     next(error);
   }
 });
+
+const runPumpCronHttp = async (_req: any, res: any, next: (err?: unknown) => void) => {
+  try {
+    const outcome = await runPumpCronImport();
+    const health = await getPumpConnectionHealth();
+    res.json({
+      ok: true,
+      state: getPumpCronState(),
+      health,
+      summary: outcome,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+router.get("/pump/cron/run", requireCronTriggerToken, runPumpCronHttp);
+router.post("/pump/cron/run", requireCronTriggerToken, runPumpCronHttp);
 
 router.post("/pump/preview", async (_req, res, next) => {
   try {

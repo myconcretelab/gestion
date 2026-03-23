@@ -60,26 +60,40 @@ Variables d'environnement utiles:
 - `PUMP_BASE_URL=https://www.airbnb.fr/hosting/multicalendar`
 - `PUMP_USERNAME=...`
 - `PUMP_SESSION_PASSWORD=...`
+- `PUMP_AUTH_MODE=persisted-only`
 - `PUMP_SCROLL_SELECTOR=...`
 - `PUMP_LOGIN_STRATEGY=simple` ou `multi-step`
 - `PUMP_IMPORT_CRON_ENABLED=true`
+- `PUMP_IMPORT_CRON_SCHEDULER=internal` ou `external`
 - `PUMP_IMPORT_CRON_INTERVAL_DAYS=3`
 - `PUMP_IMPORT_CRON_HOUR=10`
 - `PUMP_IMPORT_CRON_MINUTE=0`
+- `PUMP_ALERT_EMAIL_TO=...`
+- `PUMP_ALERT_EMAIL_FROM=...`
+- `SMTP_HOST=...`
 
 Flux prévu:
 
 1. Configurer l'automatisation Pump locale dans `contrats`.
-2. Ouvrir **Réglages**.
-3. Utiliser la section **Import Pump**:
+2. Importer une session persistée Playwright depuis un navigateur local visible.
+3. Ouvrir **Réglages**.
+4. Utiliser la section **Import Pump**:
+   - `Ouvrir le navigateur de capture`
    - `Lancer refresh Pump`
    - `Rafraîchir le statut`
    - `Analyser la dernière extraction`
    - `Importer`
 
+En phase 1, le mode recommandé est `persisted-only`: `contrats` réutilise une session Airbnb déjà persistée et n'essaie plus de reconstruire le login via les boutons/classes de la page.
+
+En local, le bouton `Ouvrir le navigateur de capture` lance un navigateur visible, attend votre connexion Airbnb, puis sauvegarde automatiquement le `storageState` réutilisé ensuite par Pump.
+
 `contrats` exécute alors la capture Airbnb localement, extrait les réservations normalisées, les prévisualise avec le même moteur que l'ancien import HAR, puis crée ou complète les réservations locales.
 
-Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h.
+Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h. En production, vous pouvez utiliser le mode `external` et déclencher:
+
+- `GET /api/settings/pump/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN`
+- ou `POST /api/settings/pump/cron/run` avec le même token
 
 ## Synchronisation iCal
 
@@ -127,6 +141,8 @@ SEED_SKIP_PDF=1 npm run seed
 - (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
 - (optionnel) `ICAL_SYNC_ENABLED=true`
 - (optionnel) `CRON_TRIGGER_TOKEN=...` pour déclencher le cron iCal via URL HTTP
+- (optionnel) `PUMP_IMPORT_CRON_SCHEDULER=external` pour déclencher Pump via cron HTTP
+- (optionnel) `PUMP_ALERT_EMAIL_TO=...`, `PUMP_ALERT_EMAIL_FROM=...`, `SMTP_HOST=...`, `SMTP_PORT=587`, `SMTP_SECURE=false`, `SMTP_USER=...`, `SMTP_PASS=...`
 - (optionnel) `RESTART_CMD=...` ou `ALWAYSDATA_API_TOKEN` + `ALWAYSDATA_ACCOUNT` + `ALWAYSDATA_SITE_ID` pour que `./update` redemarre le serveur
 
 Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
@@ -155,6 +171,12 @@ npm run start
 
 ```text
 https://votre-domaine/api/settings/ical/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN
+```
+
+3ter. Si Pump est en scheduler `external`, configurer aussi:
+
+```text
+https://votre-domaine/api/settings/pump/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN
 ```
 
 4. PDFs: les fichiers sont stockes dans `server/data/pdfs/YYYY/MM/` par defaut. Assurez-vous que le dossier `server/data/` (ou la variable `DATA_DIR`) est sur un volume persistant et accessible en ecriture par le processus AlwaysData.

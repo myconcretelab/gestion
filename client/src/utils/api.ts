@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
+const API_BASE = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE ?? "/api");
 
 type ApiOptions = RequestInit & { json?: unknown };
 type ApiValidationDetails = {

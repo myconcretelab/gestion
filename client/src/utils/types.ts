@@ -20,6 +20,7 @@ export type Gite = {
   proprietaires_adresse: string;
   site_web?: string | null;
   email?: string | null;
+  airbnb_listing_id?: string | null;
   telephones: string[];
   taxe_sejour_par_personne_par_nuit: number;
   iban: string;

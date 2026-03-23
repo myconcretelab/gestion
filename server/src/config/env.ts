@@ -68,6 +68,10 @@ export const env = {
   PUMP_BASE_URL: process.env.PUMP_BASE_URL ?? "https://www.airbnb.fr/hosting/multicalendar",
   PUMP_USERNAME: process.env.PUMP_USERNAME ?? "",
   PUMP_SESSION_PASSWORD: process.env.PUMP_SESSION_PASSWORD ?? "",
+  PUMP_AUTH_MODE:
+    String(process.env.PUMP_AUTH_MODE ?? "persisted-only").trim().toLowerCase() === "legacy-auto-login"
+      ? "legacy-auto-login"
+      : "persisted-only",
   PUMP_HAS_OTP: parseBooleanEnv(process.env.PUMP_HAS_OTP, false),
   PUMP_PERSIST_SESSION: parseBooleanEnv(process.env.PUMP_PERSIST_SESSION, true),
   PUMP_MANUAL_SCROLL_MODE: parseBooleanEnv(process.env.PUMP_MANUAL_SCROLL_MODE, false),
@@ -79,6 +83,7 @@ export const env = {
   PUMP_WAIT_BEFORE_SCROLL: parseIntegerEnv(process.env.PUMP_WAIT_BEFORE_SCROLL, 2_000, 0, 120_000),
   PUMP_ENABLE_HAR: parseBooleanEnv(process.env.PUMP_ENABLE_HAR, false),
   PUMP_OUTPUT_FOLDER: process.env.PUMP_OUTPUT_FOLDER ?? "",
+  PUMP_HEALTH_STALE_AFTER_HOURS: parseIntegerEnv(process.env.PUMP_HEALTH_STALE_AFTER_HOURS, 96, 1, 24 * 30),
   PUMP_LOGIN_STRATEGY:
     String(process.env.PUMP_LOGIN_STRATEGY ?? "simple").trim().toLowerCase() === "multi-step" ? "multi-step" : "simple",
   DEFAULT_ARRHES_RATE: Number(process.env.DEFAULT_ARRHES_RATE ?? 0.2),
@@ -91,8 +96,20 @@ export const env = {
   ICAL_SYNC_HOUR: parseIntegerEnv(process.env.ICAL_SYNC_HOUR, 3, 0, 23),
   ICAL_SYNC_MINUTE: parseIntegerEnv(process.env.ICAL_SYNC_MINUTE, 15, 0, 59),
   PUMP_IMPORT_CRON_ENABLED: parseBooleanEnv(process.env.PUMP_IMPORT_CRON_ENABLED, true),
+  PUMP_IMPORT_CRON_SCHEDULER:
+    String(process.env.PUMP_IMPORT_CRON_SCHEDULER ?? "internal").trim().toLowerCase() === "external"
+      ? "external"
+      : "internal",
   PUMP_IMPORT_CRON_RUN_ON_START: parseBooleanEnv(process.env.PUMP_IMPORT_CRON_RUN_ON_START, false),
   PUMP_IMPORT_CRON_INTERVAL_DAYS: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_INTERVAL_DAYS, 3, 1, 30),
   PUMP_IMPORT_CRON_HOUR: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_HOUR, 10, 0, 23),
   PUMP_IMPORT_CRON_MINUTE: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_MINUTE, 0, 0, 59),
+  PUMP_ALERT_EMAIL_ENABLED: parseBooleanEnv(process.env.PUMP_ALERT_EMAIL_ENABLED, true),
+  PUMP_ALERT_EMAIL_TO: process.env.PUMP_ALERT_EMAIL_TO ?? "",
+  PUMP_ALERT_EMAIL_FROM: process.env.PUMP_ALERT_EMAIL_FROM ?? "",
+  SMTP_HOST: process.env.SMTP_HOST ?? "",
+  SMTP_PORT: parseIntegerEnv(process.env.SMTP_PORT, 587, 1, 65535),
+  SMTP_SECURE: parseBooleanEnv(process.env.SMTP_SECURE, false),
+  SMTP_USER: process.env.SMTP_USER ?? "",
+  SMTP_PASS: process.env.SMTP_PASS ?? "",
 };

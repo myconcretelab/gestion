@@ -12,6 +12,7 @@ export type PumpFilterRule = {
 export type PumpAutomationConfig = {
   baseUrl: string;
   username: string;
+  authMode: "persisted-only" | "legacy-auto-login";
   hasOTP: boolean;
   persistSession: boolean;
   manualScrollMode: boolean;
@@ -35,6 +36,12 @@ export type PumpAutomationConfig = {
     emailFirstButton: string;
     continueAfterUsernameButton: string;
     finalSubmitButton: string;
+    accountChooserContinueButton: string;
+    calendarSourceCard: string;
+    calendarSourceEditButton: string;
+    calendarSourceRefreshButton: string;
+    calendarSourceUrlField: string;
+    calendarSourceCloseButton: string;
   };
 };
 
@@ -78,6 +85,18 @@ const DEFAULT_ADVANCED_SELECTORS: PumpAutomationConfig["advancedSelectors"] = {
     'button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Suivant"), button:has-text("Next"), button[type="submit"]',
   finalSubmitButton:
     'button:has-text("Connexion"), button:has-text("Se connecter"), button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Sign in"), button:has-text("Log in"), button[type="submit"]',
+  accountChooserContinueButton:
+    'button:has-text("Continuer"), [role="button"]:has-text("Continuer"), button:has-text("Continue"), [role="button"]:has-text("Continue")',
+  calendarSourceCard:
+    'div:has(button:has-text("Actualiser")), div:has(button:has-text("Refresh")), article:has(button:has-text("Actualiser")), article:has(button:has-text("Refresh"))',
+  calendarSourceEditButton:
+    'button:has-text("Modifier"), [role="button"]:has-text("Modifier"), button:has-text("Edit"), [role="button"]:has-text("Edit")',
+  calendarSourceRefreshButton:
+    'button:has-text("Actualiser"), [role="button"]:has-text("Actualiser"), button:has-text("Refresh"), [role="button"]:has-text("Refresh")',
+  calendarSourceUrlField:
+    'input[type="url"], input[readonly], input[value*="ical"], input[value*="/calendar/"], textarea',
+  calendarSourceCloseButton:
+    'button:has-text("Fermer"), [role="button"]:has-text("Fermer"), button:has-text("Close"), [role="button"]:has-text("Close"), [aria-label*="Fermer"], [aria-label*="Close"]',
 };
 
 const ensureDataDir = () => {
@@ -146,6 +165,7 @@ const normalizeFilterRules = (value: unknown) => {
 export const buildDefaultPumpAutomationConfig = (): PumpAutomationConfig => ({
   baseUrl: env.PUMP_BASE_URL,
   username: env.PUMP_USERNAME,
+  authMode: env.PUMP_AUTH_MODE as PumpAutomationConfig["authMode"],
   hasOTP: env.PUMP_HAS_OTP,
   persistSession: env.PUMP_PERSIST_SESSION,
   manualScrollMode: env.PUMP_MANUAL_SCROLL_MODE,
@@ -180,6 +200,10 @@ export const normalizePumpAutomationConfig = (
   return {
     baseUrl: toTrimmedString(source.baseUrl, defaults.baseUrl),
     username: toTrimmedString(source.username, defaults.username),
+    authMode:
+      toTrimmedString(source.authMode, defaults.authMode).toLowerCase() === "legacy-auto-login"
+        ? "legacy-auto-login"
+        : "persisted-only",
     hasOTP: toBoolean(source.hasOTP, defaults.hasOTP),
     persistSession: toBoolean(source.persistSession, defaults.persistSession),
     manualScrollMode: toBoolean(source.manualScrollMode, defaults.manualScrollMode),
@@ -213,6 +237,30 @@ export const normalizePumpAutomationConfig = (
       ),
       finalSubmitButton: normalizePumpSelectorSyntax(
         toTrimmedString(advancedSelectors.finalSubmitButton, defaults.advancedSelectors.finalSubmitButton)
+      ),
+      accountChooserContinueButton: normalizePumpSelectorSyntax(
+        toTrimmedString(
+          advancedSelectors.accountChooserContinueButton,
+          defaults.advancedSelectors.accountChooserContinueButton
+        )
+      ),
+      calendarSourceCard: normalizePumpSelectorSyntax(
+        toTrimmedString(advancedSelectors.calendarSourceCard, defaults.advancedSelectors.calendarSourceCard)
+      ),
+      calendarSourceEditButton: normalizePumpSelectorSyntax(
+        toTrimmedString(advancedSelectors.calendarSourceEditButton, defaults.advancedSelectors.calendarSourceEditButton)
+      ),
+      calendarSourceRefreshButton: normalizePumpSelectorSyntax(
+        toTrimmedString(
+          advancedSelectors.calendarSourceRefreshButton,
+          defaults.advancedSelectors.calendarSourceRefreshButton
+        )
+      ),
+      calendarSourceUrlField: normalizePumpSelectorSyntax(
+        toTrimmedString(advancedSelectors.calendarSourceUrlField, defaults.advancedSelectors.calendarSourceUrlField)
+      ),
+      calendarSourceCloseButton: normalizePumpSelectorSyntax(
+        toTrimmedString(advancedSelectors.calendarSourceCloseButton, defaults.advancedSelectors.calendarSourceCloseButton)
       ),
     },
   };
@@ -257,6 +305,10 @@ export const validatePumpAutomationConfig = (config: PumpAutomationConfig) => {
 
   if (config.loginStrategy !== "simple" && config.loginStrategy !== "multi-step") {
     errors.push("loginStrategy doit valoir simple ou multi-step.");
+  }
+
+  if (config.authMode !== "persisted-only" && config.authMode !== "legacy-auto-login") {
+    errors.push("authMode doit valoir persisted-only ou legacy-auto-login.");
   }
 
   return errors;
