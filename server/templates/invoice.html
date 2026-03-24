@@ -19,8 +19,14 @@
         --olive: #b8ab57;
         --coral: #ef735d;
         --rose: #efddd5;
-        --line: rgba(115, 97, 70, 0.24);
-        --line-strong: rgba(109, 124, 99, 0.45);
+        --line: #dad4c7;
+        --line-strong: #bbc0b1;
+        --motif-olive: #ded7ae;
+        --motif-sage: #cbd1c0;
+        --motif-coral: #f8beb1;
+        --motif-cream: #faf5eb;
+        --motif-rose: #f8eee8;
+        --motif-paper: #fdfbf4;
       }
 
       * {
@@ -45,9 +51,7 @@
         flex-direction: column;
         gap: 5.1mm;
         overflow: hidden;
-        background:
-          radial-gradient(circle at top left, rgba(255, 255, 255, 0.92) 0, rgba(255, 255, 255, 0) 35%),
-          linear-gradient(180deg, #fffdf8 0%, #fbf8f0 100%);
+        background: #fffdf8;
       }
 
       .page > * {
@@ -60,7 +64,6 @@
         z-index: 0;
         width: 66mm;
         height: 53mm;
-        opacity: 0.46;
       }
 
       .motif--top {
@@ -125,7 +128,7 @@
         position: absolute;
         top: 54%;
         width: 9.4mm;
-        border-top: 1px solid rgba(109, 124, 99, 0.65);
+        border-top: 1px solid #9fa794;
       }
 
       .brand-logo__tiny::before {
@@ -173,7 +176,7 @@
         margin-top: 2.5mm;
         padding-top: 2.5mm;
         max-width: 105mm;
-        border-top: 1px solid rgba(109, 124, 99, 0.22);
+        border-top: 1px solid #dcddd1;
       }
 
       .link {
@@ -185,13 +188,13 @@
         border: 1px solid var(--line);
         border-radius: 4mm;
         padding: 4.2mm 4.6mm;
-        background: rgba(255, 253, 248, 0.96);
+        background: #fffdf8;
       }
 
       .invoice-summary {
         padding: 4.6mm 4.8mm;
-        background: rgba(255, 253, 248, 0.97);
-        border-color: rgba(184, 171, 87, 0.3);
+        background: #fffdf8;
+        border-color: #e7e1c2;
       }
 
       .invoice-number {
@@ -239,8 +242,8 @@
       }
 
       .stay-card {
-        background: rgba(255, 253, 248, 0.98);
-        border-color: rgba(239, 115, 93, 0.24);
+        background: #fffdf8;
+        border-color: #f8d8cd;
       }
 
       .stay-dates {
@@ -274,7 +277,7 @@
       .stay-meta {
         margin-top: 3mm;
         padding-top: 2.4mm;
-        border-top: 1px solid rgba(239, 115, 93, 0.18);
+        border-top: 1px solid #f9e0d6;
       }
 
       .stay-meta-line {
@@ -299,12 +302,12 @@
       th,
       td {
         padding: 1.9mm 1.2mm;
-        border-bottom: 1px solid rgba(115, 97, 70, 0.14);
+        border-bottom: 1px solid #e8e3d8;
       }
 
       th {
         text-align: left;
-        border-bottom-color: rgba(109, 124, 99, 0.26);
+        border-bottom-color: #d6d8cb;
       }
 
       td {
@@ -318,7 +321,7 @@
       }
 
       tbody tr:last-child td {
-        border-bottom-color: rgba(115, 97, 70, 0.18);
+        border-bottom-color: #e3ddd1;
       }
 
       .invoice-muted {
@@ -367,9 +370,7 @@
       .bank-footer {
         margin-top: auto;
         padding-top: 4mm;
-        background:
-          linear-gradient(180deg, rgba(141, 157, 127, 0.1) 0%, rgba(255, 253, 248, 0.96) 42%),
-          rgba(255, 253, 248, 0.98);
+        background: #fffdf8;
       }
 
       .bank-title {
@@ -516,9 +517,7 @@
 
       @media screen {
         body.preview {
-          background:
-            radial-gradient(circle at top, rgba(184, 171, 87, 0.16), transparent 45%),
-            #efe8d8;
+          background: #efe8d8;
           padding: 24px 0;
         }
 
@@ -537,46 +536,46 @@
         <path
           d="M16 148c22-20 40-41 59-62 20-23 43-42 70-55 22-11 42-17 59-20"
           fill="none"
-          stroke="#b8ab57"
+          stroke="var(--motif-olive)"
           stroke-linecap="round"
           stroke-width="3.5"
         />
-        <path d="M50 132c-4-13 1-24 14-33" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
-        <path d="M89 103c14-7 24-18 32-31" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
-        <path d="M131 74c14-2 25-8 35-17" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
-        <ellipse cx="57" cy="117" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-35 57 117)" />
-        <ellipse cx="101" cy="91" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-22 101 91)" />
-        <ellipse cx="143" cy="60" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-14 143 60)" />
-        <g fill="#ef735d">
+        <path d="M50 132c-4-13 1-24 14-33" fill="none" stroke="var(--motif-sage)" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M89 103c14-7 24-18 32-31" fill="none" stroke="var(--motif-sage)" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M131 74c14-2 25-8 35-17" fill="none" stroke="var(--motif-sage)" stroke-linecap="round" stroke-width="2.1" />
+        <ellipse cx="57" cy="117" rx="11" ry="6.5" fill="var(--motif-sage)" transform="rotate(-35 57 117)" />
+        <ellipse cx="101" cy="91" rx="11" ry="6.5" fill="var(--motif-sage)" transform="rotate(-22 101 91)" />
+        <ellipse cx="143" cy="60" rx="11" ry="6.5" fill="var(--motif-sage)" transform="rotate(-14 143 60)" />
+        <g fill="var(--motif-coral)">
           <circle cx="32" cy="135" r="8" />
           <circle cx="44" cy="124" r="8" />
           <circle cx="57" cy="134" r="8" />
           <circle cx="45" cy="146" r="8" />
-          <circle cx="45" cy="135" r="6.2" fill="#f4ecdc" />
+          <circle cx="45" cy="135" r="6.2" fill="var(--motif-cream)" />
           <circle cx="106" cy="84" r="10" />
           <circle cx="120" cy="71" r="10" />
           <circle cx="135" cy="83" r="10" />
           <circle cx="120" cy="97" r="10" />
-          <circle cx="120" cy="84" r="8.1" fill="#f4ecdc" />
+          <circle cx="120" cy="84" r="8.1" fill="var(--motif-cream)" />
           <circle cx="166" cy="47" r="6" />
           <circle cx="175" cy="39" r="6" />
           <circle cx="184" cy="47" r="6" />
           <circle cx="175" cy="56" r="6" />
-          <circle cx="175" cy="47" r="4.3" fill="#f4ecdc" />
+          <circle cx="175" cy="47" r="4.3" fill="var(--motif-cream)" />
         </g>
-        <g fill="#efddd5">
+        <g fill="var(--motif-rose)">
           <circle cx="82" cy="132" r="6" />
           <circle cx="90" cy="125" r="6" />
           <circle cx="99" cy="132" r="6" />
           <circle cx="90" cy="140" r="6" />
-          <circle cx="90" cy="132" r="4.3" fill="#fbf8f0" />
+          <circle cx="90" cy="132" r="4.3" fill="var(--motif-paper)" />
           <circle cx="149" cy="95" r="5.3" />
           <circle cx="156" cy="89" r="5.3" />
           <circle cx="163" cy="95" r="5.3" />
           <circle cx="156" cy="102" r="5.3" />
-          <circle cx="156" cy="95" r="3.6" fill="#fbf8f0" />
+          <circle cx="156" cy="95" r="3.6" fill="var(--motif-paper)" />
         </g>
-        <g fill="#b8ab57">
+        <g fill="var(--motif-olive)">
           <circle cx="71" cy="108" r="2.8" />
           <circle cx="75" cy="100" r="2.8" />
           <circle cx="170" cy="78" r="3.1" />
@@ -588,46 +587,46 @@
         <path
           d="M16 148c22-20 40-41 59-62 20-23 43-42 70-55 22-11 42-17 59-20"
           fill="none"
-          stroke="#b8ab57"
+          stroke="var(--motif-olive)"
           stroke-linecap="round"
           stroke-width="3.5"
         />
-        <path d="M50 132c-4-13 1-24 14-33" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
-        <path d="M89 103c14-7 24-18 32-31" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
-        <path d="M131 74c14-2 25-8 35-17" fill="none" stroke="#8d9d7f" stroke-linecap="round" stroke-width="2.1" />
-        <ellipse cx="57" cy="117" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-35 57 117)" />
-        <ellipse cx="101" cy="91" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-22 101 91)" />
-        <ellipse cx="143" cy="60" rx="11" ry="6.5" fill="#8d9d7f" transform="rotate(-14 143 60)" />
-        <g fill="#ef735d">
+        <path d="M50 132c-4-13 1-24 14-33" fill="none" stroke="var(--motif-sage)" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M89 103c14-7 24-18 32-31" fill="none" stroke="var(--motif-sage)" stroke-linecap="round" stroke-width="2.1" />
+        <path d="M131 74c14-2 25-8 35-17" fill="none" stroke="var(--motif-sage)" stroke-linecap="round" stroke-width="2.1" />
+        <ellipse cx="57" cy="117" rx="11" ry="6.5" fill="var(--motif-sage)" transform="rotate(-35 57 117)" />
+        <ellipse cx="101" cy="91" rx="11" ry="6.5" fill="var(--motif-sage)" transform="rotate(-22 101 91)" />
+        <ellipse cx="143" cy="60" rx="11" ry="6.5" fill="var(--motif-sage)" transform="rotate(-14 143 60)" />
+        <g fill="var(--motif-coral)">
           <circle cx="32" cy="135" r="8" />
           <circle cx="44" cy="124" r="8" />
           <circle cx="57" cy="134" r="8" />
           <circle cx="45" cy="146" r="8" />
-          <circle cx="45" cy="135" r="6.2" fill="#f4ecdc" />
+          <circle cx="45" cy="135" r="6.2" fill="var(--motif-cream)" />
           <circle cx="106" cy="84" r="10" />
           <circle cx="120" cy="71" r="10" />
           <circle cx="135" cy="83" r="10" />
           <circle cx="120" cy="97" r="10" />
-          <circle cx="120" cy="84" r="8.1" fill="#f4ecdc" />
+          <circle cx="120" cy="84" r="8.1" fill="var(--motif-cream)" />
           <circle cx="166" cy="47" r="6" />
           <circle cx="175" cy="39" r="6" />
           <circle cx="184" cy="47" r="6" />
           <circle cx="175" cy="56" r="6" />
-          <circle cx="175" cy="47" r="4.3" fill="#f4ecdc" />
+          <circle cx="175" cy="47" r="4.3" fill="var(--motif-cream)" />
         </g>
-        <g fill="#efddd5">
+        <g fill="var(--motif-rose)">
           <circle cx="82" cy="132" r="6" />
           <circle cx="90" cy="125" r="6" />
           <circle cx="99" cy="132" r="6" />
           <circle cx="90" cy="140" r="6" />
-          <circle cx="90" cy="132" r="4.3" fill="#fbf8f0" />
+          <circle cx="90" cy="132" r="4.3" fill="var(--motif-paper)" />
           <circle cx="149" cy="95" r="5.3" />
           <circle cx="156" cy="89" r="5.3" />
           <circle cx="163" cy="95" r="5.3" />
           <circle cx="156" cy="102" r="5.3" />
-          <circle cx="156" cy="95" r="3.6" fill="#fbf8f0" />
+          <circle cx="156" cy="95" r="3.6" fill="var(--motif-paper)" />
         </g>
-        <g fill="#b8ab57">
+        <g fill="var(--motif-olive)">
           <circle cx="71" cy="108" r="2.8" />
           <circle cx="75" cy="100" r="2.8" />
           <circle cx="170" cy="78" r="3.1" />
