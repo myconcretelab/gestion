@@ -52,7 +52,26 @@ type PumpHealthNotice = {
 type LoginResult = ServerAuthSession;
 
 const ICAL_AUTO_SYNC_SESSION_KEY = "ical-auto-sync-attempted";
+const ICAL_AUTO_SYNC_TIMEOUT_MS = 15_000;
 let appLoadIcalAutoSyncPromise: Promise<IcalAutoSyncResponse> | null = null;
+
+const readSessionStorageItem = (key: string) => {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeSessionStorageItem = (key: string, value: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Safari peut refuser le storage dans certains contextes; on ignore et on continue.
+  }
+};
 
 const formatSessionDurationLabel = (hours: number) => {
   if (hours % 24 === 0) {
@@ -118,13 +137,24 @@ const buildIcalAutoSyncNotice = (result: IcalAutoSyncResponse): AppNotice => {
 
 const getAppLoadIcalAutoSyncPromise = () => {
   if (typeof window === "undefined") return null;
-  if (window.sessionStorage.getItem(ICAL_AUTO_SYNC_SESSION_KEY) !== "1") {
-    window.sessionStorage.setItem(ICAL_AUTO_SYNC_SESSION_KEY, "1");
+  if (readSessionStorageItem(ICAL_AUTO_SYNC_SESSION_KEY) !== "1") {
+    writeSessionStorageItem(ICAL_AUTO_SYNC_SESSION_KEY, "1");
   }
 
   if (!appLoadIcalAutoSyncPromise) {
-    appLoadIcalAutoSyncPromise = apiFetch<IcalAutoSyncResponse>("/settings/ical/auto-sync", {
-      method: "POST",
+    appLoadIcalAutoSyncPromise = new Promise<IcalAutoSyncResponse>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        reject(new Error("Le chargement iCal prend trop de temps."));
+      }, ICAL_AUTO_SYNC_TIMEOUT_MS);
+
+      apiFetch<IcalAutoSyncResponse>("/settings/ical/auto-sync", {
+        method: "POST",
+      })
+        .then(resolve)
+        .catch(reject)
+        .finally(() => {
+          window.clearTimeout(timeoutId);
+        });
     });
   }
 
@@ -448,7 +478,7 @@ const App = () => {
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
     if (typeof window === "undefined") return;
-    const hasAttempted = window.sessionStorage.getItem(ICAL_AUTO_SYNC_SESSION_KEY) === "1";
+    const hasAttempted = readSessionStorageItem(ICAL_AUTO_SYNC_SESSION_KEY) === "1";
     if (hasAttempted && !appLoadIcalAutoSyncPromise) return;
     let active = true;
 
@@ -470,13 +500,13 @@ const App = () => {
           void loadRecentImportedReservationsCount();
         }
       } catch (error) {
-        if (!active || isAbortError(error)) return;
+        if (!active) return;
         pushAppNotice({
           label: "iCal",
-          tone: "error",
-          message: "Echec import iCal",
+          tone: isAbortError(error) ? "neutral" : "error",
+          message: isAbortError(error) ? "Import iCal interrompu" : error instanceof Error ? error.message : "Echec import iCal",
           timeoutMs: 5_200,
-          role: "alert",
+          role: isAbortError(error) ? "status" : "alert",
         });
       }
     };
