@@ -135,6 +135,33 @@ const RESERVATION_SOURCES = [
 
 const DEFAULT_RESERVATION_SOURCE = "A définir";
 
+const getStoredTodayUser = () => {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(USER_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+
+const getMatchesMediaQuery = (query: string) =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query).matches : false;
+
+const subscribeToMediaQueryChange = (mediaQuery: MediaQueryList, listener: (event: MediaQueryListEvent) => void) => {
+  const mediaQueryWithLegacyApi = mediaQuery as MediaQueryList & {
+    addListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+    removeListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+  };
+
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", listener);
+    return () => mediaQuery.removeEventListener("change", listener);
+  }
+
+  mediaQueryWithLegacyApi.addListener?.(listener);
+  return () => mediaQueryWithLegacyApi.removeListener?.(listener);
+};
+
 const parseIsoDate = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
@@ -379,9 +406,7 @@ const getEventIcon = (type: TodayEventType) => {
 const TodayPage = () => {
   const navigate = useNavigate();
   const [overview, setOverview] = useState<TodayOverviewPayload | null>(null);
-  const [selectedUser, setSelectedUser] = useState(() =>
-    typeof window !== "undefined" ? window.localStorage.getItem(USER_STORAGE_KEY) ?? "" : ""
-  );
+  const [selectedUser, setSelectedUser] = useState(() => getStoredTodayUser());
   const [quickReservationSmsSnippets, setQuickReservationSmsSnippets] = useState<QuickReservationSmsSnippet[]>(
     DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS
   );
@@ -397,7 +422,7 @@ const TodayPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`).matches : false
+    getMatchesMediaQuery(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`)
   );
 
   const loadData = async (options?: { silent?: boolean }) => {
@@ -436,6 +461,7 @@ const TodayPage = () => {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`);
     const updateScrollMode = (matches: boolean) => {
       setUsesViewportScroll((current) => (current === matches ? current : matches));
@@ -447,11 +473,7 @@ const TodayPage = () => {
       updateScrollMode(event.matches);
     };
 
-    mediaQuery.addEventListener("change", handleChange);
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange);
-    };
+    return subscribeToMediaQueryChange(mediaQuery, handleChange);
   }, []);
 
   const todayIso = overview?.today ?? toIsoDate(new Date());
@@ -504,7 +526,11 @@ const TodayPage = () => {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(USER_STORAGE_KEY, selectedUser);
+    try {
+      window.localStorage.setItem(USER_STORAGE_KEY, selectedUser);
+    } catch {
+      // Ignore local storage write failures on restrictive mobile browsers.
+    }
   }, [selectedUser]);
 
   useEffect(() => {

@@ -460,7 +460,9 @@ const CalendrierPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`).matches : false
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`).matches
+      : false
   );
   const [viewportStickyOffsets, setViewportStickyOffsets] = useState({
     topbar: DEFAULT_MOBILE_TOPBAR_OFFSET,
@@ -552,6 +554,7 @@ const CalendrierPage = () => {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`);
     const updateScrollMode = (matches: boolean) => {
       setUsesViewportScroll((current) => (current === matches ? current : matches));
@@ -563,10 +566,23 @@ const CalendrierPage = () => {
       updateScrollMode(event.matches);
     };
 
-    mediaQuery.addEventListener("change", handleChange);
+    const mediaQueryWithLegacyApi = mediaQuery as MediaQueryList & {
+      addListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+      removeListener?: (callback: (event: MediaQueryListEvent) => void) => void;
+    };
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+    } else {
+      mediaQueryWithLegacyApi.addListener?.(handleChange);
+    }
 
     return () => {
-      mediaQuery.removeEventListener("change", handleChange);
+      if (typeof mediaQuery.addEventListener === "function") {
+        mediaQuery.removeEventListener("change", handleChange);
+        return;
+      }
+      mediaQueryWithLegacyApi.removeListener?.(handleChange);
     };
   }, []);
 
