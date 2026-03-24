@@ -414,6 +414,14 @@ const parseInputDate = (value: string): Date | null => {
   return date;
 };
 
+const formatInputDate = (date: Date) => `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+
+const addDaysToInputDate = (value: string, days: number) => {
+  const date = parseInputDate(value);
+  if (!date) return "";
+  return formatInputDate(new Date(date.getTime() + days * DAY_MS));
+};
+
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
 const getGiteNightlyPriceSuggestions = (gite: Gite | null) => {
@@ -1978,11 +1986,44 @@ const ReservationsPage = () => {
 
   const activeGite = gites.find((gite) => gite.id === activeTab) ?? null;
 
-  const ensureNewRow = (monthIndex: number): ReservationDraft => {
+  const getNewRowBaseGite = () =>
+    activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeGite : null;
+
+  const buildSuggestedNewRowDraft = (monthIndex: number, previousReservation: Reservation | null = null) => {
+    const baseDraft = buildEmptyDraft(year, monthIndex, getNewRowBaseGite());
+    const suggestedEntry = previousReservation ? addDaysToInputDate(toInputDate(previousReservation.date_sortie), 1) : "";
+    const nextEntry = suggestedEntry || baseDraft.date_entree;
+    const nextExit = addDaysToInputDate(nextEntry, 1) || baseDraft.date_sortie;
+    return recalcDraft({
+      ...baseDraft,
+      date_entree: nextEntry,
+      date_sortie: nextExit,
+    });
+  };
+
+  const applySuggestedExitFromEntry = (draft: ReservationDraft, nextEntry: string) => {
+    const suggestedExit = addDaysToInputDate(nextEntry, 1);
+    if (!suggestedExit) {
+      return recalcDraft({ ...draft, date_entree: nextEntry });
+    }
+
+    const previousSuggestedExit = addDaysToInputDate(draft.date_entree, 1);
+    const hasCustomValidExit =
+      Boolean(draft.date_sortie) &&
+      computeNights(nextEntry, draft.date_sortie) > 0 &&
+      draft.date_sortie !== previousSuggestedExit;
+
+    return recalcDraft({
+      ...draft,
+      date_entree: nextEntry,
+      date_sortie: hasCustomValidExit ? draft.date_sortie : suggestedExit,
+    });
+  };
+
+  const ensureNewRow = (monthIndex: number, previousReservation: Reservation | null = null): ReservationDraft => {
     const existing = newRows[monthIndex];
     if (existing) return existing;
-    const currentGite = activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeGite : null;
-    const created = buildEmptyDraft(year, monthIndex, currentGite);
+    const created = buildSuggestedNewRowDraft(monthIndex, previousReservation);
     setNewRows((previous) => ({ ...previous, [monthIndex]: created }));
     return created;
   };
@@ -1990,7 +2031,7 @@ const ReservationsPage = () => {
   const updateNewRow = (monthIndex: number, updater: (draft: ReservationDraft) => ReservationDraft) => {
     setNewRows((previous) => {
       const base =
-        previous[monthIndex] ?? buildEmptyDraft(year, monthIndex, activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeGite : null);
+        previous[monthIndex] ?? buildEmptyDraft(year, monthIndex, getNewRowBaseGite());
       return {
         ...previous,
         [monthIndex]: updater(base),
@@ -2993,7 +3034,9 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
   };
 
   const openInlineInsertRow = (monthIndex: number, rowIndex: number) => {
-    ensureNewRow(monthIndex);
+    const monthRows = reservationsByMonth.get(monthIndex) ?? [];
+    const previousReservation = rowIndex > 0 ? monthRows[rowIndex - 1] ?? null : null;
+    ensureNewRow(monthIndex, previousReservation);
     setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: rowIndex }));
     focusGridCell(monthIndex, rowIndex, 0);
   };
@@ -3059,7 +3102,7 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
             value={newRow.date_entree}
             onChange={(event) => {
               const nextValue = event.target.value;
-              updateNewRow(monthIndex, (prev) => recalcDraft({ ...prev, date_entree: nextValue }));
+              updateNewRow(monthIndex, (prev) => applySuggestedExitFromEntry(prev, nextValue));
               if (nextValue) {
                 focusAndOpenGridDateSortiePicker(monthIndex, newRowIndex);
               }
@@ -3084,6 +3127,9 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
             className="reservations-date-input"
             type="date"
             value={newRow.date_sortie}
+            onFocus={() => {
+              updateNewRow(monthIndex, (prev) => applySuggestedExitFromEntry(prev, prev.date_entree));
+            }}
             onChange={(event) => {
               const nextValue = event.target.value;
               updateNewRow(monthIndex, (prev) => recalcDraft({ ...prev, date_sortie: nextValue }));
