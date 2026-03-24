@@ -301,6 +301,14 @@ const getViewportScrollTop = () => window.scrollY || document.documentElement.sc
 const getViewportScrollTargetTop = (target: HTMLElement, offset: number) =>
   Math.max(target.getBoundingClientRect().top + getViewportScrollTop() - offset, 0);
 
+const getCalendarMonthHeaderHeight = (target: HTMLElement) => {
+  const monthSection = target.closest(".calendar-month-section");
+  if (!(monthSection instanceof HTMLElement)) return 0;
+
+  const header = monthSection.querySelector(".calendar-month-section__header");
+  return header instanceof HTMLElement ? Math.round(header.getBoundingClientRect().height) : 0;
+};
+
 const buildCalendarMonthData = ({
   year,
   monthIndex,
@@ -1239,7 +1247,8 @@ const CalendrierPage = () => {
       const target = dayRefs.current[isoDate];
       if (!target) return false;
 
-      const topOffset = getScrollOffset("date");
+      const monthHeaderOffset = usesViewportScroll ? getCalendarMonthHeaderHeight(target) + 8 : 0;
+      const topOffset = getScrollOffset("date") + monthHeaderOffset;
 
       if (usesViewportScroll) {
         window.scrollTo({
