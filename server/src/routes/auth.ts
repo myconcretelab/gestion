@@ -22,7 +22,7 @@ router.get("/session", async (req, res, next) => {
   try {
     const payload = await buildServerAuthSessionState(req);
     if (payload.required && !payload.authenticated && getServerAuthSessionIdFromRequest(req)) {
-      clearServerAuthCookie(res);
+      clearServerAuthCookie(req, res);
     }
     res.json(payload);
   } catch (error) {
@@ -39,7 +39,7 @@ router.post("/login", async (req, res, next) => {
 
     const isValid = await verifyServerPassword(payload.password);
     if (!isValid) {
-      clearServerAuthCookie(res);
+      clearServerAuthCookie(req, res);
       return res.status(401).json({ error: "Mot de passe invalide.", code: "AUTH_REQUIRED" });
     }
 
@@ -50,7 +50,7 @@ router.post("/login", async (req, res, next) => {
 
     const session = await createServerAuthSession();
     const settings = await readServerAuthSettings();
-    setServerAuthCookie(res, session);
+    setServerAuthCookie(req, res, session);
     res.json({
       required: true,
       authenticated: true,
@@ -66,7 +66,7 @@ router.post("/login", async (req, res, next) => {
 router.post("/logout", async (req, res, next) => {
   try {
     await deleteServerAuthSession(getServerAuthSessionIdFromRequest(req));
-    clearServerAuthCookie(res);
+    clearServerAuthCookie(req, res);
     res.status(204).end();
   } catch (error) {
     next(error);
