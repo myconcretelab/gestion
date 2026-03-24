@@ -11,10 +11,12 @@ import {
 } from "./statistics/statisticsUtils";
 import { apiFetch, isApiError } from "../utils/api";
 import {
+  buildAirbnbCalendarRefreshAppNotice,
   handleAirbnbCalendarRefreshFailure,
   waitForAirbnbCalendarRefreshJob,
   type AirbnbCalendarRefreshCreateStatus,
 } from "../utils/airbnbCalendarRefresh";
+import { dispatchAppNotice } from "../utils/appNotices";
 import { isRecentImportedReservation } from "../utils/recentImportsBadge";
 import { formatDate, formatEuro } from "../utils/format";
 import {
@@ -1116,21 +1118,30 @@ const ReservationsPage = () => {
   }, [gites, location.key, requestedTab]);
 
   const startAirbnbCalendarRefreshPolling = useCallback((refresh: AirbnbCalendarRefreshCreateStatus | undefined) => {
-    if (!refresh || refresh.status !== "queued" || !refresh.job_id) return;
+    if (!refresh) return;
+
+    dispatchAppNotice(buildAirbnbCalendarRefreshAppNotice(refresh));
+    if (refresh.status !== "queued" || !refresh.job_id) return;
 
     const controller = new AbortController();
     airbnbCalendarRefreshControllersRef.current.push(controller);
 
     void waitForAirbnbCalendarRefreshJob(refresh.job_id, {
       signal: controller.signal,
+      onUpdate: (status) => {
+        dispatchAppNotice(buildAirbnbCalendarRefreshAppNotice(status));
+      },
     })
-      .then((status) => {
-        if (status.status === "failed") {
-          setError(status.message ?? "Le rafraîchissement Airbnb a échoué.");
-        }
-      })
       .catch((error) => {
-        handleAirbnbCalendarRefreshFailure(error, (message) => setError(message));
+        handleAirbnbCalendarRefreshFailure(error, (message) =>
+          dispatchAppNotice({
+            label: "Airbnb",
+            tone: "error",
+            message,
+            timeoutMs: 5_200,
+            role: "alert",
+          })
+        );
       })
       .finally(() => {
         airbnbCalendarRefreshControllersRef.current = airbnbCalendarRefreshControllersRef.current.filter(

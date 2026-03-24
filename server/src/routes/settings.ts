@@ -57,6 +57,12 @@ import {
   readSmsTextSettings,
   writeSmsTextSettings,
 } from "../services/smsTextSettings.js";
+import {
+  buildServerSecuritySettingsState,
+  getServerAuthSessionIdFromRequest,
+  setServerAuthCookie,
+  updateServerSecuritySettings,
+} from "../services/serverAuth.js";
 import { getCronTriggerToken, hasValidCronTriggerToken } from "../utils/cronTriggerAuth.js";
 import { generateIcalExportToken, shouldExportReservationToIcal } from "../utils/reservationOrigin.js";
 
@@ -165,6 +171,11 @@ const smsTextSettingsSchema = z.object({
       })
     )
     .default([]),
+});
+const serverSecuritySettingsSchema = z.object({
+  currentPassword: z.string().optional(),
+  newPassword: z.string().trim().min(8, "Le nouveau mot de passe doit contenir au moins 8 caractères.").optional(),
+  sessionDurationHours: z.number().int().min(1).max(24 * 90),
 });
 
 const getIcalExportWindowStart = () => {
@@ -379,6 +390,43 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
     can_import: unresolved_gites.length === 0 && mapping_errors.length === 0,
   };
 };
+
+router.get("/security", async (req, res, next) => {
+  try {
+    const settings = await buildServerSecuritySettingsState(req);
+    res.json(settings);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/security", async (req, res, next) => {
+  try {
+    const payload = serverSecuritySettingsSchema.parse(req.body);
+    const result = await updateServerSecuritySettings(payload, getServerAuthSessionIdFromRequest(req));
+    if (result.session) {
+      setServerAuthCookie(res, result.session);
+    }
+    const passwordConfigured = Boolean(result.settings.passwordHash && result.settings.passwordSalt);
+    res.json({
+      settings: {
+        enabled: passwordConfigured,
+        passwordConfigured,
+        sessionDurationHours: result.settings.sessionDurationHours,
+        sessionExpiresAt: result.session?.expiresAt ?? null,
+      },
+      session: {
+        required: passwordConfigured,
+        authenticated: passwordConfigured ? Boolean(result.session) : true,
+        passwordConfigured,
+        sessionDurationHours: result.settings.sessionDurationHours,
+        sessionExpiresAt: result.session?.expiresAt ?? null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/ical-sources", async (_req, res, next) => {
   try {

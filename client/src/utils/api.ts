@@ -1,3 +1,5 @@
+import { AUTH_REQUIRED_EVENT } from "./auth";
+
 const API_BASE = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE ?? "/api");
 
 type ApiOptions = RequestInit & { json?: unknown };
@@ -8,6 +10,7 @@ type ApiValidationDetails = {
 
 type ApiErrorPayload = {
   error?: string;
+  code?: string;
   details?: ApiValidationDetails;
 };
 
@@ -34,6 +37,7 @@ export const apiFetch = async <T>(path: string, options: ApiOptions = {}): Promi
   const hasJsonBody = options.json !== undefined;
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: options.credentials ?? "include",
     headers: {
       ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
       ...(options.headers ?? {}),
@@ -43,6 +47,9 @@ export const apiFetch = async <T>(path: string, options: ApiOptions = {}): Promi
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as ApiErrorPayload;
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: payload }));
+    }
     throw new ApiError(response.status, payload);
   }
 

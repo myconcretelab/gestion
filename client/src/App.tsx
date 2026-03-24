@@ -1,6 +1,8 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
-import { apiFetch, isAbortError } from "./utils/api";
+import { apiFetch, ApiError, isAbortError } from "./utils/api";
+import { AUTH_REQUIRED_EVENT, type ServerAuthSession } from "./utils/auth";
+import { APP_NOTICE_EVENT, type AppNotice } from "./utils/appNotices";
 import { RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT } from "./utils/recentImportsBadge";
 
 const GitesPage = lazy(() => import("./pages/GitesPage"));
@@ -40,12 +42,6 @@ type IcalAutoSyncResponse = {
   message: string;
 };
 
-type IcalAutoSyncNotice = {
-  status: IcalAutoSyncResponse["status"] | "running" | "error";
-  tone: "neutral" | "success" | "error";
-  message: string;
-};
-
 type PumpHealthNotice = {
   status: "connected" | "stale" | "auth_required" | "refresh_failed" | "disabled";
   tone: "success" | "warning" | "danger" | "neutral";
@@ -53,54 +49,70 @@ type PumpHealthNotice = {
   summary: string;
 };
 
+type LoginResult = ServerAuthSession;
+
 const ICAL_AUTO_SYNC_SESSION_KEY = "ical-auto-sync-attempted";
 let appLoadIcalAutoSyncPromise: Promise<IcalAutoSyncResponse> | null = null;
 
-const buildIcalAutoSyncNotice = (result: IcalAutoSyncResponse): IcalAutoSyncNotice => {
+const formatSessionDurationLabel = (hours: number) => {
+  if (hours % 24 === 0) {
+    const days = hours / 24;
+    return `${days} jour${days > 1 ? "s" : ""}`;
+  }
+  return `${hours} heure${hours > 1 ? "s" : ""}`;
+};
+
+const buildIcalAutoSyncNotice = (result: IcalAutoSyncResponse): AppNotice => {
   if ((result.status === "success" || result.status === "shared-running") && result.summary) {
     if (result.summary.created_count <= 0 && result.summary.updated_count <= 0) {
       return {
-        status: result.status,
+        label: "iCal",
         tone: "success",
         message: "iCal a jour",
+        timeoutMs: 4_200,
       };
     }
 
     return {
-      status: result.status,
+      label: "iCal",
       tone: "success",
       message: `${result.summary.created_count} ajout(s), ${result.summary.updated_count} mise(s) a jour`,
+      timeoutMs: 4_200,
     };
   }
 
   if (result.status === "skipped-no-sources") {
     return {
-      status: result.status,
+      label: "iCal",
       tone: "neutral",
       message: "Aucune source iCal active",
+      timeoutMs: 2_600,
     };
   }
 
   if (result.status === "skipped-recent") {
     return {
-      status: result.status,
+      label: "iCal",
       tone: "neutral",
       message: "Import iCal recent deja lance",
+      timeoutMs: 2_600,
     };
   }
 
   if (result.status === "shared-running") {
     return {
-      status: result.status,
+      label: "iCal",
       tone: "neutral",
       message: "Import iCal deja en cours",
+      timeoutMs: 2_600,
     };
   }
 
   return {
-    status: result.status,
+    label: "iCal",
     tone: "neutral",
     message: "Import iCal auto desactive",
+    timeoutMs: 2_600,
   };
 };
 
@@ -119,12 +131,65 @@ const getAppLoadIcalAutoSyncPromise = () => {
   return appLoadIcalAutoSyncPromise;
 };
 
+type AuthScreenProps = {
+  session: ServerAuthSession | null;
+  password: string;
+  error: string | null;
+  submitting: boolean;
+  onPasswordChange: (value: string) => void;
+  onSubmit: () => void;
+};
+
+const AuthScreen = ({ session, password, error, submitting, onPasswordChange, onSubmit }: AuthScreenProps) => (
+  <main className="auth-shell">
+    <section className="card auth-card">
+      <div className="auth-card__eyebrow">Protection serveur</div>
+      <h1 className="auth-card__title">Connexion requise</h1>
+      <p className="auth-card__text">
+        Le serveur protège les données avec une session cookie HTTP-only. Entrez le mot de passe administrateur pour ouvrir l’application.
+      </p>
+      <label className="field">
+        Mot de passe
+        <input
+          type="password"
+          value={password}
+          onChange={(event) => onPasswordChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onSubmit();
+            }
+          }}
+          autoFocus
+          disabled={submitting}
+        />
+      </label>
+      <div className="field-hint">
+        Session par défaut: {formatSessionDurationLabel(session?.sessionDurationHours ?? 24 * 7)}.
+      </div>
+      {error ? <div className="note" style={{ marginTop: 12 }}>{error}</div> : null}
+      <div className="actions" style={{ marginTop: 16 }}>
+        <button type="button" onClick={onSubmit} disabled={submitting || !password.trim()}>
+          {submitting ? "Connexion..." : "Se connecter"}
+        </button>
+      </div>
+    </section>
+  </main>
+);
+
 const App = () => {
   const location = useLocation();
+  const [authSession, setAuthSession] = useState<ServerAuthSession | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [recentImportedReservationsCount, setRecentImportedReservationsCount] = useState(0);
-  const [icalAutoSyncNotice, setIcalAutoSyncNotice] = useState<IcalAutoSyncNotice | null>(null);
+  const [appNotice, setAppNotice] = useState<(AppNotice & { id: number }) | null>(null);
   const [pumpHealthNotice, setPumpHealthNotice] = useState<PumpHealthNotice | null>(null);
+  const isAuthenticated = authSession?.authenticated ?? false;
+  const isAuthRequired = authSession?.required ?? false;
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -200,7 +265,74 @@ const App = () => {
   const reservationBadgeLabel =
     recentImportedReservationsCount > 0
       ? `${recentImportedReservationsCount} création${recentImportedReservationsCount > 1 ? "s" : ""} importée${recentImportedReservationsCount > 1 ? "s" : ""} via iCal ou Pump sur les dernières 24 heures`
-      : null;
+        : null;
+
+  const pushAppNotice = useCallback((notice: AppNotice) => {
+    setAppNotice({
+      ...notice,
+      id: Date.now() + Math.random(),
+    });
+  }, []);
+  const loadAuthSession = async () => {
+    setAuthError(null);
+    const payload = await apiFetch<ServerAuthSession>("/auth/session");
+    setAuthSession(payload);
+    return payload;
+  };
+
+  const submitLogin = async () => {
+    if (!authPassword.trim()) {
+      setAuthError("Renseigne le mot de passe serveur.");
+      return;
+    }
+
+    setAuthSubmitting(true);
+    setAuthError(null);
+    try {
+      const payload = await apiFetch<LoginResult>("/auth/login", {
+        method: "POST",
+        json: { password: authPassword },
+      });
+      setAuthSession(payload);
+      setAuthPassword("");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setAuthError("Mot de passe invalide.");
+      } else {
+        setAuthError(error instanceof Error ? error.message : "Impossible d'ouvrir la session.");
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await apiFetch("/auth/logout", { method: "POST" });
+    } catch {
+      // Le cookie local doit être considéré perdu même si la session serveur n'a pas pu être détruite.
+    } finally {
+      setAuthSession((current) =>
+        current
+          ? {
+              ...current,
+              authenticated: false,
+              sessionExpiresAt: null,
+            }
+          : {
+              required: true,
+              authenticated: false,
+              passwordConfigured: true,
+              sessionDurationHours: 24 * 7,
+              sessionExpiresAt: null,
+            }
+      );
+      setAuthPassword("");
+      setAuthError(null);
+      setMobileMenuOpen(false);
+    }
+  };
+
   const loadRecentImportedReservationsCount = async (signal?: AbortSignal) => {
     try {
       const payload = await apiFetch<RecentImportedReservationsCountPayload>("/reservations/recent-imports/count", {
@@ -237,6 +369,53 @@ const App = () => {
   }, [location.pathname]);
 
   useEffect(() => {
+    let active = true;
+    setAuthLoading(true);
+    loadAuthSession()
+      .catch((error) => {
+        if (!active || isAbortError(error)) return;
+        setAuthError(error instanceof Error ? error.message : "Impossible de vérifier la session.");
+      })
+      .finally(() => {
+        if (active) {
+          setAuthLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleAuthRequired = () => {
+      setAuthSession((current) =>
+        current
+          ? {
+              ...current,
+              required: true,
+              authenticated: false,
+              sessionExpiresAt: null,
+            }
+          : {
+              required: true,
+              authenticated: false,
+              passwordConfigured: true,
+              sessionDurationHours: 24 * 7,
+              sessionExpiresAt: null,
+            }
+      );
+      setAuthError("La session a expiré. Reconnecte-toi.");
+    };
+
+    window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+    return () => {
+      window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authLoading || !isAuthenticated) return;
     const controller = new AbortController();
     void loadRecentImportedReservationsCount(controller.signal);
     void loadPumpHealth(controller.signal);
@@ -264,19 +443,21 @@ const App = () => {
         handleRecentImportedReservationsCreated as EventListener
       );
     };
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
+    if (authLoading || !isAuthenticated) return;
     if (typeof window === "undefined") return;
     const hasAttempted = window.sessionStorage.getItem(ICAL_AUTO_SYNC_SESSION_KEY) === "1";
     if (hasAttempted && !appLoadIcalAutoSyncPromise) return;
     let active = true;
 
     const runAutoSync = async () => {
-      setIcalAutoSyncNotice({
-        status: "running",
+      pushAppNotice({
+        label: "iCal",
         tone: "neutral",
         message: "Import iCal...",
+        timeoutMs: null,
       });
 
       try {
@@ -284,16 +465,18 @@ const App = () => {
         if (!promise) return;
         const result = await promise;
         if (!active) return;
-        setIcalAutoSyncNotice(buildIcalAutoSyncNotice(result));
+        pushAppNotice(buildIcalAutoSyncNotice(result));
         if (result.status === "success" || result.status === "shared-running") {
           void loadRecentImportedReservationsCount();
         }
       } catch (error) {
         if (!active || isAbortError(error)) return;
-        setIcalAutoSyncNotice({
-          status: "error",
+        pushAppNotice({
+          label: "iCal",
           tone: "error",
           message: "Echec import iCal",
+          timeoutMs: 5_200,
+          role: "alert",
         });
       }
     };
@@ -303,26 +486,35 @@ const App = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authLoading, isAuthenticated, loadRecentImportedReservationsCount, pushAppNotice]);
 
   useEffect(() => {
-    if (!icalAutoSyncNotice || icalAutoSyncNotice.status === "running") return;
+    if (typeof window === "undefined") return;
 
-    const timeoutMs =
-      icalAutoSyncNotice.status === "error"
-        ? 5200
-        : icalAutoSyncNotice.status === "success" || icalAutoSyncNotice.status === "shared-running"
-          ? 4200
-          : 2600;
+    const handleAppNotice = (event: Event) => {
+      const notice = (event as CustomEvent<AppNotice>).detail;
+      if (!notice) return;
+      pushAppNotice(notice);
+    };
+
+    window.addEventListener(APP_NOTICE_EVENT, handleAppNotice as EventListener);
+    return () => {
+      window.removeEventListener(APP_NOTICE_EVENT, handleAppNotice as EventListener);
+    };
+  }, [pushAppNotice]);
+
+  useEffect(() => {
+    if (!appNotice || !appNotice.timeoutMs) return;
+    const noticeId = appNotice.id;
 
     const timeoutId = window.setTimeout(() => {
-      setIcalAutoSyncNotice((current) => (current === icalAutoSyncNotice ? null : current));
-    }, timeoutMs);
+      setAppNotice((current) => (current?.id === noticeId ? null : current));
+    }, appNotice.timeoutMs);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [icalAutoSyncNotice]);
+  }, [appNotice]);
 
   const renderNavLabel = (item: { to: string; label: string; mobileLabel?: string }) => (
     <span className={`nav-item-label${item.to === "/reservations" ? " nav-item-label--with-badge" : ""}`}>
@@ -339,14 +531,36 @@ const App = () => {
     </span>
   );
 
+  if (authLoading) {
+    return (
+      <main className="auth-shell">
+        <section className="card auth-card">
+          <div className="auth-card__eyebrow">Protection serveur</div>
+          <h1 className="auth-card__title">Vérification de session</h1>
+          <p className="auth-card__text">Le serveur vérifie si une session valide existe déjà.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (isAuthRequired && !isAuthenticated) {
+    return (
+      <AuthScreen
+        session={authSession}
+        password={authPassword}
+        error={authError}
+        submitting={authSubmitting}
+        onPasswordChange={setAuthPassword}
+        onSubmit={() => void submitLogin()}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            CG
-          </span>
-          <span className="brand-label">Contrats Gîtes</span>
+          <img className="brand-logo" src="/logo.png" alt="Les gîtes de Brocéliande" />
           {pumpHealthNotice ? (
             <span
               className={`pump-indicator pump-indicator--${pumpHealthNotice.tone}`}
@@ -372,6 +586,20 @@ const App = () => {
           ))}
         </nav>
         <div className="topbar-desktop-menu">
+          {isAuthRequired ? (
+            <button
+              type="button"
+              className="secondary topbar-auth-action"
+              onClick={() => void logout()}
+              title={
+                authSession?.sessionExpiresAt
+                  ? `Session active jusqu'au ${new Date(authSession.sessionExpiresAt).toLocaleString("fr-FR")}`
+                  : "Déconnecter la session"
+              }
+            >
+              Déconnexion
+            </button>
+          ) : null}
           <button
             type="button"
             className={`topbar-menu-button topbar-menu-button--desktop${mobileMenuOpen ? " topbar-menu-button--active" : ""}`}
@@ -442,6 +670,11 @@ const App = () => {
               {renderNavLabel(item)}
             </NavLink>
           ))}
+          {isAuthRequired ? (
+            <button type="button" className="secondary topbar-auth-action topbar-auth-action--mobile" onClick={() => void logout()}>
+              Déconnexion
+            </button>
+          ) : null}
         </nav>
       </header>
       <main className="content">
@@ -461,18 +694,18 @@ const App = () => {
             <Route path="/reservations" element={<ReservationsPage />} />
             <Route path="/calendrier" element={<CalendrierPage />} />
             <Route path="/statistiques" element={<StatisticsPage />} />
-            <Route path="/parametres" element={<SettingsPage />} />
+            <Route path="/parametres" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
           </Routes>
         </Suspense>
       </main>
-      {icalAutoSyncNotice ? (
+      {appNotice ? (
         <div
-          className={`app-sync-notice app-sync-notice--${icalAutoSyncNotice.tone}`}
-          role={icalAutoSyncNotice.status === "error" ? "alert" : "status"}
-          aria-live="polite"
+          className={`app-sync-notice app-sync-notice--${appNotice.tone}`}
+          role={appNotice.role ?? (appNotice.tone === "error" ? "alert" : "status")}
+          aria-live={(appNotice.role ?? (appNotice.tone === "error" ? "alert" : "status")) === "alert" ? "assertive" : "polite"}
         >
-          <span className="app-sync-notice__label">iCal</span>
-          <span>{icalAutoSyncNotice.message}</span>
+          <span className="app-sync-notice__label">{appNotice.label}</span>
+          <span>{appNotice.message}</span>
         </div>
       ) : null}
     </div>

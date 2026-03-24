@@ -3,10 +3,12 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import {
+  buildAirbnbCalendarRefreshAppNotice,
   handleAirbnbCalendarRefreshFailure,
   waitForAirbnbCalendarRefreshJob,
   type AirbnbCalendarRefreshCreateStatus,
 } from "../utils/airbnbCalendarRefresh";
+import { dispatchAppNotice } from "../utils/appNotices";
 import { formatEuro } from "../utils/format";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -457,7 +459,6 @@ const CalendrierPage = () => {
   const [mobileActionReservationId, setMobileActionReservationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [airbnbRefreshError, setAirbnbRefreshError] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia(`(max-width: ${MOBILE_CALENDAR_BREAKPOINT}px)`).matches : false
   );
@@ -518,21 +519,30 @@ const CalendrierPage = () => {
   }, []);
 
   const startAirbnbCalendarRefreshPolling = useCallback((refresh: AirbnbCalendarRefreshCreateStatus | undefined) => {
-    if (!refresh || refresh.status !== "queued" || !refresh.job_id) return;
+    if (!refresh) return;
+
+    dispatchAppNotice(buildAirbnbCalendarRefreshAppNotice(refresh));
+    if (refresh.status !== "queued" || !refresh.job_id) return;
 
     const controller = new AbortController();
     airbnbCalendarRefreshControllersRef.current.push(controller);
 
     void waitForAirbnbCalendarRefreshJob(refresh.job_id, {
       signal: controller.signal,
+      onUpdate: (status) => {
+        dispatchAppNotice(buildAirbnbCalendarRefreshAppNotice(status));
+      },
     })
-      .then((status) => {
-        if (status.status === "failed") {
-          setAirbnbRefreshError(status.message ?? "Le rafraîchissement Airbnb a échoué.");
-        }
-      })
       .catch((error) => {
-        handleAirbnbCalendarRefreshFailure(error, (message) => setAirbnbRefreshError(message));
+        handleAirbnbCalendarRefreshFailure(error, (message) =>
+          dispatchAppNotice({
+            label: "Airbnb",
+            tone: "error",
+            message,
+            timeoutMs: 5_200,
+            role: "alert",
+          })
+        );
       })
       .finally(() => {
         airbnbCalendarRefreshControllersRef.current = airbnbCalendarRefreshControllersRef.current.filter(
@@ -996,7 +1006,6 @@ const CalendrierPage = () => {
 
     setQuickReservationSaving(true);
     setQuickReservationError(null);
-    setAirbnbRefreshError(null);
 
     try {
       if (quickReservationMode === "edit") {
@@ -1417,7 +1426,6 @@ const CalendrierPage = () => {
 
   return (
     <div className={`calendar-page${canUseQuickReservation ? " calendar-page--quick-create-visible" : ""}`} style={pageStyle}>
-      {airbnbRefreshError ? <div className="note">{airbnbRefreshError}</div> : null}
       <section ref={heroRef} className="card calendar-hero">
         <div className="calendar-hero__header">
           <label className="calendar-month-trigger">
