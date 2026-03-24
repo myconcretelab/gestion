@@ -78,7 +78,7 @@ export const createApp = () => {
       }
 
       if (req.headers.cookie) {
-        clearServerAuthCookie(res);
+        clearServerAuthCookie(req, res);
       }
 
       const unauthorized = buildServerAuthRequiredError();

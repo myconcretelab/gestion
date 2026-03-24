@@ -215,7 +215,41 @@ const parseCookieHeader = (cookieHeader: string | undefined) => {
   );
 };
 
-const serializeSessionCookie = (value: string, maxAgeMs: number) => {
+const readFirstHeaderValue = (value: string | string[] | undefined) => {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+  return typeof value === "string" ? value : "";
+};
+
+const requestUsesHttps = (req: Pick<Request, "headers" | "socket"> & { secure?: boolean }) => {
+  if (req.secure) {
+    return true;
+  }
+
+  const forwardedProto = readFirstHeaderValue(req.headers["x-forwarded-proto"])
+    .split(",")[0]
+    ?.trim()
+    .toLowerCase();
+  if (forwardedProto === "https") {
+    return true;
+  }
+
+  const forwardedHeader = readFirstHeaderValue(req.headers.forwarded);
+  const forwardedMatch = forwardedHeader.match(/proto=(https)/i);
+  if (forwardedMatch) {
+    return true;
+  }
+
+  const forwardedSsl = readFirstHeaderValue(req.headers["x-forwarded-ssl"]).trim().toLowerCase();
+  if (forwardedSsl === "on") {
+    return true;
+  }
+
+  return Boolean((req.socket as { encrypted?: boolean }).encrypted);
+};
+
+const serializeSessionCookie = (value: string, maxAgeMs: number, secure: boolean) => {
   const parts = [
     `${SESSION_COOKIE_NAME}=${encodeURIComponent(value)}`,
     "Path=/",
@@ -225,7 +259,7 @@ const serializeSessionCookie = (value: string, maxAgeMs: number) => {
     `Expires=${new Date(Date.now() + Math.max(0, maxAgeMs)).toUTCString()}`,
   ];
 
-  if (env.NODE_ENV === "production") {
+  if (secure) {
     parts.push("Secure");
   }
 
@@ -356,13 +390,17 @@ export const deleteOtherServerAuthSessions = async (keepSessionId?: string | nul
   writeSessionsToDisk({ sessions: nextSessions });
 };
 
-export const clearServerAuthCookie = (res: Response) => {
-  appendSetCookieHeader(res, serializeSessionCookie("", 0));
+export const clearServerAuthCookie = (req: Pick<Request, "headers" | "socket"> & { secure?: boolean }, res: Response) => {
+  appendSetCookieHeader(res, serializeSessionCookie("", 0, requestUsesHttps(req)));
 };
 
-export const setServerAuthCookie = (res: Response, session: StoredServerAuthSession) => {
+export const setServerAuthCookie = (
+  req: Pick<Request, "headers" | "socket"> & { secure?: boolean },
+  res: Response,
+  session: StoredServerAuthSession
+) => {
   const maxAgeMs = Math.max(0, new Date(session.expiresAt).getTime() - Date.now());
-  appendSetCookieHeader(res, serializeSessionCookie(session.id, maxAgeMs));
+  appendSetCookieHeader(res, serializeSessionCookie(session.id, maxAgeMs, requestUsesHttps(req)));
 };
 
 export const buildServerAuthSessionState = async (req: Pick<Request, "headers">): Promise<ServerAuthSessionState> => {

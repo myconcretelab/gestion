@@ -9,6 +9,19 @@ const restoreEnvVar = (key: string, value: string | undefined) => {
   else process.env[key] = value;
 };
 
+const createMockResponse = () => {
+  const headers = new Map<string, string | string[]>();
+  return {
+    getHeader(name: string) {
+      return headers.get(name);
+    },
+    setHeader(name: string, value: string | string[]) {
+      headers.set(name, value);
+    },
+    headers,
+  };
+};
+
 test("serverAuth hash le mot de passe bootstrap et renouvelle les sessions", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "contrats-server-auth-"));
   const envBackup = {
@@ -70,6 +83,31 @@ test("serverAuth hash le mot de passe bootstrap et renouvelle les sessions", asy
     assert.ok(refreshedSession);
     assert.equal(refreshedSession?.id, sessionA.id);
     assert.equal(revokedSession, null);
+
+    const httpResponse = createMockResponse();
+    auth.setServerAuthCookie(
+      {
+        headers: {},
+        socket: {},
+      } as never,
+      httpResponse as never,
+      sessionA
+    );
+    const httpCookie = String(httpResponse.headers.get("Set-Cookie"));
+    assert.match(httpCookie, /HttpOnly/);
+    assert.doesNotMatch(httpCookie, /Secure/);
+
+    const httpsResponse = createMockResponse();
+    auth.setServerAuthCookie(
+      {
+        headers: { "x-forwarded-proto": "https" },
+        socket: {},
+      } as never,
+      httpsResponse as never,
+      sessionA
+    );
+    const httpsCookie = String(httpsResponse.headers.get("Set-Cookie"));
+    assert.match(httpsCookie, /Secure/);
   } finally {
     restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
     restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);

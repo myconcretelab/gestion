@@ -405,7 +405,7 @@ router.put("/security", async (req, res, next) => {
     const payload = serverSecuritySettingsSchema.parse(req.body);
     const result = await updateServerSecuritySettings(payload, getServerAuthSessionIdFromRequest(req));
     if (result.session) {
-      setServerAuthCookie(res, result.session);
+      setServerAuthCookie(req, res, result.session);
     }
     const passwordConfigured = Boolean(result.settings.passwordHash && result.settings.passwordSalt);
     res.json({
