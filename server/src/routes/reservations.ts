@@ -239,36 +239,7 @@ const parseDateInput = (value: string, label: string) => {
 
 const formatDateFr = (value: Date | string) => format(new Date(value), "dd/MM/yyyy");
 
-const normalizeForwardedHeader = (value: unknown) => {
-  if (typeof value !== "string") return null;
-  const [first] = value.split(",");
-  const trimmed = first?.trim();
-  return trimmed ? trimmed : null;
-};
-
-const buildRequestOrigin = (req: any) => {
-  const forwardedProto = normalizeForwardedHeader(req.headers?.["x-forwarded-proto"]);
-  const forwardedHost = normalizeForwardedHeader(req.headers?.["x-forwarded-host"]);
-  const protocol = forwardedProto ?? req.protocol ?? "http";
-  const host =
-    forwardedHost ??
-    (typeof req.get === "function" ? req.get("host") : null) ??
-    (typeof req.headers?.host === "string" ? req.headers.host : null);
-
-  if (host) {
-    return `${protocol}://${host}`;
-  }
-
-  return env.CLIENT_ORIGIN;
-};
-
-const buildGiteIcalPublicUrl = (req: any, giteId: string, token: string) => {
-  const origin = buildRequestOrigin(req);
-  return new URL(`/api/gites/${giteId}/calendar.ics?token=${encodeURIComponent(token)}`, origin).toString();
-};
-
 const buildAirbnbCalendarRefreshCreateResult = async (
-  req: any,
   association: ReservationAssociation
 ): Promise<AirbnbCalendarRefreshCreateResult> => {
   try {
@@ -284,7 +255,6 @@ const buildAirbnbCalendarRefreshCreateResult = async (
       select: {
         id: true,
         airbnb_listing_id: true,
-        ical_export_token: true,
       },
     });
 
@@ -295,17 +265,9 @@ const buildAirbnbCalendarRefreshCreateResult = async (
       };
     }
 
-    if (!gite.ical_export_token) {
-      return {
-        status: "skipped",
-        message: "Le gîte n'a pas de flux iCal exportable.",
-      };
-    }
-
     return queueAirbnbCalendarRefresh({
       giteId: gite.id,
       listingId: gite.airbnb_listing_id,
-      icalUrl: buildGiteIcalPublicUrl(req, gite.id, gite.ical_export_token),
     });
   } catch (error) {
     return {
@@ -1342,7 +1304,7 @@ router.post("/", async (req, res, next) => {
     );
 
     const hydratedCreated = createdReservations.map(hydrateReservation);
-    const airbnbCalendarRefresh = await buildAirbnbCalendarRefreshCreateResult(req, association);
+    const airbnbCalendarRefresh = await buildAirbnbCalendarRefreshCreateResult(association);
     if (hydratedCreated.length > 1) {
       return res.status(201).json({
         ...hydratedCreated[0],

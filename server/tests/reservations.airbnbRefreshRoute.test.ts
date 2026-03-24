@@ -61,7 +61,7 @@ test("POST /reservations retourne skipped si le gite n'a pas d'ID Airbnb", async
     prisma.gite.findUnique = async () => {
       giteLookupCount += 1;
       if (giteLookupCount === 1) return { id: "gite-1" };
-      return { id: "gite-1", airbnb_listing_id: null, ical_export_token: "token-1" };
+      return { id: "gite-1", airbnb_listing_id: null };
     };
     prisma.reservation.findMany = async () => [];
     prisma.reservation.create = async ({ data }: any) => ({
@@ -82,9 +82,7 @@ test("POST /reservations retourne skipped si le gite n'a pas d'ID Airbnb", async
         body: createReservationPayload(),
         params: {},
         query: {},
-        headers: { host: "localhost:4000" },
-        protocol: "http",
-        get: (header: string) => (header.toLowerCase() === "host" ? "localhost:4000" : null),
+        headers: {},
       },
       response,
       (err) => {
@@ -104,7 +102,7 @@ test("POST /reservations retourne skipped si le gite n'a pas d'ID Airbnb", async
   }
 });
 
-test("POST /reservations retourne queued et ne bloque pas si l'execution echoue ensuite", async () => {
+test("POST /reservations retourne queued meme sans token iCal si l'execution echoue ensuite", async () => {
   const originals = {
     giteFindUnique: prisma.gite.findUnique,
     reservationFindMany: prisma.reservation.findMany,
@@ -121,7 +119,7 @@ test("POST /reservations retourne queued et ne bloque pas si l'execution echoue 
     prisma.gite.findUnique = async () => {
       giteLookupCount += 1;
       if (giteLookupCount === 1) return { id: "gite-1" };
-      return { id: "gite-1", airbnb_listing_id: "48504640", ical_export_token: "token-1" };
+      return { id: "gite-1", airbnb_listing_id: "48504640" };
     };
     prisma.reservation.findMany = async () => [];
     prisma.reservation.create = async ({ data }: any) => ({
@@ -142,9 +140,7 @@ test("POST /reservations retourne queued et ne bloque pas si l'execution echoue 
         body: createReservationPayload(),
         params: {},
         query: {},
-        headers: { host: "localhost:4000" },
-        protocol: "http",
-        get: (header: string) => (header.toLowerCase() === "host" ? "localhost:4000" : null),
+        headers: {},
       },
       response,
       (err) => {

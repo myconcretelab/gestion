@@ -364,10 +364,9 @@ const ArrowDepartureIcon = () => (
 
 const ArrowSwapIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path d="M8 7h10" />
-    <path d="m15 4 3 3-3 3" />
-    <path d="M16 17H6" />
-    <path d="m9 14-3 3 3 3" />
+    <path d="M12 5v14" />
+    <path d="m7.5 9.5 4.5-4.5 4.5 4.5" />
+    <path d="m16.5 14.5-4.5 4.5-4.5-4.5" />
   </svg>
 );
 
@@ -1013,9 +1012,8 @@ const TodayPage = () => {
               {totalDays} jours glissants · {gites.length} gîte{gites.length > 1 ? "s" : ""}
             </div>
           </div>
-          <div className="today-calendar-occupation" title={`${currentViewOccupation.occupiedSlots} jours occupés sur ${currentViewOccupation.totalSlots}`}>
+          <div className="today-calendar-occupation">
             <div className="today-calendar-occupation__copy">
-              <span>Remplissage vue</span>
               <strong>
                 {currentViewOccupation.occupiedSlots}/{currentViewOccupation.totalSlots}
               </strong>
@@ -1147,71 +1145,6 @@ const TodayPage = () => {
         </div>
       </section>
 
-      <section className="card today-hero">
-        <div className="today-hero__header">
-          <div>
-            <div className="today-hero__eyebrow">Exploitation</div>
-            <h1 className="today-hero__title">Aujourd&apos;hui</h1>
-            <p className="today-hero__text">Vue immédiate pour mobile: arrivées, départs, séjours en cours et suivi journalier.</p>
-          </div>
-          <div className="today-hero__controls">
-            <label className="field today-hero__field">
-              Utilisateur
-              <select value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)} disabled={managerOptions.length === 0}>
-                {managerOptions.length === 0 ? <option value="">Aucun gestionnaire</option> : null}
-                {managerOptions.map((manager) => (
-                  <option key={manager} value={manager}>
-                    {manager}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" className="secondary today-hero__refresh" onClick={() => void loadData({ silent: true })} disabled={refreshing}>
-              <span className={`today-hero__refresh-icon${refreshing ? " today-hero__refresh-icon--spinning" : ""}`} aria-hidden="true">
-                <RefreshIcon />
-              </span>
-              {refreshing ? "Rafraîchissement..." : "Rafraîchir"}
-            </button>
-          </div>
-        </div>
-
-        <div className="today-kpis">
-          <article className="today-kpi">
-            <span className="today-kpi__label">Aujourd&apos;hui</span>
-            <strong className="today-kpi__value">{eventsToday.length}</strong>
-            <span className="today-kpi__detail">arrivées, départs ou rotations</span>
-          </article>
-          <article className="today-kpi">
-            <span className="today-kpi__label">Demain</span>
-            <strong className="today-kpi__value">{eventsTomorrow.length}</strong>
-            <span className="today-kpi__detail">déjà visibles</span>
-          </article>
-          <article className="today-kpi">
-            <span className="today-kpi__label">En cours</span>
-            <strong className="today-kpi__value">{activeStayCount}</strong>
-            <span className="today-kpi__detail">séjours actifs</span>
-          </article>
-          <article className="today-kpi today-kpi--trash">
-            <span className="today-kpi__label">Poubelles</span>
-            <div className="today-trash-legend">
-              <span className="today-trash-chip" style={{ "--today-trash-bg": mauronTrashColor } as CSSProperties}>
-                <TrashIcon />
-                Mauron
-              </span>
-              <span className="today-trash-chip" style={{ "--today-trash-bg": neantTrashColor } as CSSProperties}>
-                <TrashIcon />
-                Néant
-              </span>
-            </div>
-            <span className="today-kpi__detail">
-              Semaine {evenWeek ? "paire" : "impaire"}{unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
-            </span>
-          </article>
-        </div>
-
-        {error ? <div className="note">{error}</div> : null}
-      </section>
-
       <div className="today-events-grid">
         {[
           { key: "today", title: "Aujourd'hui", events: eventsToday },
@@ -1322,6 +1255,71 @@ const TodayPage = () => {
           </section>
         ))}
       </div>
+
+      <section className="card today-hero">
+        <div className="today-hero__header">
+          <div>
+            <div className="today-hero__eyebrow">Exploitation</div>
+            <h1 className="today-hero__title">Aujourd&apos;hui</h1>
+            <p className="today-hero__text">Vue immédiate pour mobile: arrivées, départs, séjours en cours et suivi journalier.</p>
+          </div>
+          <div className="today-hero__controls">
+            <label className="field today-hero__field">
+              Utilisateur
+              <select value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)} disabled={managerOptions.length === 0}>
+                {managerOptions.length === 0 ? <option value="">Aucun gestionnaire</option> : null}
+                {managerOptions.map((manager) => (
+                  <option key={manager} value={manager}>
+                    {manager}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="secondary today-hero__refresh" onClick={() => void loadData({ silent: true })} disabled={refreshing}>
+              <span className={`today-hero__refresh-icon${refreshing ? " today-hero__refresh-icon--spinning" : ""}`} aria-hidden="true">
+                <RefreshIcon />
+              </span>
+              {refreshing ? "Rafraîchissement..." : "Rafraîchir"}
+            </button>
+          </div>
+        </div>
+
+        <div className="today-kpis">
+          <article className="today-kpi">
+            <span className="today-kpi__label">Aujourd&apos;hui</span>
+            <strong className="today-kpi__value">{eventsToday.length}</strong>
+            <span className="today-kpi__detail">arrivées, départs ou rotations</span>
+          </article>
+          <article className="today-kpi">
+            <span className="today-kpi__label">Demain</span>
+            <strong className="today-kpi__value">{eventsTomorrow.length}</strong>
+            <span className="today-kpi__detail">déjà visibles</span>
+          </article>
+          <article className="today-kpi">
+            <span className="today-kpi__label">En cours</span>
+            <strong className="today-kpi__value">{activeStayCount}</strong>
+            <span className="today-kpi__detail">séjours actifs</span>
+          </article>
+          <article className="today-kpi today-kpi--trash">
+            <span className="today-kpi__label">Poubelles</span>
+            <div className="today-trash-legend">
+              <span className="today-trash-chip" style={{ "--today-trash-bg": mauronTrashColor } as CSSProperties}>
+                <TrashIcon />
+                Mauron
+              </span>
+              <span className="today-trash-chip" style={{ "--today-trash-bg": neantTrashColor } as CSSProperties}>
+                <TrashIcon />
+                Néant
+              </span>
+            </div>
+            <span className="today-kpi__detail">
+              Semaine {evenWeek ? "paire" : "impaire"}{unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
+            </span>
+          </article>
+        </div>
+
+        {error ? <div className="note">{error}</div> : null}
+      </section>
 
       {usesViewportScroll && mobileActionState?.mode === "rotation-choice" && mobileActionEvent ? (
         <MobileReservationActionsBar

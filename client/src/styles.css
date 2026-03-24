@@ -216,24 +216,12 @@
 .today-calendar-occupation {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 18px;
-  border: 1px solid #e5e7eb;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  gap: 8px;
 }
 
 .today-calendar-occupation__copy {
   display: grid;
-  gap: 2px;
-}
-
-.today-calendar-occupation__copy span {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #6b7280;
+  gap: 0;
 }
 
 .today-calendar-occupation__copy strong {
@@ -483,7 +471,6 @@
   width: 16px;
   height: 16px;
   display: inline-flex;
-  transform: rotate(90deg);
 }
 
 .today-timeline__marker--done {
@@ -575,7 +562,6 @@
   width: 16px;
   height: 16px;
   display: inline-flex;
-  transform: rotate(90deg);
 }
 
 .today-event-card__body {
@@ -4363,6 +4349,9 @@ button.warning {
 .reservations-tab {
   flex: 0 0 auto;
   cursor: default;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
@@ -4400,6 +4389,26 @@ button.warning {
   color: #111827;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
   transform: translateY(-1px);
+}
+
+.reservations-tab__label {
+  min-width: 0;
+}
+
+.reservations-tab__badge {
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e11d48;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
 }
 
 .reservations-tab--active:hover {
@@ -4917,6 +4926,13 @@ button.warning {
   background: #fef9c3;
   border-color: #facc15;
   color: #854d0e;
+  white-space: nowrap;
+}
+
+.reservations-current-pill--new {
+  background: #ffe4e6;
+  border-color: #fb7185;
+  color: #be123c;
   white-space: nowrap;
 }
 
