@@ -15,6 +15,7 @@ import {
   waitForAirbnbCalendarRefreshJob,
   type AirbnbCalendarRefreshCreateStatus,
 } from "../utils/airbnbCalendarRefresh";
+import { isRecentImportedReservation } from "../utils/recentImportsBadge";
 import { formatDate, formatEuro } from "../utils/format";
 import {
   computeReservationBaseStayTotalFromAdjustedStay,
@@ -1208,6 +1209,26 @@ const ReservationsPage = () => {
     return reservations.filter((reservation) => reservation.gite_id === activeTab);
   }, [activeTab, reservations]);
 
+  const recentImportedReservationIds = useMemo(() => {
+    const ids = new Set<string>();
+    reservations.forEach((reservation) => {
+      if (isRecentImportedReservation(reservation, currentTimeMs)) {
+        ids.add(reservation.id);
+      }
+    });
+    return ids;
+  }, [currentTimeMs, reservations]);
+
+  const recentImportedCountByTab = useMemo(() => {
+    const counts = new Map<string, number>();
+    reservations.forEach((reservation) => {
+      if (!isRecentImportedReservation(reservation, currentTimeMs)) return;
+      const tabKey = reservation.gite_id ?? UNASSIGNED_TAB;
+      counts.set(tabKey, (counts.get(tabKey) ?? 0) + 1);
+    });
+    return counts;
+  }, [currentTimeMs, reservations]);
+
   const schoolHolidayRange = useMemo(() => getReservationDateRange(reservations), [reservations]);
   const schoolHolidayRangeFrom = schoolHolidayRange?.from ?? "";
   const schoolHolidayRangeTo = schoolHolidayRange?.to ?? "";
@@ -1397,6 +1418,9 @@ const ReservationsPage = () => {
     if (month) return [month];
     return Array.from({ length: 12 }, (_, idx) => idx + 1);
   }, [month]);
+
+  const getRecentImportedTabLabel = (count: number) =>
+    `${count} nouvelle${count > 1 ? "s" : ""} réservation${count > 1 ? "s" : ""} importée${count > 1 ? "s" : ""} récemment`;
 
   useEffect(() => {
     setMonthExpandedByIndex({});
@@ -3443,39 +3467,78 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
 
         <div className="reservations-tabs">
           {gites.map((gite) => (
-            <button
-              type="button"
-              key={gite.id}
-              className={`reservations-tab ${activeTab === gite.id ? "reservations-tab--active" : ""} ${
-                draggedGiteId === gite.id ? "reservations-tab--dragging" : ""
-              } ${dragOverGiteId === gite.id && draggedGiteId !== gite.id ? "reservations-tab--drag-over" : ""}`}
-              draggable={!reorderingTabs}
-              onDragStart={(event) => handleTabDragStart(event, gite.id)}
-              onDragOver={(event) => handleTabDragOver(event, gite.id)}
-              onDrop={(event) => void handleTabDrop(event, gite.id)}
-              onDragEnd={handleTabDragEnd}
-              onClick={() => handleTabChange(gite.id)}
-              disabled={reorderingTabs}
-              title={reorderingTabs ? "Réorganisation en cours..." : "Glisser-déposer pour réorganiser"}
-            >
-              {gite.nom}
-            </button>
+            (() => {
+              const recentImportedCount = recentImportedCountByTab.get(gite.id) ?? 0;
+              const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
+
+              return (
+                <button
+                  type="button"
+                  key={gite.id}
+                  className={`reservations-tab ${activeTab === gite.id ? "reservations-tab--active" : ""} ${
+                    draggedGiteId === gite.id ? "reservations-tab--dragging" : ""
+                  } ${dragOverGiteId === gite.id && draggedGiteId !== gite.id ? "reservations-tab--drag-over" : ""}`}
+                  draggable={!reorderingTabs}
+                  onDragStart={(event) => handleTabDragStart(event, gite.id)}
+                  onDragOver={(event) => handleTabDragOver(event, gite.id)}
+                  onDrop={(event) => void handleTabDrop(event, gite.id)}
+                  onDragEnd={handleTabDragEnd}
+                  onClick={() => handleTabChange(gite.id)}
+                  disabled={reorderingTabs}
+                  title={
+                    reorderingTabs
+                      ? "Réorganisation en cours..."
+                      : recentImportedLabel
+                        ? `${recentImportedLabel}. Glisser-déposer pour réorganiser`
+                        : "Glisser-déposer pour réorganiser"
+                  }
+                >
+                  <span className="reservations-tab__label">{gite.nom}</span>
+                  {recentImportedCount > 0 ? (
+                    <span
+                      className="reservations-tab__badge"
+                      aria-label={recentImportedLabel ?? undefined}
+                      title={recentImportedLabel ?? undefined}
+                    >
+                      {recentImportedCount}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })()
           ))}
           {showUnassignedTab && (
-            <button
-              type="button"
-              className={`reservations-tab ${activeTab === UNASSIGNED_TAB ? "reservations-tab--active" : ""}`}
-              onClick={() => handleTabChange(UNASSIGNED_TAB)}
-            >
-              Non attribuées
-            </button>
+            (() => {
+              const recentImportedCount = recentImportedCountByTab.get(UNASSIGNED_TAB) ?? 0;
+              const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
+
+              return (
+                <button
+                  type="button"
+                  className={`reservations-tab ${activeTab === UNASSIGNED_TAB ? "reservations-tab--active" : ""}`}
+                  onClick={() => handleTabChange(UNASSIGNED_TAB)}
+                  title={recentImportedLabel ?? undefined}
+                >
+                  <span className="reservations-tab__label">Non attribuées</span>
+                  {recentImportedCount > 0 ? (
+                    <span
+                      className="reservations-tab__badge"
+                      aria-label={recentImportedLabel ?? undefined}
+                      title={recentImportedLabel ?? undefined}
+                    >
+                      {recentImportedCount}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })()
           )}
           <button
             type="button"
             className={`reservations-tab reservations-tab--all ${activeTab === ALL_GITES_TAB ? "reservations-tab--active" : ""}`}
             onClick={() => handleTabChange(ALL_GITES_TAB)}
           >
-            Tous les gîtes
+            <span className="reservations-tab__label">Tous les gîtes</span>
           </button>
         </div>
 
@@ -3740,6 +3803,7 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                       const isArrivalTomorrow = isReservationArrivalTomorrow(reservation, currentTime);
                       const isDepartureTomorrow = isReservationDepartureTomorrow(reservation, currentTime);
                       const isIcalToVerify = hasIcalToVerifyMarker(reservation.commentaire);
+                      const isRecentImported = recentImportedReservationIds.has(reservation.id);
                       const holidayNightCount = holidayNightsByReservationId.get(reservation.id) ?? 0;
                       const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
@@ -3801,6 +3865,7 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                                 </button>
                               )}
                               {isCurrentReservation ||
+                              isRecentImported ||
                               isArrivalToday ||
                               isDepartureToday ||
                               isArrivalTomorrow ||
@@ -3808,6 +3873,9 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                               isIcalToVerify ||
                               holidayNightCount > 0 ? (
                                 <div className="reservations-row-flags">
+                                  {isRecentImported ? (
+                                    <span className="reservations-current-pill reservations-current-pill--new">Nouveau</span>
+                                  ) : null}
                                   {isIcalToVerify ? (
                                     <span className="reservations-current-pill reservations-current-pill--to-verify">A vérifier</span>
                                   ) : null}

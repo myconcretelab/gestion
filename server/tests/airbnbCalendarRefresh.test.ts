@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  canonicalizeIcalUrl,
   getAirbnbCalendarRefreshJobStatus,
   isAirbnbAccountChooserScreenText,
+  isAirbnbPersonalCalendarCardText,
   queueAirbnbCalendarRefresh,
   setAirbnbCalendarRefreshExecutorForTests,
 } from "../src/services/airbnbCalendarRefresh.ts";
@@ -27,12 +27,9 @@ const waitFor = async (
   throw new Error("Condition non satisfaite à temps.");
 };
 
-test("canonicalizeIcalUrl trie les query params et nettoie le path", () => {
-  const left = canonicalizeIcalUrl("https://example.test/calendar.ics?b=2&a=1");
-  const right = canonicalizeIcalUrl("https://example.test/calendar.ics/?a=1&b=2");
-
-  assert.equal(left, "https://example.test/calendar.ics?a=1&b=2");
-  assert.equal(left, right);
+test("isAirbnbPersonalCalendarCardText detecte la carte Perso", () => {
+  assert.equal(isAirbnbPersonalCalendarCardText("Perso\nDerniere mise a jour"), true);
+  assert.equal(isAirbnbPersonalCalendarCardText("Calendrier Airbnb"), false);
 });
 
 test("isAirbnbAccountChooserScreenText detecte l'ecran de selection de compte", () => {
@@ -55,7 +52,6 @@ test("queueAirbnbCalendarRefresh passe de queued a running puis success", async 
     const queued = queueAirbnbCalendarRefresh({
       giteId: "gite-1",
       listingId: "48504640",
-      icalUrl: "https://example.test/calendar.ics?token=abc",
     });
 
     assert.equal(queued.status, "queued");
@@ -79,7 +75,6 @@ test("queueAirbnbCalendarRefresh passe en failed quand l'execution echoue", asyn
     const queued = queueAirbnbCalendarRefresh({
       giteId: "gite-1",
       listingId: "48504640",
-      icalUrl: "https://example.test/calendar.ics?token=abc",
     });
 
     await waitFor(() => getAirbnbCalendarRefreshJobStatus(queued.job_id)?.status === "failed");

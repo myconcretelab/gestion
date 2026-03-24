@@ -36,7 +36,6 @@ export type AirbnbCalendarRefreshJobStatusResponse = {
 export type QueueAirbnbCalendarRefreshParams = {
   giteId: string;
   listingId: string;
-  icalUrl: string;
 };
 
 type StoredAirbnbCalendarRefreshJob = AirbnbCalendarRefreshJobStatusResponse & {
@@ -57,6 +56,7 @@ const JOB_RETENTION_MS = 10 * 60 * 1_000;
 const diagnosticsRoot = path.join(resolveDataDir(), "airbnb-calendar-refresh");
 const storageStatesRoot = path.join(resolveDataDir(), "pump", "storageStates");
 const jobs = new Map<string, StoredAirbnbCalendarRefreshJob>();
+const PERSONAL_CALENDAR_NAME = "perso";
 
 let executorOverride: AirbnbCalendarRefreshExecutor | null = null;
 
@@ -72,24 +72,6 @@ class AirbnbCalendarRefreshError extends Error {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const normalizeUrlPath = (value: string) => value.replace(/\/+$/, "") || "/";
-
-export const canonicalizeIcalUrl = (value: string | null | undefined) => {
-  if (!value) return null;
-
-  try {
-    const url = new URL(value);
-    const sortedParams = [...url.searchParams.entries()].sort(([leftKey, leftValue], [rightKey, rightValue]) => {
-      if (leftKey === rightKey) return leftValue.localeCompare(rightValue);
-      return leftKey.localeCompare(rightKey);
-    });
-    const query = sortedParams.map(([key, current]) => `${key}=${current}`).join("&");
-    return `${url.origin.toLowerCase()}${normalizeUrlPath(url.pathname)}${query ? `?${query}` : ""}`;
-  } catch {
-    return null;
-  }
-};
-
 export const isAirbnbAccountChooserScreenText = (value: string | null | undefined) => {
   const text = String(value ?? "").toLowerCase();
   return (
@@ -98,6 +80,9 @@ export const isAirbnbAccountChooserScreenText = (value: string | null | undefine
     (text.includes("bienvenue") && text.includes("continuer"))
   );
 };
+
+export const isAirbnbPersonalCalendarCardText = (value: string | null | undefined) =>
+  String(value ?? "").toLowerCase().includes(PERSONAL_CALENDAR_NAME);
 
 const buildJob = (jobId: string): StoredAirbnbCalendarRefreshJob => {
   const diagnosticsDir = path.join(diagnosticsRoot, jobId);
@@ -155,37 +140,6 @@ const getVisibleLocator = async (locator: Locator) => {
   return null;
 };
 
-const extractUrlsFromText = (value: string | null | undefined) =>
-  [...new Set((String(value ?? "").match(/https?:\/\/[^\s"'<>]+/g) ?? []).map((item) => item.trim()))];
-
-const getInputValueIfAny = async (locator: Locator) => {
-  const tagName = await locator.evaluate((element) => element.tagName.toLowerCase()).catch(() => null);
-  if (!tagName) return null;
-  if (tagName !== "input" && tagName !== "textarea") return null;
-  return locator.inputValue().catch(() => null);
-};
-
-const readVisibleUrlCandidates = async (scope: Locator, selector: string) => {
-  const matches: string[] = [];
-  const locator = scope.locator(selector);
-  const count = await locator.count();
-
-  for (let index = 0; index < count; index += 1) {
-    const current = locator.nth(index);
-    if (!(await current.isVisible().catch(() => false))) continue;
-
-    const inputValue = await getInputValueIfAny(current);
-    if (inputValue) {
-      matches.push(inputValue);
-    }
-
-    const text = await current.textContent().catch(() => null);
-    matches.push(...extractUrlsFromText(text));
-  }
-
-  return [...new Set(matches)];
-};
-
 const clickVisible = async (scope: Locator, selector: string, timeout = 5_000) => {
   const target = await getVisibleLocator(scope.locator(selector));
   if (!target) return false;
@@ -219,40 +173,7 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   return true;
 };
 
-const closeCalendarSourceEditor = async (
-  page: Page,
-  card: Locator,
-  config: PumpAutomationConfig,
-  editButton: Locator | null
-) => {
-  const pageClose = await getVisibleLocator(page.locator(config.advancedSelectors.calendarSourceCloseButton));
-  if (pageClose) {
-    await pageClose.click({ timeout: 5_000 }).catch(() => undefined);
-    await wait(400);
-    return;
-  }
-
-  const cardClose = await getVisibleLocator(card.locator(config.advancedSelectors.calendarSourceCloseButton));
-  if (cardClose) {
-    await cardClose.click({ timeout: 5_000 }).catch(() => undefined);
-    await wait(400);
-    return;
-  }
-
-  await page.keyboard.press("Escape").catch(() => undefined);
-  await wait(300);
-
-  if (editButton && (await editButton.isVisible().catch(() => false))) {
-    await editButton.click({ timeout: 5_000 }).catch(() => undefined);
-    await wait(300);
-  }
-};
-
-const locateMatchingCalendarSourceCard = async (
-  page: Page,
-  config: PumpAutomationConfig,
-  canonicalTargetUrl: string
-) => {
+const locatePersonalCalendarSourceCard = async (page: Page, config: PumpAutomationConfig) => {
   const cards = page.locator(config.advancedSelectors.calendarSourceCard);
   const cardCount = await cards.count();
   if (cardCount === 0) {
@@ -265,33 +186,12 @@ const locateMatchingCalendarSourceCard = async (
   for (let index = 0; index < cardCount; index += 1) {
     const card = cards.nth(index);
     const cardText = await card.innerText().catch(() => "");
-    const visibleMatch = extractUrlsFromText(cardText).some(
-      (candidate) => canonicalizeIcalUrl(candidate) === canonicalTargetUrl
-    );
-    if (visibleMatch) return card;
-  }
-
-  for (let index = 0; index < cardCount; index += 1) {
-    const card = cards.nth(index);
-    const editButton = await getVisibleLocator(card.locator(config.advancedSelectors.calendarSourceEditButton));
-    if (!editButton) continue;
-
-    await editButton.click({ timeout: 5_000 });
-    await wait(700);
-
-    const pageCandidates = await readVisibleUrlCandidates(page.locator("body"), config.advancedSelectors.calendarSourceUrlField);
-    const cardCandidates = await readVisibleUrlCandidates(card, config.advancedSelectors.calendarSourceUrlField);
-    const allCandidates = [...new Set([...pageCandidates, ...cardCandidates])];
-    const matches = allCandidates.some((candidate) => canonicalizeIcalUrl(candidate) === canonicalTargetUrl);
-
-    await closeCalendarSourceEditor(page, card, config, editButton);
-
-    if (matches) return card;
+    if (isAirbnbPersonalCalendarCardText(cardText)) return card;
   }
 
   throw new AirbnbCalendarRefreshError(
-    "target_not_found",
-    "Aucune source iCal Airbnb ne correspond à l'URL exportée par l'application."
+    "personal_calendar_not_found",
+    "Aucun calendrier Airbnb nommé Perso n'a été trouvé."
   );
 };
 
@@ -326,18 +226,12 @@ const writeDiagnostics = async (page: Page | null, diagnosticsDir: string, error
 const executeAirbnbCalendarRefresh = async ({
   jobId,
   listingId,
-  icalUrl,
   diagnosticsDir,
 }: AirbnbCalendarRefreshExecutorParams) => {
   const config = getPumpAutomationConfig();
   const session = new PumpPlaywrightSession(config, storageStatesRoot);
-  const targetUrl = `https://www.airbnb.fr/multicalendar/${encodeURIComponent(listingId)}`;
-  const canonicalTargetUrl = canonicalizeIcalUrl(icalUrl);
+  const targetUrl = `https://www.airbnb.fr/multicalendar/${encodeURIComponent(listingId)}/availability-settings`;
   let page: Page | null = null;
-
-  if (!canonicalTargetUrl) {
-    throw new AirbnbCalendarRefreshError("invalid_ical_url", "L'URL iCal exportée est invalide.");
-  }
 
   try {
     await session.initialize();
@@ -355,14 +249,14 @@ const executeAirbnbCalendarRefresh = async ({
 
     await session.performLogin(env.PUMP_SESSION_PASSWORD || "");
 
-    if (!page.url().includes(`/multicalendar/${listingId}`)) {
+    if (!page.url().includes(`/multicalendar/${listingId}/availability-settings`)) {
       await session.navigate(targetUrl);
     }
 
     await page.waitForLoadState("domcontentloaded", { timeout: 30_000 }).catch(() => undefined);
     await wait(2_000);
 
-    const card = await locateMatchingCalendarSourceCard(page, config, canonicalTargetUrl);
+    const card = await locatePersonalCalendarSourceCard(page, config);
     const refreshClicked = await clickVisible(card, config.advancedSelectors.calendarSourceRefreshButton, 5_000);
     if (!refreshClicked) {
       throw new AirbnbCalendarRefreshError(
