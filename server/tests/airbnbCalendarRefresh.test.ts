@@ -29,6 +29,12 @@ const waitFor = async (
 
 test("isAirbnbPersonalCalendarCardText detecte la carte Perso", () => {
   assert.equal(isAirbnbPersonalCalendarCardText("Perso\nDerniere mise a jour"), true);
+  assert.equal(
+    isAirbnbPersonalCalendarCardText(
+      "Associer des calendriers\nAbritel\nDerniere mise a jour\nActualiser\nModifier\nPerso\nDerniere mise a jour\nActualiser\nModifier"
+    ),
+    false
+  );
   assert.equal(isAirbnbPersonalCalendarCardText("Calendrier Airbnb"), false);
 });
 

@@ -58,6 +58,22 @@ const storageStatesRoot = path.join(resolveDataDir(), "pump", "storageStates");
 const jobs = new Map<string, StoredAirbnbCalendarRefreshJob>();
 const PERSONAL_CALENDAR_NAME = "perso";
 
+const normalizeAirbnbText = (value: string | null | undefined) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u00a0/g, " ")
+    .toLowerCase();
+
+const getAirbnbCalendarCardHeading = (value: string | null | undefined) => {
+  const firstLine = String(value ?? "")
+    .split(/\r?\n/g)
+    .map((line) => line.trim().replace(/\s+/g, " "))
+    .find(Boolean);
+
+  return normalizeAirbnbText(firstLine ?? value).trim();
+};
+
 let executorOverride: AirbnbCalendarRefreshExecutor | null = null;
 
 class AirbnbCalendarRefreshError extends Error {
@@ -73,7 +89,7 @@ class AirbnbCalendarRefreshError extends Error {
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const isAirbnbAccountChooserScreenText = (value: string | null | undefined) => {
-  const text = String(value ?? "").toLowerCase();
+  const text = normalizeAirbnbText(value);
   return (
     text.includes("utiliser un autre compte") ||
     text.includes("ce n'est pas vous") ||
@@ -82,7 +98,7 @@ export const isAirbnbAccountChooserScreenText = (value: string | null | undefine
 };
 
 export const isAirbnbPersonalCalendarCardText = (value: string | null | undefined) =>
-  String(value ?? "").toLowerCase().includes(PERSONAL_CALENDAR_NAME);
+  getAirbnbCalendarCardHeading(value).startsWith(PERSONAL_CALENDAR_NAME);
 
 const buildJob = (jobId: string): StoredAirbnbCalendarRefreshJob => {
   const diagnosticsDir = path.join(diagnosticsRoot, jobId);
