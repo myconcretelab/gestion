@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { apiFetch, buildApiUrl } from "../utils/api";
+import {
+  type ServerAuthSession,
+  type ServerSecuritySaveResult,
+  type ServerSecuritySettings,
+} from "../utils/auth";
 import { dispatchRecentImportedReservationsCreated } from "../utils/recentImportsBadge";
 import {
   DEFAULT_PAYMENT_SOURCE_COLORS,
@@ -351,6 +356,10 @@ type SmsTextSettings = {
   texts: SmsTextItem[];
 };
 
+type SettingsPageProps = {
+  onAuthSessionUpdated?: (session: ServerAuthSession) => void;
+};
+
 type IcalExportFeed = {
   id: string;
   nom: string;
@@ -393,6 +402,13 @@ const DEFAULT_SMS_TEXT_SETTINGS: SmsTextSettings = {
       text: "Vous pourrez prendre l'option draps à 15€ par lit si vous ne souhaitez pas emporter votre linge.",
     },
   ],
+};
+
+const DEFAULT_SERVER_SECURITY_SETTINGS: ServerSecuritySettings = {
+  enabled: false,
+  passwordConfigured: false,
+  sessionDurationHours: 24 * 7,
+  sessionExpiresAt: null,
 };
 
 const IMPORT_LOG_FETCH_COUNT = 20;
@@ -570,7 +586,7 @@ const importPreviewStatusLabelMap: Record<ImportPreviewItem["status"], string> =
   unmapped_listing: "Listing non mappé",
 };
 
-const SettingsPage = () => {
+const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
   const [sources, setSources] = useState<IcalSource[]>([]);
@@ -628,6 +644,19 @@ const SettingsPage = () => {
   const [savingSmsTexts, setSavingSmsTexts] = useState(false);
   const [smsTextError, setSmsTextError] = useState<string | null>(null);
   const [smsTextNotice, setSmsTextNotice] = useState<string | null>(null);
+  const [serverSecuritySettings, setServerSecuritySettings] = useState<ServerSecuritySettings>(
+    DEFAULT_SERVER_SECURITY_SETTINGS
+  );
+  const [serverSecurityDurationDraft, setServerSecurityDurationDraft] = useState(
+    DEFAULT_SERVER_SECURITY_SETTINGS.sessionDurationHours
+  );
+  const [serverSecurityCurrentPassword, setServerSecurityCurrentPassword] = useState("");
+  const [serverSecurityNewPassword, setServerSecurityNewPassword] = useState("");
+  const [serverSecurityConfirmPassword, setServerSecurityConfirmPassword] = useState("");
+  const [loadingServerSecurity, setLoadingServerSecurity] = useState(true);
+  const [savingServerSecurity, setSavingServerSecurity] = useState(false);
+  const [serverSecurityError, setServerSecurityError] = useState<string | null>(null);
+  const [serverSecurityNotice, setServerSecurityNotice] = useState<string | null>(null);
 
   const [icalPreview, setIcalPreview] = useState<IcalPreviewResult | null>(null);
   const [icalCronState, setIcalCronState] = useState<IcalCronState | null>(null);
@@ -993,9 +1022,26 @@ const SettingsPage = () => {
     setSmsTextDraft(nextTexts);
   };
 
+  const applyServerSecuritySettings = (data: ServerSecuritySettings) => {
+    const nextSettings: ServerSecuritySettings = {
+      enabled: Boolean(data.enabled || data.passwordConfigured),
+      passwordConfigured: Boolean(data.passwordConfigured),
+      sessionDurationHours: Math.max(1, Number(data.sessionDurationHours) || DEFAULT_SERVER_SECURITY_SETTINGS.sessionDurationHours),
+      sessionExpiresAt: data.sessionExpiresAt ?? null,
+    };
+
+    setServerSecuritySettings(nextSettings);
+    setServerSecurityDurationDraft(nextSettings.sessionDurationHours);
+  };
+
   const loadSmsTextSettings = async () => {
     const data = await apiFetch<SmsTextSettings>("/settings/sms-texts");
     applySmsTextSettings(data);
+  };
+
+  const loadServerSecuritySettings = async () => {
+    const data = await apiFetch<ServerSecuritySettings>("/settings/security");
+    applyServerSecuritySettings(data);
   };
 
   const loadCronState = async () => {
@@ -1079,12 +1125,14 @@ const SettingsPage = () => {
     setLoadingDeclarationNights(true);
     setLoadingSourceColors(true);
     setLoadingSmsTexts(true);
+    setLoadingServerSecurity(true);
     Promise.all([
       loadManagers(),
       loadSources(),
       loadDeclarationNightsSettings(),
       loadSourceColorSettings(),
       loadSmsTextSettings(),
+      loadServerSecuritySettings(),
       loadCronState(),
       loadImportLog(),
       loadPumpConfig(),
@@ -1101,6 +1149,7 @@ const SettingsPage = () => {
         setDeclarationNightsError(message);
         setSourceColorError(message);
         setSmsTextError(message);
+        setServerSecurityError(message);
       })
       .finally(() => {
         setLoadingManagers(false);
@@ -1109,6 +1158,7 @@ const SettingsPage = () => {
         setLoadingDeclarationNights(false);
         setLoadingSourceColors(false);
         setLoadingSmsTexts(false);
+        setLoadingServerSecurity(false);
       });
   }, []);
 
@@ -1247,6 +1297,54 @@ const SettingsPage = () => {
       setSmsTextError(error.message ?? "Impossible d'enregistrer les textes SMS.");
     } finally {
       setSavingSmsTexts(false);
+    }
+  };
+
+  const saveServerSecuritySettings = async () => {
+    const nextDuration = Math.max(1, Math.min(24 * 90, Math.round(Number(serverSecurityDurationDraft) || 1)));
+    const trimmedNewPassword = serverSecurityNewPassword.trim();
+    const trimmedConfirmPassword = serverSecurityConfirmPassword.trim();
+
+    setSavingServerSecurity(true);
+    setServerSecurityError(null);
+    setServerSecurityNotice(null);
+
+    try {
+      if (trimmedNewPassword || trimmedConfirmPassword) {
+        if (trimmedNewPassword.length < 8) {
+          setServerSecurityError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+          return;
+        }
+        if (trimmedNewPassword !== trimmedConfirmPassword) {
+          setServerSecurityError("La confirmation du nouveau mot de passe ne correspond pas.");
+          return;
+        }
+      }
+
+      const response = await apiFetch<ServerSecuritySaveResult>("/settings/security", {
+        method: "PUT",
+        json: {
+          currentPassword: serverSecurityCurrentPassword,
+          newPassword: trimmedNewPassword || undefined,
+          sessionDurationHours: nextDuration,
+        },
+      });
+      applyServerSecuritySettings(response.settings);
+      onAuthSessionUpdated?.(response.session);
+      setServerSecurityCurrentPassword("");
+      setServerSecurityNewPassword("");
+      setServerSecurityConfirmPassword("");
+      setServerSecurityNotice(
+        trimmedNewPassword
+          ? response.settings.enabled
+            ? "Protection serveur enregistrée et session courante renouvelée."
+            : "Paramètres de sécurité enregistrés."
+          : "Durée d'expiration enregistrée."
+      );
+    } catch (error: any) {
+      setServerSecurityError(error.message ?? "Impossible d'enregistrer la sécurité serveur.");
+    } finally {
+      setSavingServerSecurity(false);
     }
   };
 
@@ -2052,6 +2150,127 @@ const SettingsPage = () => {
         </div>
       </section>
 
+      <section id="settings-security" className="settings-cluster">
+        <div className="settings-cluster__header">
+          <div>
+            <div className="settings-cluster__eyebrow">Sécurité</div>
+            <h2 className="settings-cluster__title">Accès serveur</h2>
+          </div>
+          <p className="settings-cluster__text">
+            Le mot de passe administrateur est hashé côté serveur et la session est portée par un cookie HTTP-only.
+          </p>
+        </div>
+        <div className="settings-cluster__grid">
+          <div className="card settings-card settings-card--sand settings-card--span-12">
+            <div className="settings-card__topline">
+              <span className="settings-card__tag">Session</span>
+              <span className="settings-card__badge">
+                {serverSecuritySettings.enabled ? "Protection active" : "Protection inactive"}
+              </span>
+            </div>
+            <div className="section-title">Mot de passe et expiration</div>
+            <div className="field-hint">
+              {serverSecuritySettings.passwordConfigured
+                ? `Session courante valable jusqu'au ${formatIsoDateTimeFr(serverSecuritySettings.sessionExpiresAt)}.`
+                : "Aucun mot de passe serveur n'est encore enregistré. Définissez-en un pour activer la protection."}
+            </div>
+            {loadingServerSecurity ? (
+              <div className="field-hint" style={{ marginTop: 12 }}>Chargement...</div>
+            ) : (
+              <>
+                <div className="grid-2" style={{ marginTop: 16 }}>
+                  <label className="field">
+                    Expiration de session (heures)
+                    <input
+                      type="number"
+                      min={1}
+                      max={24 * 90}
+                      value={serverSecurityDurationDraft}
+                      onChange={(event) => {
+                        setServerSecurityError(null);
+                        setServerSecurityNotice(null);
+                        setServerSecurityDurationDraft(Math.max(1, Math.min(24 * 90, Number(event.target.value || 1))));
+                      }}
+                      disabled={savingServerSecurity}
+                    />
+                  </label>
+                  <div className="field-hint" style={{ alignSelf: "end" }}>
+                    La durée s'applique aux nouvelles connexions et renouvelle la session courante après enregistrement.
+                  </div>
+                  {serverSecuritySettings.passwordConfigured ? (
+                    <label className="field">
+                      Mot de passe actuel
+                      <input
+                        type="password"
+                        value={serverSecurityCurrentPassword}
+                        onChange={(event) => {
+                          setServerSecurityError(null);
+                          setServerSecurityNotice(null);
+                          setServerSecurityCurrentPassword(event.target.value);
+                        }}
+                        placeholder="Requis uniquement si vous changez le mot de passe"
+                        disabled={savingServerSecurity}
+                      />
+                    </label>
+                  ) : (
+                    <div className="field-hint" style={{ alignSelf: "end" }}>
+                      Le premier mot de passe active la protection immédiatement pour ce navigateur.
+                    </div>
+                  )}
+                  <label className="field">
+                    {serverSecuritySettings.passwordConfigured ? "Nouveau mot de passe" : "Mot de passe initial"}
+                    <input
+                      type="password"
+                      value={serverSecurityNewPassword}
+                      onChange={(event) => {
+                        setServerSecurityError(null);
+                        setServerSecurityNotice(null);
+                        setServerSecurityNewPassword(event.target.value);
+                      }}
+                      placeholder={serverSecuritySettings.passwordConfigured ? "Laisser vide pour conserver l'actuel" : "Minimum 8 caractères"}
+                      disabled={savingServerSecurity}
+                    />
+                  </label>
+                  <label className="field">
+                    Confirmation du mot de passe
+                    <input
+                      type="password"
+                      value={serverSecurityConfirmPassword}
+                      onChange={(event) => {
+                        setServerSecurityError(null);
+                        setServerSecurityNotice(null);
+                        setServerSecurityConfirmPassword(event.target.value);
+                      }}
+                      placeholder="Confirmer le nouveau mot de passe"
+                      disabled={savingServerSecurity}
+                    />
+                  </label>
+                </div>
+                <div className="actions" style={{ marginTop: 16 }}>
+                  <button type="button" onClick={() => void saveServerSecuritySettings()} disabled={savingServerSecurity}>
+                    {savingServerSecurity
+                      ? "Enregistrement..."
+                      : serverSecuritySettings.passwordConfigured
+                        ? "Enregistrer la sécurité"
+                        : "Activer la protection"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => void loadServerSecuritySettings()}
+                    disabled={loadingServerSecurity || savingServerSecurity}
+                  >
+                    {loadingServerSecurity ? "Chargement..." : "Recharger"}
+                  </button>
+                </div>
+                {serverSecurityNotice ? <div className="note note--success">{serverSecurityNotice}</div> : null}
+                {serverSecurityError ? <div className="note">{serverSecurityError}</div> : null}
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+
       <section id="settings-exploitation" className="settings-cluster">
         <div className="settings-cluster__header">
           <div>
@@ -2484,6 +2703,15 @@ const SettingsPage = () => {
       </section>
 
       <section className="settings-overview">
+        <a href="#settings-security" className="settings-overview-card settings-overview-card--sand">
+          <span className="settings-overview-card__kicker">Sécurité</span>
+          <strong className="settings-overview-card__title">Accès serveur</strong>
+          <span className="settings-overview-card__meta">
+            {serverSecuritySettings.enabled
+              ? `Protection active, expiration ${serverSecuritySettings.sessionDurationHours}h.`
+              : "Aucun mot de passe serveur configuré pour le moment."}
+          </span>
+        </a>
         <a href="#settings-exploitation" className="settings-overview-card settings-overview-card--rose">
           <span className="settings-overview-card__kicker">Exploitation</span>
           <strong className="settings-overview-card__title">Nuitées et journal</strong>

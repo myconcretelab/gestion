@@ -137,7 +137,7 @@ SEED_SKIP_PDF=1 npm run seed
 - `CLIENT_DIST_DIR=/home/USER/app/client/dist`
 - `PLAYWRIGHT_BROWSERS_PATH=/home/USER/.cache/ms-playwright` (recommande pour eviter les re-telechargements, utilisez un chemin absolu)
 - (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` (et conserve `node_modules`)
-- (optionnel) `BASIC_AUTH_PASSWORD=...`
+- (optionnel) `BASIC_AUTH_PASSWORD=...` pour initialiser le premier mot de passe serveur hashé au premier démarrage
 - (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
 - (optionnel) `ICAL_SYNC_ENABLED=true`
 - (optionnel) `CRON_TRIGGER_TOKEN=...` pour déclencher le cron iCal via URL HTTP
@@ -227,5 +227,6 @@ Par defaut, la source SQLite vient de `DATABASE_URL` (ou `DATABASE_URL_SQLITE`) 
 
 - Les PDF sont stockés sous `server/data/pdfs/YYYY/MM/`.
 - La numérotation est automatique `{PREFIX}-{YYYY}-{000001}` par gîte et par année.
-- Auth simple activable via `BASIC_AUTH_PASSWORD`.
+- Auth serveur via mot de passe hashé + session cookie. `BASIC_AUTH_PASSWORD` ne sert plus que de bootstrap initial optionnel.
+- Le mot de passe serveur et la durée d'expiration de session se changent ensuite dans **Paramètres**.
 - Auth machine-à-machine possible via `Authorization: Bearer <INTEGRATION_API_TOKEN>`.

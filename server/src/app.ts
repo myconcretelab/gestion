@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { ZodError } from "zod";
 import { env } from "./config/env.js";
+import authRouter from "./routes/auth.js";
 import gitesRouter from "./routes/gites.js";
 import managersRouter from "./routes/managers.js";
 import contractsRouter from "./routes/contracts.js";
@@ -15,6 +16,12 @@ import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
 import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
 import { hasValidCronTriggerToken, parseBearerToken } from "./utils/cronTriggerAuth.js";
+import {
+  buildServerAuthRequiredError,
+  clearServerAuthCookie,
+  getServerAuthSessionFromRequest,
+  isServerAuthRequired,
+} from "./services/serverAuth.js";
 
 export const createApp = () => {
   const app = express();
@@ -35,14 +42,19 @@ export const createApp = () => {
     })
   );
 
-  if (env.BASIC_AUTH_PASSWORD) {
-    app.use((req, res, next) => {
-      if (/^\/api\/gites\/[^/]+\/calendar\.ics$/i.test(req.path)) {
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  app.use("/api/auth", authRouter);
+  app.use("/api", async (req, res, next) => {
+    try {
+      if (/^\/gites\/[^/]+\/calendar\.ics$/i.test(req.path)) {
         return next();
       }
 
       if (
-        (/^\/api\/settings\/ical\/cron\/run$/i.test(req.path) || /^\/api\/settings\/pump\/cron\/run$/i.test(req.path)) &&
+        (/^\/settings\/ical\/cron\/run$/i.test(req.path) || /^\/settings\/pump\/cron\/run$/i.test(req.path)) &&
         hasValidCronTriggerToken(req)
       ) {
         return next();
@@ -56,23 +68,24 @@ export const createApp = () => {
         }
       }
 
-      const [type, encoded] = header.split(" ");
-      if (type !== "Basic" || !encoded) {
-        res.setHeader("WWW-Authenticate", "Basic");
-        return res.status(401).json({ error: "Authentification requise" });
+      if (!(await isServerAuthRequired())) {
+        return next();
       }
-      const decoded = Buffer.from(encoded, "base64").toString("utf-8");
-      const [, password] = decoded.split(":");
-      if (password !== env.BASIC_AUTH_PASSWORD) {
-        res.setHeader("WWW-Authenticate", "Basic");
-        return res.status(401).json({ error: "Mot de passe invalide" });
-      }
-      return next();
-    });
-  }
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
+      const session = await getServerAuthSessionFromRequest(req);
+      if (session) {
+        return next();
+      }
+
+      if (req.headers.cookie) {
+        clearServerAuthCookie(res);
+      }
+
+      const unauthorized = buildServerAuthRequiredError();
+      return res.status(unauthorized.status).json(unauthorized.body);
+    } catch (error) {
+      return next(error);
+    }
   });
 
   app.use("/api/gites", gitesRouter);
