@@ -1517,7 +1517,10 @@ const ReservationsPage = () => {
   const persistExistingRow = async (
     rowId: string,
     draft: ReservationDraft,
-    optionsOverride?: ContratOptions
+    options?: {
+      optionsOverride?: ContratOptions;
+      keepIcalToVerifyMarker?: boolean;
+    }
   ): Promise<boolean> => {
     if (!draft.hote_nom.trim()) {
       setRowState((previous) => ({ ...previous, [rowId]: "error" }));
@@ -1539,7 +1542,7 @@ const ReservationsPage = () => {
 
     try {
       const existingReservation = reservationsRef.current.find((item) => item.id === rowId);
-      const optionDraft = optionsOverride ?? reservationOptionsRef.current[rowId];
+      const optionDraft = options?.optionsOverride ?? reservationOptionsRef.current[rowId];
       let nextDraft = draft;
       if (existingReservation && optionDraft) {
         const optionGite = resolveReservationGite(existingReservation, draft);
@@ -1557,7 +1560,8 @@ const ReservationsPage = () => {
           frais_optionnels_declares: allDeclared,
         };
       }
-      const keepIcalToVerifyMarker = hasIcalToVerifyMarker(existingReservation?.commentaire);
+      const keepIcalToVerifyMarker =
+        options?.keepIcalToVerifyMarker ?? hasIcalToVerifyMarker(existingReservation?.commentaire);
       const updated = await apiFetch<Reservation>(`/reservations/${rowId}`, {
         method: "PUT",
         json: toPayload(nextDraft, optionDraft, keepIcalToVerifyMarker),
@@ -1877,6 +1881,38 @@ const ReservationsPage = () => {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const markReservationAsVerified = async (reservation: Reservation) => {
+    if (!hasIcalToVerifyMarker(reservation.commentaire)) return;
+
+    const rowId = reservation.id;
+    clearRowFeedback(rowId);
+
+    if (saveTimers.current[rowId]) {
+      window.clearTimeout(saveTimers.current[rowId]);
+      delete saveTimers.current[rowId];
+    }
+
+    const nextDraft: ReservationDraft = {
+      ...(draftsRef.current[rowId] ?? toDraft(reservation)),
+      commentaire: stripIcalToVerifyMarker(draftsRef.current[rowId]?.commentaire ?? reservation.commentaire),
+    };
+
+    setDrafts((previous) => ({
+      ...previous,
+      [rowId]: nextDraft,
+    }));
+
+    const saved = await persistExistingRow(rowId, nextDraft, {
+      optionsOverride: reservationOptionsRef.current[rowId],
+      keepIcalToVerifyMarker: false,
+    });
+
+    if (!saved) return;
+
+    clearDraft(rowId);
+    startSavedRowFade(rowId);
   };
 
   const splitReservationByMonth = async (reservation: Reservation) => {
@@ -2213,7 +2249,9 @@ const ReservationsPage = () => {
       delete saveTimers.current[reservation.id];
     }
 
-    const saved = await persistExistingRow(reservation.id, nextDraft, optionDraft);
+    const saved = await persistExistingRow(reservation.id, nextDraft, {
+      optionsOverride: optionDraft,
+    });
     if (!saved) return;
     closeEditModeWithAnimation(reservation.id, { highlightSaved: true });
   };
@@ -4468,6 +4506,17 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                                   >
                                     {rowStatusLabel}
                                   </div>
+                                )}
+                                {isIcalToVerify && (
+                                  <button
+                                    type="button"
+                                    className="table-action table-action--success reservations-verify-action"
+                                    onClick={() => markReservationAsVerified(reservation).catch((err) => setError((err as Error).message))}
+                                    disabled={rowSaveState === "saving" || deletingId === reservation.id}
+                                    title='Retirer le statut "A vérifier"'
+                                  >
+                                    OK
+                                  </button>
                                 )}
                                 <div className="reservations-actions-menu">
                                   <button className="table-action table-action--neutral reservations-actions-trigger" title="Actions">
