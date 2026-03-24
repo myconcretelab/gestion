@@ -363,7 +363,7 @@ const App = () => {
     }
   };
 
-  const loadRecentImportedReservationsCount = async (signal?: AbortSignal) => {
+  const loadRecentImportedReservationsCount = useCallback(async (signal?: AbortSignal) => {
     try {
       const payload = await apiFetch<RecentImportedReservationsCountPayload>("/reservations/recent-imports/count", {
         signal,
@@ -375,9 +375,9 @@ const App = () => {
         console.error(error);
       }
     }
-  };
+  }, []);
 
-  const loadPumpHealth = async (signal?: AbortSignal) => {
+  const loadPumpHealth = useCallback(async (signal?: AbortSignal) => {
     try {
       const payload = await apiFetch<PumpHealthNotice>("/settings/pump/health", { signal });
       setPumpHealthNotice(payload);
@@ -392,7 +392,7 @@ const App = () => {
         console.error(error);
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -473,7 +473,7 @@ const App = () => {
         handleRecentImportedReservationsCreated as EventListener
       );
     };
-  }, [authLoading, isAuthenticated]);
+  }, [authLoading, isAuthenticated, loadPumpHealth, loadRecentImportedReservationsCount]);
 
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
