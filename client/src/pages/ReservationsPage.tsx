@@ -3695,7 +3695,7 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                 >
                   <div className="reservations-month__head-main">
                     <div className="reservations-month__title-row">
-                      <div className="section-subtitle">{MONTHS[monthIndex - 1]}</div>
+                      <div className="section-subtitle reservations-month__title">{MONTHS[monthIndex - 1]}</div>
                       {holidaySegments.length > 0 ? (
                         <div className="reservations-month__holiday-list">
                           {holidaySegments.map((segment) => (
@@ -4507,22 +4507,22 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                                     {rowStatusLabel}
                                   </div>
                                 )}
-                                {isIcalToVerify && (
-                                  <button
-                                    type="button"
-                                    className="table-action table-action--success reservations-verify-action"
-                                    onClick={() => markReservationAsVerified(reservation).catch((err) => setError((err as Error).message))}
-                                    disabled={rowSaveState === "saving" || deletingId === reservation.id}
-                                    title='Retirer le statut "A vérifier"'
-                                  >
-                                    OK
-                                  </button>
-                                )}
                                 <div className="reservations-actions-menu">
                                   <button className="table-action table-action--neutral reservations-actions-trigger" title="Actions">
                                     ⋯
                                   </button>
                                   <div className="reservations-row-actions">
+                                  {isIcalToVerify && (
+                                    <button
+                                      type="button"
+                                      className="table-action table-action--success"
+                                      onClick={() => markReservationAsVerified(reservation).catch((err) => setError((err as Error).message))}
+                                      disabled={rowSaveState === "saving" || deletingId === reservation.id}
+                                      title='Retirer le statut "A vérifier"'
+                                    >
+                                      OK
+                                    </button>
+                                  )}
                                   <button
                                     className="table-action table-action--neutral"
                                     onClick={() => {

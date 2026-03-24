@@ -4607,7 +4607,16 @@ button.warning {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px 14px;
+  gap: 14px 18px;
+}
+
+.reservations-month__title {
+  margin: 0;
+  font-size: clamp(1.6rem, 2.8vw, 2.2rem);
+  line-height: 1.02;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: #334155;
 }
 
 .reservations-month__head-main {
@@ -4645,6 +4654,7 @@ button.warning {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin-top: 10px;
   font-size: 0.78rem;
   color: #6b7280;
   font-weight: 600;
@@ -5741,10 +5751,6 @@ button.warning {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
-}
-
-.reservations-verify-action {
-  min-width: 48px;
 }
 
 .placeholder-target-select {
@@ -6985,6 +6991,10 @@ button.warning {
 @media (max-width: 720px) {
   .reservations-month__head {
     flex-wrap: wrap;
+  }
+
+  .reservations-month__title {
+    font-size: clamp(1.5rem, 6vw, 1.95rem);
   }
 
   .gites-header--listing,
