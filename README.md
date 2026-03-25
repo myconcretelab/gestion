@@ -136,6 +136,7 @@ SEED_SKIP_PDF=1 npm run seed
 - `PORT=4000`
 - `CLIENT_DIST_DIR=/home/USER/app/client/dist`
 - `PLAYWRIGHT_BROWSERS_PATH=/home/USER/.cache/ms-playwright` (recommande pour eviter les re-telechargements, utilisez un chemin absolu)
+- `PLAYWRIGHT_HEADLESS=true` par defaut implicite en production (`NODE_ENV=production`) ; vous pouvez l'ajouter explicitement pour rendre le comportement visible
 - (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` (et conserve `node_modules`)
 - (optionnel) `BASIC_AUTH_PASSWORD=...` pour initialiser le premier mot de passe serveur hashé au premier démarrage
 - (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
