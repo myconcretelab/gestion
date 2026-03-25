@@ -45,6 +45,7 @@ const reservationPayloadSchema = z.object({
   airbnb_url: z.preprocess(emptyStringToNull, z.string().trim().url().nullable()).optional(),
   hote_nom: z.string().trim().min(1),
   telephone: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  email: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
   date_entree: z.string().trim().min(1),
   date_sortie: z.string().trim().min(1),
   nb_adultes: z.coerce.number().int().min(0),
@@ -117,6 +118,7 @@ type ParsedImportRow = {
   rowNumber: number;
   hote_nom: string;
   telephone: string | null;
+  email: string | null;
   date_entree: string;
   date_sortie: string;
   nb_adultes: number;
@@ -434,6 +436,7 @@ const buildReservationSegmentRecords = (
           airbnb_url: payload.airbnb_url ?? null,
           hote_nom: payload.hote_nom,
           telephone: payload.telephone ?? null,
+          email: payload.email ?? null,
           date_entree: segment.dateEntree,
           date_sortie: segment.dateSortie,
           nb_nuits: segment.nbNuits,
@@ -655,6 +658,7 @@ const isSameStayIdentity = (
 const IMPORT_JSON_KEYS = {
   hote_nom: normalizeTextKey("hote"),
   telephone: normalizeTextKey("telephone"),
+  email: normalizeTextKey("email"),
   date_entree: normalizeTextKey("date entree"),
   date_sortie: normalizeTextKey("date sortie"),
   nb_adultes: normalizeTextKey("nb adultes"),
@@ -677,6 +681,7 @@ const GROUPED_GITE_KEYS = new Set([
 const IMPORT_DEFAULT_COLUMN_LABELS: Record<string, string> = {
   [IMPORT_JSON_KEYS.hote_nom]: "Hôte",
   [IMPORT_JSON_KEYS.telephone]: "Téléphone",
+  [IMPORT_JSON_KEYS.email]: "Email",
   [IMPORT_JSON_KEYS.date_entree]: "Date entrée",
   [IMPORT_JSON_KEYS.date_sortie]: "Date sortie",
   [IMPORT_JSON_KEYS.nb_adultes]: "Nb adultes",
@@ -924,6 +929,7 @@ const pickRawField = (row: Record<string, unknown>, aliases: string[]) => {
 const importFieldAliases = {
   hote_nom: ["nom de l'hote", "nom hote", "hote", "host", "nom", "locataire", "locataire_nom"],
   telephone: ["telephone", "téléphone", "tel", "numero", "numero de telephone", "portable", "mobile", "phone"],
+  email: ["email", "e-mail", "mail", "courriel", "locataire_email"],
   date_entree: ["date entree", "date d'entree", "entree", "checkin", "date_arrivee", "arrivee"],
   date_sortie: ["date sortie", "sortie", "checkout", "date_depart", "depart"],
   nb_adultes: ["nb adultes", "adultes", "adults", "nombre adultes"],
@@ -944,6 +950,7 @@ const IMPORT_REQUIRED_FIELDS = ["hote_nom", "date_entree", "date_sortie"] as con
 const IMPORT_FIELD_LABELS: Record<ImportFieldKey, string> = {
   hote_nom: "Nom de l'hôte",
   telephone: "Téléphone",
+  email: "Email",
   date_entree: "Date d'entrée",
   date_sortie: "Date de sortie",
   nb_adultes: "Nombre d'adultes",
@@ -1089,6 +1096,7 @@ const parseImportRows = (
       rowNumber: row.index,
       hote_nom,
       telephone: String(pickImportField(row.data, "telephone", columnMap) ?? "").trim() || null,
+      email: String(pickImportField(row.data, "email", columnMap) ?? "").trim() || null,
       date_entree,
       date_sortie,
       nb_adultes: parseInteger(pickImportField(row.data, "nb_adultes", columnMap), 0),
@@ -1217,11 +1225,13 @@ router.get("/", async (req, res, next) => {
           const source = (reservation.source_paiement ?? "").toLowerCase();
           const commentaire = (reservation.commentaire ?? "").toLowerCase();
           const telephone = (reservation.telephone ?? "").toLowerCase();
+          const email = (reservation.email ?? "").toLowerCase();
           return (
             entree.includes(q) ||
             sortie.includes(q) ||
             reservation.hote_nom.toLowerCase().includes(q) ||
             telephone.includes(q) ||
+            email.includes(q) ||
             source.includes(q) ||
             commentaire.includes(q)
           );
@@ -1523,6 +1533,7 @@ router.put("/:id", async (req, res, next) => {
         airbnb_url: payload.airbnb_url !== undefined ? payload.airbnb_url ?? null : existing.airbnb_url,
         hote_nom: payload.hote_nom,
         telephone: payload.telephone ?? null,
+        email: payload.email ?? null,
         date_entree: computed.dateEntree,
         date_sortie: computed.dateSortie,
         nb_nuits: computed.nbNuits,
@@ -1841,6 +1852,7 @@ router.post("/import", async (req, res, next) => {
           placeholder_id: association.placeholder_id,
           hote_nom: row.hote_nom,
           telephone: row.telephone,
+          email: row.email,
           date_entree: row.date_entree,
           date_sortie: row.date_sortie,
           nb_adultes: row.nb_adultes,
@@ -1913,6 +1925,7 @@ router.post("/import", async (req, res, next) => {
           }),
           hote_nom: row.hote_nom,
           telephone: row.telephone,
+          email: row.email,
           date_entree: computed.dateEntree,
           date_sortie: computed.dateSortie,
           nb_nuits: computed.nbNuits,

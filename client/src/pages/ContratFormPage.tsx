@@ -25,6 +25,7 @@ type ContractFieldKey =
   | "locataire_nom"
   | "locataire_adresse"
   | "locataire_tel"
+  | "locataire_email"
   | "date_debut"
   | "heure_arrivee"
   | "date_fin"
@@ -44,6 +45,7 @@ const contractFieldKeys: ContractFieldKey[] = [
   "locataire_nom",
   "locataire_adresse",
   "locataire_tel",
+  "locataire_email",
   "date_debut",
   "heure_arrivee",
   "date_fin",
@@ -71,6 +73,7 @@ const ContratFormPage = () => {
   const [locataireNom, setLocataireNom] = useState("");
   const [locataireAdresse, setLocataireAdresse] = useState("");
   const [locataireTel, setLocataireTel] = useState("");
+  const [locataireEmail, setLocataireEmail] = useState("");
   const [nbAdultes, setNbAdultes] = useState(1);
   const [nbEnfants, setNbEnfants] = useState(0);
   const [dateDebut, setDateDebut] = useState("");
@@ -129,6 +132,7 @@ const ContratFormPage = () => {
         setLocataireNom(data.locataire_nom);
         setLocataireAdresse(data.locataire_adresse);
         setLocataireTel(data.locataire_tel);
+        setLocataireEmail(data.locataire_email ?? "");
         setNbAdultes(data.nb_adultes);
         setNbEnfants(data.nb_enfants_2_17);
         setDateDebut(toDateInputValue(data.date_debut));
@@ -187,6 +191,7 @@ const ContratFormPage = () => {
         setLocataireNom(prefill.locataireNom);
         setLocataireAdresse(prefill.locataireAdresse);
         setLocataireTel(prefill.locataireTel);
+        setLocataireEmail(prefill.locataireEmail);
         setNbAdultes(prefill.nbAdultes);
         setNbEnfants(prefill.nbEnfants);
         setDateDebut(prefill.dateDebut);
@@ -204,6 +209,7 @@ const ContratFormPage = () => {
         if (!active || isAbortError(err)) return;
         setLinkedReservationId(null);
         setSourceReservationLabel(null);
+        setLocataireEmail("");
         setError(err instanceof Error ? err.message : "Erreur lors du préremplissage.");
       })
       .finally(() => {
@@ -222,6 +228,7 @@ const ContratFormPage = () => {
     setLoadingFromReservation(false);
     setSourceReservationLabel(null);
     setLinkedReservationId(null);
+    setLocataireEmail("");
   }, [isEdit, fromReservationId]);
 
   useEffect(() => {
@@ -324,6 +331,7 @@ const ContratFormPage = () => {
       locataire_nom: locataireNom,
       locataire_adresse: locataireAdresse,
       locataire_tel: locataireTel,
+      locataire_email: locataireEmail,
       nb_adultes: nbAdultes,
       nb_enfants_2_17: nbEnfants,
       date_debut: dateDebut,
@@ -353,6 +361,7 @@ const ContratFormPage = () => {
     locataireNom,
     locataireAdresse,
     locataireTel,
+    locataireEmail,
     nbAdultes,
     nbEnfants,
     dateDebut,
@@ -508,6 +517,18 @@ const ContratFormPage = () => {
               }}
             />
             {renderFieldError("locataire_tel")}
+          </label>
+          <label className={getFieldClassName("locataire_email")}>
+            Email locataire (optionnel)
+            <input
+              type="email"
+              value={locataireEmail}
+              onChange={(e) => {
+                clearFieldError("locataire_email");
+                setLocataireEmail(e.target.value);
+              }}
+            />
+            {renderFieldError("locataire_email")}
           </label>
         </div>
       </div>

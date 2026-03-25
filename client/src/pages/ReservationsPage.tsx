@@ -44,6 +44,7 @@ type ReservationDraft = {
   placeholder_id: string | null;
   hote_nom: string;
   telephone: string;
+  email: string;
   date_entree: string;
   date_sortie: string;
   nb_nuits: number;
@@ -87,6 +88,7 @@ type ReservationCreateResponse = Reservation & {
 type ImportColumnField =
   | "hote_nom"
   | "telephone"
+  | "email"
   | "date_entree"
   | "date_sortie"
   | "nb_adultes"
@@ -217,6 +219,7 @@ const ROW_SAVED_FADE_MS = 900;
 const IMPORT_COLUMN_FIELDS: Array<{ key: ImportColumnField; label: string; required?: boolean }> = [
   { key: "hote_nom", label: "Nom de l'hôte", required: true },
   { key: "telephone", label: "N° téléphone" },
+  { key: "email", label: "Email" },
   { key: "date_entree", label: "Date d'entrée", required: true },
   { key: "date_sortie", label: "Date de sortie", required: true },
   { key: "nb_adultes", label: "Nb adultes" },
@@ -267,6 +270,40 @@ const buildTelephoneHref = (value: string | null | undefined) => {
   const normalized = String(value ?? "").trim().replace(/[^+\d]/g, "");
   return normalized ? `tel:${normalized}` : null;
 };
+
+const ReservationPhoneIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="M6.9 3.2c.4-.4 1-.5 1.5-.3l2.4 1c.7.3 1 .9.9 1.6l-.4 2.5c0 .3.1.6.3.8l3 3c.2.2.5.3.8.3l2.5-.4c.7-.1 1.4.2 1.6.9l1 2.4c.2.5.1 1.1-.3 1.5l-1.7 1.7c-.6.6-1.5.9-2.3.7-2.7-.6-5.3-2.1-7.6-4.3-2.2-2.2-3.7-4.8-4.3-7.6-.2-.8.1-1.7.7-2.3Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const ReservationEmailIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="m5.5 7 6.5 5 6.5-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
 const hasIcalToVerifyMarker = (comment: string | null | undefined) => {
   if (typeof comment !== "string") return false;
@@ -682,6 +719,7 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     placeholder_id: reservation.placeholder_id ?? null,
     hote_nom: getEditableHostName(reservation.hote_nom),
     telephone: reservation.telephone ?? "",
+    email: reservation.email ?? "",
     date_entree: toInputDate(reservation.date_entree),
     date_sortie: toInputDate(reservation.date_sortie),
     nb_nuits: reservation.nb_nuits,
@@ -720,6 +758,7 @@ const buildEmptyDraft = (
     placeholder_id: overrides.placeholder_id ?? null,
     hote_nom: overrides.hote_nom ?? "",
     telephone: overrides.telephone ?? "",
+    email: overrides.email ?? "",
     date_entree: entry,
     date_sortie: exit,
     nb_nuits: 1,
@@ -745,6 +784,7 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions, keepIcalTo
     placeholder_id: draft.placeholder_id,
     hote_nom: draft.hote_nom.trim(),
     telephone: draft.telephone.trim() || null,
+    email: draft.email.trim() || null,
     date_entree: draft.date_entree,
     date_sortie: draft.date_sortie,
     nb_adultes: draft.nb_adultes,
@@ -2799,6 +2839,7 @@ const ReservationsPage = () => {
       "Placeholder",
       "Hôte",
       "Téléphone",
+      "Email",
       "Entrée",
       "Sortie",
       "Nuits",
@@ -2828,6 +2869,7 @@ const ReservationsPage = () => {
         placeholderLabel,
         reservation.hote_nom,
         reservation.telephone ?? "",
+        reservation.email ?? "",
         formatDate(reservation.date_entree),
         formatDate(reservation.date_sortie),
         String(reservation.nb_nuits),
@@ -4047,7 +4089,23 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                                   onClick={() => openInlineField(reservation, "hote_nom")}
                                   title="Modifier l'hôte"
                                 >
-                                  {getEditableHostName(reservation.hote_nom)}
+                                  <span className="reservations-host-inline">
+                                    <span className="reservations-host-inline__name">{getEditableHostName(reservation.hote_nom)}</span>
+                                    {reservation.telephone || reservation.email ? (
+                                      <span className="reservations-host-inline__contacts" aria-hidden="true">
+                                        {reservation.telephone ? (
+                                          <span className="reservations-host-inline__contact-indicator" title="Téléphone renseigné">
+                                            <ReservationPhoneIcon />
+                                          </span>
+                                        ) : null}
+                                        {reservation.email ? (
+                                          <span className="reservations-host-inline__contact-indicator" title="Email renseigné">
+                                            <ReservationEmailIcon />
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    ) : null}
+                                  </span>
                                 </button>
                               )}
                             </td>
@@ -4690,6 +4748,52 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
                               <td colSpan={12}>
                                 <div className="reservations-row-details-content">
                                   <div className="reservations-details-grid">
+                                    <div className="reservations-contact-card">
+                                      <div className="reservations-contact-card__title">Contact</div>
+                                      <div className="grid-2">
+                                        <div className="field">
+                                          <span>Téléphone</span>
+                                          {isEditing ? (
+                                            <input
+                                              value={draft.telephone}
+                                              onChange={(event) =>
+                                                updateExistingField(reservation, (prev) => ({
+                                                  ...prev,
+                                                  telephone: event.target.value,
+                                                }))
+                                              }
+                                            />
+                                          ) : reservation.telephone && telephoneHref ? (
+                                            <a className="detail-link" href={telephoneHref}>
+                                              {reservation.telephone}
+                                            </a>
+                                          ) : (
+                                            <span className="detail-value">—</span>
+                                          )}
+                                        </div>
+                                        <div className="field">
+                                          <span>Email</span>
+                                          {isEditing ? (
+                                            <input
+                                              type="email"
+                                              value={draft.email}
+                                              onChange={(event) =>
+                                                updateExistingField(reservation, (prev) => ({
+                                                  ...prev,
+                                                  email: event.target.value,
+                                                }))
+                                              }
+                                            />
+                                          ) : reservation.email ? (
+                                            <a className="detail-link" href={`mailto:${reservation.email}`}>
+                                              {reservation.email}
+                                            </a>
+                                          ) : (
+                                            <span className="detail-value">—</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
                                     <div className="reservations-options-builder">
                                     <div className="reservations-options-builder__head">
                                       <div>

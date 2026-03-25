@@ -103,6 +103,7 @@ export const buildDocumentListWhere = (params: {
   if (params.q) {
     where.OR = [
       { locataire_nom: { contains: params.q, mode: "insensitive" } },
+      { locataire_email: { contains: params.q, mode: "insensitive" } },
       { [params.numeroField]: { contains: params.q, mode: "insensitive" } },
     ];
   }

@@ -43,6 +43,7 @@ const contractSchema = z.object({
   locataire_nom: z.string().min(1),
   locataire_adresse: z.string().optional().default(""),
   locataire_tel: z.string().min(1),
+  locataire_email: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
   nb_adultes: z.number().int().min(1),
   nb_enfants_2_17: z.number().int().min(0),
   date_debut: z.string().min(1),
@@ -73,6 +74,7 @@ const previewSchema = z.object({
   locataire_nom: z.string().optional().default(""),
   locataire_adresse: z.string().optional().default(""),
   locataire_tel: z.string().optional().default(""),
+  locataire_email: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
   nb_adultes: z.number().int().min(1).optional().default(1),
   nb_enfants_2_17: z.number().int().min(0).optional().default(0),
   date_debut: optionalDateString,
@@ -189,6 +191,7 @@ const syncReservationFromContract = async (params: {
   giteId: string;
   locataireNom: string;
   locataireTel: string;
+  locataireEmail?: string | null;
   dateDebut: Date;
   dateFin: Date;
   nbNuits: number;
@@ -205,6 +208,7 @@ const syncReservationFromContract = async (params: {
     giteId,
     locataireNom,
     locataireTel,
+    locataireEmail,
     dateDebut,
     dateFin,
     nbNuits,
@@ -274,6 +278,7 @@ const syncReservationFromContract = async (params: {
     placeholder_id: null,
     hote_nom: locataireNom,
     telephone: locataireTel.trim() || null,
+    email: locataireEmail?.trim() || null,
     date_entree: dateDebut,
     date_sortie: dateFin,
     nb_nuits: nbNuits,
@@ -619,6 +624,7 @@ router.post("/", async (req, res, next) => {
       giteId: data.gite_id,
       locataireNom: data.locataire_nom,
       locataireTel: data.locataire_tel,
+      locataireEmail: data.locataire_email ?? null,
       dateDebut,
       dateFin,
       nbNuits: totals.nbNuits,
@@ -637,6 +643,7 @@ router.post("/", async (req, res, next) => {
         locataire_nom: data.locataire_nom,
         locataire_adresse: data.locataire_adresse,
         locataire_tel: data.locataire_tel,
+        locataire_email: data.locataire_email ?? null,
         nb_adultes: data.nb_adultes,
         nb_enfants_2_17: data.nb_enfants_2_17,
         date_debut: dateDebut,
@@ -730,6 +737,7 @@ router.put("/:id", async (req, res, next) => {
       giteId: data.gite_id,
       locataireNom: data.locataire_nom,
       locataireTel: data.locataire_tel,
+      locataireEmail: data.locataire_email ?? null,
       dateDebut,
       dateFin,
       nbNuits: totals.nbNuits,
@@ -753,6 +761,7 @@ router.put("/:id", async (req, res, next) => {
         locataire_nom: data.locataire_nom,
         locataire_adresse: data.locataire_adresse,
         locataire_tel: data.locataire_tel,
+        locataire_email: data.locataire_email ?? null,
         nb_adultes: data.nb_adultes,
         nb_enfants_2_17: data.nb_enfants_2_17,
         date_debut: dateDebut,

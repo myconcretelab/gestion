@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Facture, Gite } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
+import { buildMailtoHref } from "../utils/documentEmail";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const FacturesListPage = () => {
@@ -156,6 +157,12 @@ const FacturesListPage = () => {
           <tbody>
             {factures.map((facture) => {
               const totalMontant = Number(facture.solde_montant ?? 0) + Number(facture.arrhes_montant ?? 0);
+              const pdfUrl = new URL(`/api/invoices/${facture.id}/pdf`, window.location.origin).toString();
+              const mailHref = buildMailtoHref({
+                recipient: facture.locataire_email,
+                subject: `Facture ${facture.numero_facture}`,
+                body: `Bonjour,\n\nVoici votre facture :\n${pdfUrl}`,
+              });
               return (
                 <tr key={facture.id}>
                   <td>
@@ -183,6 +190,20 @@ const FacturesListPage = () => {
                       <Link className="table-action table-action--neutral" to={`/factures/${facture.id}`}>
                         Détails
                       </Link>
+                      {mailHref ? (
+                        <a className="table-action table-action--neutral" href={mailHref}>
+                          Email
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          className="table-action table-action--neutral"
+                          disabled
+                          title="Email client non renseigné"
+                        >
+                          Email
+                        </button>
+                      )}
                       <button
                         className="table-action table-action--danger"
                         onClick={() => remove(facture)}
