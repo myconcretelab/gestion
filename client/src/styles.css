@@ -7819,6 +7819,17 @@ button.warning {
   }
 }
 
+@media (max-width: 430px) {
+  .calendar-quick-create-sheet {
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+
+  .calendar-quick-create-sheet__panel {
+    width: 100%;
+  }
+}
+
 .auth-shell {
   min-height: 100vh;
   display: grid;

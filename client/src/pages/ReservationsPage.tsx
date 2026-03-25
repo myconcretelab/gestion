@@ -36,6 +36,8 @@ import {
 } from "../utils/schoolHolidays";
 import type { ContratOptions, Gite, Reservation, ReservationPlaceholder } from "../utils/types";
 
+const MOBILE_INLINE_INSERT_BREAKPOINT = 760;
+
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 type ReservationDraft = {
@@ -2941,8 +2943,17 @@ const ReservationsPage = () => {
     }, 0);
   };
 
-const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) => {
-  window.setTimeout(() => {
+  const scrollGridCellIntoView = useCallback((monthIndex: number, rowIndex: number, colIndex: number) => {
+    window.setTimeout(() => {
+      const selector = `[data-grid-month="${monthIndex}"][data-grid-row="${rowIndex}"][data-grid-col="${colIndex}"]`;
+      const element = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(selector);
+      if (!element) return;
+      element.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }, 0);
+  }, []);
+
+  const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) => {
+    window.setTimeout(() => {
       const selector = `[data-grid-month="${monthIndex}"][data-grid-row="${rowIndex}"][data-grid-col="2"]`;
       const element = document.querySelector<HTMLInputElement>(selector);
       if (!element) return;
@@ -2992,6 +3003,16 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
     setError(null);
     setNewRows((previous) => ({ ...previous, [requestedCreateMonthIndex]: nextDraft }));
     setInsertRowIndexByMonth((previous) => ({ ...previous, [requestedCreateMonthIndex]: nextInsertIndex }));
+    const shouldKeepInlineListingMode =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia(`(max-width: ${MOBILE_INLINE_INSERT_BREAKPOINT}px)`).matches;
+
+    if (shouldKeepInlineListingMode) {
+      scrollGridCellIntoView(requestedCreateMonthIndex, nextInsertIndex, 0);
+      return;
+    }
+
     focusGridCell(requestedCreateMonthIndex, nextInsertIndex, 0);
   }, [
     activeGite,
@@ -3005,6 +3026,7 @@ const focusAndOpenGridDateSortiePicker = (monthIndex: number, rowIndex: number) 
     requestedCreateMode,
     requestedTab,
     reservationsByMonth,
+    scrollGridCellIntoView,
     setMonthExpanded,
     year,
   ]);
