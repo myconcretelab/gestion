@@ -261,13 +261,13 @@ test("syncIcalReservations supprime les reservations iCal plateforme absentes du
   }
 });
 
-test("syncIcalReservations marque a verifier une reservation iCal absente hors source plateforme", async () => {
+test("syncIcalReservations supprime une reservation iCal absente meme hors source plateforme", async () => {
   const originalFindManySources = prisma.icalSource.findMany;
   const originalFindManyReservations = prisma.reservation.findMany;
   const originalDelete = prisma.reservation.delete;
   const originalUpdate = prisma.reservation.update;
   const originalFetch = global.fetch;
-  const updatedComments: Array<string | null | undefined> = [];
+  const deletedIds: string[] = [];
 
   try {
     prisma.icalSource.findMany = async () => createActiveSource();
@@ -284,12 +284,12 @@ test("syncIcalReservations marque a verifier une reservation iCal absente hors s
         commentaire: null,
       },
     ];
-    prisma.reservation.delete = async () => {
-      throw new Error("reservation.delete ne doit pas etre appele pour une reservation hors plateforme.");
+    prisma.reservation.delete = async ({ where }: any) => {
+      deletedIds.push(where.id);
+      return { id: where.id } as any;
     };
-    prisma.reservation.update = async ({ data }: any) => {
-      updatedComments.push(data.commentaire);
-      return { id: "reservation-virement", ...data } as any;
+    prisma.reservation.update = async () => {
+      throw new Error("reservation.update ne doit pas etre appele pour une reservation iCal supprimee.");
     };
     global.fetch = (async () =>
       ({
@@ -300,9 +300,9 @@ test("syncIcalReservations marque a verifier une reservation iCal absente hors s
 
     const result = await syncIcalReservations();
 
-    assert.equal(result.deleted_count, 0);
-    assert.equal(result.to_verify_marked_count, 1);
-    assert.deepEqual(updatedComments, ["[ICAL_TO_VERIFY]"]);
+    assert.equal(result.deleted_count, 1);
+    assert.equal(result.to_verify_marked_count, 0);
+    assert.deepEqual(deletedIds, ["reservation-virement"]);
   } finally {
     prisma.icalSource.findMany = originalFindManySources;
     prisma.reservation.findMany = originalFindManyReservations;
