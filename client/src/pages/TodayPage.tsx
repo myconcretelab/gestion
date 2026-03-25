@@ -1230,7 +1230,7 @@ const TodayPage = () => {
 
   if (loading) {
     return (
-      <div className="today-page">
+      <div className={`today-page${usesViewportScroll && (mobileActionState || quickReservationOpen) ? " today-page--mobile-overlay-visible" : ""}`}>
         <section className="card today-hero">
           <div className="section-title">Aujourd&apos;hui</div>
           <div className="field-hint">Chargement de la vue opérationnelle...</div>
@@ -1239,8 +1239,10 @@ const TodayPage = () => {
     );
   }
 
+  const hasMobileOverlay = usesViewportScroll && (Boolean(mobileActionState) || quickReservationOpen);
+
   return (
-    <div className="today-page">
+    <div className={`today-page${hasMobileOverlay ? " today-page--mobile-overlay-visible" : ""}`}>
       <section className="today-calendar-card">
         <div className="today-section-head today-section-head--calendar">
           <div>

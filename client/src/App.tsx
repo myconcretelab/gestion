@@ -546,6 +546,36 @@ const App = () => {
     };
   }, [appNotice]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    const rootStyle = document.documentElement.style;
+
+    const updateViewportCssVars = () => {
+      const visualViewport = window.visualViewport;
+      const viewportHeight = Math.round(visualViewport?.height ?? window.innerHeight);
+      const viewportOffsetBottom = Math.max(
+        0,
+        Math.round(window.innerHeight - (visualViewport?.height ?? window.innerHeight) - (visualViewport?.offsetTop ?? 0))
+      );
+
+      rootStyle.setProperty("--app-height", `${viewportHeight}px`);
+      rootStyle.setProperty("--viewport-offset-bottom", `${viewportOffsetBottom}px`);
+    };
+
+    updateViewportCssVars();
+
+    window.addEventListener("resize", updateViewportCssVars, { passive: true });
+    window.visualViewport?.addEventListener("resize", updateViewportCssVars);
+    window.visualViewport?.addEventListener("scroll", updateViewportCssVars);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportCssVars);
+      window.visualViewport?.removeEventListener("resize", updateViewportCssVars);
+      window.visualViewport?.removeEventListener("scroll", updateViewportCssVars);
+    };
+  }, []);
+
   const renderNavLabel = (item: { to: string; label: string; mobileLabel?: string }) => (
     <span className={`nav-item-label${item.to === "/reservations" ? " nav-item-label--with-badge" : ""}`}>
       <span className="nav__label">{item.mobileLabel ?? item.label}</span>

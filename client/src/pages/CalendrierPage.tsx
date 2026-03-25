@@ -1449,8 +1449,15 @@ const CalendrierPage = () => {
     );
   }
 
+  const hasMobileOverlay = usesViewportScroll && (canUseQuickReservation || Boolean(mobileActionReservation));
+
   return (
-    <div className={`calendar-page${canUseQuickReservation ? " calendar-page--quick-create-visible" : ""}`} style={pageStyle}>
+    <div
+      className={`calendar-page${canUseQuickReservation ? " calendar-page--quick-create-visible" : ""}${
+        hasMobileOverlay ? " calendar-page--mobile-overlay-visible" : ""
+      }`}
+      style={pageStyle}
+    >
       <section ref={heroRef} className="card calendar-hero">
         <div className="calendar-hero__header">
           <label className="calendar-month-trigger">
