@@ -10,6 +10,13 @@ import {
   buildPaymentColorMap,
   getPaymentColorFromMap,
 } from "../utils/paymentColors";
+import {
+  areReservationOptionsAllDeclared,
+  buildQuickReservationOptions,
+  computeReservationOptionsPreview,
+  mergeReservationOptions,
+  toNonNegativeInt,
+} from "../utils/reservationOptions";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import type { Gestionnaire, Gite, Reservation } from "../utils/types";
 
@@ -133,6 +140,9 @@ type QuickReservationDraft = {
   prix_par_nuit: string;
   source_paiement: string;
   commentaire: string;
+  option_menage: boolean;
+  option_draps: number;
+  option_serviettes: number;
 };
 
 type QuickReservationSmsSnippet = {
@@ -252,8 +262,11 @@ const formatQuickReservationPhone = (value: string) => {
 };
 const getQuickReservationSmsPhoneDigits = (value: string) => value.replace(/\D/g, "");
 const getQuickReservationAdultsMax = (gite: Gite | null) => Math.max(1, Math.trunc(Number(gite?.capacite_max ?? 1)) || 1);
+const getQuickReservationOptionCountMax = (gite: Gite | null) => Math.max(1, Math.trunc(Number(gite?.capacite_max ?? 1)) || 1);
 const clampQuickReservationAdults = (value: number, gite: Gite | null) =>
   Math.min(getQuickReservationAdultsMax(gite), Math.max(1, Math.trunc(Number(value) || 1)));
+const clampQuickReservationOptionCount = (value: number, gite: Gite | null) =>
+  Math.min(getQuickReservationOptionCountMax(gite), Math.max(0, Math.trunc(Number(value) || 0)));
 const isIsoDateString = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(String(value).trim());
 const parseOptionalIsoDate = (value: string) => (isIsoDateString(value) ? parseIsoDate(value) : null);
 const interpolateQuickReservationSmsSnippet = (template: string, values: Record<string, string>) =>
@@ -271,6 +284,54 @@ const formatQuickReservationSmsHour = (value: string, options?: { middayLabel?: 
 const formatQuickReservationSmsAmount = (value: number) => {
   if (!Number.isFinite(value)) return "";
   return Number.isInteger(value) ? String(value) : round2(value).toFixed(2).replace(".", ",");
+};
+const formatQuickReservationOptionSmsSummary = (params: {
+  options: ReturnType<typeof mergeReservationOptions>;
+  optionsPreview: ReturnType<typeof computeReservationOptionsPreview>;
+}) => {
+  const { options, optionsPreview } = params;
+  const items: string[] = [];
+
+  if (options.menage.enabled) {
+    items.push(optionsPreview.byKey.menage > 0 ? `ménage ${formatQuickReservationSmsAmount(optionsPreview.byKey.menage)}€` : "ménage offert");
+  }
+
+  if (options.draps.enabled) {
+    const count = toNonNegativeInt(options.draps.nb_lits, 0);
+    items.push(
+      optionsPreview.byKey.draps > 0
+        ? `draps x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.draps)}€`
+        : `draps x${count} offerts`
+    );
+  }
+
+  if (options.linge_toilette.enabled) {
+    const count = toNonNegativeInt(options.linge_toilette.nb_personnes, 0);
+    items.push(
+      optionsPreview.byKey.linge_toilette > 0
+        ? `serviettes x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.linge_toilette)}€`
+        : `serviettes x${count} offertes`
+    );
+  }
+
+  if (options.depart_tardif.enabled) {
+    items.push(
+      optionsPreview.byKey.depart_tardif > 0
+        ? `départ tardif ${formatQuickReservationSmsAmount(optionsPreview.byKey.depart_tardif)}€`
+        : "départ tardif offert"
+    );
+  }
+
+  if (options.chiens.enabled) {
+    const count = toNonNegativeInt(options.chiens.nb, 0);
+    items.push(
+      optionsPreview.byKey.chiens > 0
+        ? `chiens x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.chiens)}€`
+        : `chiens x${count} offerts`
+    );
+  }
+
+  return items.join(" · ");
 };
 
 const getWeekNumber = (value: Date) => {
@@ -769,8 +830,10 @@ const TodayPage = () => {
           .map((reservation) => {
             const startIndex = clamp(diffUtcDays(parseIsoDate(reservation.date_entree), todayDate), 0, totalDays - 1);
             const endIndex = clamp(diffUtcDays(parseIsoDate(reservation.date_sortie), todayDate), 0, totalDays - 1);
+            const occupiedStartIndex = Math.max(diffUtcDays(parseIsoDate(reservation.date_entree), todayDate), 0);
+            const occupiedEndIndexExclusive = Math.min(diffUtcDays(parseIsoDate(reservation.date_sortie), todayDate), totalDays);
 
-            for (let index = startIndex; index <= endIndex; index += 1) {
+            for (let index = occupiedStartIndex; index < occupiedEndIndexExclusive; index += 1) {
               blockedDateIsos.add(toIsoDate(addUtcDays(todayDate, index)));
             }
 
@@ -873,6 +936,10 @@ const TodayPage = () => {
     () => Array.from({ length: quickReservationAdultsMax }, (_, index) => index + 1),
     [quickReservationAdultsMax]
   );
+  const quickReservationOptionCountMax = useMemo(
+    () => getQuickReservationOptionCountMax(quickReservationSelectedGite),
+    [quickReservationSelectedGite]
+  );
 
   const quickReservationDateSummary = useMemo(() => {
     if (!quickReservationDraft) {
@@ -900,12 +967,49 @@ const TodayPage = () => {
     };
   }, [quickReservationDraft]);
 
-  const quickReservationComputedTotal = useMemo(() => {
+  const quickReservationOptions = useMemo(
+    () =>
+      quickReservationDraft
+        ? buildQuickReservationOptions({
+            baseOptions: quickReservationEditingReservation?.options,
+            menageEnabled: quickReservationDraft.option_menage,
+            drapsCount: quickReservationDraft.option_draps,
+            serviettesCount: quickReservationDraft.option_serviettes,
+          })
+        : null,
+    [quickReservationDraft, quickReservationEditingReservation?.options]
+  );
+  const quickReservationOptionsPreview = useMemo(
+    () =>
+      computeReservationOptionsPreview(quickReservationOptions, {
+        nights: quickReservationDateSummary.nights,
+        gite: quickReservationSelectedGite,
+      }),
+    [quickReservationDateSummary.nights, quickReservationOptions, quickReservationSelectedGite]
+  );
+  const quickReservationBaseTotal = useMemo(() => {
     if (!quickReservationDraft) return null;
     const nightly = Number.parseFloat(String(quickReservationDraft.prix_par_nuit).replace(",", "."));
     if (!Number.isFinite(nightly) || nightly < 0) return null;
     return quickReservationDateSummary.nights > 0 ? round2(nightly * quickReservationDateSummary.nights) : null;
   }, [quickReservationDateSummary.nights, quickReservationDraft]);
+  const quickReservationComputedTotal = useMemo(
+    () =>
+      quickReservationBaseTotal !== null
+        ? round2(quickReservationBaseTotal + quickReservationOptionsPreview.total)
+        : null,
+    [quickReservationBaseTotal, quickReservationOptionsPreview.total]
+  );
+  const quickReservationOptionSummary = useMemo(
+    () =>
+      quickReservationOptions
+        ? formatQuickReservationOptionSmsSummary({
+            options: quickReservationOptions,
+            optionsPreview: quickReservationOptionsPreview,
+          })
+        : "",
+    [quickReservationOptions, quickReservationOptionsPreview]
+  );
 
   const quickReservationSmsText = useMemo(() => {
     if (!quickReservationSelectedGite || !quickReservationDraft) return "";
@@ -939,12 +1043,20 @@ const TodayPage = () => {
       }).`,
     ];
 
-    if (Number.isFinite(nightly) && nightly >= 0 && quickReservationComputedTotal !== null) {
+    if (Number.isFinite(nightly) && nightly >= 0 && quickReservationBaseTotal !== null) {
       baseLines.push(
         `Le tarif est de ${formatQuickReservationSmsAmount(round2(nightly))}€/nuit, soit ${formatQuickReservationSmsAmount(
-          quickReservationComputedTotal
+          quickReservationBaseTotal
         )}€.`
       );
+    }
+
+    if (quickReservationOptionSummary) {
+      baseLines.push(`Options retenues : ${quickReservationOptionSummary}.`);
+    }
+
+    if (quickReservationComputedTotal !== null && (quickReservationOptionsPreview.total > 0 || quickReservationOptionSummary)) {
+      baseLines.push(`Le total du séjour est de ${formatQuickReservationSmsAmount(quickReservationComputedTotal)}€.`);
     }
 
     if (address) baseLines.push(`L'adresse est ${address}.`);
@@ -956,9 +1068,12 @@ const TodayPage = () => {
 
     return [...baseLines, ...selectedSnippets, "Merci Beaucoup,", "Soazig Molinier"].join("\n");
   }, [
+    quickReservationBaseTotal,
     quickReservationComputedTotal,
     quickReservationDateSummary,
     quickReservationDraft,
+    quickReservationOptionSummary,
+    quickReservationOptionsPreview.total,
     quickReservationSelectedGite,
     quickReservationSmsSelection,
     quickReservationSmsSnippets,
@@ -991,13 +1106,26 @@ const TodayPage = () => {
       prix_par_nuit: String(reservation.prix_par_nuit ?? ""),
       source_paiement: reservation.source_paiement?.trim() || DEFAULT_RESERVATION_SOURCE,
       commentaire: reservation.commentaire ?? "",
+      option_menage: Boolean(reservation.options?.menage?.enabled),
+      option_draps: reservation.options?.draps?.enabled
+        ? clampQuickReservationOptionCount(
+            toNonNegativeInt(reservation.options?.draps?.nb_lits, Math.max(1, reservation.nb_adultes || 1)),
+            gites.find((gite) => gite.id === reservation.gite_id) ?? null
+          )
+        : 0,
+      option_serviettes: reservation.options?.linge_toilette?.enabled
+        ? clampQuickReservationOptionCount(
+            toNonNegativeInt(reservation.options?.linge_toilette?.nb_personnes, Math.max(1, reservation.nb_adultes || 1)),
+            gites.find((gite) => gite.id === reservation.gite_id) ?? null
+          )
+        : 0,
     });
     setQuickReservationSmsSelection([]);
     setQuickReservationError(null);
     setQuickReservationOpen(true);
   };
 
-  const handleQuickReservationFieldChange = (field: keyof QuickReservationDraft, value: string | number) => {
+  const handleQuickReservationFieldChange = (field: keyof QuickReservationDraft, value: string | number | boolean) => {
     setQuickReservationDraft((current) => {
       if (!current) return current;
       if (field === "telephone") {
@@ -1005,6 +1133,12 @@ const TodayPage = () => {
       }
       if (field === "nb_adultes") {
         return { ...current, nb_adultes: clampQuickReservationAdults(Number(value), quickReservationSelectedGite) };
+      }
+      if (field === "option_draps" || field === "option_serviettes") {
+        return { ...current, [field]: clampQuickReservationOptionCount(Number(value), quickReservationSelectedGite) };
+      }
+      if (field === "option_menage") {
+        return { ...current, option_menage: Boolean(value) };
       }
       return { ...current, [field]: value };
     });
@@ -1041,6 +1175,18 @@ const TodayPage = () => {
     const adults = Math.max(0, Math.trunc(Number(quickReservationDraft.nb_adultes) || 0));
     const entryDate = parseOptionalIsoDate(quickReservationDraft.date_entree);
     const exitDate = parseOptionalIsoDate(quickReservationDraft.date_sortie);
+    const nights = entryDate && exitDate ? Math.max(0, Math.round((exitDate.getTime() - entryDate.getTime()) / DAY_MS)) : 0;
+    const quickOptions = buildQuickReservationOptions({
+      baseOptions: quickReservationEditingReservation?.options,
+      menageEnabled: quickReservationDraft.option_menage,
+      drapsCount: quickReservationDraft.option_draps,
+      serviettesCount: quickReservationDraft.option_serviettes,
+    });
+    const quickOptionsPreview = computeReservationOptionsPreview(quickOptions, {
+      nights,
+      gite: quickReservationSelectedGite,
+    });
+    const quickOptionsDeclared = areReservationOptionsAllDeclared(quickOptions);
 
     if (!hostName) {
       setQuickReservationError("Renseigne le nom de l'hôte.");
@@ -1084,10 +1230,10 @@ const TodayPage = () => {
           remise_montant: quickReservationEditingReservation.remise_montant ?? 0,
           commission_channel_mode: quickReservationEditingReservation.commission_channel_mode ?? "euro",
           commission_channel_value: quickReservationEditingReservation.commission_channel_value ?? 0,
-          frais_optionnels_montant: quickReservationEditingReservation.frais_optionnels_montant ?? 0,
-          frais_optionnels_libelle: quickReservationEditingReservation.frais_optionnels_libelle ?? undefined,
-          frais_optionnels_declares: quickReservationEditingReservation.frais_optionnels_declares ?? false,
-          options: quickReservationEditingReservation.options ?? {},
+          frais_optionnels_montant: quickOptionsPreview.total,
+          frais_optionnels_libelle: quickOptionsPreview.label || undefined,
+          frais_optionnels_declares: quickOptionsDeclared,
+          options: quickOptions,
         },
       });
 
@@ -1650,15 +1796,12 @@ const TodayPage = () => {
             className="calendar-quick-create-sheet__panel"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="today-quick-edit-title"
+            aria-label="Réservation rapide"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="calendar-quick-create-sheet__handle" aria-hidden="true" />
             <div className="calendar-quick-create-sheet__header">
-              <div>
-                <p className="calendar-quick-create-sheet__eyebrow">{quickReservationSelectedGite?.nom ?? "Réservation"}</p>
-                <h2 id="today-quick-edit-title">Modifier la réservation</h2>
-              </div>
+              <p className="calendar-quick-create-sheet__eyebrow">{quickReservationSelectedGite?.nom ?? "Réservation"}</p>
               <button
                 type="button"
                 className="calendar-quick-create-sheet__close"
@@ -1682,7 +1825,6 @@ const TodayPage = () => {
                 </span>
               </div>
               <div className="calendar-quick-create-sheet__summary-total">
-                <span>Total</span>
                 <strong>{quickReservationComputedTotal !== null ? formatEuro(quickReservationComputedTotal) : "A calculer"}</strong>
               </div>
             </div>
@@ -1691,8 +1833,6 @@ const TodayPage = () => {
 
             <div className="calendar-quick-create-sheet__form">
               <section className="calendar-quick-create-sheet__section">
-                <p className="calendar-quick-create-sheet__section-title">1 - Entrer les informations</p>
-
                 <label className="field field--small calendar-quick-create-sheet__host-field">
                   Hôte
                   <input
@@ -1715,7 +1855,7 @@ const TodayPage = () => {
                   />
                 </label>
 
-                <div className="calendar-quick-create-sheet__dates-grid">
+                <div className="calendar-quick-create-sheet__dates-band">
                   <label className="field field--small calendar-quick-create-sheet__host-field">
                     Entrée
                     <input
@@ -1812,6 +1952,65 @@ const TodayPage = () => {
                     onChange={(event) => handleQuickReservationFieldChange("commentaire", event.target.value)}
                   />
                 </label>
+
+                <div className="calendar-quick-create-sheet__options-card">
+                  <label className="calendar-quick-create-sheet__toggle-row">
+                    <div>
+                      <span className="calendar-quick-create-sheet__toggle-title">Option ménage</span>
+                      <span className="calendar-quick-create-sheet__toggle-meta">
+                        {formatEuro(Number(quickReservationSelectedGite?.options_menage_forfait ?? 0))}
+                      </span>
+                    </div>
+                    <span className="calendar-quick-create-sheet__switch-control">
+                      <input
+                        type="checkbox"
+                        checked={quickReservationDraft.option_menage}
+                        onChange={(event) => handleQuickReservationFieldChange("option_menage", event.target.checked)}
+                      />
+                      <span aria-hidden="true" />
+                    </span>
+                  </label>
+
+                  <label className="calendar-quick-create-sheet__range-field">
+                    <div className="calendar-quick-create-sheet__range-head">
+                      <span className="calendar-quick-create-sheet__toggle-title">Draps</span>
+                      <span className="calendar-quick-create-sheet__range-value">
+                        {quickReservationDraft.option_draps} · {formatEuro(quickReservationOptionsPreview.byKey.draps)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={quickReservationOptionCountMax}
+                      step={1}
+                      value={quickReservationDraft.option_draps}
+                      onChange={(event) => handleQuickReservationFieldChange("option_draps", Number(event.target.value))}
+                    />
+                    <span className="calendar-quick-create-sheet__range-meta">
+                      {formatEuro(Number(quickReservationSelectedGite?.options_draps_par_lit ?? 0))} / lit
+                    </span>
+                  </label>
+
+                  <label className="calendar-quick-create-sheet__range-field">
+                    <div className="calendar-quick-create-sheet__range-head">
+                      <span className="calendar-quick-create-sheet__toggle-title">Serviettes</span>
+                      <span className="calendar-quick-create-sheet__range-value">
+                        {quickReservationDraft.option_serviettes} · {formatEuro(quickReservationOptionsPreview.byKey.linge_toilette)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={quickReservationOptionCountMax}
+                      step={1}
+                      value={quickReservationDraft.option_serviettes}
+                      onChange={(event) => handleQuickReservationFieldChange("option_serviettes", Number(event.target.value))}
+                    />
+                    <span className="calendar-quick-create-sheet__range-meta">
+                      {formatEuro(Number(quickReservationSelectedGite?.options_linge_toilette_par_personne ?? 0))} / personne
+                    </span>
+                  </label>
+                </div>
               </section>
 
               <section className="calendar-quick-create-sheet__section">

@@ -1641,16 +1641,16 @@
 
 .calendar-quick-create-sheet__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .calendar-quick-create-sheet__eyebrow {
-  margin: 0 0 4px;
+  margin: 0;
   color: #b45309;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1678,11 +1678,10 @@
 }
 
 .calendar-quick-create-sheet__summary {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  flex-wrap: wrap;
   margin-top: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.9);
@@ -1720,9 +1719,8 @@
 
 .calendar-quick-create-sheet__summary-total {
   display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
   white-space: nowrap;
   flex: 0 0 auto;
 }
@@ -1737,8 +1735,9 @@
 
 .calendar-quick-create-sheet__summary-total strong {
   color: #111827;
-  font-size: 1rem;
+  font-size: 1.08rem;
   line-height: 1;
+  text-align: right;
 }
 
 .calendar-quick-create-sheet__error {
@@ -1821,10 +1820,44 @@
   min-height: 38px;
 }
 
-.calendar-quick-create-sheet__dates-grid {
+.calendar-quick-create-sheet__dates-band {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--primary) 0%, #ff6b4d 100%);
+  box-shadow: 0 16px 32px rgba(255, 90, 95, 0.22);
+}
+
+.calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field {
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.76rem;
+}
+
+.calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field input {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field input:focus {
+  border-bottom-color: transparent;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.38),
+    0 0 0 3px rgba(255, 255, 255, 0.12);
+}
+
+.calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.92;
 }
 
 .calendar-quick-create-sheet__stats-grid {
@@ -1951,6 +1984,107 @@
   padding-bottom: 6px;
   resize: vertical;
   line-height: 1.4;
+}
+
+.calendar-quick-create-sheet__options-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff7f5 0%, #fffaf8 100%);
+  border: 1px solid rgba(255, 90, 95, 0.12);
+}
+
+.calendar-quick-create-sheet__toggle-row,
+.calendar-quick-create-sheet__range-field {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-quick-create-sheet__toggle-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.calendar-quick-create-sheet__toggle-title {
+  display: block;
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.calendar-quick-create-sheet__toggle-meta,
+.calendar-quick-create-sheet__range-meta {
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.calendar-quick-create-sheet__switch-control {
+  position: relative;
+  display: inline-flex;
+  width: 52px;
+  height: 32px;
+}
+
+.calendar-quick-create-sheet__switch-control input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.calendar-quick-create-sheet__switch-control span {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: #dbe2ea;
+  transition: background 160ms ease;
+}
+
+.calendar-quick-create-sheet__switch-control span::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
+  transition: transform 160ms ease;
+}
+
+.calendar-quick-create-sheet__switch-control input:checked + span {
+  background: var(--primary);
+}
+
+.calendar-quick-create-sheet__switch-control input:checked + span::after {
+  transform: translateX(20px);
+}
+
+.calendar-quick-create-sheet__switch-control input:focus-visible + span {
+  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.18);
+}
+
+.calendar-quick-create-sheet__range-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-quick-create-sheet__range-value {
+  color: #b91c1c;
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.calendar-quick-create-sheet__range-field input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--primary);
 }
 
 .calendar-quick-create-sheet__switches {
@@ -7636,9 +7770,9 @@ button.warning {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  .calendar-quick-create-sheet__dates-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
+  .calendar-quick-create-sheet__dates-band {
+    gap: 8px;
+    padding: 10px;
   }
 
   .calendar-quick-create-sheet__compact-field--adults {
@@ -7654,7 +7788,7 @@ button.warning {
   }
 
   .calendar-quick-create-sheet__summary {
-    align-items: flex-start;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .calendar-quick-create-sheet__footer {
@@ -7673,7 +7807,7 @@ button.warning {
   }
 
   .calendar-quick-create-sheet__summary-total {
-    margin-left: 0;
+    justify-content: flex-end;
   }
 
   .calendar-quick-create-sheet__summary-dates {
