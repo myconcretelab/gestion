@@ -47,6 +47,7 @@ const SOURCE_BY_NORMALIZED_KEY = new Map<string, string>([
 ]);
 
 const DEFAULT_SOURCE = "A définir";
+const PLATFORM_SOURCES = new Set(["Airbnb", "Abritel", "Gites de France", "HomeExchange"]);
 const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 const AUTO_SYNC_GUARD_WINDOW_MS = 10 * 60 * 1000;
 const AUTO_SYNC_LOG_SOURCES = new Set(["ical-manual", "ical-cron", "ical-startup"]);
@@ -122,6 +123,7 @@ export type IcalPreviewResult = {
 export type IcalSyncResult = IcalPreviewResult & {
   created_count: number;
   updated_count: number;
+  deleted_count: number;
   skipped_count: number;
   to_verify_marked_count: number;
   to_verify_cleared_count: number;
@@ -135,6 +137,7 @@ export type IcalSyncResult = IcalPreviewResult & {
     source: string;
     updatedFields: string[];
   }>;
+  deleted_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }>;
 };
 
 export type IcalCronState = {
@@ -216,6 +219,9 @@ const normalizeSource = (rawType: string) => {
   const normalized = SOURCE_BY_NORMALIZED_KEY.get(normalizeTextKey(rawType.trim()));
   return normalized ?? DEFAULT_SOURCE;
 };
+
+const isPlatformSource = (value: string | null | undefined) =>
+  typeof value === "string" && PLATFORM_SOURCES.has(normalizeSource(value));
 
 const hasIcalToVerifyMarker = (comment: string | null | undefined) => {
   if (typeof comment !== "string") return false;
@@ -629,8 +635,13 @@ const buildAutoSyncMessage = (status: IcalAutoSyncStatus, summary?: IcalSyncResu
   if (status === "shared-running") return "Import iCal deja en cours.";
 
   if (!summary) return "Import iCal termine.";
-  if (summary.created_count <= 0 && summary.updated_count <= 0) return "iCal a jour.";
-  return `${summary.created_count} ajout(s), ${summary.updated_count} mise(s) a jour`;
+  if (summary.created_count <= 0 && summary.updated_count <= 0 && summary.deleted_count <= 0) return "iCal a jour.";
+
+  const parts: string[] = [];
+  if (summary.created_count > 0) parts.push(`${summary.created_count} ajout(s)`);
+  if (summary.updated_count > 0) parts.push(`${summary.updated_count} mise(s) a jour`);
+  if (summary.deleted_count > 0) parts.push(`${summary.deleted_count} suppression(s)`);
+  return parts.join(", ");
 };
 
 const hasRecentIcalImportWithinGuardWindow = () => {
@@ -646,7 +657,7 @@ const hasRecentIcalImportWithinGuardWindow = () => {
 const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof loadParsedIcalReservations>>) => {
   const giteIds = [...new Set(loaded.sources.map((source) => source.gite_id))];
   if (giteIds.length === 0) {
-    return { marked_count: 0, cleared_count: 0 };
+    return { marked_count: 0, cleared_count: 0, deleted_count: 0, deleted_items: [] };
   }
 
   const parsedPeriodKeys = new Set(
@@ -682,11 +693,18 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       export_to_ical: true,
       source_paiement: true,
       commentaire: true,
+      gite: {
+        select: {
+          nom: true,
+        },
+      },
     },
   });
 
   let marked_count = 0;
   let cleared_count = 0;
+  let deleted_count = 0;
+  const deleted_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
 
   for (const reservation of existingReservations) {
     const giteId = reservation.gite_id;
@@ -715,6 +733,24 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       date_sortie: toIsoDate(reservation.date_sortie),
     });
     const shouldBeMarked = !parsedPeriodKeys.has(periodKey);
+    const shouldDeleteMissingPlatformReservation =
+      shouldBeMarked && originSystem === "ical" && isPlatformSource(normalizedSource);
+
+    if (shouldDeleteMissingPlatformReservation) {
+      deleted_items.push({
+        giteName: reservation.gite?.nom ?? "",
+        giteId,
+        checkIn: toIsoDate(reservation.date_entree),
+        checkOut: toIsoDate(reservation.date_sortie),
+        source: normalizedSource,
+      });
+      await prisma.reservation.delete({
+        where: { id: reservation.id },
+      });
+      deleted_count += 1;
+      continue;
+    }
+
     const nextComment = mergeIcalToVerifyMarker(reservation.commentaire, shouldBeMarked);
     const currentComment = typeof reservation.commentaire === "string" ? reservation.commentaire.trim() : null;
     if (nextComment === currentComment) continue;
@@ -728,7 +764,7 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
     else cleared_count += 1;
   }
 
-  return { marked_count, cleared_count };
+  return { marked_count, cleared_count, deleted_count, deleted_items };
 };
 
 const runSync = async (): Promise<IcalSyncResult> => {
@@ -736,8 +772,10 @@ const runSync = async (): Promise<IcalSyncResult> => {
   const preview = await buildIcalPreviewResult(loaded);
   let created_count = 0;
   let updated_count = 0;
+  let deleted_count = 0;
   const inserted_items: IcalSyncResult["inserted_items"] = [];
   const updated_items: IcalSyncResult["updated_items"] = [];
+  const deleted_items: IcalSyncResult["deleted_items"] = [];
   const per_gite: IcalSyncResult["per_gite"] = {};
 
   const markPerGite = (giteName: string, field: "inserted" | "updated" | "skipped") => {
@@ -799,16 +837,20 @@ const runSync = async (): Promise<IcalSyncResult> => {
   }
 
   const toVerifySync = await syncMissingReservationsToVerify(loaded);
+  deleted_count = toVerifySync.deleted_count;
+  deleted_items.push(...toVerifySync.deleted_items);
 
   const skipped_count = preview.counts.existing + preview.counts.conflict;
   return {
     ...preview,
     created_count,
     updated_count,
+    deleted_count,
     skipped_count,
     per_gite,
     inserted_items,
     updated_items,
+    deleted_items,
     to_verify_marked_count: toVerifySync.marked_count,
     to_verify_cleared_count: toVerifySync.cleared_count,
   };
@@ -830,12 +872,14 @@ export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalS
               selectionCount: result.counts.new + result.counts.existing_updatable,
               inserted: result.created_count,
               updated: result.updated_count,
+              deleted: result.deleted_count,
               skipped: {
                 unknown: result.skipped_count,
               },
               perGite: result.per_gite,
               insertedItems: result.inserted_items,
               updatedItems: result.updated_items,
+              deletedItems: result.deleted_items,
             })
           );
         } catch (error) {

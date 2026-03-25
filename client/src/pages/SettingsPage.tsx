@@ -43,6 +43,7 @@ type IcalPreviewResult = {
 type IcalSyncResult = IcalPreviewResult & {
   created_count: number;
   updated_count: number;
+  deleted_count?: number;
   skipped_count: number;
   to_verify_marked_count?: number;
   to_verify_cleared_count?: number;
@@ -1955,8 +1956,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         typeof result.to_verify_marked_count === "number"
           ? ` ${result.to_verify_marked_count} marquée(s) "A vérifier", ${result.to_verify_cleared_count ?? 0} retirée(s).`
           : "";
+      const deletedLabel = typeof result.deleted_count === "number" ? `, ${result.deleted_count} suppression(s)` : "";
       setIcalNotice(
-        `Synchronisation terminée: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour, ${result.skipped_count} ignorée(s).${toVerifyLabel}`
+        `Synchronisation terminée: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour${deletedLabel}, ${result.skipped_count} ignorée(s).${toVerifyLabel}`
       );
       dispatchRecentImportedReservationsCreated(result.created_count);
     } catch (error: any) {
