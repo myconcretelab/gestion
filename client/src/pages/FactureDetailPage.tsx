@@ -37,6 +37,7 @@ const FactureDetailPage = () => {
 
   const isPaid = facture.statut_paiement === "reglee";
   const totalMontant = Number(facture.solde_montant ?? 0) + Number(facture.arrhes_montant ?? 0);
+  const email = facture.locataire_email;
   const phoneHref = facture.locataire_tel ? facture.locataire_tel.replace(/\s+/g, "") : "";
   const pdfVersion = facture.date_derniere_modif ?? facture.date_creation ?? Date.now();
   const pdfUrl = `/api/invoices/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
@@ -102,6 +103,16 @@ const FactureDetailPage = () => {
             <div className="detail-item">
               <span className="detail-label">Adresse</span>
               <span className="detail-value">{facture.locataire_adresse}</span>
+            </div>
+            <div className="detail-item">
+              <span className="detail-label">Email</span>
+              {email ? (
+                <a className="detail-link" href={`mailto:${email}`}>
+                  {email}
+                </a>
+              ) : (
+                <span className="detail-value">—</span>
+              )}
             </div>
             <div className="detail-item">
               <span className="detail-label">Téléphone</span>

@@ -40,6 +40,7 @@ const invoiceSchema = z.object({
   locataire_nom: z.string().min(1),
   locataire_adresse: z.string().optional().default(""),
   locataire_tel: z.string().trim().optional().default(""),
+  locataire_email: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
   nb_adultes: z.number().int().min(1),
   nb_enfants_2_17: z.number().int().min(0),
   date_debut: z.string().min(1),
@@ -70,6 +71,7 @@ const previewSchema = z.object({
   locataire_nom: z.string().optional().default(""),
   locataire_adresse: z.string().optional().default(""),
   locataire_tel: z.string().optional().default(""),
+  locataire_email: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
   nb_adultes: z.number().int().min(1).optional().default(1),
   nb_enfants_2_17: z.number().int().min(0).optional().default(0),
   date_debut: optionalDateString,
@@ -214,6 +216,17 @@ const resolveLinkedReservation = async (reservationId: string | null | undefined
     return { error: "La réservation sélectionnée est rattachée à un autre gîte." } as const;
   }
   return { id: reservation.id } as const;
+};
+
+const syncReservationEmailFromInvoice = async (
+  reservationId: string | null | undefined,
+  locataireEmail: string | null | undefined
+) => {
+  if (!reservationId) return;
+  await prisma.reservation.update({
+    where: { id: reservationId },
+    data: { email: locataireEmail?.trim() || null },
+  });
 };
 
 type PreviewContext = {
@@ -436,6 +449,7 @@ router.post("/", async (req, res, next) => {
         locataire_nom: data.locataire_nom,
         locataire_adresse: data.locataire_adresse,
         locataire_tel: data.locataire_tel,
+        locataire_email: data.locataire_email ?? null,
         nb_adultes: data.nb_adultes,
         nb_enfants_2_17: data.nb_enfants_2_17,
         date_debut: dateDebut,
@@ -462,6 +476,8 @@ router.post("/", async (req, res, next) => {
       },
       include: { gite: true },
     });
+
+    await syncReservationEmailFromInvoice(linkedReservation?.id ?? null, data.locataire_email ?? null);
 
     const invoiceForPdf = toInvoiceRenderInput(contrat);
     await generateInvoicePdf({
@@ -529,6 +545,7 @@ router.put("/:id", async (req, res, next) => {
         locataire_nom: data.locataire_nom,
         locataire_adresse: data.locataire_adresse,
         locataire_tel: data.locataire_tel,
+        locataire_email: data.locataire_email ?? null,
         nb_adultes: data.nb_adultes,
         nb_enfants_2_17: data.nb_enfants_2_17,
         date_debut: dateDebut,
@@ -555,6 +572,8 @@ router.put("/:id", async (req, res, next) => {
       },
       include: { gite: true },
     });
+
+    await syncReservationEmailFromInvoice(linkedReservation?.id ?? null, data.locataire_email ?? null);
 
     const invoiceForPdf = toInvoiceRenderInput(contrat);
     await generateInvoicePdf({

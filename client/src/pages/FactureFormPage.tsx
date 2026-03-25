@@ -26,6 +26,7 @@ type ContractFieldKey =
   | "locataire_nom"
   | "locataire_adresse"
   | "locataire_tel"
+  | "locataire_email"
   | "date_debut"
   | "heure_arrivee"
   | "date_fin"
@@ -43,6 +44,7 @@ const contractFieldKeys: ContractFieldKey[] = [
   "locataire_nom",
   "locataire_adresse",
   "locataire_tel",
+  "locataire_email",
   "date_debut",
   "heure_arrivee",
   "date_fin",
@@ -69,6 +71,7 @@ const FactureFormPage = () => {
   const [locataireNom, setLocataireNom] = useState("");
   const [locataireAdresse, setLocataireAdresse] = useState("");
   const [locataireTel, setLocataireTel] = useState("");
+  const [locataireEmail, setLocataireEmail] = useState("");
   const [nbAdultes, setNbAdultes] = useState(1);
   const [nbEnfants, setNbEnfants] = useState(0);
   const [dateDebut, setDateDebut] = useState("");
@@ -125,6 +128,7 @@ const FactureFormPage = () => {
         setLocataireNom(data.locataire_nom);
         setLocataireAdresse(data.locataire_adresse);
         setLocataireTel(data.locataire_tel);
+        setLocataireEmail(data.locataire_email ?? "");
         setNbAdultes(data.nb_adultes);
         setNbEnfants(data.nb_enfants_2_17);
         setDateDebut(toDateInputValue(data.date_debut));
@@ -181,6 +185,7 @@ const FactureFormPage = () => {
         setLocataireNom(data.locataire_nom);
         setLocataireAdresse(data.locataire_adresse);
         setLocataireTel(data.locataire_tel);
+        setLocataireEmail(data.locataire_email ?? "");
         setNbAdultes(data.nb_adultes);
         setNbEnfants(data.nb_enfants_2_17);
         setDateDebut(toDateInputValue(data.date_debut));
@@ -207,6 +212,7 @@ const FactureFormPage = () => {
         setSourceContractNumber(null);
         setPrefilledContractGiteId(null);
         setLinkedReservationId(null);
+        setLocataireEmail("");
         setError(err instanceof Error ? err.message : "Erreur lors du préremplissage depuis le contrat.");
       })
       .finally(() => {
@@ -229,6 +235,7 @@ const FactureFormPage = () => {
     setPrefilledReservationGiteId(null);
     setLoadingFromReservation(false);
     setLinkedReservationId(null);
+    setLocataireEmail("");
   }, [isEdit, fromContractId, fromReservationId]);
 
   useEffect(() => {
@@ -252,6 +259,7 @@ const FactureFormPage = () => {
         setLocataireNom(prefill.locataireNom);
         setLocataireAdresse(prefill.locataireAdresse);
         setLocataireTel(prefill.locataireTel);
+        setLocataireEmail(prefill.locataireEmail);
         setNbAdultes(prefill.nbAdultes);
         setNbEnfants(prefill.nbEnfants);
         setDateDebut(prefill.dateDebut);
@@ -272,6 +280,7 @@ const FactureFormPage = () => {
         setLinkedReservationId(null);
         setSourceReservationLabel(null);
         setPrefilledReservationGiteId(null);
+        setLocataireEmail("");
         setError(err instanceof Error ? err.message : "Erreur lors du préremplissage depuis la réservation.");
       })
       .finally(() => {
@@ -403,6 +412,7 @@ const FactureFormPage = () => {
       locataire_nom: locataireNom,
       locataire_adresse: locataireAdresse,
       locataire_tel: locataireTel,
+      locataire_email: locataireEmail,
       nb_adultes: nbAdultes,
       nb_enfants_2_17: nbEnfants,
       date_debut: dateDebut,
@@ -429,6 +439,7 @@ const FactureFormPage = () => {
     locataireNom,
     locataireAdresse,
     locataireTel,
+    locataireEmail,
     nbAdultes,
     nbEnfants,
     dateDebut,
@@ -578,6 +589,18 @@ const FactureFormPage = () => {
               }}
             />
             {renderFieldError("locataire_tel")}
+          </label>
+          <label className={getFieldClassName("locataire_email")}>
+            Email client (optionnel)
+            <input
+              type="email"
+              value={locataireEmail}
+              onChange={(e) => {
+                clearFieldError("locataire_email");
+                setLocataireEmail(e.target.value);
+              }}
+            />
+            {renderFieldError("locataire_email")}
           </label>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
 import { formatDate } from "../utils/format";
+import { buildMailtoHref } from "../utils/documentEmail";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const ContratsListPage = () => {
@@ -153,53 +154,76 @@ const ContratsListPage = () => {
             </tr>
           </thead>
           <tbody>
-            {contrats.map((contrat) => (
-              <tr key={contrat.id}>
-                <td>
-                  {formatDate(contrat.date_debut)} - {formatDate(contrat.date_fin)}
-                </td>
-                <td>
-                  {contrat.gite?.nom ?? ""}
-                </td>
-                <td>{contrat.locataire_nom}</td>
-                <td>
-                  <div className="switch-group switch-group--table">
-                    <label className="switch">
-                      <input
-                        type="checkbox"
-                        checked={contrat.statut_paiement_arrhes === "recu"}
-                        disabled={Boolean(arrhesUpdating[contrat.id])}
-                        onChange={() => toggleArrhes(contrat)}
-                      />
-                      <span className="slider" />
-                    </label>
-                    <span>
-                      {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "Non payées"}
-                    </span>
-                  </div>
-                </td>
-                <td className="table-actions-cell">
-                  <div className="table-actions">
-                    <Link className="table-action table-action--neutral" to={`/contrats/${contrat.id}`}>
-                      Détails
-                    </Link>
-                    <Link
-                      className="table-action table-action--neutral"
-                      to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
-                    >
-                      Facturer
-                    </Link>
-                    <button
-                      className="table-action table-action--danger"
-                      onClick={() => remove(contrat)}
-                      disabled={deletingId === contrat.id}
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {contrats.map((contrat) => {
+              const pdfUrl = new URL(`/api/contracts/${contrat.id}/pdf`, window.location.origin).toString();
+              const mailHref = buildMailtoHref({
+                recipient: contrat.locataire_email,
+                subject: `Contrat ${contrat.numero_contrat}`,
+                body: `Bonjour,\n\nVoici votre contrat :\n${pdfUrl}`,
+              });
+
+              return (
+                <tr key={contrat.id}>
+                  <td>
+                    {formatDate(contrat.date_debut)} - {formatDate(contrat.date_fin)}
+                  </td>
+                  <td>
+                    {contrat.gite?.nom ?? ""}
+                  </td>
+                  <td>{contrat.locataire_nom}</td>
+                  <td>
+                    <div className="switch-group switch-group--table">
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={contrat.statut_paiement_arrhes === "recu"}
+                          disabled={Boolean(arrhesUpdating[contrat.id])}
+                          onChange={() => toggleArrhes(contrat)}
+                        />
+                        <span className="slider" />
+                      </label>
+                      <span>
+                        {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "Non payées"}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="table-actions-cell">
+                    <div className="table-actions">
+                      <Link className="table-action table-action--neutral" to={`/contrats/${contrat.id}`}>
+                        Détails
+                      </Link>
+                      {mailHref ? (
+                        <a className="table-action table-action--neutral" href={mailHref}>
+                          Email
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          className="table-action table-action--neutral"
+                          disabled
+                          title="Email locataire non renseigné"
+                        >
+                          Email
+                        </button>
+                      )}
+                      <Link
+                        className="table-action table-action--neutral"
+                        to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
+                      >
+                        Facturer
+                      </Link>
+                      <button
+                        className="table-action table-action--danger"
+                        onClick={() => remove(contrat)}
+                        disabled={deletingId === contrat.id}
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

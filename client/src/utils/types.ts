@@ -81,6 +81,7 @@ export type Reservation = {
   airbnb_url?: string | null;
   hote_nom: string;
   telephone?: string | null;
+  email?: string | null;
   date_entree: string;
   date_sortie: string;
   nb_nuits: number;
@@ -158,6 +159,7 @@ export type Facture = {
   locataire_nom: string;
   locataire_adresse: string;
   locataire_tel: string;
+  locataire_email?: string | null;
   nb_adultes: number;
   nb_enfants_2_17: number;
   date_debut: string;

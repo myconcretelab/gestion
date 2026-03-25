@@ -126,6 +126,7 @@ model Contrat {
   locataire_nom          String
   locataire_adresse      String
   locataire_tel          String
+  locataire_email        String?
   nb_adultes             Int
   nb_enfants_2_17        Int
   date_debut             DateTime
@@ -177,6 +178,7 @@ model Facture {
   locataire_nom          String
   locataire_adresse      String
   locataire_tel          String
+  locataire_email        String?
   nb_adultes             Int
   nb_enfants_2_17        Int
   date_debut             DateTime
@@ -241,6 +243,7 @@ model Reservation {
   airbnb_url               String?
   hote_nom                 String
   telephone                String?
+  email                    String?
   date_entree              DateTime
   date_sortie              DateTime
   nb_nuits                 Int

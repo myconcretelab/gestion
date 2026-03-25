@@ -105,26 +105,34 @@ const ActionButton = ({
   children,
   href,
   label,
+  text,
   onClick,
 }: {
   children: ReactNode;
   href?: string | null;
   label: string;
+  text?: string;
   onClick?: () => void;
 }) => {
-  const className = "mobile-reservation-actions__icon-button";
+  const className = `mobile-reservation-actions__icon-button${text ? " mobile-reservation-actions__icon-button--labeled" : ""}`;
+  const content = (
+    <>
+      {children}
+      {text ? <span>{text}</span> : null}
+    </>
+  );
 
   if (href) {
     return (
       <a href={href} className={className} aria-label={label} title={label} target={href.startsWith("http") ? "_blank" : undefined} rel={href.startsWith("http") ? "noreferrer" : undefined}>
-        {children}
+        {content}
       </a>
     );
   }
 
   return (
     <button type="button" className={className} aria-label={label} title={label} onClick={onClick}>
-      {children}
+      {content}
     </button>
   );
 };
@@ -182,12 +190,12 @@ const MobileReservationActionsBar = ({
               </button>
             ) : null}
             {smsHref ? (
-              <ActionButton href={smsHref} label="Envoyer un SMS">
+              <ActionButton href={smsHref} label="Envoyer un SMS" text="SMS">
                 <SmsIcon />
               </ActionButton>
             ) : null}
             {phoneHref ? (
-              <ActionButton href={phoneHref} label="Appeler">
+              <ActionButton href={phoneHref} label="Appeler" text="Tel">
                 <PhoneIcon />
               </ActionButton>
             ) : null}

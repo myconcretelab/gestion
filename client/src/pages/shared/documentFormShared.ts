@@ -14,6 +14,7 @@ export type ReservationDocumentPrefill = {
   locataireNom: string;
   locataireAdresse: string;
   locataireTel: string;
+  locataireEmail: string;
   nbAdultes: number;
   nbEnfants: number;
   dateDebut: string;
@@ -60,6 +61,7 @@ export const buildReservationDocumentPrefill = (reservation: Reservation): Reser
     locataireNom: reservation.hote_nom,
     locataireAdresse: "",
     locataireTel: reservation.telephone ?? "",
+    locataireEmail: reservation.email ?? "",
     nbAdultes: Math.max(1, reservation.nb_adultes ?? 1),
     nbEnfants: 0,
     dateDebut: toDateInputValue(reservation.date_entree),
