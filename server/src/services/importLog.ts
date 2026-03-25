@@ -15,6 +15,7 @@ type ImportLogEntryInput = {
   selectionCount: number;
   inserted: number;
   updated: number;
+  deleted?: number;
   skipped?: {
     duplicate?: number;
     invalid?: number;
@@ -37,6 +38,13 @@ type ImportLogEntryInput = {
     source?: string;
     updatedFields?: string[];
   }>;
+  deletedItems?: Array<{
+    giteName?: string;
+    giteId?: string;
+    checkIn?: string;
+    checkOut?: string;
+    source?: string;
+  }>;
 };
 
 export type ImportLogEntry = {
@@ -48,6 +56,7 @@ export type ImportLogEntry = {
   selectionCount: number;
   inserted: number;
   updated: number;
+  deleted: number;
   skipped: {
     duplicate: number;
     invalid: number;
@@ -69,6 +78,13 @@ export type ImportLogEntry = {
     checkOut: string;
     source: string;
     updatedFields: string[];
+  }>;
+  deletedItems: Array<{
+    giteName: string;
+    giteId: string;
+    checkIn: string;
+    checkOut: string;
+    source: string;
   }>;
 };
 
@@ -166,6 +182,7 @@ export const buildPumpSessionImportLogEntry = (
     selectionCount: normalizedReservationCount,
     inserted: 0,
     updated: 0,
+    deleted: 0,
     skipped: {
       duplicate: 0,
       invalid: 0,
@@ -175,6 +192,7 @@ export const buildPumpSessionImportLogEntry = (
     perGite: {},
     insertedItems: [],
     updatedItems: [],
+    deletedItems: [],
   };
 };
 
@@ -232,6 +250,13 @@ export const buildImportLogEntry = (input: ImportLogEntryInput): ImportLogEntry 
 
   const insertedItems = sanitizeItems(input.insertedItems);
   const updatedItems = sanitizeItems(input.updatedItems);
+  const deletedItems = sanitizeItems(input.deletedItems).map((item) => ({
+    giteName: item.giteName,
+    giteId: item.giteId,
+    checkIn: item.checkIn,
+    checkOut: item.checkOut,
+    source: item.source,
+  }));
 
   const normalizedPerGite: ImportLogEntry["perGite"] = {};
   for (const [key, value] of Object.entries(input.perGite ?? {})) {
@@ -251,6 +276,7 @@ export const buildImportLogEntry = (input: ImportLogEntryInput): ImportLogEntry 
     selectionCount: toNumber(input.selectionCount),
     inserted: toNumber(input.inserted),
     updated: toNumber(input.updated),
+    deleted: toNumber(input.deleted),
     skipped: {
       duplicate: toNumber(input.skipped?.duplicate),
       invalid: toNumber(input.skipped?.invalid),
@@ -260,6 +286,7 @@ export const buildImportLogEntry = (input: ImportLogEntryInput): ImportLogEntry 
     perGite: normalizedPerGite,
     insertedItems,
     updatedItems,
+    deletedItems,
   };
 };
 

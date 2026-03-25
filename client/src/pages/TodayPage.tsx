@@ -39,6 +39,53 @@ type TodayOverviewPayload = {
   statuses: TodayStatuses;
   source_colors: Record<string, string>;
   unassigned_count: number;
+  recent_import_log: TodayImportLogEntry[];
+  recent_app_activity: TodayAppActivityEntry[];
+};
+
+type TodayImportLogEntry = {
+  id: string;
+  at: string;
+  source: string;
+  status?: "success" | "error";
+  errorMessage?: string | null;
+  selectionCount: number;
+  inserted: number;
+  updated: number;
+  deleted?: number;
+  insertedItems?: Array<{
+    giteName?: string;
+    giteId?: string;
+    checkIn?: string;
+    checkOut?: string;
+    source?: string;
+  }>;
+  updatedItems?: Array<{
+    giteName?: string;
+    giteId?: string;
+    checkIn?: string;
+    checkOut?: string;
+    source?: string;
+    updatedFields?: string[];
+  }>;
+  deletedItems?: Array<{
+    giteName?: string;
+    giteId?: string;
+    checkIn?: string;
+    checkOut?: string;
+    source?: string;
+  }>;
+};
+
+type TodayAppActivityEntry = {
+  id: string;
+  at: string;
+  type: "created" | "updated";
+  reservation_id: string;
+  gite_id: string | null;
+  gite_name: string;
+  guest_name: string;
+  source: string | null;
 };
 
 type TodayEventType = "arrival" | "depart" | "both";
@@ -96,6 +143,19 @@ type QuickReservationSmsSnippet = {
 
 type QuickReservationSmsSettings = {
   texts: QuickReservationSmsSnippet[];
+};
+
+type TodayActivitySourceCount = {
+  label: string;
+  count: number;
+  color: string;
+};
+
+type TodayActivitySummary = {
+  kind: "created" | "updated" | "deleted";
+  label: string;
+  total: number;
+  sources: TodayActivitySourceCount[];
 };
 
 type TodayMobileActionState =
@@ -237,6 +297,85 @@ const getEventDateLabel = (value: string) =>
 
 const buildEventStatusId = (giteId: string, dateIso: string, type: TodayEventType) => `today:${giteId}:${dateIso}:${type}`;
 
+const formatImportSource = (source: string | null | undefined) => {
+  const normalized = String(source ?? "").trim().toLowerCase();
+  if (normalized === "ical-manual") return "ICAL manuel";
+  if (normalized === "ical-cron") return "ICAL cron";
+  if (normalized === "ical-startup") return "ICAL démarrage";
+  if (normalized === "pump") return "Pump";
+  if (normalized === "pump-cron") return "Pump cron";
+  if (normalized === "pump-refresh") return "Pump refresh";
+  return source || "Import";
+};
+
+const isPumpRefreshImportSource = (source: string | null | undefined) =>
+  String(source ?? "").trim().toLowerCase() === "pump-refresh";
+
+const mixHexColors = (baseHex: string, targetHex: string, weight: number) => {
+  const parse = (value: string) => {
+    const normalized = value.replace("#", "").trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null;
+    return {
+      r: Number.parseInt(normalized.slice(0, 2), 16),
+      g: Number.parseInt(normalized.slice(2, 4), 16),
+      b: Number.parseInt(normalized.slice(4, 6), 16),
+    };
+  };
+
+  const base = parse(baseHex);
+  const target = parse(targetHex);
+  if (!base || !target) return baseHex;
+
+  const ratio = clamp(weight, 0, 1);
+  const mixChannel = (left: number, right: number) => Math.round(left * (1 - ratio) + right * ratio);
+  const toHex = (value: number) => value.toString(16).padStart(2, "0");
+
+  return `#${toHex(mixChannel(base.r, target.r))}${toHex(mixChannel(base.g, target.g))}${toHex(mixChannel(base.b, target.b))}`;
+};
+
+const getTrashTextColor = (background: string) => {
+  const normalized = background.replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return "#111827";
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return luminance > 0.62 ? mixHexColors(background, "#111827", 0.64) : mixHexColors(background, "#ffffff", 0.48);
+};
+
+const buildActivitySourceCounts = (
+  items: Array<{ source?: string | null }> | undefined,
+  fallbackTotal: number,
+  paymentColorMap: Record<string, string>
+) => {
+  const counts = new Map<string, number>();
+
+  (items ?? []).forEach((item) => {
+    const label = String(item.source ?? "").trim() || "A définir";
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  });
+
+  if (counts.size === 0) {
+    return fallbackTotal > 0
+      ? [
+          {
+            label: "Non détaillé",
+            count: fallbackTotal,
+            color: "#d1d5db",
+          },
+        ]
+      : [];
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "fr", { sensitivity: "base" }))
+    .map(([label, count]) => ({
+      label,
+      count,
+      color: getPaymentColorFromMap(label, paymentColorMap),
+    }));
+};
+
 const buildTodayEvents = (reservations: Reservation[], todayIso: string, lastVisibleIso: string) => {
   const grouped = new Map<
     string,
@@ -358,13 +497,6 @@ const SmsIcon = () => (
   </svg>
 );
 
-const RefreshIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path d="M20 11a8 8 0 1 0 2 5.3" />
-    <path d="M20 4v7h-7" />
-  </svg>
-);
-
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     <path d="M8 6h8" />
@@ -418,17 +550,15 @@ const TodayPage = () => {
   const [quickReservationSaving, setQuickReservationSaving] = useState(false);
   const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
     getMatchesMediaQuery(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`)
   );
 
-  const loadData = async (options?: { silent?: boolean }) => {
-    if (options?.silent) {
-      setRefreshing(true);
-    } else {
+  const loadData = async (options?: { preserveContent?: boolean }) => {
+    const shouldShowLoader = !options?.preserveContent || !overview;
+    if (shouldShowLoader) {
       setLoading(true);
     }
 
@@ -439,8 +569,9 @@ const TodayPage = () => {
     } catch (err: any) {
       setError(err.message ?? "Impossible de charger la page Aujourd'hui.");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (shouldShowLoader) {
+        setLoading(false);
+      }
     }
   };
 
@@ -488,6 +619,8 @@ const TodayPage = () => {
   const reservations = overview?.reservations ?? [];
   const statuses = overview?.statuses ?? {};
   const unassignedCount = overview?.unassigned_count ?? 0;
+  const recentImportLog = overview?.recent_import_log ?? [];
+  const recentAppActivity = overview?.recent_app_activity ?? [];
   const mobileActionEvent = useMemo(
     () =>
       mobileActionState?.mode === "rotation-choice"
@@ -683,6 +816,21 @@ const TodayPage = () => {
       ).length,
     [reservations, todayDate]
   );
+  const filledGiteCount = useMemo(
+    () =>
+      new Set(
+        reservations
+          .filter(
+            (reservation) =>
+              reservation.gite_id &&
+              parseIsoDate(reservation.date_entree).getTime() <= todayDate.getTime() &&
+              parseIsoDate(reservation.date_sortie).getTime() > todayDate.getTime()
+          )
+          .map((reservation) => reservation.gite_id as string)
+      ).size,
+    [reservations, todayDate]
+  );
+  const filledGiteRate = useMemo(() => (gites.length > 0 ? filledGiteCount / gites.length : 0), [filledGiteCount, gites.length]);
   const currentViewOccupation = useMemo(() => {
     const totalSlots = timelineRows.length * totalDays;
     if (totalSlots <= 0) {
@@ -943,7 +1091,7 @@ const TodayPage = () => {
         },
       });
 
-      await loadData({ silent: true });
+      await loadData({ preserveContent: true });
       closeQuickReservationSheet();
     } catch (err) {
       if (isApiError(err)) {
@@ -973,6 +1121,69 @@ const TodayPage = () => {
   const evenWeek = useMemo(() => getWeekNumber(todayDate) % 2 === 0, [todayDate]);
   const mauronTrashColor = evenWeek ? TRASH_COLORS.yellow : TRASH_COLORS.darkGreen;
   const neantTrashColor = evenWeek ? TRASH_COLORS.darkGreen : TRASH_COLORS.yellow;
+  const mauronTrashTextColor = useMemo(() => getTrashTextColor(mauronTrashColor), [mauronTrashColor]);
+  const neantTrashTextColor = useMemo(() => getTrashTextColor(neantTrashColor), [neantTrashColor]);
+
+  const recentActivitySummary = useMemo<TodayActivitySummary[]>(() => {
+    const summaries = new Map<"created" | "updated" | "deleted", Map<string, number>>([
+      ["created", new Map()],
+      ["updated", new Map()],
+      ["deleted", new Map()],
+    ]);
+    const totals = new Map<"created" | "updated" | "deleted", number>([
+      ["created", 0],
+      ["updated", 0],
+      ["deleted", 0],
+    ]);
+
+    const addSourceCount = (kind: "created" | "updated" | "deleted", label: string, count: number) => {
+      if (count <= 0) return;
+      totals.set(kind, (totals.get(kind) ?? 0) + count);
+      const sourceMap = summaries.get(kind);
+      if (!sourceMap) return;
+      sourceMap.set(label, (sourceMap.get(label) ?? 0) + count);
+    };
+
+    recentImportLog.forEach((entry) => {
+      if (entry.status === "error" || isPumpRefreshImportSource(entry.source)) return;
+
+      buildActivitySourceCounts(entry.insertedItems, entry.inserted ?? 0, paymentColorMap).forEach((source) =>
+        addSourceCount("created", source.label, source.count)
+      );
+      buildActivitySourceCounts(entry.updatedItems, entry.updated ?? 0, paymentColorMap).forEach((source) =>
+        addSourceCount("updated", source.label, source.count)
+      );
+      buildActivitySourceCounts(entry.deletedItems, entry.deleted ?? 0, paymentColorMap).forEach((source) =>
+        addSourceCount("deleted", source.label, source.count)
+      );
+    });
+
+    recentAppActivity.forEach((entry) => {
+      addSourceCount(entry.type, "App", 1);
+    });
+
+    const toSources = (kind: "created" | "updated" | "deleted") =>
+      [...(summaries.get(kind)?.entries() ?? [])]
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "fr", { sensitivity: "base" }))
+        .map(([label, count]) => ({
+          label:
+            kind === "created"
+              ? label === "App"
+                ? "Direct"
+                : label === "A définir"
+                  ? "Direct externe"
+                  : label
+              : label,
+          count,
+          color: label === "App" ? "#94a3b8" : getPaymentColorFromMap(label, paymentColorMap),
+        }));
+
+    return [
+      { kind: "created", label: "Ajouts", total: totals.get("created") ?? 0, sources: toSources("created") },
+      { kind: "deleted", label: "Suppressions", total: totals.get("deleted") ?? 0, sources: toSources("deleted") },
+      { kind: "updated", label: "Mises à jour", total: totals.get("updated") ?? 0, sources: toSources("updated") },
+    ];
+  }, [paymentColorMap, recentAppActivity, recentImportLog]);
 
   const toggleStatus = async (event: TodayEvent) => {
     const current = statuses[event.statusId];
@@ -1030,7 +1241,7 @@ const TodayPage = () => {
 
   return (
     <div className="today-page">
-      <section className="card today-calendar-card">
+      <section className="today-calendar-card">
         <div className="today-section-head today-section-head--calendar">
           <div>
             <div className="section-title">Calendrier</div>
@@ -1176,7 +1387,7 @@ const TodayPage = () => {
           { key: "today", title: "Aujourd'hui", events: eventsToday },
           { key: "tomorrow", title: "Demain", events: eventsTomorrow },
         ].map((group) => (
-          <section key={group.key} className="card today-events-card">
+          <section key={group.key} className="today-events-card">
             <div className="today-section-head">
               <div>
                 <div className="section-title">{group.title}</div>
@@ -1282,66 +1493,110 @@ const TodayPage = () => {
         ))}
       </div>
 
-      <section className="card today-hero">
+      <section className="today-hero">
         <div className="today-hero__header">
           <div>
             <div className="today-hero__eyebrow">Exploitation</div>
             <h1 className="today-hero__title">Aujourd&apos;hui</h1>
             <p className="today-hero__text">Vue immédiate pour mobile: arrivées, départs, séjours en cours et suivi journalier.</p>
           </div>
-          <div className="today-hero__controls">
-            <label className="field today-hero__field">
-              Utilisateur
-              <select value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)} disabled={managerOptions.length === 0}>
-                {managerOptions.length === 0 ? <option value="">Aucun gestionnaire</option> : null}
-                {managerOptions.map((manager) => (
-                  <option key={manager} value={manager}>
-                    {manager}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" className="secondary today-hero__refresh" onClick={() => void loadData({ silent: true })} disabled={refreshing}>
-              <span className={`today-hero__refresh-icon${refreshing ? " today-hero__refresh-icon--spinning" : ""}`} aria-hidden="true">
-                <RefreshIcon />
-              </span>
-              {refreshing ? "Rafraîchissement..." : "Rafraîchir"}
-            </button>
-          </div>
         </div>
 
         <div className="today-kpis">
-          <article className="today-kpi">
-            <span className="today-kpi__label">Aujourd&apos;hui</span>
-            <strong className="today-kpi__value">{eventsToday.length}</strong>
-            <span className="today-kpi__detail">arrivées, départs ou rotations</span>
-          </article>
-          <article className="today-kpi">
-            <span className="today-kpi__label">Demain</span>
-            <strong className="today-kpi__value">{eventsTomorrow.length}</strong>
-            <span className="today-kpi__detail">déjà visibles</span>
-          </article>
-          <article className="today-kpi">
-            <span className="today-kpi__label">En cours</span>
-            <strong className="today-kpi__value">{activeStayCount}</strong>
-            <span className="today-kpi__detail">séjours actifs</span>
-          </article>
-          <article className="today-kpi today-kpi--trash">
-            <span className="today-kpi__label">Poubelles</span>
-            <div className="today-trash-legend">
-              <span className="today-trash-chip" style={{ "--today-trash-bg": mauronTrashColor } as CSSProperties}>
-                <TrashIcon />
-                Mauron
-              </span>
-              <span className="today-trash-chip" style={{ "--today-trash-bg": neantTrashColor } as CSSProperties}>
-                <TrashIcon />
-                Néant
-              </span>
+          <article className="today-kpi today-kpi--fill">
+            <span className="today-kpi__label">Remplissage du jour</span>
+            <div className="today-kpi__fill">
+              <div className="today-kpi__fill-copy">
+                <strong className="today-kpi__value">
+                  {filledGiteCount}/{gites.length || 0}
+                </strong>
+                <span className="today-kpi__detail">
+                  gîte{gites.length > 1 ? "s" : ""} rempli{filledGiteCount > 1 ? "s" : ""}
+                </span>
+              </div>
+              <OccupationGaugeDial
+                id={`today-fill-rate-${todayIso}`}
+                occupation={filledGiteRate}
+                highlighted={false}
+                animate={false}
+                size={{ width: 76, height: 36 }}
+                className="today-kpi__fill-gauge"
+              />
             </div>
-            <span className="today-kpi__detail">
-              Semaine {evenWeek ? "paire" : "impaire"}{unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
-            </span>
           </article>
+        </div>
+
+        <div className="today-trash-inline">
+          <div className="today-trash-inline__chips">
+            <span
+              className="today-trash-chip"
+              style={
+                {
+                  "--today-trash-bg": mauronTrashColor,
+                  "--today-trash-fg": mauronTrashTextColor,
+                } as CSSProperties
+              }
+            >
+              <TrashIcon />
+              Mauron
+            </span>
+            <span
+              className="today-trash-chip"
+              style={
+                {
+                  "--today-trash-bg": neantTrashColor,
+                  "--today-trash-fg": neantTrashTextColor,
+                } as CSSProperties
+              }
+            >
+              <TrashIcon />
+              Néant
+            </span>
+          </div>
+          <span className="today-trash-inline__detail">
+            Semaine {evenWeek ? "paire" : "impaire"}
+            {unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
+          </span>
+        </div>
+
+        <div className="today-activity">
+          <div className="today-section-head today-section-head--activity">
+            <div>
+              <div className="section-title">Résumé 3 jours</div>
+              <div className="field-hint">Vue compacte des mouvements iCal, Pump et app</div>
+            </div>
+          </div>
+
+          {recentActivitySummary.every((item) => item.total === 0) ? (
+            <div className="today-activity__empty">Aucun ajout, suppression ou mise à jour sur les 3 derniers jours.</div>
+          ) : (
+            <div className="today-activity-compact">
+              {recentActivitySummary.map((item) => (
+                <article key={item.kind} className="today-activity-compact__card">
+                  <div className="today-activity-compact__top">
+                    <span className={`today-activity__action-label today-activity__action-label--${item.kind}`}>{item.label}</span>
+                    <strong className="today-activity-compact__value">{item.total}</strong>
+                  </div>
+
+                  {item.sources.length > 0 ? (
+                    <div className="today-activity__source-list">
+                      {item.sources.map((source) => (
+                        <span
+                          key={`${item.kind}:${source.label}`}
+                          className="today-activity__source-chip"
+                          style={{ "--today-activity-source": source.color } as CSSProperties}
+                        >
+                          {source.label} {source.count}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="today-activity-compact__empty">Aucun</div>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
         </div>
 
         {error ? <div className="note">{error}</div> : null}

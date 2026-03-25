@@ -52,21 +52,19 @@
 
 .today-page {
   display: grid;
-  gap: 20px;
+  gap: 28px;
 }
 
 .today-hero {
-  padding: 22px 24px;
-  border-radius: 30px;
-  background:
-    radial-gradient(circle at top right, rgba(255, 90, 95, 0.16), transparent 28%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 247, 247, 0.92));
+  padding: 24px 0 0;
+  border-top: 1px solid #ebe5dd;
+  background: transparent;
 }
 
 .today-hero__header {
   display: flex;
   align-items: start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 24px;
   margin-bottom: 18px;
 }
@@ -95,30 +93,6 @@
   line-height: 1.65;
 }
 
-.today-hero__controls {
-  display: grid;
-  gap: 10px;
-  min-width: min(320px, 100%);
-}
-
-.today-hero__field {
-  margin-bottom: 0;
-}
-
-.today-hero__refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.today-hero__refresh-icon {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-}
-
-.today-hero__refresh-icon svg,
 .today-trash-chip svg,
 .today-timeline__marker svg,
 .today-event-card__toggle svg,
@@ -132,13 +106,9 @@
   stroke-linejoin: round;
 }
 
-.today-hero__refresh-icon--spinning {
-  animation: today-spin 1s linear infinite;
-}
-
 .today-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -152,11 +122,6 @@
   display: grid;
   align-content: start;
   gap: 10px;
-}
-
-.today-kpi--trash {
-  background:
-    linear-gradient(180deg, rgba(255, 245, 235, 0.92), rgba(255, 255, 255, 0.94));
 }
 
 .today-kpi__label {
@@ -179,21 +144,37 @@
   line-height: 1.5;
 }
 
-.today-trash-legend {
+.today-kpi__fill {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.today-kpi__fill-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.today-kpi__fill-gauge {
+  min-width: 82px;
+}
+
+.today-kpi__fill-gauge strong {
+  font-size: 0.78rem;
 }
 
 .today-trash-chip {
   --today-trash-bg: #d1d5db;
+  --today-trash-fg: #111827;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
   background: var(--today-trash-bg);
-  color: #111827;
+  color: var(--today-trash-fg);
+  border: 1px solid color-mix(in srgb, var(--today-trash-fg) 28%, transparent);
   font-size: 0.82rem;
   font-weight: 700;
 }
@@ -204,9 +185,30 @@
   flex: 0 0 auto;
 }
 
+.today-trash-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.today-trash-inline__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.today-trash-inline__detail {
+  color: #6b7280;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 .today-calendar-card {
-  padding: 18px 22px;
-  border-radius: 28px;
+  padding: 0 0 26px;
+  border-bottom: 1px solid #ebe5dd;
 }
 
 .today-section-head--calendar {
@@ -484,12 +486,11 @@
 .today-events-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: 28px;
 }
 
 .today-events-card {
-  padding: 22px;
-  border-radius: 24px;
+  padding: 0;
 }
 
 .today-events-list {
@@ -648,6 +649,113 @@
   margin-left: 0;
 }
 
+.today-activity {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid #ebe5dd;
+}
+
+.today-section-head--activity {
+  margin-bottom: 0;
+}
+
+.today-activity__empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 1px dashed #d8dee7;
+  background: #fafafa;
+  color: #6b7280;
+}
+
+.today-activity-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.today-activity-compact__card {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid #eceff3;
+  background: linear-gradient(180deg, #ffffff, #fbfbfc);
+}
+
+.today-activity-compact__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.today-activity-compact__value {
+  color: #111827;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.today-activity-compact__empty {
+  color: #6b7280;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.today-activity__action-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.today-activity__action-label--created {
+  background: #e8f7ee;
+  color: #166534;
+}
+
+.today-activity__action-label--updated {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.today-activity__action-label--deleted {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.today-activity__action-label--extracted {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.today-activity__source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.today-activity__source-chip {
+  --today-activity-source: #d1d5db;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--today-activity-source) 18%, #ffffff 82%);
+  color: #1f2937;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--today-activity-source) 34%, #ffffff 66%);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 @keyframes today-pulse {
   0%,
   100% {
@@ -658,15 +766,6 @@
   }
   16% {
     transform: translate(-50%, -50%);
-  }
-}
-
-@keyframes today-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
   }
 }
 
@@ -7257,8 +7356,7 @@ button.warning {
   }
 
   .today-hero {
-    padding: 16px;
-    border-radius: 22px;
+    padding-top: 18px;
   }
 
   .today-hero__header,
@@ -7277,12 +7375,7 @@ button.warning {
 
   .today-calendar-card,
   .today-events-card {
-    padding: 14px;
-    border-radius: 20px;
-  }
-
-  .today-calendar-card {
-    padding: 14px;
+    padding: 0;
   }
 
   .today-section-head--calendar {
@@ -7349,6 +7442,11 @@ button.warning {
   .today-event-card__meta,
   .today-event-card__actions {
     justify-content: flex-start;
+  }
+
+  .today-trash-inline,
+  .today-activity-compact__top {
+    display: grid;
   }
 
   .calendar-board {
