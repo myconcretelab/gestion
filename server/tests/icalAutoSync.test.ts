@@ -312,12 +312,13 @@ test("syncIcalReservations supprime une reservation iCal absente meme hors sourc
   }
 });
 
-test("syncIcalReservations ne supprime pas une reservation manuelle meme si sa source est plateforme", async () => {
+test("syncIcalReservations supprime une reservation plateforme absente meme si elle semble creee dans l'app", async () => {
   const originalFindManySources = prisma.icalSource.findMany;
   const originalFindManyReservations = prisma.reservation.findMany;
   const originalDelete = prisma.reservation.delete;
   const originalUpdate = prisma.reservation.update;
   const originalFetch = global.fetch;
+  const deletedIds: string[] = [];
 
   try {
     prisma.icalSource.findMany = async () => createActiveSource();
@@ -334,11 +335,61 @@ test("syncIcalReservations ne supprime pas une reservation manuelle meme si sa s
         commentaire: null,
       },
     ];
-    prisma.reservation.delete = async () => {
-      throw new Error("reservation.delete ne doit pas etre appele pour une reservation manuelle.");
+    prisma.reservation.delete = async ({ where }: any) => {
+      deletedIds.push(where.id);
+      return { id: where.id } as any;
     };
     prisma.reservation.update = async () => {
-      throw new Error("reservation.update ne doit pas etre appele pour une reservation manuelle.");
+      throw new Error("reservation.update ne doit pas etre appele pour une reservation plateforme supprimee.");
+    };
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        text: async () => "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR",
+      }) as Response) as typeof fetch;
+
+    const result = await syncIcalReservations();
+
+    assert.equal(result.deleted_count, 1);
+    assert.equal(result.to_verify_marked_count, 0);
+    assert.deepEqual(deletedIds, ["reservation-app-airbnb"]);
+  } finally {
+    prisma.icalSource.findMany = originalFindManySources;
+    prisma.reservation.findMany = originalFindManyReservations;
+    prisma.reservation.delete = originalDelete;
+    prisma.reservation.update = originalUpdate;
+    global.fetch = originalFetch;
+  }
+});
+
+test("syncIcalReservations ne supprime pas une reservation manuelle absente hors source plateforme", async () => {
+  const originalFindManySources = prisma.icalSource.findMany;
+  const originalFindManyReservations = prisma.reservation.findMany;
+  const originalDelete = prisma.reservation.delete;
+  const originalUpdate = prisma.reservation.update;
+  const originalFetch = global.fetch;
+
+  try {
+    prisma.icalSource.findMany = async () => createActiveSource();
+    prisma.reservation.findMany = async () => [
+      {
+        id: "reservation-app-virement",
+        gite_id: "gite-1",
+        hote_nom: "Client Test",
+        date_entree: new Date("2026-03-21T00:00:00.000Z"),
+        date_sortie: new Date("2026-03-24T00:00:00.000Z"),
+        origin_system: "app",
+        export_to_ical: true,
+        source_paiement: "Virement",
+        commentaire: null,
+      },
+    ];
+    prisma.reservation.delete = async () => {
+      throw new Error("reservation.delete ne doit pas etre appele pour une reservation manuelle hors plateforme.");
+    };
+    prisma.reservation.update = async () => {
+      throw new Error("reservation.update ne doit pas etre appele pour une reservation manuelle hors plateforme.");
     };
     global.fetch = (async () =>
       ({

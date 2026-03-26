@@ -713,12 +713,16 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
     const managedSources = sourceByGite.get(giteId);
     if (!managedSources || managedSources.size === 0) continue;
 
+    const normalizedSource = normalizeSource(String(reservation.source_paiement ?? ""));
+    const platformManagedByIcal = isPlatformSource(normalizedSource) && managedSources.has(normalizedSource);
     const originSystem = getReservationOriginSystem(reservation);
-    if (originSystem === "app" || originSystem === "what-today") {
+    if (originSystem === "what-today") {
+      continue;
+    }
+    if (originSystem === "app" && !platformManagedByIcal) {
       continue;
     }
 
-    const normalizedSource = normalizeSource(String(reservation.source_paiement ?? ""));
     const hasMarker = hasIcalToVerifyMarker(reservation.commentaire);
     const likelyManagedByIcal =
       originSystem === "ical" ||
@@ -733,7 +737,7 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       date_sortie: toIsoDate(reservation.date_sortie),
     });
     const shouldBeMarked = !parsedPeriodKeys.has(periodKey);
-    const shouldDeleteMissingIcalReservation = shouldBeMarked && originSystem === "ical";
+    const shouldDeleteMissingIcalReservation = shouldBeMarked && (originSystem === "ical" || platformManagedByIcal);
 
     if (shouldDeleteMissingIcalReservation) {
       deleted_items.push({
