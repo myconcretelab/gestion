@@ -516,6 +516,10 @@ const computeReservationOptionsPreview = (
     options.draps.prix_unitaire !== undefined
       ? round2(Math.max(0, Number(options.draps.prix_unitaire ?? 0)))
       : round2(Number(gite?.options_draps_par_lit ?? 0));
+  const departTardifTarif =
+    options.depart_tardif.prix_forfait !== undefined
+      ? round2(Math.max(0, Number(options.depart_tardif.prix_forfait ?? 0)))
+      : round2(Number(gite?.options_depart_tardif_forfait ?? 0));
 
   const draps = options.draps.enabled
     ? options.draps.offert
@@ -535,7 +539,7 @@ const computeReservationOptionsPreview = (
   const departTardif = options.depart_tardif.enabled
     ? options.depart_tardif.offert
       ? 0
-      : round2(Number(gite?.options_depart_tardif_forfait ?? 0))
+      : departTardifTarif
     : 0;
   const chiens = options.chiens.enabled
     ? options.chiens.offert
@@ -5043,7 +5047,10 @@ const ReservationsPage = () => {
                                             <div className="reservations-option-main">
                                               <span className="reservations-option-title">Départ tardif</span>
                                               <span className="field-hint">
-                                                Forfait {formatEuro(optionGite.options_depart_tardif_forfait)}
+                                                Forfait{" "}
+                                                {formatEuro(
+                                                  optionDraft.depart_tardif?.prix_forfait ?? optionGite.options_depart_tardif_forfait
+                                                )}
                                               </span>
                                               <div className="reservations-option-switches">
                                                 <div className="switch-group switch-group--table">

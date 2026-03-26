@@ -11,6 +11,11 @@ export type ReservationOptionsPreview = {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+const resolveDepartTardifTarif = (params: { options: ContratOptions; gite: Gite | null }) =>
+  params.options.depart_tardif?.prix_forfait !== undefined
+    ? round2(Math.max(0, Number(params.options.depart_tardif.prix_forfait ?? 0)))
+    : round2(Number(params.gite?.options_depart_tardif_forfait ?? 0));
+
 export const mergeReservationOptions = (value?: ContratOptions | null): ContratOptions => ({
   draps: { enabled: false, nb_lits: 0, offert: false, declared: false, ...(value?.draps ?? {}) },
   linge_toilette: { enabled: false, nb_personnes: 0, offert: false, declared: false, ...(value?.linge_toilette ?? {}) },
@@ -93,7 +98,7 @@ export const computeReservationOptionsPreview = (
   const departTardif = options.depart_tardif.enabled
     ? options.depart_tardif.offert
       ? 0
-      : round2(Number(params.gite?.options_depart_tardif_forfait ?? 0))
+      : resolveDepartTardifTarif({ options, gite: params.gite })
     : 0;
   const chiens = options.chiens.enabled
     ? options.chiens.offert

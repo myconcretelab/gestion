@@ -203,6 +203,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
           options: {
             ...baseOptions,
             menage: { enabled: false },
+            depart_tardif: { enabled: true, prix_forfait: 27.5 },
             chiens: { enabled: false, nb: 0 },
           },
         },
@@ -216,8 +217,9 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     );
     assert.equal(nextError, null);
     assert.equal(updateContractRes.statusCode, 200);
-    assert.equal(Number((updateContractRes.body as any).solde_montant), 332);
+    assert.equal(Number((updateContractRes.body as any).solde_montant), 359.5);
     assert.equal((updateContractRes.body as any).reservation_id, "r-contract");
+    assert.equal((updateContractRes.body as any).options.depart_tardif.prix_forfait, 27.5);
 
     const invoicePayload = {
       gite_id: "g1",
@@ -273,6 +275,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
           options: {
             ...baseOptions,
             menage: { enabled: false },
+            depart_tardif: { enabled: true, prix_forfait: 27.5 },
             chiens: { enabled: false, nb: 0 },
           },
         },
@@ -286,13 +289,18 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     );
     assert.equal(nextError, null);
     assert.equal(updateInvoiceRes.statusCode, 200);
-    assert.equal(Number((updateInvoiceRes.body as any).solde_montant), 332);
+    assert.equal(Number((updateInvoiceRes.body as any).solde_montant), 359.5);
     assert.equal((updateInvoiceRes.body as any).reservation_id, "r-invoice");
     assert.deepEqual(lastUpdatedReservationData.where, { id: "r-invoice" });
     assert.equal(lastUpdatedReservationData.data.email, "client.facture@example.com");
     assert.equal(lastUpdatedReservationData.data.telephone, null);
     assert.equal(Number(lastUpdatedReservationData.data.prix_total), 360);
-    assert.equal(lastUpdatedReservationData.data.frais_optionnels_libelle, "Draps x2 · Linge x1");
+    assert.equal(lastUpdatedReservationData.data.frais_optionnels_libelle, "Draps x2 · Linge x1 · Départ tardif");
+    assert.equal(Number(lastUpdatedReservationData.data.frais_optionnels_montant), 59.5);
+    assert.equal(
+      JSON.parse(lastUpdatedReservationData.data.options).depart_tardif.prix_forfait,
+      27.5
+    );
   } finally {
     prisma.gite.findUnique = original.giteFindUnique;
     prisma.contratCounter.upsert = original.contratCounterUpsert;

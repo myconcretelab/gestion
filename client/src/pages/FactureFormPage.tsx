@@ -991,7 +991,7 @@ const FactureFormPage = () => {
             <div className="option-row">
               <div>
                 <div className="option-title">Départ tardif</div>
-                <div className="option-sub">Forfait {formatEuro(departTardifTarif)}</div>
+                <div className="option-sub">Forfait actuel {formatEuro(departTardifTarif)}</div>
               </div>
               <div className="option-actions">
                 <div className="switch-group">
@@ -1000,12 +1000,16 @@ const FactureFormPage = () => {
                     <input
                       type="checkbox"
                       checked={options.depart_tardif?.enabled}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         updateOption("depart_tardif", {
                           enabled: e.target.checked,
                           offert: e.target.checked ? options.depart_tardif?.offert ?? false : false,
-                        })
-                      }
+                        });
+                        if (e.target.checked) {
+                          clearFieldError("heure_depart");
+                          setHeureDepart("17:00");
+                        }
+                      }}
                     />
                     <span className="slider" />
                   </label>
@@ -1023,6 +1027,19 @@ const FactureFormPage = () => {
                   </label>
                 </div>
               </div>
+            </div>
+            <div className="option-inputs">
+              <label className="field field-inline">
+                Prix forfait
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={options.depart_tardif?.prix_forfait ?? departTardifTarif}
+                  disabled={!options.depart_tardif?.enabled}
+                  onChange={(e) => updateOption("depart_tardif", { prix_forfait: Number(e.target.value) })}
+                />
+              </label>
             </div>
           </div>
 
