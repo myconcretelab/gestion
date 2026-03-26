@@ -6,6 +6,45 @@ import { formatDate } from "../utils/format";
 import { buildDocumentMailtoHref } from "../utils/documentEmail";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
+const toLocalDateKey = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toDateKey = (value: string) => {
+  const trimmed = value.trim();
+  return trimmed.includes("T") ? trimmed.slice(0, 10) : trimmed;
+};
+
+const getReturnBadge = (contrat: Contrat) => {
+  if (contrat.statut_reception_contrat === "recu") return null;
+
+  const dueDateKey = toDateKey(contrat.arrhes_date_limite);
+  const todayKey = toLocalDateKey(new Date());
+  const formattedDueDate = formatDate(contrat.arrhes_date_limite);
+
+  if (dueDateKey < todayKey) {
+    return {
+      className: "reservations-current-pill reservations-current-pill--departure-today contrats-return-pill",
+      label: `Retour attendu depuis le ${formattedDueDate}`,
+    };
+  }
+
+  if (dueDateKey === todayKey) {
+    return {
+      className: "reservations-current-pill contrats-return-pill",
+      label: "Retour attendu aujourd'hui",
+    };
+  }
+
+  return {
+    className: "reservations-current-pill contrats-return-pill",
+    label: `Retour attendu avant le ${formattedDueDate}`,
+  };
+};
+
 const ContratsListPage = () => {
   const [contrats, setContrats] = useState<Contrat[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
@@ -192,6 +231,7 @@ const ContratsListPage = () => {
           <tbody>
             {contrats.map((contrat) => {
               const pdfUrl = new URL(`/api/contracts/${contrat.id}/pdf`, window.location.origin).toString();
+              const returnBadge = getReturnBadge(contrat);
               const mailHref = buildDocumentMailtoHref({
                 recipient: contrat.locataire_email,
                 documentType: "contrat",
@@ -212,21 +252,17 @@ const ContratsListPage = () => {
               return (
                 <tr key={contrat.id}>
                   <td>
-                    {formatDate(contrat.date_debut)} - {formatDate(contrat.date_fin)}
+                    <div className="contracts-date-cell">
+                      {returnBadge ? <span className={returnBadge.className}>{returnBadge.label}</span> : null}
+                      <span>
+                        {formatDate(contrat.date_debut)} - {formatDate(contrat.date_fin)}
+                      </span>
+                    </div>
                   </td>
                   <td>
                     {contrat.gite?.nom ?? ""}
                   </td>
-                  <td>
-                    <div className="contracts-cell-with-pill">
-                      <span>{contrat.locataire_nom}</span>
-                      {contrat.statut_reception_contrat !== "recu" ? (
-                        <span className="reservations-current-pill reservations-current-pill--departure contrats-return-pill">
-                          Retour attendu avant le {formatDate(contrat.arrhes_date_limite)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
+                  <td>{contrat.locataire_nom}</td>
                   <td>
                     <div className="switch-cell">
                       <div className="switch-group switch-group--table">

@@ -5988,10 +5988,11 @@ button.warning {
   font-weight: 600;
 }
 
-.contracts-cell-with-pill {
+.contracts-date-cell {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  align-items: flex-start;
 }
 
 .contrats-return-pill {
