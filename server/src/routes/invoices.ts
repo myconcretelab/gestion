@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { computeTotals, type OptionsInput } from "../services/contractCalculator.js";
+import { syncReservationFromDocument } from "../services/documentReservationSync.js";
 import { generateInvoiceNumber } from "../services/invoiceNumber.js";
 import {
   generateInvoicePdf,
@@ -216,17 +217,6 @@ const resolveLinkedReservation = async (reservationId: string | null | undefined
     return { error: "La réservation sélectionnée est rattachée à un autre gîte." } as const;
   }
   return { id: reservation.id } as const;
-};
-
-const syncReservationEmailFromInvoice = async (
-  reservationId: string | null | undefined,
-  locataireEmail: string | null | undefined
-) => {
-  if (!reservationId) return;
-  await prisma.reservation.update({
-    where: { id: reservationId },
-    data: { email: locataireEmail?.trim() || null },
-  });
 };
 
 type PreviewContext = {
@@ -442,6 +432,23 @@ router.post("/", async (req, res, next) => {
       dateDebut
     );
 
+    const reservationId = await syncReservationFromDocument({
+      explicitReservationId: data.reservation_id ?? null,
+      giteId: data.gite_id,
+      locataireNom: data.locataire_nom,
+      locataireTel: data.locataire_tel,
+      locataireEmail: data.locataire_email ?? null,
+      dateDebut,
+      dateFin,
+      nbNuits: totals.nbNuits,
+      nbAdultes: data.nb_adultes,
+      prixParNuit: data.prix_par_nuit,
+      prixTotal: totals.montantBase,
+      remiseMontant: data.remise_montant ?? 0,
+      options,
+      optionsTotal: totals.optionsTotal,
+    });
+
     const contrat = await prisma.facture.create({
       data: {
         numero_facture: numeroFacture,
@@ -472,12 +479,10 @@ router.post("/", async (req, res, next) => {
         pdf_path: pdfRelativePath,
         statut_paiement: data.statut_paiement ?? "non_reglee",
         notes: data.notes ?? null,
-        reservation_id: linkedReservation?.id ?? null,
+        reservation_id: reservationId,
       },
       include: { gite: true },
     });
-
-    await syncReservationEmailFromInvoice(linkedReservation?.id ?? null, data.locataire_email ?? null);
 
     const invoiceForPdf = toInvoiceRenderInput(contrat);
     await generateInvoicePdf({
@@ -538,6 +543,24 @@ router.put("/:id", async (req, res, next) => {
       dateDebut
     );
 
+    const reservationId = await syncReservationFromDocument({
+      explicitReservationId: data.reservation_id ?? null,
+      existingReservationId: existing.reservation_id ?? null,
+      giteId: data.gite_id,
+      locataireNom: data.locataire_nom,
+      locataireTel: data.locataire_tel,
+      locataireEmail: data.locataire_email ?? null,
+      dateDebut,
+      dateFin,
+      nbNuits: totals.nbNuits,
+      nbAdultes: data.nb_adultes,
+      prixParNuit: data.prix_par_nuit,
+      prixTotal: totals.montantBase,
+      remiseMontant: data.remise_montant ?? 0,
+      options,
+      optionsTotal: totals.optionsTotal,
+    });
+
     const contrat = await prisma.facture.update({
       where: { id: req.params.id },
       data: {
@@ -568,12 +591,10 @@ router.put("/:id", async (req, res, next) => {
         pdf_path: pdfRelativePath,
         statut_paiement: data.statut_paiement ?? "non_reglee",
         notes: data.notes ?? null,
-        reservation_id: linkedReservation?.id ?? null,
+        reservation_id: reservationId,
       },
       include: { gite: true },
     });
-
-    await syncReservationEmailFromInvoice(linkedReservation?.id ?? null, data.locataire_email ?? null);
 
     const invoiceForPdf = toInvoiceRenderInput(contrat);
     await generateInvoicePdf({
