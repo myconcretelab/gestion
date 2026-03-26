@@ -297,8 +297,12 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(Number(lastUpdatedReservationData.data.prix_total), 360);
     assert.equal(lastUpdatedReservationData.data.frais_optionnels_libelle, "Draps x2 · Linge x1 · Départ tardif");
     assert.equal(Number(lastUpdatedReservationData.data.frais_optionnels_montant), 59.5);
+    const updatedOptions =
+      typeof lastUpdatedReservationData.data.options === "string"
+        ? JSON.parse(lastUpdatedReservationData.data.options)
+        : lastUpdatedReservationData.data.options;
     assert.equal(
-      JSON.parse(lastUpdatedReservationData.data.options).depart_tardif.prix_forfait,
+      updatedOptions.depart_tardif.prix_forfait,
       27.5
     );
   } finally {
