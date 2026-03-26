@@ -1,0 +1,60 @@
+{
+  "contrat": {
+    "bodyLines": [
+      "{{greeting}}",
+      "",
+      "Suite à votre appel, veuillez trouver ci-dessous le lien vers le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.",
+      "",
+      "Lien de téléchargement du contrat :",
+      "{{documentUrl}}",
+      "",
+      "Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de {{arrhesMontant}} avant le {{arrhesDateLimiteLong}}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit {{soldeMontant}}, sera à régler à votre arrivée.",
+      "",
+      "Si vous voulez des idées d'activités pour votre escapade mauronnaise, voici ce que je peux vous conseiller :",
+      "",
+      "{{activitiesList}}",
+      "",
+      "Vous trouverez de bonnes indications sur ces sites :",
+      "{{guideUrl}}",
+      "{{destinationUrl}}",
+      "",
+      "N'hésitez pas à revenir vers nous si vous avez des questions pour l'organisation de votre rencontre.",
+      "",
+      "Si toutefois vous ne voulez pas donner suite à cette location, merci de nous en informer rapidement pour que nous puissions débloquer les dates sur le calendrier et les proposer à d'autres locataires.",
+      "",
+      "Je vous souhaite une bonne journée.",
+      "",
+      "Bien à vous,",
+      "Soazig",
+      "",
+      "www.gites-broceliande.com",
+      "Soazig et Sébastien Jacqmin",
+      "T : (0033) 6 98 99 37 35"
+    ],
+    "activities": [
+      "Les calèches de Brocéliande. Ils proposent des balades en forêt : https://broceliande.guide/Les-Caleches-de-Barenton",
+      "Les balades contées avec les guides conteurs de Brocéliande : https://guidesdebroceliande.com/",
+      "Le Château de Comper, avec le Centre de l'Imaginaire Arthurien.",
+      "La Porte des Secrets à Paimpont.",
+      "En balades : la fontaine de Barenton, le Val sans Retour, le lac au Duc et l'étang de Trémelin."
+    ],
+    "guideUrl": "https://broceliande.guide/Secrets-de-Broceliande",
+    "destinationUrl": "https://destination-broceliande.com/"
+  },
+  "facture": {
+    "bodyLines": [
+      "{{greeting}}",
+      "",
+      "Je vous joins un lien de téléchargement vers votre facture.",
+      "En espérant que vous avez passé un agréable séjour{{giteSentence}}",
+      "",
+      "Le lien de téléchargement :",
+      "{{documentUrl}}",
+      "",
+      "A bientôt,",
+      "",
+      "Sébastien et Soazig",
+      "Les Gites de Brocéliande"
+    ]
+  }
+}

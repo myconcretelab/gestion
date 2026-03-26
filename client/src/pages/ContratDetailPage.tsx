@@ -52,6 +52,14 @@ const ContratDetailPage = () => {
     documentUrl: absolutePdfUrl,
     locataireNom: contrat.locataire_nom,
     giteNom: contrat.gite?.nom,
+    dateDebut: contrat.date_debut,
+    heureArrivee: contrat.heure_arrivee,
+    dateFin: contrat.date_fin,
+    heureDepart: contrat.heure_depart,
+    nbNuits: contrat.nb_nuits,
+    arrhesMontant: contrat.arrhes_montant,
+    arrhesDateLimite: contrat.arrhes_date_limite,
+    soldeMontant: contrat.solde_montant,
   });
 
   return (
