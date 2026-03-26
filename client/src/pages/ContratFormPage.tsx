@@ -628,7 +628,7 @@ const ContratFormPage = () => {
                 <>
                   <input
                     type="number"
-                    step="0.01"
+                    step={1}
                     value={prixParNuit}
                     onChange={(e) => {
                       clearFieldError("prix_par_nuit");
@@ -645,7 +645,7 @@ const ContratFormPage = () => {
               <div className="field-row field-row--compact">
                 <input
                   type="number"
-                  step="0.01"
+                  step={1}
                   value={remiseValue}
                   onChange={(e) => {
                     clearFieldError("remise_montant");
@@ -669,7 +669,7 @@ const ContratFormPage = () => {
               <div className="field-row field-row--compact">
                 <input
                   type="number"
-                  step="0.01"
+                  step={1}
                   value={arrhesMontant}
                   onChange={(e) => {
                     clearFieldError("arrhes_montant");
@@ -730,7 +730,7 @@ const ContratFormPage = () => {
               <div className="field-row field-row--compact">
                 <input
                   type="number"
-                  step="0.01"
+                  step={1}
                   value={cautionMontant}
                   onChange={(e) => {
                     clearFieldError("caution_montant");
@@ -757,7 +757,7 @@ const ContratFormPage = () => {
               <div className="field-row field-row--compact">
                 <input
                   type="number"
-                  step="0.01"
+                  step={1}
                   value={chequeMenageMontant}
                   onChange={(e) => {
                     clearFieldError("cheque_menage_montant");
@@ -886,7 +886,7 @@ const ContratFormPage = () => {
                 <input
                   type="number"
                   min={0}
-                  step="0.01"
+                  step={1}
                   value={options.draps?.prix_unitaire ?? drapsTarif}
                   disabled={!options.draps?.enabled}
                   onChange={(e) => updateOption("draps", { prix_unitaire: Number(e.target.value) })}
@@ -1031,7 +1031,7 @@ const ContratFormPage = () => {
                 <input
                   type="number"
                   min={0}
-                  step="0.01"
+                  step={1}
                   value={options.depart_tardif?.prix_forfait ?? departTardifTarif}
                   disabled={!options.depart_tardif?.enabled}
                   onChange={(e) => updateOption("depart_tardif", { prix_forfait: Number(e.target.value) })}

@@ -809,7 +809,7 @@ const GitesPage = () => {
               Draps / lit (par séjour)
               <input
                 type="number"
-                step="0.01"
+                step={1}
                 value={form.options_draps_par_lit}
                 onChange={(e) => handleChange("options_draps_par_lit", Number(e.target.value))}
               />
@@ -818,7 +818,7 @@ const GitesPage = () => {
               Linge toilette / personne (par séjour)
               <input
                 type="number"
-                step="0.01"
+                step={1}
                 value={form.options_linge_toilette_par_personne}
                 onChange={(e) => handleChange("options_linge_toilette_par_personne", Number(e.target.value))}
               />
@@ -827,7 +827,7 @@ const GitesPage = () => {
               Ménage forfait
               <input
                 type="number"
-                step="0.01"
+                step={1}
                 value={form.options_menage_forfait}
                 onChange={(e) => handleChange("options_menage_forfait", Number(e.target.value))}
               />
@@ -836,7 +836,7 @@ const GitesPage = () => {
               Départ tardif forfait
               <input
                 type="number"
-                step="0.01"
+                step={1}
                 value={form.options_depart_tardif_forfait}
                 onChange={(e) => handleChange("options_depart_tardif_forfait", Number(e.target.value))}
               />
@@ -845,7 +845,7 @@ const GitesPage = () => {
               Chiens / nuit
               <input
                 type="number"
-                step="0.01"
+                step={1}
                 value={form.options_chiens_forfait}
                 onChange={(e) => handleChange("options_chiens_forfait", Number(e.target.value))}
               />
@@ -876,7 +876,7 @@ const GitesPage = () => {
               Caution par défaut
               <input
                 type="number"
-                step="0.01"
+                step={1}
                 value={form.caution_montant_defaut}
                 onChange={(e) => handleChange("caution_montant_defaut", Number(e.target.value))}
               />
@@ -885,7 +885,7 @@ const GitesPage = () => {
               Chèque ménage par défaut
               <input
                 type="number"
-                step="0.01"
+                step={1}
                 value={form.cheque_menage_montant_defaut}
                 onChange={(e) => handleChange("cheque_menage_montant_defaut", Number(e.target.value))}
               />
