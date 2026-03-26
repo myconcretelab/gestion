@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import type { Contrat } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
+import { buildDocumentMailtoHref } from "../utils/documentEmail";
 
 const ContratDetailPage = () => {
   const { id } = useParams();
@@ -43,6 +44,15 @@ const ContratDetailPage = () => {
   const phoneHref = contrat.locataire_tel ? contrat.locataire_tel.replace(/\s+/g, "") : "";
   const pdfVersion = contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
   const pdfUrl = `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
+  const absolutePdfUrl = new URL(pdfUrl, window.location.origin).toString();
+  const mailHref = buildDocumentMailtoHref({
+    recipient: email,
+    documentType: "contrat",
+    documentNumber: contrat.numero_contrat,
+    documentUrl: absolutePdfUrl,
+    locataireNom: contrat.locataire_nom,
+    giteNom: contrat.gite?.nom,
+  });
 
   return (
     <div>
@@ -61,6 +71,13 @@ const ContratDetailPage = () => {
             <Link to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}>
               Créer facture
             </Link>
+            {mailHref ? (
+              <a href={mailHref}>Envoyer contrat</a>
+            ) : (
+              <button type="button" disabled title="Email locataire non renseigné">
+                Envoyer contrat
+              </button>
+            )}
             <button onClick={downloadPdf}>Télécharger PDF</button>
             <button className="secondary" onClick={regenerate}>
               Régénérer

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
 import { formatDate } from "../utils/format";
-import { buildMailtoHref } from "../utils/documentEmail";
+import { buildDocumentMailtoHref } from "../utils/documentEmail";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const ContratsListPage = () => {
@@ -156,10 +156,13 @@ const ContratsListPage = () => {
           <tbody>
             {contrats.map((contrat) => {
               const pdfUrl = new URL(`/api/contracts/${contrat.id}/pdf`, window.location.origin).toString();
-              const mailHref = buildMailtoHref({
+              const mailHref = buildDocumentMailtoHref({
                 recipient: contrat.locataire_email,
-                subject: `Contrat ${contrat.numero_contrat}`,
-                body: `Bonjour,\n\nVoici votre contrat :\n${pdfUrl}`,
+                documentType: "contrat",
+                documentNumber: contrat.numero_contrat,
+                documentUrl: pdfUrl,
+                locataireNom: contrat.locataire_nom,
+                giteNom: contrat.gite?.nom,
               });
 
               return (
