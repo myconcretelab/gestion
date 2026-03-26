@@ -35,3 +35,30 @@ test("computeTotals calcule un solde incluant les options", () => {
   assert.equal(totals.solde, 272);
   assert.equal(totals.taxeSejourCalculee, 13.5);
 });
+
+test("computeTotals utilise le forfait personnalise du depart tardif", () => {
+  const totals = computeTotals({
+    dateDebut: new Date("2026-03-01T00:00:00.000Z"),
+    dateFin: new Date("2026-03-04T00:00:00.000Z"),
+    prixParNuit: 100,
+    remiseMontant: 0,
+    nbAdultes: 2,
+    nbEnfants: 0,
+    arrhesMontant: 0,
+    options: {
+      depart_tardif: { enabled: true, prix_forfait: 27.5 },
+    },
+    gite: {
+      taxe_sejour_par_personne_par_nuit: 1.5,
+      options_draps_par_lit: 12,
+      options_linge_toilette_par_personne: 8,
+      options_menage_forfait: 20,
+      options_depart_tardif_forfait: 15,
+      options_chiens_forfait: 5,
+    },
+  });
+
+  assert.equal(totals.optionsDetail.departTardif, 27.5);
+  assert.equal(totals.optionsTotal, 27.5);
+  assert.equal(totals.totalGlobal, 327.5);
+});

@@ -12,6 +12,11 @@ export type Totals = {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+const resolveDepartTardifTarif = (params: { options: ContratOptions; gite?: Gite | null }) =>
+  params.options.depart_tardif?.prix_forfait !== undefined
+    ? Number(params.options.depart_tardif.prix_forfait ?? 0)
+    : Number(params.gite?.options_depart_tardif_forfait ?? 0);
+
 export const computeTotals = (params: {
   dateDebut: string;
   dateFin: string;
@@ -47,7 +52,7 @@ export const computeTotals = (params: {
       : Number(gite?.options_draps_par_lit ?? 0);
   const lingeTarif = Number(gite?.options_linge_toilette_par_personne ?? 0);
   const menageTarif = Number(gite?.options_menage_forfait ?? 0);
-  const departTardifTarif = Number(gite?.options_depart_tardif_forfait ?? 0);
+  const departTardifTarif = resolveDepartTardifTarif({ options: params.options, gite });
   const chiensTarif = Number(gite?.options_chiens_forfait ?? 0);
 
   const draps = params.options.draps?.enabled

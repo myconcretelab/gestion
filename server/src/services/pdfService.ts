@@ -20,6 +20,11 @@ const resolveDrapsTarif = (options: OptionsInput, gite: GiteLike) =>
     ? toNumber(options.draps.prix_unitaire)
     : toNumber(gite.options_draps_par_lit);
 
+const resolveDepartTardifTarif = (options: OptionsInput, gite: GiteLike) =>
+  options.depart_tardif?.prix_forfait !== undefined
+    ? toNumber(options.depart_tardif.prix_forfait)
+    : toNumber(gite.options_depart_tardif_forfait);
+
 const writePlaceholderPdf = async (outputPath: string) => {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, MINIMAL_PDF_BUFFER);
@@ -486,7 +491,7 @@ const buildOptionsBandRowsHtml = (params: {
     }
   }
   if (options.depart_tardif?.enabled) {
-    const tarif = toNumber(gite.options_depart_tardif_forfait);
+    const tarif = resolveDepartTardifTarif(options, gite);
     const base = round2(tarif);
     rows.push(
       `<tr class="band-option"><td>Départ tardif</td><td>${formatSignedEuro(base, "+")}</td></tr>`
@@ -867,7 +872,7 @@ const buildInvoiceOptionsRowsHtml = (params: {
     });
   }
   if (options.depart_tardif?.enabled) {
-    const baseAmount = round2(toNumber(gite.options_depart_tardif_forfait));
+    const baseAmount = round2(resolveDepartTardifTarif(options, gite));
     addOptionRows({
       label: "Départ tardif",
       baseAmount,

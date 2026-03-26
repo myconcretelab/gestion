@@ -23,7 +23,12 @@ export const optionsSchema = z.object({
     .optional(),
   menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional(), declared: z.boolean().optional() }).optional(),
   depart_tardif: z
-    .object({ enabled: z.boolean(), offert: z.boolean().optional(), declared: z.boolean().optional() })
+    .object({
+      enabled: z.boolean(),
+      prix_forfait: z.number().min(0).optional(),
+      offert: z.boolean().optional(),
+      declared: z.boolean().optional(),
+    })
     .optional(),
   chiens: z
     .object({

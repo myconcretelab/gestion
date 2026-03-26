@@ -59,3 +59,22 @@ test("computeTotals client aligne le solde avec le back (options incluses)", () 
   assert.equal(totals.solde, 272);
   assert.equal(totals.taxeSejour, 13.5);
 });
+
+test("computeTotals client utilise le forfait personnalise du depart tardif", () => {
+  const totals = computeTotals({
+    dateDebut: "2026-03-01",
+    dateFin: "2026-03-04",
+    prixParNuit: 100,
+    remiseMontant: 0,
+    nbAdultes: 2,
+    nbEnfants: 0,
+    arrhesMontant: 0,
+    options: {
+      depart_tardif: { enabled: true, prix_forfait: 27.5 },
+    },
+    gite,
+  });
+
+  assert.equal(totals.optionsTotal, 27.5);
+  assert.equal(totals.totalGlobal, 327.5);
+});
