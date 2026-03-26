@@ -97,6 +97,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       options_chiens_forfait: 5,
     };
     let lastCreatedReservationData: any = null;
+    let lastUpdatedReservationData: any = null;
 
     prisma.gite.findUnique = async () => mockedGite;
     prisma.contratCounter.upsert = async () => ({ lastNumber: 1 });
@@ -106,6 +107,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       id: "c1",
       numero_contrat: "GT-2026-000001",
       arrhes_montant: 100,
+      reservation_id: "r-contract",
     });
     prisma.contrat.update = async ({ data }: any) => ({ id: "c1", numero_contrat: "GT-2026-000001", ...data });
     prisma.facture.create = async ({ data }: any) => ({ id: "f1", ...data });
@@ -113,15 +115,24 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       id: "f1",
       numero_facture: "GT-2026-01",
       arrhes_montant: 100,
+      reservation_id: "r-invoice",
     });
     prisma.facture.update = async ({ data }: any) => ({ id: "f1", numero_facture: "GT-2026-01", ...data });
-    prisma.reservation.findUnique = async () => null;
+    prisma.reservation.findUnique = async ({ where }: any) => {
+      if (where.id === "r-contract" || where.id === "r-invoice") {
+        return { id: where.id, gite_id: "g1" };
+      }
+      return null;
+    };
     prisma.reservation.findMany = async () => [];
     prisma.reservation.create = async ({ data }: any) => {
       lastCreatedReservationData = data;
-      return { id: "r1" };
+      return { id: data.hote_nom === "Client Contrat" ? "r-contract-created" : "r-invoice-created" };
     };
-    prisma.reservation.update = async ({ where }: any) => ({ id: where.id });
+    prisma.reservation.update = async ({ where, data }: any) => {
+      lastUpdatedReservationData = { where, data };
+      return { id: where.id };
+    };
 
     const contractsRouterModule = await import("../src/routes/contracts.ts");
     const invoicesRouterModule = await import("../src/routes/invoices.ts");
@@ -179,6 +190,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(Number(lastCreatedReservationData.prix_par_nuit), 100);
     assert.equal(Number(lastCreatedReservationData.prix_total), 300);
     assert.equal(Number(lastCreatedReservationData.remise_montant), 10);
+    assert.equal((createContractRes.body as any).reservation_id, "r-contract-created");
 
     const updateContractRes = createMockResponse();
     nextError = null;
@@ -205,12 +217,14 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(updateContractRes.statusCode, 200);
     assert.equal(Number((updateContractRes.body as any).solde_montant), 332);
+    assert.equal((updateContractRes.body as any).reservation_id, "r-contract");
 
     const invoicePayload = {
       gite_id: "g1",
       locataire_nom: "Client Facture",
       locataire_adresse: "Adresse",
       locataire_tel: "",
+      locataire_email: "client.facture@example.com",
       nb_adultes: 2,
       nb_enfants_2_17: 1,
       date_debut: "2026-03-01",
@@ -243,6 +257,10 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(createInvoiceRes.statusCode, 201);
     assert.equal(Number((createInvoiceRes.body as any).solde_montant), 272);
+    assert.equal((createInvoiceRes.body as any).reservation_id, "r-invoice-created");
+    assert.equal(lastCreatedReservationData.telephone, null);
+    assert.equal(lastCreatedReservationData.email, "client.facture@example.com");
+    assert.equal(lastCreatedReservationData.frais_optionnels_libelle, "Draps x2 · Linge x1 · Ménage · Chiens x2");
 
     const updateInvoiceRes = createMockResponse();
     nextError = null;
@@ -269,6 +287,12 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(updateInvoiceRes.statusCode, 200);
     assert.equal(Number((updateInvoiceRes.body as any).solde_montant), 332);
+    assert.equal((updateInvoiceRes.body as any).reservation_id, "r-invoice");
+    assert.deepEqual(lastUpdatedReservationData.where, { id: "r-invoice" });
+    assert.equal(lastUpdatedReservationData.data.email, "client.facture@example.com");
+    assert.equal(lastUpdatedReservationData.data.telephone, null);
+    assert.equal(Number(lastUpdatedReservationData.data.prix_total), 360);
+    assert.equal(lastUpdatedReservationData.data.frais_optionnels_libelle, "Draps x2 · Linge x1");
   } finally {
     prisma.gite.findUnique = original.giteFindUnique;
     prisma.contratCounter.upsert = original.contratCounterUpsert;
@@ -279,6 +303,138 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     prisma.facture.create = original.factureCreate;
     prisma.facture.findUnique = original.factureFindUnique;
     prisma.facture.update = original.factureUpdate;
+    prisma.reservation.findUnique = original.reservationFindUnique;
+    prisma.reservation.findMany = original.reservationFindMany;
+    prisma.reservation.create = original.reservationCreate;
+    prisma.reservation.update = original.reservationUpdate;
+
+    restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
+    restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
+    restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
+
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("creation facture complete une reservation existante plutot que d'en creer une nouvelle", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "contrats-invoice-reservation-test-"));
+  const envBackup = {
+    DATA_DIR: process.env.DATA_DIR,
+    SKIP_PDF_GENERATION: process.env.SKIP_PDF_GENERATION,
+    BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD,
+  };
+
+  process.env.DATA_DIR = tempDir;
+  process.env.SKIP_PDF_GENERATION = "1";
+  process.env.BASIC_AUTH_PASSWORD = "";
+
+  const prismaModule = await import("../src/db/prisma.ts");
+  const prisma = prismaModule.default as any;
+
+  const original = {
+    giteFindUnique: prisma.gite.findUnique,
+    factureCounterUpsert: prisma.factureCounter.upsert,
+    factureCreate: prisma.facture.create,
+    reservationFindUnique: prisma.reservation.findUnique,
+    reservationFindMany: prisma.reservation.findMany,
+    reservationCreate: prisma.reservation.create,
+    reservationUpdate: prisma.reservation.update,
+  };
+
+  try {
+    prisma.gite.findUnique = async () => ({
+      id: "g1",
+      prefixe_contrat: "GT",
+      arrhes_taux_defaut: 0.2,
+      regle_animaux_acceptes: true,
+      regle_bois_premiere_flambee: false,
+      regle_tiers_personnes_info: false,
+      taxe_sejour_par_personne_par_nuit: 1.5,
+      options_draps_par_lit: 12,
+      options_linge_toilette_par_personne: 8,
+      options_menage_forfait: 20,
+      options_depart_tardif_forfait: 15,
+      options_chiens_forfait: 5,
+    });
+    prisma.factureCounter.upsert = async () => ({ lastNumber: 1 });
+    prisma.facture.create = async ({ data }: any) => ({ id: "f-overlap", ...data });
+    prisma.reservation.findUnique = async () => null;
+    prisma.reservation.findMany = async () => [
+      {
+        id: "r-existing",
+        hote_nom: "Client Facture",
+        date_entree: new Date("2026-07-10T00:00:00.000Z"),
+        date_sortie: new Date("2026-07-15T00:00:00.000Z"),
+      },
+    ];
+
+    let reservationCreateCalls = 0;
+    let reservationUpdatePayload: any = null;
+    prisma.reservation.create = async () => {
+      reservationCreateCalls += 1;
+      return { id: "r-created" };
+    };
+    prisma.reservation.update = async ({ where, data }: any) => {
+      reservationUpdatePayload = { where, data };
+      return { id: where.id };
+    };
+
+    const invoicesRouterModule = await import("../src/routes/invoices.ts");
+    const invoicePost = getRouteHandler(invoicesRouterModule.default, "post", "/");
+
+    const response = createMockResponse();
+    let nextError: unknown = null;
+    await invoicePost(
+      {
+        body: {
+          gite_id: "g1",
+          locataire_nom: "Client Facture",
+          locataire_adresse: "Adresse",
+          locataire_tel: "0611223344",
+          locataire_email: "existing@example.com",
+          nb_adultes: 2,
+          nb_enfants_2_17: 0,
+          date_debut: "2026-07-10",
+          heure_arrivee: "17:00",
+          date_fin: "2026-07-15",
+          heure_depart: "12:00",
+          prix_par_nuit: 110,
+          remise_montant: 15,
+          options: {
+            menage: { enabled: true, declared: true },
+          },
+          arrhes_montant: 100,
+          arrhes_date_limite: "2026-06-15",
+          caution_montant: 0,
+          cheque_menage_montant: 0,
+          afficher_caution_phrase: false,
+          afficher_cheque_menage_phrase: false,
+          clauses: {},
+          notes: null,
+          statut_paiement: "non_reglee",
+        },
+        params: {},
+        query: {},
+      },
+      response,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 201);
+    assert.equal((response.body as any).reservation_id, "r-existing");
+    assert.equal(reservationCreateCalls, 0);
+    assert.deepEqual(reservationUpdatePayload.where, { id: "r-existing" });
+    assert.equal(reservationUpdatePayload.data.email, "existing@example.com");
+    assert.equal(reservationUpdatePayload.data.telephone, "0611223344");
+    assert.equal(reservationUpdatePayload.data.frais_optionnels_libelle, "Ménage");
+    assert.equal(reservationUpdatePayload.data.frais_optionnels_declares, true);
+  } finally {
+    prisma.gite.findUnique = original.giteFindUnique;
+    prisma.factureCounter.upsert = original.factureCounterUpsert;
+    prisma.facture.create = original.factureCreate;
     prisma.reservation.findUnique = original.reservationFindUnique;
     prisma.reservation.findMany = original.reservationFindMany;
     prisma.reservation.create = original.reservationCreate;
