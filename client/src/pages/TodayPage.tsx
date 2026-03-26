@@ -1840,7 +1840,6 @@ const TodayPage = () => {
                     value={quickReservationDraft.hote_nom}
                     placeholder="Nom du voyageur"
                     onChange={(event) => handleQuickReservationFieldChange("hote_nom", event.target.value)}
-                    autoFocus
                   />
                 </label>
 
