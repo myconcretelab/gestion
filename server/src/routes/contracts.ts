@@ -37,6 +37,8 @@ const emptyStringToNull = (value: unknown) => {
   return trimmed.length === 0 ? null : trimmed;
 };
 
+const nullableDateString = z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional();
+
 const contractSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
@@ -60,12 +62,24 @@ const contractSchema = z.object({
   afficher_cheque_menage_phrase: z.boolean().optional().default(true),
   clauses: z.record(z.any()).optional(),
   notes: z.string().optional().nullable(),
+  statut_reception_contrat: z.enum(["non_recu", "recu"]).optional(),
+  date_reception_contrat: nullableDateString,
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
+  date_paiement_arrhes: nullableDateString,
   reservation_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
+});
+
+const receptionStatusSchema = z.object({
+  statut_reception_contrat: z.enum(["non_recu", "recu"]),
 });
 
 const arrhesStatusSchema = z.object({
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]),
+});
+
+const trackingDatesSchema = z.object({
+  date_reception_contrat: nullableDateString,
+  date_paiement_arrhes: nullableDateString,
 });
 
 const previewSchema = z.object({
@@ -114,6 +128,14 @@ const hydrateContract = (contrat: any) => ({
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
 });
+
+const parseOptionalTrackedDate = (value: string | null | undefined, label: string) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const parsed = parseDate(value);
+  ensureValidDate(parsed, label);
+  return parsed;
+};
 
 const toContractRenderInput = (contrat: any): ContractRenderInput => ({
   numero_contrat: contrat.numero_contrat,
@@ -491,7 +513,11 @@ router.post("/", async (req, res, next) => {
         afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
         clauses: encodeJsonField(data.clauses ?? {}),
         pdf_path: pdfRelativePath,
+        date_envoi_email: null,
+        statut_reception_contrat: data.statut_reception_contrat ?? "non_recu",
+        date_reception_contrat: parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat") ?? null,
         statut_paiement_arrhes: data.statut_paiement_arrhes ?? "non_recu",
+        date_paiement_arrhes: parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes") ?? null,
         notes: data.notes ?? null,
         reservation_id: reservationId,
       },
@@ -609,7 +635,17 @@ router.put("/:id", async (req, res, next) => {
         afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
         clauses: encodeJsonField(data.clauses ?? {}),
         pdf_path: pdfRelativePath,
-        statut_paiement_arrhes: data.statut_paiement_arrhes ?? "non_recu",
+        date_envoi_email: existing.date_envoi_email,
+        statut_reception_contrat: data.statut_reception_contrat ?? existing.statut_reception_contrat ?? "non_recu",
+        date_reception_contrat:
+          data.date_reception_contrat === undefined
+            ? existing.date_reception_contrat
+            : parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat"),
+        statut_paiement_arrhes: data.statut_paiement_arrhes ?? existing.statut_paiement_arrhes ?? "non_recu",
+        date_paiement_arrhes:
+          data.date_paiement_arrhes === undefined
+            ? existing.date_paiement_arrhes
+            : parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes"),
         notes: data.notes ?? null,
         reservation_id: reservationId,
       },
@@ -630,14 +666,101 @@ router.put("/:id", async (req, res, next) => {
   }
 });
 
+router.patch("/:id/email-sent", async (req, res, next) => {
+  try {
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const contrat = await prisma.contrat.update({
+      where: { id: req.params.id },
+      data: { date_envoi_email: new Date() },
+      include: { gite: true },
+    });
+    res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/reception", async (req, res, next) => {
+  try {
+    const data = receptionStatusSchema.parse(req.body);
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      select: { date_reception_contrat: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const contrat = await prisma.contrat.update({
+      where: { id: req.params.id },
+      data: {
+        statut_reception_contrat: data.statut_reception_contrat,
+        date_reception_contrat:
+          data.statut_reception_contrat === "recu"
+            ? existing.date_reception_contrat ?? new Date()
+            : existing.date_reception_contrat,
+      },
+      include: { gite: true },
+    });
+    res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch("/:id/arrhes", async (req, res, next) => {
   try {
     const data = arrhesStatusSchema.parse(req.body);
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      select: { date_paiement_arrhes: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
     const contrat = await prisma.contrat.update({
       where: { id: req.params.id },
-      data: { statut_paiement_arrhes: data.statut_paiement_arrhes },
+      data: {
+        statut_paiement_arrhes: data.statut_paiement_arrhes,
+        date_paiement_arrhes:
+          data.statut_paiement_arrhes === "recu" ? existing.date_paiement_arrhes ?? new Date() : existing.date_paiement_arrhes,
+      },
       include: { gite: true },
     });
+    res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/tracking-dates", async (req, res, next) => {
+  try {
+    const data = trackingDatesSchema.parse(req.body);
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const nextData: Record<string, Date | null> = {};
+    if (data.date_reception_contrat !== undefined) {
+      nextData.date_reception_contrat = parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat") ?? null;
+    }
+    if (data.date_paiement_arrhes !== undefined) {
+      nextData.date_paiement_arrhes = parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes") ?? null;
+    }
+
+    const contrat =
+      Object.keys(nextData).length === 0
+        ? existing
+        : await prisma.contrat.update({
+            where: { id: req.params.id },
+            data: nextData,
+            include: { gite: true },
+          });
+
     res.json(hydrateContract(contrat));
   } catch (err) {
     next(err);

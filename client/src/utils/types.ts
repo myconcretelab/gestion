@@ -144,7 +144,11 @@ export type Contrat = {
   afficher_cheque_menage_phrase: boolean;
   clauses: Record<string, unknown>;
   pdf_path: string;
+  date_envoi_email?: string | null;
+  statut_reception_contrat: "non_recu" | "recu";
+  date_reception_contrat?: string | null;
   statut_paiement_arrhes: "non_recu" | "recu";
+  date_paiement_arrhes?: string | null;
   notes?: string | null;
   reservation_id?: string | null;
   gite?: Gite;

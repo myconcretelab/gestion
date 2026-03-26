@@ -42,7 +42,7 @@ const restoreEnvVar = (key: string, value: string | undefined) => {
   else process.env[key] = value;
 };
 
-const getRouteHandler = (router: any, method: "get" | "post" | "put", routePath: string) => {
+const getRouteHandler = (router: any, method: "get" | "post" | "put" | "patch", routePath: string) => {
   const layer = router.stack.find(
     (item: any) => item.route?.path === routePath && item.route?.methods?.[method]
   );
@@ -460,6 +460,171 @@ test("creation facture complete une reservation existante plutot que d'en creer 
   }
 });
 
+test("API contrats conserve les dates de suivi lors des bascules de statuts", async () => {
+  const prismaModule = await import("../src/db/prisma.ts");
+  const prisma = prismaModule.default as any;
+
+  const original = {
+    contratFindUnique: prisma.contrat.findUnique,
+    contratUpdate: prisma.contrat.update,
+  };
+
+  const baseContract = {
+    id: "c1",
+    numero_contrat: "GT-2026-000001",
+    gite_id: "g1",
+    date_creation: "2026-03-12T00:00:00.000Z",
+    date_derniere_modif: "2026-03-13T00:00:00.000Z",
+    locataire_nom: "Client Contrat",
+    locataire_adresse: "Adresse",
+    locataire_tel: "0700000000",
+    locataire_email: "client@example.com",
+    nb_adultes: 2,
+    nb_enfants_2_17: 0,
+    date_debut: "2026-03-08T00:00:00.000Z",
+    heure_arrivee: "17:00",
+    date_fin: "2026-03-13T00:00:00.000Z",
+    heure_depart: "12:00",
+    nb_nuits: 5,
+    prix_par_nuit: 70,
+    remise_montant: 0,
+    taxe_sejour_calculee: 10,
+    options: "{}",
+    arrhes_montant: 100,
+    arrhes_date_limite: "2026-02-15T00:00:00.000Z",
+    solde_montant: 250,
+    caution_montant: 500,
+    cheque_menage_montant: 80,
+    afficher_caution_phrase: true,
+    afficher_cheque_menage_phrase: true,
+    clauses: "{}",
+    pdf_path: "test.pdf",
+    date_envoi_email: null,
+    statut_reception_contrat: "non_recu",
+    date_reception_contrat: null,
+    statut_paiement_arrhes: "non_recu",
+    date_paiement_arrhes: null,
+    notes: null,
+    reservation_id: null,
+    gite: null,
+  };
+
+  let contractState = { ...baseContract };
+
+  try {
+    prisma.contrat.findUnique = async () => ({ ...contractState });
+    prisma.contrat.update = async ({ data }: any) => {
+      contractState = { ...contractState, ...data };
+      return { ...contractState };
+    };
+
+    const contractsRouterModule = await import("../src/routes/contracts.ts");
+    const emailPatch = getRouteHandler(contractsRouterModule.default, "patch", "/:id/email-sent");
+    const receptionPatch = getRouteHandler(contractsRouterModule.default, "patch", "/:id/reception");
+    const arrhesPatch = getRouteHandler(contractsRouterModule.default, "patch", "/:id/arrhes");
+    const trackingDatesPatch = getRouteHandler(contractsRouterModule.default, "patch", "/:id/tracking-dates");
+
+    let nextError: unknown = null;
+
+    const receptionOnRes = createMockResponse();
+    await receptionPatch(
+      { body: { statut_reception_contrat: "recu" }, params: { id: "c1" }, query: {} },
+      receptionOnRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal((receptionOnRes.body as any).statut_reception_contrat, "recu");
+    assert.ok((receptionOnRes.body as any).date_reception_contrat);
+    const firstReceptionDate = (receptionOnRes.body as any).date_reception_contrat as Date;
+
+    const receptionOffRes = createMockResponse();
+    nextError = null;
+    await receptionPatch(
+      { body: { statut_reception_contrat: "non_recu" }, params: { id: "c1" }, query: {} },
+      receptionOffRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal((receptionOffRes.body as any).date_reception_contrat.getTime(), firstReceptionDate.getTime());
+
+    const emailRes = createMockResponse();
+    nextError = null;
+    await emailPatch(
+      { body: {}, params: { id: "c1" }, query: {} },
+      emailRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.ok((emailRes.body as any).date_envoi_email);
+
+    const receptionOnAgainRes = createMockResponse();
+    nextError = null;
+    await receptionPatch(
+      { body: { statut_reception_contrat: "recu" }, params: { id: "c1" }, query: {} },
+      receptionOnAgainRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal((receptionOnAgainRes.body as any).date_reception_contrat.getTime(), firstReceptionDate.getTime());
+
+    const arrhesOnRes = createMockResponse();
+    nextError = null;
+    await arrhesPatch(
+      { body: { statut_paiement_arrhes: "recu" }, params: { id: "c1" }, query: {} },
+      arrhesOnRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.ok((arrhesOnRes.body as any).date_paiement_arrhes);
+    const firstArrhesDate = (arrhesOnRes.body as any).date_paiement_arrhes as Date;
+
+    const arrhesOffRes = createMockResponse();
+    nextError = null;
+    await arrhesPatch(
+      { body: { statut_paiement_arrhes: "non_recu" }, params: { id: "c1" }, query: {} },
+      arrhesOffRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal((arrhesOffRes.body as any).date_paiement_arrhes.getTime(), firstArrhesDate.getTime());
+
+    const trackingRes = createMockResponse();
+    nextError = null;
+    await trackingDatesPatch(
+      {
+        body: {
+          date_reception_contrat: "2026-03-20",
+          date_paiement_arrhes: "2026-03-21",
+        },
+        params: { id: "c1" },
+        query: {},
+      },
+      trackingRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal((trackingRes.body as any).date_reception_contrat.toISOString(), new Date("2026-03-20").toISOString());
+    assert.equal((trackingRes.body as any).date_paiement_arrhes.toISOString(), new Date("2026-03-21").toISOString());
+  } finally {
+    prisma.contrat.findUnique = original.contratFindUnique;
+    prisma.contrat.update = original.contratUpdate;
+  }
+});
+
 test("API hydrate les montants de contrat/facture en nombres", async () => {
   const prismaModule = await import("../src/db/prisma.ts");
   const prisma = prismaModule.default as any;
@@ -499,7 +664,11 @@ test("API hydrate les montants de contrat/facture en nombres", async () => {
       afficher_cheque_menage_phrase: true,
       clauses: "{}",
       pdf_path: "test.pdf",
+      date_envoi_email: null,
+      statut_reception_contrat: "non_recu",
+      date_reception_contrat: null,
       statut_paiement_arrhes: "non_recu",
+      date_paiement_arrhes: null,
       notes: null,
       reservation_id: null,
     });

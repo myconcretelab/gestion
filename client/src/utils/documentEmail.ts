@@ -119,7 +119,7 @@ export const buildDocumentMailtoHref = (params: BuildDocumentMailtoHrefParams) =
   };
 
   if (documentType === "contrat") {
-    const activitiesList = (template.activities ?? []).map((activity) => `- ${activity}`).join("\n");
+    const activitiesList = (template.activities ?? []).join("\n\n");
     Object.assign(templateValues, {
       stayDuration: formatStayDuration(params.nbNuits),
       giteReference: safeGiteNom ? `au ${safeGiteNom}` : "dans notre gîte",

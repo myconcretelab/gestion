@@ -1,15 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import type { Contrat } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
 import { buildDocumentMailtoHref } from "../utils/documentEmail";
+import { toDateInputValue } from "./shared/rentalForm";
 
 const ContratDetailPage = () => {
   const { id } = useParams();
   const [contrat, setContrat] = useState<Contrat | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pdfNonce] = useState(() => Date.now());
+  const [receptionUpdating, setReceptionUpdating] = useState(false);
+  const [arrhesUpdating, setArrhesUpdating] = useState(false);
+  const [dateSaving, setDateSaving] = useState<"reception" | "arrhes" | null>(null);
+  const [receptionDateInput, setReceptionDateInput] = useState("");
+  const [arrhesPaymentDateInput, setArrhesPaymentDateInput] = useState("");
 
   const load = async () => {
     if (!id) return;
@@ -21,10 +27,86 @@ const ContratDetailPage = () => {
     load().catch((err) => setError(err.message));
   }, [id]);
 
+  useEffect(() => {
+    setReceptionDateInput(toDateInputValue(contrat?.date_reception_contrat));
+    setArrhesPaymentDateInput(toDateInputValue(contrat?.date_paiement_arrhes));
+  }, [contrat?.date_reception_contrat, contrat?.date_paiement_arrhes]);
+
   const regenerate = async () => {
     if (!id) return;
     await apiFetch(`/contracts/${id}/regenerate`, { method: "POST" });
     await load();
+  };
+
+  const toggleReception = async () => {
+    if (!id || !contrat) return;
+    const nextStatus = contrat.statut_reception_contrat === "recu" ? "non_recu" : "recu";
+    setReceptionUpdating(true);
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${id}/reception`, {
+        method: "PATCH",
+        json: { statut_reception_contrat: nextStatus },
+      });
+      setError(null);
+      setContrat(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setReceptionUpdating(false);
+    }
+  };
+
+  const toggleArrhes = async () => {
+    if (!id || !contrat) return;
+    const nextStatus = contrat.statut_paiement_arrhes === "recu" ? "non_recu" : "recu";
+    setArrhesUpdating(true);
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${id}/arrhes`, {
+        method: "PATCH",
+        json: { statut_paiement_arrhes: nextStatus },
+      });
+      setError(null);
+      setContrat(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setArrhesUpdating(false);
+    }
+  };
+
+  const saveTrackingDate = async (field: "reception" | "arrhes") => {
+    if (!id) return;
+    setDateSaving(field);
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${id}/tracking-dates`, {
+        method: "PATCH",
+        json:
+          field === "reception"
+            ? { date_reception_contrat: receptionDateInput || null }
+            : { date_paiement_arrhes: arrhesPaymentDateInput || null },
+      });
+      setError(null);
+      setContrat(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDateSaving(null);
+    }
+  };
+
+  const handleEmailClick = async (event: MouseEvent<HTMLAnchorElement>, targetHref: string) => {
+    event.preventDefault();
+    if (!id) return;
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${id}/email-sent`, {
+        method: "PATCH",
+      });
+      setError(null);
+      setContrat(updated);
+      window.location.href = targetHref;
+    } catch (err) {
+      setError((err as Error).message);
+    }
   };
 
   const downloadPdf = () => {
@@ -36,12 +118,15 @@ const ContratDetailPage = () => {
     );
   };
 
-  if (error) return <div className="note">{error}</div>;
+  if (error && !contrat) return <div className="note">{error}</div>;
   if (!contrat) return <div>Chargement...</div>;
 
+  const contractReceived = contrat.statut_reception_contrat === "recu";
   const arrhesPaid = contrat.statut_paiement_arrhes === "recu";
   const email = contrat.locataire_email;
   const phoneHref = contrat.locataire_tel ? contrat.locataire_tel.replace(/\s+/g, "") : "";
+  const receptionDateEnabled = contractReceived || Boolean(receptionDateInput);
+  const arrhesDateEnabled = arrhesPaid || Boolean(arrhesPaymentDateInput);
   const pdfVersion = contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
   const pdfUrl = `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
   const absolutePdfUrl = new URL(pdfUrl, window.location.origin).toString();
@@ -64,6 +149,7 @@ const ContratDetailPage = () => {
 
   return (
     <div>
+      {error ? <div className="note">{error}</div> : null}
       <Link to="/contrats" className="back-link">
         Retour
       </Link>
@@ -80,7 +166,9 @@ const ContratDetailPage = () => {
               Créer facture
             </Link>
             {mailHref ? (
-              <a href={mailHref}>Envoyer contrat</a>
+              <a href={mailHref} onClick={(event) => handleEmailClick(event, mailHref)}>
+                Envoyer contrat
+              </a>
             ) : (
               <button type="button" disabled title="Email locataire non renseigné">
                 Envoyer contrat
@@ -119,15 +207,90 @@ const ContratDetailPage = () => {
             </div>
           </div>
 
+          <div className={`arrhes-card ${contractReceived ? "arrhes-card--paid" : "arrhes-card--pending"}`}>
+            <div className="arrhes-label">Contrat signé</div>
+            <div className="switch-group">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={contractReceived}
+                  disabled={receptionUpdating}
+                  onChange={toggleReception}
+                />
+                <span className="slider" />
+              </label>
+              <span>{contractReceived ? "Reçu en retour" : "En attente de retour"}</span>
+            </div>
+            <div className={`arrhes-status ${contractReceived ? "arrhes-status--paid" : "arrhes-status--pending"}`}>
+              {contractReceived ? "Reçu" : "Non reçu"}
+            </div>
+            {contrat.date_reception_contrat ? (
+              <div className="arrhes-meta">Date enregistrée: {formatDate(contrat.date_reception_contrat)}</div>
+            ) : null}
+            <label className="field">
+              Date de réception du contrat
+              <div className="field-row field-row--compact">
+                <input
+                  type="date"
+                  value={receptionDateInput}
+                  disabled={!receptionDateEnabled}
+                  onChange={(e) => setReceptionDateInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={!receptionDateEnabled || dateSaving === "reception"}
+                  onClick={() => saveTrackingDate("reception")}
+                >
+                  {dateSaving === "reception" ? "Enregistrement..." : "Enregistrer"}
+                </button>
+              </div>
+            </label>
+          </div>
+
           <div className={`arrhes-card ${arrhesPaid ? "arrhes-card--paid" : "arrhes-card--pending"}`}>
             <div className="arrhes-label">Arrhes</div>
             <div className="arrhes-amount">{formatEuro(contrat.arrhes_montant)}</div>
+            <div className="switch-group">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={arrhesPaid}
+                  disabled={arrhesUpdating}
+                  onChange={toggleArrhes}
+                />
+                <span className="slider" />
+              </label>
+              <span>{arrhesPaid ? "Payées" : "Non payées"}</span>
+            </div>
             <div className={`arrhes-status ${arrhesPaid ? "arrhes-status--paid" : "arrhes-status--pending"}`}>
               {arrhesPaid ? "Payées" : "Non payées"}
             </div>
             <div className="arrhes-meta">
               À régler avant le {formatDate(contrat.arrhes_date_limite)}
             </div>
+            {contrat.date_paiement_arrhes ? (
+              <div className="arrhes-meta">Date de paiement: {formatDate(contrat.date_paiement_arrhes)}</div>
+            ) : null}
+            <label className="field">
+              Date de paiement des arrhes
+              <div className="field-row field-row--compact">
+                <input
+                  type="date"
+                  value={arrhesPaymentDateInput}
+                  disabled={!arrhesDateEnabled}
+                  onChange={(e) => setArrhesPaymentDateInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={!arrhesDateEnabled || dateSaving === "arrhes"}
+                  onClick={() => saveTrackingDate("arrhes")}
+                >
+                  {dateSaving === "arrhes" ? "Enregistrement..." : "Enregistrer"}
+                </button>
+              </div>
+            </label>
           </div>
 
           <div className="detail-block detail-block--contact">
@@ -144,6 +307,10 @@ const ContratDetailPage = () => {
               ) : (
                 <span className="detail-value">—</span>
               )}
+            </div>
+            <div className="detail-item">
+              <span className="detail-label">Dernier envoi email</span>
+              <span className="detail-value">{contrat.date_envoi_email ? formatDate(contrat.date_envoi_email) : "—"}</span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Téléphone</span>
