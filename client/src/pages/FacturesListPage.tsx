@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Facture, Gite } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
-import { buildMailtoHref } from "../utils/documentEmail";
+import { buildDocumentMailtoHref } from "../utils/documentEmail";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const FacturesListPage = () => {
@@ -158,10 +158,13 @@ const FacturesListPage = () => {
             {factures.map((facture) => {
               const totalMontant = Number(facture.solde_montant ?? 0) + Number(facture.arrhes_montant ?? 0);
               const pdfUrl = new URL(`/api/invoices/${facture.id}/pdf`, window.location.origin).toString();
-              const mailHref = buildMailtoHref({
+              const mailHref = buildDocumentMailtoHref({
                 recipient: facture.locataire_email,
-                subject: `Facture ${facture.numero_facture}`,
-                body: `Bonjour,\n\nVoici votre facture :\n${pdfUrl}`,
+                documentType: "facture",
+                documentNumber: facture.numero_facture,
+                documentUrl: pdfUrl,
+                locataireNom: facture.locataire_nom,
+                giteNom: facture.gite?.nom,
               });
               return (
                 <tr key={facture.id}>
