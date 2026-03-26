@@ -17,14 +17,14 @@ export const buildMailtoHref = ({ recipient, subject, body }: BuildMailtoHrefPar
   const to = String(recipient ?? "").trim();
   if (!to) return null;
 
-  const params = new URLSearchParams();
   const trimmedSubject = subject.trim();
   const trimmedBody = String(body ?? "").trim();
+  const queryParts: string[] = [];
 
-  if (trimmedSubject) params.set("subject", trimmedSubject);
-  if (trimmedBody) params.set("body", trimmedBody);
+  if (trimmedSubject) queryParts.push(`subject=${encodeURIComponent(trimmedSubject)}`);
+  if (trimmedBody) queryParts.push(`body=${encodeURIComponent(trimmedBody)}`);
 
-  const query = params.toString();
+  const query = queryParts.join("&");
   return `mailto:${encodeURIComponent(to)}${query ? `?${query}` : ""}`;
 };
 

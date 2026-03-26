@@ -3257,7 +3257,7 @@ const ReservationsPage = () => {
               className="reservations-nightly-field__input"
               type="number"
               min={0}
-              step="0.01"
+              step={1}
               value={newRow.prix_par_nuit}
               onChange={(event) =>
                 updateNewRow(monthIndex, (prev) =>
@@ -3314,7 +3314,7 @@ const ReservationsPage = () => {
             data-grid-col={6}
             type="number"
             min={0}
-            step="0.01"
+            step={1}
             value={newRow.prix_total}
             onChange={(event) =>
               updateNewRow(monthIndex, (prev) =>
@@ -4321,7 +4321,7 @@ const ReservationsPage = () => {
                                     className="reservations-nightly-field__input"
                                     type="number"
                                     min={0}
-                                    step="0.01"
+                                    step={1}
                                     value={draft.prix_par_nuit}
                                     autoFocus={!isEditing}
                                     onChange={(event) => {
@@ -4419,7 +4419,7 @@ const ReservationsPage = () => {
                                   data-inline-field={!isEditing ? "prix_total" : undefined}
                                   type="number"
                                   min={0}
-                                  step="0.01"
+                                  step={1}
                                   value={draft.prix_total}
                                   autoFocus={!isEditing}
                                   onChange={(event) => {
@@ -4906,7 +4906,7 @@ const ReservationsPage = () => {
                                                 <input
                                                   type="number"
                                                   min={0}
-                                                  step="0.01"
+                                                  step={1}
                                                   value={optionDraft.draps?.prix_unitaire ?? optionGite.options_draps_par_lit}
                                                   disabled={!optionDraft.draps?.enabled}
                                                   onChange={(event) =>
@@ -5194,7 +5194,7 @@ const ReservationsPage = () => {
                                                   type="number"
                                                   min={0}
                                                   max={draft.commission_channel_mode === "percent" ? 99.99 : undefined}
-                                                  step="0.01"
+                                                  step={1}
                                                   value={draft.commission_channel_value}
                                                   onChange={(event) =>
                                                     updateExistingField(reservation, (prev) => ({
@@ -5213,7 +5213,7 @@ const ReservationsPage = () => {
                                               <input
                                                 type="number"
                                                 min={0}
-                                                step="0.01"
+                                                step={1}
                                                 value={draft.remise_montant}
                                                 onChange={(event) =>
                                                   updateExistingField(reservation, (prev) => ({

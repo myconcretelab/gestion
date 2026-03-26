@@ -2147,7 +2147,7 @@ const CalendrierPage = () => {
                     <input
                       type="number"
                       min={0}
-                      step="0.01"
+                      step={1}
                       inputMode="decimal"
                       value={quickReservationDraft.prix_par_nuit}
                       onChange={(event) => handleQuickReservationFieldChange("prix_par_nuit", event.target.value)}
