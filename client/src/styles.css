@@ -5976,6 +5976,31 @@ button.warning {
   color: #374151;
 }
 
+.switch-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.switch-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.contracts-cell-with-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.contrats-return-pill {
+  width: fit-content;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 .table-actions-cell {
   text-align: right;
 }

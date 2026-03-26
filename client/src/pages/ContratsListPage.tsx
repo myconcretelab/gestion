@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
@@ -14,6 +14,7 @@ const ContratsListPage = () => {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [receptionUpdating, setReceptionUpdating] = useState<Record<string, boolean>>({});
   const [arrhesUpdating, setArrhesUpdating] = useState<Record<string, boolean>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -66,6 +67,26 @@ const ContratsListPage = () => {
     };
   }, [debouncedQueryString]);
 
+  const toggleReception = async (contrat: Contrat) => {
+    const nextStatus = contrat.statut_reception_contrat === "recu" ? "non_recu" : "recu";
+    setReceptionUpdating((prev) => ({ ...prev, [contrat.id]: true }));
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${contrat.id}/reception`, {
+        method: "PATCH",
+        json: { statut_reception_contrat: nextStatus },
+      });
+      setContrats((prev) => prev.map((item) => (item.id === contrat.id ? updated : item)));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setReceptionUpdating((prev) => {
+        const next = { ...prev };
+        delete next[contrat.id];
+        return next;
+      });
+    }
+  };
+
   const toggleArrhes = async (contrat: Contrat) => {
     const nextStatus = contrat.statut_paiement_arrhes === "recu" ? "non_recu" : "recu";
     setArrhesUpdating((prev) => ({ ...prev, [contrat.id]: true }));
@@ -83,6 +104,20 @@ const ContratsListPage = () => {
         delete next[contrat.id];
         return next;
       });
+    }
+  };
+
+  const handleEmailClick = async (event: MouseEvent<HTMLAnchorElement>, contrat: Contrat, mailHref: string) => {
+    event.preventDefault();
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${contrat.id}/email-sent`, {
+        method: "PATCH",
+      });
+      setError(null);
+      setContrats((prev) => prev.map((item) => (item.id === contrat.id ? updated : item)));
+      window.location.href = mailHref;
+    } catch (err) {
+      setError((err as Error).message);
     }
   };
 
@@ -149,6 +184,7 @@ const ContratsListPage = () => {
               <th>Dates</th>
               <th>Gîte</th>
               <th>Locataire</th>
+              <th>Reçu en retour</th>
               <th>Arrhes payées</th>
               <th>Actions</th>
             </tr>
@@ -181,21 +217,54 @@ const ContratsListPage = () => {
                   <td>
                     {contrat.gite?.nom ?? ""}
                   </td>
-                  <td>{contrat.locataire_nom}</td>
                   <td>
-                    <div className="switch-group switch-group--table">
-                      <label className="switch">
-                        <input
-                          type="checkbox"
-                          checked={contrat.statut_paiement_arrhes === "recu"}
-                          disabled={Boolean(arrhesUpdating[contrat.id])}
-                          onChange={() => toggleArrhes(contrat)}
-                        />
-                        <span className="slider" />
-                      </label>
-                      <span>
-                        {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "Non payées"}
-                      </span>
+                    <div className="contracts-cell-with-pill">
+                      <span>{contrat.locataire_nom}</span>
+                      {contrat.statut_reception_contrat !== "recu" ? (
+                        <span className="reservations-current-pill reservations-current-pill--departure contrats-return-pill">
+                          Retour attendu avant le {formatDate(contrat.arrhes_date_limite)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="switch-cell">
+                      <div className="switch-group switch-group--table">
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={contrat.statut_reception_contrat === "recu"}
+                            disabled={Boolean(receptionUpdating[contrat.id])}
+                            onChange={() => toggleReception(contrat)}
+                          />
+                          <span className="slider" />
+                        </label>
+                        <span>{contrat.statut_reception_contrat === "recu" ? "Reçu" : "En attente"}</span>
+                      </div>
+                      {contrat.statut_reception_contrat === "recu" && contrat.date_reception_contrat ? (
+                        <div className="switch-meta">Date de réception: {formatDate(contrat.date_reception_contrat)}</div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="switch-cell">
+                      <div className="switch-group switch-group--table">
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={contrat.statut_paiement_arrhes === "recu"}
+                            disabled={Boolean(arrhesUpdating[contrat.id])}
+                            onChange={() => toggleArrhes(contrat)}
+                          />
+                          <span className="slider" />
+                        </label>
+                        <span>
+                          {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "Non payées"}
+                        </span>
+                      </div>
+                      {contrat.statut_paiement_arrhes === "recu" && contrat.date_paiement_arrhes ? (
+                        <div className="switch-meta">Date de paiement: {formatDate(contrat.date_paiement_arrhes)}</div>
+                      ) : null}
                     </div>
                   </td>
                   <td className="table-actions-cell">
@@ -204,7 +273,11 @@ const ContratsListPage = () => {
                         Détails
                       </Link>
                       {mailHref ? (
-                        <a className="table-action table-action--neutral" href={mailHref}>
+                        <a
+                          className="table-action table-action--neutral"
+                          href={mailHref}
+                          onClick={(event) => handleEmailClick(event, contrat, mailHref)}
+                        >
                           Email
                         </a>
                       ) : (
