@@ -1103,6 +1103,16 @@
   border-color: #eeeae2;
 }
 
+.calendar-day--school-holiday {
+  background: #fff8d9;
+  border-color: #f0e1a4;
+}
+
+.calendar-day--past.calendar-day--school-holiday {
+  background: #fcf6df;
+  border-color: #e6dbb4;
+}
+
 .calendar-day--ghost.calendar-day--past,
 .calendar-day--ghost.calendar-day--occupied {
   border-color: transparent;
@@ -1134,9 +1144,19 @@
   z-index: 0;
 }
 
+.calendar-day--occupied.calendar-day--school-holiday::before {
+  background: #fff8d9;
+  border-color: #f0e1a4;
+}
+
 .calendar-day--past.calendar-day--occupied::before {
   background: #fafaf8;
   border-color: #eeeae2;
+}
+
+.calendar-day--past.calendar-day--occupied.calendar-day--school-holiday::before {
+  background: #fcf6df;
+  border-color: #e6dbb4;
 }
 
 .calendar-day--occupied.calendar-day--occupied-connected-left::before,

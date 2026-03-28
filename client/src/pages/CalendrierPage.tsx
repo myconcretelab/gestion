@@ -24,6 +24,7 @@ import {
   mergeReservationOptions,
   toNonNegativeInt,
 } from "../utils/reservationOptions";
+import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
 import type { Gite, Reservation } from "../utils/types";
@@ -65,6 +66,7 @@ type CalendarDay = {
   isCurrentMonth: boolean;
   isToday: boolean;
   isPast: boolean;
+  isSchoolHoliday: boolean;
   isOccupied: boolean;
   isConnectedToPrevious: boolean;
   isConnectedToNext: boolean;
@@ -374,12 +376,14 @@ const buildCalendarMonthData = ({
   year,
   monthIndex,
   reservations,
+  schoolHolidayDates,
   todayDate,
   todayIso,
 }: {
   year: number;
   monthIndex: number;
   reservations: Reservation[];
+  schoolHolidayDates: ReadonlySet<string>;
   todayDate: Date;
   todayIso: string;
 }): CalendarMonthData => {
@@ -433,6 +437,7 @@ const buildCalendarMonthData = ({
       isCurrentMonth,
       isToday: isoDate === todayIso,
       isPast: date.getTime() < todayDate.getTime(),
+      isSchoolHoliday: isCurrentMonth && schoolHolidayDates.has(isoDate),
       isOccupied,
       isConnectedToPrevious,
       isConnectedToNext,
@@ -483,6 +488,14 @@ const buildCalendarMonthData = ({
     segments: segmentsByWeek.get(index) ?? [],
   }));
 
+  while (weeks.length > 0) {
+    const lastWeek = weeks[weeks.length - 1];
+    if (lastWeek.days.some((day) => day.isCurrentMonth) || lastWeek.segments.length > 0) {
+      break;
+    }
+    weeks.pop();
+  }
+
   const occupiedNights = monthReservations.reduce((sum, reservation) => sum + getReservationOverlapNights(reservation, monthStart, monthEnd), 0);
   const occupancyRate = daysInMonth > 0 ? occupiedNights / daysInMonth : 0;
 
@@ -526,6 +539,7 @@ const CalendrierPage = () => {
   const [quickReservationSaving, setQuickReservationSaving] = useState(false);
   const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
   const [mobileActionReservationId, setMobileActionReservationId] = useState<string | null>(null);
+  const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
@@ -763,10 +777,7 @@ const CalendrierPage = () => {
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
   const accentColor = selectedGite ? getGiteColor(selectedGite) : "#ff5a5f";
   const todayDate = useMemo(() => parseIsoDate(todayIso), [todayIso]);
-  const selectedRangeExitIso = useMemo(
-    () => (selectedDateRange ? toIsoDate(addUtcDays(parseIsoDate(selectedDateRange.endIso), 1)) : ""),
-    [selectedDateRange]
-  );
+  const selectedRangeExitIso = useMemo(() => (selectedDateRange ? selectedDateRange.endIso : ""), [selectedDateRange]);
   const selectedRangeNights = useMemo(() => {
     if (!selectedDateRange || !selectedRangeExitIso) return 0;
     return Math.round((parseIsoDate(selectedRangeExitIso).getTime() - parseIsoDate(selectedDateRange.startIso).getTime()) / DAY_MS);
@@ -783,7 +794,7 @@ const CalendrierPage = () => {
     [quickReservationAdultsMax]
   );
   const quickReservationOptionCountMax = useMemo(() => getQuickReservationOptionCountMax(selectedGite), [selectedGite]);
-  const canUseQuickReservation = usesViewportScroll && Boolean(selectedDateRange && selectedGiteId);
+  const canUseQuickReservation = usesViewportScroll && Boolean(selectedDateRange && selectedGiteId && selectedRangeNights > 0);
   const quickReservationEditingReservation = useMemo(
     () => (quickReservationEditingId ? reservations.find((reservation) => reservation.id === quickReservationEditingId) ?? null : null),
     [quickReservationEditingId, reservations]
@@ -807,11 +818,34 @@ const CalendrierPage = () => {
         .sort((left, right) => parseIsoDate(left.date_entree).getTime() - parseIsoDate(right.date_entree).getTime()),
     [reservations, selectedGiteId]
   );
+  const schoolHolidayRangeFrom = `${year}-01-01`;
+  const schoolHolidayRangeTo = `${year}-12-31`;
+  const schoolHolidayDates = useMemo(() => buildSchoolHolidayDateSet(schoolHolidays), [schoolHolidays]);
 
   const mobileActionReservation = useMemo(
     () => (mobileActionReservationId ? reservationsForGite.find((reservation) => reservation.id === mobileActionReservationId) ?? null : null),
     [mobileActionReservationId, reservationsForGite]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    apiFetch<SchoolHoliday[]>(
+      `/school-holidays?from=${encodeURIComponent(schoolHolidayRangeFrom)}&to=${encodeURIComponent(schoolHolidayRangeTo)}&zone=B`
+    )
+      .then((rows) => {
+        if (cancelled) return;
+        setSchoolHolidays(rows);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSchoolHolidays([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolHolidayRangeFrom, schoolHolidayRangeTo]);
 
   const calendarMonths = useMemo(
     () =>
@@ -820,11 +854,12 @@ const CalendrierPage = () => {
           year,
           monthIndex,
           reservations: reservationsForGite,
+          schoolHolidayDates,
           todayDate,
           todayIso,
         })
       ),
-    [reservationsForGite, todayDate, todayIso, year]
+    [reservationsForGite, schoolHolidayDates, todayDate, todayIso, year]
   );
 
   const visibleMonth = calendarMonths[activeMonthIndex] ?? calendarMonths[0] ?? null;
@@ -918,7 +953,7 @@ const CalendrierPage = () => {
   );
 
   const buildQuickReservationDraft = useCallback((): QuickReservationDraft | null => {
-    if (!selectedDateRange || !selectedGiteId) return null;
+    if (!selectedDateRange || !selectedGiteId || selectedRangeNights <= 0) return null;
 
     const defaultAdults = Math.max(1, selectedGite?.nb_adultes_habituel ?? 2);
 
@@ -926,7 +961,7 @@ const CalendrierPage = () => {
       hote_nom: "",
       telephone: "",
       date_entree: selectedDateRange.startIso,
-      date_sortie: toIsoDate(addUtcDays(parseIsoDate(selectedDateRange.endIso), 1)),
+      date_sortie: selectedDateRange.endIso,
       nb_adultes: clampQuickReservationAdults(defaultAdults, selectedGite),
       prix_par_nuit: quickReservationSuggestedNightly > 0 ? String(quickReservationSuggestedNightly) : "",
       source_paiement: DEFAULT_RESERVATION_SOURCE,
@@ -935,7 +970,7 @@ const CalendrierPage = () => {
       option_draps: 0,
       option_serviettes: 0,
     };
-  }, [quickReservationSuggestedNightly, selectedDateRange, selectedGite, selectedGiteId]);
+  }, [quickReservationSuggestedNightly, selectedDateRange, selectedGite, selectedGiteId, selectedRangeNights]);
 
   const buildQuickReservationDraftFromReservation = useCallback(
     (reservation: Reservation): QuickReservationDraft => ({
@@ -975,18 +1010,18 @@ const CalendrierPage = () => {
 
   const openReservationInsertFromSelection = useCallback(
     (monthNumber: number) => {
-      if (!selectedDateRange || !selectedGiteId) return;
+      if (!selectedDateRange || !selectedGiteId || selectedRangeNights <= 0) return;
 
       const params = new URLSearchParams();
       params.set("create", "1");
       params.set("entry", selectedDateRange.startIso);
-      params.set("exit", toIsoDate(addUtcDays(parseIsoDate(selectedDateRange.endIso), 1)));
+      params.set("exit", selectedDateRange.endIso);
       params.set("year", String(year));
       params.set("month", String(monthNumber));
       params.set("tab", selectedGiteId);
       navigate(`/reservations?${params.toString()}`);
     },
-    [navigate, selectedDateRange, selectedGiteId, year]
+    [navigate, selectedDateRange, selectedGiteId, selectedRangeNights, year]
   );
 
   const openReservationInListing = useCallback(
@@ -1768,6 +1803,7 @@ const CalendrierPage = () => {
                                   className={[
                                     "calendar-day",
                                     day.isCurrentMonth ? "" : "calendar-day--ghost",
+                                    day.isSchoolHoliday ? "calendar-day--school-holiday" : "",
                                     day.isOccupied ? "calendar-day--occupied" : "",
                                     day.isPast ? "calendar-day--past" : "",
                                     day.isConnectedToPrevious ? "calendar-day--occupied-connected-left" : "",
@@ -1797,7 +1833,7 @@ const CalendrierPage = () => {
                                       <div className="calendar-day__number-wrap">
                                         <span className="calendar-day__number">{day.dayNumber}</span>
                                       </div>
-                                      {isSelectionEnd ? (
+                                      {isSelectionEnd && selectedRangeNights > 0 ? (
                                         <button
                                           type="button"
                                           className="calendar-day__add-button"
