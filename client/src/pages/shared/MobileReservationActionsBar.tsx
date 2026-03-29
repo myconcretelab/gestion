@@ -6,6 +6,10 @@ type MobileReservationActionsBarProps = {
   open: boolean;
   title: string;
   subtitle?: string;
+  details?: Array<{
+    label: string;
+    value: string;
+  }>;
   mode?: MobileReservationActionsBarMode;
   onClose: () => void;
   onEdit?: () => void;
@@ -141,6 +145,7 @@ const MobileReservationActionsBar = ({
   open,
   title,
   subtitle,
+  details,
   mode = "actions",
   onClose,
   onEdit,
@@ -160,7 +165,17 @@ const MobileReservationActionsBar = ({
         <div className="mobile-reservation-actions__header">
           <div className="mobile-reservation-actions__copy">
             <strong>{title}</strong>
-            {subtitle ? <span>{subtitle}</span> : null}
+            {subtitle ? <span className="mobile-reservation-actions__subtitle">{subtitle}</span> : null}
+            {details?.length ? (
+              <div className="mobile-reservation-actions__details">
+                {details.map((detail) => (
+                  <div key={`${detail.label}-${detail.value}`} className="mobile-reservation-actions__detail">
+                    <span className="mobile-reservation-actions__detail-label">{detail.label}</span>
+                    <strong className="mobile-reservation-actions__detail-value">{detail.value}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
           <button
             type="button"

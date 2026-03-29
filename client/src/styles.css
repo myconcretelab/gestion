@@ -2249,7 +2249,7 @@
 .mobile-reservation-actions__copy {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 6px;
 }
 
 .mobile-reservation-actions__copy strong {
@@ -2257,10 +2257,40 @@
   line-height: 1.15;
 }
 
-.mobile-reservation-actions__copy span {
+.mobile-reservation-actions__subtitle {
   font-size: 0.76rem;
   line-height: 1.35;
   color: rgba(255, 255, 255, 0.72);
+}
+
+.mobile-reservation-actions__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-reservation-actions__detail {
+  min-width: 92px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mobile-reservation-actions__detail-label {
+  font-size: 0.62rem;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.mobile-reservation-actions__detail-value {
+  font-size: 0.84rem;
+  line-height: 1.2;
+  color: #ffffff;
 }
 
 .mobile-reservation-actions__close,
@@ -2598,7 +2628,7 @@
 
   .calendar-hero,
   .calendar-sidebar__card {
-    padding: 14px;
+    padding: 12px;
     border-radius: 22px;
   }
 
@@ -2614,22 +2644,31 @@
   }
 
   .calendar-hero {
-    gap: 12px;
+    gap: 8px;
   }
 
   .calendar-hero__header {
-    gap: 12px;
+    gap: 8px;
   }
 
   .calendar-month-trigger {
-    gap: 10px;
-    padding: 2px 0;
-    font-size: clamp(1.45rem, 8vw, 2rem);
+    max-width: 100%;
+    gap: 8px;
+    padding: 1px 0;
+    font-size: clamp(1.2rem, 6.8vw, 1.7rem);
+    line-height: 1.12;
+  }
+
+  .calendar-month-trigger span {
+    display: block;
+    padding-block: 2px;
+    white-space: nowrap;
   }
 
   .calendar-month-trigger svg {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
   }
 
   .calendar-hero__actions {
@@ -2641,14 +2680,14 @@
 
   .calendar-pill-select {
     grid-column: auto;
-    min-height: 44px;
+    min-height: 42px;
     min-width: 0;
-    padding: 0 14px;
+    padding: 0 12px;
   }
 
   .calendar-year-switch,
   .calendar-today-button {
-    min-height: 44px;
+    min-height: 42px;
     width: auto;
     justify-content: center;
   }
@@ -2657,7 +2696,7 @@
     min-width: 0;
     width: 100%;
     text-align: left;
-    font-size: 0.94rem;
+    font-size: 0.9rem;
   }
 
   .calendar-year-switch {
@@ -2665,7 +2704,7 @@
   }
 
   .calendar-today-button {
-    padding: 0 16px;
+    padding: 0 14px;
     border-color: color-mix(in srgb, var(--primary) 72%, #ffffff 28%);
     background: linear-gradient(135deg, var(--primary) 0%, #ff385c 100%);
     color: #ffffff;
@@ -7605,7 +7644,7 @@ button.warning {
 
   .calendar-hero,
   .calendar-sidebar__card {
-    padding: 12px;
+    padding: 10px;
     border-radius: 20px;
   }
 
@@ -7709,7 +7748,18 @@ button.warning {
   }
 
   .calendar-month-trigger {
-    font-size: clamp(1.25rem, 8vw, 1.7rem);
+    gap: 6px;
+    font-size: clamp(1.02rem, 6.6vw, 1.34rem);
+    line-height: 1.14;
+  }
+
+  .calendar-month-trigger span {
+    padding-block: 2px 3px;
+  }
+
+  .calendar-month-trigger svg {
+    width: 16px;
+    height: 16px;
   }
 
   .calendar-year-switch {
@@ -7729,8 +7779,9 @@ button.warning {
   }
 
   .calendar-today-button {
-    padding: 0 14px;
-    font-size: 0.9rem;
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 0.84rem;
   }
 
   .calendar-month-section__header {
@@ -7795,6 +7846,36 @@ button.warning {
   .mobile-reservation-actions__panel {
     border-radius: 20px;
     padding: 10px;
+  }
+
+  .mobile-reservation-actions__copy {
+    gap: 5px;
+  }
+
+  .mobile-reservation-actions__copy strong {
+    font-size: 0.92rem;
+  }
+
+  .mobile-reservation-actions__subtitle {
+    font-size: 0.72rem;
+  }
+
+  .mobile-reservation-actions__details {
+    gap: 6px;
+  }
+
+  .mobile-reservation-actions__detail {
+    min-width: 0;
+    flex: 1 1 0;
+    padding: 9px 13px 9px 11px;
+  }
+
+  .mobile-reservation-actions__detail-label {
+    font-size: 0.58rem;
+  }
+
+  .mobile-reservation-actions__detail-value {
+    font-size: 0.8rem;
   }
 
   .mobile-reservation-actions__buttons {
