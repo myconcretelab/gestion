@@ -250,6 +250,7 @@ const formatShortDate = (value: string) =>
     month: "short",
     timeZone: "UTC",
   });
+const formatStayNights = (nights: number) => `${nights} nuit${nights > 1 ? "s" : ""}`;
 const formatLongDate = (value: string) =>
   parseIsoDate(value).toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -1775,6 +1776,10 @@ const TodayPage = () => {
           open
           title={getReservationGuestName(mobileActionReservation)}
           subtitle={`${formatShortDate(mobileActionReservation.date_entree)} → ${formatShortDate(mobileActionReservation.date_sortie)}`}
+          details={[
+            { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
+            { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
+          ]}
           onClose={() => setMobileActionState(null)}
           onEdit={() => openQuickReservationEditSheet(mobileActionReservation)}
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
