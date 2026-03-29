@@ -128,7 +128,7 @@ router.get("/overview", async (req, res, next) => {
         where: {
           gite_id: { not: null },
           date_entree: { lt: endExclusive },
-          date_sortie: { gt: today },
+          date_sortie: { gte: today },
         },
         include: {
           gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
@@ -139,7 +139,7 @@ router.get("/overview", async (req, res, next) => {
         where: {
           gite_id: null,
           date_entree: { lt: endExclusive },
-          date_sortie: { gt: today },
+          date_sortie: { gte: today },
         },
       }),
       buildRecentAppActivity(recentActivitySince),
