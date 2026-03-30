@@ -326,37 +326,39 @@ const MobileReservationSheet = ({
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="calendar-quick-create-sheet__handle" aria-hidden="true" />
-        <div className="calendar-quick-create-sheet__header">
-          <div>
-            <p className="calendar-quick-create-sheet__eyebrow">{title || "Réservation"}</p>
-            <h2 id={titleId}>{mode === "edit" ? "Réservation rapide" : "Nouvelle réservation"}</h2>
+        <div className="calendar-quick-create-sheet__top">
+          <div className="calendar-quick-create-sheet__handle" aria-hidden="true" />
+          <div className="calendar-quick-create-sheet__header">
+            <div>
+              <p className="calendar-quick-create-sheet__eyebrow">{title || "Réservation"}</p>
+              <h2 id={titleId}>{mode === "edit" ? "Réservation rapide" : "Nouvelle réservation"}</h2>
+            </div>
+            <button
+              type="button"
+              className="calendar-quick-create-sheet__close"
+              aria-label={mode === "edit" ? "Fermer l'édition rapide" : "Fermer la création rapide"}
+              onClick={onRequestClose}
+              disabled={saving}
+            >
+              ×
+            </button>
           </div>
-          <button
-            type="button"
-            className="calendar-quick-create-sheet__close"
-            aria-label={mode === "edit" ? "Fermer l'édition rapide" : "Fermer la création rapide"}
-            onClick={onRequestClose}
-            disabled={saving}
-          >
-            ×
-          </button>
-        </div>
 
-        <div className="calendar-quick-create-sheet__summary">
-          <div className="calendar-quick-create-sheet__summary-main">
-            <strong className="calendar-quick-create-sheet__summary-dates">
-              {dateSummary.startIso && dateSummary.exitIso
-                ? `${formatShortDate(dateSummary.startIso)} → ${formatShortDate(dateSummary.exitIso)}`
-                : "Dates à renseigner"}
-            </strong>
-            <span className="calendar-quick-create-sheet__summary-pill">
-              {dateSummary.nights} nuit{dateSummary.nights > 1 ? "s" : ""}
-            </span>
-            {savedMessage ? <span className="calendar-quick-create-sheet__saved-pill">{savedMessage}</span> : null}
-          </div>
-          <div className="calendar-quick-create-sheet__summary-total">
-            <strong>{formattedTotal}</strong>
+          <div className="calendar-quick-create-sheet__summary">
+            <div className="calendar-quick-create-sheet__summary-main">
+              <strong className="calendar-quick-create-sheet__summary-dates">
+                {dateSummary.startIso && dateSummary.exitIso
+                  ? `${formatShortDate(dateSummary.startIso)} → ${formatShortDate(dateSummary.exitIso)}`
+                  : "Dates à renseigner"}
+              </strong>
+              <span className="calendar-quick-create-sheet__summary-pill">
+                {dateSummary.nights} nuit{dateSummary.nights > 1 ? "s" : ""}
+              </span>
+              {savedMessage ? <span className="calendar-quick-create-sheet__saved-pill">{savedMessage}</span> : null}
+            </div>
+            <div className="calendar-quick-create-sheet__summary-total">
+              <strong>{formattedTotal}</strong>
+            </div>
           </div>
         </div>
 
