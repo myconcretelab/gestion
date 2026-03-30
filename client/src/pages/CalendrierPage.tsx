@@ -27,6 +27,7 @@ import {
 import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
+import MobileReservationSheet from "./shared/MobileReservationSheet";
 import type { Gite, Reservation } from "../utils/types";
 
 const MONTHS = [
@@ -160,6 +161,7 @@ type QuickReservationSmsSettings = {
 };
 
 type QuickReservationMode = "create" | "edit";
+type QuickReservationErrorField = keyof QuickReservationDraft | null;
 
 const normalizeIsoDate = (value: string) => value.slice(0, 10);
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -540,6 +542,8 @@ const CalendrierPage = () => {
   );
   const [quickReservationSaving, setQuickReservationSaving] = useState(false);
   const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
+  const [quickReservationErrorField, setQuickReservationErrorField] = useState<QuickReservationErrorField>(null);
+  const [quickReservationSaved, setQuickReservationSaved] = useState(false);
   const [mobileActionReservationId, setMobileActionReservationId] = useState<string | null>(null);
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [loading, setLoading] = useState(true);
@@ -748,32 +752,9 @@ const CalendrierPage = () => {
     setQuickReservationEditingId(null);
     setQuickReservationSmsSelection([]);
     setQuickReservationError(null);
+    setQuickReservationErrorField(null);
+    setQuickReservationSaved(false);
   }, [quickReservationMode, selectedDateRange]);
-
-  useEffect(() => {
-    if (!quickReservationOpen || !usesViewportScroll) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !quickReservationSaving) {
-        setQuickReservationOpen(false);
-        setQuickReservationDraft(null);
-        setQuickReservationMode("create");
-        setQuickReservationEditingId(null);
-        setQuickReservationSmsSelection([]);
-        setQuickReservationError(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [quickReservationOpen, quickReservationSaving, usesViewportScroll]);
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
@@ -1008,6 +989,8 @@ const CalendrierPage = () => {
     setQuickReservationEditingId(null);
     setQuickReservationSmsSelection([]);
     setQuickReservationError(null);
+    setQuickReservationErrorField(null);
+    setQuickReservationSaved(false);
   }, []);
 
   const openReservationInsertFromSelection = useCallback(
@@ -1048,6 +1031,8 @@ const CalendrierPage = () => {
     setQuickReservationDraft(nextDraft);
     setQuickReservationSmsSelection([]);
     setQuickReservationError(null);
+    setQuickReservationErrorField(null);
+    setQuickReservationSaved(false);
     setQuickReservationOpen(true);
   }, [buildQuickReservationDraft]);
 
@@ -1061,6 +1046,8 @@ const CalendrierPage = () => {
       setQuickReservationDraft(buildQuickReservationDraftFromReservation(reservation));
       setQuickReservationSmsSelection([]);
       setQuickReservationError(null);
+      setQuickReservationErrorField(null);
+      setQuickReservationSaved(false);
       setSelectedDateRange(null);
       setQuickReservationOpen(true);
     },
@@ -1077,6 +1064,8 @@ const CalendrierPage = () => {
         setQuickReservationEditingId(null);
         setQuickReservationSmsSelection([]);
         setQuickReservationError(null);
+        setQuickReservationErrorField(null);
+        setQuickReservationSaved(false);
         setMobileActionReservationId((current) => (current === reservation.id ? null : reservation.id));
         return;
       }
@@ -1100,6 +1089,9 @@ const CalendrierPage = () => {
 
   const handleQuickReservationFieldChange = useCallback(
     (field: keyof QuickReservationDraft, value: string | number | boolean) => {
+      setQuickReservationSaved(false);
+      setQuickReservationError(null);
+      setQuickReservationErrorField(null);
       setQuickReservationDraft((current) => {
         if (!current) return current;
         if (field === "telephone") {
@@ -1143,36 +1135,49 @@ const CalendrierPage = () => {
 
     if (!hostName) {
       setQuickReservationError("Renseigne le nom de l'hôte.");
+      setQuickReservationErrorField("hote_nom");
+      setQuickReservationSaved(false);
       return;
     }
 
     if (!entryDate || !exitDate) {
       setQuickReservationError("Renseigne des dates valides.");
+      setQuickReservationErrorField(!entryDate ? "date_entree" : "date_sortie");
+      setQuickReservationSaved(false);
       return;
     }
 
     if (exitDate.getTime() <= entryDate.getTime()) {
       setQuickReservationError("La date de sortie doit être postérieure à la date d'entrée.");
+      setQuickReservationErrorField("date_sortie");
+      setQuickReservationSaved(false);
       return;
     }
 
     if (!Number.isFinite(nightly) || nightly < 0) {
       setQuickReservationError("Renseigne un prix par nuit valide.");
+      setQuickReservationErrorField("prix_par_nuit");
+      setQuickReservationSaved(false);
       return;
     }
 
     setQuickReservationSaving(true);
     setQuickReservationError(null);
+    setQuickReservationErrorField(null);
 
     try {
+      let persistedReservationId: string | null = null;
+
       if (quickReservationMode === "edit") {
         const existingReservation = quickReservationEditingReservation;
         if (!existingReservation) {
           setQuickReservationError("Réservation introuvable.");
+          setQuickReservationErrorField(null);
+          setQuickReservationSaving(false);
           return;
         }
 
-        await apiFetch<Reservation>(`/reservations/${existingReservation.id}`, {
+        const updatedReservation = await apiFetch<Reservation>(`/reservations/${existingReservation.id}`, {
           method: "PUT",
           json: {
             gite_id: existingReservation.gite_id ?? selectedGiteId,
@@ -1196,6 +1201,7 @@ const CalendrierPage = () => {
             options: quickOptions,
           },
         });
+        persistedReservationId = updatedReservation.id;
       } else {
         const created = await apiFetch<ReservationCreateResponse>("/reservations", {
           method: "POST",
@@ -1216,25 +1222,29 @@ const CalendrierPage = () => {
             options: quickOptions,
           },
         });
+        persistedReservationId = created.id;
         startAirbnbCalendarRefreshPolling(created.airbnb_calendar_refresh);
       }
 
       await loadData();
-      closeQuickReservationSheet();
       if (quickReservationMode === "create") {
+        setQuickReservationMode("edit");
         setSelectedDateRange(null);
       }
+      setQuickReservationEditingId(persistedReservationId);
+      setQuickReservationSaved(true);
     } catch (err) {
       if (isApiError(err)) {
         setQuickReservationError(err.message);
       } else {
         setQuickReservationError("Impossible d'enregistrer la réservation.");
       }
+      setQuickReservationErrorField(null);
+      setQuickReservationSaved(false);
     } finally {
       setQuickReservationSaving(false);
     }
   }, [
-    closeQuickReservationSheet,
     loadData,
     quickReservationDraft,
     quickReservationEditingReservation,
@@ -1244,6 +1254,16 @@ const CalendrierPage = () => {
     selectedGiteId,
     startAirbnbCalendarRefreshPolling,
   ]);
+
+  const handleQuickReservationPrimaryAction = useCallback(() => {
+    if (quickReservationSaved) {
+      if (!quickReservationSmsHref) return;
+      window.location.href = quickReservationSmsHref;
+      return;
+    }
+
+    void saveQuickReservation();
+  }, [quickReservationSaved, quickReservationSmsHref, saveQuickReservation]);
 
   const quickReservationDateSummary = useMemo(() => {
     if (!quickReservationDraft) {
@@ -2078,336 +2098,52 @@ const CalendrierPage = () => {
         />
       ) : null}
 
-      {usesViewportScroll && quickReservationOpen && quickReservationDraft ? (
-        <div
-          className="calendar-quick-create-sheet"
-          role="presentation"
-          onClick={() => {
-            if (quickReservationSaving) return;
-            closeQuickReservationSheet();
-          }}
-        >
-          <section
-            className="calendar-quick-create-sheet__panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label={quickReservationMode === "edit" ? "Réservation rapide" : "Nouvelle réservation"}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="calendar-quick-create-sheet__handle" aria-hidden="true" />
-            <div className="calendar-quick-create-sheet__header">
-              <p className="calendar-quick-create-sheet__eyebrow">{selectedGite?.nom ?? "Réservation"}</p>
-              <button
-                type="button"
-                className="calendar-quick-create-sheet__close"
-                aria-label={quickReservationMode === "edit" ? "Fermer l'édition rapide" : "Fermer la création rapide"}
-                onClick={closeQuickReservationSheet}
-                disabled={quickReservationSaving}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="calendar-quick-create-sheet__summary">
-              <div className="calendar-quick-create-sheet__summary-main">
-                <strong className="calendar-quick-create-sheet__summary-dates">
-                  {isIsoDateString(quickReservationDateSummary.startIso) && isIsoDateString(quickReservationDateSummary.exitIso)
-                    ? `${formatShortDate(quickReservationDateSummary.startIso)} → ${formatShortDate(quickReservationDateSummary.exitIso)}`
-                    : "Dates à renseigner"}
-                </strong>
-                <span className="calendar-quick-create-sheet__summary-pill">
-                  {quickReservationDateSummary.nights} nuit{quickReservationDateSummary.nights > 1 ? "s" : ""}
-                </span>
-              </div>
-              <div className="calendar-quick-create-sheet__summary-total">
-                <strong>{quickReservationComputedTotal !== null ? formatEuro(quickReservationComputedTotal) : "A calculer"}</strong>
-              </div>
-            </div>
-
-            {quickReservationError ? <p className="calendar-quick-create-sheet__error">{quickReservationError}</p> : null}
-
-            <div className="calendar-quick-create-sheet__form">
-              <section className="calendar-quick-create-sheet__section">
-                <label className="field field--small calendar-quick-create-sheet__host-field">
-                  Hôte
-                  <input
-                    type="text"
-                    value={quickReservationDraft.hote_nom}
-                    placeholder="Nom du voyageur"
-                    onChange={(event) => handleQuickReservationFieldChange("hote_nom", event.target.value)}
-                  />
-                </label>
-
-                <label className="field field--small calendar-quick-create-sheet__host-field">
-                  Téléphone
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    value={quickReservationDraft.telephone}
-                    placeholder="06 12 34 56 78"
-                    onChange={(event) => handleQuickReservationFieldChange("telephone", event.target.value)}
-                  />
-                </label>
-
-                <div className="calendar-quick-create-sheet__dates-band">
-                  <label className="field field--small calendar-quick-create-sheet__host-field">
-                    Entrée
-                    <input
-                      type="date"
-                      value={quickReservationDraft.date_entree}
-                      onChange={(event) => handleQuickReservationFieldChange("date_entree", event.target.value)}
-                    />
-                  </label>
-
-                  <label className="field field--small calendar-quick-create-sheet__host-field">
-                    Sortie
-                    <input
-                      type="date"
-                      value={quickReservationDraft.date_sortie}
-                      onChange={(event) => handleQuickReservationFieldChange("date_sortie", event.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="calendar-quick-create-sheet__stats-grid">
-                  <label className="field field--small calendar-quick-create-sheet__compact-field calendar-quick-create-sheet__compact-field--adults">
-                    <span className="calendar-quick-create-sheet__compact-label">Adultes</span>
-                    <select
-                      value={quickReservationDraft.nb_adultes}
-                      onChange={(event) => handleQuickReservationFieldChange("nb_adultes", Number(event.target.value))}
-                    >
-                      {quickReservationAdultOptions.map((count) => (
-                        <option key={count} value={count}>
-                          {count}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="field field--small calendar-quick-create-sheet__compact-field calendar-quick-create-sheet__compact-field--nightly">
-                    <span className="calendar-quick-create-sheet__compact-label">Prix / nuit</span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      inputMode="decimal"
-                      value={quickReservationDraft.prix_par_nuit}
-                      onChange={(event) => handleQuickReservationFieldChange("prix_par_nuit", event.target.value)}
-                    />
-                  </label>
-
-                  {quickReservationNightlySuggestions.length > 0 ? (
-                    <div className="calendar-quick-create-sheet__prices">
-                      <span className="calendar-quick-create-sheet__compact-label">Tarifs du gîte</span>
-                      <div className="calendar-quick-create-sheet__price-list">
-                        {quickReservationNightlySuggestions.map((price) => {
-                          const isActive = round2(Number(quickReservationDraft.prix_par_nuit) || 0) === price;
-                          return (
-                            <button
-                              key={price}
-                              type="button"
-                              className={`calendar-quick-create-sheet__price-chip${
-                                isActive ? " calendar-quick-create-sheet__price-chip--active" : ""
-                              }`}
-                              onClick={() => handleQuickReservationFieldChange("prix_par_nuit", String(price))}
-                            >
-                              {formatEuro(price)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="calendar-quick-create-sheet__prices calendar-quick-create-sheet__prices--empty">
-                      <span className="calendar-quick-create-sheet__compact-label">Tarifs du gîte</span>
-                      <strong>Manuel</strong>
-                    </div>
-                  )}
-                </div>
-
-                <label className="field field--small calendar-quick-create-sheet__host-field">
-                  Source
-                  <select
-                    value={quickReservationDraft.source_paiement}
-                    onChange={(event) => handleQuickReservationFieldChange("source_paiement", event.target.value)}
-                  >
-                    {RESERVATION_SOURCES.map((source) => (
-                      <option key={source} value={source}>
-                        {source}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="field field--small calendar-quick-create-sheet__note-field">
-                  Note
-                  <textarea
-                    rows={2}
-                    value={quickReservationDraft.commentaire}
-                    placeholder="Optionnel"
-                    onChange={(event) => handleQuickReservationFieldChange("commentaire", event.target.value)}
-                  />
-                </label>
-
-                <div className="calendar-quick-create-sheet__options-card">
-                  <label className="calendar-quick-create-sheet__toggle-row">
-                    <div>
-                      <span className="calendar-quick-create-sheet__toggle-title">Option ménage</span>
-                      <span className="calendar-quick-create-sheet__toggle-meta">
-                        {formatEuro(Number(selectedGite?.options_menage_forfait ?? 0))}
-                      </span>
-                    </div>
-                    <span className="calendar-quick-create-sheet__switch-control">
-                      <input
-                        type="checkbox"
-                        checked={quickReservationDraft.option_menage}
-                        onChange={(event) => handleQuickReservationFieldChange("option_menage", event.target.checked)}
-                      />
-                      <span aria-hidden="true" />
-                    </span>
-                  </label>
-
-                  <label className="calendar-quick-create-sheet__range-field">
-                    <div className="calendar-quick-create-sheet__range-head">
-                      <span className="calendar-quick-create-sheet__toggle-title">Draps</span>
-                      <span className="calendar-quick-create-sheet__range-value">
-                        {quickReservationDraft.option_draps} · {formatEuro(quickReservationOptionsPreview.byKey.draps)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={quickReservationOptionCountMax}
-                      step={1}
-                      value={quickReservationDraft.option_draps}
-                      onChange={(event) => handleQuickReservationFieldChange("option_draps", Number(event.target.value))}
-                    />
-                    <span className="calendar-quick-create-sheet__range-meta">
-                      {formatEuro(Number(selectedGite?.options_draps_par_lit ?? 0))} / lit
-                    </span>
-                  </label>
-
-                  <label className="calendar-quick-create-sheet__range-field">
-                    <div className="calendar-quick-create-sheet__range-head">
-                      <span className="calendar-quick-create-sheet__toggle-title">Serviettes</span>
-                      <span className="calendar-quick-create-sheet__range-value">
-                        {quickReservationDraft.option_serviettes} · {formatEuro(quickReservationOptionsPreview.byKey.linge_toilette)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={quickReservationOptionCountMax}
-                      step={1}
-                      value={quickReservationDraft.option_serviettes}
-                      onChange={(event) => handleQuickReservationFieldChange("option_serviettes", Number(event.target.value))}
-                    />
-                    <span className="calendar-quick-create-sheet__range-meta">
-                      {formatEuro(Number(selectedGite?.options_linge_toilette_par_personne ?? 0))} / personne
-                    </span>
-                  </label>
-                </div>
-              </section>
-
-              <section className="calendar-quick-create-sheet__section">
-                <p className="calendar-quick-create-sheet__section-title">3 - Envoyer un SMS de confirmation</p>
-
-                <div className="calendar-quick-create-sheet__switches">
-                  {quickReservationSmsSnippets.map((snippet) => {
-                    const checked = quickReservationSmsSelection.includes(snippet.id);
-                    return (
-                      <label key={snippet.id} className="calendar-quick-create-sheet__switch">
-                        <span>{snippet.title}</span>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) =>
-                            setQuickReservationSmsSelection((current) =>
-                              event.target.checked
-                                ? [...current, snippet.id]
-                                : current.filter((item) => item !== snippet.id)
-                            )
-                          }
-                        />
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <div className="calendar-quick-create-sheet__sms-preview">
-                  <pre>{quickReservationSmsText}</pre>
-                </div>
-
-                <div className="calendar-quick-create-sheet__sms-actions">
-                  <button
-                    type="button"
-                    className="calendar-quick-create-sheet__sms-button"
-                    onClick={() => {
-                      if (!quickReservationSmsHref) return;
-                      window.location.href = quickReservationSmsHref;
-                    }}
-                    disabled={!quickReservationSmsHref}
-                    aria-label="Ouvrir l'envoi du SMS"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4.5 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M7 9h10M7 12h6"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="calendar-quick-create-sheet__copy"
-                    onClick={() => {
-                      if (!navigator.clipboard?.writeText) return;
-                      void navigator.clipboard.writeText(quickReservationSmsText);
-                    }}
-                    aria-label="Copier le SMS"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path
-                        d="M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v10a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 19.5v-10Z"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M6 16H5.5A1.5 1.5 0 0 1 4 14.5v-10A1.5 1.5 0 0 1 5.5 3h8A1.5 1.5 0 0 1 15 4.5V5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </section>
-            </div>
-
-            <div className="calendar-quick-create-sheet__footer">
-              <button type="button" className="calendar-quick-create-sheet__submit" onClick={saveQuickReservation} disabled={quickReservationSaving}>
-                {quickReservationSaving ? "Enregistrement..." : quickReservationMode === "edit" ? "Mettre à jour" : "Enregistrer"}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <MobileReservationSheet
+        open={usesViewportScroll && quickReservationOpen}
+        mode={quickReservationMode}
+        saving={quickReservationSaving}
+        saved={quickReservationSaved}
+        title={selectedGite?.nom ?? "Réservation"}
+        error={quickReservationError}
+        errorField={quickReservationErrorField}
+        savedMessage={quickReservationSaved ? "Réservation enregistrée" : null}
+        draft={quickReservationDraft}
+        dateSummary={quickReservationDateSummary}
+        computedTotal={quickReservationComputedTotal}
+        adultOptions={quickReservationAdultOptions}
+        nightlySuggestions={quickReservationNightlySuggestions}
+        sourceOptions={RESERVATION_SOURCES}
+        optionCountMax={quickReservationOptionCountMax}
+        optionPreview={quickReservationOptionsPreview}
+        gitePricing={{
+          menage: Number(selectedGite?.options_menage_forfait ?? 0),
+          draps: Number(selectedGite?.options_draps_par_lit ?? 0),
+          serviettes: Number(selectedGite?.options_linge_toilette_par_personne ?? 0),
+        }}
+        smsSnippets={quickReservationSmsSnippets}
+        smsSelection={quickReservationSmsSelection}
+        smsText={quickReservationSmsText}
+        smsHref={quickReservationSmsHref}
+        primaryActionLabel={
+          quickReservationSaved
+            ? "Envoyer le SMS"
+            : quickReservationSaving
+              ? "Enregistrement..."
+              : quickReservationMode === "edit"
+                ? "Mettre à jour"
+                : "Enregistrer"
+        }
+        primaryActionDisabled={quickReservationSaving || (quickReservationSaved && !quickReservationSmsHref)}
+        onRequestClose={closeQuickReservationSheet}
+        onPrimaryAction={handleQuickReservationPrimaryAction}
+        onFieldChange={handleQuickReservationFieldChange}
+        onSmsSelectionChange={(snippetId, checked) =>
+          setQuickReservationSmsSelection((current) =>
+            checked ? [...current, snippetId] : current.filter((item) => item !== snippetId)
+          )
+        }
+        formatShortDate={formatShortDate}
+      />
     </div>
   );
 };
