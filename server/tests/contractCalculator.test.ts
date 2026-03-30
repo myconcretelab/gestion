@@ -33,7 +33,7 @@ test("computeTotals calcule un solde incluant les options", () => {
   assert.equal(totals.optionsTotal, 82);
   assert.equal(totals.totalGlobal, 372);
   assert.equal(totals.solde, 272);
-  assert.equal(totals.taxeSejourCalculee, 13.5);
+  assert.equal(totals.taxeSejourCalculee, 9);
 });
 
 test("computeTotals utilise le forfait personnalise du depart tardif", () => {

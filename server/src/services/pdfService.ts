@@ -744,7 +744,7 @@ const buildContractHtml = async (params: {
     }),
     taxeSejourInfo: `${formatEuro(params.totals.taxeSejourCalculee)} (soit ${formatEuro(
       toNumber(params.gite.taxe_sejour_par_personne_par_nuit)
-    )} / personne / nuit)`,
+    )} / adulte / nuit)`,
     arrhesMontant: formatEuro(toNumber(params.contract.arrhes_montant)),
     arrhesDateLimite: formatDate(params.contract.arrhes_date_limite),
     paiementSurPlaceHtml: buildPaiementSurPlaceHtml({

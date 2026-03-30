@@ -94,8 +94,7 @@ export const computeTotals = (params: {
   const optionsTotal = round2(draps + linge + menage + departTardif + chiens);
 
   const taxeTarif = toNumber(params.gite.taxe_sejour_par_personne_par_nuit);
-  const nbPersonnes = params.nbAdultes + params.nbEnfants;
-  const taxeSejourCalculee = round2(nbPersonnes * nbNuits * taxeTarif);
+  const taxeSejourCalculee = round2(params.nbAdultes * nbNuits * taxeTarif);
 
   const totalGlobal = round2(totalSansOptions + optionsTotal);
   const solde = round2(totalGlobal - params.arrhesMontant);

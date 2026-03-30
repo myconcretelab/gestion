@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { fromJsonString } from "../../utils/jsonFields.js";
 
@@ -124,4 +124,46 @@ export const buildDocumentListWhere = (params: {
   }
 
   return where;
+};
+
+const toSafeInt = (value: unknown, fallback: number) => {
+  const normalized = Math.trunc(Number(value));
+  return Number.isFinite(normalized) ? normalized : fallback;
+};
+
+export const getDocumentOccupancyLimits = (gite: { capacite_max: number; nb_adultes_habituel: number }) => {
+  const capaciteMax = Math.max(1, toSafeInt(gite.capacite_max, 1));
+  const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_habituel, capaciteMax)));
+  const maxChildren = Math.max(0, capaciteMax - maxAdults);
+  return { capaciteMax, maxAdults, maxChildren };
+};
+
+export const validateDocumentOccupancy = (params: {
+  gite: { capacite_max: number; nb_adultes_habituel: number };
+  nbAdultes: number;
+  nbEnfants: number;
+}) => {
+  const limits = getDocumentOccupancyLimits(params.gite);
+  const issues: ConstructorParameters<typeof ZodError>[0] = [];
+
+  if (params.nbAdultes > limits.maxAdults) {
+    issues.push({
+      code: "custom",
+      path: ["nb_adultes"],
+      message: `Le nombre d'adultes ne peut pas dépasser ${limits.maxAdults} pour ce gîte.`,
+    });
+  }
+
+  if (params.nbEnfants > limits.maxChildren) {
+    issues.push({
+      code: "custom",
+      path: ["nb_enfants_2_17"],
+      message:
+        limits.maxChildren === 0
+          ? "Aucun enfant n'est configuré pour ce gîte."
+          : `Le nombre d'enfants ne peut pas dépasser ${limits.maxChildren} pour ce gîte.`,
+    });
+  }
+
+  return issues.length > 0 ? new ZodError(issues) : null;
 };
