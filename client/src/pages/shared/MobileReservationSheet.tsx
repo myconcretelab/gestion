@@ -1,6 +1,12 @@
 import { createPortal } from "react-dom";
 import { useEffect, useId, useMemo, useRef } from "react";
 import { formatEuro } from "../../utils/format";
+import type {
+  QuickReservationDraft,
+  QuickReservationErrorField,
+  QuickReservationSmsSnippet,
+  QuickReservationDateSummary,
+} from "./quickReservation";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -11,32 +17,6 @@ const FOCUSABLE_SELECTOR = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-type QuickReservationDraftShape = {
-  hote_nom: string;
-  telephone: string;
-  date_entree: string;
-  date_sortie: string;
-  nb_adultes: number;
-  prix_par_nuit: string;
-  source_paiement: string;
-  commentaire: string;
-  option_menage: boolean;
-  option_draps: number;
-  option_serviettes: number;
-};
-
-type QuickReservationSmsSnippet = {
-  id: string;
-  title: string;
-  text: string;
-};
-
-type QuickReservationSummary = {
-  startIso: string;
-  exitIso: string;
-  nights: number;
-};
-
 type QuickReservationOptionPreview = {
   total: number;
   byKey: {
@@ -44,20 +24,6 @@ type QuickReservationOptionPreview = {
     linge_toilette: number;
   };
 };
-
-type QuickReservationErrorField =
-  | "hote_nom"
-  | "telephone"
-  | "date_entree"
-  | "date_sortie"
-  | "nb_adultes"
-  | "prix_par_nuit"
-  | "source_paiement"
-  | "commentaire"
-  | "option_menage"
-  | "option_draps"
-  | "option_serviettes"
-  | null;
 
 type MobileReservationSheetProps = {
   open: boolean;
@@ -68,8 +34,8 @@ type MobileReservationSheetProps = {
   error: string | null;
   errorField: QuickReservationErrorField;
   savedMessage?: string | null;
-  draft: QuickReservationDraftShape | null;
-  dateSummary: QuickReservationSummary;
+  draft: QuickReservationDraft | null;
+  dateSummary: QuickReservationDateSummary;
   computedTotal: number | null;
   adultOptions: number[];
   nightlySuggestions: number[];
@@ -89,10 +55,12 @@ type MobileReservationSheetProps = {
   primaryActionDisabled: boolean;
   onRequestClose: () => void;
   onPrimaryAction: () => void;
-  onFieldChange: (field: keyof QuickReservationDraftShape, value: string | number | boolean) => void;
+  onFieldChange: (field: keyof QuickReservationDraft, value: string | number | boolean) => void;
   onSmsSelectionChange: (snippetId: string, checked: boolean) => void;
   formatShortDate: (value: string) => string;
 };
+
+const APP_SCROLL_LOCK_CLASS = "app-scroll-locked";
 
 const queryFocusableElements = (node: HTMLElement) =>
   [...node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
@@ -102,37 +70,15 @@ const queryFocusableElements = (node: HTMLElement) =>
 const lockDocumentScroll = () => {
   const body = document.body;
   const root = document.documentElement;
-  const scrollY = window.scrollY || window.pageYOffset || 0;
-  const previousBodyStyle = {
-    position: body.style.position,
-    top: body.style.top,
-    left: body.style.left,
-    right: body.style.right,
-    width: body.style.width,
-    overflow: body.style.overflow,
-    touchAction: body.style.touchAction,
-  };
-  const previousRootOverflow = root.style.overflow;
+  const hadBodyLock = body.classList.contains(APP_SCROLL_LOCK_CLASS);
+  const hadRootLock = root.classList.contains(APP_SCROLL_LOCK_CLASS);
 
-  body.style.position = "fixed";
-  body.style.top = `-${scrollY}px`;
-  body.style.left = "0";
-  body.style.right = "0";
-  body.style.width = "100%";
-  body.style.overflow = "hidden";
-  body.style.touchAction = "none";
-  root.style.overflow = "hidden";
+  body.classList.add(APP_SCROLL_LOCK_CLASS);
+  root.classList.add(APP_SCROLL_LOCK_CLASS);
 
   return () => {
-    body.style.position = previousBodyStyle.position;
-    body.style.top = previousBodyStyle.top;
-    body.style.left = previousBodyStyle.left;
-    body.style.right = previousBodyStyle.right;
-    body.style.width = previousBodyStyle.width;
-    body.style.overflow = previousBodyStyle.overflow;
-    body.style.touchAction = previousBodyStyle.touchAction;
-    root.style.overflow = previousRootOverflow;
-    window.scrollTo(0, scrollY);
+    if (!hadBodyLock) body.classList.remove(APP_SCROLL_LOCK_CLASS);
+    if (!hadRootLock) root.classList.remove(APP_SCROLL_LOCK_CLASS);
   };
 };
 
@@ -160,7 +106,7 @@ const setAppBackgroundHidden = () => {
 const isInteractiveField = (target: EventTarget | null): target is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement =>
   target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
 
-const ensureFieldVisible = (container: HTMLElement | null, target: HTMLElement | null, behavior: ScrollBehavior = "smooth") => {
+const ensureFieldVisible = (container: HTMLElement | null, target: HTMLElement | null, behavior: ScrollBehavior = "auto") => {
   if (!container || !target) return;
 
   const containerRect = container.getBoundingClientRect();
@@ -174,9 +120,6 @@ const ensureFieldVisible = (container: HTMLElement | null, target: HTMLElement |
   const desiredTop = Math.max(0, targetTop - Math.max(28, Math.round(container.clientHeight * 0.22)));
   container.scrollTo({ top: desiredTop, behavior });
 };
-
-const getMobileFocusScrollBehavior = (): ScrollBehavior =>
-  typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches ? "auto" : "smooth";
 
 const MobileReservationSheet = ({
   open,
@@ -276,17 +219,30 @@ const MobileReservationSheet = ({
 
       if (!isInteractiveField(event.target)) return;
       window.requestAnimationFrame(() => {
-        ensureFieldVisible(bodyRef.current, event.target, getMobileFocusScrollBehavior());
+        ensureFieldVisible(bodyRef.current, event.target, "auto");
+      });
+    };
+
+    const handleViewportChange = () => {
+      const activeElement = document.activeElement;
+      if (!isInteractiveField(activeElement)) return;
+
+      window.requestAnimationFrame(() => {
+        ensureFieldVisible(bodyRef.current, activeElement, "auto");
       });
     };
 
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("focusin", handleFocusIn);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
 
     return () => {
       window.cancelAnimationFrame(focusDialogFrame);
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focusin", handleFocusIn);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
       restoreBackground();
       restoreScroll();
       openerRef.current?.focus?.({ preventScroll: true });
@@ -301,7 +257,7 @@ const MobileReservationSheet = ({
 
     const timeoutId = window.setTimeout(() => {
       target.focus({ preventScroll: true });
-      ensureFieldVisible(bodyRef.current, target, getMobileFocusScrollBehavior());
+      ensureFieldVisible(bodyRef.current, target);
     }, 30);
 
     return () => {

@@ -12,13 +12,23 @@ import {
   getPaymentColorFromMap,
 } from "../utils/paymentColors";
 import {
-  areReservationOptionsAllDeclared,
-  buildQuickReservationOptions,
-  computeReservationOptionsPreview,
-  mergeReservationOptions,
-  toNonNegativeInt,
 } from "../utils/reservationOptions";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
+import {
+  DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS,
+  RESERVATION_SOURCES,
+  buildQuickReservationDraftFromReservation,
+  buildQuickReservationSavePayload,
+  computeQuickReservationDerivedState,
+  getQuickReservationAdultsMax,
+  getQuickReservationOptionCountMax,
+  QuickReservationDraft,
+  QuickReservationErrorField,
+  QuickReservationSmsSettings,
+  QuickReservationSmsSnippet,
+  round2,
+  updateQuickReservationDraftField,
+} from "./shared/quickReservation";
 import type { Gestionnaire, Gite, Reservation } from "../utils/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -132,31 +142,6 @@ type TimelineRow = {
   blockedDateIsos: Set<string>;
 };
 
-type QuickReservationDraft = {
-  hote_nom: string;
-  telephone: string;
-  date_entree: string;
-  date_sortie: string;
-  nb_adultes: number;
-  prix_par_nuit: string;
-  source_paiement: string;
-  commentaire: string;
-  option_menage: boolean;
-  option_draps: number;
-  option_serviettes: number;
-};
-type QuickReservationErrorField = keyof QuickReservationDraft | null;
-
-type QuickReservationSmsSnippet = {
-  id: string;
-  title: string;
-  text: string;
-};
-
-type QuickReservationSmsSettings = {
-  texts: QuickReservationSmsSnippet[];
-};
-
 type TodayActivitySourceCount = {
   label: string;
   count: number;
@@ -180,32 +165,6 @@ type TodayMobileActionState =
       eventId: string;
     }
   | null;
-
-const DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS: QuickReservationSmsSnippet[] = [
-  {
-    id: "bedding-cleaning",
-    title: "Draps/ménage",
-    text: "Comme indiqué, je vous laisse prendre vos draps, serviettes et faire le ménage avant de partir.",
-  },
-  {
-    id: "bedding-option",
-    title: "Option Draps/Serviettes",
-    text: "Vous pourrez prendre l'option draps à 15€ par lit si vous ne souhaitez pas emporter votre linge.",
-  },
-];
-
-const RESERVATION_SOURCES = [
-  "Abritel",
-  "Airbnb",
-  "Chèque",
-  "Espèces",
-  "HomeExchange",
-  "Virement",
-  "A définir",
-  "Gites de France",
-] as const;
-
-const DEFAULT_RESERVATION_SOURCE = "A définir";
 
 const getStoredTodayUser = () => {
   if (typeof window === "undefined") return "";
@@ -243,9 +202,7 @@ const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
 const addUtcDays = (value: Date, days: number) => new Date(value.getTime() + days * DAY_MS);
 const diffUtcDays = (left: Date, right: Date) => Math.round((left.getTime() - right.getTime()) / DAY_MS);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const round2 = (value: number) => Math.round(value * 100) / 100;
 const formatManagerName = (manager: Gestionnaire) => `${manager.prenom} ${manager.nom}`.trim();
-const normalizeIsoDate = (value: string) => value.slice(0, 10);
 const formatShortDate = (value: string) =>
   parseIsoDate(value).toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -259,83 +216,6 @@ const formatLongDate = (value: string) =>
     month: "long",
     timeZone: "UTC",
   });
-const formatQuickReservationPhone = (value: string) => {
-  const digits = value.replace(/\D/g, "").slice(0, 10);
-  return digits.replace(/(\d{2})(?=\d)/g, "$1 ").trim();
-};
-const getQuickReservationSmsPhoneDigits = (value: string) => value.replace(/\D/g, "");
-const getQuickReservationAdultsMax = (gite: Gite | null) => Math.max(1, Math.trunc(Number(gite?.capacite_max ?? 1)) || 1);
-const getQuickReservationOptionCountMax = (gite: Gite | null) => Math.max(1, Math.trunc(Number(gite?.capacite_max ?? 1)) || 1);
-const clampQuickReservationAdults = (value: number, gite: Gite | null) =>
-  Math.min(getQuickReservationAdultsMax(gite), Math.max(1, Math.trunc(Number(value) || 1)));
-const clampQuickReservationOptionCount = (value: number, gite: Gite | null) =>
-  Math.min(getQuickReservationOptionCountMax(gite), Math.max(0, Math.trunc(Number(value) || 0)));
-const isIsoDateString = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(String(value).trim());
-const parseOptionalIsoDate = (value: string) => (isIsoDateString(value) ? parseIsoDate(value) : null);
-const interpolateQuickReservationSmsSnippet = (template: string, values: Record<string, string>) =>
-  template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? "");
-const formatQuickReservationSmsHour = (value: string, options?: { middayLabel?: boolean }) => {
-  const match = String(value ?? "").trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return value;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (options?.middayLabel && hours === 12 && minutes === 0) return "midi";
-  if (minutes === 0) return `${hours}h`;
-  return `${hours}h${String(minutes).padStart(2, "0")}`;
-};
-const formatQuickReservationSmsAmount = (value: number) => {
-  if (!Number.isFinite(value)) return "";
-  return Number.isInteger(value) ? String(value) : round2(value).toFixed(2).replace(".", ",");
-};
-const formatQuickReservationOptionSmsSummary = (params: {
-  options: ReturnType<typeof mergeReservationOptions>;
-  optionsPreview: ReturnType<typeof computeReservationOptionsPreview>;
-}) => {
-  const { options, optionsPreview } = params;
-  const items: string[] = [];
-
-  if (options.menage.enabled) {
-    items.push(optionsPreview.byKey.menage > 0 ? `ménage ${formatQuickReservationSmsAmount(optionsPreview.byKey.menage)}€` : "ménage offert");
-  }
-
-  if (options.draps.enabled) {
-    const count = toNonNegativeInt(options.draps.nb_lits, 0);
-    items.push(
-      optionsPreview.byKey.draps > 0
-        ? `draps x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.draps)}€`
-        : `draps x${count} offerts`
-    );
-  }
-
-  if (options.linge_toilette.enabled) {
-    const count = toNonNegativeInt(options.linge_toilette.nb_personnes, 0);
-    items.push(
-      optionsPreview.byKey.linge_toilette > 0
-        ? `serviettes x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.linge_toilette)}€`
-        : `serviettes x${count} offertes`
-    );
-  }
-
-  if (options.depart_tardif.enabled) {
-    items.push(
-      optionsPreview.byKey.depart_tardif > 0
-        ? `départ tardif ${formatQuickReservationSmsAmount(optionsPreview.byKey.depart_tardif)}€`
-        : "départ tardif offert"
-    );
-  }
-
-  if (options.chiens.enabled) {
-    const count = toNonNegativeInt(options.chiens.nb, 0);
-    items.push(
-      optionsPreview.byKey.chiens > 0
-        ? `chiens x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.chiens)}€`
-        : `chiens x${count} offerts`
-    );
-  }
-
-  return items.join(" · ");
-};
 
 const getWeekNumber = (value: Date) => {
   const date = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
@@ -537,14 +417,6 @@ const buildReservationCreateHref = (giteId: string, dateIso: string) => {
   params.set("month", String(date.getUTCMonth() + 1));
   params.set("tab", giteId);
   return `/reservations?${params.toString()}`;
-};
-
-const buildMobileReservationEditorHref = (reservationId: string) => {
-  const params = new URLSearchParams();
-  params.set("mode", "edit");
-  params.set("id", reservationId);
-  params.set("returnTo", "/aujourdhui");
-  return `/reservations/mobile?${params.toString()}`;
 };
 
 const getTimelinePercent = (dayIndex: number, totalDays: number) => {
@@ -932,148 +804,28 @@ const TodayPage = () => {
     [quickReservationSelectedGite]
   );
 
-  const quickReservationDateSummary = useMemo(() => {
-    if (!quickReservationDraft) {
-      return {
-        startIso: "",
-        exitIso: "",
-        nights: 0,
-      };
-    }
-
-    const entryDate = parseOptionalIsoDate(quickReservationDraft.date_entree);
-    const exitDate = parseOptionalIsoDate(quickReservationDraft.date_sortie);
-    if (!entryDate || !exitDate) {
-      return {
-        startIso: quickReservationDraft.date_entree,
-        exitIso: quickReservationDraft.date_sortie,
-        nights: 0,
-      };
-    }
-
-    return {
-      startIso: quickReservationDraft.date_entree,
-      exitIso: quickReservationDraft.date_sortie,
-      nights: Math.max(0, Math.round((exitDate.getTime() - entryDate.getTime()) / DAY_MS)),
-    };
-  }, [quickReservationDraft]);
-
-  const quickReservationOptions = useMemo(
+  const quickReservationDerived = useMemo(
     () =>
-      quickReservationDraft
-        ? buildQuickReservationOptions({
-            baseOptions: quickReservationEditingReservation?.options,
-            menageEnabled: quickReservationDraft.option_menage,
-            drapsCount: quickReservationDraft.option_draps,
-            serviettesCount: quickReservationDraft.option_serviettes,
-          })
-        : null,
-    [quickReservationDraft, quickReservationEditingReservation?.options]
-  );
-  const quickReservationOptionsPreview = useMemo(
-    () =>
-      computeReservationOptionsPreview(quickReservationOptions, {
-        nights: quickReservationDateSummary.nights,
+      computeQuickReservationDerivedState({
+        draft: quickReservationDraft,
+        editingReservation: quickReservationEditingReservation,
         gite: quickReservationSelectedGite,
+        smsSnippets: quickReservationSmsSnippets,
+        smsSelection: quickReservationSmsSelection,
       }),
-    [quickReservationDateSummary.nights, quickReservationOptions, quickReservationSelectedGite]
+    [
+      quickReservationDraft,
+      quickReservationEditingReservation,
+      quickReservationSelectedGite,
+      quickReservationSmsSelection,
+      quickReservationSmsSnippets,
+    ]
   );
-  const quickReservationBaseTotal = useMemo(() => {
-    if (!quickReservationDraft) return null;
-    const nightly = Number.parseFloat(String(quickReservationDraft.prix_par_nuit).replace(",", "."));
-    if (!Number.isFinite(nightly) || nightly < 0) return null;
-    return quickReservationDateSummary.nights > 0 ? round2(nightly * quickReservationDateSummary.nights) : null;
-  }, [quickReservationDateSummary.nights, quickReservationDraft]);
-  const quickReservationComputedTotal = useMemo(
-    () =>
-      quickReservationBaseTotal !== null
-        ? round2(quickReservationBaseTotal + quickReservationOptionsPreview.total)
-        : null,
-    [quickReservationBaseTotal, quickReservationOptionsPreview.total]
-  );
-  const quickReservationOptionSummary = useMemo(
-    () =>
-      quickReservationOptions
-        ? formatQuickReservationOptionSmsSummary({
-            options: quickReservationOptions,
-            optionsPreview: quickReservationOptionsPreview,
-          })
-        : "",
-    [quickReservationOptions, quickReservationOptionsPreview]
-  );
-
-  const quickReservationSmsText = useMemo(() => {
-    if (!quickReservationSelectedGite || !quickReservationDraft) return "";
-
-    const { startIso, exitIso, nights } = quickReservationDateSummary;
-    if (!isIsoDateString(startIso) || !isIsoDateString(exitIso) || nights <= 0) return "";
-
-    const startDate = formatLongDate(startIso);
-    const endDate = formatLongDate(exitIso);
-    const nightly = Number.parseFloat(String(quickReservationDraft.prix_par_nuit).replace(",", "."));
-    const address = [quickReservationSelectedGite.adresse_ligne1, quickReservationSelectedGite.adresse_ligne2].filter(Boolean).join(", ");
-    const arrivalTime = formatQuickReservationSmsHour(quickReservationSelectedGite.heure_arrivee_defaut || "17:00");
-    const departureTime = formatQuickReservationSmsHour(quickReservationSelectedGite.heure_depart_defaut || "12:00", {
-      middayLabel: true,
-    });
-    const snippetValues = {
-      adresse: address,
-      dateDebut: startDate,
-      dateFin: endDate,
-      heureArrivee: arrivalTime,
-      heureDepart: departureTime,
-      gite: quickReservationSelectedGite.nom,
-      nbNuits: String(nights),
-      nom: quickReservationDraft.hote_nom.trim(),
-    };
-
-    const baseLines = [
-      "Bonjour,",
-      `Je vous confirme votre réservation pour le gîte ${quickReservationSelectedGite.nom} du ${startDate} à partir de ${arrivalTime} au ${endDate} ${departureTime} (${nights} nuit${
-        nights > 1 ? "s" : ""
-      }).`,
-    ];
-
-    if (Number.isFinite(nightly) && nightly >= 0 && quickReservationBaseTotal !== null) {
-      baseLines.push(
-        `Le tarif est de ${formatQuickReservationSmsAmount(round2(nightly))}€/nuit, soit ${formatQuickReservationSmsAmount(
-          quickReservationBaseTotal
-        )}€.`
-      );
-    }
-
-    if (quickReservationOptionSummary) {
-      baseLines.push(`Options retenues : ${quickReservationOptionSummary}.`);
-    }
-
-    if (quickReservationComputedTotal !== null && (quickReservationOptionsPreview.total > 0 || quickReservationOptionSummary)) {
-      baseLines.push(`Le total du séjour est de ${formatQuickReservationSmsAmount(quickReservationComputedTotal)}€.`);
-    }
-
-    if (address) baseLines.push(`L'adresse est ${address}.`);
-
-    const selectedSnippets = quickReservationSmsSnippets
-      .filter((snippet) => quickReservationSmsSelection.includes(snippet.id))
-      .map((snippet) => interpolateQuickReservationSmsSnippet(snippet.text, snippetValues))
-      .filter((snippet) => snippet.trim().length > 0);
-
-    return [...baseLines, ...selectedSnippets, "Merci Beaucoup,", "Soazig Molinier"].join("\n");
-  }, [
-    quickReservationBaseTotal,
-    quickReservationComputedTotal,
-    quickReservationDateSummary,
-    quickReservationDraft,
-    quickReservationOptionSummary,
-    quickReservationOptionsPreview.total,
-    quickReservationSelectedGite,
-    quickReservationSmsSelection,
-    quickReservationSmsSnippets,
-  ]);
-
-  const quickReservationSmsHref = useMemo(() => {
-    const phone = quickReservationDraft ? getQuickReservationSmsPhoneDigits(quickReservationDraft.telephone) : "";
-    return buildSmsHref(phone, quickReservationSmsText);
-  }, [quickReservationDraft, quickReservationSmsText]);
+  const quickReservationDateSummary = quickReservationDerived.dateSummary;
+  const quickReservationOptionsPreview = quickReservationDerived.optionsPreview;
+  const quickReservationComputedTotal = quickReservationDerived.computedTotal;
+  const quickReservationSmsText = quickReservationDerived.smsText;
+  const quickReservationSmsHref = quickReservationDerived.smsHref;
 
   const closeQuickReservationSheet = () => {
     setQuickReservationOpen(false);
@@ -1090,29 +842,12 @@ const TodayPage = () => {
 
     setMobileActionState(null);
     setQuickReservationEditingId(reservation.id);
-    setQuickReservationDraft({
-      hote_nom: reservation.hote_nom,
-      telephone: formatQuickReservationPhone(reservation.telephone ?? ""),
-      date_entree: normalizeIsoDate(reservation.date_entree),
-      date_sortie: normalizeIsoDate(reservation.date_sortie),
-      nb_adultes: clampQuickReservationAdults(reservation.nb_adultes, gites.find((gite) => gite.id === reservation.gite_id) ?? null),
-      prix_par_nuit: String(reservation.prix_par_nuit ?? ""),
-      source_paiement: reservation.source_paiement?.trim() || DEFAULT_RESERVATION_SOURCE,
-      commentaire: reservation.commentaire ?? "",
-      option_menage: Boolean(reservation.options?.menage?.enabled),
-      option_draps: reservation.options?.draps?.enabled
-        ? clampQuickReservationOptionCount(
-            toNonNegativeInt(reservation.options?.draps?.nb_lits, Math.max(1, reservation.nb_adultes || 1)),
-            gites.find((gite) => gite.id === reservation.gite_id) ?? null
-          )
-        : 0,
-      option_serviettes: reservation.options?.linge_toilette?.enabled
-        ? clampQuickReservationOptionCount(
-            toNonNegativeInt(reservation.options?.linge_toilette?.nb_personnes, Math.max(1, reservation.nb_adultes || 1)),
-            gites.find((gite) => gite.id === reservation.gite_id) ?? null
-          )
-        : 0,
-    });
+    setQuickReservationDraft(
+      buildQuickReservationDraftFromReservation({
+        reservation,
+        gite: gites.find((gite) => gite.id === reservation.gite_id) ?? null,
+      })
+    );
     setQuickReservationSmsSelection([]);
     setQuickReservationError(null);
     setQuickReservationErrorField(null);
@@ -1126,19 +861,12 @@ const TodayPage = () => {
     setQuickReservationErrorField(null);
     setQuickReservationDraft((current) => {
       if (!current) return current;
-      if (field === "telephone") {
-        return { ...current, telephone: formatQuickReservationPhone(String(value)) };
-      }
-      if (field === "nb_adultes") {
-        return { ...current, nb_adultes: clampQuickReservationAdults(Number(value), quickReservationSelectedGite) };
-      }
-      if (field === "option_draps" || field === "option_serviettes") {
-        return { ...current, [field]: clampQuickReservationOptionCount(Number(value), quickReservationSelectedGite) };
-      }
-      if (field === "option_menage") {
-        return { ...current, option_menage: Boolean(value) };
-      }
-      return { ...current, [field]: value };
+      return updateQuickReservationDraftField({
+        current,
+        field,
+        value,
+        gite: quickReservationSelectedGite,
+      });
     });
   };
 
@@ -1170,48 +898,15 @@ const TodayPage = () => {
   const saveQuickReservation = async () => {
     if (!quickReservationDraft || !quickReservationEditingReservation || quickReservationSaving) return;
 
-    const hostName = quickReservationDraft.hote_nom.trim();
-    const nightly = Number.parseFloat(String(quickReservationDraft.prix_par_nuit).replace(",", "."));
-    const adults = Math.max(0, Math.trunc(Number(quickReservationDraft.nb_adultes) || 0));
-    const entryDate = parseOptionalIsoDate(quickReservationDraft.date_entree);
-    const exitDate = parseOptionalIsoDate(quickReservationDraft.date_sortie);
-    const nights = entryDate && exitDate ? Math.max(0, Math.round((exitDate.getTime() - entryDate.getTime()) / DAY_MS)) : 0;
-    const quickOptions = buildQuickReservationOptions({
-      baseOptions: quickReservationEditingReservation?.options,
-      menageEnabled: quickReservationDraft.option_menage,
-      drapsCount: quickReservationDraft.option_draps,
-      serviettesCount: quickReservationDraft.option_serviettes,
-    });
-    const quickOptionsPreview = computeReservationOptionsPreview(quickOptions, {
-      nights,
+    const savePayload = buildQuickReservationSavePayload({
+      draft: quickReservationDraft,
       gite: quickReservationSelectedGite,
+      baseOptions: quickReservationEditingReservation.options,
     });
-    const quickOptionsDeclared = areReservationOptionsAllDeclared(quickOptions);
 
-    if (!hostName) {
-      setQuickReservationError("Renseigne le nom de l'hôte.");
-      setQuickReservationErrorField("hote_nom");
-      setQuickReservationSaved(false);
-      return;
-    }
-
-    if (!entryDate || !exitDate) {
-      setQuickReservationError("Renseigne des dates valides.");
-      setQuickReservationErrorField(!entryDate ? "date_entree" : "date_sortie");
-      setQuickReservationSaved(false);
-      return;
-    }
-
-    if (exitDate.getTime() <= entryDate.getTime()) {
-      setQuickReservationError("La date de sortie doit être postérieure à la date d'entrée.");
-      setQuickReservationErrorField("date_sortie");
-      setQuickReservationSaved(false);
-      return;
-    }
-
-    if (!Number.isFinite(nightly) || nightly < 0) {
-      setQuickReservationError("Renseigne un prix par nuit valide.");
-      setQuickReservationErrorField("prix_par_nuit");
+    if (!savePayload.ok) {
+      setQuickReservationError(savePayload.error);
+      setQuickReservationErrorField(savePayload.errorField);
       setQuickReservationSaved(false);
       return;
     }
@@ -1227,22 +922,10 @@ const TodayPage = () => {
           gite_id: quickReservationEditingReservation.gite_id ?? undefined,
           placeholder_id: quickReservationEditingReservation.placeholder_id ?? undefined,
           airbnb_url: quickReservationEditingReservation.airbnb_url ?? undefined,
-          hote_nom: hostName,
-          telephone: quickReservationDraft.telephone.trim() || undefined,
-          date_entree: quickReservationDraft.date_entree,
-          date_sortie: quickReservationDraft.date_sortie,
-          nb_adultes: adults,
-          prix_par_nuit: round2(nightly),
-          price_driver: "nightly",
-          source_paiement: quickReservationDraft.source_paiement || DEFAULT_RESERVATION_SOURCE,
-          commentaire: quickReservationDraft.commentaire.trim() || undefined,
+          ...savePayload.payload,
           remise_montant: quickReservationEditingReservation.remise_montant ?? 0,
           commission_channel_mode: quickReservationEditingReservation.commission_channel_mode ?? "euro",
           commission_channel_value: quickReservationEditingReservation.commission_channel_value ?? 0,
-          frais_optionnels_montant: quickOptionsPreview.total,
-          frais_optionnels_libelle: quickOptionsPreview.label || undefined,
-          frais_optionnels_declares: quickOptionsDeclared,
-          options: quickOptions,
         },
       });
 
@@ -1801,7 +1484,7 @@ const TodayPage = () => {
             { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
           ]}
           onClose={() => setMobileActionState(null)}
-          onEdit={() => navigate(buildMobileReservationEditorHref(mobileActionReservation.id))}
+          onEdit={() => openQuickReservationEditSheet(mobileActionReservation)}
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
           smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
           airbnbUrl={mobileActionReservation.airbnb_url}
