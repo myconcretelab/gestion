@@ -175,6 +175,9 @@ const ensureFieldVisible = (container: HTMLElement | null, target: HTMLElement |
   container.scrollTo({ top: desiredTop, behavior });
 };
 
+const getMobileFocusScrollBehavior = (): ScrollBehavior =>
+  typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches ? "auto" : "smooth";
+
 const MobileReservationSheet = ({
   open,
   mode,
@@ -273,7 +276,7 @@ const MobileReservationSheet = ({
 
       if (!isInteractiveField(event.target)) return;
       window.requestAnimationFrame(() => {
-        ensureFieldVisible(bodyRef.current, event.target, "smooth");
+        ensureFieldVisible(bodyRef.current, event.target, getMobileFocusScrollBehavior());
       });
     };
 
@@ -298,7 +301,7 @@ const MobileReservationSheet = ({
 
     const timeoutId = window.setTimeout(() => {
       target.focus({ preventScroll: true });
-      ensureFieldVisible(bodyRef.current, target);
+      ensureFieldVisible(bodyRef.current, target, getMobileFocusScrollBehavior());
     }, 30);
 
     return () => {
