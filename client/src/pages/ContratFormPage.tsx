@@ -5,9 +5,13 @@ import type { Contrat, ContratOptions, Reservation } from "../utils/types";
 import { formatEuro } from "../utils/format";
 import {
   addDays,
+  clampDocumentAdults,
+  clampDocumentChildren,
   defaultOptions,
   extractValidationFieldErrors,
   formatDateInput,
+  getDocumentAdultsMax,
+  getDocumentChildrenMax,
   mergeOptions,
   nextDayFromInput,
   nightsBetweenInputs,
@@ -26,6 +30,8 @@ type ContractFieldKey =
   | "locataire_adresse"
   | "locataire_tel"
   | "locataire_email"
+  | "nb_adultes"
+  | "nb_enfants_2_17"
   | "date_debut"
   | "heure_arrivee"
   | "date_fin"
@@ -46,6 +52,8 @@ const contractFieldKeys: ContractFieldKey[] = [
   "locataire_adresse",
   "locataire_tel",
   "locataire_email",
+  "nb_adultes",
+  "nb_enfants_2_17",
   "date_debut",
   "heure_arrivee",
   "date_fin",
@@ -105,6 +113,7 @@ const ContratFormPage = () => {
   const [loadingContract, setLoadingContract] = useState(false);
   const [loadingFromReservation, setLoadingFromReservation] = useState(false);
   const [sourceReservationLabel, setSourceReservationLabel] = useState<string | null>(null);
+  const [prefilledReservationGiteId, setPrefilledReservationGiteId] = useState<string | null>(null);
   const [linkedReservationId, setLinkedReservationId] = useState<string | null>(null);
   const gites = useDocumentGites({
     setSelectedGiteId: setGiteId,
@@ -187,6 +196,7 @@ const ContratFormPage = () => {
         const prefill = buildReservationDocumentPrefill(data);
         setLinkedReservationId(prefill.linkedReservationId);
         setSourceReservationLabel(data.hote_nom);
+        setPrefilledReservationGiteId(prefill.giteId);
         setGiteId(prefill.giteId);
         setLocataireNom(prefill.locataireNom);
         setLocataireAdresse(prefill.locataireAdresse);
@@ -209,6 +219,7 @@ const ContratFormPage = () => {
         if (!active || isAbortError(err)) return;
         setLinkedReservationId(null);
         setSourceReservationLabel(null);
+        setPrefilledReservationGiteId(null);
         setLocataireEmail("");
         setError(err instanceof Error ? err.message : "Erreur lors du préremplissage.");
       })
@@ -227,6 +238,7 @@ const ContratFormPage = () => {
     if (isEdit || fromReservationId) return;
     setLoadingFromReservation(false);
     setSourceReservationLabel(null);
+    setPrefilledReservationGiteId(null);
     setLinkedReservationId(null);
     setLocataireEmail("");
   }, [isEdit, fromReservationId]);
@@ -284,20 +296,30 @@ const ContratFormPage = () => {
   useEffect(() => {
     if (!selectedGite) return;
     if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
+    if (!isEdit && prefilledReservationGiteId && selectedGite.id === prefilledReservationGiteId) return;
     setHeureArrivee(selectedGite.heure_arrivee_defaut || "17:00");
     setHeureDepart(selectedGite.heure_depart_defaut || "12:00");
-  }, [selectedGite, isEdit, editingContract]);
+  }, [selectedGite, isEdit, editingContract, prefilledReservationGiteId]);
 
   useEffect(() => {
     if (!selectedGite) return;
     if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
+    if (!isEdit && prefilledReservationGiteId && selectedGite.id === prefilledReservationGiteId) return;
     setOptions((prev) => ({
       ...prev,
       regle_animaux_acceptes: selectedGite.regle_animaux_acceptes,
       regle_bois_premiere_flambee: selectedGite.regle_bois_premiere_flambee,
       regle_tiers_personnes_info: selectedGite.regle_tiers_personnes_info,
     }));
-  }, [selectedGite?.id, isEdit, editingContract]);
+  }, [selectedGite?.id, isEdit, editingContract, prefilledReservationGiteId]);
+
+  useEffect(() => {
+    if (!selectedGite) return;
+    if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
+    if (!isEdit && prefilledReservationGiteId && selectedGite.id === prefilledReservationGiteId) return;
+    setNbAdultes(clampDocumentAdults(selectedGite.nb_adultes_habituel, selectedGite));
+    setNbEnfants(0);
+  }, [selectedGite, isEdit, editingContract, prefilledReservationGiteId]);
 
   useEffect(() => {
     if (regleAnimauxAcceptes) return;
@@ -324,6 +346,11 @@ const ContratFormPage = () => {
     if (!arrhesAuto) return;
     if (Number.isFinite(arrhesAutoValue)) setArrhesMontant(arrhesAutoValue.toFixed(2));
   }, [arrhesAuto, arrhesAutoValue]);
+
+  const adultesMax = useMemo(() => getDocumentAdultsMax(selectedGite), [selectedGite]);
+  const enfantsMax = useMemo(() => getDocumentChildrenMax(selectedGite), [selectedGite]);
+  const adultOptions = useMemo(() => Array.from({ length: adultesMax }, (_, index) => index + 1), [adultesMax]);
+  const childrenOptions = useMemo(() => Array.from({ length: enfantsMax + 1 }, (_, index) => index), [enfantsMax]);
 
   const previewPayload = useMemo(() => {
     const payload: any = {
@@ -529,6 +556,46 @@ const ContratFormPage = () => {
               }}
             />
             {renderFieldError("locataire_email")}
+          </label>
+          <label className={getFieldClassName("nb_adultes")}>
+            Adultes
+            <select
+              value={nbAdultes}
+              onChange={(e) => {
+                clearFieldError("nb_adultes");
+                setNbAdultes(clampDocumentAdults(Number(e.target.value), selectedGite));
+              }}
+            >
+              {adultOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <div className="field-hint">Max {adultesMax} adulte(s) pour ce gîte. Taxe de séjour calculée sur les adultes.</div>
+            {renderFieldError("nb_adultes")}
+          </label>
+          <label className={getFieldClassName("nb_enfants_2_17")}>
+            Enfants
+            <select
+              value={nbEnfants}
+              onChange={(e) => {
+                clearFieldError("nb_enfants_2_17");
+                setNbEnfants(clampDocumentChildren(Number(e.target.value), selectedGite));
+              }}
+            >
+              {childrenOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <div className="field-hint">
+              {enfantsMax > 0
+                ? `Max ${enfantsMax} enfant(s) pour ce gîte.`
+                : "Aucun enfant configuré pour ce gîte."}
+            </div>
+            {renderFieldError("nb_enfants_2_17")}
           </label>
         </div>
       </div>

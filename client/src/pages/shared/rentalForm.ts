@@ -1,5 +1,5 @@
 import { isApiError } from "../../utils/api";
-import type { ContratOptions } from "../../utils/types";
+import type { ContratOptions, Gite } from "../../utils/types";
 
 export const defaultOptions: ContratOptions = {
   draps: { enabled: false, nb_lits: 0, offert: false, declared: false },
@@ -102,3 +102,25 @@ export const extractValidationFieldErrors = <T extends string>(
 
   return result;
 };
+
+const toSafeInt = (value: unknown, fallback: number) => {
+  const normalized = Math.trunc(Number(value));
+  return Number.isFinite(normalized) ? normalized : fallback;
+};
+
+export const getDocumentAdultsMax = (gite?: Gite | null) => {
+  const capaciteMax = Math.max(1, toSafeInt(gite?.capacite_max ?? 1, 1));
+  const adultsMax = Math.max(1, toSafeInt(gite?.nb_adultes_habituel ?? capaciteMax, capaciteMax));
+  return Math.min(capaciteMax, adultsMax);
+};
+
+export const getDocumentChildrenMax = (gite?: Gite | null) => {
+  const capaciteMax = Math.max(1, toSafeInt(gite?.capacite_max ?? 1, 1));
+  return Math.max(0, capaciteMax - getDocumentAdultsMax(gite));
+};
+
+export const clampDocumentAdults = (value: number, gite?: Gite | null) =>
+  Math.min(getDocumentAdultsMax(gite), Math.max(1, toSafeInt(value, 1)));
+
+export const clampDocumentChildren = (value: number, gite?: Gite | null) =>
+  Math.min(getDocumentChildrenMax(gite), Math.max(0, toSafeInt(value, 0)));

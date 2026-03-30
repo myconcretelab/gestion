@@ -57,7 +57,7 @@ test("computeTotals client aligne le solde avec le back (options incluses)", () 
   assert.equal(totals.optionsTotal, 82);
   assert.equal(totals.totalGlobal, 372);
   assert.equal(totals.solde, 272);
-  assert.equal(totals.taxeSejour, 13.5);
+  assert.equal(totals.taxeSejour, 9);
 });
 
 test("computeTotals client utilise le forfait personnalise du depart tardif", () => {

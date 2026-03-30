@@ -85,6 +85,8 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     const mockedGite = {
       id: "g1",
       prefixe_contrat: "GT",
+      capacite_max: 6,
+      nb_adultes_habituel: 4,
       arrhes_taux_defaut: 0.2,
       regle_animaux_acceptes: true,
       regle_bois_premiere_flambee: false,
@@ -187,6 +189,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(createContractRes.statusCode, 201);
     assert.equal(Number((createContractRes.body as any).solde_montant), 272);
+    assert.equal(Number((createContractRes.body as any).taxe_sejour_calculee), 9);
     assert.equal(Number(lastCreatedReservationData.prix_par_nuit), 100);
     assert.equal(Number(lastCreatedReservationData.prix_total), 300);
     assert.equal(Number(lastCreatedReservationData.remise_montant), 10);
@@ -218,6 +221,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(updateContractRes.statusCode, 200);
     assert.equal(Number((updateContractRes.body as any).solde_montant), 359.5);
+    assert.equal(Number((updateContractRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((updateContractRes.body as any).reservation_id, "r-contract");
     assert.equal((updateContractRes.body as any).options.depart_tardif.prix_forfait, 27.5);
 
@@ -259,6 +263,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(createInvoiceRes.statusCode, 201);
     assert.equal(Number((createInvoiceRes.body as any).solde_montant), 272);
+    assert.equal(Number((createInvoiceRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((createInvoiceRes.body as any).reservation_id, "r-invoice-created");
     assert.equal(lastCreatedReservationData.telephone, null);
     assert.equal(lastCreatedReservationData.email, "client.facture@example.com");
@@ -290,6 +295,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(nextError, null);
     assert.equal(updateInvoiceRes.statusCode, 200);
     assert.equal(Number((updateInvoiceRes.body as any).solde_montant), 359.5);
+    assert.equal(Number((updateInvoiceRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((updateInvoiceRes.body as any).reservation_id, "r-invoice");
     assert.deepEqual(lastUpdatedReservationData.where, { id: "r-invoice" });
     assert.equal(lastUpdatedReservationData.data.email, "client.facture@example.com");
