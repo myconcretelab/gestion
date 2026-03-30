@@ -86,6 +86,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       id: "g1",
       prefixe_contrat: "GT",
       capacite_max: 6,
+      nb_adultes_max: 4,
       nb_adultes_habituel: 4,
       arrhes_taux_defaut: 0.2,
       regle_animaux_acceptes: true,
@@ -363,6 +364,9 @@ test("creation facture complete une reservation existante plutot que d'en creer 
     prisma.gite.findUnique = async () => ({
       id: "g1",
       prefixe_contrat: "GT",
+      capacite_max: 6,
+      nb_adultes_max: 4,
+      nb_adultes_habituel: 2,
       arrhes_taux_defaut: 0.2,
       regle_animaux_acceptes: true,
       regle_bois_premiere_flambee: false,

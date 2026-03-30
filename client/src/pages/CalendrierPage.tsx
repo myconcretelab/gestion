@@ -1255,16 +1255,6 @@ const CalendrierPage = () => {
     startAirbnbCalendarRefreshPolling,
   ]);
 
-  const handleQuickReservationPrimaryAction = useCallback(() => {
-    if (quickReservationSaved) {
-      if (!quickReservationSmsHref) return;
-      window.location.href = quickReservationSmsHref;
-      return;
-    }
-
-    void saveQuickReservation();
-  }, [quickReservationSaved, quickReservationSmsHref, saveQuickReservation]);
-
   const quickReservationDateSummary = useMemo(() => {
     if (!quickReservationDraft) {
       return {
@@ -1410,6 +1400,16 @@ const CalendrierPage = () => {
     const phone = quickReservationDraft ? getQuickReservationSmsPhoneDigits(quickReservationDraft.telephone) : "";
     return buildSmsHref(phone, quickReservationSmsText);
   }, [quickReservationDraft, quickReservationSmsText]);
+
+  const handleQuickReservationPrimaryAction = useCallback(() => {
+    if (quickReservationSaved) {
+      if (!quickReservationSmsHref) return;
+      window.location.href = quickReservationSmsHref;
+      return;
+    }
+
+    void saveQuickReservation();
+  }, [quickReservationSaved, quickReservationSmsHref, saveQuickReservation]);
 
   const getScrollOffset = useCallback(
     (kind: "month" | "date") => {

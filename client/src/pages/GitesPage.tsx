@@ -9,6 +9,7 @@ const emptyForm = {
   adresse_ligne1: "",
   adresse_ligne2: "",
   capacite_max: 1,
+  nb_adultes_max: 1,
   nb_adultes_habituel: 1,
   proprietaires_noms: "",
   proprietaires_adresse: "",
@@ -120,6 +121,7 @@ const GitesPage = () => {
       adresse_ligne1: selected.adresse_ligne1,
       adresse_ligne2: selected.adresse_ligne2 ?? "",
       capacite_max: selected.capacite_max,
+      nb_adultes_max: selected.nb_adultes_max,
       nb_adultes_habituel: selected.nb_adultes_habituel,
       proprietaires_noms: selected.proprietaires_noms,
       proprietaires_adresse: selected.proprietaires_adresse,
@@ -467,7 +469,8 @@ const GitesPage = () => {
               const highlights = getGiteHighlights(gite);
               const tags = [
                 `${gite.capacite_max} voyageurs`,
-                `${gite.nb_adultes_habituel} adultes`,
+                `${gite.nb_adultes_max} adultes max`,
+                `${gite.nb_adultes_habituel} adultes habituels`,
                 gite.regle_animaux_acceptes ? "Animaux ok" : null,
                 gite.regle_bois_premiere_flambee ? "Bois inclus" : null,
               ].filter((tag): tag is string => Boolean(tag));
@@ -688,6 +691,14 @@ const GitesPage = () => {
                 type="number"
                 value={form.capacite_max}
                 onChange={(e) => handleChange("capacite_max", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Nombre d'adultes max
+              <input
+                type="number"
+                value={form.nb_adultes_max}
+                onChange={(e) => handleChange("nb_adultes_max", Number(e.target.value))}
               />
             </label>
             <label className="field">
