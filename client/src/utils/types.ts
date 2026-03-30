@@ -15,6 +15,7 @@ export type Gite = {
   adresse_ligne1: string;
   adresse_ligne2?: string | null;
   capacite_max: number;
+  nb_adultes_max: number;
   nb_adultes_habituel: number;
   proprietaires_noms: string;
   proprietaires_adresse: string;

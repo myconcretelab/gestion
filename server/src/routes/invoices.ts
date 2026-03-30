@@ -25,6 +25,7 @@ import {
   optionalDateString,
   optionsSchema,
   parseDate,
+  validateDocumentOccupancy,
 } from "./shared/rentalDocument.js";
 
 const router = Router();
@@ -375,6 +376,12 @@ router.post("/", async (req, res, next) => {
     const data = invoiceSchema.parse(req.body);
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+    const occupancyError = validateDocumentOccupancy({
+      gite,
+      nbAdultes: data.nb_adultes,
+      nbEnfants: data.nb_enfants_2_17,
+    });
+    if (occupancyError) throw occupancyError;
     const linkedReservation = await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id);
     if (linkedReservation && "error" in linkedReservation) {
       return res.status(400).json({ error: linkedReservation.error });
@@ -506,6 +513,12 @@ router.put("/:id", async (req, res, next) => {
 
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
+    const occupancyError = validateDocumentOccupancy({
+      gite,
+      nbAdultes: data.nb_adultes,
+      nbEnfants: data.nb_enfants_2_17,
+    });
+    if (occupancyError) throw occupancyError;
     const linkedReservation = await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id);
     if (linkedReservation && "error" in linkedReservation) {
       return res.status(400).json({ error: linkedReservation.error });

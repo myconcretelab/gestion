@@ -110,7 +110,7 @@ const toSafeInt = (value: unknown, fallback: number) => {
 
 export const getDocumentAdultsMax = (gite?: Gite | null) => {
   const capaciteMax = Math.max(1, toSafeInt(gite?.capacite_max ?? 1, 1));
-  const adultsMax = Math.max(1, toSafeInt(gite?.nb_adultes_habituel ?? capaciteMax, capaciteMax));
+  const adultsMax = Math.max(1, toSafeInt(gite?.nb_adultes_max ?? capaciteMax, capaciteMax));
   return Math.min(capaciteMax, adultsMax);
 };
 

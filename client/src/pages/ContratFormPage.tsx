@@ -317,7 +317,7 @@ const ContratFormPage = () => {
     if (!selectedGite) return;
     if (isEdit && editingContract && selectedGite.id === editingContract.gite_id) return;
     if (!isEdit && prefilledReservationGiteId && selectedGite.id === prefilledReservationGiteId) return;
-    setNbAdultes(clampDocumentAdults(selectedGite.nb_adultes_habituel, selectedGite));
+    setNbAdultes(clampDocumentAdults(selectedGite.nb_adultes_habituel ?? selectedGite.nb_adultes_max, selectedGite));
     setNbEnfants(0);
   }, [selectedGite, isEdit, editingContract, prefilledReservationGiteId]);
 

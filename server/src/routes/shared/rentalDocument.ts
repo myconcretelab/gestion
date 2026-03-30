@@ -131,15 +131,15 @@ const toSafeInt = (value: unknown, fallback: number) => {
   return Number.isFinite(normalized) ? normalized : fallback;
 };
 
-export const getDocumentOccupancyLimits = (gite: { capacite_max: number; nb_adultes_habituel: number }) => {
+export const getDocumentOccupancyLimits = (gite: { capacite_max: number; nb_adultes_max: number }) => {
   const capaciteMax = Math.max(1, toSafeInt(gite.capacite_max, 1));
-  const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_habituel, capaciteMax)));
+  const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_max, capaciteMax)));
   const maxChildren = Math.max(0, capaciteMax - maxAdults);
   return { capaciteMax, maxAdults, maxChildren };
 };
 
 export const validateDocumentOccupancy = (params: {
-  gite: { capacite_max: number; nb_adultes_habituel: number };
+  gite: { capacite_max: number; nb_adultes_max: number };
   nbAdultes: number;
   nbEnfants: number;
 }) => {
