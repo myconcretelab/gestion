@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import {
   buildAirbnbCalendarRefreshAppNotice,
@@ -519,16 +519,24 @@ const buildCalendarMonthData = ({
 const CalendrierPage = () => {
   const now = new Date();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const currentYear = now.getUTCFullYear();
   const currentMonthIndex = now.getUTCMonth();
   const todayIso = toIsoDate(new Date(Date.UTC(currentYear, now.getUTCMonth(), now.getUTCDate())));
+  const requestedYear = Number(searchParams.get("year"));
+  const requestedMonth = Number(searchParams.get("month"));
+  const initialYear =
+    Number.isFinite(requestedYear) && requestedYear >= currentYear - 5 && requestedYear <= currentYear + 5 ? requestedYear : currentYear;
+  const initialMonthIndex =
+    Number.isFinite(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12 ? requestedMonth - 1 : currentMonthIndex;
+  const initialGiteId = (searchParams.get("giteId") ?? "").trim();
 
   const [gites, setGites] = useState<Gite[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [selectedGiteId, setSelectedGiteId] = useState("");
+  const [selectedGiteId, setSelectedGiteId] = useState(initialGiteId);
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
-  const [year, setYear] = useState(currentYear);
-  const [activeMonthIndex, setActiveMonthIndex] = useState(currentMonthIndex);
+  const [year, setYear] = useState(initialYear);
+  const [activeMonthIndex, setActiveMonthIndex] = useState(initialMonthIndex);
   const [hoveredReservation, setHoveredReservation] = useState<HoveredReservationState>(null);
   const [floatingPopoverLayout, setFloatingPopoverLayout] = useState<FloatingPopoverLayout>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
@@ -1023,35 +1031,59 @@ const CalendrierPage = () => {
     [navigate]
   );
 
+  const buildMobileReservationReturnHref = useCallback(() => {
+    const params = new URLSearchParams();
+    if (selectedGiteId) {
+      params.set("giteId", selectedGiteId);
+    }
+    params.set("year", String(year));
+    params.set("month", String(activeMonthIndex + 1));
+    return `/calendrier?${params.toString()}`;
+  }, [activeMonthIndex, selectedGiteId, year]);
+
+  const buildMobileReservationEditorHref = useCallback(
+    (params: { mode: "create"; giteId: string; entry: string; exit: string } | { mode: "edit"; reservationId: string }) => {
+      const nextParams = new URLSearchParams();
+      nextParams.set("mode", params.mode);
+      if (params.mode === "edit") {
+        nextParams.set("id", params.reservationId);
+      } else {
+        nextParams.set("giteId", params.giteId);
+        nextParams.set("entry", params.entry);
+        nextParams.set("exit", params.exit);
+      }
+      nextParams.set("returnTo", buildMobileReservationReturnHref());
+      return `/reservations/mobile?${nextParams.toString()}`;
+    },
+    [buildMobileReservationReturnHref]
+  );
+
   const openQuickReservationSheet = useCallback(() => {
-    const nextDraft = buildQuickReservationDraft();
-    if (!nextDraft) return;
-    setQuickReservationMode("create");
-    setQuickReservationEditingId(null);
-    setQuickReservationDraft(nextDraft);
-    setQuickReservationSmsSelection([]);
-    setQuickReservationError(null);
-    setQuickReservationErrorField(null);
-    setQuickReservationSaved(false);
-    setQuickReservationOpen(true);
-  }, [buildQuickReservationDraft]);
+    if (!selectedDateRange || !selectedGiteId || selectedRangeNights <= 0) return;
+    navigate(
+      buildMobileReservationEditorHref({
+        mode: "create",
+        giteId: selectedGiteId,
+        entry: selectedDateRange.startIso,
+        exit: selectedDateRange.endIso,
+      })
+    );
+  }, [buildMobileReservationEditorHref, navigate, selectedDateRange, selectedGiteId, selectedRangeNights]);
 
   const openQuickReservationEditSheet = useCallback(
     (reservation: Reservation) => {
       if (!usesViewportScroll) return;
 
       setMobileActionReservationId(null);
-      setQuickReservationMode("edit");
-      setQuickReservationEditingId(reservation.id);
-      setQuickReservationDraft(buildQuickReservationDraftFromReservation(reservation));
-      setQuickReservationSmsSelection([]);
-      setQuickReservationError(null);
-      setQuickReservationErrorField(null);
-      setQuickReservationSaved(false);
       setSelectedDateRange(null);
-      setQuickReservationOpen(true);
+      navigate(
+        buildMobileReservationEditorHref({
+          mode: "edit",
+          reservationId: reservation.id,
+        })
+      );
     },
-    [buildQuickReservationDraftFromReservation, usesViewportScroll]
+    [buildMobileReservationEditorHref, navigate, usesViewportScroll]
   );
 
   const handleReservationOpen = useCallback(

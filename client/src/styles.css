@@ -2272,6 +2272,56 @@
   box-shadow: none;
 }
 
+.mobile-reservation-editor-page {
+  min-height: var(--app-height);
+  padding:
+    calc(14px + var(--safe-area-top))
+    calc(14px + env(safe-area-inset-right, 0px))
+    calc(24px + var(--safe-area-bottom))
+    calc(14px + env(safe-area-inset-left, 0px));
+  background:
+    radial-gradient(circle at top right, rgba(255, 90, 95, 0.12), transparent 28%),
+    linear-gradient(180deg, #fff9f8 0%, #f8fafc 58%, #f3f4f6 100%);
+}
+
+.mobile-reservation-editor-page__shell {
+  width: min(100%, 560px);
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-reservation-editor-page__topbar {
+  position: sticky;
+  top: calc(6px + var(--safe-area-top));
+  z-index: 5;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.mobile-reservation-editor-page__close {
+  margin: 0;
+}
+
+.mobile-reservation-editor-page__panel {
+  width: 100%;
+  max-height: none;
+  min-height: min(calc(var(--app-height) - 80px - var(--safe-area-top) - var(--safe-area-bottom)), 880px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.mobile-reservation-editor-page__body {
+  min-height: 0;
+  padding-top: 4px;
+}
+
+.mobile-reservation-editor-page__footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(252, 252, 253, 0.82) 0%, #fcfcfd 36%);
+}
+
 .mobile-reservation-actions {
   position: fixed;
   left: 12px;
