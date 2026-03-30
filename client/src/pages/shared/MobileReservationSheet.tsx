@@ -106,9 +106,6 @@ const setAppBackgroundHidden = () => {
   };
 };
 
-const isInteractiveField = (target: EventTarget | null): target is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement =>
-  target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
-
 const ensureFieldVisible = (container: HTMLElement | null, target: HTMLElement | null, behavior: ScrollBehavior = "auto") => {
   if (!container || !target) return;
 
@@ -252,35 +249,16 @@ const MobileReservationSheet = ({
       if (!dialogNode.contains(event.target as Node)) {
         const focusable = queryFocusableElements(dialogNode);
         (focusable[0] ?? dialogNode).focus({ preventScroll: true });
-        return;
       }
-
-      if (!isInteractiveField(event.target)) return;
-      window.requestAnimationFrame(() => {
-        ensureFieldVisible(bodyRef.current, event.target, "auto");
-      });
-    };
-
-    const handleViewportChange = () => {
-      const activeElement = document.activeElement;
-      if (!isInteractiveField(activeElement)) return;
-
-      window.requestAnimationFrame(() => {
-        ensureFieldVisible(bodyRef.current, activeElement, "auto");
-      });
     };
 
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("focusin", handleFocusIn);
-    window.visualViewport?.addEventListener("resize", handleViewportChange);
-    window.visualViewport?.addEventListener("scroll", handleViewportChange);
 
     return () => {
       window.cancelAnimationFrame(focusDialogFrame);
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focusin", handleFocusIn);
-      window.visualViewport?.removeEventListener("resize", handleViewportChange);
-      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
       restoreBackground();
       restoreScroll();
       openerRef.current?.focus?.({ preventScroll: true });
