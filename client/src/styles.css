@@ -37,6 +37,12 @@
   --reservations-month-head-top: calc(var(--reservations-sticky-top) + 48px);
 }
 
+html.app-scroll-locked,
+body.app-scroll-locked {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .calendar-page {
   --calendar-accent: var(--accent);
   --calendar-accent-soft: rgba(255, 90, 95, 0.12);
@@ -1637,26 +1643,23 @@
   align-items: flex-end;
   justify-content: center;
   min-height: var(--app-height);
-  padding: 16px 12px calc(12px + var(--safe-area-bottom) + var(--viewport-offset-bottom));
-  background: rgba(15, 23, 42, 0.42);
-  backdrop-filter: blur(6px);
+  padding: 12px 12px calc(12px + var(--safe-area-bottom) + var(--viewport-offset-bottom));
+  background: rgba(15, 23, 42, 0.56);
   overscroll-behavior: none;
 }
 
 .calendar-quick-create-sheet__panel {
   width: min(100%, 440px);
-  max-height: min(calc(var(--app-height) - 20px - var(--viewport-offset-bottom)), 760px);
+  max-height: min(calc(var(--app-height) - 12px - var(--viewport-offset-bottom)), 760px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   padding: 12px 12px 14px;
-  border-radius: 26px;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
   position: relative;
-  isolation: isolate;
-  background:
-    radial-gradient(circle at top right, rgba(255, 90, 95, 0.12), transparent 34%),
-    linear-gradient(180deg, #ffffff 0%, #fcfcfd 100%);
-  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.28);
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
@@ -1666,12 +1669,8 @@
 }
 
 .calendar-quick-create-sheet__top {
-  position: relative;
-  z-index: 3;
-  padding-bottom: 8px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, #ffffff 82%, rgba(255, 255, 255, 0.94) 100%);
-  box-shadow: 0 10px 22px -22px rgba(15, 23, 42, 0.45);
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .calendar-quick-create-sheet__handle {
@@ -1712,12 +1711,10 @@
   padding: 0;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255, 90, 95, 0.14), rgba(255, 255, 255, 0.98) 68%);
+  background: #ffffff;
   color: #374151;
   font-size: 1.4rem;
   line-height: 1;
-  box-shadow: 0 10px 22px rgba(255, 90, 95, 0.16);
 }
 
 .calendar-quick-create-sheet__summary {
@@ -1726,9 +1723,7 @@
   align-items: center;
   gap: 10px;
   margin-top: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
-  background: #ffffff;
+  padding-bottom: 2px;
 }
 
 .calendar-quick-create-sheet__summary-main {
@@ -1893,39 +1888,34 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   padding: 12px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, var(--primary) 0%, #ff6b4d 100%);
-  box-shadow: 0 16px 32px rgba(255, 90, 95, 0.22);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
 }
 
 .calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field {
   gap: 6px;
-  color: rgba(255, 255, 255, 0.86);
+  color: #475569;
   font-size: 0.76rem;
 }
 
 .calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field input {
   min-height: 42px;
   padding: 0 12px;
-  border: 0;
+  border: 1px solid #d7dee8;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
-  font-weight: 800;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
 }
 
 .calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field input:focus {
-  border-bottom-color: transparent;
-  background: rgba(255, 255, 255, 0.22);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.38),
-    0 0 0 3px rgba(255, 255, 255, 0.12);
+  border-color: color-mix(in srgb, var(--calendar-accent) 62%, #ffffff 38%);
+  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.08);
 }
 
 .calendar-quick-create-sheet__dates-band .calendar-quick-create-sheet__host-field input::-webkit-calendar-picker-indicator {
-  filter: invert(1);
-  opacity: 0.92;
+  opacity: 0.72;
 }
 
 .calendar-quick-create-sheet__stats-grid {
@@ -2050,7 +2040,7 @@
   min-height: 44px;
   padding-top: 8px;
   padding-bottom: 6px;
-  resize: vertical;
+  resize: none;
   line-height: 1.4;
 }
 
@@ -2059,8 +2049,8 @@
   gap: 10px;
   padding: 12px;
   border-radius: 18px;
-  background: linear-gradient(180deg, #fff7f5 0%, #fffaf8 100%);
-  border: 1px solid rgba(255, 90, 95, 0.12);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
 
 .calendar-quick-create-sheet__toggle-row,
@@ -2168,7 +2158,7 @@
   min-height: 42px;
   padding: 10px 12px;
   border-radius: 16px;
-  background: rgba(248, 250, 252, 0.92);
+  background: #f8fafc;
   color: #334155;
   font-size: 0.84rem;
   font-weight: 600;
@@ -2184,7 +2174,7 @@
   padding: 12px;
   border: 1px solid rgba(226, 232, 240, 0.92);
   border-radius: 18px;
-  background: #f8fafc;
+  background: #ffffff;
 }
 
 .calendar-quick-create-sheet__sms-preview pre {
@@ -2223,7 +2213,6 @@
   background: #ffffff;
   color: #475569;
   border: 1px solid rgba(203, 213, 225, 0.92);
-  box-shadow: 0 12px 28px rgba(148, 163, 184, 0.18);
 }
 
 .calendar-quick-create-sheet__copy span {
@@ -2246,6 +2235,7 @@
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid rgba(226, 232, 240, 0.9);
+  background: #ffffff;
 }
 
 .calendar-quick-create-sheet__submit {
@@ -2270,56 +2260,6 @@
   background: #cbd5e1;
   color: #64748b;
   box-shadow: none;
-}
-
-.mobile-reservation-editor-page {
-  min-height: var(--app-height);
-  padding:
-    calc(14px + var(--safe-area-top))
-    calc(14px + env(safe-area-inset-right, 0px))
-    calc(24px + var(--safe-area-bottom))
-    calc(14px + env(safe-area-inset-left, 0px));
-  background:
-    radial-gradient(circle at top right, rgba(255, 90, 95, 0.12), transparent 28%),
-    linear-gradient(180deg, #fff9f8 0%, #f8fafc 58%, #f3f4f6 100%);
-}
-
-.mobile-reservation-editor-page__shell {
-  width: min(100%, 560px);
-  margin: 0 auto;
-  display: grid;
-  gap: 12px;
-}
-
-.mobile-reservation-editor-page__topbar {
-  position: sticky;
-  top: calc(6px + var(--safe-area-top));
-  z-index: 5;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.mobile-reservation-editor-page__close {
-  margin: 0;
-}
-
-.mobile-reservation-editor-page__panel {
-  width: 100%;
-  max-height: none;
-  min-height: min(calc(var(--app-height) - 80px - var(--safe-area-top) - var(--safe-area-bottom)), 880px);
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-
-.mobile-reservation-editor-page__body {
-  min-height: 0;
-  padding-top: 4px;
-}
-
-.mobile-reservation-editor-page__footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  background: linear-gradient(180deg, rgba(252, 252, 253, 0.82) 0%, #fcfcfd 36%);
 }
 
 .mobile-reservation-actions {
@@ -7997,16 +7937,8 @@ button.warning {
 
   .calendar-quick-create-sheet__panel {
     padding: 10px 10px 12px;
-    border-radius: 24px;
+    border-radius: 18px;
     max-height: min(calc(var(--app-height) - 12px - var(--viewport-offset-bottom)), 100%);
-  }
-
-  .calendar-quick-create-sheet__host-field input,
-  .calendar-quick-create-sheet__host-field select,
-  .calendar-quick-create-sheet__compact-field select,
-  .calendar-quick-create-sheet__compact-field input,
-  .calendar-quick-create-sheet__note-field textarea {
-    font-size: 16px;
   }
 
   .calendar-quick-create-sheet__stats-grid {
@@ -8067,9 +7999,6 @@ button.warning {
 
 @media (max-width: 430px) {
   .calendar-quick-create-sheet {
-    background: rgba(15, 23, 42, 0.34);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
     padding-left: calc(16px + env(safe-area-inset-left, 0px));
     padding-right: calc(16px + env(safe-area-inset-right, 0px));
   }
