@@ -539,6 +539,14 @@ const buildReservationCreateHref = (giteId: string, dateIso: string) => {
   return `/reservations?${params.toString()}`;
 };
 
+const buildMobileReservationEditorHref = (reservationId: string) => {
+  const params = new URLSearchParams();
+  params.set("mode", "edit");
+  params.set("id", reservationId);
+  params.set("returnTo", "/aujourdhui");
+  return `/reservations/mobile?${params.toString()}`;
+};
+
 const getTimelinePercent = (dayIndex: number, totalDays: number) => {
   if (totalDays <= 1) return 0;
   return (dayIndex / (totalDays - 1)) * 100;
@@ -1793,7 +1801,7 @@ const TodayPage = () => {
             { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
           ]}
           onClose={() => setMobileActionState(null)}
-          onEdit={() => openQuickReservationEditSheet(mobileActionReservation)}
+          onEdit={() => navigate(buildMobileReservationEditorHref(mobileActionReservation.id))}
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
           smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
           airbnbUrl={mobileActionReservation.airbnb_url}
