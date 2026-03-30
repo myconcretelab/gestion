@@ -7951,6 +7951,14 @@ button.warning {
     max-height: min(calc(var(--app-height) - 12px - var(--viewport-offset-bottom)), 100%);
   }
 
+  .calendar-quick-create-sheet__host-field input,
+  .calendar-quick-create-sheet__host-field select,
+  .calendar-quick-create-sheet__compact-field select,
+  .calendar-quick-create-sheet__compact-field input,
+  .calendar-quick-create-sheet__note-field textarea {
+    font-size: 16px;
+  }
+
   .calendar-quick-create-sheet__stats-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
@@ -8009,6 +8017,9 @@ button.warning {
 
 @media (max-width: 430px) {
   .calendar-quick-create-sheet {
+    background: rgba(15, 23, 42, 0.34);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     padding-left: calc(16px + env(safe-area-inset-left, 0px));
     padding-right: calc(16px + env(safe-area-inset-right, 0px));
   }
