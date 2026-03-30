@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useEffect, useId, useMemo, useRef } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { formatEuro } from "../../utils/format";
 import type {
   QuickReservationDraft,
@@ -61,6 +61,7 @@ type MobileReservationSheetProps = {
 };
 
 const APP_SCROLL_LOCK_CLASS = "app-scroll-locked";
+const OPTION_FIELDS = new Set<QuickReservationErrorField>(["option_menage", "option_draps", "option_serviettes"]);
 
 const queryFocusableElements = (node: HTMLElement) =>
   [...node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
@@ -155,12 +156,28 @@ const MobileReservationSheet = ({
   const dialogRef = useRef<HTMLElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const [optionsExpanded, setOptionsExpanded] = useState(false);
+  const [smsExpanded, setSmsExpanded] = useState(false);
+  const [smsPreviewExpanded, setSmsPreviewExpanded] = useState(false);
 
   const canRender = open && draft;
   const formattedTotal = useMemo(
     () => (computedTotal !== null ? formatEuro(computedTotal) : "A calculer"),
     [computedTotal]
   );
+  const hasLongSmsPreview = useMemo(() => smsText.length > 260 || smsText.split("\n").length > 6, [smsText]);
+
+  useEffect(() => {
+    if (!open) return;
+    setOptionsExpanded(false);
+    setSmsExpanded(false);
+    setSmsPreviewExpanded(false);
+  }, [open, mode]);
+
+  useEffect(() => {
+    if (!canRender || !errorField || !OPTION_FIELDS.has(errorField)) return;
+    setOptionsExpanded(true);
+  }, [canRender, errorField]);
 
   useEffect(() => {
     if (!canRender) return;
@@ -263,7 +280,7 @@ const MobileReservationSheet = ({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [canRender, errorField]);
+  }, [canRender, errorField, optionsExpanded]);
 
   if (!canRender || typeof document === "undefined") return null;
 
@@ -326,6 +343,8 @@ const MobileReservationSheet = ({
 
           <div className="calendar-quick-create-sheet__form">
             <section className="calendar-quick-create-sheet__section">
+              <p className="calendar-quick-create-sheet__section-title">1 - Infos séjour</p>
+
               <label className="field field--small calendar-quick-create-sheet__host-field">
                 Hôte
                 <input
@@ -455,126 +474,169 @@ const MobileReservationSheet = ({
                 />
               </label>
 
-              <div className="calendar-quick-create-sheet__options-card">
-                <label className="calendar-quick-create-sheet__toggle-row">
-                  <div>
-                    <span className="calendar-quick-create-sheet__toggle-title">Option ménage</span>
-                    <span className="calendar-quick-create-sheet__toggle-meta">{formatEuro(gitePricing.menage)}</span>
-                  </div>
-                  <span className="calendar-quick-create-sheet__switch-control">
-                    <input
-                      data-reservation-field="option_menage"
-                      type="checkbox"
-                      checked={draft.option_menage}
-                      onChange={(event) => onFieldChange("option_menage", event.target.checked)}
-                    />
-                    <span aria-hidden="true" />
-                  </span>
-                </label>
-
-                <label className="calendar-quick-create-sheet__range-field">
-                  <div className="calendar-quick-create-sheet__range-head">
-                    <span className="calendar-quick-create-sheet__toggle-title">Draps</span>
-                    <span className="calendar-quick-create-sheet__range-value">
-                      {draft.option_draps} · {formatEuro(optionPreview.byKey.draps)}
-                    </span>
-                  </div>
-                  <input
-                    data-reservation-field="option_draps"
-                    type="range"
-                    min={0}
-                    max={optionCountMax}
-                    step={1}
-                    value={draft.option_draps}
-                    onChange={(event) => onFieldChange("option_draps", Number(event.target.value))}
-                  />
-                  <span className="calendar-quick-create-sheet__range-meta">{formatEuro(gitePricing.draps)} / lit</span>
-                </label>
-
-                <label className="calendar-quick-create-sheet__range-field">
-                  <div className="calendar-quick-create-sheet__range-head">
-                    <span className="calendar-quick-create-sheet__toggle-title">Serviettes</span>
-                    <span className="calendar-quick-create-sheet__range-value">
-                      {draft.option_serviettes} · {formatEuro(optionPreview.byKey.linge_toilette)}
-                    </span>
-                  </div>
-                  <input
-                    data-reservation-field="option_serviettes"
-                    type="range"
-                    min={0}
-                    max={optionCountMax}
-                    step={1}
-                    value={draft.option_serviettes}
-                    onChange={(event) => onFieldChange("option_serviettes", Number(event.target.value))}
-                  />
-                  <span className="calendar-quick-create-sheet__range-meta">
-                    {formatEuro(gitePricing.serviettes)} / personne
-                  </span>
-                </label>
-              </div>
             </section>
 
             <section className="calendar-quick-create-sheet__section">
-              <p className="calendar-quick-create-sheet__section-title">3 - Envoyer un SMS de confirmation</p>
+              <button
+                type="button"
+                className="calendar-quick-create-sheet__section-toggle"
+                onClick={() => setOptionsExpanded((current) => !current)}
+                aria-expanded={optionsExpanded}
+              >
+                <span>2 - Options</span>
+                <span>{optionsExpanded ? "Masquer" : "Afficher"}</span>
+              </button>
 
-              <div className="calendar-quick-create-sheet__switches">
-                {smsSnippets.map((snippet) => {
-                  const checked = smsSelection.includes(snippet.id);
-                  return (
-                    <label key={snippet.id} className="calendar-quick-create-sheet__switch">
-                      <span>{snippet.title}</span>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) => onSmsSelectionChange(snippet.id, event.target.checked)}
-                      />
+              {optionsExpanded ? (
+                <div className="calendar-quick-create-sheet__section-body">
+                  <div className="calendar-quick-create-sheet__options-card">
+                    <label className="calendar-quick-create-sheet__toggle-row">
+                      <div>
+                        <span className="calendar-quick-create-sheet__toggle-title">Option ménage</span>
+                        <span className="calendar-quick-create-sheet__toggle-meta">{formatEuro(gitePricing.menage)}</span>
+                      </div>
+                      <span className="calendar-quick-create-sheet__switch-control">
+                        <input
+                          data-reservation-field="option_menage"
+                          type="checkbox"
+                          checked={draft.option_menage}
+                          onChange={(event) => onFieldChange("option_menage", event.target.checked)}
+                        />
+                        <span aria-hidden="true" />
+                      </span>
                     </label>
-                  );
-                })}
-              </div>
 
-              <div className="calendar-quick-create-sheet__sms-preview">
-                <pre>{smsText}</pre>
-              </div>
+                    <label className="calendar-quick-create-sheet__range-field">
+                      <div className="calendar-quick-create-sheet__range-head">
+                        <span className="calendar-quick-create-sheet__toggle-title">Draps</span>
+                        <span className="calendar-quick-create-sheet__range-value">
+                          {draft.option_draps} · {formatEuro(optionPreview.byKey.draps)}
+                        </span>
+                      </div>
+                      <input
+                        data-reservation-field="option_draps"
+                        type="range"
+                        min={0}
+                        max={optionCountMax}
+                        step={1}
+                        value={draft.option_draps}
+                        onChange={(event) => onFieldChange("option_draps", Number(event.target.value))}
+                      />
+                      <span className="calendar-quick-create-sheet__range-meta">{formatEuro(gitePricing.draps)} / lit</span>
+                    </label>
 
-              <div className="calendar-quick-create-sheet__sms-actions">
-                <button
-                  type="button"
-                  className="calendar-quick-create-sheet__copy"
-                  onClick={() => {
-                    if (!navigator.clipboard?.writeText) return;
-                    void navigator.clipboard.writeText(smsText);
-                  }}
-                  aria-label="Copier le SMS"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v10a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 19.5v-10Z"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M6 16H5.5A1.5 1.5 0 0 1 4 14.5v-10A1.5 1.5 0 0 1 5.5 3h8A1.5 1.5 0 0 1 15 4.5V5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  <span>Copier</span>
-                </button>
-                {saved ? (
-                  <span className="calendar-quick-create-sheet__sms-hint">
-                    {smsHref ? "Le bouton principal ouvre la messagerie SMS." : "Ajoute un numéro pour envoyer le SMS."}
-                  </span>
-                ) : (
-                  <span className="calendar-quick-create-sheet__sms-hint">Le SMS s'ouvre après l'enregistrement.</span>
-                )}
-              </div>
+                    <label className="calendar-quick-create-sheet__range-field">
+                      <div className="calendar-quick-create-sheet__range-head">
+                        <span className="calendar-quick-create-sheet__toggle-title">Serviettes</span>
+                        <span className="calendar-quick-create-sheet__range-value">
+                          {draft.option_serviettes} · {formatEuro(optionPreview.byKey.linge_toilette)}
+                        </span>
+                      </div>
+                      <input
+                        data-reservation-field="option_serviettes"
+                        type="range"
+                        min={0}
+                        max={optionCountMax}
+                        step={1}
+                        value={draft.option_serviettes}
+                        onChange={(event) => onFieldChange("option_serviettes", Number(event.target.value))}
+                      />
+                      <span className="calendar-quick-create-sheet__range-meta">
+                        {formatEuro(gitePricing.serviettes)} / personne
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="calendar-quick-create-sheet__section">
+              <button
+                type="button"
+                className="calendar-quick-create-sheet__section-toggle"
+                onClick={() => setSmsExpanded((current) => !current)}
+                aria-expanded={smsExpanded}
+              >
+                <span>3 - SMS de confirmation</span>
+                <span>{smsExpanded ? "Masquer" : "Afficher"}</span>
+              </button>
+
+              {smsExpanded ? (
+                <div className="calendar-quick-create-sheet__section-body">
+                  <div className="calendar-quick-create-sheet__switches">
+                    {smsSnippets.map((snippet) => {
+                      const checked = smsSelection.includes(snippet.id);
+                      return (
+                        <label key={snippet.id} className="calendar-quick-create-sheet__switch">
+                          <span>{snippet.title}</span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => onSmsSelectionChange(snippet.id, event.target.checked)}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    className={`calendar-quick-create-sheet__sms-preview${
+                      !smsPreviewExpanded && hasLongSmsPreview ? " calendar-quick-create-sheet__sms-preview--collapsed" : ""
+                    }`}
+                  >
+                    <pre>{smsText}</pre>
+                  </div>
+
+                  {hasLongSmsPreview ? (
+                    <button
+                      type="button"
+                      className="calendar-quick-create-sheet__preview-toggle"
+                      onClick={() => setSmsPreviewExpanded((current) => !current)}
+                    >
+                      {smsPreviewExpanded ? "Réduire l'aperçu" : "Voir tout le SMS"}
+                    </button>
+                  ) : null}
+
+                  <div className="calendar-quick-create-sheet__sms-actions">
+                    <button
+                      type="button"
+                      className="calendar-quick-create-sheet__copy"
+                      onClick={() => {
+                        if (!navigator.clipboard?.writeText) return;
+                        void navigator.clipboard.writeText(smsText);
+                      }}
+                      aria-label="Copier le SMS"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v10a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 19.5v-10Z"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M6 16H5.5A1.5 1.5 0 0 1 4 14.5v-10A1.5 1.5 0 0 1 5.5 3h8A1.5 1.5 0 0 1 15 4.5V5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <span>Copier</span>
+                    </button>
+                    {saved ? (
+                      <span className="calendar-quick-create-sheet__sms-hint">
+                        {smsHref ? "Le bouton principal ouvre la messagerie SMS." : "Ajoute un numéro pour envoyer le SMS."}
+                      </span>
+                    ) : (
+                      <span className="calendar-quick-create-sheet__sms-hint">Le SMS s'ouvre après l'enregistrement.</span>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </section>
           </div>
         </div>
