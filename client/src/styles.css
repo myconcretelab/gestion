@@ -1837,6 +1837,35 @@ body.app-scroll-locked {
   letter-spacing: -0.01em;
 }
 
+.calendar-quick-create-sheet__section-toggle,
+.calendar-quick-create-sheet__preview-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 800;
+  text-align: left;
+}
+
+.calendar-quick-create-sheet__section-toggle span:last-child,
+.calendar-quick-create-sheet__preview-toggle {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.calendar-quick-create-sheet__section-body {
+  display: grid;
+  gap: 10px;
+}
+
 .calendar-quick-create-sheet__host-field,
 .calendar-quick-create-sheet__note-field {
   gap: 4px;
@@ -2175,6 +2204,11 @@ body.app-scroll-locked {
   border: 1px solid rgba(226, 232, 240, 0.92);
   border-radius: 18px;
   background: #ffffff;
+}
+
+.calendar-quick-create-sheet__sms-preview--collapsed {
+  max-height: 148px;
+  overflow: hidden;
 }
 
 .calendar-quick-create-sheet__sms-preview pre {
