@@ -19,6 +19,7 @@ export type QuickReservationDraft = {
   source_paiement: string;
   commentaire: string;
   option_menage: boolean;
+  option_depart_tardif: boolean;
   option_draps: number;
   option_serviettes: number;
 };
@@ -114,6 +115,7 @@ export const buildNewQuickReservationDraft = (params: {
   source_paiement: DEFAULT_RESERVATION_SOURCE,
   commentaire: "",
   option_menage: false,
+  option_depart_tardif: false,
   option_draps: 0,
   option_serviettes: 0,
 });
@@ -134,6 +136,7 @@ export const buildQuickReservationDraftFromReservation = (params: {
     source_paiement: reservation.source_paiement?.trim() || DEFAULT_RESERVATION_SOURCE,
     commentaire: reservation.commentaire ?? "",
     option_menage: Boolean(reservation.options?.menage?.enabled),
+    option_depart_tardif: Boolean(reservation.options?.depart_tardif?.enabled),
     option_draps: reservation.options?.draps?.enabled
       ? clampQuickReservationOptionCount(
           toNonNegativeInt(reservation.options?.draps?.nb_lits, Math.max(1, reservation.nb_adultes || 1)),
@@ -171,6 +174,10 @@ export const updateQuickReservationDraftField = (params: {
 
   if (field === "option_menage") {
     return { ...current, option_menage: Boolean(value) };
+  }
+
+  if (field === "option_depart_tardif") {
+    return { ...current, option_depart_tardif: Boolean(value) };
   }
 
   return { ...current, [field]: value };
@@ -290,6 +297,7 @@ export const computeQuickReservationDerivedState = (params: {
     ? buildQuickReservationOptions({
         baseOptions: editingReservation?.options,
         menageEnabled: draft.option_menage,
+        departTardifEnabled: draft.option_depart_tardif,
         drapsCount: draft.option_draps,
         serviettesCount: draft.option_serviettes,
       })
@@ -421,6 +429,7 @@ export const buildQuickReservationSavePayload = (params: {
   const options = buildQuickReservationOptions({
     baseOptions,
     menageEnabled: draft.option_menage,
+    departTardifEnabled: draft.option_depart_tardif,
     drapsCount: draft.option_draps,
     serviettesCount: draft.option_serviettes,
   });

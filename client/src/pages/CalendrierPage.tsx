@@ -1771,6 +1771,7 @@ const CalendrierPage = () => {
           menage: Number(selectedGite?.options_menage_forfait ?? 0),
           draps: Number(selectedGite?.options_draps_par_lit ?? 0),
           serviettes: Number(selectedGite?.options_linge_toilette_par_personne ?? 0),
+          depart_tardif: Number(selectedGite?.options_depart_tardif_forfait ?? 0),
         }}
         smsSnippets={quickReservationSmsSnippets}
         smsSelection={quickReservationSmsSelection}

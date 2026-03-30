@@ -1512,6 +1512,7 @@ const TodayPage = () => {
           menage: Number(quickReservationSelectedGite?.options_menage_forfait ?? 0),
           draps: Number(quickReservationSelectedGite?.options_draps_par_lit ?? 0),
           serviettes: Number(quickReservationSelectedGite?.options_linge_toilette_par_personne ?? 0),
+          depart_tardif: Number(quickReservationSelectedGite?.options_depart_tardif_forfait ?? 0),
         }}
         smsSnippets={quickReservationSmsSnippets}
         smsSelection={quickReservationSmsSelection}
