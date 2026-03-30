@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { formatEuro } from "../../utils/format";
 import type {
   QuickReservationDraft,
@@ -22,6 +22,7 @@ type QuickReservationOptionPreview = {
   byKey: {
     draps: number;
     linge_toilette: number;
+    depart_tardif: number;
   };
 };
 
@@ -46,6 +47,7 @@ type MobileReservationSheetProps = {
     menage: number;
     draps: number;
     serviettes: number;
+    depart_tardif: number;
   };
   smsSnippets: QuickReservationSmsSnippet[];
   smsSelection: string[];
@@ -61,7 +63,7 @@ type MobileReservationSheetProps = {
 };
 
 const APP_SCROLL_LOCK_CLASS = "app-scroll-locked";
-const OPTION_FIELDS = new Set<QuickReservationErrorField>(["option_menage", "option_draps", "option_serviettes"]);
+const OPTION_FIELDS = new Set<QuickReservationErrorField>(["option_menage", "option_depart_tardif", "option_draps", "option_serviettes"]);
 
 const queryFocusableElements = (node: HTMLElement) =>
   [...node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
@@ -159,6 +161,7 @@ const MobileReservationSheet = ({
   const [optionsExpanded, setOptionsExpanded] = useState(false);
   const [smsExpanded, setSmsExpanded] = useState(false);
   const [smsPreviewExpanded, setSmsPreviewExpanded] = useState(false);
+  const [sheetViewportHeight, setSheetViewportHeight] = useState<number | null>(null);
 
   const canRender = open && draft;
   const formattedTotal = useMemo(
@@ -166,6 +169,15 @@ const MobileReservationSheet = ({
     [computedTotal]
   );
   const hasLongSmsPreview = useMemo(() => smsText.length > 260 || smsText.split("\n").length > 6, [smsText]);
+  const sheetStyle = useMemo<CSSProperties | undefined>(
+    () =>
+      sheetViewportHeight
+        ? ({
+            ["--sheet-open-height" as "--sheet-open-height"]: `${sheetViewportHeight}px`,
+          } as CSSProperties)
+        : undefined,
+    [sheetViewportHeight]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -173,6 +185,15 @@ const MobileReservationSheet = ({
     setSmsExpanded(false);
     setSmsPreviewExpanded(false);
   }, [open, mode]);
+
+  useEffect(() => {
+    if (!canRender) {
+      setSheetViewportHeight(null);
+      return;
+    }
+
+    setSheetViewportHeight(Math.round(window.visualViewport?.height ?? window.innerHeight));
+  }, [canRender]);
 
   useEffect(() => {
     if (!canRender || !errorField || !OPTION_FIELDS.has(errorField)) return;
@@ -287,6 +308,7 @@ const MobileReservationSheet = ({
   return createPortal(
     <div
       className="calendar-quick-create-sheet"
+      style={sheetStyle}
       role="presentation"
       onClick={() => {
         if (saving) return;
@@ -501,6 +523,24 @@ const MobileReservationSheet = ({
                           type="checkbox"
                           checked={draft.option_menage}
                           onChange={(event) => onFieldChange("option_menage", event.target.checked)}
+                        />
+                        <span aria-hidden="true" />
+                      </span>
+                    </label>
+
+                    <label className="calendar-quick-create-sheet__toggle-row">
+                      <div>
+                        <span className="calendar-quick-create-sheet__toggle-title">Départ tardif</span>
+                        <span className="calendar-quick-create-sheet__toggle-meta">
+                          {draft.option_depart_tardif ? formatEuro(optionPreview.byKey.depart_tardif) : formatEuro(gitePricing.depart_tardif)}
+                        </span>
+                      </div>
+                      <span className="calendar-quick-create-sheet__switch-control">
+                        <input
+                          data-reservation-field="option_depart_tardif"
+                          type="checkbox"
+                          checked={draft.option_depart_tardif}
+                          onChange={(event) => onFieldChange("option_depart_tardif", event.target.checked)}
                         />
                         <span aria-hidden="true" />
                       </span>

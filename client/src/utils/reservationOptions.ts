@@ -36,6 +36,7 @@ export const toNonNegativeInt = (value: unknown, fallback = 0) => {
 export const buildQuickReservationOptions = (params: {
   baseOptions?: ContratOptions | null;
   menageEnabled: boolean;
+  departTardifEnabled: boolean;
   drapsCount: number;
   serviettesCount: number;
 }) => {
@@ -58,6 +59,10 @@ export const buildQuickReservationOptions = (params: {
     menage: {
       ...baseOptions.menage,
       enabled: params.menageEnabled,
+    },
+    depart_tardif: {
+      ...baseOptions.depart_tardif,
+      enabled: params.departTardifEnabled,
     },
   } satisfies ContratOptions;
 };

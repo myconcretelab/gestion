@@ -1642,7 +1642,7 @@ body.app-scroll-locked {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  min-height: var(--app-height);
+  min-height: var(--sheet-open-height, var(--app-height));
   padding: 12px 12px calc(12px + var(--safe-area-bottom) + var(--viewport-offset-bottom));
   background: rgba(15, 23, 42, 0.56);
   overscroll-behavior: none;
@@ -1650,7 +1650,8 @@ body.app-scroll-locked {
 
 .calendar-quick-create-sheet__panel {
   width: min(100%, 440px);
-  max-height: min(calc(var(--app-height) - 12px - var(--viewport-offset-bottom)), 760px);
+  height: min(calc(var(--sheet-open-height, var(--app-height)) - 12px - var(--viewport-offset-bottom)), 760px);
+  max-height: min(calc(var(--sheet-open-height, var(--app-height)) - 12px - var(--viewport-offset-bottom)), 760px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
@@ -7972,7 +7973,8 @@ button.warning {
   .calendar-quick-create-sheet__panel {
     padding: 10px 10px 12px;
     border-radius: 18px;
-    max-height: min(calc(var(--app-height) - 12px - var(--viewport-offset-bottom)), 100%);
+    height: min(calc(var(--sheet-open-height, var(--app-height)) - 12px - var(--viewport-offset-bottom)), 100%);
+    max-height: min(calc(var(--sheet-open-height, var(--app-height)) - 12px - var(--viewport-offset-bottom)), 100%);
   }
 
   .calendar-quick-create-sheet__stats-grid {
