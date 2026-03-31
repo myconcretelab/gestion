@@ -52,6 +52,8 @@ body.app-scroll-locked {
   --calendar-gap: 6px;
   --calendar-reservation-height: 24px;
   --calendar-reservation-top: 64px;
+  --calendar-reservation-start-offset: 17px;
+  --calendar-reservation-end-offset: 20px;
   --calendar-day-min-height: 118px;
   --calendar-week-side-padding: 24px;
   display: flex;
@@ -1281,7 +1283,11 @@ body.app-scroll-locked {
 }
 
 .calendar-reservation:not(.calendar-reservation--continues-to-next) {
-  margin-right: -16px;
+  margin-right: calc(var(--calendar-reservation-end-offset) * -1);
+}
+
+.calendar-reservation:not(.calendar-reservation--continues-from-previous) {
+  margin-left: var(--calendar-reservation-start-offset);
 }
 
 .calendar-reservation--continuation {
