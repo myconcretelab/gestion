@@ -25,7 +25,7 @@ const createMockResponse = (): MockResponse => ({
   },
 });
 
-const getRouteHandler = (router: any, method: "post", routePath: string) => {
+const getRouteHandler = (router: any, method: "get" | "post", routePath: string) => {
   const layer = router.stack.find(
     (item: any) => item.route?.path === routePath && item.route?.methods?.[method]
   );
@@ -44,6 +44,102 @@ const createReservationPayload = () => ({
   price_driver: "nightly" as const,
   source_paiement: "Airbnb",
   commentaire: "note",
+});
+
+test("GET /reservations/:id retourne la reservation hydratee", async () => {
+  const originalFindUnique = prisma.reservation.findUnique;
+
+  try {
+    prisma.reservation.findUnique = async () => ({
+      id: "reservation-1",
+      gite_id: "gite-1",
+      placeholder_id: null,
+      hote_nom: "Client Test",
+      telephone: "0600000000",
+      email: null,
+      date_entree: new Date("2026-03-21T00:00:00.000Z"),
+      date_sortie: new Date("2026-03-24T00:00:00.000Z"),
+      nb_nuits: 3,
+      nb_adultes: 2,
+      prix_par_nuit: 100,
+      prix_total: 300,
+      source_paiement: "Airbnb",
+      commentaire: "note",
+      remise_montant: 0,
+      commission_channel_mode: "euro",
+      commission_channel_value: 0,
+      frais_optionnels_montant: 0,
+      frais_optionnels_libelle: null,
+      frais_optionnels_declares: false,
+      options: null,
+      airbnb_url: null,
+      origin_system: "app",
+      origin_reference: null,
+      export_to_ical: true,
+      createdAt: new Date("2026-03-20T00:00:00.000Z"),
+      updatedAt: new Date("2026-03-20T00:00:00.000Z"),
+      gite: { id: "gite-1", nom: "Gite test", prefixe_contrat: "GT", ordre: 0 },
+      placeholder: null,
+    });
+
+    const reservationsRouterModule = await import("../src/routes/reservations.ts");
+    const get = getRouteHandler(reservationsRouterModule.default, "get", "/:id");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await get(
+      {
+        body: {},
+        params: { id: "reservation-1" },
+        query: {},
+        headers: {},
+      },
+      response,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal((response.body as any).id, "reservation-1");
+    assert.equal((response.body as any).gite?.id, "gite-1");
+    assert.equal((response.body as any).date_entree.toISOString(), "2026-03-21T00:00:00.000Z");
+  } finally {
+    prisma.reservation.findUnique = originalFindUnique;
+  }
+});
+
+test("GET /reservations/:id retourne 404 si la reservation est absente", async () => {
+  const originalFindUnique = prisma.reservation.findUnique;
+
+  try {
+    prisma.reservation.findUnique = async () => null;
+
+    const reservationsRouterModule = await import("../src/routes/reservations.ts");
+    const get = getRouteHandler(reservationsRouterModule.default, "get", "/:id");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await get(
+      {
+        body: {},
+        params: { id: "reservation-missing" },
+        query: {},
+        headers: {},
+      },
+      response,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 404);
+    assert.equal((response.body as any).error, "Réservation introuvable");
+  } finally {
+    prisma.reservation.findUnique = originalFindUnique;
+  }
 });
 
 test("POST /reservations retourne skipped si le gite n'a pas d'ID Airbnb", async () => {
