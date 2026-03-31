@@ -16,6 +16,7 @@ import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
 import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
 import { hasValidCronTriggerToken, parseBearerToken } from "./utils/cronTriggerAuth.js";
+import { isPublicApiPath } from "./utils/publicApiPath.js";
 import {
   buildServerAuthRequiredError,
   clearServerAuthCookie,
@@ -49,6 +50,10 @@ export const createApp = () => {
   app.use("/api/auth", authRouter);
   app.use("/api", async (req, res, next) => {
     try {
+      if (isPublicApiPath(req.path)) {
+        return next();
+      }
+
       if (/^\/gites\/[^/]+\/calendar\.ics$/i.test(req.path)) {
         return next();
       }
