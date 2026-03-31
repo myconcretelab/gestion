@@ -247,6 +247,20 @@ const MobileReservationEditorPage = () => {
   const quickReservationComputedTotal = quickReservationDerived.computedTotal;
   const quickReservationSmsText = quickReservationDerived.smsText;
   const quickReservationSmsHref = quickReservationDerived.smsHref;
+  const activeOptionCount =
+    Number(quickReservationDraft?.option_menage ? 1 : 0) +
+    Number(quickReservationDraft?.option_depart_tardif ? 1 : 0) +
+    Number((quickReservationDraft?.option_draps ?? 0) > 0 ? 1 : 0) +
+    Number((quickReservationDraft?.option_serviettes ?? 0) > 0 ? 1 : 0);
+  const optionsToggleSummary =
+    activeOptionCount > 0
+      ? `${activeOptionCount} activée${activeOptionCount > 1 ? "s" : ""} · ${formatEuro(quickReservationOptionsPreview.total)}`
+      : "Ménage, départ tardif, linge";
+  const smsSelectionCount = quickReservationSmsSelection.length;
+  const smsToggleSummary =
+    smsSelectionCount > 0
+      ? `${smsSelectionCount} bloc${smsSelectionCount > 1 ? "s" : ""} ajouté${smsSelectionCount > 1 ? "s" : ""}`
+      : "Message prêt à personnaliser";
   const hasLongSmsPreview = useMemo(
     () => quickReservationSmsText.length > 260 || quickReservationSmsText.split("\n").length > 6,
     [quickReservationSmsText]
@@ -504,8 +518,6 @@ const MobileReservationEditorPage = () => {
 
           <div className="calendar-quick-create-sheet__form">
             <section className="calendar-quick-create-sheet__section">
-              <p className="calendar-quick-create-sheet__section-title">1 - Infos séjour</p>
-
               <label className="field field--small calendar-quick-create-sheet__host-field">
                 Hôte
                 <input
@@ -639,12 +651,16 @@ const MobileReservationEditorPage = () => {
             <section className="calendar-quick-create-sheet__section">
               <button
                 type="button"
-                className="calendar-quick-create-sheet__section-toggle"
+                className={`calendar-quick-create-sheet__section-toggle${
+                  optionsExpanded ? " calendar-quick-create-sheet__section-toggle--expanded" : ""
+                }`}
                 onClick={() => setOptionsExpanded((current) => !current)}
                 aria-expanded={optionsExpanded}
               >
-                <span>2 - Options</span>
-                <span>{optionsExpanded ? "Masquer" : "Afficher"}</span>
+                <span className="calendar-quick-create-sheet__section-toggle-copy">
+                  <span className="calendar-quick-create-sheet__section-toggle-title">Options</span>
+                  <span className="calendar-quick-create-sheet__section-toggle-summary">{optionsToggleSummary}</span>
+                </span>
               </button>
 
               {optionsExpanded ? (
@@ -737,12 +753,16 @@ const MobileReservationEditorPage = () => {
             <section className="calendar-quick-create-sheet__section">
               <button
                 type="button"
-                className="calendar-quick-create-sheet__section-toggle"
+                className={`calendar-quick-create-sheet__section-toggle${
+                  smsExpanded ? " calendar-quick-create-sheet__section-toggle--expanded" : ""
+                }`}
                 onClick={() => setSmsExpanded((current) => !current)}
                 aria-expanded={smsExpanded}
               >
-                <span>3 - SMS de confirmation</span>
-                <span>{smsExpanded ? "Masquer" : "Afficher"}</span>
+                <span className="calendar-quick-create-sheet__section-toggle-copy">
+                  <span className="calendar-quick-create-sheet__section-toggle-title">SMS de confirmation</span>
+                  <span className="calendar-quick-create-sheet__section-toggle-summary">{smsToggleSummary}</span>
+                </span>
               </button>
 
               {smsExpanded ? (

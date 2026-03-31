@@ -1274,6 +1274,26 @@ router.get("/prefill/:id", async (req, res, next) => {
   }
 });
 
+router.get("/:id", async (req, res, next) => {
+  try {
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      include: {
+        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+        placeholder: { select: { id: true, abbreviation: true, label: true } },
+      },
+    });
+
+    if (!reservation) {
+      return res.status(404).json({ error: "Réservation introuvable" });
+    }
+
+    return res.json(hydrateReservation(reservation));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/", async (req, res, next) => {
   try {
     const payload = reservationPayloadSchema.parse(req.body);
