@@ -2360,6 +2360,13 @@ body.app-scroll-locked {
   padding: 16px 16px calc(24px + var(--safe-area-bottom));
 }
 
+.reservation-editor-page__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .reservation-editor-page__panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -2395,9 +2402,34 @@ body.app-scroll-locked {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
+.reservation-editor-page__back:disabled {
+  opacity: 0.65;
+  box-shadow: none;
+}
+
 .reservation-editor-page__back svg {
   width: 18px;
   height: 18px;
+}
+
+.reservation-editor-page__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.86rem;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.22);
+}
+
+.reservation-editor-page__delete:disabled {
+  opacity: 0.65;
+  box-shadow: none;
 }
 
 .reservation-editor-page__back--footer {
@@ -8142,6 +8174,10 @@ button.warning {
   .reservation-editor-page {
     width: 100%;
     padding: 12px 12px calc(20px + var(--safe-area-bottom));
+  }
+
+  .reservation-editor-page__header-actions {
+    gap: 8px;
   }
 
   .reservation-editor-page__panel {
