@@ -1,14 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
-import {
-  buildAirbnbCalendarRefreshAppNotice,
-  handleAirbnbCalendarRefreshFailure,
-  waitForAirbnbCalendarRefreshJob,
-  type AirbnbCalendarRefreshCreateStatus,
-} from "../utils/airbnbCalendarRefresh";
-import { dispatchAppNotice } from "../utils/appNotices";
 import { formatEuro } from "../utils/format";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -20,23 +13,10 @@ import {
 import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
-import MobileReservationSheet from "./shared/MobileReservationSheet";
 import {
-  DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS,
-  RESERVATION_SOURCES,
-  buildNewQuickReservationDraft,
-  buildQuickReservationDraftFromReservation,
-  buildQuickReservationSavePayload,
-  computeQuickReservationDerivedState,
-  getQuickReservationOptionCountMax,
-  QuickReservationDraft,
-  QuickReservationErrorField,
-  QuickReservationSmsSettings,
-  QuickReservationSmsSnippet,
-  round2,
-  updateQuickReservationDraftField,
-  normalizeIsoDate,
-} from "./shared/quickReservation";
+  buildCalendarReservationReturnHref,
+  buildMobileReservationEditorHref,
+} from "./shared/mobileReservationEditor";
 import type { Gite, Reservation } from "../utils/types";
 
 const MONTHS = [
@@ -140,39 +120,16 @@ type FloatingPopoverLayout = {
   maxHeight: number;
 } | null;
 
-type ReservationCreateResponse = Reservation & {
-  created_reservations?: Reservation[];
-  airbnb_calendar_refresh?: AirbnbCalendarRefreshCreateStatus;
-};
-
-type QuickReservationMode = "create" | "edit";
-
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 const parseIsoDate = (value: string) => {
-  const normalized = normalizeIsoDate(value);
-  const [year, month, day] = normalized.split("-").map(Number);
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
 };
 
 const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
 
 const addUtcDays = (value: Date, days: number) => new Date(value.getTime() + days * DAY_MS);
-
-const getGiteNightlyPriceSuggestions = (gite: Gite | null) => {
-  const seen = new Set<number>();
-  const suggestions: number[] = [];
-  const rawList = Array.isArray(gite?.prix_nuit_liste) ? gite.prix_nuit_liste : [];
-
-  rawList.forEach((item) => {
-    const nextValue = round2(Math.max(0, Number(item)));
-    if (!Number.isFinite(nextValue) || seen.has(nextValue)) return;
-    seen.add(nextValue);
-    suggestions.push(nextValue);
-  });
-
-  return suggestions;
-};
 
 const haveSharedReservationId = (leftIds: string[] | undefined, rightIds: string[] | undefined) => {
   if (!leftIds?.length || !rightIds?.length) return false;
@@ -386,6 +343,7 @@ const buildCalendarMonthData = ({
 
 const CalendrierPage = () => {
   const now = new Date();
+  const location = useLocation();
   const navigate = useNavigate();
   const currentYear = now.getUTCFullYear();
   const currentMonthIndex = now.getUTCMonth();
@@ -400,18 +358,6 @@ const CalendrierPage = () => {
   const [hoveredReservation, setHoveredReservation] = useState<HoveredReservationState>(null);
   const [floatingPopoverLayout, setFloatingPopoverLayout] = useState<FloatingPopoverLayout>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
-  const [quickReservationDraft, setQuickReservationDraft] = useState<QuickReservationDraft | null>(null);
-  const [quickReservationOpen, setQuickReservationOpen] = useState(false);
-  const [quickReservationMode, setQuickReservationMode] = useState<QuickReservationMode>("create");
-  const [quickReservationEditingId, setQuickReservationEditingId] = useState<string | null>(null);
-  const [quickReservationSmsSelection, setQuickReservationSmsSelection] = useState<string[]>([]);
-  const [quickReservationSmsSnippets, setQuickReservationSmsSnippets] = useState<QuickReservationSmsSnippet[]>(
-    DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS
-  );
-  const [quickReservationSaving, setQuickReservationSaving] = useState(false);
-  const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
-  const [quickReservationErrorField, setQuickReservationErrorField] = useState<QuickReservationErrorField>(null);
-  const [quickReservationSaved, setQuickReservationSaved] = useState(false);
   const [mobileActionReservationId, setMobileActionReservationId] = useState<string | null>(null);
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [loading, setLoading] = useState(true);
@@ -436,28 +382,21 @@ const CalendrierPage = () => {
     kind: "date",
     value: todayIso,
   });
-  const airbnbCalendarRefreshControllersRef = useRef<AbortController[]>([]);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [gitesData, reservationsData, sourceColorSettings, smsTextSettings] = await Promise.all([
+      const [gitesData, reservationsData, sourceColorSettings] = await Promise.all([
         apiFetch<Gite[]>("/gites"),
         apiFetch<Reservation[]>("/reservations"),
         apiFetch<SourceColorSettings>("/settings/source-colors"),
-        apiFetch<QuickReservationSmsSettings>("/settings/sms-texts"),
       ]);
 
       setGites(gitesData);
       setReservations(reservationsData);
       setSourceColors(sourceColorSettings.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
-      setQuickReservationSmsSnippets(
-        Array.isArray(smsTextSettings.texts) && smsTextSettings.texts.length > 0
-          ? smsTextSettings.texts
-          : DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS
-      );
       setSelectedGiteId((previous) => previous || gitesData[0]?.id || "");
     } catch (err) {
       if (isApiError(err)) setError(err.message);
@@ -470,45 +409,6 @@ const CalendrierPage = () => {
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    return () => {
-      airbnbCalendarRefreshControllersRef.current.forEach((controller) => controller.abort());
-    };
-  }, []);
-
-  const startAirbnbCalendarRefreshPolling = useCallback((refresh: AirbnbCalendarRefreshCreateStatus | undefined) => {
-    if (!refresh) return;
-
-    dispatchAppNotice(buildAirbnbCalendarRefreshAppNotice(refresh));
-    if (refresh.status !== "queued" || !refresh.job_id) return;
-
-    const controller = new AbortController();
-    airbnbCalendarRefreshControllersRef.current.push(controller);
-
-    void waitForAirbnbCalendarRefreshJob(refresh.job_id, {
-      signal: controller.signal,
-      onUpdate: (status) => {
-        dispatchAppNotice(buildAirbnbCalendarRefreshAppNotice(status));
-      },
-    })
-      .catch((error) => {
-        handleAirbnbCalendarRefreshFailure(error, (message) =>
-          dispatchAppNotice({
-            label: "Airbnb",
-            tone: "error",
-            message,
-            timeoutMs: 5_200,
-            role: "alert",
-          })
-        );
-      })
-      .finally(() => {
-        airbnbCalendarRefreshControllersRef.current = airbnbCalendarRefreshControllersRef.current.filter(
-          (current) => current !== controller
-        );
-      });
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -602,27 +502,31 @@ const CalendrierPage = () => {
   }, [gites, selectedGiteId]);
 
   useEffect(() => {
+    if (!gites.length) return;
+
+    const searchParams = new URLSearchParams(location.search);
+    const nextGiteId = String(searchParams.get("gite") ?? "").trim();
+    const nextYear = Number.parseInt(String(searchParams.get("year") ?? ""), 10);
+    const nextMonth = Number.parseInt(String(searchParams.get("month") ?? ""), 10);
+
+    if (nextGiteId && gites.some((gite) => gite.id === nextGiteId)) {
+      setSelectedGiteId(nextGiteId);
+    }
+
+    if (Number.isInteger(nextYear) && nextYear >= 2000 && nextYear <= 2100) {
+      setYear(nextYear);
+    }
+
+    if (Number.isInteger(nextMonth) && nextMonth >= 1 && nextMonth <= 12) {
+      pendingScrollTargetRef.current = { kind: "month", value: nextMonth - 1 };
+    }
+  }, [gites, location.search]);
+
+  useEffect(() => {
     setHoveredReservation(null);
     setSelectedDateRange(null);
     setMobileActionReservationId(null);
   }, [selectedGiteId, year]);
-
-  useEffect(() => {
-    if (quickReservationOpen) {
-      setMobileActionReservationId(null);
-    }
-  }, [quickReservationOpen]);
-
-  useEffect(() => {
-    if (selectedDateRange || quickReservationMode === "edit") return;
-    setQuickReservationOpen(false);
-    setQuickReservationDraft(null);
-    setQuickReservationEditingId(null);
-    setQuickReservationSmsSelection([]);
-    setQuickReservationError(null);
-    setQuickReservationErrorField(null);
-    setQuickReservationSaved(false);
-  }, [quickReservationMode, selectedDateRange]);
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
@@ -637,19 +541,7 @@ const CalendrierPage = () => {
     if (!selectedDateRange || !selectedRangeExitIso) return "";
     return `${formatLongDate(selectedDateRange.startIso)} → ${formatLongDate(selectedRangeExitIso)}`;
   }, [selectedDateRange, selectedRangeExitIso]);
-  const quickReservationNightlySuggestions = useMemo(() => getGiteNightlyPriceSuggestions(selectedGite), [selectedGite]);
-  const quickReservationSuggestedNightly = quickReservationNightlySuggestions[0] ?? 0;
-  const quickReservationAdultsMax = useMemo(() => getQuickReservationAdultsMax(selectedGite), [selectedGite]);
-  const quickReservationAdultOptions = useMemo(
-    () => Array.from({ length: quickReservationAdultsMax }, (_, index) => index + 1),
-    [quickReservationAdultsMax]
-  );
-  const quickReservationOptionCountMax = useMemo(() => getQuickReservationOptionCountMax(selectedGite), [selectedGite]);
-  const canUseQuickReservation = usesViewportScroll && Boolean(selectedDateRange && selectedGiteId && selectedRangeNights > 0);
-  const quickReservationEditingReservation = useMemo(
-    () => (quickReservationEditingId ? reservations.find((reservation) => reservation.id === quickReservationEditingId) ?? null : null),
-    [quickReservationEditingId, reservations]
-  );
+  const hasSelectedRangeAction = usesViewportScroll && Boolean(selectedDateRange && selectedGiteId && selectedRangeNights > 0);
   const pageStyle = useMemo(
     () =>
       ({
@@ -803,40 +695,15 @@ const CalendrierPage = () => {
     [isSelectableDateRange, selectableDateSetsByMonth]
   );
 
-  const buildQuickReservationDraft = useCallback((): QuickReservationDraft | null => {
-    if (!selectedDateRange || !selectedGiteId || selectedRangeNights <= 0) return null;
-
-    const defaultAdults = Math.max(1, selectedGite?.nb_adultes_habituel ?? 2);
-
-    return buildNewQuickReservationDraft({
-      startIso: selectedDateRange.startIso,
-      exitIso: selectedDateRange.endIso,
-      defaultAdults,
-      nightlySuggestion: quickReservationSuggestedNightly,
-      gite: selectedGite,
-    });
-  }, [quickReservationSuggestedNightly, selectedDateRange, selectedGite, selectedGiteId, selectedRangeNights]);
-
-  const buildDraftFromReservation = useCallback(
-    (reservation: Reservation): QuickReservationDraft => ({
-      ...buildQuickReservationDraftFromReservation({
-        reservation,
-        gite: selectedGite,
+  const buildCalendarBackHref = useCallback(
+    (monthNumber: number, targetYear = year) =>
+      buildCalendarReservationReturnHref({
+        giteId: selectedGiteId,
+        year: targetYear,
+        month: monthNumber,
       }),
-    }),
-    [selectedGite]
+    [selectedGiteId, year]
   );
-
-  const closeQuickReservationSheet = useCallback(() => {
-    setQuickReservationOpen(false);
-    setQuickReservationDraft(null);
-    setQuickReservationMode("create");
-    setQuickReservationEditingId(null);
-    setQuickReservationSmsSelection([]);
-    setQuickReservationError(null);
-    setQuickReservationErrorField(null);
-    setQuickReservationSaved(false);
-  }, []);
 
   const openReservationInsertFromSelection = useCallback(
     (monthNumber: number) => {
@@ -854,6 +721,24 @@ const CalendrierPage = () => {
     [navigate, selectedDateRange, selectedGiteId, selectedRangeNights, year]
   );
 
+  const openMobileReservationCreateFromSelection = useCallback(
+    (monthNumber: number) => {
+      if (!selectedDateRange || !selectedGiteId || selectedRangeNights <= 0) return;
+
+      navigate(
+        buildMobileReservationEditorHref({
+          mode: "create",
+          origin: "calendar",
+          backHref: buildCalendarBackHref(monthNumber),
+          giteId: selectedGiteId,
+          entry: selectedDateRange.startIso,
+          exit: selectedDateRange.endIso,
+        })
+      );
+    },
+    [buildCalendarBackHref, navigate, selectedDateRange, selectedGiteId, selectedRangeNights]
+  );
+
   const openReservationInListing = useCallback(
     (reservation: Reservation, options?: { monthNumber?: number; year?: number }) => {
       const params = new URLSearchParams();
@@ -868,49 +753,34 @@ const CalendrierPage = () => {
     [navigate]
   );
 
-  const openQuickReservationSheet = useCallback(() => {
-    const nextDraft = buildQuickReservationDraft();
-    if (!nextDraft) return;
-    setQuickReservationMode("create");
-    setQuickReservationEditingId(null);
-    setQuickReservationDraft(nextDraft);
-    setQuickReservationSmsSelection([]);
-    setQuickReservationError(null);
-    setQuickReservationErrorField(null);
-    setQuickReservationSaved(false);
-    setQuickReservationOpen(true);
-  }, [buildQuickReservationDraft]);
-
-  const openQuickReservationEditSheet = useCallback(
-    (reservation: Reservation) => {
-      if (!usesViewportScroll) return;
+  const openMobileReservationEditPage = useCallback(
+    (reservation: Reservation, options?: { monthNumber?: number; year?: number }) => {
+      const reservationStartDate = parseIsoDate(reservation.date_entree);
+      const targetYear = options?.year ?? reservationStartDate.getUTCFullYear();
+      const targetMonth = options?.monthNumber ?? reservationStartDate.getUTCMonth() + 1;
 
       setMobileActionReservationId(null);
-      setQuickReservationMode("edit");
-      setQuickReservationEditingId(reservation.id);
-      setQuickReservationDraft(buildDraftFromReservation(reservation));
-      setQuickReservationSmsSelection([]);
-      setQuickReservationError(null);
-      setQuickReservationErrorField(null);
-      setQuickReservationSaved(false);
       setSelectedDateRange(null);
-      setQuickReservationOpen(true);
+      navigate(
+        buildMobileReservationEditorHref({
+          mode: "edit",
+          origin: "calendar",
+          backHref: buildCalendarReservationReturnHref({
+            giteId: reservation.gite_id ?? selectedGiteId,
+            year: targetYear,
+            month: targetMonth,
+          }),
+          reservationId: reservation.id,
+        })
+      );
     },
-    [buildDraftFromReservation, usesViewportScroll]
+    [navigate, selectedGiteId]
   );
 
   const handleReservationOpen = useCallback(
     (reservation: Reservation, options?: { monthNumber?: number; year?: number }) => {
       if (usesViewportScroll) {
         setSelectedDateRange(null);
-        setQuickReservationOpen(false);
-        setQuickReservationDraft(null);
-        setQuickReservationMode("create");
-        setQuickReservationEditingId(null);
-        setQuickReservationSmsSelection([]);
-        setQuickReservationError(null);
-        setQuickReservationErrorField(null);
-        setQuickReservationSaved(false);
         setMobileActionReservationId((current) => (current === reservation.id ? null : reservation.id));
         return;
       }
@@ -923,145 +793,14 @@ const CalendrierPage = () => {
   const handleReservationInsertFromSelection = useCallback(
     (monthNumber: number) => {
       if (usesViewportScroll) {
-        openQuickReservationSheet();
+        openMobileReservationCreateFromSelection(monthNumber);
         return;
       }
 
       openReservationInsertFromSelection(monthNumber);
     },
-    [openQuickReservationSheet, openReservationInsertFromSelection, usesViewportScroll]
+    [openMobileReservationCreateFromSelection, openReservationInsertFromSelection, usesViewportScroll]
   );
-
-  const handleQuickReservationFieldChange = useCallback(
-    (field: keyof QuickReservationDraft, value: string | number | boolean) => {
-      setQuickReservationSaved(false);
-      setQuickReservationError(null);
-      setQuickReservationErrorField(null);
-      setQuickReservationDraft((current) => {
-        if (!current) return current;
-        return updateQuickReservationDraftField({
-          current,
-          field,
-          value,
-          gite: selectedGite,
-        });
-      });
-    },
-    [selectedGite]
-  );
-
-  const saveQuickReservation = useCallback(async () => {
-    if (!selectedGiteId || !quickReservationDraft || quickReservationSaving) return;
-
-    const savePayload = buildQuickReservationSavePayload({
-      draft: quickReservationDraft,
-      gite: selectedGite,
-      baseOptions: quickReservationEditingReservation?.options,
-    });
-
-    if (!savePayload.ok) {
-      setQuickReservationError(savePayload.error);
-      setQuickReservationErrorField(savePayload.errorField);
-      setQuickReservationSaved(false);
-      return;
-    }
-
-    setQuickReservationSaving(true);
-    setQuickReservationError(null);
-    setQuickReservationErrorField(null);
-
-    try {
-      let persistedReservationId: string | null = null;
-
-      if (quickReservationMode === "edit") {
-        const existingReservation = quickReservationEditingReservation;
-        if (!existingReservation) {
-          setQuickReservationError("Réservation introuvable.");
-          setQuickReservationErrorField(null);
-          setQuickReservationSaving(false);
-          return;
-        }
-
-        const updatedReservation = await apiFetch<Reservation>(`/reservations/${existingReservation.id}`, {
-          method: "PUT",
-          json: {
-            gite_id: existingReservation.gite_id ?? selectedGiteId,
-            placeholder_id: existingReservation.placeholder_id ?? undefined,
-            airbnb_url: existingReservation.airbnb_url ?? undefined,
-            ...savePayload.payload,
-            remise_montant: existingReservation.remise_montant ?? 0,
-            commission_channel_mode: existingReservation.commission_channel_mode ?? "euro",
-            commission_channel_value: existingReservation.commission_channel_value ?? 0,
-          },
-        });
-        persistedReservationId = updatedReservation.id;
-      } else {
-        const created = await apiFetch<ReservationCreateResponse>("/reservations", {
-          method: "POST",
-          json: {
-            gite_id: selectedGiteId,
-            ...savePayload.payload,
-          },
-        });
-        persistedReservationId = created.id;
-        startAirbnbCalendarRefreshPolling(created.airbnb_calendar_refresh);
-      }
-
-      await loadData();
-      if (quickReservationMode === "create") {
-        setQuickReservationMode("edit");
-        setSelectedDateRange(null);
-      }
-      setQuickReservationEditingId(persistedReservationId);
-      setQuickReservationSaved(true);
-    } catch (err) {
-      if (isApiError(err)) {
-        setQuickReservationError(err.message);
-      } else {
-        setQuickReservationError("Impossible d'enregistrer la réservation.");
-      }
-      setQuickReservationErrorField(null);
-      setQuickReservationSaved(false);
-    } finally {
-      setQuickReservationSaving(false);
-    }
-  }, [
-    loadData,
-    quickReservationDraft,
-    quickReservationEditingReservation,
-    quickReservationMode,
-    quickReservationSaving,
-    selectedGite,
-    selectedGiteId,
-    startAirbnbCalendarRefreshPolling,
-  ]);
-
-  const quickReservationDerived = useMemo(
-    () =>
-      computeQuickReservationDerivedState({
-        draft: quickReservationDraft,
-        editingReservation: quickReservationEditingReservation,
-        gite: selectedGite,
-        smsSnippets: quickReservationSmsSnippets,
-        smsSelection: quickReservationSmsSelection,
-      }),
-    [quickReservationDraft, quickReservationEditingReservation, quickReservationSmsSelection, quickReservationSmsSnippets, selectedGite]
-  );
-  const quickReservationDateSummary = quickReservationDerived.dateSummary;
-  const quickReservationOptionsPreview = quickReservationDerived.optionsPreview;
-  const quickReservationComputedTotal = quickReservationDerived.computedTotal;
-  const quickReservationSmsText = quickReservationDerived.smsText;
-  const quickReservationSmsHref = quickReservationDerived.smsHref;
-
-  const handleQuickReservationPrimaryAction = useCallback(() => {
-    if (quickReservationSaved) {
-      if (!quickReservationSmsHref) return;
-      window.location.href = quickReservationSmsHref;
-      return;
-    }
-
-    void saveQuickReservation();
-  }, [quickReservationSaved, quickReservationSmsHref, saveQuickReservation]);
 
   const getScrollOffset = useCallback(
     (kind: "month" | "date") => {
@@ -1308,11 +1047,11 @@ const CalendrierPage = () => {
     );
   }
 
-  const hasMobileOverlay = usesViewportScroll && (canUseQuickReservation || Boolean(mobileActionReservation));
+  const hasMobileOverlay = usesViewportScroll && Boolean(mobileActionReservation);
 
   return (
     <div
-      className={`calendar-page${canUseQuickReservation ? " calendar-page--quick-create-visible" : ""}${
+      className={`calendar-page${hasSelectedRangeAction ? " calendar-page--quick-create-visible" : ""}${
         hasMobileOverlay ? " calendar-page--mobile-overlay-visible" : ""
       }`}
       style={pageStyle}
@@ -1672,7 +1411,7 @@ const CalendrierPage = () => {
         </aside>
       </div>
 
-      {canUseQuickReservation ? (
+      {hasSelectedRangeAction ? (
         <div className="calendar-quick-create-bar" role="status" aria-live="polite">
           <div className="calendar-quick-create-bar__content">
             <strong>{selectedRangeNights} nuit{selectedRangeNights > 1 ? "s" : ""}</strong>
@@ -1682,8 +1421,12 @@ const CalendrierPage = () => {
             <button type="button" className="calendar-quick-create-bar__ghost" onClick={() => setSelectedDateRange(null)}>
               Effacer
             </button>
-            <button type="button" className="calendar-quick-create-bar__primary" onClick={openQuickReservationSheet}>
-              Ajouter
+            <button
+              type="button"
+              className="calendar-quick-create-bar__primary"
+              onClick={() => handleReservationInsertFromSelection((selectedDateRange?.monthIndex ?? activeMonthIndex) + 1)}
+            >
+              Éditer
             </button>
           </div>
         </div>
@@ -1743,60 +1486,17 @@ const CalendrierPage = () => {
             { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
           ]}
           onClose={() => setMobileActionReservationId(null)}
-          onEdit={() => openQuickReservationEditSheet(mobileActionReservation)}
+          onEdit={() =>
+            openMobileReservationEditPage(mobileActionReservation, {
+              monthNumber: activeMonthIndex + 1,
+              year,
+            })
+          }
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
           smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
           airbnbUrl={mobileActionReservation.airbnb_url}
         />
       ) : null}
-
-      <MobileReservationSheet
-        open={usesViewportScroll && quickReservationOpen}
-        mode={quickReservationMode}
-        saving={quickReservationSaving}
-        saved={quickReservationSaved}
-        title={selectedGite?.nom ?? "Réservation"}
-        error={quickReservationError}
-        errorField={quickReservationErrorField}
-        savedMessage={quickReservationSaved ? "Réservation enregistrée" : null}
-        draft={quickReservationDraft}
-        dateSummary={quickReservationDateSummary}
-        computedTotal={quickReservationComputedTotal}
-        adultOptions={quickReservationAdultOptions}
-        nightlySuggestions={quickReservationNightlySuggestions}
-        sourceOptions={RESERVATION_SOURCES}
-        optionCountMax={quickReservationOptionCountMax}
-        optionPreview={quickReservationOptionsPreview}
-        gitePricing={{
-          menage: Number(selectedGite?.options_menage_forfait ?? 0),
-          draps: Number(selectedGite?.options_draps_par_lit ?? 0),
-          serviettes: Number(selectedGite?.options_linge_toilette_par_personne ?? 0),
-          depart_tardif: Number(selectedGite?.options_depart_tardif_forfait ?? 0),
-        }}
-        smsSnippets={quickReservationSmsSnippets}
-        smsSelection={quickReservationSmsSelection}
-        smsText={quickReservationSmsText}
-        smsHref={quickReservationSmsHref}
-        primaryActionLabel={
-          quickReservationSaved
-            ? "Envoyer le SMS"
-            : quickReservationSaving
-              ? "Enregistrement..."
-              : quickReservationMode === "edit"
-                ? "Mettre à jour"
-                : "Enregistrer"
-        }
-        primaryActionDisabled={quickReservationSaving || (quickReservationSaved && !quickReservationSmsHref)}
-        onRequestClose={closeQuickReservationSheet}
-        onPrimaryAction={handleQuickReservationPrimaryAction}
-        onFieldChange={handleQuickReservationFieldChange}
-        onSmsSelectionChange={(snippetId, checked) =>
-          setQuickReservationSmsSelection((current) =>
-            checked ? [...current, snippetId] : current.filter((item) => item !== snippetId)
-          )
-        }
-        formatShortDate={formatShortDate}
-      />
     </div>
   );
 };
