@@ -89,6 +89,7 @@ const MobileReservationEditorPage = () => {
   );
   const [quickReservationSmsSelection, setQuickReservationSmsSelection] = useState<string[]>([]);
   const [quickReservationSaving, setQuickReservationSaving] = useState(false);
+  const [quickReservationDeleting, setQuickReservationDeleting] = useState(false);
   const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
   const [quickReservationErrorField, setQuickReservationErrorField] = useState<QuickReservationErrorField>(null);
   const [quickReservationSaved, setQuickReservationSaved] = useState(false);
@@ -440,14 +441,37 @@ const MobileReservationEditorPage = () => {
   ]);
 
   const handlePrimaryAction = useCallback(() => {
-    if (quickReservationSaved) {
-      if (!quickReservationSmsHref) return;
-      window.location.href = quickReservationSmsHref;
-      return;
-    }
-
     void saveQuickReservation();
-  }, [quickReservationSaved, quickReservationSmsHref, saveQuickReservation]);
+  }, [saveQuickReservation]);
+
+  const handleSmsAction = useCallback(() => {
+    if (!quickReservationSmsHref) return;
+    window.location.href = quickReservationSmsHref;
+  }, [quickReservationSmsHref]);
+
+  const handleDeleteReservation = useCallback(async () => {
+    if (!editingReservation || quickReservationDeleting) return;
+
+    const confirmed = window.confirm(`Supprimer la réservation de ${editingReservation.hote_nom.trim() || "cet hôte"} ?`);
+    if (!confirmed) return;
+
+    setQuickReservationDeleting(true);
+    setQuickReservationError(null);
+    setQuickReservationErrorField(null);
+
+    try {
+      await apiFetch(`/reservations/${editingReservation.id}`, { method: "DELETE" });
+      navigate(backHref, { replace: true });
+    } catch (error) {
+      if (isApiError(error)) {
+        setQuickReservationError(error.message);
+      } else {
+        setQuickReservationError("Impossible de supprimer la réservation.");
+      }
+    } finally {
+      setQuickReservationDeleting(false);
+    }
+  }, [backHref, editingReservation, navigate, quickReservationDeleting]);
 
   if (loading) {
     return (
@@ -477,10 +501,22 @@ const MobileReservationEditorPage = () => {
 
   return (
     <div className="reservation-editor-page" style={pageStyle}>
-      <button type="button" className="reservation-editor-page__back" onClick={goBack}>
-        <ArrowLeftIcon />
-        <span>Retour {origin === "calendar" ? "calendrier" : "today"}</span>
-      </button>
+      <div className="reservation-editor-page__header-actions">
+        <button type="button" className="reservation-editor-page__back" onClick={goBack} disabled={quickReservationDeleting}>
+          <ArrowLeftIcon />
+          <span>Retour {origin === "calendar" ? "calendrier" : "today"}</span>
+        </button>
+        {editingReservation ? (
+          <button
+            type="button"
+            className="reservation-editor-page__delete"
+            onClick={handleDeleteReservation}
+            disabled={quickReservationSaving || quickReservationDeleting}
+          >
+            {quickReservationDeleting ? "Suppression..." : "Supprimer"}
+          </button>
+        ) : null}
+      </div>
 
       <section className="reservation-editor-page__panel">
         <div className="calendar-quick-create-sheet__top">
@@ -835,13 +871,11 @@ const MobileReservationEditorPage = () => {
                       </svg>
                       <span>Copier</span>
                     </button>
-                    {quickReservationSaved ? (
-                      <span className="calendar-quick-create-sheet__sms-hint">
-                        {quickReservationSmsHref ? "Le bouton principal ouvre la messagerie SMS." : "Ajoute un numéro pour envoyer le SMS."}
-                      </span>
-                    ) : (
-                      <span className="calendar-quick-create-sheet__sms-hint">Le SMS s'ouvre après l'enregistrement.</span>
-                    )}
+                    <span className="calendar-quick-create-sheet__sms-hint">
+                      {quickReservationSmsHref
+                        ? "Le bouton Envoi SMS ouvre la messagerie."
+                        : "Ajoute un numéro pour envoyer le SMS."}
+                    </span>
                   </div>
                 </div>
               ) : null}
@@ -850,23 +884,25 @@ const MobileReservationEditorPage = () => {
         </div>
 
         <div className="calendar-quick-create-sheet__footer reservation-editor-page__footer">
-          <button type="button" className="reservation-editor-page__back reservation-editor-page__back--footer" onClick={goBack}>
-            <ArrowLeftIcon />
-            <span>Retour</span>
+          <button
+            type="button"
+            className="calendar-quick-create-sheet__submit"
+            onClick={handlePrimaryAction}
+            disabled={quickReservationSaving}
+          >
+            {quickReservationSaving ? "Enregistrement..." : editorMode === "edit" ? "Mettre à jour" : "Enregistrer"}
           </button>
           <button
             type="button"
-            className={`calendar-quick-create-sheet__submit${quickReservationSaved ? " calendar-quick-create-sheet__submit--sms" : ""}`}
-            onClick={handlePrimaryAction}
-            disabled={quickReservationSaving || (quickReservationSaved && !quickReservationSmsHref)}
+            className="calendar-quick-create-sheet__submit calendar-quick-create-sheet__submit--sms"
+            onClick={handleSmsAction}
+            disabled={quickReservationSaving || !quickReservationSmsHref}
           >
-            {quickReservationSaved
-              ? "Envoyer le SMS"
-              : quickReservationSaving
-                ? "Enregistrement..."
-                : editorMode === "edit"
-                  ? "Mettre à jour"
-                  : "Enregistrer"}
+            Envoi SMS
+          </button>
+          <button type="button" className="reservation-editor-page__back reservation-editor-page__back--footer" onClick={goBack}>
+            <ArrowLeftIcon />
+            <span>Retour</span>
           </button>
         </div>
       </section>
