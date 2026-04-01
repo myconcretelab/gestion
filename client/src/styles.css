@@ -1006,11 +1006,16 @@ body.app-scroll-locked {
   display: inline-flex;
   align-items: center;
   gap: 12px;
+  position: relative;
   padding: 9px 13px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--calendar-accent-soft) 62%, #ffffff 38%);
   border: 1px solid color-mix(in srgb, var(--calendar-accent-strong) 42%, #ffffff 58%);
   color: #1f2937;
+}
+
+.calendar-month-section__summary-crown {
+  display: none;
 }
 
 .calendar-month-section__summary span {
@@ -2962,6 +2967,35 @@ body.app-scroll-locked {
     margin-left: auto;
     gap: 8px;
     padding: 7px 10px;
+  }
+
+  .calendar-month-section__summary--leader {
+    margin-top: 10px;
+  }
+
+  .calendar-month-section__summary-crown {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -62%);
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    color: #9a6700;
+    background: linear-gradient(180deg, #ffe9a3 0%, #f5c94c 100%);
+    box-shadow: 0 6px 14px rgba(154, 103, 0, 0.16);
+  }
+
+  .calendar-month-section__summary-crown svg {
+    width: 12px;
+    height: 12px;
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .calendar-week {
@@ -5037,6 +5071,13 @@ button.warning {
   font-weight: 700;
 }
 
+.reservations-urssaf-reminder__flags {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .reservations-urssaf-reminder__actions {
   display: flex;
   align-items: center;
@@ -5310,6 +5351,12 @@ button.warning {
   border-color: #fecaca;
   background: #fff1f2;
   color: #9f1239;
+}
+
+.reservations-summary-pill--needs-completion {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .reservations-table col.reservations-col--insert {

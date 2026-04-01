@@ -152,6 +152,7 @@ type UrssafDeclarationsByKey = Record<string, UrssafDeclarationRow>;
 type UrssafUndeclaredMonthItem = {
   month: number;
   amount: number;
+  zeroTotalReservationsCount: number;
   managers: Array<{
     managerId: string;
     amount: number;
@@ -339,6 +340,16 @@ const pad2 = (value: number) => String(value).padStart(2, "0");
 
 const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
   `${year}-${pad2(month)}-${managerId}`;
+
+const isUrssafConcernedMonth = (
+  targetYear: number,
+  targetMonth: number,
+  currentPeriod: { year: number; month: number }
+) => {
+  if (targetYear < currentPeriod.year) return true;
+  if (targetYear > currentPeriod.year) return false;
+  return targetMonth < currentPeriod.month;
+};
 
 const toInputDate = (value: string) => {
   const date = new Date(value);
@@ -2514,16 +2525,20 @@ const ReservationsPage = () => {
 
       const amount = round2(undeclaredManagers.reduce((sum, manager) => sum + manager.amount, 0));
       if (amount <= 0) continue;
+      const zeroTotalReservationsCount = (reservationsByMonth.get(monthIndex) ?? []).reduce((count, reservation) => {
+        return round2(Number(reservation.prix_total ?? 0)) === 0 ? count + 1 : count;
+      }, 0);
 
       items.push({
         month: monthIndex,
         amount,
+        zeroTotalReservationsCount,
         managers: undeclaredManagers,
       });
     }
 
     return items.sort((left, right) => left.month - right.month);
-  }, [activeManagerIds, currentPeriod.month, currentPeriod.year, statisticsDataset, urssafDeclarationsByKey, year]);
+  }, [activeManagerIds, currentPeriod.month, currentPeriod.year, reservationsByMonth, statisticsDataset, urssafDeclarationsByKey, year]);
 
   const undeclaredUrssafByMonthForActiveTab = useMemo(() => {
     const byMonth = new Map<number, number>();
@@ -2913,10 +2928,14 @@ const ReservationsPage = () => {
   const monthSummary = (list: Reservation[]) => {
     let guestNights = 0;
     let declaredGuestNights = 0;
+    let zeroTotalReservationsCount = 0;
 
     list.forEach((item) => {
       const reservationGuestNights = computeReservationGuestNights(item);
       guestNights += reservationGuestNights;
+      if (round2(Number(item.prix_total ?? 0)) === 0) {
+        zeroTotalReservationsCount += 1;
+      }
 
       const normalizedSource = normalizeTextKey(normalizeReservationSource(item.source_paiement));
       if (!declarationExcludedSourceKeys.has(normalizedSource)) {
@@ -2929,6 +2948,7 @@ const ReservationsPage = () => {
       nights: list.reduce((acc, item) => acc + item.nb_nuits, 0),
       guestNights,
       declaredGuestNights,
+      zeroTotalReservationsCount,
       revenue: list.reduce((acc, item) => acc + item.prix_total, 0),
       fees: list.reduce((acc, item) => acc + (item.frais_optionnels_montant ?? 0), 0),
       adults: list.reduce((acc, item) => acc + item.nb_adultes, 0),
@@ -3727,6 +3747,20 @@ const ReservationsPage = () => {
                       {MONTHS[item.month - 1]} {year}
                     </div>
                     <div className="reservations-urssaf-reminder__amount">{formatEuro(item.amount)}</div>
+                    {item.zeroTotalReservationsCount > 0 ? (
+                      <div className="reservations-urssaf-reminder__flags">
+                        <span
+                          className="reservations-summary-pill reservations-summary-pill--needs-completion"
+                          title={`${formatPluralLabel(
+                            item.zeroTotalReservationsCount,
+                            "réservation",
+                            "réservations"
+                          )} avec un total à 0€ sur ce mois`}
+                        >
+                          Réservation à compléter
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="reservations-urssaf-reminder__actions">
                     <button
@@ -3790,6 +3824,8 @@ const ReservationsPage = () => {
             const undeclaredUrssafForMonth = undeclaredUrssafByMonthForActiveTab.get(monthIndex) ?? 0;
             const holidaySegments = holidaySegmentsByMonth.get(monthIndex) ?? [];
             const monthHasPendingUrssafReminder = undeclaredUrssafForMonth > 0;
+            const monthHasZeroTotalReservations =
+              summary.zeroTotalReservationsCount > 0 && isUrssafConcernedMonth(year, monthIndex, currentPeriod);
             const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
             const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
             const monthPanelId = `reservations-month-panel-${year}-${monthIndex}`;
@@ -3846,6 +3882,18 @@ const ReservationsPage = () => {
                       </span>
                       <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
+                      {monthHasZeroTotalReservations ? (
+                        <span
+                          className="reservations-summary-pill reservations-summary-pill--needs-completion"
+                          title={`${formatPluralLabel(
+                            summary.zeroTotalReservationsCount,
+                            "réservation",
+                            "réservations"
+                          )} avec un total à 0€ sur ce mois`}
+                        >
+                          Réservation à compléter
+                        </span>
+                      ) : null}
                       {declaredUrssafForMonth ? (
                         <span
                           className="reservations-summary-pill reservations-summary-pill--urssaf"
