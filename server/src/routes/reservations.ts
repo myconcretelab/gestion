@@ -1274,6 +1274,33 @@ router.get("/prefill/:id", async (req, res, next) => {
   }
 });
 
+router.get("/placeholders", async (_req, res, next) => {
+  try {
+    const placeholders = await prisma.reservationPlaceholder.findMany({
+      where: {
+        reservations: {
+          some: {},
+        },
+      },
+      include: {
+        _count: { select: { reservations: true } },
+      },
+      orderBy: { abbreviation: "asc" },
+    });
+
+    res.json(
+      placeholders.map((placeholder) => ({
+        id: placeholder.id,
+        abbreviation: placeholder.abbreviation,
+        label: placeholder.label,
+        reservations_count: placeholder._count.reservations,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const reservation = await prisma.reservation.findUnique({
@@ -1592,33 +1619,6 @@ router.delete("/:id", async (req, res, next) => {
 
     await prisma.reservation.delete({ where: { id: existing.id } });
     return res.status(204).end();
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get("/placeholders", async (_req, res, next) => {
-  try {
-    const placeholders = await prisma.reservationPlaceholder.findMany({
-      where: {
-        reservations: {
-          some: {},
-        },
-      },
-      include: {
-        _count: { select: { reservations: true } },
-      },
-      orderBy: { abbreviation: "asc" },
-    });
-
-    res.json(
-      placeholders.map((placeholder) => ({
-        id: placeholder.id,
-        abbreviation: placeholder.abbreviation,
-        label: placeholder.label,
-        reservations_count: placeholder._count.reservations,
-      }))
-    );
   } catch (err) {
     next(err);
   }

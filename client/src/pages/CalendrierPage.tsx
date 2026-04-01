@@ -50,6 +50,13 @@ const DEFAULT_DAY_SCROLL_OFFSET = 76;
 const DEFAULT_MOBILE_TOPBAR_OFFSET = 56;
 const RENDERED_MONTH_RADIUS = 2;
 
+const CrownIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M5 18 3.5 8.75l4.4 3.35L12 5.5l4.1 6.6 4.4-3.35L19 18H5Z" />
+    <path d="M6 20h12" />
+  </svg>
+);
+
 type CalendarDay = {
   isoDate: string;
   dayNumber: number;
@@ -529,9 +536,26 @@ const CalendrierPage = () => {
   }, [selectedGiteId, year]);
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
+  const giteOrderById = useMemo(() => {
+    const map = new Map<string, number>();
+    gites.forEach((gite, index) => {
+      map.set(gite.id, typeof gite.ordre === "number" ? gite.ordre : index + 1);
+    });
+    return map;
+  }, [gites]);
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
   const accentColor = selectedGite ? getGiteColor(selectedGite) : "#ff5a5f";
   const todayDate = useMemo(() => parseIsoDate(todayIso), [todayIso]);
+  const monthBoundaries = useMemo(
+    () =>
+      MONTHS.map((_, monthIndex) => ({
+        monthNumber: monthIndex + 1,
+        monthStart: new Date(Date.UTC(year, monthIndex, 1)),
+        monthEnd: new Date(Date.UTC(year, monthIndex + 1, 1)),
+        daysInMonth: new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate(),
+      })),
+    [year]
+  );
   const selectedRangeExitIso = useMemo(() => (selectedDateRange ? selectedDateRange.endIso : ""), [selectedDateRange]);
   const selectedRangeNights = useMemo(() => {
     if (!selectedDateRange || !selectedRangeExitIso) return 0;
@@ -561,6 +585,67 @@ const CalendrierPage = () => {
         .sort((left, right) => parseIsoDate(left.date_entree).getTime() - parseIsoDate(right.date_entree).getTime()),
     [reservations, selectedGiteId]
   );
+  const occupationByMonthByGite = useMemo(() => {
+    const byGite = new Map<string, Map<number, number>>();
+    gites.forEach((gite) => {
+      const byMonth = new Map<number, number>();
+      monthBoundaries.forEach(({ monthNumber }) => {
+        byMonth.set(monthNumber, 0);
+      });
+      byGite.set(gite.id, byMonth);
+    });
+
+    reservations.forEach((reservation) => {
+      if (!reservation.gite_id) return;
+      const byMonth = byGite.get(reservation.gite_id);
+      if (!byMonth) return;
+
+      monthBoundaries.forEach(({ monthNumber, monthStart, monthEnd }) => {
+        const occupiedNights = getReservationOverlapNights(reservation, monthStart, monthEnd);
+        if (occupiedNights <= 0) return;
+        byMonth.set(monthNumber, (byMonth.get(monthNumber) ?? 0) + occupiedNights);
+      });
+    });
+
+    byGite.forEach((byMonth) => {
+      monthBoundaries.forEach(({ monthNumber, daysInMonth }) => {
+        const occupiedNights = byMonth.get(monthNumber) ?? 0;
+        byMonth.set(monthNumber, daysInMonth > 0 ? occupiedNights / daysInMonth : 0);
+      });
+    });
+
+    return byGite;
+  }, [gites, monthBoundaries, reservations]);
+  const topOccupationGiteIdByMonth = useMemo(() => {
+    const leadersByMonth = new Map<number, string | null>();
+
+    monthBoundaries.forEach(({ monthNumber }) => {
+      let bestOccupation = -1;
+      let leaderId: string | null = null;
+
+      gites.forEach((gite) => {
+        const occupation = occupationByMonthByGite.get(gite.id)?.get(monthNumber) ?? 0;
+
+        if (occupation > bestOccupation + 1e-6) {
+          bestOccupation = occupation;
+          leaderId = gite.id;
+          return;
+        }
+
+        if (Math.abs(occupation - bestOccupation) <= 1e-6 && leaderId) {
+          const currentLeaderOrder = giteOrderById.get(leaderId) ?? Number.MAX_SAFE_INTEGER;
+          const challengerOrder = giteOrderById.get(gite.id) ?? Number.MAX_SAFE_INTEGER;
+          if (challengerOrder < currentLeaderOrder) {
+            leaderId = gite.id;
+          }
+        }
+      });
+
+      leadersByMonth.set(monthNumber, bestOccupation > 0 ? leaderId : null);
+    });
+
+    return leadersByMonth;
+  }, [giteOrderById, gites, monthBoundaries, occupationByMonthByGite]);
   const schoolHolidayRangeFrom = `${year}-01-01`;
   const schoolHolidayRangeTo = `${year}-12-31`;
   const schoolHolidayDates = useMemo(() => buildSchoolHolidayDateSet(schoolHolidays), [schoolHolidays]);
@@ -1165,6 +1250,7 @@ const CalendrierPage = () => {
                 const shouldRenderSegments = renderedMonthIndexes.has(monthData.index);
                 const selectedRangeForMonth =
                   selectedDateRange?.monthIndex === monthData.index ? selectedDateRange : null;
+                const isSelectedGiteMonthLeader = topOccupationGiteIdByMonth.get(monthData.monthNumber) === selectedGiteId;
 
                 return (
                   <section
@@ -1180,7 +1266,16 @@ const CalendrierPage = () => {
                         <p className="calendar-month-section__eyebrow">{monthData.subtitle}</p>
                         <h2>{monthData.title}</h2>
                       </div>
-                      <div className="calendar-month-section__summary">
+                      <div
+                        className={`calendar-month-section__summary${
+                          isSelectedGiteMonthLeader ? " calendar-month-section__summary--leader" : ""
+                        }`}
+                      >
+                        {isSelectedGiteMonthLeader ? (
+                          <span className="calendar-month-section__summary-crown" aria-label="Meilleur taux de remplissage du mois">
+                            <CrownIcon />
+                          </span>
+                        ) : null}
                         <span>{monthData.reservations.length} séjour{monthData.reservations.length > 1 ? "s" : ""}</span>
                         <strong>{Math.round(monthData.occupancyRate * 100)}%</strong>
                       </div>

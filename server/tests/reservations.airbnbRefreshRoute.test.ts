@@ -110,6 +110,20 @@ test("GET /reservations/:id retourne la reservation hydratee", async () => {
   }
 });
 
+test("GET /reservations/placeholders est declare avant /reservations/:id", async () => {
+  const reservationsRouterModule = await import("../src/routes/reservations.ts");
+  const getRoutePaths = reservationsRouterModule.default.stack
+    .filter((item: any) => item.route?.methods?.get)
+    .map((item: any) => item.route.path);
+
+  const placeholdersIndex = getRoutePaths.indexOf("/placeholders");
+  const byIdIndex = getRoutePaths.indexOf("/:id");
+
+  assert.notEqual(placeholdersIndex, -1, "Route GET /placeholders introuvable");
+  assert.notEqual(byIdIndex, -1, "Route GET /:id introuvable");
+  assert.ok(placeholdersIndex < byIdIndex, "GET /placeholders doit etre declare avant GET /:id");
+});
+
 test("GET /reservations/:id retourne 404 si la reservation est absente", async () => {
   const originalFindUnique = prisma.reservation.findUnique;
 
