@@ -2014,8 +2014,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         method: "POST",
         json: pumpConfigDraft,
       });
+      await Promise.all([loadPumpHealth(), loadPumpStatus()]);
       const method = result.result?.method ? ` (${result.result.method})` : "";
-      setPumpNotice(`Connexion Pump validée${method}.`);
+      setPumpNotice(`Test de connexion Pump validé${method}.`);
     } catch (error: any) {
       setPumpError(error.message ?? "Impossible de tester la connexion Pump.");
     } finally {
