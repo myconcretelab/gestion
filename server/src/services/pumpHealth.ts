@@ -68,6 +68,13 @@ const parseDate = (value: string | null | undefined) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const isStrictlyMoreRecent = (left: string | null | undefined, right: string | null | undefined) => {
+  const leftTime = parseDate(left)?.getTime() ?? null;
+  const rightTime = parseDate(right)?.getTime() ?? null;
+  if (leftTime === null || rightTime === null) return false;
+  return leftTime > rightTime;
+};
+
 const readRegistry = (): StoredSessionRecord[] => {
   ensurePumpRoot();
   if (!fs.existsSync(registryPath)) return [];
@@ -120,6 +127,22 @@ const hasAuthFailureFingerprint = (value: string | null | undefined) => {
     "persist",
     "storage state",
   ].some((fragment) => message.includes(fragment));
+};
+
+export const isSupersededPumpAuthFailure = ({
+  latestSessionStatus,
+  latestError,
+  latestRefreshAt,
+  sessionFileUpdatedAt,
+}: {
+  latestSessionStatus: string | null | undefined;
+  latestError: string | null | undefined;
+  latestRefreshAt: string | null | undefined;
+  sessionFileUpdatedAt: string | null | undefined;
+}) => {
+  if (latestSessionStatus !== "failed" && latestSessionStatus !== "stopped") return false;
+  if (!hasAuthFailureFingerprint(latestError)) return false;
+  return isStrictlyMoreRecent(sessionFileUpdatedAt, latestRefreshAt);
 };
 
 const resolveStaleAfterHours = () => {
@@ -185,12 +208,18 @@ export const getPumpConnectionHealth = async (): Promise<PumpConnectionHealth> =
   const lastSuccessfulRefreshAt =
     lastSuccessfulSession?.updatedAt || lastSuccessfulSession?.createdAt || sessionFileUpdatedAt || null;
   const lastFailedRefreshAt = lastFailedSession?.updatedAt || lastFailedSession?.createdAt || null;
+  const latestError = latestSession?.lastError?.trim() || null;
   const latestRelevantDate =
     parseDate(lastSuccessfulRefreshAt)?.getTime() ?? parseDate(sessionFileUpdatedAt)?.getTime() ?? null;
+  const latestAuthFailureSuperseded = isSupersededPumpAuthFailure({
+    latestSessionStatus: latestSession?.status,
+    latestError,
+    latestRefreshAt,
+    sessionFileUpdatedAt,
+  });
 
   const configValid = Boolean(config.baseUrl.trim() && config.scrollSelector.trim());
   const checkedAt = new Date().toISOString();
-  const latestError = latestSession?.lastError?.trim() || null;
 
   if (!config.persistSession) {
     return {
@@ -272,33 +301,35 @@ export const getPumpConnectionHealth = async (): Promise<PumpConnectionHealth> =
 
   if (latestSession && (latestSession.status === "failed" || latestSession.status === "stopped")) {
     const authRequired = hasAuthFailureFingerprint(latestSession.lastError);
-    return {
-      status: authRequired ? "auth_required" : "refresh_failed",
-      tone: "danger",
-      label: authRequired ? "Session expirée" : "Refresh en échec",
-      summary: authRequired
-        ? "La session persistée ne suffit plus pour accéder à Airbnb."
-        : "Le dernier refresh Pump a échoué alors qu'une session persistée existe encore.",
-      recommendedAction: authRequired
-        ? "Renouvelez la session Playwright en local puis réimportez-la en production."
-        : "Consultez l'erreur du dernier refresh puis relancez un test manuel.",
-      configValid,
-      persistSessionEnabled: true,
-      sessionFileExists,
-      sessionFileUpdatedAt,
-      storageStateId,
-      storageStateRelativePath: relativePath,
-      latestSessionId: latestSession.sessionId,
-      latestSessionStatus: latestSession.status,
-      lastSuccessfulRefreshAt,
-      lastFailedRefreshAt,
-      latestRefreshAt,
-      latestError,
-      cronEnabled: cronConfig.enabled,
-      cronScheduler: pumpCronScheduler,
-      staleAfterHours,
-      checkedAt,
-    };
+    if (!authRequired || !latestAuthFailureSuperseded) {
+      return {
+        status: authRequired ? "auth_required" : "refresh_failed",
+        tone: "danger",
+        label: authRequired ? "Session expirée" : "Refresh en échec",
+        summary: authRequired
+          ? "La session persistée ne suffit plus pour accéder à Airbnb."
+          : "Le dernier refresh Pump a échoué alors qu'une session persistée existe encore.",
+        recommendedAction: authRequired
+          ? "Renouvelez la session Playwright en local puis réimportez-la en production."
+          : "Consultez l'erreur du dernier refresh puis relancez un test manuel.",
+        configValid,
+        persistSessionEnabled: true,
+        sessionFileExists,
+        sessionFileUpdatedAt,
+        storageStateId,
+        storageStateRelativePath: relativePath,
+        latestSessionId: latestSession.sessionId,
+        latestSessionStatus: latestSession.status,
+        lastSuccessfulRefreshAt,
+        lastFailedRefreshAt,
+        latestRefreshAt,
+        latestError,
+        cronEnabled: cronConfig.enabled,
+        cronScheduler: pumpCronScheduler,
+        staleAfterHours,
+        checkedAt,
+      };
+    }
   }
 
   if (!latestRelevantDate || Date.now() - latestRelevantDate > staleAfterMs) {
