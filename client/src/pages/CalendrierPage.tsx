@@ -1188,28 +1188,30 @@ const CalendrierPage = () => {
     >
       <section ref={heroRef} className="card calendar-hero">
         <div className="calendar-hero__header">
-          <label className="calendar-month-trigger">
-            <span>{MONTHS[activeMonthIndex].toLocaleLowerCase("fr-FR")}</span>
-            <select
-              id="calendar-month-select"
-              value={activeMonthIndex + 1}
-              onChange={(event) => {
-                const nextMonthIndex = Number(event.target.value) - 1;
-                pendingScrollTargetRef.current = null;
-                scrollToMonth(nextMonthIndex);
-              }}
-              aria-label="Sélection du mois"
-            >
-              {MONTHS.map((label, index) => (
-                <option key={label} value={index + 1}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </label>
+          {!usesViewportScroll ? (
+            <label className="calendar-month-trigger">
+              <span>{MONTHS[activeMonthIndex].toLocaleLowerCase("fr-FR")}</span>
+              <select
+                id="calendar-month-select"
+                value={activeMonthIndex + 1}
+                onChange={(event) => {
+                  const nextMonthIndex = Number(event.target.value) - 1;
+                  pendingScrollTargetRef.current = null;
+                  scrollToMonth(nextMonthIndex);
+                }}
+                aria-label="Sélection du mois"
+              >
+                {MONTHS.map((label, index) => (
+                  <option key={label} value={index + 1}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </label>
+          ) : null}
 
           <div className="calendar-hero__actions">
             <label className="calendar-pill-select">
