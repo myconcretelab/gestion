@@ -404,6 +404,7 @@ const CalendrierPage = () => {
   const [viewportStickyOffsets, setViewportStickyOffsets] = useState({
     topbar: DEFAULT_MOBILE_TOPBAR_OFFSET,
     hero: 0,
+    weekdays: 0,
   });
 
   const heroRef = useRef<HTMLElement | null>(null);
@@ -478,32 +479,42 @@ const CalendrierPage = () => {
   }, []);
 
   useEffect(() => {
+    if (loading || error || !gites.length) return;
+
     const heroNode = heroRef.current;
+    const weekdaysNode = weekdaysRef.current;
     const topbarNode = document.querySelector(".topbar");
-    if (!heroNode) return;
+    if (!heroNode || !weekdaysNode) return;
+
+    let frameId = 0;
 
     const updateStickyOffsets = () => {
       const nextTopbar = Math.round(topbarNode?.getBoundingClientRect().height ?? DEFAULT_MOBILE_TOPBAR_OFFSET);
       const nextHero = Math.round(heroNode.getBoundingClientRect().height);
+      const nextWeekdays = Math.round(weekdaysNode?.getBoundingClientRect().height ?? 0);
 
       setViewportStickyOffsets((current) => {
-        if (current.topbar === nextTopbar && current.hero === nextHero) {
+        if (current.topbar === nextTopbar && current.hero === nextHero && current.weekdays === nextWeekdays) {
           return current;
         }
 
         return {
           topbar: nextTopbar,
           hero: nextHero,
+          weekdays: nextWeekdays,
         };
       });
     };
 
-    updateStickyOffsets();
+    frameId = window.requestAnimationFrame(updateStickyOffsets);
 
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", updateStickyOffsets, { passive: true });
 
       return () => {
+        if (frameId) {
+          window.cancelAnimationFrame(frameId);
+        }
         window.removeEventListener("resize", updateStickyOffsets);
       };
     }
@@ -516,13 +527,19 @@ const CalendrierPage = () => {
     if (topbarNode instanceof HTMLElement) {
       resizeObserver.observe(topbarNode);
     }
+    if (weekdaysNode instanceof HTMLElement) {
+      resizeObserver.observe(weekdaysNode);
+    }
     window.addEventListener("resize", updateStickyOffsets, { passive: true });
 
     return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateStickyOffsets);
     };
-  }, []);
+  }, [error, gites.length, loading, usesViewportScroll]);
 
   useEffect(() => {
     if (!gites.length) {
@@ -601,8 +618,9 @@ const CalendrierPage = () => {
         "--calendar-accent-strong": hexToRgba(accentColor, 0.24),
         "--calendar-mobile-topbar-offset": `${viewportStickyOffsets.topbar}px`,
         "--calendar-mobile-sticky-offset": `${viewportStickyOffsets.topbar + viewportStickyOffsets.hero}px`,
+        "--calendar-mobile-weekdays-height": `${viewportStickyOffsets.weekdays}px`,
       }) as CSSProperties,
-    [accentColor, viewportStickyOffsets.hero, viewportStickyOffsets.topbar]
+    [accentColor, viewportStickyOffsets.hero, viewportStickyOffsets.topbar, viewportStickyOffsets.weekdays]
   );
 
   const reservationsForGite = useMemo(
@@ -916,7 +934,7 @@ const CalendrierPage = () => {
 
   const getScrollOffset = useCallback(
     (kind: "month" | "date") => {
-      const stickyHeight = weekdaysRef.current?.getBoundingClientRect().height ?? 0;
+      const stickyHeight = viewportStickyOffsets.weekdays || weekdaysRef.current?.getBoundingClientRect().height || 0;
       const viewportChromeOffset = usesViewportScroll ? viewportStickyOffsets.topbar + viewportStickyOffsets.hero : 0;
       if (stickyHeight <= 0) {
         return (kind === "month" ? DEFAULT_MONTH_SCROLL_OFFSET : DEFAULT_DAY_SCROLL_OFFSET) + viewportChromeOffset;
@@ -924,7 +942,7 @@ const CalendrierPage = () => {
 
       return viewportChromeOffset + stickyHeight + (kind === "month" ? 18 : 10);
     },
-    [usesViewportScroll, viewportStickyOffsets.hero, viewportStickyOffsets.topbar]
+    [usesViewportScroll, viewportStickyOffsets.hero, viewportStickyOffsets.topbar, viewportStickyOffsets.weekdays]
   );
 
   const scrollToMonth = useCallback((monthIndex: number, behavior: ScrollBehavior = "smooth") => {

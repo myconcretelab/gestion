@@ -2962,6 +2962,7 @@ body.app-scroll-locked {
   .calendar-board {
     border-radius: 22px;
     height: auto;
+    overflow: visible;
   }
 
   .calendar-hero {
@@ -3048,11 +3049,20 @@ body.app-scroll-locked {
   }
 
   .calendar-month-section__header {
+    position: sticky;
+    top: calc(
+      var(--calendar-mobile-sticky-offset) +
+        var(--calendar-mobile-weekdays-height)
+    );
+    z-index: 5;
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     gap: 10px;
-    padding: 0 12px 10px;
+    padding: 8px 12px 10px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid #f1ede8;
   }
 
   .calendar-month-section__summary {
@@ -3144,6 +3154,10 @@ body.app-scroll-locked {
 
   .calendar-month-section {
     padding-top: 12px;
+    scroll-margin-top: calc(
+      var(--calendar-mobile-sticky-offset) +
+        var(--calendar-mobile-weekdays-height) + 12px
+    );
   }
 
   .calendar-month-section__eyebrow {
