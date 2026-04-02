@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import path from "path";
 import fs from "fs/promises";
@@ -12,6 +12,8 @@ import {
   generateInvoicePreviewHtml,
   type InvoiceRenderInput,
 } from "../services/pdfService.js";
+import { DocumentEmailError, sendInvoiceEmail } from "../services/documentEmail.js";
+import { SmtpConfigurationError, SmtpDeliveryError } from "../services/mailer.js";
 import { toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
@@ -66,6 +68,12 @@ const invoiceSchema = z.object({
 
 const paymentStatusSchema = z.object({
   statut_paiement: z.enum(["non_reglee", "reglee"]),
+});
+
+const sendEmailSchema = z.object({
+  recipient: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
+  subject: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(200).nullable()).optional(),
+  body: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(20_000).nullable()).optional(),
 });
 
 const previewSchema = z.object({
@@ -205,6 +213,17 @@ const shouldRegenerateInvoicePdf = async (contrat: any, absolutePath: string) =>
       : new Date(contrat.date_derniere_modif).getTime();
   const latestSourceMtimeMs = Math.max(contractMtimeMs, latestTemplateMtimeMs);
   return pdfStat.mtimeMs + 1 < latestSourceMtimeMs;
+};
+
+const handleDocumentEmailError = (err: unknown, res: Response, next: NextFunction) => {
+  if (
+    err instanceof DocumentEmailError ||
+    err instanceof SmtpConfigurationError ||
+    err instanceof SmtpDeliveryError
+  ) {
+    return res.status(err.statusCode).json({ error: err.message });
+  }
+  return next(err);
 };
 
 const resolveLinkedReservation = async (reservationId: string | null | undefined, giteId: string) => {
@@ -634,6 +653,32 @@ router.patch("/:id/payment", async (req, res, next) => {
     res.json(hydrateInvoice(contrat));
   } catch (err) {
     next(err);
+  }
+});
+
+router.post("/:id/send-email", async (req, res, next) => {
+  try {
+    const emailDraft = sendEmailSchema.parse(req.body ?? {});
+    const contrat = await prisma.facture.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!contrat) return res.status(404).json({ error: "Facture introuvable" });
+
+    let absolutePath = path.join(process.cwd(), contrat.pdf_path);
+    if (await shouldRegenerateInvoicePdf(contrat, absolutePath)) {
+      const regenerated = await regenerateStoredInvoicePdf(contrat);
+      absolutePath = regenerated.pdfAbsolutePath;
+    }
+
+    const documentUrl = new URL(`/api/invoices/${req.params.id}/pdf`, `${req.protocol}://${req.get("host")}`).toString();
+    await sendInvoiceEmail(contrat, absolutePath, {
+      documentUrl,
+      customMessage: emailDraft,
+    });
+    res.json(hydrateInvoice(contrat));
+  } catch (err) {
+    return handleDocumentEmailError(err, res, next);
   }
 });
 

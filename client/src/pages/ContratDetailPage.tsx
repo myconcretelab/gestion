@@ -1,10 +1,21 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import type { Contrat } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
-import { buildDocumentMailtoHref } from "../utils/documentEmail";
+import {
+  buildDocumentEmailDraft,
+  buildDocumentEmailTemplateSettings,
+  type DocumentEmailTextSettings,
+} from "../utils/documentEmail";
+import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import { toDateInputValue } from "./shared/rentalForm";
+
+type EmailComposerState = {
+  recipient: string;
+  subject: string;
+  body: string;
+};
 
 const ContratDetailPage = () => {
   const { id } = useParams();
@@ -13,9 +24,16 @@ const ContratDetailPage = () => {
   const [pdfNonce] = useState(() => Date.now());
   const [receptionUpdating, setReceptionUpdating] = useState(false);
   const [arrhesUpdating, setArrhesUpdating] = useState(false);
-  const [dateSaving, setDateSaving] = useState<"reception" | "arrhes" | null>(null);
+  const [dateSaving, setDateSaving] = useState<"reception" | "arrhes" | null>(
+    null,
+  );
   const [receptionDateInput, setReceptionDateInput] = useState("");
   const [arrhesPaymentDateInput, setArrhesPaymentDateInput] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [emailComposer, setEmailComposer] = useState<EmailComposerState | null>(
+    null,
+  );
 
   const load = async () => {
     if (!id) return;
@@ -40,7 +58,8 @@ const ContratDetailPage = () => {
 
   const toggleReception = async () => {
     if (!id || !contrat) return;
-    const nextStatus = contrat.statut_reception_contrat === "recu" ? "non_recu" : "recu";
+    const nextStatus =
+      contrat.statut_reception_contrat === "recu" ? "non_recu" : "recu";
     setReceptionUpdating(true);
     try {
       const updated = await apiFetch<Contrat>(`/contracts/${id}/reception`, {
@@ -48,6 +67,7 @@ const ContratDetailPage = () => {
         json: { statut_reception_contrat: nextStatus },
       });
       setError(null);
+      setNotice(null);
       setContrat(updated);
     } catch (err) {
       setError((err as Error).message);
@@ -58,7 +78,8 @@ const ContratDetailPage = () => {
 
   const toggleArrhes = async () => {
     if (!id || !contrat) return;
-    const nextStatus = contrat.statut_paiement_arrhes === "recu" ? "non_recu" : "recu";
+    const nextStatus =
+      contrat.statut_paiement_arrhes === "recu" ? "non_recu" : "recu";
     setArrhesUpdating(true);
     try {
       const updated = await apiFetch<Contrat>(`/contracts/${id}/arrhes`, {
@@ -66,6 +87,7 @@ const ContratDetailPage = () => {
         json: { statut_paiement_arrhes: nextStatus },
       });
       setError(null);
+      setNotice(null);
       setContrat(updated);
     } catch (err) {
       setError((err as Error).message);
@@ -78,14 +100,18 @@ const ContratDetailPage = () => {
     if (!id) return;
     setDateSaving(field);
     try {
-      const updated = await apiFetch<Contrat>(`/contracts/${id}/tracking-dates`, {
-        method: "PATCH",
-        json:
-          field === "reception"
-            ? { date_reception_contrat: receptionDateInput || null }
-            : { date_paiement_arrhes: arrhesPaymentDateInput || null },
-      });
+      const updated = await apiFetch<Contrat>(
+        `/contracts/${id}/tracking-dates`,
+        {
+          method: "PATCH",
+          json:
+            field === "reception"
+              ? { date_reception_contrat: receptionDateInput || null }
+              : { date_paiement_arrhes: arrhesPaymentDateInput || null },
+        },
+      );
       setError(null);
+      setNotice(null);
       setContrat(updated);
     } catch (err) {
       setError((err as Error).message);
@@ -94,18 +120,66 @@ const ContratDetailPage = () => {
     }
   };
 
-  const handleEmailClick = async (event: MouseEvent<HTMLAnchorElement>, targetHref: string) => {
-    event.preventDefault();
-    if (!id) return;
+  const openEmailComposer = async () => {
+    if (!id || !contrat?.locataire_email) return;
     try {
-      const updated = await apiFetch<Contrat>(`/contracts/${id}/email-sent`, {
-        method: "PATCH",
-      });
+      const version =
+        contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
+      const documentUrl = new URL(
+        `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(version))}`,
+        window.location.origin,
+      ).toString();
+      const emailTextSettings = await apiFetch<DocumentEmailTextSettings>(
+        "/settings/document-email-texts",
+      );
       setError(null);
-      setContrat(updated);
-      window.location.href = targetHref;
+      setEmailComposer(
+        buildDocumentEmailDraft(
+          {
+            recipient: contrat.locataire_email,
+            documentType: "contrat",
+            documentNumber: contrat.numero_contrat,
+            documentUrl,
+            locataireNom: contrat.locataire_nom,
+            giteNom: contrat.gite?.nom,
+            dateDebut: contrat.date_debut,
+            heureArrivee: contrat.heure_arrivee,
+            dateFin: contrat.date_fin,
+            heureDepart: contrat.heure_depart,
+            nbNuits: contrat.nb_nuits,
+            arrhesMontant: contrat.arrhes_montant,
+            arrhesDateLimite: contrat.arrhes_date_limite,
+            soldeMontant: contrat.solde_montant,
+          },
+          buildDocumentEmailTemplateSettings(emailTextSettings),
+        ),
+      );
     } catch (err) {
       setError((err as Error).message);
+    }
+  };
+
+  const sendEmail = async () => {
+    if (!id || !contrat?.locataire_email || !emailComposer) return;
+    setEmailSending(true);
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${id}/send-email`, {
+        method: "POST",
+        json: {
+          recipient: emailComposer.recipient,
+          subject: emailComposer.subject,
+          body: emailComposer.body,
+        },
+      });
+      setError(null);
+      setNotice(`Contrat envoyé à ${updated.locataire_email}.`);
+      setEmailComposer(null);
+      setContrat(updated);
+    } catch (err) {
+      setNotice(null);
+      setError((err as Error).message);
+    } finally {
+      setEmailSending(false);
     }
   };
 
@@ -114,7 +188,7 @@ const ContratDetailPage = () => {
     const version = contrat?.date_derniere_modif ?? Date.now();
     window.open(
       `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(version))}&t=${Date.now()}`,
-      "_blank"
+      "_blank",
     );
   };
 
@@ -124,32 +198,42 @@ const ContratDetailPage = () => {
   const contractReceived = contrat.statut_reception_contrat === "recu";
   const arrhesPaid = contrat.statut_paiement_arrhes === "recu";
   const email = contrat.locataire_email;
-  const phoneHref = contrat.locataire_tel ? contrat.locataire_tel.replace(/\s+/g, "") : "";
+  const phoneHref = contrat.locataire_tel
+    ? contrat.locataire_tel.replace(/\s+/g, "")
+    : "";
   const receptionDateEnabled = contractReceived || Boolean(receptionDateInput);
   const arrhesDateEnabled = arrhesPaid || Boolean(arrhesPaymentDateInput);
-  const pdfVersion = contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
+  const pdfVersion =
+    contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
   const pdfUrl = `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
-  const absolutePdfUrl = new URL(pdfUrl, window.location.origin).toString();
-  const mailHref = buildDocumentMailtoHref({
-    recipient: email,
-    documentType: "contrat",
-    documentNumber: contrat.numero_contrat,
-    documentUrl: absolutePdfUrl,
-    locataireNom: contrat.locataire_nom,
-    giteNom: contrat.gite?.nom,
-    dateDebut: contrat.date_debut,
-    heureArrivee: contrat.heure_arrivee,
-    dateFin: contrat.date_fin,
-    heureDepart: contrat.heure_depart,
-    nbNuits: contrat.nb_nuits,
-    arrhesMontant: contrat.arrhes_montant,
-    arrhesDateLimite: contrat.arrhes_date_limite,
-    soldeMontant: contrat.solde_montant,
-  });
 
   return (
     <div>
       {error ? <div className="note">{error}</div> : null}
+      {notice ? <div className="note note--success">{notice}</div> : null}
+      <DocumentEmailComposerDialog
+        open={Boolean(emailComposer)}
+        title={`Email du contrat ${contrat.numero_contrat}`}
+        recipient={emailComposer?.recipient ?? ""}
+        subject={emailComposer?.subject ?? ""}
+        body={emailComposer?.body ?? ""}
+        sending={emailSending}
+        onClose={() => setEmailComposer(null)}
+        onRecipientChange={(value) =>
+          setEmailComposer((prev) =>
+            prev ? { ...prev, recipient: value } : prev,
+          )
+        }
+        onSubjectChange={(value) =>
+          setEmailComposer((prev) =>
+            prev ? { ...prev, subject: value } : prev,
+          )
+        }
+        onBodyChange={(value) =>
+          setEmailComposer((prev) => (prev ? { ...prev, body: value } : prev))
+        }
+        onSubmit={sendEmail}
+      />
       <Link to="/contrats" className="back-link">
         Retour
       </Link>
@@ -162,15 +246,25 @@ const ContratDetailPage = () => {
           </div>
           <div className="actions">
             <Link to={`/contrats/${contrat.id}/edition`}>Éditer</Link>
-            <Link to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}>
+            <Link
+              to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
+            >
               Créer facture
             </Link>
-            {mailHref ? (
-              <a href={mailHref} onClick={(event) => handleEmailClick(event, mailHref)}>
-                Envoyer contrat
-              </a>
+            {email ? (
+              <button
+                type="button"
+                onClick={() => void openEmailComposer()}
+                disabled={emailSending}
+              >
+                Email
+              </button>
             ) : (
-              <button type="button" disabled title="Email locataire non renseigné">
+              <button
+                type="button"
+                disabled
+                title="Email locataire non renseigné"
+              >
                 Envoyer contrat
               </button>
             )}
@@ -194,20 +288,27 @@ const ContratDetailPage = () => {
             <div className="detail-item">
               <span className="detail-label">Période</span>
               <span className="detail-value">
-                {formatDate(contrat.date_debut)} — {formatDate(contrat.date_fin)}
+                {formatDate(contrat.date_debut)} —{" "}
+                {formatDate(contrat.date_fin)}
               </span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Créé le</span>
-              <span className="detail-value">{formatDate(contrat.date_creation)}</span>
+              <span className="detail-value">
+                {formatDate(contrat.date_creation)}
+              </span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Dernière modif</span>
-              <span className="detail-value">{formatDate(contrat.date_derniere_modif)}</span>
+              <span className="detail-value">
+                {formatDate(contrat.date_derniere_modif)}
+              </span>
             </div>
           </div>
 
-          <div className={`arrhes-card ${contractReceived ? "arrhes-card--paid" : "arrhes-card--pending"}`}>
+          <div
+            className={`arrhes-card ${contractReceived ? "arrhes-card--paid" : "arrhes-card--pending"}`}
+          >
             <div className="arrhes-label">Contrat signé</div>
             <div className="switch-group">
               <label className="switch">
@@ -219,13 +320,19 @@ const ContratDetailPage = () => {
                 />
                 <span className="slider" />
               </label>
-              <span>{contractReceived ? "Reçu en retour" : "En attente de retour"}</span>
+              <span>
+                {contractReceived ? "Reçu en retour" : "En attente de retour"}
+              </span>
             </div>
-            <div className={`arrhes-status ${contractReceived ? "arrhes-status--paid" : "arrhes-status--pending"}`}>
+            <div
+              className={`arrhes-status ${contractReceived ? "arrhes-status--paid" : "arrhes-status--pending"}`}
+            >
               {contractReceived ? "Reçu" : "Non reçu"}
             </div>
             {contrat.date_reception_contrat ? (
-              <div className="arrhes-meta">Date enregistrée: {formatDate(contrat.date_reception_contrat)}</div>
+              <div className="arrhes-meta">
+                Date enregistrée: {formatDate(contrat.date_reception_contrat)}
+              </div>
             ) : null}
             <label className="field">
               Date de réception du contrat
@@ -242,15 +349,21 @@ const ContratDetailPage = () => {
                   disabled={!receptionDateEnabled || dateSaving === "reception"}
                   onClick={() => saveTrackingDate("reception")}
                 >
-                  {dateSaving === "reception" ? "Enregistrement..." : "Enregistrer"}
+                  {dateSaving === "reception"
+                    ? "Enregistrement..."
+                    : "Enregistrer"}
                 </button>
               </div>
             </label>
           </div>
 
-          <div className={`arrhes-card ${arrhesPaid ? "arrhes-card--paid" : "arrhes-card--pending"}`}>
+          <div
+            className={`arrhes-card ${arrhesPaid ? "arrhes-card--paid" : "arrhes-card--pending"}`}
+          >
             <div className="arrhes-label">Arrhes</div>
-            <div className="arrhes-amount">{formatEuro(contrat.arrhes_montant)}</div>
+            <div className="arrhes-amount">
+              {formatEuro(contrat.arrhes_montant)}
+            </div>
             <div className="switch-group">
               <label className="switch">
                 <input
@@ -263,14 +376,18 @@ const ContratDetailPage = () => {
               </label>
               <span>{arrhesPaid ? "Payées" : "Non payées"}</span>
             </div>
-            <div className={`arrhes-status ${arrhesPaid ? "arrhes-status--paid" : "arrhes-status--pending"}`}>
+            <div
+              className={`arrhes-status ${arrhesPaid ? "arrhes-status--paid" : "arrhes-status--pending"}`}
+            >
               {arrhesPaid ? "Payées" : "Non payées"}
             </div>
             <div className="arrhes-meta">
               À régler avant le {formatDate(contrat.arrhes_date_limite)}
             </div>
             {contrat.date_paiement_arrhes ? (
-              <div className="arrhes-meta">Date de paiement: {formatDate(contrat.date_paiement_arrhes)}</div>
+              <div className="arrhes-meta">
+                Date de paiement: {formatDate(contrat.date_paiement_arrhes)}
+              </div>
             ) : null}
             <label className="field">
               Date de paiement des arrhes
@@ -287,7 +404,9 @@ const ContratDetailPage = () => {
                   disabled={!arrhesDateEnabled || dateSaving === "arrhes"}
                   onClick={() => saveTrackingDate("arrhes")}
                 >
-                  {dateSaving === "arrhes" ? "Enregistrement..." : "Enregistrer"}
+                  {dateSaving === "arrhes"
+                    ? "Enregistrement..."
+                    : "Enregistrer"}
                 </button>
               </div>
             </label>
@@ -310,7 +429,11 @@ const ContratDetailPage = () => {
             </div>
             <div className="detail-item">
               <span className="detail-label">Dernier envoi email</span>
-              <span className="detail-value">{contrat.date_envoi_email ? formatDate(contrat.date_envoi_email) : "—"}</span>
+              <span className="detail-value">
+                {contrat.date_envoi_email
+                  ? formatDate(contrat.date_envoi_email)
+                  : "—"}
+              </span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Téléphone</span>
@@ -329,7 +452,12 @@ const ContratDetailPage = () => {
       <div className="card">
         <div className="section-title">PDF</div>
         <div className="preview-shell">
-          <iframe key={pdfUrl} className="preview-frame" title="Contrat PDF" src={pdfUrl} />
+          <iframe
+            key={pdfUrl}
+            className="preview-frame"
+            title="Contrat PDF"
+            src={pdfUrl}
+          />
         </div>
       </div>
     </div>

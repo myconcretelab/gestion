@@ -30,22 +30,59 @@ type BuildInvoiceMailtoHrefParams = BuildDocumentMailtoHrefBaseParams & {
   documentType: "facture";
 };
 
-type BuildDocumentMailtoHrefParams = BuildContractMailtoHrefParams | BuildInvoiceMailtoHrefParams;
+type BuildDocumentMailtoHrefParams =
+  | BuildContractMailtoHrefParams
+  | BuildInvoiceMailtoHrefParams;
 
-type DocumentEmailTemplate = {
+export type BuildDocumentEmailDraftParams = BuildDocumentMailtoHrefParams;
+
+export type DocumentEmailDraft = {
+  recipient?: string | null;
+  subject: string;
+  body: string;
+};
+
+export type DocumentEmailTemplate = {
+  subject: string;
   bodyLines: string[];
   activities?: string[];
   guideUrl?: string;
   destinationUrl?: string;
 };
 
-const documentTemplates = templates as Record<BuildDocumentMailtoHrefParams["documentType"], DocumentEmailTemplate>;
+export type DocumentEmailTemplateSettings = Record<
+  BuildDocumentMailtoHrefParams["documentType"],
+  DocumentEmailTemplate
+>;
 
-const isIsoDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+export type ContractDocumentEmailTextTemplate = {
+  subject: string;
+  body: string;
+  activitiesList: string;
+  guideUrl: string;
+  destinationUrl: string;
+};
+
+export type InvoiceDocumentEmailTextTemplate = {
+  subject: string;
+  body: string;
+};
+
+export type DocumentEmailTextSettings = {
+  contrat: ContractDocumentEmailTextTemplate;
+  facture: InvoiceDocumentEmailTextTemplate;
+};
+
+const documentTemplates = templates as DocumentEmailTemplateSettings;
+
+const isIsoDateOnly = (value: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 
 const parseDateValue = (value: string) => {
   const trimmedValue = value.trim();
-  return new Date(isIsoDateOnly(trimmedValue) ? `${trimmedValue}T00:00:00Z` : trimmedValue);
+  return new Date(
+    isIsoDateOnly(trimmedValue) ? `${trimmedValue}T00:00:00Z` : trimmedValue,
+  );
 };
 
 const formatLongDate = (value: string) => {
@@ -83,12 +120,63 @@ const formatEuroText = (value: number | string) => {
   return `${formatted}€`;
 };
 
-const formatStayDuration = (value: number) => `${value} ${value > 1 ? "nuits" : "nuit"}`;
+const formatStayDuration = (value: number) =>
+  `${value} ${value > 1 ? "nuits" : "nuit"}`;
 
 const renderTemplateLine = (line: string, values: Record<string, string>) =>
   line.replace(/{{(\w+)}}/g, (_, key: string) => values[key] ?? "");
 
-export const buildMailtoHref = ({ recipient, subject, body }: BuildMailtoHrefParams) => {
+const renderSubjectTemplate = (
+  template: DocumentEmailTemplate,
+  values: Record<string, string>,
+) => renderTemplateLine(template.subject, values).replace(/\s+/g, " ").trim();
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const linkifyHtml = (value: string) =>
+  escapeHtml(value).replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noreferrer noopener">$1</a>',
+  );
+
+export const renderEmailBodyHtml = (body: string) => {
+  const lines = String(body ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n");
+  const paragraphs: string[] = [];
+  let currentBlock: string[] = [];
+
+  const flushBlock = () => {
+    if (currentBlock.length === 0) return;
+    paragraphs.push(
+      `<p>${currentBlock.map((line) => linkifyHtml(line)).join("<br />")}</p>`,
+    );
+    currentBlock = [];
+  };
+
+  for (const line of lines) {
+    if (line === "") {
+      flushBlock();
+      continue;
+    }
+    currentBlock.push(line);
+  }
+
+  flushBlock();
+  return paragraphs.join("");
+};
+
+export const buildMailtoHref = ({
+  recipient,
+  subject,
+  body,
+}: BuildMailtoHrefParams) => {
   const to = String(recipient ?? "").trim();
   if (!to) return null;
 
@@ -96,25 +184,42 @@ export const buildMailtoHref = ({ recipient, subject, body }: BuildMailtoHrefPar
   const trimmedBody = String(body ?? "").trim();
   const queryParts: string[] = [];
 
-  if (trimmedSubject) queryParts.push(`subject=${encodeURIComponent(trimmedSubject)}`);
+  if (trimmedSubject)
+    queryParts.push(`subject=${encodeURIComponent(trimmedSubject)}`);
   if (trimmedBody) queryParts.push(`body=${encodeURIComponent(trimmedBody)}`);
 
   const query = queryParts.join("&");
   return `mailto:${encodeURIComponent(to)}${query ? `?${query}` : ""}`;
 };
 
-export const buildDocumentMailtoHref = (params: BuildDocumentMailtoHrefParams) => {
-  const { recipient, documentType, documentNumber, documentUrl, locataireNom, giteNom } = params;
-  const template = documentTemplates[documentType];
+export const buildDocumentMailtoHref = (
+  params: BuildDocumentMailtoHrefParams,
+  templateSettings?: Partial<DocumentEmailTemplateSettings>,
+) => {
+  const {
+    recipient,
+    documentType,
+    documentNumber,
+    documentUrl,
+    locataireNom,
+    giteNom,
+  } = params;
+  const template = {
+    ...documentTemplates[documentType],
+    ...(templateSettings?.[documentType] ?? {}),
+  };
   const safeDocumentNumber = documentNumber.trim();
   const safeGiteNom = String(giteNom ?? "").trim();
   const safeLocataireNom = locataireNom.trim();
-  const subjectPrefix = documentType === "contrat" ? "Contrat" : "Facture";
-  const subject = [subjectPrefix, safeGiteNom, safeDocumentNumber].filter(Boolean).join(" ");
-  const greeting = safeLocataireNom ? `Bonjour ${safeLocataireNom},` : "Bonjour,";
+  const greeting = safeLocataireNom
+    ? `Bonjour ${safeLocataireNom},`
+    : "Bonjour,";
   const templateValues: Record<string, string> = {
     greeting,
     documentUrl: documentUrl.trim(),
+    giteName: safeGiteNom,
+    documentNumber: safeDocumentNumber,
+    locataireNom: safeLocataireNom,
     giteSentence: safeGiteNom ? ` au ${safeGiteNom}.` : ".",
   };
 
@@ -135,8 +240,48 @@ export const buildDocumentMailtoHref = (params: BuildDocumentMailtoHrefParams) =
       destinationUrl: template.destinationUrl ?? "",
     });
   }
+  const subject = renderSubjectTemplate(template, templateValues);
 
-  const body = template.bodyLines.map((line) => renderTemplateLine(line, templateValues)).join("\n");
+  const body = template.bodyLines
+    .map((line) => renderTemplateLine(line, templateValues))
+    .join("\n");
 
   return buildMailtoHref({ recipient, subject, body });
 };
+
+export const buildDocumentEmailDraft = (
+  params: BuildDocumentEmailDraftParams,
+  templateSettings?: Partial<DocumentEmailTemplateSettings>,
+): DocumentEmailDraft => {
+  const href = buildDocumentMailtoHref(params, templateSettings);
+  const [, rawQuery = ""] = String(href ?? "mailto:").split("?");
+  const searchParams = new URLSearchParams(rawQuery);
+
+  return {
+    recipient: params.recipient,
+    subject: searchParams.get("subject") ?? "",
+    body: searchParams.get("body") ?? "",
+  };
+};
+
+export const buildDocumentEmailTemplateSettings = (
+  textSettings: DocumentEmailTextSettings,
+): DocumentEmailTemplateSettings => ({
+  contrat: {
+    ...documentTemplates.contrat,
+    subject: textSettings.contrat.subject,
+    bodyLines: textSettings.contrat.body.replace(/\r\n/g, "\n").split("\n"),
+    activities: textSettings.contrat.activitiesList
+      .replace(/\r\n/g, "\n")
+      .split(/\n\s*\n/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    guideUrl: textSettings.contrat.guideUrl.trim(),
+    destinationUrl: textSettings.contrat.destinationUrl.trim(),
+  },
+  facture: {
+    ...documentTemplates.facture,
+    subject: textSettings.facture.subject,
+    bodyLines: textSettings.facture.body.replace(/\r\n/g, "\n").split("\n"),
+  },
+});

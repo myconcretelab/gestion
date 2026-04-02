@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
-import { readTraceabilityLog, IMPORT_LOG_LIMIT } from "../services/importLog.js";
+import {
+  readTraceabilityLog,
+  IMPORT_LOG_LIMIT,
+} from "../services/importLog.js";
 import {
   getIcalSyncCronConfig,
   getIcalCronState,
@@ -33,9 +36,16 @@ import {
   buildReservationsPreview,
   importPreviewReservations,
 } from "../services/reservationImports.js";
-import { getPumpCronState, runPumpCronImport, updatePumpCronConfig } from "../services/pumpCron.js";
+import {
+  getPumpCronState,
+  runPumpCronImport,
+  updatePumpCronConfig,
+} from "../services/pumpCron.js";
 import type { PumpCronConfig } from "../services/pumpCronSettings.js";
-import { getPumpConnectionHealth, syncPumpHealthAlerts } from "../services/pumpHealth.js";
+import {
+  getPumpConnectionHealth,
+  syncPumpHealthAlerts,
+} from "../services/pumpHealth.js";
 import {
   cancelPumpSessionCapture,
   getPumpSessionCaptureStatus,
@@ -58,13 +68,25 @@ import {
   writeSmsTextSettings,
 } from "../services/smsTextSettings.js";
 import {
+  buildDocumentEmailTextSettingsResponse,
+  mergeDocumentEmailTemplateSettings,
+  readDocumentEmailTemplateSettings,
+  writeDocumentEmailTemplateSettings,
+} from "../services/documentEmailTemplateSettings.js";
+import {
   buildServerSecuritySettingsState,
   getServerAuthSessionIdFromRequest,
   setServerAuthCookie,
   updateServerSecuritySettings,
 } from "../services/serverAuth.js";
-import { getCronTriggerToken, hasValidCronTriggerToken } from "../utils/cronTriggerAuth.js";
-import { generateIcalExportToken, shouldExportReservationToIcal } from "../utils/reservationOrigin.js";
+import {
+  getCronTriggerToken,
+  hasValidCronTriggerToken,
+} from "../utils/cronTriggerAuth.js";
+import {
+  generateIcalExportToken,
+  shouldExportReservationToIcal,
+} from "../utils/reservationOrigin.js";
 
 const router = Router();
 
@@ -79,19 +101,31 @@ const sourcePayloadSchema = z.object({
   gite_id: z.string().trim().min(1),
   type: z.string().trim().min(1),
   url: z.string().trim().url("URL iCal invalide."),
-  include_summary: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional().default(null),
-  exclude_summary: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional().default(null),
+  include_summary: z
+    .preprocess(emptyStringToNull, z.string().trim().nullable())
+    .optional()
+    .default(null),
+  exclude_summary: z
+    .preprocess(emptyStringToNull, z.string().trim().nullable())
+    .optional()
+    .default(null),
   is_active: z.boolean().optional().default(true),
 });
 const sourceImportItemSchema = sourcePayloadSchema.extend({
   id: z.string().trim().min(1).optional(),
   ordre: z.coerce.number().int().min(0).optional(),
-  gite_nom: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
-  gite_prefixe: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  gite_nom: z
+    .preprocess(emptyStringToNull, z.string().trim().nullable())
+    .optional(),
+  gite_prefixe: z
+    .preprocess(emptyStringToNull, z.string().trim().nullable())
+    .optional(),
 });
 const sourceImportSchema = z.object({
   sources: z.array(sourceImportItemSchema).min(1),
-  gite_mapping: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
+  gite_mapping: z
+    .record(z.string().trim().min(1), z.string().trim().min(1))
+    .optional(),
 });
 
 const cronConfigSchema = z
@@ -100,11 +134,16 @@ const cronConfigSchema = z
     auto_sync_on_app_load: z.boolean().optional(),
   })
   .passthrough()
-  .transform((payload): IcalCronConfig => ({
-    enabled: payload.enabled,
-    auto_sync_on_app_load: payload.auto_sync_on_app_load ?? false,
-  }));
-const cronImportSchema = z.union([cronConfigSchema, z.object({ config: cronConfigSchema })]);
+  .transform(
+    (payload): IcalCronConfig => ({
+      enabled: payload.enabled,
+      auto_sync_on_app_load: payload.auto_sync_on_app_load ?? false,
+    }),
+  );
+const cronImportSchema = z.union([
+  cronConfigSchema,
+  z.object({ config: cronConfigSchema }),
+]);
 const pumpCronConfigSchema = z.object({
   enabled: z.boolean(),
   interval_days: z.number().int().min(1).max(30),
@@ -115,7 +154,9 @@ const pumpCronConfigSchema = z.object({
 const pumpAutomationConfigSchema = z.object({
   baseUrl: z.string().trim().url("URL Pump invalide."),
   username: z.string().trim().default(""),
-  authMode: z.enum(["persisted-only", "legacy-auto-login"]).default("persisted-only"),
+  authMode: z
+    .enum(["persisted-only", "legacy-auto-login"])
+    .default("persisted-only"),
   hasOTP: z.boolean().default(false),
   persistSession: z.boolean().default(true),
   manualScrollMode: z.boolean().default(false),
@@ -129,8 +170,24 @@ const pumpAutomationConfigSchema = z.object({
   loginStrategy: z.enum(["simple", "multi-step"]).default("simple"),
   filterRules: z
     .object({
-      inclusive: z.array(z.object({ type: z.string().trim().min(1), pattern: z.string().optional(), negate: z.boolean().optional() })).default([]),
-      exclusive: z.array(z.object({ type: z.string().trim().min(1), pattern: z.string().optional(), negate: z.boolean().optional() })).default([]),
+      inclusive: z
+        .array(
+          z.object({
+            type: z.string().trim().min(1),
+            pattern: z.string().optional(),
+            negate: z.boolean().optional(),
+          }),
+        )
+        .default([]),
+      exclusive: z
+        .array(
+          z.object({
+            type: z.string().trim().min(1),
+            pattern: z.string().optional(),
+            negate: z.boolean().optional(),
+          }),
+        )
+        .default([]),
     })
     .default({ inclusive: [], exclusive: [] }),
   advancedSelectors: z.object({
@@ -159,23 +216,53 @@ const declarationNightsSettingsSchema = z.object({
   excluded_sources: z.array(z.string().trim().min(1)).default([]),
 });
 const sourceColorSettingsSchema = z.object({
-  colors: z.record(z.string().trim().min(1), z.string().trim().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)).default({}),
+  colors: z
+    .record(
+      z.string().trim().min(1),
+      z
+        .string()
+        .trim()
+        .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/),
+    )
+    .default({}),
 });
 const smsTextSettingsSchema = z.object({
   texts: z
     .array(
       z.object({
-        id: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+        id: z
+          .preprocess(emptyStringToNull, z.string().trim().nullable())
+          .optional(),
         title: z.string().trim().min(1),
         text: z.string().trim().min(1),
-      })
+      }),
     )
     .default([]),
 });
+const documentEmailTextTemplateSchema = z.object({
+  subject: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(20_000),
+});
+const documentEmailTextSettingsSchema = z.object({
+  contrat: documentEmailTextTemplateSchema.extend({
+    activitiesList: z.string().max(20_000).default(""),
+    guideUrl: z.string().trim().max(2_000).default(""),
+    destinationUrl: z.string().trim().max(2_000).default(""),
+  }),
+  facture: documentEmailTextTemplateSchema,
+});
 const serverSecuritySettingsSchema = z.object({
   currentPassword: z.string().optional(),
-  newPassword: z.string().trim().min(8, "Le nouveau mot de passe doit contenir au moins 8 caractères.").optional(),
-  sessionDurationHours: z.number().int().min(1).max(24 * 90),
+  newPassword: z
+    .string()
+    .trim()
+    .min(8, "Le nouveau mot de passe doit contenir au moins 8 caractères.")
+    .optional(),
+  sessionDurationHours: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 90),
 });
 
 const getIcalExportWindowStart = () => {
@@ -219,8 +306,14 @@ const listDeclarationSources = async () => {
     distinct: ["source_paiement"],
   });
 
-  return [...new Set(rows.map((row) => String(row.source_paiement ?? "").trim()).filter(Boolean))].sort((left, right) =>
-    left.localeCompare(right, "fr", { sensitivity: "base" })
+  return [
+    ...new Set(
+      rows
+        .map((row) => String(row.source_paiement ?? "").trim())
+        .filter(Boolean),
+    ),
+  ].sort((left, right) =>
+    left.localeCompare(right, "fr", { sensitivity: "base" }),
   );
 };
 
@@ -230,8 +323,10 @@ const buildDeclarationNightsSettingsResponse = async () => {
 
   return {
     excluded_sources: settings.excluded_sources,
-    available_sources: [...new Set([...settings.excluded_sources, ...availableSources])].sort((left, right) =>
-      left.localeCompare(right, "fr", { sensitivity: "base" })
+    available_sources: [
+      ...new Set([...settings.excluded_sources, ...availableSources]),
+    ].sort((left, right) =>
+      left.localeCompare(right, "fr", { sensitivity: "base" }),
     ),
   };
 };
@@ -239,12 +334,16 @@ const buildDeclarationNightsSettingsResponse = async () => {
 const buildSourceColorSettingsResponse = async () => {
   const settings = readSourceColorSettings();
   const availableSources = await listDeclarationSources();
-  const configuredSources = Object.keys(settings.colors ?? {}).map((value) => String(value ?? "").trim()).filter(Boolean);
+  const configuredSources = Object.keys(settings.colors ?? {})
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
 
   return {
     colors: settings.colors,
-    available_sources: [...new Set([...availableSources, ...configuredSources])].sort((left, right) =>
-      left.localeCompare(right, "fr", { sensitivity: "base" })
+    available_sources: [
+      ...new Set([...availableSources, ...configuredSources]),
+    ].sort((left, right) =>
+      left.localeCompare(right, "fr", { sensitivity: "base" }),
     ),
   };
 };
@@ -257,8 +356,14 @@ const buildSmsTextSettingsResponse = () => {
 };
 
 const buildImportLogResponse = (limitRaw: unknown) => {
-  const rawLimit = typeof limitRaw === "string" ? Number.parseInt(limitRaw, 10) : Number(limitRaw);
-  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, IMPORT_LOG_LIMIT) : 5;
+  const rawLimit =
+    typeof limitRaw === "string"
+      ? Number.parseInt(limitRaw, 10)
+      : Number(limitRaw);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.min(rawLimit, IMPORT_LOG_LIMIT)
+      : 5;
   const entries = readTraceabilityLog();
   return {
     entries: entries.slice(0, limit),
@@ -267,7 +372,11 @@ const buildImportLogResponse = (limitRaw: unknown) => {
   };
 };
 
-const requireCronTriggerToken = (req: any, res: any, next: (err?: unknown) => void) => {
+const requireCronTriggerToken = (
+  req: any,
+  res: any,
+  next: (err?: unknown) => void,
+) => {
   if (!getCronTriggerToken()) {
     return res.status(503).json({
       error: "CRON_TRIGGER_TOKEN ou INTEGRATION_API_TOKEN non configuré.",
@@ -334,7 +443,10 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
     const host = extractUrlHost(row.url);
     if (normalizedType) previous.sample_types.add(normalizedType);
     if (host) previous.sample_hosts.add(host);
-    if (previous.examples.length < 4 && !previous.examples.some((example) => example.url === row.url)) {
+    if (
+      previous.examples.length < 4 &&
+      !previous.examples.some((example) => example.url === row.url)
+    ) {
       previous.examples.push({
         source_id: row.id ?? null,
         type: row.type ?? null,
@@ -349,7 +461,8 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
       sample_url: previous.sample_url ?? row.url ?? null,
       sample_source_id: previous.sample_source_id ?? row.id ?? null,
       sample_gite_nom: previous.sample_gite_nom ?? row.gite_nom ?? null,
-      sample_gite_prefixe: previous.sample_gite_prefixe ?? row.gite_prefixe ?? null,
+      sample_gite_prefixe:
+        previous.sample_gite_prefixe ?? row.gite_prefixe ?? null,
     });
 
     const mapped = mapping[row.gite_id];
@@ -359,7 +472,9 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
     };
   });
 
-  const unknown_gites: SourceImportUnknownGite[] = [...unknownBySourceId.entries()].map(([sourceGiteId, item]) => {
+  const unknown_gites: SourceImportUnknownGite[] = [
+    ...unknownBySourceId.entries(),
+  ].map(([sourceGiteId, item]) => {
     const mapped = mapping[sourceGiteId];
     return {
       source_gite_id: sourceGiteId,
@@ -377,7 +492,9 @@ const analyzeIcalSourcesImport = async (payload: SourceImportPayload) => {
   });
 
   const unresolved_gites = unknown_gites.filter((item) => !item.mapped_to);
-  const ready_count = rows.filter((row) => Boolean(row.resolved_gite_id)).length;
+  const ready_count = rows.filter((row) =>
+    Boolean(row.resolved_gite_id),
+  ).length;
 
   return {
     rows,
@@ -403,11 +520,16 @@ router.get("/security", async (req, res, next) => {
 router.put("/security", async (req, res, next) => {
   try {
     const payload = serverSecuritySettingsSchema.parse(req.body);
-    const result = await updateServerSecuritySettings(payload, getServerAuthSessionIdFromRequest(req));
+    const result = await updateServerSecuritySettings(
+      payload,
+      getServerAuthSessionIdFromRequest(req),
+    );
     if (result.session) {
       setServerAuthCookie(req, res, result.session);
     }
-    const passwordConfigured = Boolean(result.settings.passwordHash && result.settings.passwordSalt);
+    const passwordConfigured = Boolean(
+      result.settings.passwordHash && result.settings.passwordSalt,
+    );
     res.json({
       settings: {
         enabled: passwordConfigured,
@@ -470,8 +592,12 @@ router.get("/ical-exports", async (_req, res, next) => {
 
     const exportableCountsByGite = new Map<string, number>();
     for (const reservation of reservationRows) {
-      if (!reservation.gite_id || !shouldExportReservationToIcal(reservation)) continue;
-      exportableCountsByGite.set(reservation.gite_id, (exportableCountsByGite.get(reservation.gite_id) ?? 0) + 1);
+      if (!reservation.gite_id || !shouldExportReservationToIcal(reservation))
+        continue;
+      exportableCountsByGite.set(
+        reservation.gite_id,
+        (exportableCountsByGite.get(reservation.gite_id) ?? 0) + 1,
+      );
     }
 
     res.json(
@@ -483,7 +609,7 @@ router.get("/ical-exports", async (_req, res, next) => {
         ical_export_token: gite.ical_export_token ?? null,
         reservations_count: gite._count.reservations,
         exported_reservations_count: exportableCountsByGite.get(gite.id) ?? 0,
-      }))
+      })),
     );
   } catch (error) {
     next(error);
@@ -577,7 +703,10 @@ router.post("/ical-exports/:giteId/reset-token", async (req, res, next) => {
 router.post("/ical-sources", async (req, res, next) => {
   try {
     const payload = sourcePayloadSchema.parse(req.body);
-    const gite = await prisma.gite.findUnique({ where: { id: payload.gite_id }, select: { id: true } });
+    const gite = await prisma.gite.findUnique({
+      where: { id: payload.gite_id },
+      select: { id: true },
+    });
     if (!gite) {
       return res.status(404).json({ error: "Gîte introuvable." });
     }
@@ -591,7 +720,9 @@ router.post("/ical-sources", async (req, res, next) => {
     });
 
     if (duplicate) {
-      return res.status(409).json({ error: "Cette URL iCal existe déjà pour ce gîte." });
+      return res
+        .status(409)
+        .json({ error: "Cette URL iCal existe déjà pour ce gîte." });
     }
 
     const aggregate = await prisma.icalSource.aggregate({
@@ -660,7 +791,8 @@ router.post("/ical-sources/import", async (req, res, next) => {
     }
     if (analysis.unresolved_count > 0) {
       return res.status(400).json({
-        error: "Certains gîtes importés sont introuvables. Analysez et attribuez-les avant l'import.",
+        error:
+          "Certains gîtes importés sont introuvables. Analysez et attribuez-les avant l'import.",
         unknown_gites: analysis.unknown_gites,
         unresolved_count: analysis.unresolved_count,
       });
@@ -675,14 +807,18 @@ router.post("/ical-sources/import", async (req, res, next) => {
     for (const row of rows) {
       if (row.id) {
         if (seenIds.has(row.id)) {
-          return res.status(400).json({ error: `Identifiant source dupliqué dans l'import: ${row.id}` });
+          return res.status(400).json({
+            error: `Identifiant source dupliqué dans l'import: ${row.id}`,
+          });
         }
         seenIds.add(row.id);
       }
 
       const key = `${row.gite_id}::${row.url}`;
       if (seenKeys.has(key)) {
-        return res.status(400).json({ error: `URL iCal dupliquée dans l'import pour le même gîte: ${row.url}` });
+        return res.status(400).json({
+          error: `URL iCal dupliquée dans l'import pour le même gîte: ${row.url}`,
+        });
       }
       seenKeys.add(key);
     }
@@ -693,14 +829,23 @@ router.post("/ical-sources/import", async (req, res, next) => {
       select: { id: true },
     });
     if (existingGites.length !== giteIds.length) {
-      return res.status(400).json({ error: "L'import contient un gîte introuvable." });
+      return res
+        .status(400)
+        .json({ error: "L'import contient un gîte introuvable." });
     }
 
     const existingSources = await prisma.icalSource.findMany({
       select: { id: true, gite_id: true, url: true, ordre: true },
     });
-    const existingById = new Map(existingSources.map((source) => [source.id, source]));
-    const existingByKey = new Map(existingSources.map((source) => [`${source.gite_id}::${source.url}`, source]));
+    const existingById = new Map(
+      existingSources.map((source) => [source.id, source]),
+    );
+    const existingByKey = new Map(
+      existingSources.map((source) => [
+        `${source.gite_id}::${source.url}`,
+        source,
+      ]),
+    );
 
     const nextOrderByGite = new Map<string, number>();
     for (const source of existingSources) {
@@ -733,7 +878,9 @@ router.post("/ical-sources/import", async (req, res, next) => {
     await prisma.$transaction(async (tx) => {
       for (const row of rows) {
         const key = `${row.gite_id}::${row.url}`;
-        const existingByRowId = row.id ? existingById.get(row.id) ?? null : null;
+        const existingByRowId = row.id
+          ? (existingById.get(row.id) ?? null)
+          : null;
         const existingByRowKey = existingByKey.get(key) ?? null;
         const target = existingByRowId ?? existingByRowKey;
 
@@ -772,7 +919,10 @@ router.post("/ical-sources/import", async (req, res, next) => {
         });
 
         createdCount += 1;
-        nextOrderByGite.set(row.gite_id, Math.max(nextOrder + 1, created.ordre + 1));
+        nextOrderByGite.set(
+          row.gite_id,
+          Math.max(nextOrder + 1, created.ordre + 1),
+        );
         existingById.set(created.id, created);
         existingByKey.set(`${created.gite_id}::${created.url}`, created);
       }
@@ -807,12 +957,18 @@ router.post("/ical-sources/import/preview", async (req, res, next) => {
 router.put("/ical-sources/:id", async (req, res, next) => {
   try {
     const payload = sourcePayloadSchema.parse(req.body);
-    const existing = await prisma.icalSource.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    const existing = await prisma.icalSource.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
     if (!existing) {
       return res.status(404).json({ error: "Source iCal introuvable." });
     }
 
-    const gite = await prisma.gite.findUnique({ where: { id: payload.gite_id }, select: { id: true } });
+    const gite = await prisma.gite.findUnique({
+      where: { id: payload.gite_id },
+      select: { id: true },
+    });
     if (!gite) {
       return res.status(404).json({ error: "Gîte introuvable." });
     }
@@ -827,7 +983,9 @@ router.put("/ical-sources/:id", async (req, res, next) => {
     });
 
     if (duplicate) {
-      return res.status(409).json({ error: "Cette URL iCal existe déjà pour ce gîte." });
+      return res
+        .status(409)
+        .json({ error: "Cette URL iCal existe déjà pour ce gîte." });
     }
 
     const updated = await prisma.icalSource.update({
@@ -853,7 +1011,10 @@ router.put("/ical-sources/:id", async (req, res, next) => {
 
 router.delete("/ical-sources/:id", async (req, res, next) => {
   try {
-    const existing = await prisma.icalSource.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    const existing = await prisma.icalSource.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
     if (!existing) {
       return res.status(404).json({ error: "Source iCal introuvable." });
     }
@@ -898,7 +1059,9 @@ router.post("/ical/cron/import", async (req, res, next) => {
   try {
     const payload = cronImportSchema.parse(req.body);
     const patch = "config" in payload ? payload.config : payload;
-    const config = await updateIcalSyncCronConfig(patch as Partial<IcalCronConfig>);
+    const config = await updateIcalSyncCronConfig(
+      patch as Partial<IcalCronConfig>,
+    );
     res.json({
       config,
       state: getIcalCronState(),
@@ -935,7 +1098,11 @@ router.post("/ical/auto-sync", async (_req, res, next) => {
   }
 });
 
-const runIcalCronHttp = async (_req: any, res: any, next: (err?: unknown) => void) => {
+const runIcalCronHttp = async (
+  _req: any,
+  res: any,
+  next: (err?: unknown) => void,
+) => {
   try {
     const outcome = await runScheduledIcalSync();
     res.json({
@@ -975,6 +1142,14 @@ router.get("/source-colors", async (_req, res, next) => {
 router.get("/sms-texts", (_req, res, next) => {
   try {
     res.json(buildSmsTextSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/document-email-texts", (_req, res, next) => {
+  try {
+    res.json(buildDocumentEmailTextSettingsResponse());
   } catch (error) {
     next(error);
   }
@@ -1022,6 +1197,18 @@ router.put("/sms-texts", (req, res, next) => {
   }
 });
 
+router.put("/document-email-texts", (req, res, next) => {
+  try {
+    const payload = documentEmailTextSettingsSchema.parse(req.body ?? {});
+    const current = readDocumentEmailTemplateSettings();
+    const merged = mergeDocumentEmailTemplateSettings(current, payload);
+    writeDocumentEmailTemplateSettings(merged);
+    res.json(buildDocumentEmailTextSettingsResponse(merged));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/pump/cron", (_req, res) => {
   res.json(getPumpCronState());
 });
@@ -1032,7 +1219,9 @@ router.get("/pump/config", (_req, res) => {
 
 router.put("/pump/config", (req, res, next) => {
   try {
-    const payload = pumpAutomationConfigSchema.parse(req.body) as PumpAutomationConfig;
+    const payload = pumpAutomationConfigSchema.parse(
+      req.body,
+    ) as PumpAutomationConfig;
     const config = updatePumpAutomationConfig(payload);
     res.json({
       config,
@@ -1162,7 +1351,11 @@ router.post("/pump/refresh", async (_req, res, next) => {
   }
 });
 
-const runPumpCronHttp = async (_req: any, res: any, next: (err?: unknown) => void) => {
+const runPumpCronHttp = async (
+  _req: any,
+  res: any,
+  next: (err?: unknown) => void,
+) => {
   try {
     const outcome = await runPumpCronImport();
     const health = await getPumpConnectionHealth();
@@ -1183,7 +1376,9 @@ router.post("/pump/cron/run", requireCronTriggerToken, runPumpCronHttp);
 router.post("/pump/preview", async (_req, res, next) => {
   try {
     const latest = await getPumpLatestReservations();
-    const preview = await buildReservationsPreview(latest.reservations.map(normalizePumpReservation));
+    const preview = await buildReservationsPreview(
+      latest.reservations.map(normalizePumpReservation),
+    );
     res.json({
       ...preview,
       pump: {
@@ -1207,8 +1402,14 @@ router.post("/pump/import", async (req, res, next) => {
       .parse(req.body);
 
     const latest = await getPumpLatestReservations();
-    const preview = await buildReservationsPreview(latest.reservations.map(normalizePumpReservation));
-    const response = await importPreviewReservations(preview, payload.selected_ids, "pump");
+    const preview = await buildReservationsPreview(
+      latest.reservations.map(normalizePumpReservation),
+    );
+    const response = await importPreviewReservations(
+      preview,
+      payload.selected_ids,
+      "pump",
+    );
     res.json({
       ...response,
       pump: {
