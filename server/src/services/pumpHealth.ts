@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import nodemailer from "nodemailer";
 import { env } from "../config/env.js";
+import { sendSmtpMail } from "./mailer.js";
 import {
   buildDefaultPumpAutomationConfig,
   getPumpStorageStateId,
@@ -392,20 +392,7 @@ const canSendPumpAlertEmail = () =>
 const sendPumpAlertEmail = async (subject: string, lines: string[]) => {
   if (!canSendPumpAlertEmail()) return false;
 
-  const transporter = nodemailer.createTransport({
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    auth:
-      env.SMTP_USER || env.SMTP_PASS
-        ? {
-            user: env.SMTP_USER,
-            pass: env.SMTP_PASS,
-          }
-        : undefined,
-  });
-
-  await transporter.sendMail({
+  await sendSmtpMail({
     from: env.PUMP_ALERT_EMAIL_FROM,
     to: env.PUMP_ALERT_EMAIL_TO,
     subject,

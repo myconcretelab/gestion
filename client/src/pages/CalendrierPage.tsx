@@ -78,6 +78,7 @@ type CalendarWeekSegment = {
   isPast: boolean;
   continuesFromPreviousWeek: boolean;
   continuesToNextWeek: boolean;
+  isDepartureMarker: boolean;
   reservation: Reservation;
 };
 
@@ -284,6 +285,13 @@ const buildCalendarMonthData = ({
   for (const reservation of monthReservations) {
     const reservationStart = new Date(Math.max(parseIsoDate(reservation.date_entree).getTime(), monthStart.getTime()));
     const reservationEnd = new Date(Math.min(parseIsoDate(reservation.date_sortie).getTime(), monthEnd.getTime()));
+    const reservationEndOffset = Math.floor((reservationEnd.getTime() - gridStart.getTime()) / DAY_MS);
+    const reservationEndColumn = (reservationEndOffset % 7) + 1;
+    const endsAtNextWeekStart =
+      reservationEnd.getTime() > reservationStart.getTime() &&
+      reservationEnd.getTime() > monthStart.getTime() &&
+      reservationEnd.getTime() < monthEnd.getTime() &&
+      reservationEndColumn === 1;
 
     for (let cursor = reservationStart; cursor < reservationEnd; ) {
       const dayOffset = Math.floor((cursor.getTime() - gridStart.getTime()) / DAY_MS);
@@ -308,13 +316,32 @@ const buildCalendarMonthData = ({
           showLabel: partStart.getTime() === reservationStart.getTime() || (pointIndex === 0 && cursor.getTime() > reservationStart.getTime()),
           isPast: partEndExclusive.getTime() <= todayDate.getTime(),
           continuesFromPreviousWeek: partStart.getTime() > reservationStart.getTime(),
-          continuesToNextWeek: partEndExclusive.getTime() < reservationEnd.getTime(),
+          continuesToNextWeek: partEndExclusive.getTime() < reservationEnd.getTime() || endsAtNextWeekStart,
+          isDepartureMarker: false,
           reservation,
         });
       }
 
       segmentsByWeek.set(weekIndex, segments);
       cursor = segmentEndExclusive;
+    }
+
+    if (endsAtNextWeekStart) {
+      const departureWeekIndex = Math.floor(reservationEndOffset / 7);
+      const departureSegments = segmentsByWeek.get(departureWeekIndex) ?? [];
+      departureSegments.push({
+        id: `${reservation.id}-departure`,
+        startColumn: reservationEndColumn,
+        endColumn: reservationEndColumn,
+        label: "",
+        showLabel: false,
+        isPast: reservationEnd.getTime() <= todayDate.getTime(),
+        continuesFromPreviousWeek: true,
+        continuesToNextWeek: false,
+        isDepartureMarker: true,
+        reservation,
+      });
+      segmentsByWeek.set(departureWeekIndex, departureSegments);
     }
   }
 
@@ -1379,12 +1406,14 @@ const CalendrierPage = () => {
                                       hoveredReservation?.segmentKey === segmentKey ? "calendar-reservation--hovered" : "",
                                       segment.continuesFromPreviousWeek ? "calendar-reservation--continues-from-previous" : "",
                                       segment.continuesToNextWeek ? "calendar-reservation--continues-to-next" : "",
+                                      segment.isDepartureMarker ? "calendar-reservation--departure-marker" : "",
                                     ]
                                       .filter(Boolean)
                                       .join(" ")}
                                     style={
                                       {
                                         gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
+                                        "--calendar-reservation-span": String(segment.endColumn - segment.startColumn + 1),
                                         "--calendar-reservation-bg": getPaymentColorFromMap(segment.reservation.source_paiement, paymentColorMap),
                                         "--calendar-reservation-fg": getPaymentTextColorFromMap(segment.reservation.source_paiement, paymentColorMap),
                                       } as CSSProperties

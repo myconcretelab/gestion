@@ -111,4 +111,6 @@ export const env = {
   SMTP_SECURE: parseBooleanEnv(process.env.SMTP_SECURE, false),
   SMTP_USER: process.env.SMTP_USER ?? "",
   SMTP_PASS: process.env.SMTP_PASS ?? "",
+  SMTP_FROM: process.env.SMTP_FROM ?? "",
+  SMTP_REPLY_TO: process.env.SMTP_REPLY_TO ?? "",
 };

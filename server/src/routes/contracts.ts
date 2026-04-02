@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import path from "path";
 import fs from "fs/promises";
@@ -13,6 +13,8 @@ import {
   generateContractPreviewPdf,
   type ContractRenderInput,
 } from "../services/pdfService.js";
+import { DocumentEmailError, sendContractEmail } from "../services/documentEmail.js";
+import { SmtpConfigurationError, SmtpDeliveryError } from "../services/mailer.js";
 import { toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
@@ -81,6 +83,12 @@ const arrhesStatusSchema = z.object({
 const trackingDatesSchema = z.object({
   date_reception_contrat: nullableDateString,
   date_paiement_arrhes: nullableDateString,
+});
+
+const sendEmailSchema = z.object({
+  recipient: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
+  subject: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(200).nullable()).optional(),
+  body: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(20_000).nullable()).optional(),
 });
 
 const previewSchema = z.object({
@@ -227,6 +235,17 @@ const shouldRegeneratePdf = async (contrat: any, absolutePath: string) => {
       : new Date(contrat.date_derniere_modif).getTime();
   const latestSourceMtimeMs = Math.max(contractMtimeMs, latestTemplateMtimeMs);
   return pdfStat.mtimeMs + 1 < latestSourceMtimeMs;
+};
+
+const handleDocumentEmailError = (err: unknown, res: Response, next: NextFunction) => {
+  if (
+    err instanceof DocumentEmailError ||
+    err instanceof SmtpConfigurationError ||
+    err instanceof SmtpDeliveryError
+  ) {
+    return res.status(err.statusCode).json({ error: err.message });
+  }
+  return next(err);
 };
 
 type PreviewContext = {
@@ -695,6 +714,39 @@ router.patch("/:id/email-sent", async (req, res, next) => {
     res.json(hydrateContract(contrat));
   } catch (err) {
     next(err);
+  }
+});
+
+router.post("/:id/send-email", async (req, res, next) => {
+  try {
+    const emailDraft = sendEmailSchema.parse(req.body ?? {});
+    const contrat = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
+
+    let absolutePath = path.join(process.cwd(), contrat.pdf_path);
+    if (await shouldRegeneratePdf(contrat, absolutePath)) {
+      const regenerated = await regenerateStoredContractPdf(contrat);
+      absolutePath = regenerated.pdfAbsolutePath;
+    }
+
+    const documentUrl = new URL(`/api/contracts/${req.params.id}/pdf`, `${req.protocol}://${req.get("host")}`).toString();
+    await sendContractEmail(contrat, absolutePath, {
+      documentUrl,
+      customMessage: emailDraft,
+    });
+
+    const updated = await prisma.contrat.update({
+      where: { id: req.params.id },
+      data: { date_envoi_email: new Date() },
+      include: { gite: true },
+    });
+
+    res.json(hydrateContract(updated));
+  } catch (err) {
+    return handleDocumentEmailError(err, res, next);
   }
 });
 

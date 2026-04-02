@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -755,5 +755,216 @@ test("API hydrate les montants de contrat/facture en nombres", async () => {
   } finally {
     prisma.contrat.findUnique = original.contratFindUnique;
     prisma.facture.findUnique = original.factureFindUnique;
+  }
+});
+
+test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "contrats-email-test-"));
+  const pdfPath = path.join(tempDir, "document.pdf");
+  await writeFile(pdfPath, "pdf");
+
+  const prismaModule = await import("../src/db/prisma.ts");
+  const envModule = await import("../src/config/env.ts");
+  const mailerModule = await import("../src/services/mailer.ts");
+  const nodemailerModule = await import("nodemailer");
+  const prisma = prismaModule.default as any;
+  const env = envModule.env as any;
+  const nodemailer = nodemailerModule.default as any;
+
+  const relativePdfPath = path.relative(process.cwd(), pdfPath);
+  const sentMails: any[] = [];
+
+  const original = {
+    contratFindUnique: prisma.contrat.findUnique,
+    contratUpdate: prisma.contrat.update,
+    factureFindUnique: prisma.facture.findUnique,
+    nodemailerCreateTransport: nodemailer.createTransport,
+    SMTP_HOST: env.SMTP_HOST,
+    SMTP_PORT: env.SMTP_PORT,
+    SMTP_SECURE: env.SMTP_SECURE,
+    SMTP_USER: env.SMTP_USER,
+    SMTP_PASS: env.SMTP_PASS,
+    SMTP_FROM: env.SMTP_FROM,
+    SMTP_REPLY_TO: env.SMTP_REPLY_TO,
+  };
+
+  let contractState = {
+    id: "c1",
+    numero_contrat: "GT-2026-000001",
+    gite_id: "g1",
+    date_creation: "2026-03-12T00:00:00.000Z",
+    date_derniere_modif: "2026-03-01T00:00:00.000Z",
+    locataire_nom: "Client Contrat",
+    locataire_adresse: "Adresse",
+    locataire_tel: "0700000000",
+    locataire_email: "client@example.com",
+    nb_adultes: 2,
+    nb_enfants_2_17: 0,
+    date_debut: "2026-03-08T00:00:00.000Z",
+    heure_arrivee: "17:00",
+    date_fin: "2026-03-13T00:00:00.000Z",
+    heure_depart: "12:00",
+    nb_nuits: 5,
+    prix_par_nuit: 70,
+    remise_montant: 0,
+    taxe_sejour_calculee: 10,
+    options: "{}",
+    arrhes_montant: 100,
+    arrhes_date_limite: "2026-02-15T00:00:00.000Z",
+    solde_montant: 250,
+    caution_montant: 500,
+    cheque_menage_montant: 80,
+    afficher_caution_phrase: true,
+    afficher_cheque_menage_phrase: true,
+    clauses: "{}",
+    pdf_path: relativePdfPath,
+    date_envoi_email: null,
+    statut_reception_contrat: "non_recu",
+    date_reception_contrat: null,
+    statut_paiement_arrhes: "non_recu",
+    date_paiement_arrhes: null,
+    notes: null,
+    reservation_id: null,
+    gite: {
+      nom: "Liberté",
+      email: "gite@example.com",
+    },
+  };
+
+  const invoiceState = {
+    id: "f1",
+    numero_facture: "GT-2026-01",
+    gite_id: "g1",
+    date_creation: "2026-03-12T00:00:00.000Z",
+    date_derniere_modif: "2026-03-01T00:00:00.000Z",
+    locataire_nom: "Client Facture",
+    locataire_adresse: "Adresse",
+    locataire_tel: "0700000000",
+    locataire_email: "facture@example.com",
+    nb_adultes: 2,
+    nb_enfants_2_17: 0,
+    date_debut: "2026-03-08T00:00:00.000Z",
+    heure_arrivee: "17:00",
+    date_fin: "2026-03-13T00:00:00.000Z",
+    heure_depart: "12:00",
+    nb_nuits: 5,
+    prix_par_nuit: 70,
+    remise_montant: 0,
+    taxe_sejour_calculee: 10,
+    options: "{}",
+    arrhes_montant: 100,
+    arrhes_date_limite: "2026-02-15T00:00:00.000Z",
+    solde_montant: 250,
+    caution_montant: 500,
+    cheque_menage_montant: 80,
+    afficher_caution_phrase: true,
+    afficher_cheque_menage_phrase: true,
+    clauses: "{}",
+    pdf_path: relativePdfPath,
+    statut_paiement: "non_reglee",
+    notes: null,
+    reservation_id: null,
+    gite: {
+      nom: "Liberté",
+      email: "gite@example.com",
+    },
+  };
+
+  try {
+    env.SMTP_HOST = "smtp.example.com";
+    env.SMTP_PORT = 587;
+    env.SMTP_SECURE = false;
+    env.SMTP_USER = "smtp-user";
+    env.SMTP_PASS = "smtp-pass";
+    env.SMTP_FROM = "noreply@example.com";
+    env.SMTP_REPLY_TO = "";
+    mailerModule.resetSmtpTransportForTests();
+
+    nodemailer.createTransport = () => ({
+      verify: async () => undefined,
+      sendMail: async (payload: any) => {
+        sentMails.push(payload);
+        return { messageId: `message-${sentMails.length}` };
+      },
+    });
+
+    prisma.contrat.findUnique = async () => ({ ...contractState });
+    prisma.contrat.update = async ({ data }: any) => {
+      contractState = { ...contractState, ...data };
+      return { ...contractState };
+    };
+    prisma.facture.findUnique = async () => ({ ...invoiceState });
+
+    const contractsRouterModule = await import("../src/routes/contracts.ts");
+    const invoicesRouterModule = await import("../src/routes/invoices.ts");
+    const contractSend = getRouteHandler(contractsRouterModule.default, "post", "/:id/send-email");
+    const invoiceSend = getRouteHandler(invoicesRouterModule.default, "post", "/:id/send-email");
+
+    const contractRes = createMockResponse();
+    let nextError: unknown = null;
+    await contractSend(
+      {
+        body: { recipient: "alt-contract@example.com", subject: "Sujet contrat", body: "Corps contrat" },
+        params: { id: "c1" },
+        query: {},
+        protocol: "https",
+        get: () => "example.com",
+      },
+      contractRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal(contractRes.statusCode, 200);
+    assert.ok((contractRes.body as any).date_envoi_email);
+
+    const invoiceRes = createMockResponse();
+    nextError = null;
+    await invoiceSend(
+      {
+        body: { recipient: "alt-invoice@example.com", subject: "Sujet facture", body: "Corps facture" },
+        params: { id: "f1" },
+        query: {},
+        protocol: "https",
+        get: () => "example.com",
+      },
+      invoiceRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal(invoiceRes.statusCode, 200);
+
+    assert.equal(sentMails.length, 2);
+    assert.equal(sentMails[0].to, "alt-contract@example.com");
+    assert.equal(sentMails[0].from, "noreply@example.com");
+    assert.equal(sentMails[0].replyTo, "gite@example.com");
+    assert.equal(sentMails[0].attachments[0].filename, "GT-2026-000001.pdf");
+    assert.equal(sentMails[0].attachments[0].path, pdfPath);
+    assert.equal(sentMails[0].subject, "Sujet contrat");
+    assert.equal(sentMails[0].text, "Corps contrat");
+
+    assert.equal(sentMails[1].to, "alt-invoice@example.com");
+    assert.equal(sentMails[1].from, "noreply@example.com");
+    assert.equal(sentMails[1].attachments[0].filename, "GT-2026-01.pdf");
+    assert.equal(sentMails[1].attachments[0].path, pdfPath);
+    assert.equal(sentMails[1].subject, "Sujet facture");
+    assert.equal(sentMails[1].text, "Corps facture");
+  } finally {
+    prisma.contrat.findUnique = original.contratFindUnique;
+    prisma.contrat.update = original.contratUpdate;
+    prisma.facture.findUnique = original.factureFindUnique;
+    nodemailer.createTransport = original.nodemailerCreateTransport;
+    env.SMTP_HOST = original.SMTP_HOST;
+    env.SMTP_PORT = original.SMTP_PORT;
+    env.SMTP_SECURE = original.SMTP_SECURE;
+    env.SMTP_USER = original.SMTP_USER;
+    env.SMTP_PASS = original.SMTP_PASS;
+    env.SMTP_FROM = original.SMTP_FROM;
+    env.SMTP_REPLY_TO = original.SMTP_REPLY_TO;
+    mailerModule.resetSmtpTransportForTests();
+    await rm(tempDir, { recursive: true, force: true });
   }
 });
