@@ -2668,6 +2668,23 @@ body.app-scroll-locked {
   text-decoration: none;
 }
 
+.mobile-reservation-actions__icon-button--airbnb {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.mobile-reservation-actions__icon-button--airbnb svg {
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+}
+
+.mobile-reservation-actions__icon-button--airbnb path {
+  transform: scale(1.04);
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
 .mobile-reservation-actions__icon-button--labeled {
   width: auto;
   min-width: 78px;
