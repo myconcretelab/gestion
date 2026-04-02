@@ -13,7 +13,11 @@ import {
   generateContractPreviewPdf,
   type ContractRenderInput,
 } from "../services/pdfService.js";
-import { DocumentEmailError, sendContractEmail } from "../services/documentEmail.js";
+import {
+  DocumentEmailError,
+  sendContractEmail,
+  type ContractEmailDocument,
+} from "../services/documentEmail.js";
 import { SmtpConfigurationError, SmtpDeliveryError } from "../services/mailer.js";
 import { toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths } from "../utils/paths.js";
@@ -169,6 +173,27 @@ const toContractRenderInput = (contrat: any): ContractRenderInput => ({
   options: fromJsonString<OptionsInput>(contrat.options, {}),
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   notes: contrat.notes ?? null,
+});
+
+const toContractEmailDocument = (contrat: any): ContractEmailDocument => ({
+  id: contrat.id,
+  numero_contrat: contrat.numero_contrat,
+  locataire_nom: contrat.locataire_nom,
+  locataire_email: contrat.locataire_email,
+  date_debut: contrat.date_debut,
+  heure_arrivee: contrat.heure_arrivee,
+  date_fin: contrat.date_fin,
+  heure_depart: contrat.heure_depart,
+  nb_nuits: contrat.nb_nuits,
+  arrhes_montant: toNumber(contrat.arrhes_montant),
+  arrhes_date_limite: contrat.arrhes_date_limite,
+  solde_montant: toNumber(contrat.solde_montant),
+  gite: contrat.gite
+    ? {
+        nom: contrat.gite.nom,
+        email: contrat.gite.email,
+      }
+    : undefined,
 });
 
 const contractTemplatePaths = [
@@ -733,7 +758,7 @@ router.post("/:id/send-email", async (req, res, next) => {
     }
 
     const documentUrl = new URL(`/api/contracts/${req.params.id}/pdf`, `${req.protocol}://${req.get("host")}`).toString();
-    await sendContractEmail(contrat, absolutePath, {
+    await sendContractEmail(toContractEmailDocument(contrat), absolutePath, {
       documentUrl,
       customMessage: emailDraft,
     });
