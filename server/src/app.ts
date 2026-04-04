@@ -59,7 +59,11 @@ export const createApp = () => {
       }
 
       if (
-        (/^\/settings\/ical\/cron\/run$/i.test(req.path) || /^\/settings\/pump\/cron\/run$/i.test(req.path)) &&
+        (
+          /^\/settings\/ical\/cron\/run$/i.test(req.path) ||
+          /^\/settings\/pump\/cron\/run$/i.test(req.path) ||
+          /^\/settings\/daily-reservation-email\/run$/i.test(req.path)
+        ) &&
         hasValidCronTriggerToken(req)
       ) {
         return next();

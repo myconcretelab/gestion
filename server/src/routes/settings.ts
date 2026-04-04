@@ -74,6 +74,12 @@ import {
   writeDocumentEmailTemplateSettings,
 } from "../services/documentEmailTemplateSettings.js";
 import {
+  getDailyReservationEmailState,
+  runDailyReservationEmail,
+  updateDailyReservationEmailConfig,
+} from "../services/dailyReservationEmail.js";
+import type { DailyReservationEmailConfig } from "../services/dailyReservationEmailSettings.js";
+import {
   buildServerSecuritySettingsState,
   getServerAuthSessionIdFromRequest,
   setServerAuthCookie,
@@ -253,6 +259,23 @@ const documentEmailTextSettingsSchema = z.object({
     destinationUrl: z.string().trim().max(2_000).default(""),
   }),
   facture: documentEmailTextTemplateSchema,
+});
+const dailyReservationEmailSettingsSchema = z.object({
+  enabled: z.boolean(),
+  recipients: z
+    .array(
+      z.object({
+        email: z.string().trim().email(),
+        enabled: z.boolean().default(true),
+        send_if_empty: z.boolean().default(false),
+      }),
+    )
+    .default([]),
+  hour: z.number().int().min(0).max(23),
+  minute: z.number().int().min(0).max(59),
+});
+const dailyReservationEmailRunSchema = z.object({
+  force: z.boolean().optional().default(false),
 });
 const serverSecuritySettingsSchema = z.object({
   currentPassword: z.string().optional(),
@@ -1122,6 +1145,43 @@ const runIcalCronHttp = async (
 router.get("/ical/cron/run", requireCronTriggerToken, runIcalCronHttp);
 router.post("/ical/cron/run", requireCronTriggerToken, runIcalCronHttp);
 
+const runDailyReservationEmailHttp = async (
+  req: any,
+  res: any,
+  next: (err?: unknown) => void,
+) => {
+  try {
+    const force =
+      req.method === "GET"
+        ? ["1", "true", "yes", "on"].includes(
+            String(req.query.force ?? "").trim().toLowerCase(),
+          )
+        : dailyReservationEmailRunSchema.parse(req.body ?? {}).force;
+    const summary = await runDailyReservationEmail({
+      force,
+      triggered_by: "http",
+    });
+    res.json({
+      ok: summary.email_sent || summary.skipped_reason !== null,
+      state: getDailyReservationEmailState(),
+      summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+router.get(
+  "/daily-reservation-email/run",
+  requireCronTriggerToken,
+  runDailyReservationEmailHttp,
+);
+router.post(
+  "/daily-reservation-email/run",
+  requireCronTriggerToken,
+  runDailyReservationEmailHttp,
+);
+
 router.get("/import-log", (req, res) => {
   res.json(buildImportLogResponse(req.query.limit));
 });
@@ -1153,6 +1213,14 @@ router.get("/sms-texts", (_req, res, next) => {
 router.get("/document-email-texts", (_req, res, next) => {
   try {
     res.json(buildDocumentEmailTextSettingsResponse());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/daily-reservation-email", (_req, res, next) => {
+  try {
+    res.json(getDailyReservationEmailState());
   } catch (error) {
     next(error);
   }
@@ -1207,6 +1275,35 @@ router.put("/document-email-texts", (req, res, next) => {
     const merged = mergeDocumentEmailTemplateSettings(current, payload);
     writeDocumentEmailTemplateSettings(merged);
     res.json(buildDocumentEmailTextSettingsResponse(merged));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/daily-reservation-email", async (req, res, next) => {
+  try {
+    const payload = dailyReservationEmailSettingsSchema.parse(
+      req.body ?? {},
+    ) as DailyReservationEmailConfig;
+    await updateDailyReservationEmailConfig(payload);
+    res.json(getDailyReservationEmailState());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/daily-reservation-email/send", async (req, res, next) => {
+  try {
+    const payload = dailyReservationEmailRunSchema.parse(req.body ?? {});
+    const summary = await runDailyReservationEmail({
+      force: payload.force,
+      triggered_by: "manual",
+    });
+    res.json({
+      ok: summary.email_sent || summary.skipped_reason !== null,
+      state: getDailyReservationEmailState(),
+      summary,
+    });
   } catch (error) {
     next(error);
   }

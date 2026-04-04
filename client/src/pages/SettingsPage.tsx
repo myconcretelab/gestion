@@ -5,6 +5,7 @@ import {
   type ServerSecuritySaveResult,
   type ServerSecuritySettings,
 } from "../utils/auth";
+import { formatEuro } from "../utils/format";
 import { dispatchRecentImportedReservationsCreated } from "../utils/recentImportsBadge";
 import {
   DEFAULT_PAYMENT_SOURCE_COLORS,
@@ -310,6 +311,7 @@ const SETTINGS_SECTIONS = [
   { id: "settings-import-log", label: "Journal des imports" },
   { id: "settings-sms", label: "SMS" },
   { id: "settings-email-texts", label: "Emails" },
+  { id: "settings-daily-reservation-email", label: "Email quotidien" },
   { id: "settings-declaration-nights", label: "Nuitées à déclarer" },
   { id: "settings-source-colors", label: "Couleurs des sources" },
   { id: "settings-team", label: "Équipe" },
@@ -438,6 +440,64 @@ type DocumentEmailTextSettings = {
   facture: DocumentEmailTextTemplate;
 };
 
+type DailyReservationEmailConfig = {
+  enabled: boolean;
+  recipients: DailyReservationEmailRecipientConfig[];
+  hour: number;
+  minute: number;
+};
+
+type DailyReservationEmailRecipientConfig = {
+  email: string;
+  enabled: boolean;
+  send_if_empty: boolean;
+};
+
+type DailyReservationEmailGiteTotal = {
+  gite_id: string | null;
+  gite_nom: string;
+  total_amount: number;
+  reservations_count: number;
+};
+
+type DailyReservationEmailRunSummary = {
+  slot_at: string;
+  window_start_at: string;
+  window_end_at: string;
+  new_reservations_count: number;
+  email_sent: boolean;
+  skipped_reason:
+    | "disabled"
+    | "already-ran-for-slot"
+    | "no-new-reservations"
+    | null;
+  recipients_count: number;
+  total_amount: number;
+  total_reservations_count: number;
+  totals_by_gite: DailyReservationEmailGiteTotal[];
+};
+
+type DailyReservationEmailState = {
+  config: DailyReservationEmailConfig;
+  scheduler: "internal";
+  running: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_success_at: string | null;
+  last_email_sent_at: string | null;
+  last_status: "idle" | "running" | "success" | "skipped" | "error";
+  last_error: string | null;
+  last_result: DailyReservationEmailRunSummary | null;
+  smtp_configured: boolean;
+  smtp_issues: string[];
+};
+
+type DailyReservationEmailRunResponse = {
+  ok: boolean;
+  state: DailyReservationEmailState;
+  summary: DailyReservationEmailRunSummary;
+};
+
 type SettingsPageProps = {
   onAuthSessionUpdated?: (session: ServerAuthSession) => void;
 };
@@ -549,6 +609,28 @@ const DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS: DocumentEmailTextSettings = {
   },
 };
 
+const DEFAULT_DAILY_RESERVATION_EMAIL_CONFIG: DailyReservationEmailConfig = {
+  enabled: false,
+  recipients: [],
+  hour: 7,
+  minute: 0,
+};
+
+const DEFAULT_DAILY_RESERVATION_EMAIL_STATE: DailyReservationEmailState = {
+  config: DEFAULT_DAILY_RESERVATION_EMAIL_CONFIG,
+  scheduler: "internal",
+  running: false,
+  next_run_at: null,
+  last_run_at: null,
+  last_success_at: null,
+  last_email_sent_at: null,
+  last_status: "idle",
+  last_error: null,
+  last_result: null,
+  smtp_configured: false,
+  smtp_issues: [],
+};
+
 const DEFAULT_SERVER_SECURITY_SETTINGS: ServerSecuritySettings = {
   enabled: false,
   passwordConfigured: false,
@@ -603,6 +685,24 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "pump-ical-follow-up") return "Pump après iCal";
   if (normalized === "pump-refresh") return "Pump refresh";
   return source || "Import";
+};
+
+const createDailyReservationRecipientDraft =
+  (): DailyReservationEmailRecipientConfig => ({
+    email: "",
+    enabled: true,
+    send_if_empty: false,
+  });
+
+const formatDailyReservationEmailSkippedReason = (
+  reason: DailyReservationEmailRunSummary["skipped_reason"],
+) => {
+  if (reason === "disabled") return "Envoi automatique désactivé.";
+  if (reason === "already-ran-for-slot")
+    return "Le créneau courant a déjà été traité.";
+  if (reason === "no-new-reservations")
+    return "Aucune nouvelle réservation sur les dernières 24h.";
+  return null;
 };
 
 const formatImportLogTitle = (
@@ -858,6 +958,25 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [documentEmailTextNotice, setDocumentEmailTextNotice] = useState<
     string | null
   >(null);
+  const [dailyReservationEmailState, setDailyReservationEmailState] =
+    useState<DailyReservationEmailState>(
+      DEFAULT_DAILY_RESERVATION_EMAIL_STATE,
+    );
+  const [dailyReservationEmailDraft, setDailyReservationEmailDraft] =
+    useState<DailyReservationEmailConfig>(
+      DEFAULT_DAILY_RESERVATION_EMAIL_CONFIG,
+    );
+  const [loadingDailyReservationEmail, setLoadingDailyReservationEmail] =
+    useState(true);
+  const [savingDailyReservationEmail, setSavingDailyReservationEmail] =
+    useState(false);
+  const [runningDailyReservationEmail, setRunningDailyReservationEmail] =
+    useState(false);
+  const [dailyReservationEmailError, setDailyReservationEmailError] = useState<
+    string | null
+  >(null);
+  const [dailyReservationEmailNotice, setDailyReservationEmailNotice] =
+    useState<string | null>(null);
   const [serverSecuritySettings, setServerSecuritySettings] =
     useState<ServerSecuritySettings>(DEFAULT_SERVER_SECURITY_SETTINGS);
   const [serverSecurityDurationDraft, setServerSecurityDurationDraft] =
@@ -1265,6 +1384,101 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     setDocumentEmailTextDraft(nextSettings);
   };
 
+  const applyDailyReservationEmailState = (data: DailyReservationEmailState) => {
+    const recipients = Array.isArray(data?.config?.recipients)
+      ? data.config.recipients
+          .map((item) => ({
+            email: String(item?.email ?? "").trim().toLowerCase(),
+            enabled: Boolean(item?.enabled),
+            send_if_empty: Boolean(item?.send_if_empty),
+          }))
+          .filter((item) => item.email)
+      : DEFAULT_DAILY_RESERVATION_EMAIL_CONFIG.recipients;
+
+    const totalsByGite = Array.isArray(data?.last_result?.totals_by_gite)
+      ? data.last_result.totals_by_gite
+          .map((item) => ({
+            gite_id:
+              typeof item?.gite_id === "string" && item.gite_id.trim()
+                ? item.gite_id
+                : null,
+            gite_nom: String(item?.gite_nom ?? "").trim(),
+            total_amount: Number(item?.total_amount ?? 0),
+            reservations_count: Math.max(
+              0,
+              Number(item?.reservations_count ?? 0),
+            ),
+          }))
+          .filter((item) => item.gite_nom)
+      : [];
+
+    const nextState: DailyReservationEmailState = {
+      config: {
+        enabled: Boolean(data?.config?.enabled),
+        recipients,
+        hour: Math.min(
+          23,
+          Math.max(0, Math.round(Number(data?.config?.hour ?? 7) || 7)),
+        ),
+        minute: Math.min(
+          59,
+          Math.max(0, Math.round(Number(data?.config?.minute ?? 0) || 0)),
+        ),
+      },
+      scheduler: "internal",
+      running: Boolean(data?.running),
+      next_run_at: data?.next_run_at ?? null,
+      last_run_at: data?.last_run_at ?? null,
+      last_success_at: data?.last_success_at ?? null,
+      last_email_sent_at: data?.last_email_sent_at ?? null,
+      last_status:
+        data?.last_status === "running" ||
+        data?.last_status === "success" ||
+        data?.last_status === "skipped" ||
+        data?.last_status === "error"
+          ? data.last_status
+          : "idle",
+      last_error: data?.last_error ?? null,
+      last_result: data?.last_result
+        ? {
+            slot_at: data.last_result.slot_at,
+            window_start_at: data.last_result.window_start_at,
+            window_end_at: data.last_result.window_end_at,
+            new_reservations_count: Math.max(
+              0,
+              Number(data.last_result.new_reservations_count ?? 0),
+            ),
+            email_sent: Boolean(data.last_result.email_sent),
+            skipped_reason:
+              data.last_result.skipped_reason === "disabled" ||
+              data.last_result.skipped_reason === "already-ran-for-slot" ||
+              data.last_result.skipped_reason === "no-new-reservations"
+                ? data.last_result.skipped_reason
+                : null,
+            recipients_count: Math.max(
+              0,
+              Number(data.last_result.recipients_count ?? 0),
+            ),
+            total_amount: Number(data.last_result.total_amount ?? 0),
+            total_reservations_count: Math.max(
+              0,
+              Number(data.last_result.total_reservations_count ?? 0),
+            ),
+            totals_by_gite: totalsByGite,
+          }
+        : null,
+      smtp_configured: Boolean(data?.smtp_configured),
+      smtp_issues: Array.isArray(data?.smtp_issues)
+        ? data.smtp_issues
+            .map((item) => String(item ?? "").trim())
+            .filter(Boolean)
+        : [],
+    };
+
+    setDailyReservationEmailState(nextState);
+    setDailyReservationEmailDraft(nextState.config);
+  };
+
   const applyServerSecuritySettings = (data: ServerSecuritySettings) => {
     const nextSettings: ServerSecuritySettings = {
       enabled: Boolean(data.enabled || data.passwordConfigured),
@@ -1291,6 +1505,13 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       "/settings/document-email-texts",
     );
     applyDocumentEmailTextSettings(data);
+  };
+
+  const loadDailyReservationEmailState = async () => {
+    const data = await apiFetch<DailyReservationEmailState>(
+      "/settings/daily-reservation-email",
+    );
+    applyDailyReservationEmailState(data);
   };
 
   const loadServerSecuritySettings = async () => {
@@ -1394,6 +1615,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     setLoadingSourceColors(true);
     setLoadingSmsTexts(true);
     setLoadingDocumentEmailTexts(true);
+    setLoadingDailyReservationEmail(true);
     setLoadingServerSecurity(true);
     Promise.all([
       loadManagers(),
@@ -1402,6 +1624,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       loadSourceColorSettings(),
       loadSmsTextSettings(),
       loadDocumentEmailTextSettings(),
+      loadDailyReservationEmailState(),
       loadServerSecuritySettings(),
       loadCronState(),
       loadImportLog(),
@@ -1421,6 +1644,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         setSourceColorError(message);
         setSmsTextError(message);
         setDocumentEmailTextError(message);
+        setDailyReservationEmailError(message);
         setServerSecurityError(message);
       })
       .finally(() => {
@@ -1431,6 +1655,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         setLoadingSourceColors(false);
         setLoadingSmsTexts(false);
         setLoadingDocumentEmailTexts(false);
+        setLoadingDailyReservationEmail(false);
         setLoadingServerSecurity(false);
       });
   }, []);
@@ -1628,6 +1853,98 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     } finally {
       setSavingDocumentEmailTexts(false);
+    }
+  };
+
+  const saveDailyReservationEmailSettings = async () => {
+    setSavingDailyReservationEmail(true);
+    setDailyReservationEmailError(null);
+    setDailyReservationEmailNotice(null);
+
+    try {
+      const sanitizedRecipients = dailyReservationEmailDraft.recipients
+        .map((item) => ({
+          email: String(item.email ?? "").trim().toLowerCase(),
+          enabled: Boolean(item.enabled),
+          send_if_empty: Boolean(item.send_if_empty),
+        }))
+        .filter((item) => item.email);
+
+      const invalidRecipient = sanitizedRecipients.find(
+        (item) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(item.email),
+      );
+      if (invalidRecipient) {
+        setDailyReservationEmailError(
+          `Adresse email invalide: ${invalidRecipient.email}`,
+        );
+        return;
+      }
+
+      const seen = new Set<string>();
+      const deduplicatedRecipients = sanitizedRecipients.filter((item) => {
+        if (seen.has(item.email)) return false;
+        seen.add(item.email);
+        return true;
+      });
+
+      const response = await apiFetch<DailyReservationEmailState>(
+        "/settings/daily-reservation-email",
+        {
+          method: "PUT",
+          json: {
+            enabled: dailyReservationEmailDraft.enabled,
+            recipients: deduplicatedRecipients,
+            hour: dailyReservationEmailDraft.hour,
+            minute: dailyReservationEmailDraft.minute,
+          },
+        },
+      );
+      applyDailyReservationEmailState(response);
+      setDailyReservationEmailNotice(
+        "Résumé quotidien des réservations enregistré.",
+      );
+    } catch (error: any) {
+      setDailyReservationEmailError(
+        error.message ??
+          "Impossible d'enregistrer le résumé quotidien des réservations.",
+      );
+    } finally {
+      setSavingDailyReservationEmail(false);
+    }
+  };
+
+  const runDailyReservationEmailNow = async () => {
+    setRunningDailyReservationEmail(true);
+    setDailyReservationEmailError(null);
+    setDailyReservationEmailNotice(null);
+
+    try {
+      const response = await apiFetch<DailyReservationEmailRunResponse>(
+        "/settings/daily-reservation-email/send",
+        {
+          method: "POST",
+          json: { force: true },
+        },
+      );
+      applyDailyReservationEmailState(response.state);
+
+      if (response.summary.email_sent) {
+        setDailyReservationEmailNotice(
+          `Email envoyé à ${response.summary.recipients_count} destinataire${response.summary.recipients_count > 1 ? "s" : ""}.`,
+        );
+      } else {
+        setDailyReservationEmailNotice(
+          formatDailyReservationEmailSkippedReason(
+            response.summary.skipped_reason,
+          ) ?? "Aucun email n'a été envoyé.",
+        );
+      }
+    } catch (error: any) {
+      setDailyReservationEmailError(
+        error.message ?? "Impossible d'envoyer le résumé quotidien.",
+      );
+    } finally {
+      setRunningDailyReservationEmail(false);
     }
   };
 
@@ -3180,6 +3497,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   </>
                 )}
               </div>
+
             </div>
           </section>
 
@@ -3408,6 +3726,442 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                     ) : null}
                     {documentEmailTextError ? (
                       <div className="note">{documentEmailTextError}</div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section
+            id="settings-daily-reservation-email"
+            className="settings-cluster"
+            hidden={activeSettingsSection !== "settings-daily-reservation-email"}
+            aria-labelledby="nav-settings-daily-reservation-email"
+          >
+            <div className="settings-cluster__header">
+              <div>
+                <div className="settings-cluster__eyebrow">Communication</div>
+                <h2 className="settings-cluster__title">Email quotidien</h2>
+              </div>
+              <p className="settings-cluster__text">
+                Configurez le digest quotidien des nouvelles réservations avec
+                des réglages distincts par adresse email.
+              </p>
+            </div>
+            <div className="settings-cluster__grid">
+              <div className="card settings-card settings-card--span-12">
+                <div className="settings-card__topline">
+                  <span className="settings-card__tag">Digest quotidien</span>
+                </div>
+                <div className="section-title">
+                  Email quotidien des nouvelles réservations
+                </div>
+                <div className="field-hint">
+                  Envoie un email stylé récapitulant les réservations créées
+                  sur les dernières 24h, avec les totaux actuels par gîte et
+                  le total global.
+                </div>
+                <div className="field-hint" style={{ marginTop: 8 }}>
+                  Le bouton <strong>Envoyer maintenant</strong> force un envoi
+                  immédiat pour vérifier le rendu, même sans nouvelle
+                  réservation.
+                </div>
+                {loadingDailyReservationEmail ? (
+                  <div className="field-hint" style={{ marginTop: 12 }}>
+                    Chargement...
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid-2" style={{ marginTop: 16 }}>
+                      <label className="field">
+                        Activation
+                        <select
+                          value={dailyReservationEmailDraft.enabled ? "1" : "0"}
+                          onChange={(event) => {
+                            setDailyReservationEmailError(null);
+                            setDailyReservationEmailNotice(null);
+                            setDailyReservationEmailDraft((previous) => ({
+                              ...previous,
+                              enabled: event.target.value === "1",
+                            }));
+                          }}
+                          disabled={
+                            savingDailyReservationEmail ||
+                            runningDailyReservationEmail
+                          }
+                        >
+                          <option value="0">Désactivé</option>
+                          <option value="1">Activé</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        Heure d'envoi
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={dailyReservationEmailDraft.hour}
+                          onChange={(event) => {
+                            setDailyReservationEmailError(null);
+                            setDailyReservationEmailNotice(null);
+                            setDailyReservationEmailDraft((previous) => ({
+                              ...previous,
+                              hour: Math.min(
+                                23,
+                                Math.max(
+                                  0,
+                                  Math.round(
+                                    Number(event.target.value || 0),
+                                  ),
+                                ),
+                              ),
+                            }));
+                          }}
+                          disabled={
+                            savingDailyReservationEmail ||
+                            runningDailyReservationEmail
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        Minute
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          value={dailyReservationEmailDraft.minute}
+                          onChange={(event) => {
+                            setDailyReservationEmailError(null);
+                            setDailyReservationEmailNotice(null);
+                            setDailyReservationEmailDraft((previous) => ({
+                              ...previous,
+                              minute: Math.min(
+                                59,
+                                Math.max(
+                                  0,
+                                  Math.round(
+                                    Number(event.target.value || 0),
+                                  ),
+                                ),
+                              ),
+                            }));
+                          }}
+                          disabled={
+                            savingDailyReservationEmail ||
+                            runningDailyReservationEmail
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <div style={{ marginTop: 16 }}>
+                      <div className="field-hint">
+                        Chaque adresse peut avoir ses propres réglages.
+                      </div>
+                      <div
+                        className="settings-sms-texts"
+                        style={{ marginTop: 8 }}
+                      >
+                        {dailyReservationEmailDraft.recipients.map(
+                          (recipient, index) => (
+                            <div
+                              key={`daily-recipient-${index}`}
+                              className="settings-sms-text-row"
+                            >
+                              <div className="settings-sms-text-row__header">
+                                <strong>
+                                  {recipient.email ||
+                                    `Destinataire ${index + 1}`}
+                                </strong>
+                                <button
+                                  type="button"
+                                  className="danger-link"
+                                  onClick={() => {
+                                    setDailyReservationEmailError(null);
+                                    setDailyReservationEmailNotice(null);
+                                    setDailyReservationEmailDraft((previous) => ({
+                                      ...previous,
+                                      recipients: previous.recipients.filter(
+                                        (_item, itemIndex) =>
+                                          itemIndex !== index,
+                                      ),
+                                    }));
+                                  }}
+                                  disabled={
+                                    savingDailyReservationEmail ||
+                                    runningDailyReservationEmail
+                                  }
+                                >
+                                  Supprimer
+                                </button>
+                              </div>
+                              <div className="grid-2">
+                                <label className="field">
+                                  Adresse email
+                                  <input
+                                    type="email"
+                                    value={recipient.email}
+                                    onChange={(event) => {
+                                      setDailyReservationEmailError(null);
+                                      setDailyReservationEmailNotice(null);
+                                      setDailyReservationEmailDraft((previous) => ({
+                                        ...previous,
+                                        recipients: previous.recipients.map(
+                                          (item, itemIndex) =>
+                                            itemIndex === index
+                                              ? {
+                                                  ...item,
+                                                  email: event.target.value,
+                                                }
+                                              : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={
+                                      savingDailyReservationEmail ||
+                                      runningDailyReservationEmail
+                                    }
+                                    placeholder="contact@example.com"
+                                  />
+                                </label>
+                                <label className="field">
+                                  Actif
+                                  <select
+                                    value={recipient.enabled ? "1" : "0"}
+                                    onChange={(event) => {
+                                      setDailyReservationEmailError(null);
+                                      setDailyReservationEmailNotice(null);
+                                      setDailyReservationEmailDraft((previous) => ({
+                                        ...previous,
+                                        recipients: previous.recipients.map(
+                                          (item, itemIndex) =>
+                                            itemIndex === index
+                                              ? {
+                                                  ...item,
+                                                  enabled:
+                                                    event.target.value === "1",
+                                                }
+                                              : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={
+                                      savingDailyReservationEmail ||
+                                      runningDailyReservationEmail
+                                    }
+                                  >
+                                    <option value="1">Oui</option>
+                                    <option value="0">Non</option>
+                                  </select>
+                                </label>
+                                <label className="field">
+                                  Envoyer même sans nouvelle résa
+                                  <select
+                                    value={recipient.send_if_empty ? "1" : "0"}
+                                    onChange={(event) => {
+                                      setDailyReservationEmailError(null);
+                                      setDailyReservationEmailNotice(null);
+                                      setDailyReservationEmailDraft((previous) => ({
+                                        ...previous,
+                                        recipients: previous.recipients.map(
+                                          (item, itemIndex) =>
+                                            itemIndex === index
+                                              ? {
+                                                  ...item,
+                                                  send_if_empty:
+                                                    event.target.value === "1",
+                                                }
+                                              : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={
+                                      savingDailyReservationEmail ||
+                                      runningDailyReservationEmail
+                                    }
+                                  >
+                                    <option value="0">Non</option>
+                                    <option value="1">Oui</option>
+                                  </select>
+                                </label>
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                      <div className="actions" style={{ marginTop: 12 }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            setDailyReservationEmailError(null);
+                            setDailyReservationEmailNotice(null);
+                            setDailyReservationEmailDraft((previous) => ({
+                              ...previous,
+                              recipients: [
+                                ...previous.recipients,
+                                createDailyReservationRecipientDraft(),
+                              ],
+                            }));
+                          }}
+                          disabled={
+                            savingDailyReservationEmail ||
+                            runningDailyReservationEmail
+                          }
+                        >
+                          Ajouter un destinataire
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="field-hint" style={{ marginTop: 8 }}>
+                      Prochain passage:{" "}
+                      <strong>
+                        {formatIsoDateTimeFr(
+                          dailyReservationEmailState.next_run_at,
+                        )}
+                      </strong>
+                      {" · "}Dernier run:{" "}
+                      <strong>
+                        {formatIsoDateTimeFr(
+                          dailyReservationEmailState.last_run_at,
+                        )}
+                      </strong>
+                      {" · "}Dernier email envoyé:{" "}
+                      <strong>
+                        {formatIsoDateTimeFr(
+                          dailyReservationEmailState.last_email_sent_at,
+                        )}
+                      </strong>
+                    </div>
+                    <div className="field-hint" style={{ marginTop: 8 }}>
+                      SMTP:{" "}
+                      <strong>
+                        {dailyReservationEmailState.smtp_configured
+                          ? "configuré"
+                          : "incomplet"}
+                      </strong>
+                      {dailyReservationEmailState.smtp_issues.length > 0
+                        ? ` (${dailyReservationEmailState.smtp_issues.join(", ")})`
+                        : ""}
+                      {" · "}Statut:{" "}
+                      <strong>{dailyReservationEmailState.last_status}</strong>
+                    </div>
+
+                    {dailyReservationEmailState.last_result ? (
+                      <div className="field-hint" style={{ marginTop: 12 }}>
+                        Dernière fenêtre:{" "}
+                        {formatIsoDateTimeFr(
+                          dailyReservationEmailState.last_result
+                            .window_start_at,
+                        )}{" "}
+                        →{" "}
+                        {formatIsoDateTimeFr(
+                          dailyReservationEmailState.last_result.window_end_at,
+                        )}
+                        {" · "}
+                        {dailyReservationEmailState.last_result
+                          .new_reservations_count}{" "}
+                        nouvelle
+                        {dailyReservationEmailState.last_result
+                          .new_reservations_count > 1
+                          ? "s"
+                          : ""}
+                        {" · "}Total actuel{" "}
+                        {formatEuro(
+                          dailyReservationEmailState.last_result.total_amount,
+                        )}
+                      </div>
+                    ) : null}
+
+                    {dailyReservationEmailState.last_result?.totals_by_gite
+                      ?.length ? (
+                      <div style={{ marginTop: 14 }}>
+                        <div className="field-hint">
+                          Totaux actuels mémorisés au dernier envoi/run:
+                        </div>
+                        <div
+                          className="settings-sms-texts"
+                          style={{ marginTop: 8 }}
+                        >
+                          {dailyReservationEmailState.last_result.totals_by_gite.map(
+                            (item) => (
+                              <div
+                                key={`${item.gite_id ?? item.gite_nom}-daily-email`}
+                                className="settings-sms-text-row"
+                              >
+                                <div className="settings-sms-text-row__header">
+                                  <strong>{item.gite_nom}</strong>
+                                  <span>
+                                    {item.reservations_count} réservation
+                                    {item.reservations_count > 1 ? "s" : ""}
+                                  </span>
+                                </div>
+                                <div className="field-hint">
+                                  {formatEuro(item.total_amount)}
+                                </div>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="actions" style={{ marginTop: 16 }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void loadDailyReservationEmailState()}
+                        disabled={
+                          loadingDailyReservationEmail ||
+                          savingDailyReservationEmail ||
+                          runningDailyReservationEmail
+                        }
+                      >
+                        {loadingDailyReservationEmail
+                          ? "Chargement..."
+                          : "Recharger"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void runDailyReservationEmailNow()}
+                        disabled={
+                          savingDailyReservationEmail ||
+                          runningDailyReservationEmail
+                        }
+                      >
+                        {runningDailyReservationEmail
+                          ? "Envoi..."
+                          : "Envoyer maintenant"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveDailyReservationEmailSettings()}
+                        disabled={
+                          savingDailyReservationEmail ||
+                          runningDailyReservationEmail
+                        }
+                      >
+                        {savingDailyReservationEmail
+                          ? "Enregistrement..."
+                          : "Enregistrer"}
+                      </button>
+                    </div>
+                    {dailyReservationEmailNotice ? (
+                      <div className="note note--success">
+                        {dailyReservationEmailNotice}
+                      </div>
+                    ) : null}
+                    {dailyReservationEmailError ? (
+                      <div className="note">{dailyReservationEmailError}</div>
+                    ) : null}
+                    {!dailyReservationEmailState.smtp_configured ? (
+                      <div className="note" style={{ marginTop: 12 }}>
+                        Configurez le SMTP dans le fichier d'environnement pour
+                        activer l'envoi réel.
+                      </div>
                     ) : null}
                   </>
                 )}
