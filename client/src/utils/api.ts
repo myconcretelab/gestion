@@ -57,5 +57,16 @@ export const apiFetch = async <T>(path: string, options: ApiOptions = {}): Promi
     return {} as T;
   }
 
+  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  if (!contentType.includes("application/json")) {
+    const raw = await response.text().catch(() => "");
+    if (/<!doctype html>|<html[\s>]/i.test(raw)) {
+      throw new Error(
+        "Réponse API invalide: le serveur a renvoyé du HTML au lieu du JSON attendu."
+      );
+    }
+    throw new Error("Réponse API invalide: JSON attendu.");
+  }
+
   return (await response.json()) as T;
 };

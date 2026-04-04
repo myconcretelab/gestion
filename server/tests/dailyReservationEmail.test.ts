@@ -7,6 +7,7 @@ test("buildDailyReservationEmailMessage construit un digest avec reservations", 
     generatedAt: new Date("2026-04-04T07:00:00.000Z"),
     windowStart: new Date("2026-04-03T07:00:00.000Z"),
     windowEnd: new Date("2026-04-04T07:00:00.000Z"),
+    monthStart: new Date("2026-04-01T00:00:00.000Z"),
     reservations: [
       {
         id: "res-1",
@@ -40,8 +41,12 @@ test("buildDailyReservationEmailMessage construit un digest avec reservations", 
 
   assert.match(message.subject, /Nouvelles réservations du/);
   assert.match(message.text, /La Clairière \| Camille Martin/);
-  assert.match(message.text, /Montant total actuel : 2 520,00 €/);
+  assert.match(message.text, /Montant total du mois : 2 520,00 €/);
+  assert.match(message.text, /Nombre de réservations du mois : 6/);
   assert.match(message.html, /Réservations des dernières 24h/);
+  assert.match(message.html, /Mois de référence : avril 2026/i);
+  assert.match(message.html, /Montant total du mois/);
+  assert.match(message.html, /Réservations du mois/);
   assert.match(message.html, /Camille Martin/);
   assert.match(message.html, /Le Refuge/);
 });
@@ -51,6 +56,7 @@ test("buildDailyReservationEmailMessage gère l'absence de nouvelles reservation
     generatedAt: new Date("2026-04-04T07:00:00.000Z"),
     windowStart: new Date("2026-04-03T07:00:00.000Z"),
     windowEnd: new Date("2026-04-04T07:00:00.000Z"),
+    monthStart: new Date("2026-04-01T00:00:00.000Z"),
     reservations: [],
     totalsByGite: [
       {

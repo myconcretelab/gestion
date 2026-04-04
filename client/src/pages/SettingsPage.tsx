@@ -705,6 +705,15 @@ const formatDailyReservationEmailSkippedReason = (
   return null;
 };
 
+const isHtmlApiResponseError = (error: unknown) =>
+  error instanceof Error &&
+  /html au lieu du json attendu|unexpected token '<'|doctype/i.test(
+    error.message,
+  );
+
+const buildDailyReservationEmailUnavailableMessage = () =>
+  "Cette section n'est pas disponible sur ce serveur: le frontend reçoit du HTML au lieu du JSON API. Le backend en production n'est probablement pas à jour, ou la route /api/settings/daily-reservation-email est redirigée vers le frontend.";
+
 const formatImportLogTitle = (
   entry: Pick<ImportLogEntry, "source" | "status">,
 ) =>
@@ -968,6 +977,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     );
   const [loadingDailyReservationEmail, setLoadingDailyReservationEmail] =
     useState(true);
+  const [dailyReservationEmailStateLoaded, setDailyReservationEmailStateLoaded] =
+    useState(false);
   const [savingDailyReservationEmail, setSavingDailyReservationEmail] =
     useState(false);
   const [runningDailyReservationEmail, setRunningDailyReservationEmail] =
@@ -1477,6 +1488,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
 
     setDailyReservationEmailState(nextState);
     setDailyReservationEmailDraft(nextState.config);
+    setDailyReservationEmailStateLoaded(true);
   };
 
   const applyServerSecuritySettings = (data: ServerSecuritySettings) => {
@@ -1508,10 +1520,21 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   };
 
   const loadDailyReservationEmailState = async () => {
-    const data = await apiFetch<DailyReservationEmailState>(
-      "/settings/daily-reservation-email",
-    );
-    applyDailyReservationEmailState(data);
+    try {
+      const data = await apiFetch<DailyReservationEmailState>(
+        "/settings/daily-reservation-email",
+      );
+      setDailyReservationEmailError(null);
+      applyDailyReservationEmailState(data);
+    } catch (error: any) {
+      setDailyReservationEmailStateLoaded(false);
+      setDailyReservationEmailError(
+        isHtmlApiResponseError(error)
+          ? buildDailyReservationEmailUnavailableMessage()
+          : error.message ??
+              "Impossible de charger la configuration de l'email quotidien.",
+      );
+    }
   };
 
   const loadServerSecuritySettings = async () => {
@@ -1905,8 +1928,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     } catch (error: any) {
       setDailyReservationEmailError(
-        error.message ??
-          "Impossible d'enregistrer le résumé quotidien des réservations.",
+        isHtmlApiResponseError(error)
+          ? buildDailyReservationEmailUnavailableMessage()
+          : error.message ??
+              "Impossible d'enregistrer le résumé quotidien des réservations.",
       );
     } finally {
       setSavingDailyReservationEmail(false);
@@ -1941,7 +1966,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       }
     } catch (error: any) {
       setDailyReservationEmailError(
-        error.message ?? "Impossible d'envoyer le résumé quotidien.",
+        isHtmlApiResponseError(error)
+          ? buildDailyReservationEmailUnavailableMessage()
+          : error.message ?? "Impossible d'envoyer le résumé quotidien.",
       );
     } finally {
       setRunningDailyReservationEmail(false);
@@ -3771,6 +3798,31 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   <div className="field-hint" style={{ marginTop: 12 }}>
                     Chargement...
                   </div>
+                ) : !dailyReservationEmailStateLoaded ? (
+                  <>
+                    {dailyReservationEmailError ? (
+                      <div className="note" style={{ marginTop: 16 }}>
+                        {dailyReservationEmailError}
+                      </div>
+                    ) : (
+                      <div className="note" style={{ marginTop: 16 }}>
+                        La configuration de l'email quotidien n'a pas pu être
+                        chargée.
+                      </div>
+                    )}
+                    <div className="actions" style={{ marginTop: 16 }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void loadDailyReservationEmailState()}
+                        disabled={loadingDailyReservationEmail}
+                      >
+                        {loadingDailyReservationEmail
+                          ? "Chargement..."
+                          : "Recharger"}
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="grid-2" style={{ marginTop: 16 }}>
@@ -4068,7 +4120,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                           .new_reservations_count > 1
                           ? "s"
                           : ""}
-                        {" · "}Total actuel{" "}
+                        {" · "}Total du mois{" "}
                         {formatEuro(
                           dailyReservationEmailState.last_result.total_amount,
                         )}
@@ -4079,7 +4131,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                       ?.length ? (
                       <div style={{ marginTop: 14 }}>
                         <div className="field-hint">
-                          Totaux actuels mémorisés au dernier envoi/run:
+                          Totaux du mois mémorisés au dernier envoi/run:
                         </div>
                         <div
                           className="settings-sms-texts"

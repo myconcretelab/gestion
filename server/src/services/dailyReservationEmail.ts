@@ -34,6 +34,7 @@ type DailyReservationDigestMessageInput = {
   generatedAt: Date;
   windowStart: Date;
   windowEnd: Date;
+  monthStart: Date;
   reservations: DailyReservationDigestReservation[];
   totalsByGite: DailyReservationEmailGiteTotal[];
   totalAmount: number;
@@ -122,12 +123,21 @@ const buildDigestSubject = (
 const formatWindowLabel = (windowStart: Date, windowEnd: Date) =>
   `${formatDateTime(windowStart)} au ${formatDateTime(windowEnd)}`;
 
+const formatMonthLabel = (monthStart: Date) =>
+  monthStart.toLocaleDateString("fr-FR", {
+    month: "long",
+    year: "numeric",
+  });
+
 const buildPlainTextDigest = (input: DailyReservationDigestMessageInput) => {
+  const monthLabel = formatMonthLabel(input.monthStart);
   const lines = [
     `Point quotidien des réservations`,
     `Période analysée : ${formatWindowLabel(input.windowStart, input.windowEnd)}`,
+    `Mois de référence : ${monthLabel}`,
     `Nouvelles réservations : ${input.reservations.length}`,
-    `Montant total actuel : ${formatEuro(input.totalAmount)}`,
+    `Montant total du mois : ${formatEuro(input.totalAmount)}`,
+    `Nombre de réservations du mois : ${input.totalReservationsCount}`,
     "",
   ];
 
@@ -144,7 +154,7 @@ const buildPlainTextDigest = (input: DailyReservationDigestMessageInput) => {
     lines.push("");
   }
 
-  lines.push("Totaux actuels par gîte :");
+  lines.push("Totaux du mois par gîte :");
   for (const total of input.totalsByGite) {
     lines.push(
       `- ${total.gite_nom}: ${formatEuro(total.total_amount)} (${total.reservations_count} réservation${total.reservations_count > 1 ? "s" : ""})`,
@@ -167,6 +177,7 @@ const renderMetricCardHtml = (label: string, value: string, tone = "#1d1d1f") =>
   </td>`;
 
 const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
+  const monthLabel = formatMonthLabel(input.monthStart);
   const reservationCardsHtml =
     input.reservations.length > 0
       ? input.reservations
@@ -239,6 +250,9 @@ const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
                       <div style="margin-top:10px;font-size:15px;line-height:1.7;max-width:520px;opacity:0.95;">
                         Période analysée : ${escapeHtml(formatWindowLabel(input.windowStart, input.windowEnd))}
                       </div>
+                      <div style="margin-top:4px;font-size:15px;line-height:1.7;max-width:520px;opacity:0.95;">
+                        Mois de référence : ${escapeHtml(monthLabel)}
+                      </div>
                     </td>
                   </tr>
                 </table>
@@ -249,8 +263,8 @@ const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
                 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
                   <tr>
                     ${renderMetricCardHtml("Nouvelles réservations", String(input.reservations.length), "#ff385c")}
-                    ${renderMetricCardHtml("Montant total actuel", formatEuro(input.totalAmount))}
-                    ${renderMetricCardHtml("Réservations archivées", String(input.totalReservationsCount))}
+                    ${renderMetricCardHtml("Montant total du mois", formatEuro(input.totalAmount))}
+                    ${renderMetricCardHtml("Réservations du mois", String(input.totalReservationsCount))}
                   </tr>
                 </table>
               </td>
@@ -260,7 +274,7 @@ const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
             </tr>
             ${reservationCardsHtml}
             <tr>
-              <td style="padding:8px 0 10px;font-size:20px;line-height:1.3;font-weight:700;color:#1d1d1f;">Totaux actuels par gîte</td>
+              <td style="padding:8px 0 10px;font-size:20px;line-height:1.3;font-weight:700;color:#1d1d1f;">Totaux du mois par gîte</td>
             </tr>
             <tr>
               <td>
@@ -349,8 +363,25 @@ const applyCronConfig = (config: DailyReservationEmailConfig) => {
   }
 };
 
-const buildTotalsByGite = async () => {
+const getMonthBoundaries = (referenceDate: Date) => {
+  const monthStart = new Date(referenceDate);
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const monthEnd = new Date(monthStart);
+  monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+  return { monthStart, monthEnd };
+};
+
+const buildTotalsByGite = async (monthStart: Date, monthEnd: Date) => {
   const reservations = await prisma.reservation.findMany({
+    where: {
+      date_entree: {
+        gte: monthStart,
+        lt: monthEnd,
+      },
+    },
     select: {
       gite_id: true,
       prix_total: true,
@@ -545,9 +576,10 @@ export const runDailyReservationEmail = async (options?: {
     });
 
     try {
+      const { monthStart, monthEnd } = getMonthBoundaries(now);
       const [reservations, totalsByGite] = await Promise.all([
         buildNewReservations(windowStart, windowEnd),
-        buildTotalsByGite(),
+        buildTotalsByGite(monthStart, monthEnd),
       ]);
 
       const totalAmount = totalsByGite.reduce(
@@ -607,6 +639,7 @@ export const runDailyReservationEmail = async (options?: {
         generatedAt: now,
         windowStart,
         windowEnd,
+        monthStart,
         reservations,
         totalsByGite,
         totalAmount,
