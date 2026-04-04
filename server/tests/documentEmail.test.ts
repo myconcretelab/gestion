@@ -1,6 +1,36 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import { buildContractEmailMessage, buildInvoiceEmailMessage } from "../src/services/documentEmail.ts";
+import { env } from "../src/config/env.js";
+import {
+  buildDefaultDocumentEmailTemplateSettings,
+  writeDocumentEmailTemplateSettings,
+} from "../src/services/documentEmailTemplateSettings.js";
+
+const templateSettingsPath = path.join(
+  env.DATA_DIR,
+  "document-email-template-settings.json",
+);
+const originalTemplateSettings = fs.existsSync(templateSettingsPath)
+  ? fs.readFileSync(templateSettingsPath, "utf-8")
+  : null;
+
+test.beforeEach(() => {
+  writeDocumentEmailTemplateSettings(
+    buildDefaultDocumentEmailTemplateSettings(),
+  );
+});
+
+test.after(() => {
+  if (originalTemplateSettings === null) {
+    fs.rmSync(templateSettingsPath, { force: true });
+    return;
+  }
+
+  fs.writeFileSync(templateSettingsPath, originalTemplateSettings, "utf-8");
+});
 
 test("buildContractEmailMessage construit un email de contrat exploitable", () => {
   const message = buildContractEmailMessage(

@@ -52,6 +52,17 @@ type IcalSyncResult = IcalPreviewResult & {
   skipped_count: number;
   to_verify_marked_count?: number;
   to_verify_cleared_count?: number;
+  pump_follow_up?: {
+    source: "pump-ical-follow-up";
+    status: "success" | "error";
+    message: string;
+    created_count: number;
+    updated_count: number;
+    skipped_count: number;
+    reservation_count: number;
+    updated_at: string | null;
+    session_id: string | null;
+  };
   per_gite?: Record<
     string,
     { inserted: number; updated: number; skipped: number }
@@ -69,6 +80,7 @@ type IcalCronState = {
   config: {
     enabled: boolean;
     auto_sync_on_app_load: boolean;
+    auto_run_pump_for_new_airbnb_ical: boolean;
   };
   scheduler: "external";
   running: boolean;
@@ -588,6 +600,7 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "ical-startup") return "ICAL démarrage";
   if (normalized === "pump") return "Pump";
   if (normalized === "pump-cron") return "Pump cron";
+  if (normalized === "pump-ical-follow-up") return "Pump après iCal";
   if (normalized === "pump-refresh") return "Pump refresh";
   return source || "Import";
 };
@@ -873,6 +886,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [cronDraft, setCronDraft] = useState<IcalCronConfig>({
     enabled: true,
     auto_sync_on_app_load: false,
+    auto_run_pump_for_new_airbnb_ical: false,
   });
   const [savingCron, setSavingCron] = useState(false);
   const [loadingIcalPreview, setLoadingIcalPreview] = useState(false);
@@ -2400,8 +2414,13 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         typeof result.deleted_count === "number"
           ? `, ${result.deleted_count} suppression(s)`
           : "";
+      const pumpLabel = result.pump_follow_up
+        ? result.pump_follow_up.status === "success"
+          ? ` ${result.pump_follow_up.message}`
+          : ` Pump auto en échec: ${result.pump_follow_up.message}`
+        : "";
       setIcalNotice(
-        `Synchronisation terminée: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour${deletedLabel}, ${result.skipped_count} ignorée(s).${toVerifyLabel}`,
+        `Synchronisation terminée: ${result.created_count} création(s), ${result.updated_count} mise(s) à jour${deletedLabel}, ${result.skipped_count} ignorée(s).${toVerifyLabel}${pumpLabel}`,
       );
       dispatchRecentImportedReservationsCreated(result.created_count);
     } catch (error: any) {
@@ -4598,6 +4617,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   {icalCronState?.config.auto_sync_on_app_load
                     ? "activé"
                     : "désactivé"}
+                  . Relance Pump après nouvelle réservation Airbnb:{" "}
+                  {icalCronState?.config.auto_run_pump_for_new_airbnb_ical
+                    ? "activée"
+                    : "désactivée"}
                   . Dernière tentative:{" "}
                   {formatIsoDateTimeFr(icalCronState?.last_run_at ?? null)}.
                 </div>
@@ -4641,6 +4664,23 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                         setCronDraft((previous) => ({
                           ...previous,
                           auto_sync_on_app_load: event.target.value === "1",
+                        }))
+                      }
+                      disabled={savingCron}
+                    >
+                      <option value="1">Oui</option>
+                      <option value="0">Non</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    Relancer Pump si iCal crée une réservation Airbnb
+                    <select
+                      value={cronDraft.auto_run_pump_for_new_airbnb_ical ? "1" : "0"}
+                      onChange={(event) =>
+                        setCronDraft((previous) => ({
+                          ...previous,
+                          auto_run_pump_for_new_airbnb_ical:
+                            event.target.value === "1",
                         }))
                       }
                       disabled={savingCron}

@@ -35,6 +35,10 @@ type RecentImportedReservationsCountPayload = {
 type IcalAutoSyncResultSummary = {
   created_count: number;
   updated_count: number;
+  pump_follow_up?: {
+    status: "success" | "error";
+    message: string;
+  };
 };
 
 type IcalAutoSyncResponse = {
@@ -84,11 +88,30 @@ const formatSessionDurationLabel = (hours: number) => {
 
 const buildIcalAutoSyncNotice = (result: IcalAutoSyncResponse): AppNotice => {
   if ((result.status === "success" || result.status === "shared-running") && result.summary) {
+    const pumpNotice =
+      result.summary.pump_follow_up?.status === "success"
+        ? " · Pump relancé"
+        : result.summary.pump_follow_up?.status === "error"
+          ? " · Pump auto en échec"
+          : "";
+
+    if (result.summary.pump_follow_up?.status === "error") {
+      return {
+        label: "iCal",
+        tone: "warning",
+        message:
+          result.summary.created_count <= 0 && result.summary.updated_count <= 0
+            ? `iCal a jour${pumpNotice}`
+            : `${result.summary.created_count} ajout(s), ${result.summary.updated_count} mise(s) a jour${pumpNotice}`,
+        timeoutMs: 5_200,
+      };
+    }
+
     if (result.summary.created_count <= 0 && result.summary.updated_count <= 0) {
       return {
         label: "iCal",
         tone: "success",
-        message: "iCal a jour",
+        message: `iCal a jour${pumpNotice}`,
         timeoutMs: 4_200,
       };
     }
@@ -96,7 +119,7 @@ const buildIcalAutoSyncNotice = (result: IcalAutoSyncResponse): AppNotice => {
     return {
       label: "iCal",
       tone: "success",
-      message: `${result.summary.created_count} ajout(s), ${result.summary.updated_count} mise(s) a jour`,
+      message: `${result.summary.created_count} ajout(s), ${result.summary.updated_count} mise(s) a jour${pumpNotice}`,
       timeoutMs: 4_200,
     };
   }

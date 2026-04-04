@@ -5,6 +5,7 @@ import { env } from "../config/env.js";
 export type IcalCronConfig = {
   enabled: boolean;
   auto_sync_on_app_load: boolean;
+  auto_run_pump_for_new_airbnb_ical: boolean;
 };
 
 const SETTINGS_FILE = path.join(env.DATA_DIR, "ical-cron-settings.json");
@@ -23,6 +24,7 @@ const toBoolean = (value: unknown, fallback: boolean) => {
 export const buildDefaultIcalCronConfig = (): IcalCronConfig => ({
   enabled: env.ICAL_SYNC_ENABLED,
   auto_sync_on_app_load: false,
+  auto_run_pump_for_new_airbnb_ical: false,
 });
 
 type IcalCronConfigInput = Partial<IcalCronConfig> & {
@@ -35,6 +37,10 @@ type IcalCronConfigInput = Partial<IcalCronConfig> & {
 export const normalizeIcalCronConfig = (input: IcalCronConfigInput, fallback: IcalCronConfig): IcalCronConfig => ({
   enabled: toBoolean(input.enabled, fallback.enabled),
   auto_sync_on_app_load: toBoolean(input.auto_sync_on_app_load, fallback.auto_sync_on_app_load),
+  auto_run_pump_for_new_airbnb_ical: toBoolean(
+    input.auto_run_pump_for_new_airbnb_ical,
+    fallback.auto_run_pump_for_new_airbnb_ical
+  ),
 });
 
 const ensureDataDir = () => {

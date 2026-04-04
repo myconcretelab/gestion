@@ -5,6 +5,7 @@ import test from "node:test";
 import prisma from "../src/db/prisma.ts";
 import {
   runAppLoadIcalSync,
+  setPumpFollowUpRunnerForTests,
   syncIcalReservations,
   updateIcalSyncCronConfig,
 } from "../src/services/icalSync.ts";
@@ -56,6 +57,13 @@ const createActiveSource = () => [
       ordre: 0,
       nb_adultes_habituel: 2,
     },
+  },
+];
+
+const createSourceWithType = (type: string) => [
+  {
+    ...createActiveSource()[0],
+    type,
   },
 ];
 
@@ -408,5 +416,119 @@ test("syncIcalReservations ne supprime pas une reservation manuelle absente hors
     prisma.reservation.delete = originalDelete;
     prisma.reservation.update = originalUpdate;
     global.fetch = originalFetch;
+  }
+});
+
+test("syncIcalReservations relance Pump apres creation Airbnb si l'option est activee", async () => {
+  const settingsBackup = backupFile(path.join(env.DATA_DIR, "ical-cron-settings.json"));
+  const originalFindManySources = prisma.icalSource.findMany;
+  const originalFindFirst = prisma.reservation.findFirst;
+  const originalFindManyReservations = prisma.reservation.findMany;
+  const originalCreate = prisma.reservation.create;
+  const originalFetch = global.fetch;
+  let pumpTriggerCount = 0;
+
+  try {
+    await updateIcalSyncCronConfig({
+      enabled: true,
+      auto_sync_on_app_load: false,
+      auto_run_pump_for_new_airbnb_ical: true,
+    });
+    setPumpFollowUpRunnerForTests(async () => {
+      pumpTriggerCount += 1;
+      return {
+        created_count: 0,
+        updated_count: 1,
+        skipped_count: 2,
+        pump: {
+          session_id: "pump-session-1",
+          updated_at: "2026-03-21T10:00:00.000Z",
+          reservation_count: 3,
+        },
+      };
+    });
+
+    prisma.icalSource.findMany = async () => createActiveSource();
+    prisma.reservation.findFirst = async () => null;
+    prisma.reservation.findMany = async () => [];
+    prisma.reservation.create = async ({ data }: any) => ({ id: "reservation-1", ...data });
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        text: async () => ICS_SAMPLE,
+      }) as Response) as typeof fetch;
+
+    const result = await syncIcalReservations();
+
+    assert.equal(result.created_count, 1);
+    assert.equal(pumpTriggerCount, 1);
+    assert.equal(result.pump_follow_up?.status, "success");
+    assert.equal(result.pump_follow_up?.updated_count, 1);
+    assert.equal(result.pump_follow_up?.reservation_count, 3);
+  } finally {
+    setPumpFollowUpRunnerForTests(null);
+    prisma.icalSource.findMany = originalFindManySources;
+    prisma.reservation.findFirst = originalFindFirst;
+    prisma.reservation.findMany = originalFindManyReservations;
+    prisma.reservation.create = originalCreate;
+    global.fetch = originalFetch;
+    restoreFile(settingsBackup);
+  }
+});
+
+test("syncIcalReservations ne relance pas Pump si la creation iCal n'est pas Airbnb", async () => {
+  const settingsBackup = backupFile(path.join(env.DATA_DIR, "ical-cron-settings.json"));
+  const originalFindManySources = prisma.icalSource.findMany;
+  const originalFindFirst = prisma.reservation.findFirst;
+  const originalFindManyReservations = prisma.reservation.findMany;
+  const originalCreate = prisma.reservation.create;
+  const originalFetch = global.fetch;
+  let pumpTriggerCount = 0;
+
+  try {
+    await updateIcalSyncCronConfig({
+      enabled: true,
+      auto_sync_on_app_load: false,
+      auto_run_pump_for_new_airbnb_ical: true,
+    });
+    setPumpFollowUpRunnerForTests(async () => {
+      pumpTriggerCount += 1;
+      return {
+        created_count: 0,
+        updated_count: 0,
+        skipped_count: 0,
+        pump: {
+          session_id: "pump-session-2",
+          updated_at: "2026-03-21T10:00:00.000Z",
+          reservation_count: 0,
+        },
+      };
+    });
+
+    prisma.icalSource.findMany = async () => createSourceWithType("Virement");
+    prisma.reservation.findFirst = async () => null;
+    prisma.reservation.findMany = async () => [];
+    prisma.reservation.create = async ({ data }: any) => ({ id: "reservation-2", ...data });
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        text: async () => ICS_SAMPLE,
+      }) as Response) as typeof fetch;
+
+    const result = await syncIcalReservations();
+
+    assert.equal(result.created_count, 1);
+    assert.equal(pumpTriggerCount, 0);
+    assert.equal(result.pump_follow_up, undefined);
+  } finally {
+    setPumpFollowUpRunnerForTests(null);
+    prisma.icalSource.findMany = originalFindManySources;
+    prisma.reservation.findFirst = originalFindFirst;
+    prisma.reservation.findMany = originalFindManyReservations;
+    prisma.reservation.create = originalCreate;
+    global.fetch = originalFetch;
+    restoreFile(settingsBackup);
   }
 });
