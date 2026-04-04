@@ -6,6 +6,7 @@ test("la config iCal legacy est reduite au simple flag enabled", () => {
   const fallback: IcalCronConfig = {
     enabled: true,
     auto_sync_on_app_load: true,
+    auto_run_pump_for_new_airbnb_ical: true,
   };
 
   const config = normalizeIcalCronConfig(
@@ -22,6 +23,7 @@ test("la config iCal legacy est reduite au simple flag enabled", () => {
   assert.deepEqual(config, {
     enabled: false,
     auto_sync_on_app_load: true,
+    auto_run_pump_for_new_airbnb_ical: true,
   });
 });
 
@@ -29,15 +31,18 @@ test("mergeIcalCronConfig conserve l'activation et l'auto-import", () => {
   const current: IcalCronConfig = {
     enabled: true,
     auto_sync_on_app_load: false,
+    auto_run_pump_for_new_airbnb_ical: false,
   };
 
   const config = mergeIcalCronConfig(current, {
     enabled: false,
     auto_sync_on_app_load: true,
+    auto_run_pump_for_new_airbnb_ical: true,
   });
 
   assert.deepEqual(config, {
     enabled: false,
     auto_sync_on_app_load: true,
+    auto_run_pump_for_new_airbnb_ical: true,
   });
 });

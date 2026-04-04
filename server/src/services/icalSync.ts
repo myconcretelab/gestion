@@ -120,6 +120,18 @@ export type IcalPreviewResult = {
   };
 };
 
+export type IcalPumpFollowUpResult = {
+  source: "pump-ical-follow-up";
+  status: "success" | "error";
+  message: string;
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  reservation_count: number;
+  updated_at: string | null;
+  session_id: string | null;
+};
+
 export type IcalSyncResult = IcalPreviewResult & {
   created_count: number;
   updated_count: number;
@@ -138,6 +150,7 @@ export type IcalSyncResult = IcalPreviewResult & {
     updatedFields: string[];
   }>;
   deleted_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }>;
+  pump_follow_up?: IcalPumpFollowUpResult;
 };
 
 export type IcalCronState = {
@@ -625,8 +638,23 @@ type SyncOptions = {
   log_source?: "ical-manual" | "ical-cron" | "ical-startup";
 };
 
+type PumpFollowUpRunner = () => Promise<{
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  pump: {
+    session_id: string | null;
+    updated_at: string | null;
+    reservation_count: number;
+  };
+}>;
+
 let activeSyncPromise: Promise<IcalSyncResult> | null = null;
 let cronConfig: IcalCronConfig = readIcalCronConfig(buildDefaultIcalCronConfig());
+let pumpFollowUpRunner: PumpFollowUpRunner = async () => {
+  const { runPumpCronImport } = await import("./pumpCron.js");
+  return runPumpCronImport("pump-ical-follow-up");
+};
 
 const buildAutoSyncMessage = (status: IcalAutoSyncStatus, summary?: IcalSyncResult | null) => {
   if (status === "skipped-disabled") return "Import iCal auto desactive.";
@@ -652,6 +680,66 @@ const hasRecentIcalImportWithinGuardWindow = () => {
     const executedAt = Date.parse(String(entry.at ?? ""));
     return Number.isFinite(executedAt) && executedAt >= threshold;
   });
+};
+
+const hasNewAirbnbReservation = (result: IcalSyncResult) =>
+  result.inserted_items.some((item) => normalizeSource(item.source) === "Airbnb");
+
+const buildPumpFollowUpMessage = (summary: {
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  pump: {
+    reservation_count: number;
+  };
+}) =>
+  `Pump relancé: ${summary.created_count} création(s), ${summary.updated_count} mise(s) à jour, ${summary.skipped_count} ignorée(s), ${summary.pump.reservation_count} réservation(s) vues côté Pump.`;
+
+const runPumpFollowUpIfNeeded = async (result: IcalSyncResult): Promise<IcalSyncResult> => {
+  if (!cronConfig.auto_run_pump_for_new_airbnb_ical) {
+    return result;
+  }
+
+  if (!hasNewAirbnbReservation(result)) {
+    return result;
+  }
+
+  try {
+    const pumpResult = await pumpFollowUpRunner();
+    return {
+      ...result,
+      pump_follow_up: {
+        source: "pump-ical-follow-up",
+        status: "success",
+        message: buildPumpFollowUpMessage(pumpResult),
+        created_count: pumpResult.created_count,
+        updated_count: pumpResult.updated_count,
+        skipped_count: pumpResult.skipped_count,
+        reservation_count: pumpResult.pump.reservation_count,
+        updated_at: pumpResult.pump.updated_at,
+        session_id: pumpResult.pump.session_id,
+      },
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Le cycle Pump auto a échoué après la synchronisation iCal.";
+    // eslint-disable-next-line no-console
+    console.error("[ical-sync] Pump follow-up failed:", message);
+    return {
+      ...result,
+      pump_follow_up: {
+        source: "pump-ical-follow-up",
+        status: "error",
+        message,
+        created_count: 0,
+        updated_count: 0,
+        skipped_count: 0,
+        reservation_count: 0,
+        updated_at: null,
+        session_id: null,
+      },
+    };
+  }
 };
 
 const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof loadParsedIcalReservations>>) => {
@@ -864,7 +952,8 @@ export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalS
 
   activeSyncPromise = (async () => {
     try {
-      const result = await runSync();
+      const synced = await runSync();
+      const result = await runPumpFollowUpIfNeeded(synced);
 
       if (options?.log_source) {
         try {
@@ -1026,6 +1115,15 @@ export const updateIcalSyncCronConfig = async (patch: Partial<IcalCronConfig>) =
 };
 
 export const getIcalSyncCronConfig = () => cronConfig;
+
+export const setPumpFollowUpRunnerForTests = (runner: PumpFollowUpRunner | null) => {
+  pumpFollowUpRunner =
+    runner ??
+    (async () => {
+      const { runPumpCronImport } = await import("./pumpCron.js");
+      return runPumpCronImport("pump-ical-follow-up");
+    });
+};
 
 export const getIcalCronState = (): IcalCronState => {
   const persistedState = readIcalCronRunState();

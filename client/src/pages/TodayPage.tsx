@@ -232,6 +232,7 @@ const formatImportSource = (source: string | null | undefined) => {
   if (normalized === "ical-startup") return "ICAL démarrage";
   if (normalized === "pump") return "Pump";
   if (normalized === "pump-cron") return "Pump cron";
+  if (normalized === "pump-ical-follow-up") return "Pump après iCal";
   if (normalized === "pump-refresh") return "Pump refresh";
   return source || "Import";
 };

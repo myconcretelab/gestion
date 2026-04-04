@@ -2425,7 +2425,20 @@ body.app-scroll-locked {
   background: #ffffff;
 }
 
+.u-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .calendar-quick-create-sheet__submit {
+  position: relative;
   width: 100%;
   min-height: 46px;
   padding: 0 18px;
@@ -2438,6 +2451,42 @@ body.app-scroll-locked {
   box-shadow: 0 12px 28px rgba(255, 90, 95, 0.24);
 }
 
+.calendar-quick-create-sheet__submit-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 24px;
+}
+
+.calendar-quick-create-sheet__submit-content--icon {
+  min-width: 24px;
+}
+
+.calendar-quick-create-sheet__submit-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.calendar-quick-create-sheet__submit-icon--spinner {
+  animation: calendar-quick-create-sheet-spin 800ms linear infinite;
+}
+
+.calendar-quick-create-sheet__submit--saving,
+.calendar-quick-create-sheet__submit--saving:disabled {
+  background: linear-gradient(135deg, var(--primary) 0%, #ff385c 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(255, 90, 95, 0.24);
+  cursor: wait;
+}
+
+.calendar-quick-create-sheet__submit--saved {
+  background: linear-gradient(135deg, #0f766e 0%, #10b981 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.24);
+}
+
 .calendar-quick-create-sheet__submit--sms {
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.22);
@@ -2447,6 +2496,12 @@ body.app-scroll-locked {
   background: #cbd5e1;
   color: #64748b;
   box-shadow: none;
+}
+
+@keyframes calendar-quick-create-sheet-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .reservation-editor-page {

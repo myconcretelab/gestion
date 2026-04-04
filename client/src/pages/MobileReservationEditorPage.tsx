@@ -46,6 +46,32 @@ const ArrowLeftIcon = () => (
   </svg>
 );
 
+const SaveSpinnerIcon = () => (
+  <svg className="calendar-quick-create-sheet__submit-icon calendar-quick-create-sheet__submit-icon--spinner" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="2.2" opacity="0.28" />
+    <path
+      d="M12 4a8 8 0 0 1 8 8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+const SaveCheckIcon = () => (
+  <svg className="calendar-quick-create-sheet__submit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="m7.5 12.5 3 3 6-7"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const parseIsoDate = (value: string) => {
   const [year, month, day] = normalizeIsoDate(value).split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
@@ -64,6 +90,7 @@ type ReservationCreateResponse = Reservation & {
 };
 
 type EditorMode = "create" | "edit";
+type QuickReservationSaveState = "idle" | "saving" | "saved";
 
 const MobileReservationEditorPage = () => {
   const location = useLocation();
@@ -88,11 +115,10 @@ const MobileReservationEditorPage = () => {
     DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS
   );
   const [quickReservationSmsSelection, setQuickReservationSmsSelection] = useState<string[]>([]);
-  const [quickReservationSaving, setQuickReservationSaving] = useState(false);
+  const [quickReservationSaveState, setQuickReservationSaveState] = useState<QuickReservationSaveState>("idle");
   const [quickReservationDeleting, setQuickReservationDeleting] = useState(false);
   const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
   const [quickReservationErrorField, setQuickReservationErrorField] = useState<QuickReservationErrorField>(null);
-  const [quickReservationSaved, setQuickReservationSaved] = useState(false);
   const [optionsExpanded, setOptionsExpanded] = useState(false);
   const [smsExpanded, setSmsExpanded] = useState(false);
   const [smsPreviewExpanded, setSmsPreviewExpanded] = useState(false);
@@ -100,6 +126,23 @@ const MobileReservationEditorPage = () => {
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
   const airbnbCalendarRefreshControllersRef = useRef<AbortController[]>([]);
+  const quickReservationSavedTimeoutRef = useRef<number | null>(null);
+  const quickReservationSaving = quickReservationSaveState === "saving";
+  const quickReservationSaved = quickReservationSaveState === "saved";
+
+  const clearQuickReservationSavedTimeout = useCallback(() => {
+    if (quickReservationSavedTimeoutRef.current === null) return;
+    window.clearTimeout(quickReservationSavedTimeoutRef.current);
+    quickReservationSavedTimeoutRef.current = null;
+  }, []);
+
+  const scheduleQuickReservationSavedReset = useCallback(() => {
+    clearQuickReservationSavedTimeout();
+    quickReservationSavedTimeoutRef.current = window.setTimeout(() => {
+      setQuickReservationSaveState((current) => (current === "saved" ? "idle" : current));
+      quickReservationSavedTimeoutRef.current = null;
+    }, 1600);
+  }, [clearQuickReservationSavedTimeout]);
 
   const loadPage = useCallback(
     async (params: {
@@ -115,7 +158,8 @@ const MobileReservationEditorPage = () => {
       setLoadingError(null);
       setQuickReservationError(null);
       setQuickReservationErrorField(null);
-      setQuickReservationSaved(false);
+      clearQuickReservationSavedTimeout();
+      setQuickReservationSaveState("idle");
       setQuickReservationSmsSelection([]);
       setOptionsExpanded(false);
       setSmsExpanded(false);
@@ -177,7 +221,7 @@ const MobileReservationEditorPage = () => {
         setLoading(false);
       }
     },
-    []
+    [clearQuickReservationSavedTimeout]
   );
 
   useEffect(() => {
@@ -194,9 +238,10 @@ const MobileReservationEditorPage = () => {
 
   useEffect(() => {
     return () => {
+      clearQuickReservationSavedTimeout();
       airbnbCalendarRefreshControllersRef.current.forEach((controller) => controller.abort());
     };
-  }, []);
+  }, [clearQuickReservationSavedTimeout]);
 
   useEffect(() => {
     if (!quickReservationErrorField) return;
@@ -317,7 +362,8 @@ const MobileReservationEditorPage = () => {
 
   const handleQuickReservationFieldChange = useCallback(
     (field: keyof QuickReservationDraft, value: string | number | boolean) => {
-      setQuickReservationSaved(false);
+      clearQuickReservationSavedTimeout();
+      setQuickReservationSaveState("idle");
       setQuickReservationError(null);
       setQuickReservationErrorField(null);
       setQuickReservationDraft((current) => {
@@ -330,7 +376,7 @@ const MobileReservationEditorPage = () => {
         });
       });
     },
-    [selectedGite]
+    [clearQuickReservationSavedTimeout, selectedGite]
   );
 
   const saveQuickReservation = useCallback(async () => {
@@ -345,19 +391,22 @@ const MobileReservationEditorPage = () => {
     if (!savePayload.ok) {
       setQuickReservationError(savePayload.error);
       setQuickReservationErrorField(savePayload.errorField);
-      setQuickReservationSaved(false);
+      clearQuickReservationSavedTimeout();
+      setQuickReservationSaveState("idle");
       return;
     }
 
-    setQuickReservationSaving(true);
+    clearQuickReservationSavedTimeout();
+    setQuickReservationSaveState("saving");
     setQuickReservationError(null);
     setQuickReservationErrorField(null);
+
+    let saveSucceeded = false;
 
     try {
       if (editorMode === "edit") {
         if (!editingReservation) {
           setQuickReservationError("Réservation introuvable.");
-          setQuickReservationSaved(false);
           return;
         }
 
@@ -414,7 +463,9 @@ const MobileReservationEditorPage = () => {
         );
       }
 
-      setQuickReservationSaved(true);
+      saveSucceeded = true;
+      setQuickReservationSaveState("saved");
+      scheduleQuickReservationSavedReset();
     } catch (error) {
       if (isApiError(error)) {
         setQuickReservationError(error.message);
@@ -422,12 +473,12 @@ const MobileReservationEditorPage = () => {
         setQuickReservationError("Impossible d'enregistrer la réservation.");
       }
       setQuickReservationErrorField(null);
-      setQuickReservationSaved(false);
     } finally {
-      setQuickReservationSaving(false);
+      if (!saveSucceeded) setQuickReservationSaveState("idle");
     }
   }, [
     backHref,
+    clearQuickReservationSavedTimeout,
     editorMode,
     editingReservation,
     gites,
@@ -435,6 +486,7 @@ const MobileReservationEditorPage = () => {
     origin,
     quickReservationDraft,
     quickReservationSaving,
+    scheduleQuickReservationSavedReset,
     selectedGite,
     selectedGiteId,
     startAirbnbCalendarRefreshPolling,
@@ -448,6 +500,13 @@ const MobileReservationEditorPage = () => {
     if (!quickReservationSmsHref) return;
     window.location.href = quickReservationSmsHref;
   }, [quickReservationSmsHref]);
+
+  const quickReservationPrimaryActionLabel = editorMode === "edit" ? "Mettre à jour" : "Enregistrer";
+  const quickReservationPrimaryActionStatusLabel = quickReservationSaving
+    ? "Enregistrement en cours"
+    : quickReservationSaved
+      ? "Réservation enregistrée"
+      : quickReservationPrimaryActionLabel;
 
   const handleDeleteReservation = useCallback(async () => {
     if (!editingReservation || quickReservationDeleting) return;
@@ -886,11 +945,35 @@ const MobileReservationEditorPage = () => {
         <div className="calendar-quick-create-sheet__footer reservation-editor-page__footer">
           <button
             type="button"
-            className="calendar-quick-create-sheet__submit"
+            className={`calendar-quick-create-sheet__submit${
+              quickReservationSaving
+                ? " calendar-quick-create-sheet__submit--saving"
+                : quickReservationSaved
+                  ? " calendar-quick-create-sheet__submit--saved"
+                  : ""
+            }`}
             onClick={handlePrimaryAction}
             disabled={quickReservationSaving}
+            aria-label={quickReservationPrimaryActionStatusLabel}
+            title={quickReservationPrimaryActionStatusLabel}
           >
-            {quickReservationSaving ? "Enregistrement..." : editorMode === "edit" ? "Mettre à jour" : "Enregistrer"}
+            <span className="u-visually-hidden" aria-live="polite" aria-atomic="true">
+              {quickReservationPrimaryActionStatusLabel}
+            </span>
+            <span
+              className={`calendar-quick-create-sheet__submit-content${
+                quickReservationSaving || quickReservationSaved ? " calendar-quick-create-sheet__submit-content--icon" : ""
+              }`}
+              aria-hidden="true"
+            >
+              {quickReservationSaving ? (
+                <SaveSpinnerIcon />
+              ) : quickReservationSaved ? (
+                <SaveCheckIcon />
+              ) : (
+                <span>{quickReservationPrimaryActionLabel}</span>
+              )}
+            </span>
           </button>
           <button
             type="button"

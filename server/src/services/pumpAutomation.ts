@@ -87,6 +87,20 @@ const sanitizeImportedStorageStateId = (value: string) => {
   return normalized || null;
 };
 
+export const resolveImportedPumpStorageStateId = (
+  config: Pick<PumpAutomationConfig, "baseUrl" | "username">,
+  filename?: string | null
+) => {
+  const configuredStorageStateId =
+    config.baseUrl.trim() && config.username.trim() ? getPumpStorageStateId(config) : null;
+
+  if (configuredStorageStateId) {
+    return configuredStorageStateId;
+  }
+
+  return filename ? sanitizeImportedStorageStateId(filename) : null;
+};
+
 const ensurePumpDirectories = () => {
   fs.mkdirSync(sessionsRoot, { recursive: true });
   fs.mkdirSync(storageStatesRoot, { recursive: true });
@@ -298,9 +312,7 @@ export const importPersistedPumpSession = (
   }
 
   const currentConfig = getPumpAutomationConfig();
-  const storageStateId =
-    (options.filename ? sanitizeImportedStorageStateId(options.filename) : null) ??
-    (currentConfig.baseUrl.trim() && currentConfig.username.trim() ? getPumpStorageStateId(currentConfig) : null);
+  const storageStateId = resolveImportedPumpStorageStateId(currentConfig, options.filename);
 
   if (!storageStateId) {
     throw new Error("Impossible de déterminer le nom de la session. Importez d'abord la configuration Pump.");

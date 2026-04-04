@@ -24,6 +24,8 @@ type PumpCronRunResult = ReservationImportResult & {
   };
 };
 
+export type PumpImportSource = "pump-cron" | "pump-ical-follow-up";
+
 export type PumpCronState = {
   config: PumpCronConfig;
   scheduler: "internal" | "external";
@@ -152,14 +154,14 @@ const applyCronConfig = (config: PumpCronConfig) => {
   }
 };
 
-export const runPumpCronImport = async (): Promise<PumpCronRunResult> => {
+export const runPumpCronImport = async (importSource: PumpImportSource = "pump-cron"): Promise<PumpCronRunResult> => {
   if (activeImportPromise) return activeImportPromise;
 
   activeImportPromise = (async () => {
     await waitForPumpRefresh();
     const latest = await getPumpLatestReservations();
     const preview = await buildReservationsPreview(latest.reservations.map(normalizePumpReservation));
-    const result = await importPreviewReservations(preview, undefined, "pump-cron");
+    const result = await importPreviewReservations(preview, undefined, importSource);
     const response: PumpCronRunResult = {
       ...result,
       pump: {

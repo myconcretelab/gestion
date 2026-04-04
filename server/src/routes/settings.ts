@@ -132,12 +132,15 @@ const cronConfigSchema = z
   .object({
     enabled: z.boolean(),
     auto_sync_on_app_load: z.boolean().optional(),
+    auto_run_pump_for_new_airbnb_ical: z.boolean().optional(),
   })
   .passthrough()
   .transform(
     (payload): IcalCronConfig => ({
       enabled: payload.enabled,
       auto_sync_on_app_load: payload.auto_sync_on_app_load ?? false,
+      auto_run_pump_for_new_airbnb_ical:
+        payload.auto_run_pump_for_new_airbnb_ical ?? false,
     }),
   );
 const cronImportSchema = z.union([
