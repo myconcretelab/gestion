@@ -884,7 +884,17 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
       verify: async () => undefined,
       sendMail: async (payload: any) => {
         sentMails.push(payload);
-        return { messageId: `message-${sentMails.length}` };
+        return {
+          envelope: {
+            from: "noreply@example.com",
+            to: payload.to,
+          },
+          messageId: `message-${sentMails.length}`,
+          accepted: [payload.to],
+          rejected: [],
+          pending: [],
+          response: "250 2.0.0 Ok",
+        };
       },
     });
 
@@ -939,7 +949,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
 
     assert.equal(sentMails.length, 2);
     assert.equal(sentMails[0].to, "alt-contract@example.com");
-    assert.equal(sentMails[0].from, "noreply@example.com");
+    assert.deepEqual(sentMails[0].from, { name: "", address: "noreply@example.com" });
     assert.equal(sentMails[0].replyTo, "gite@example.com");
     assert.equal(sentMails[0].attachments[0].filename, "GT-2026-000001.pdf");
     assert.equal(sentMails[0].attachments[0].path, path.join(process.cwd(), contractState.pdf_sent_path));
@@ -949,7 +959,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     assert.ok(contractState.snapshot_json);
 
     assert.equal(sentMails[1].to, "alt-invoice@example.com");
-    assert.equal(sentMails[1].from, "noreply@example.com");
+    assert.deepEqual(sentMails[1].from, { name: "", address: "noreply@example.com" });
     assert.equal(sentMails[1].attachments[0].filename, "GT-2026-01.pdf");
     assert.equal(sentMails[1].attachments[0].path, pdfPath);
     assert.equal(sentMails[1].subject, "Sujet facture");
