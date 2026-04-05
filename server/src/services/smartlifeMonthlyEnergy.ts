@@ -1,5 +1,5 @@
 import prisma from "../db/prisma.js";
-import { round2, toNumber } from "../utils/money.js";
+import { round2, toNumber, type NumericLike } from "../utils/money.js";
 import type { SmartlifeAutomationConfig } from "./smartlifeSettings.js";
 import { getSmartlifeDeviceTotalElectricityKwh } from "./smartlifeClient.js";
 
@@ -23,13 +23,13 @@ type MonthlyReadingRow = {
   month: number;
   device_id: string;
   device_name: string;
-  opening_total_kwh: number | null;
+  opening_total_kwh: NumericLike | null;
   opening_recorded_at: Date | null;
-  closing_total_kwh: number | null;
+  closing_total_kwh: NumericLike | null;
   closing_recorded_at: Date | null;
   gite: {
     id: string;
-    electricity_price_per_kwh: number | null;
+    electricity_price_per_kwh: NumericLike | null;
   } | null;
 };
 
