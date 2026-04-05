@@ -170,6 +170,12 @@ const hydrateContract = (contrat: any) => ({
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
 });
 
+const hydrateContractForTrackingStatusResponse = (contrat: any) => ({
+  ...hydrateContract(contrat),
+  date_reception_contrat: contrat.statut_reception_contrat === "recu" ? contrat.date_reception_contrat : null,
+  date_paiement_arrhes: contrat.statut_paiement_arrhes === "recu" ? contrat.date_paiement_arrhes : null,
+});
+
 const summarizeReservationOptions = (options: OptionsInput) => {
   const labels: string[] = [];
   const declarationFlags: boolean[] = [];
@@ -902,11 +908,11 @@ router.patch("/:id/reception", async (req, res, next) => {
         date_reception_contrat:
           data.statut_reception_contrat === "recu"
             ? existing.date_reception_contrat ?? new Date()
-            : null,
+            : existing.date_reception_contrat,
       },
       include: { gite: true },
     });
-    res.json(hydrateContract(contrat));
+    res.json(hydrateContractForTrackingStatusResponse(contrat));
   } catch (err) {
     next(err);
   }
@@ -925,12 +931,13 @@ router.patch("/:id/arrhes", async (req, res, next) => {
       where: { id: req.params.id },
       data: {
         statut_paiement_arrhes: data.statut_paiement_arrhes,
-        date_paiement_arrhes: data.statut_paiement_arrhes === "recu" ? existing.date_paiement_arrhes ?? new Date() : null,
+        date_paiement_arrhes:
+          data.statut_paiement_arrhes === "recu" ? existing.date_paiement_arrhes ?? new Date() : existing.date_paiement_arrhes,
         mode_paiement_arrhes: data.statut_paiement_arrhes === "recu" ? undefined : null,
       },
       include: { gite: true },
     });
-    res.json(hydrateContract(contrat));
+    res.json(hydrateContractForTrackingStatusResponse(contrat));
   } catch (err) {
     next(err);
   }
@@ -946,20 +953,28 @@ router.patch("/:id/return-processing", async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
 
     const nextReceptionStatus = data.statut_reception_contrat ?? existing.statut_reception_contrat;
-    const parsedReceptionDate =
+    const explicitReceptionDate =
       data.date_reception_contrat === undefined
-        ? existing.date_reception_contrat
+        ? undefined
         : parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat");
     const nextReceptionDate =
-      nextReceptionStatus === "recu" ? parsedReceptionDate ?? existing.date_reception_contrat ?? new Date() : null;
+      nextReceptionStatus === "recu"
+        ? explicitReceptionDate ?? existing.date_reception_contrat ?? new Date()
+        : explicitReceptionDate === undefined || explicitReceptionDate === null
+          ? existing.date_reception_contrat
+          : explicitReceptionDate;
 
     const nextArrhesStatus = data.statut_paiement_arrhes ?? existing.statut_paiement_arrhes;
-    const parsedArrhesDate =
+    const explicitArrhesDate =
       data.date_paiement_arrhes === undefined
-        ? existing.date_paiement_arrhes
+        ? undefined
         : parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes");
     const nextArrhesDate =
-      nextArrhesStatus === "recu" ? parsedArrhesDate ?? existing.date_paiement_arrhes ?? new Date() : null;
+      nextArrhesStatus === "recu"
+        ? explicitArrhesDate ?? existing.date_paiement_arrhes ?? new Date()
+        : explicitArrhesDate === undefined || explicitArrhesDate === null
+          ? existing.date_paiement_arrhes
+          : explicitArrhesDate;
     const nextArrhesPaymentMode =
       nextArrhesStatus === "recu"
         ? data.mode_paiement_arrhes === undefined
@@ -1023,7 +1038,7 @@ router.patch("/:id/return-processing", async (req, res, next) => {
       });
     });
 
-    res.json(hydrateContract(updatedContract));
+    res.json(hydrateContractForTrackingStatusResponse(updatedContract));
   } catch (err) {
     next(err);
   }
