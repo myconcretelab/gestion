@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import prisma from "../db/prisma.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 import { round2, toNumber } from "../utils/money.js";
+import type { NumericLike } from "../utils/money.js";
 import type {
   SmartlifeAutomationConfig,
   SmartlifeAutomationRuleAction,
@@ -36,7 +37,7 @@ type ReservationEnergyRow = {
   gite: {
     id: string;
     nom: string;
-    electricity_price_per_kwh: number;
+    electricity_price_per_kwh: NumericLike;
   } | null;
 };
 
