@@ -339,6 +339,12 @@ const resizeCommentTextarea = (element: HTMLTextAreaElement | null) => {
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
+const formatKwh = (value: number) =>
+  new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: value >= 10 ? 2 : 3,
+    maximumFractionDigits: 3,
+  }).format(value);
+
 const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
   `${year}-${pad2(month)}-${managerId}`;
 
@@ -3884,6 +3890,9 @@ const ReservationsPage = () => {
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
                       const telephoneHref = buildTelephoneHref(reservation.telephone);
+                      const hasEnergyData =
+                        reservation.energy_consumption_kwh > 0 ||
+                        reservation.energy_cost_eur > 0;
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
 
                       return (
@@ -4383,7 +4392,15 @@ const ReservationsPage = () => {
                                   onClick={() => openInlineField(reservation, "prix_total")}
                                   title="Modifier le total"
                                 >
-                                  {formatEuro(reservation.prix_total)}
+                                  <span className="reservations-total-value__amount">
+                                    {formatEuro(reservation.prix_total)}
+                                  </span>
+                                  {hasEnergyData ? (
+                                    <span className="reservations-total-value__meta">
+                                      Élec {formatEuro(reservation.energy_cost_eur)} ·{" "}
+                                      {formatKwh(reservation.energy_consumption_kwh)} kWh
+                                    </span>
+                                  ) : null}
                                 </button>
                               )}
                             </td>
@@ -4686,6 +4703,13 @@ const ReservationsPage = () => {
                               <td colSpan={12}>
                                 <div className="reservations-row-details-content">
                                   <div className="reservations-details-grid">
+                                    {hasEnergyData ? (
+                                      <div className="reservations-energy-inline">
+                                        Électricité: {formatKwh(reservation.energy_consumption_kwh)} kWh
+                                        {" · "}
+                                        {formatEuro(reservation.energy_cost_eur)}
+                                      </div>
+                                    ) : null}
                                     <div className="reservations-contact-card">
                                       <div className="reservations-contact-card__title">Contact</div>
                                       <div className="grid-2">

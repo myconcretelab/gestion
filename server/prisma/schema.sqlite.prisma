@@ -44,6 +44,7 @@ model Gite {
   caution_montant_defaut               Float  @default(0)
   cheque_menage_montant_defaut         Float  @default(0)
   arrhes_taux_defaut                   Float  @default(0.2)
+  electricity_price_per_kwh            Float  @default(0)
   prix_nuit_liste                      String?
   caracteristiques                     String?
   airbnb_listing_id                    String?
@@ -244,6 +245,7 @@ model ReservationPlaceholder {
 model Reservation {
   id                       String                  @id @default(cuid())
   gite_id                  String?
+  stay_group_id            String?
   placeholder_id           String?
   origin_system            String?
   origin_reference         String?
@@ -267,6 +269,10 @@ model Reservation {
   frais_optionnels_libelle String?
   frais_optionnels_declares Boolean               @default(false)
   options                  String                 @default("{}")
+  energy_consumption_kwh   Float                  @default(0)
+  energy_cost_eur          Float                  @default(0)
+  energy_price_per_kwh     Float?
+  energy_tracking          String                 @default("[]")
   createdAt                DateTime               @default(now())
   updatedAt                DateTime               @updatedAt
 
@@ -277,5 +283,6 @@ model Reservation {
   @@index([gite_id, export_to_ical, date_entree], map: "reservations_gite_export_to_ical_date_entree_idx")
   @@index([origin_system, origin_reference], map: "reservations_origin_system_origin_reference_idx")
   @@index([placeholder_id, date_entree])
+  @@index([stay_group_id], map: "reservations_stay_group_id_idx")
   @@map("reservations")
 }

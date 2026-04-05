@@ -11,22 +11,37 @@ export type SmartlifeRegion =
   | "in"
   | "cn";
 
+export type SmartlifeAutomationRuleAction =
+  | "device-on"
+  | "device-off"
+  | "energy-start"
+  | "energy-stop";
+
 export type SmartlifeAutomationRule = {
   id: string;
   enabled: boolean;
   label: string;
   gite_ids: string[];
   trigger:
-    | "before-arrival"
-    | "after-arrival"
-    | "before-departure"
-    | "after-departure";
+      | "before-arrival"
+      | "after-arrival"
+      | "before-departure"
+      | "after-departure";
   offset_minutes: number;
+  action: SmartlifeAutomationRuleAction;
   device_id: string;
   device_name: string;
   command_code: string;
   command_label: string | null;
   command_value: boolean;
+};
+
+export type SmartlifeEnergyMeterAssignment = {
+  id: string;
+  enabled: boolean;
+  gite_id: string;
+  device_id: string;
+  device_name: string;
 };
 
 export type SmartlifeAutomationConfig = {
@@ -35,6 +50,7 @@ export type SmartlifeAutomationConfig = {
   access_id: string;
   access_secret: string;
   rules: SmartlifeAutomationRule[];
+  meter_assignments: SmartlifeEnergyMeterAssignment[];
 };
 
 const SETTINGS_FILE = path.join(
@@ -109,6 +125,30 @@ const normalizeStringList = (value: unknown, fallback: string[]) => {
   return items;
 };
 
+const normalizeRuleAction = (
+  value: unknown,
+  fallback: SmartlifeAutomationRuleAction,
+): SmartlifeAutomationRuleAction => {
+  const normalized = normalizeString(value).toLowerCase();
+  if (normalized === "device-on") return "device-on";
+  if (normalized === "device-off") return "device-off";
+  if (normalized === "energy-start") return "energy-start";
+  if (normalized === "energy-stop") return "energy-stop";
+  return fallback;
+};
+
+export const isSmartlifeDeviceCommandAction = (
+  action: SmartlifeAutomationRuleAction,
+) => action === "device-on" || action === "device-off";
+
+export const isSmartlifeEnergyTrackingAction = (
+  action: SmartlifeAutomationRuleAction,
+) => action === "energy-start" || action === "energy-stop";
+
+export const getSmartlifeRuleCommandValue = (
+  action: SmartlifeAutomationRuleAction,
+) => action === "device-on" || action === "energy-start";
+
 const normalizeRule = (
   value: unknown,
   fallback?: SmartlifeAutomationRule,
@@ -126,6 +166,16 @@ const normalizeRule = (
         : "before-arrival";
 
   const giteIds = normalizeStringList(rule.gite_ids, fallback?.gite_ids ?? []);
+  const fallbackAction =
+    fallback?.action ??
+    (normalizeBoolean(rule.command_value, fallback?.command_value ?? true)
+      ? "device-on"
+      : "device-off");
+  const action = normalizeRuleAction(rule.action, fallbackAction);
+  const commandValue = getSmartlifeRuleCommandValue(action);
+  const commandCode = normalizeString(rule.command_code) || fallback?.command_code || "";
+  const commandLabel =
+    normalizeNullableString(rule.command_label) ?? fallback?.command_label ?? null;
 
   return {
     id: normalizeString(rule.id) || fallback?.id || crypto.randomUUID(),
@@ -142,17 +192,36 @@ const normalizeRule = (
       0,
       MAX_OFFSET_MINUTES,
     ),
+    action,
     device_id: normalizeString(rule.device_id) || fallback?.device_id || "",
     device_name:
       normalizeString(rule.device_name) || fallback?.device_name || "",
-    command_code:
-      normalizeString(rule.command_code) || fallback?.command_code || "",
-    command_label:
-      normalizeNullableString(rule.command_label) ?? fallback?.command_label ?? null,
-    command_value: normalizeBoolean(
-      rule.command_value,
-      fallback?.command_value ?? true,
-    ),
+    command_code: isSmartlifeDeviceCommandAction(action) ? commandCode : "",
+    command_label: isSmartlifeDeviceCommandAction(action) ? commandLabel : null,
+    command_value: commandValue,
+  };
+};
+
+const normalizeMeterAssignment = (
+  value: unknown,
+  fallback?: SmartlifeEnergyMeterAssignment,
+): SmartlifeEnergyMeterAssignment | null => {
+  if (!value || typeof value !== "object") return fallback ?? null;
+
+  const assignment = value as Partial<SmartlifeEnergyMeterAssignment>;
+  const giteId = normalizeString(assignment.gite_id) || fallback?.gite_id || "";
+  const deviceId =
+    normalizeString(assignment.device_id) || fallback?.device_id || "";
+  if (!giteId || !deviceId) return fallback ?? null;
+
+  return {
+    id:
+      normalizeString(assignment.id) || fallback?.id || crypto.randomUUID(),
+    enabled: normalizeBoolean(assignment.enabled, fallback?.enabled ?? true),
+    gite_id: giteId,
+    device_id: deviceId,
+    device_name:
+      normalizeString(assignment.device_name) || fallback?.device_name || "",
   };
 };
 
@@ -163,6 +232,7 @@ export const buildDefaultSmartlifeAutomationConfig =
     access_id: "",
     access_secret: "",
     rules: [],
+    meter_assignments: [],
   });
 
 export const normalizeSmartlifeAutomationConfig = (
@@ -175,6 +245,14 @@ export const normalizeSmartlifeAutomationConfig = (
         .map((rule) => normalizeRule(rule))
         .filter((rule): rule is SmartlifeAutomationRule => rule !== null)
     : fallback.rules;
+  const meterAssignments = Array.isArray(input.meter_assignments)
+    ? input.meter_assignments
+        .map((assignment) => normalizeMeterAssignment(assignment))
+        .filter(
+          (assignment): assignment is SmartlifeEnergyMeterAssignment =>
+            assignment !== null,
+        )
+    : fallback.meter_assignments;
 
   return {
     enabled: normalizeBoolean(input.enabled, fallback.enabled),
@@ -183,6 +261,7 @@ export const normalizeSmartlifeAutomationConfig = (
     access_secret:
       normalizeString(input.access_secret) || fallback.access_secret,
     rules,
+    meter_assignments: meterAssignments,
   };
 };
 

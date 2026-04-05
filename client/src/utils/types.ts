@@ -40,6 +40,7 @@ export type Gite = {
   caution_montant_defaut: number;
   cheque_menage_montant_defaut: number;
   arrhes_taux_defaut: number;
+  electricity_price_per_kwh: number;
   prix_nuit_liste?: number[];
   caracteristiques?: string | null;
   gestionnaire_id?: string | null;
@@ -75,6 +76,7 @@ export type ReservationPlaceholder = {
 export type Reservation = {
   id: string;
   gite_id?: string | null;
+  stay_group_id?: string | null;
   placeholder_id?: string | null;
   origin_system?: "app" | "what-today" | "ical" | "pump" | "har" | "csv" | "legacy" | null;
   origin_reference?: string | null;
@@ -97,6 +99,26 @@ export type Reservation = {
   frais_optionnels_montant: number;
   frais_optionnels_libelle?: string | null;
   frais_optionnels_declares: boolean;
+  energy_consumption_kwh: number;
+  energy_cost_eur: number;
+  energy_price_per_kwh?: number | null;
+  energy_tracking?: Array<{
+    session_id: string;
+    device_id: string;
+    device_name: string;
+    status: "open" | "closed";
+    started_at: string;
+    ended_at?: string | null;
+    started_total_kwh: number;
+    ended_total_kwh?: number | null;
+    total_kwh?: number | null;
+    total_cost_eur?: number | null;
+    stay_total_kwh?: number | null;
+    stay_total_cost_eur?: number | null;
+    allocation_ratio: number;
+    started_by_rule_id?: string | null;
+    ended_by_rule_id?: string | null;
+  }>;
   options?: ContratOptions;
   createdAt?: string;
   updatedAt?: string;
