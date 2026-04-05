@@ -30,6 +30,7 @@ const gite: Gite = {
   caution_montant_defaut: 0,
   cheque_menage_montant_defaut: 0,
   arrhes_taux_defaut: 0.2,
+  electricity_price_per_kwh: 0.25,
 };
 
 const options: ContratOptions = {

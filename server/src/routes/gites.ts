@@ -50,6 +50,7 @@ const giteSchemaShape = {
   caution_montant_defaut: z.coerce.number().min(0).default(0),
   cheque_menage_montant_defaut: z.coerce.number().min(0).default(0),
   arrhes_taux_defaut: z.coerce.number().min(0).max(1).default(0.2),
+  electricity_price_per_kwh: z.coerce.number().min(0).default(0),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
   gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
 };
@@ -155,6 +156,7 @@ const hydrateGite = (gite: any) => {
     caution_montant_defaut: toNumber(rest.caution_montant_defaut),
     cheque_menage_montant_defaut: toNumber(rest.cheque_menage_montant_defaut),
     arrhes_taux_defaut: toNumber(rest.arrhes_taux_defaut),
+    electricity_price_per_kwh: toNumber(rest.electricity_price_per_kwh),
     prix_nuit_liste,
     contrats_count: typeof _count?.contrats === "number" ? _count.contrats : gite.contrats_count,
     factures_count: typeof _count?.factures === "number" ? _count.factures : gite.factures_count,
@@ -485,6 +487,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         caution_montant_defaut: existing.caution_montant_defaut,
         cheque_menage_montant_defaut: existing.cheque_menage_montant_defaut,
         arrhes_taux_defaut: existing.arrhes_taux_defaut,
+        electricity_price_per_kwh: existing.electricity_price_per_kwh,
         prix_nuit_liste: encodeJsonField(fromJsonString<number[]>(existing.prix_nuit_liste, [])),
         gestionnaire_id: existing.gestionnaire_id,
       },

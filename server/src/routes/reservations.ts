@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { format } from "date-fns";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
@@ -6,6 +7,10 @@ import { env } from "../config/env.js";
 import { round2, toNumber } from "../utils/money.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { type OptionsInput } from "../services/contractCalculator.js";
+import {
+  parseReservationEnergyTracking,
+  summarizeReservationEnergyTracking,
+} from "../services/smartlifeEnergyTracking.js";
 import {
   getAirbnbCalendarRefreshJobStatus,
   queueAirbnbCalendarRefresh,
@@ -402,7 +407,8 @@ const allocateAmountByNights = (total: number, segments: ReservationPeriodSegmen
 const buildReservationSegmentRecords = (
   payload: ReservationPayload | IntegrationReservationPayload,
   association: ReservationAssociation,
-  originData?: ReturnType<typeof buildReservationOriginData>
+  originData?: ReturnType<typeof buildReservationOriginData>,
+  stayGroupId?: string,
 ) => {
   const computed = computeReservationFields(payload);
   const segments = splitReservationByMonth(computed.dateEntree, computed.dateSortie);
@@ -431,6 +437,7 @@ const buildReservationSegmentRecords = (
         segment,
         data: {
           gite_id: association.gite_id,
+          stay_group_id: stayGroupId ?? crypto.randomUUID(),
           placeholder_id: association.placeholder_id,
           ...(originData ?? {}),
           airbnb_url: payload.airbnb_url ?? null,
@@ -528,19 +535,34 @@ const buildConflictPayload = (conflicts: any[]) => ({
   })),
 });
 
-const hydrateReservation = (reservation: any) => ({
-  ...reservation,
-  origin_system: getReservationOriginSystem(reservation),
-  origin_reference: reservation.origin_reference ?? null,
-  export_to_ical: shouldExportReservationToIcal(reservation),
-  prix_par_nuit: toNumber(reservation.prix_par_nuit),
-  prix_total: toNumber(reservation.prix_total),
-  remise_montant: toNumber(reservation.remise_montant),
-  commission_channel_mode: normalizeReservationCommissionMode(reservation.commission_channel_mode),
-  commission_channel_value: toNumber(reservation.commission_channel_value),
-  frais_optionnels_montant: toNumber(reservation.frais_optionnels_montant),
-  options: fromJsonString<OptionsInput>(reservation.options, {}),
-});
+const hydrateReservation = (reservation: any) => {
+  const energyTracking = parseReservationEnergyTracking(reservation.energy_tracking);
+  const energySummary = summarizeReservationEnergyTracking(energyTracking);
+
+  return {
+    ...reservation,
+    origin_system: getReservationOriginSystem(reservation),
+    origin_reference: reservation.origin_reference ?? null,
+    export_to_ical: shouldExportReservationToIcal(reservation),
+    prix_par_nuit: toNumber(reservation.prix_par_nuit),
+    prix_total: toNumber(reservation.prix_total),
+    remise_montant: toNumber(reservation.remise_montant),
+    commission_channel_mode: normalizeReservationCommissionMode(reservation.commission_channel_mode),
+    commission_channel_value: toNumber(reservation.commission_channel_value),
+    frais_optionnels_montant: toNumber(reservation.frais_optionnels_montant),
+    options: fromJsonString<OptionsInput>(reservation.options, {}),
+    stay_group_id: typeof reservation.stay_group_id === "string" ? reservation.stay_group_id : null,
+    energy_consumption_kwh:
+      toNumber(reservation.energy_consumption_kwh) || energySummary.energy_consumption_kwh,
+    energy_cost_eur:
+      toNumber(reservation.energy_cost_eur) || energySummary.energy_cost_eur,
+    energy_price_per_kwh:
+      reservation.energy_price_per_kwh == null
+        ? energySummary.energy_price_per_kwh
+        : toNumber(reservation.energy_price_per_kwh),
+    energy_tracking: energyTracking,
+  };
+};
 
 const loadIntegratedReservationRows = async (originReference: string) =>
   prisma.reservation.findMany({
@@ -563,7 +585,8 @@ const syncIntegratedReservationRows = async (params: {
       originSystem: "what-today",
       originReference: params.payload.origin_reference,
       exportToIcal: true,
-    })
+    }),
+    params.existingRows[0]?.stay_group_id || crypto.randomUUID(),
   );
   const existingIds = params.existingRows.map((row) => row.id);
   const conflictById = new Map<string, any>();
@@ -1329,7 +1352,8 @@ router.post("/", async (req, res, next) => {
     const prepared = buildReservationSegmentRecords(
       payload,
       association,
-      buildReservationOriginData({ originSystem: "app", exportToIcal: true })
+      buildReservationOriginData({ originSystem: "app", exportToIcal: true }),
+      crypto.randomUUID(),
     );
     const conflictById = new Map<string, any>();
 
@@ -1490,6 +1514,7 @@ router.post("/:id/split", async (req, res, next) => {
         const createdReservation = await tx.reservation.create({
           data: {
             gite_id: association.gite_id,
+            stay_group_id: existing.stay_group_id ?? existing.id,
             placeholder_id: association.placeholder_id,
             origin_system: existing.origin_system,
             origin_reference: existing.origin_reference,
@@ -1576,6 +1601,7 @@ router.put("/:id", async (req, res, next) => {
       where: { id: existing.id },
       data: {
         gite_id: association.gite_id,
+        stay_group_id: existing.stay_group_id ?? existing.id,
         placeholder_id: association.placeholder_id,
         airbnb_url: payload.airbnb_url !== undefined ? payload.airbnb_url ?? null : existing.airbnb_url,
         hote_nom: payload.hote_nom,
@@ -1937,6 +1963,7 @@ router.post("/import", async (req, res, next) => {
         rowNumber: row.rowNumber,
         data: {
           gite_id: association.gite_id,
+          stay_group_id: crypto.randomUUID(),
           placeholder_id: association.placeholder_id,
           ...buildReservationOriginData({
             originSystem: "csv",

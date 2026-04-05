@@ -35,6 +35,7 @@ const emptyForm = {
   caution_montant_defaut: 0,
   cheque_menage_montant_defaut: 0,
   arrhes_taux_defaut: 0.2,
+  electricity_price_per_kwh: 0,
   prix_nuit_liste: "",
   gestionnaire_id: "",
 };
@@ -147,6 +148,7 @@ const GitesPage = () => {
       caution_montant_defaut: selected.caution_montant_defaut ?? 0,
       cheque_menage_montant_defaut: selected.cheque_menage_montant_defaut ?? 0,
       arrhes_taux_defaut: selected.arrhes_taux_defaut ?? 0.2,
+      electricity_price_per_kwh: selected.electricity_price_per_kwh ?? 0,
       prix_nuit_liste: Array.isArray(selected.prix_nuit_liste) ? selected.prix_nuit_liste.join(", ") : "",
       gestionnaire_id: selected.gestionnaire_id ?? "",
     });
@@ -796,6 +798,18 @@ const GitesPage = () => {
                 step="0.01"
                 value={form.taxe_sejour_par_personne_par_nuit}
                 onChange={(e) => handleChange("taxe_sejour_par_personne_par_nuit", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Prix électricité / kWh
+              <input
+                type="number"
+                step="0.0001"
+                min={0}
+                value={form.electricity_price_per_kwh}
+                onChange={(e) =>
+                  handleChange("electricity_price_per_kwh", Number(e.target.value))
+                }
               />
             </label>
             <label className="field">

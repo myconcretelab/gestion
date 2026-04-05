@@ -299,6 +299,10 @@ const smartlifeAutomationRuleSchema = z.object({
     ])
     .default("before-arrival"),
   offset_minutes: z.number().int().min(0).max(14 * 24 * 60).default(60),
+  action: z
+    .enum(["device-on", "device-off", "energy-start", "energy-stop"])
+    .optional()
+    .default("device-on"),
   device_id: z.string().default(""),
   device_name: z.string().default(""),
   command_code: z.string().default(""),
@@ -308,12 +312,20 @@ const smartlifeAutomationRuleSchema = z.object({
     .default(null),
   command_value: z.boolean().optional().default(true),
 });
+const smartlifeMeterAssignmentSchema = z.object({
+  id: z.string().trim().min(1).optional(),
+  enabled: z.boolean().optional().default(true),
+  gite_id: z.string().trim().min(1),
+  device_id: z.string().trim().min(1),
+  device_name: z.string().default(""),
+});
 const smartlifeAutomationSettingsSchema = z.object({
   enabled: z.boolean(),
   region: z.enum(["eu", "eu-west", "us", "us-e", "in", "cn"]).default("eu"),
   access_id: z.string().default(""),
   access_secret: z.string().default(""),
   rules: z.array(smartlifeAutomationRuleSchema).default([]),
+  meter_assignments: z.array(smartlifeMeterAssignmentSchema).default([]),
 });
 const smartlifeTestCommandSchema = z.object({
   device_id: z.string().trim().min(1),

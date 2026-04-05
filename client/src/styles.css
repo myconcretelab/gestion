@@ -6130,6 +6130,12 @@ button.warning {
   gap: 10px;
 }
 
+.reservations-energy-inline {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #6b7280;
+}
+
 .reservations-contact-card__title {
   font-size: 0.95rem;
   font-weight: 800;
@@ -6292,6 +6298,23 @@ button.warning {
   color: #0f172a;
 }
 
+.reservations-total-value {
+  display: inline-grid;
+  gap: 3px;
+  justify-items: start;
+  text-align: left;
+}
+
+.reservations-total-value__amount {
+  font-weight: 700;
+}
+
+.reservations-total-value__meta {
+  font-size: 0.68rem;
+  color: #7c5a14;
+  line-height: 1.25;
+}
+
 .reservations-options-builder__foot {
   display: flex;
   align-items: center;
@@ -6378,6 +6401,7 @@ button.warning {
   .reservations-pricing-card__commission-inputs {
     grid-template-columns: 1fr;
   }
+
 }
 
 .reservations-new-row td {

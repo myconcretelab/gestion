@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
+import {
+  getSmartlifeRuleCommandValue,
+  type SmartlifeAutomationRuleAction,
+} from "./smartlifeSettings.js";
 
 const STATE_FILE = path.join(env.DATA_DIR, "smartlife-automation-state.json");
 const EXECUTED_KEYS_MAX_AGE_DAYS = 90;
@@ -24,6 +28,7 @@ export type SmartlifeAutomationRunItem = {
   rule_label: string;
   device_id: string;
   device_name: string;
+  action: SmartlifeAutomationRuleAction;
   command_code: string;
   command_value: boolean;
   trigger:
@@ -95,6 +100,20 @@ const normalizeNullableString = (value: unknown) => {
   return trimmed || null;
 };
 
+const normalizeRuleAction = (
+  value: unknown,
+  fallback: SmartlifeAutomationRuleAction,
+): SmartlifeAutomationRuleAction => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "device-on") return "device-on";
+  if (normalized === "device-off") return "device-off";
+  if (normalized === "energy-start") return "energy-start";
+  if (normalized === "energy-stop") return "energy-stop";
+  return fallback;
+};
+
 const normalizeRunItem = (value: unknown): SmartlifeAutomationRunItem | null => {
   if (!value || typeof value !== "object") return null;
   const item = value as Partial<SmartlifeAutomationRunItem>;
@@ -104,8 +123,10 @@ const normalizeRunItem = (value: unknown): SmartlifeAutomationRunItem | null => 
   const deviceId = String(item.device_id ?? "").trim();
   const commandCode = String(item.command_code ?? "").trim();
   const scheduledAt = parseIsoDateTime(item.scheduled_at);
+  const fallbackAction = Boolean(item.command_value) ? "device-on" : "device-off";
+  const action = normalizeRuleAction(item.action, fallbackAction);
 
-  if (!key || !reservationId || !ruleId || !deviceId || !commandCode || !scheduledAt) {
+  if (!key || !reservationId || !ruleId || !deviceId || !scheduledAt) {
     return null;
   }
 
@@ -120,8 +141,12 @@ const normalizeRunItem = (value: unknown): SmartlifeAutomationRunItem | null => 
     rule_label: String(item.rule_label ?? "").trim() || ruleId,
     device_id: deviceId,
     device_name: String(item.device_name ?? "").trim() || deviceId,
+    action,
     command_code: commandCode,
-    command_value: Boolean(item.command_value),
+    command_value:
+      typeof item.command_value === "boolean"
+        ? item.command_value
+        : getSmartlifeRuleCommandValue(action),
     trigger:
       item.trigger === "after-arrival"
         ? "after-arrival"

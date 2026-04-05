@@ -2,7 +2,9 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import {
   buildDefaultSmartlifeAutomationConfig,
+  getSmartlifeRuleCommandValue,
   hasSmartlifeCredentials,
+  isSmartlifeDeviceCommandAction,
   mergeSmartlifeAutomationConfig,
   readSmartlifeAutomationConfig,
   writeSmartlifeAutomationConfig,
@@ -23,6 +25,7 @@ import {
   sendSmartlifeCommand,
   type SmartlifeDevice,
 } from "./smartlifeClient.js";
+import { trackSmartlifeEnergyForAutomationEvent } from "./smartlifeEnergyTracking.js";
 
 const CRON_INTERVAL_MS = 60 * 1000;
 const EXECUTION_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -227,7 +230,13 @@ const buildDueEvents = (
     for (const rule of config.rules) {
       if (!rule.enabled) continue;
       if (!rule.gite_ids.includes(reservation.gite_id)) continue;
-      if (!rule.device_id.trim() || !rule.command_code.trim()) continue;
+      if (!rule.device_id.trim()) continue;
+      if (
+        isSmartlifeDeviceCommandAction(rule.action) &&
+        !rule.command_code.trim()
+      ) {
+        continue;
+      }
 
       const baseDate =
         rule.trigger === "before-departure" ||
@@ -257,8 +266,9 @@ const buildDueEvents = (
         reservation.id,
         reservation.gite_id,
         rule.device_id.trim(),
+        rule.action,
         rule.command_code.trim(),
-        rule.command_value ? "1" : "0",
+        getSmartlifeRuleCommandValue(rule.action) ? "1" : "0",
         scheduledDate.toISOString(),
       ].join("|");
 
@@ -274,8 +284,9 @@ const buildDueEvents = (
         rule_label: rule.label,
         device_id: rule.device_id.trim(),
         device_name: rule.device_name.trim() || rule.device_id.trim(),
+        action: rule.action,
         command_code: rule.command_code.trim(),
-        command_value: rule.command_value,
+        command_value: getSmartlifeRuleCommandValue(rule.action),
         trigger: rule.trigger,
         scheduled_at: scheduledDate.toISOString(),
         executed_at: null,
@@ -361,20 +372,40 @@ export const runSmartlifeAutomation = async (options?: {
         }
 
         try {
-          await sendSmartlifeCommand(cronConfig, {
-            device_id: event.device_id,
-            command_code: event.command_code,
-            command_value: event.command_value,
-          });
+          if (isSmartlifeDeviceCommandAction(event.action)) {
+            await sendSmartlifeCommand(cronConfig, {
+              device_id: event.device_id,
+              command_code: event.command_code,
+              command_value: event.command_value,
+            });
+          }
 
           const executedAt = new Date().toISOString();
+          let executionMessage: string | null = null;
+          try {
+            executionMessage =
+              (await trackSmartlifeEnergyForAutomationEvent(cronConfig, {
+                reservation_id: event.reservation_id,
+                gite_id: event.gite_id,
+                device_id: event.device_id,
+                device_name: event.device_name,
+                action: event.action,
+                command_value: event.command_value,
+                rule_id: event.rule_id,
+              })) ?? null;
+          } catch (trackingError) {
+            executionMessage =
+              trackingError instanceof Error
+                ? `Énergie: ${trackingError.message}`
+                : "Énergie: suivi impossible.";
+          }
           executedEventKeys[event.key] = executedAt;
           executedCount += 1;
           items.push({
             ...event,
             executed_at: executedAt,
             status: "executed",
-            message: null,
+            message: executionMessage,
           });
         } catch (error) {
           errorCount += 1;
