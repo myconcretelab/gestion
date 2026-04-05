@@ -84,6 +84,7 @@ test("sendSmtpMail complete SMTP_FROM avec SMTP_USER quand seul le nom est fourn
   });
   assert.deepEqual(sentPayloads[0].envelope, {
     from: "contact@example.com",
+    to: ["client@example.com"],
   });
 });
 

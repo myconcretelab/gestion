@@ -188,6 +188,7 @@ export const sendSmtpMail = async (params: SendSmtpMailParams) => {
       attachments: params.attachments,
       envelope: {
         from: getEnvelopeSender(resolvedFrom),
+        to,
       },
     });
 
