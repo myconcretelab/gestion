@@ -26,6 +26,7 @@ import {
   type SmartlifeDevice,
 } from "./smartlifeClient.js";
 import { trackSmartlifeEnergyForAutomationEvent } from "./smartlifeEnergyTracking.js";
+import { recordSmartlifeMonthlyEnergySnapshots } from "./smartlifeMonthlyEnergy.js";
 
 const CRON_INTERVAL_MS = 60 * 1000;
 const EXECUTION_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -349,6 +350,10 @@ export const runSmartlifeAutomation = async (options?: {
         );
       }
 
+      const monthlyEnergyCapture = await recordSmartlifeMonthlyEnergySnapshots(
+        cronConfig,
+        now,
+      );
       const reservations = await loadReservationCandidates(cronConfig, now);
       const dueEvents = buildDueEvents(cronConfig, reservations, now);
       const executedEventKeys = {
@@ -421,7 +426,7 @@ export const runSmartlifeAutomation = async (options?: {
       }
 
       const nextExecutedKeys = pruneExecutedEventKeys(executedEventKeys);
-      const note =
+      const noteParts = [
         dueEvents.length === 0
           ? "Aucune commande à déclencher pour l'instant."
           : errorCount > 0 && executedCount > 0
@@ -430,7 +435,23 @@ export const runSmartlifeAutomation = async (options?: {
               ? "Toutes les commandes dues ont échoué."
               : executedCount > 0
                 ? "Commandes Smart Life exécutées."
-                : "Toutes les commandes dues avaient déjà été exécutées.";
+                : "Toutes les commandes dues avaient déjà été exécutées.",
+      ];
+      if (
+        monthlyEnergyCapture.triggered &&
+        (monthlyEnergyCapture.opened_count > 0 ||
+          monthlyEnergyCapture.closed_count > 0)
+      ) {
+        noteParts.push(
+          `Relevés mensuels énergie: ${monthlyEnergyCapture.opened_count} ouverture(s), ${monthlyEnergyCapture.closed_count} clôture(s).`,
+        );
+      }
+      if (monthlyEnergyCapture.error_count > 0) {
+        noteParts.push(
+          `${monthlyEnergyCapture.error_count} erreur(s) lors des relevés mensuels énergie.`,
+        );
+      }
+      const note = noteParts.join(" ");
       const summary = buildSummary({
         checkedAt: now,
         scanned_rules_count: cronConfig.rules.length,

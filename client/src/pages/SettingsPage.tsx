@@ -632,10 +632,20 @@ type SmartlifeAutomationRunResponse = {
   summary: SmartlifeAutomationRunSummary;
 };
 
+type SmartlifeRuleExportGiteRef = {
+  id: string;
+  nom: string;
+  prefixe_contrat: string;
+};
+
+type SmartlifeRulesImportExportRule = SmartlifeAutomationRule & {
+  gites?: SmartlifeRuleExportGiteRef[];
+};
+
 type SmartlifeRulesImportExportPayload = {
-  version: 1;
+  version: 1 | 2;
   exported_at: string;
-  rules: SmartlifeAutomationRule[];
+  rules: SmartlifeRulesImportExportRule[];
 };
 
 type SettingsPageProps = {
@@ -990,6 +1000,65 @@ const normalizeSmartlifeRules = (
   });
 };
 
+const normalizeSmartlifeGiteMatchKey = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const sanitizeSmartlifeRuleGiteIds = (
+  giteIds: string[],
+  validGiteIds?: ReadonlySet<string>,
+) => {
+  const normalized = [...new Set(giteIds.map((item) => item.trim()).filter(Boolean))];
+  return validGiteIds
+    ? normalized.filter((giteId) => validGiteIds.has(giteId))
+    : normalized;
+};
+
+const resolveImportedSmartlifeRuleGiteIds = (
+  rule:
+    | (Partial<SmartlifeAutomationRule> & {
+        gites?: Array<Partial<SmartlifeRuleExportGiteRef> | null | undefined>;
+      })
+    | null
+    | undefined,
+  gites: Gite[],
+) => {
+  const exportedGites = Array.isArray(rule?.gites) ? rule.gites : [];
+  if (exportedGites.length === 0) {
+    return Array.isArray(rule?.gite_ids)
+      ? sanitizeSmartlifeRuleGiteIds(
+          rule.gite_ids.map((item) => String(item ?? "").trim()),
+        )
+      : [];
+  }
+
+  const gitesByPrefix = new Map(
+    gites.map((gite) => [
+      normalizeSmartlifeGiteMatchKey(gite.prefixe_contrat),
+      gite.id,
+    ]),
+  );
+  const gitesByName = new Map(
+    gites.map((gite) => [normalizeSmartlifeGiteMatchKey(gite.nom), gite.id]),
+  );
+
+  return sanitizeSmartlifeRuleGiteIds(
+    exportedGites.flatMap((gite) => {
+      const prefix = normalizeSmartlifeGiteMatchKey(gite?.prefixe_contrat);
+      const name = normalizeSmartlifeGiteMatchKey(gite?.nom);
+      const matchedId =
+        (prefix ? gitesByPrefix.get(prefix) : null) ??
+        (name ? gitesByName.get(name) : null) ??
+        null;
+      return matchedId ? [matchedId] : [];
+    }),
+  );
+};
+
 const createSmartlifeMeterAssignmentDraft = (
   deviceId: string,
   deviceName: string,
@@ -1038,10 +1107,15 @@ const normalizeSmartlifeMeterAssignments = (
 
 const sanitizeSmartlifeRulesForSave = (
   rules: Array<Partial<SmartlifeAutomationRule> | null | undefined>,
+  validGiteIds?: ReadonlySet<string>,
 ) =>
   normalizeSmartlifeRules(rules)
     .map((rule, index) => {
-      return { ...rule, label: rule.label || `Automatisation ${index + 1}` };
+      return {
+        ...rule,
+        label: rule.label || `Automatisation ${index + 1}`,
+        gite_ids: sanitizeSmartlifeRuleGiteIds(rule.gite_ids, validGiteIds),
+      };
     })
     .filter(
       (rule) =>
@@ -1208,6 +1282,40 @@ const getPreferredSmartlifeCommand = (
     device.functions[0] ??
     null
   );
+};
+
+const getAvailableSmartlifeRuleActions = (
+  device: SmartlifeDevice | null | undefined,
+): Array<{
+  value: SmartlifeAutomationRuleAction;
+  label: string;
+}> => {
+  const actions: Array<{
+    value: SmartlifeAutomationRuleAction;
+    label: string;
+  }> = [
+    { value: "device-on", label: "Activer" },
+    { value: "device-off", label: "Désactiver" },
+  ];
+
+  if (device?.supports_total_ele) {
+    actions.push(
+      { value: "energy-start", label: "Démarrer compteur" },
+      { value: "energy-stop", label: "Arrêter compteur" },
+    );
+  }
+
+  return actions;
+};
+
+const getCompatibleSmartlifeRuleAction = (
+  action: SmartlifeAutomationRuleAction,
+  device: SmartlifeDevice | null | undefined,
+): SmartlifeAutomationRuleAction => {
+  if (isSmartlifeEnergyTrackingAction(action) && !device?.supports_total_ele) {
+    return getSmartlifeActionCommandValue(action) ? "device-on" : "device-off";
+  }
+  return action;
 };
 
 const formatImportLogTitle = (
@@ -1511,6 +1619,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [smartlifeNotice, setSmartlifeNotice] = useState<string | null>(null);
   const smartlifeRuleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const importSmartlifeRulesInputRef = useRef<HTMLInputElement | null>(null);
+  const smartlifeValidGiteIds = useMemo(
+    () => new Set(gites.map((gite) => gite.id)),
+    [gites],
+  );
   const [serverSecuritySettings, setServerSecuritySettings] =
     useState<ServerSecuritySettings>(DEFAULT_SERVER_SECURITY_SETTINGS);
   const [serverSecurityDurationDraft, setServerSecurityDurationDraft] =
@@ -1673,6 +1785,38 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     () => new Map(smartlifeDevices.map((device) => [device.id, device])),
     [smartlifeDevices],
   );
+  useEffect(() => {
+    setSmartlifeDraft((previous) => {
+      let hasChanges = false;
+      const nextRules = previous.rules.map((rule) => {
+        const device = smartlifeDeviceMap.get(rule.device_id) ?? null;
+        const nextAction = getCompatibleSmartlifeRuleAction(rule.action, device);
+        if (nextAction === rule.action) return rule;
+
+        hasChanges = true;
+        const preferredCommand = getPreferredSmartlifeCommand(device);
+
+        return {
+          ...rule,
+          action: nextAction,
+          command_code: isSmartlifeDeviceCommandAction(nextAction)
+            ? preferredCommand?.code ?? rule.command_code
+            : "",
+          command_label: isSmartlifeDeviceCommandAction(nextAction)
+            ? preferredCommand
+              ? formatSmartlifeFunctionLabel(
+                  preferredCommand.code,
+                  preferredCommand.name,
+                )
+              : rule.command_label
+            : null,
+          command_value: getSmartlifeActionCommandValue(nextAction),
+        };
+      });
+
+      return hasChanges ? { ...previous, rules: nextRules } : previous;
+    });
+  }, [smartlifeDeviceMap]);
   const smartlifeMeterAssignmentByDeviceId = useMemo(
     () =>
       new Map(
@@ -1759,7 +1903,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     };
 
     smartlifeDraft.rules.forEach((rule, index) => {
-      const uniqueGiteIds = Array.from(new Set(rule.gite_ids));
+      const uniqueGiteIds = sanitizeSmartlifeRuleGiteIds(
+        rule.gite_ids,
+        smartlifeValidGiteIds,
+      );
       const singleGite =
         uniqueGiteIds.length === 1
           ? giteLookup.get(uniqueGiteIds[0]) ?? null
@@ -1788,7 +1935,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     return Array.from(groups.values()).sort(
       (left, right) => left.sortIndex - right.sortIndex,
     );
-  }, [gites, smartlifeDraft.rules]);
+  }, [gites, smartlifeDraft.rules, smartlifeValidGiteIds]);
   const sourceImportUnknownIds = useMemo(
     () =>
       (sourceImportPreview?.unknown_gites ?? []).map(
@@ -2509,6 +2656,25 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     );
   }, [smartlifeDraft.rules]);
 
+  const preserveSmartlifeRuleViewportPosition = (ruleId: string) => {
+    const initialTop =
+      smartlifeRuleRefs.current[ruleId]?.getBoundingClientRect().top ?? null;
+
+    return () => {
+      if (initialTop == null) return;
+
+      requestAnimationFrame(() => {
+        const nextTop =
+          smartlifeRuleRefs.current[ruleId]?.getBoundingClientRect().top ?? null;
+        if (nextTop == null) return;
+
+        const delta = nextTop - initialTop;
+        if (Math.abs(delta) < 1) return;
+        window.scrollBy({ top: delta, left: 0, behavior: "auto" });
+      });
+    };
+  };
+
   const saveDeclarationNightsSettings = async () => {
     setSavingDeclarationNights(true);
     setDeclarationNightsError(null);
@@ -2827,7 +2993,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         return;
       }
 
-      const sanitizedRules = sanitizeSmartlifeRulesForSave(smartlifeDraft.rules);
+      const sanitizedRules = sanitizeSmartlifeRulesForSave(
+        smartlifeDraft.rules,
+        smartlifeValidGiteIds,
+      );
       const sanitizedMeterAssignments = sanitizeSmartlifeMeterAssignmentsForSave(
         smartlifeDraft.meter_assignments,
       );
@@ -2897,10 +3066,24 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     setSmartlifeNotice(null);
 
     try {
+      const giteLookup = new Map(gites.map((gite) => [gite.id, gite]));
       const payload: SmartlifeRulesImportExportPayload = {
-        version: 1,
+        version: 2,
         exported_at: new Date().toISOString(),
-        rules: normalizeSmartlifeRules(smartlifeDraft.rules),
+        rules: normalizeSmartlifeRules(smartlifeDraft.rules).map((rule) => ({
+          ...rule,
+          gites: sanitizeSmartlifeRuleGiteIds(
+            rule.gite_ids,
+            smartlifeValidGiteIds,
+          )
+            .map((giteId) => giteLookup.get(giteId) ?? null)
+            .filter((gite): gite is Gite => Boolean(gite))
+            .map((gite) => ({
+              id: gite.id,
+              nom: gite.nom,
+              prefixe_contrat: gite.prefixe_contrat,
+            })),
+        })),
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
         type: "application/json",
@@ -2954,11 +3137,17 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       }
 
       const importedRules = normalizeSmartlifeRules(
-        source.map((rule) =>
-          rule && typeof rule === "object"
-            ? (rule as Partial<SmartlifeAutomationRule>)
-            : null,
-        ),
+        source.map((rule) => {
+          if (!rule || typeof rule !== "object") return null;
+          const candidate = rule as Partial<SmartlifeAutomationRule> & {
+            gites?: Array<Partial<SmartlifeRuleExportGiteRef> | null | undefined>;
+          };
+
+          return {
+            ...candidate,
+            gite_ids: resolveImportedSmartlifeRuleGiteIds(candidate, gites),
+          };
+        }),
       );
 
       setSmartlifeDraft((previous) => ({
@@ -5470,13 +5659,23 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                               {group.rules.map(({ rule, displayIndex }) => {
                                 const device =
                                   smartlifeDeviceMap.get(rule.device_id) ?? null;
+                                const availableActionOptions =
+                                  getAvailableSmartlifeRuleActions(device);
+                                const effectiveAction =
+                                  getCompatibleSmartlifeRuleAction(
+                                    rule.action,
+                                    device,
+                                  );
                                 const isDeviceAction = isSmartlifeDeviceCommandAction(
-                                  rule.action,
+                                  effectiveAction,
                                 );
                                 const isEnergyAction = isSmartlifeEnergyTrackingAction(
-                                  rule.action,
+                                  effectiveAction,
                                 );
-                                const ruleGites = rule.gite_ids
+                                const ruleGites = sanitizeSmartlifeRuleGiteIds(
+                                  rule.gite_ids,
+                                  smartlifeValidGiteIds,
+                                )
                                   .map(
                                     (giteId) =>
                                       gites.find((gite) => gite.id === giteId) ??
@@ -5550,7 +5749,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                           rule.offset_minutes,
                                         )}{" "}
                                         ·{" "}
-                                        {formatSmartlifeRuleAction(rule.action)}
+                                        {formatSmartlifeRuleAction(
+                                          effectiveAction,
+                                        )}
                                         {" · "}Appareil:{" "}
                                         <strong>
                                           {rule.device_name ||
@@ -5859,9 +6060,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                 <label className="field">
                                   Action
                                   <select
-                                    value={rule.action}
+                                    value={effectiveAction}
                                     onChange={(event) => {
-                                      const nextAction =
+                                      const requestedAction =
                                         event.target.value === "device-off"
                                           ? "device-off"
                                           : event.target.value === "energy-start"
@@ -5869,6 +6070,11 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                             : event.target.value === "energy-stop"
                                               ? "energy-stop"
                                               : "device-on";
+                                      const nextAction =
+                                        getCompatibleSmartlifeRuleAction(
+                                          requestedAction,
+                                          device,
+                                        );
                                       setSmartlifeError(null);
                                       setSmartlifeNotice(null);
                                       setSmartlifeDraft((previous) => ({
@@ -5899,14 +6105,14 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                     }}
                                     disabled={savingSmartlife || runningSmartlife}
                                   >
-                                    <option value="device-on">Activer</option>
-                                    <option value="device-off">Désactiver</option>
-                                    <option value="energy-start">
-                                      Démarrer compteur
-                                    </option>
-                                    <option value="energy-stop">
-                                      Arrêter compteur
-                                    </option>
+                                    {availableActionOptions.map((actionOption) => (
+                                      <option
+                                        key={actionOption.value}
+                                        value={actionOption.value}
+                                      >
+                                        {actionOption.label}
+                                      </option>
+                                    ))}
                                   </select>
                                 </label>
                                 <label className="field">
@@ -5924,32 +6130,46 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                       setSmartlifeDraft((previous) => ({
                                         ...previous,
                                         rules: previous.rules.map((item) =>
-                                          item.id === rule.id
-                                            ? {
-                                                ...item,
-                                                device_id: nextDeviceId,
-                                                device_name: nextDevice?.name ?? "",
-                                                command_code: isSmartlifeDeviceCommandAction(
-                                                  item.action,
-                                                )
-                                                  ? preferredCommand?.code ??
-                                                    item.command_code
-                                                  : "",
-                                                command_label:
-                                                  isSmartlifeDeviceCommandAction(
+                                          item.id !== rule.id
+                                            ? item
+                                            : (() => {
+                                                const nextAction =
+                                                  getCompatibleSmartlifeRuleAction(
                                                     item.action,
-                                                  ) && preferredCommand
-                                                    ? formatSmartlifeFunctionLabel(
-                                                        preferredCommand.code,
-                                                        preferredCommand.name,
-                                                      )
-                                                    : isSmartlifeDeviceCommandAction(
-                                                          item.action,
+                                                    nextDevice,
+                                                  );
+                                                return {
+                                                  ...item,
+                                                  action: nextAction,
+                                                  device_id: nextDeviceId,
+                                                  device_name:
+                                                    nextDevice?.name ?? "",
+                                                  command_code:
+                                                    isSmartlifeDeviceCommandAction(
+                                                      nextAction,
+                                                    )
+                                                      ? preferredCommand?.code ??
+                                                        item.command_code
+                                                      : "",
+                                                  command_label:
+                                                    isSmartlifeDeviceCommandAction(
+                                                      nextAction,
+                                                    ) && preferredCommand
+                                                      ? formatSmartlifeFunctionLabel(
+                                                          preferredCommand.code,
+                                                          preferredCommand.name,
                                                         )
-                                                      ? item.command_label
-                                                      : null,
-                                              }
-                                            : item,
+                                                      : isSmartlifeDeviceCommandAction(
+                                                            nextAction,
+                                                          )
+                                                        ? item.command_label
+                                                        : null,
+                                                  command_value:
+                                                    getSmartlifeActionCommandValue(
+                                                      nextAction,
+                                                    ),
+                                                };
+                                              })(),
                                         ),
                                       }));
                                     }}
@@ -6082,8 +6302,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                     >
                                       <input
                                         type="checkbox"
-                                        checked={rule.gite_ids.includes(gite.id)}
+                                        checked={sanitizeSmartlifeRuleGiteIds(
+                                          rule.gite_ids,
+                                          smartlifeValidGiteIds,
+                                        ).includes(gite.id)}
                                         onChange={(event) => {
+                                          const restoreScroll =
+                                            preserveSmartlifeRuleViewportPosition(
+                                              rule.id,
+                                            );
                                           setSmartlifeError(null);
                                           setSmartlifeNotice(null);
                                           setSmartlifeDraft((previous) => ({
@@ -6093,14 +6320,25 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                                 ? {
                                                     ...item,
                                                     gite_ids: event.target.checked
-                                                      ? [...item.gite_ids, gite.id]
-                                                      : item.gite_ids.filter(
-                                                          (giteId) => giteId !== gite.id,
+                                                      ? [
+                                                          ...sanitizeSmartlifeRuleGiteIds(
+                                                            item.gite_ids,
+                                                            smartlifeValidGiteIds,
+                                                          ),
+                                                          gite.id,
+                                                        ]
+                                                      : sanitizeSmartlifeRuleGiteIds(
+                                                          item.gite_ids,
+                                                          smartlifeValidGiteIds,
+                                                        ).filter(
+                                                          (giteId) =>
+                                                            giteId !== gite.id,
                                                         ),
                                                   }
                                                 : item,
                                             ),
                                           }));
+                                          restoreScroll();
                                         }}
                                         disabled={savingSmartlife || runningSmartlife}
                                       />

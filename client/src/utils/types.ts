@@ -73,6 +73,15 @@ export type ReservationPlaceholder = {
   reservations_count: number;
 };
 
+export type ReservationMonthlyEnergySummary = {
+  gite_id: string;
+  year: number;
+  month: number;
+  total_kwh: number;
+  total_cost_eur: number;
+  device_count: number;
+};
+
 export type Reservation = {
   id: string;
   gite_id?: string | null;
