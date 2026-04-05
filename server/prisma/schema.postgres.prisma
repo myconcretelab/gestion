@@ -58,6 +58,7 @@ model Gite {
   contrats                             Contrat[]
   factures                             Facture[]
   reservations                         Reservation[]
+  monthly_energy_readings              GiteMonthlyEnergyReading[]
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
 
@@ -285,4 +286,26 @@ model Reservation {
   @@index([placeholder_id, date_entree])
   @@index([stay_group_id], map: "reservations_stay_group_id_idx")
   @@map("reservations")
+}
+
+model GiteMonthlyEnergyReading {
+  id                  String    @id @default(cuid())
+  gite_id             String
+  year                Int
+  month               Int
+  device_id           String
+  device_name         String
+  opening_total_kwh   Decimal?  @db.Decimal(12,4)
+  opening_recorded_at DateTime?
+  closing_total_kwh   Decimal?  @db.Decimal(12,4)
+  closing_recorded_at DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  gite                Gite      @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@unique([gite_id, year, month, device_id], map: "gite_monthly_energy_readings_period_device_key")
+  @@index([year, month], map: "gite_monthly_energy_readings_period_idx")
+  @@index([gite_id, year, month], map: "gite_monthly_energy_readings_gite_period_idx")
+  @@map("gite_monthly_energy_readings")
 }

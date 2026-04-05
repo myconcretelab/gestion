@@ -11,6 +11,7 @@ import {
   parseReservationEnergyTracking,
   summarizeReservationEnergyTracking,
 } from "../services/smartlifeEnergyTracking.js";
+import { getGiteMonthlyEnergySummaries } from "../services/smartlifeMonthlyEnergy.js";
 import {
   getAirbnbCalendarRefreshJobStatus,
   queueAirbnbCalendarRefresh,
@@ -1262,6 +1263,28 @@ router.get("/", async (req, res, next) => {
       : reservations;
 
     res.json(filtered.map(hydrateReservation));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/monthly-energy", async (req, res, next) => {
+  try {
+    const year = typeof req.query.year === "string" ? Number(req.query.year) : NaN;
+    const month = typeof req.query.month === "string" ? Number(req.query.month) : NaN;
+    const giteId = typeof req.query.giteId === "string" ? req.query.giteId.trim() : "";
+
+    if (!Number.isFinite(year) || year <= 0) {
+      return res.status(400).json({ error: "Paramètre year invalide." });
+    }
+
+    const summaries = await getGiteMonthlyEnergySummaries({
+      year: Number(year),
+      month: Number.isFinite(month) && month >= 1 && month <= 12 ? Number(month) : null,
+      gite_id: giteId || null,
+    });
+
+    return res.json(summaries);
   } catch (err) {
     next(err);
   }

@@ -35,7 +35,13 @@ import {
   getSchoolHolidaySegmentsForMonth,
   type SchoolHoliday,
 } from "../utils/schoolHolidays";
-import type { ContratOptions, Gite, Reservation, ReservationPlaceholder } from "../utils/types";
+import type {
+  ContratOptions,
+  Gite,
+  Reservation,
+  ReservationMonthlyEnergySummary,
+  ReservationPlaceholder,
+} from "../utils/types";
 
 const MOBILE_INLINE_INSERT_BREAKPOINT = 760;
 
@@ -344,6 +350,9 @@ const formatKwh = (value: number) =>
     minimumFractionDigits: value >= 10 ? 2 : 3,
     maximumFractionDigits: 3,
   }).format(value);
+
+const getMonthlyEnergySummaryKey = (giteId: string, year: number, month: number) =>
+  `${giteId}:${year}-${pad2(month)}`;
 
 const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
   `${year}-${pad2(month)}-${managerId}`;
@@ -904,6 +913,9 @@ const ReservationsPage = () => {
   const [gites, setGites] = useState<Gite[]>([]);
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [monthlyEnergySummaries, setMonthlyEnergySummaries] = useState<
+    ReservationMonthlyEnergySummary[]
+  >([]);
   const [activeTab, setActiveTab] = useState<string>("");
   const [year, setYear] = useState<number>(currentYear);
   const [availableYears, setAvailableYears] = useState<number[]>([currentYear]);
@@ -1091,17 +1103,24 @@ const ReservationsPage = () => {
     params.set("year", String(year));
     if (month) params.set("month", String(month));
     if (q.trim()) params.set("q", q.trim());
+    const energyParams = new URLSearchParams();
+    energyParams.set("year", String(year));
+    if (month) energyParams.set("month", String(month));
 
-    const [gitesData, placeholdersData, reservationsData, yearsData] = await Promise.all([
+    const [gitesData, placeholdersData, reservationsData, monthlyEnergyData, yearsData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Reservation[]>(`/reservations?${params.toString()}`),
+      apiFetch<ReservationMonthlyEnergySummary[]>(
+        `/reservations/monthly-energy?${energyParams.toString()}`,
+      ),
       apiFetch<number[]>("/reservations/years"),
     ]);
 
     setGites(gitesData);
     setPlaceholders(placeholdersData);
     setReservations(reservationsData);
+    setMonthlyEnergySummaries(monthlyEnergyData);
     setAvailableYears([...new Set([currentYear, ...yearsData])].sort((a, b) => b - a));
 
     setActiveTab((current) => {
@@ -1366,6 +1385,17 @@ const ReservationsPage = () => {
     }
     return byMonth;
   }, [schoolHolidays, year]);
+
+  const monthlyEnergySummaryByKey = useMemo(() => {
+    const map = new Map<string, ReservationMonthlyEnergySummary>();
+    monthlyEnergySummaries.forEach((summary) => {
+      map.set(
+        getMonthlyEnergySummaryKey(summary.gite_id, summary.year, summary.month),
+        summary,
+      );
+    });
+    return map;
+  }, [monthlyEnergySummaries]);
 
   const giteOrderById = useMemo(() => {
     const map = new Map<string, number>();
@@ -3703,6 +3733,12 @@ const ReservationsPage = () => {
             const topOccupationGiteId = topOccupationGiteIdByMonth.get(monthIndex) ?? null;
             const isActiveGiteMonthLeader =
               activeTab !== ALL_GITES_TAB && activeTab !== UNASSIGNED_TAB && topOccupationGiteId === activeTab;
+            const activeGiteMonthlyEnergy =
+              activeTab !== ALL_GITES_TAB && activeTab !== UNASSIGNED_TAB
+                ? monthlyEnergySummaryByKey.get(
+                    getMonthlyEnergySummaryKey(activeTab, year, monthIndex),
+                  ) ?? null
+                : null;
 
             return (
               <section
@@ -3752,6 +3788,14 @@ const ReservationsPage = () => {
                       </span>
                       <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
+                      {activeGiteMonthlyEnergy ? (
+                        <span
+                          className="reservations-summary-pill reservations-summary-pill--energy"
+                          title={`${formatKwh(activeGiteMonthlyEnergy.total_kwh)} kWh relevés sur ${activeGiteMonthlyEnergy.device_count} compteur(s)`}
+                        >
+                          Élec {formatEuro(activeGiteMonthlyEnergy.total_cost_eur)}
+                        </span>
+                      ) : null}
                       {monthHasZeroTotalReservations ? (
                         <span
                           className="reservations-summary-pill reservations-summary-pill--needs-completion"
@@ -3855,6 +3899,12 @@ const ReservationsPage = () => {
                       const groupSummary = groupedSummaries.get(groupKey);
                       const groupOccupation =
                         groupKey === UNASSIGNED_TAB ? null : (occupationByMonthByGite.get(groupKey)?.get(monthIndex) ?? null);
+                      const groupMonthlyEnergy =
+                        groupKey === UNASSIGNED_TAB
+                          ? null
+                          : monthlyEnergySummaryByKey.get(
+                              getMonthlyEnergySummaryKey(groupKey, year, monthIndex),
+                            ) ?? null;
                       const groupLabel =
                         groupKey === UNASSIGNED_TAB
                           ? "Non attribuées"
@@ -3912,6 +3962,14 @@ const ReservationsPage = () => {
                                     <span className="reservations-summary-pill reservations-summary-pill--revenue">
                                       {formatEuro(groupSummary.revenue)}
                                     </span>
+                                    {groupMonthlyEnergy ? (
+                                      <span
+                                        className="reservations-summary-pill reservations-summary-pill--energy"
+                                        title={`${formatKwh(groupMonthlyEnergy.total_kwh)} kWh relevés sur ${groupMonthlyEnergy.device_count} compteur(s)`}
+                                      >
+                                        Élec {formatEuro(groupMonthlyEnergy.total_cost_eur)}
+                                      </span>
+                                    ) : null}
                                     {groupOccupation !== null ? (
                                       <div className="reservations-gite-group-row__occupation">
                                         <OccupationGaugeDial

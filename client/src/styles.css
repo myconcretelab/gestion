@@ -5419,6 +5419,12 @@ button.warning {
   color: #065f46;
 }
 
+.reservations-summary-pill--energy {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
 .reservations-summary-pill--guest-nights {
   border-color: #fde68a;
   background: #fffbeb;
