@@ -62,7 +62,8 @@ export const createApp = () => {
         (
           /^\/settings\/ical\/cron\/run$/i.test(req.path) ||
           /^\/settings\/pump\/cron\/run$/i.test(req.path) ||
-          /^\/settings\/daily-reservation-email\/run$/i.test(req.path)
+          /^\/settings\/daily-reservation-email\/run$/i.test(req.path) ||
+          /^\/settings\/smartlife\/run$/i.test(req.path)
         ) &&
         hasValidCronTriggerToken(req)
       ) {
