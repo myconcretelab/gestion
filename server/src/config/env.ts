@@ -99,6 +99,12 @@ export const env = {
     String(process.env.PUMP_IMPORT_CRON_SCHEDULER ?? "internal").trim().toLowerCase() === "external"
       ? "external"
       : "internal",
+  SMARTLIFE_AUTOMATION_SCHEDULER:
+    String(process.env.SMARTLIFE_AUTOMATION_SCHEDULER ?? "external")
+      .trim()
+      .toLowerCase() === "internal"
+      ? "internal"
+      : "external",
   PUMP_IMPORT_CRON_RUN_ON_START: parseBooleanEnv(process.env.PUMP_IMPORT_CRON_RUN_ON_START, false),
   PUMP_IMPORT_CRON_INTERVAL_DAYS: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_INTERVAL_DAYS, 3, 1, 30),
   PUMP_IMPORT_CRON_HOUR: parseIntegerEnv(process.env.PUMP_IMPORT_CRON_HOUR, 10, 0, 23),

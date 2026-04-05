@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { apiFetch, buildApiUrl } from "../utils/api";
+import { getGiteColor } from "../utils/giteColors";
 import {
   type ServerAuthSession,
   type ServerSecuritySaveResult,
@@ -312,6 +313,7 @@ const SETTINGS_SECTIONS = [
   { id: "settings-sms", label: "SMS" },
   { id: "settings-email-texts", label: "Emails" },
   { id: "settings-daily-reservation-email", label: "Email quotidien" },
+  { id: "settings-smartlife", label: "Smart Life" },
   { id: "settings-declaration-nights", label: "Nuitées à déclarer" },
   { id: "settings-source-colors", label: "Couleurs des sources" },
   { id: "settings-team", label: "Équipe" },
@@ -498,6 +500,116 @@ type DailyReservationEmailRunResponse = {
   summary: DailyReservationEmailRunSummary;
 };
 
+type SmartlifeRegion = "eu" | "eu-west" | "us" | "us-e" | "in" | "cn";
+
+type SmartlifeDeviceFunction = {
+  code: string;
+  name: string;
+  desc: string;
+  type: string;
+  values: string;
+  is_primary_switch: boolean;
+};
+
+type SmartlifeDeviceStatusEntry = {
+  code: string;
+  value: string | boolean | number | null;
+};
+
+type SmartlifeDevice = {
+  id: string;
+  name: string;
+  product_name: string | null;
+  category: string;
+  online: boolean;
+  functions: SmartlifeDeviceFunction[];
+  status: SmartlifeDeviceStatusEntry[];
+};
+
+type SmartlifeAutomationRule = {
+  id: string;
+  enabled: boolean;
+  label: string;
+  gite_ids: string[];
+  trigger:
+    | "before-arrival"
+    | "after-arrival"
+    | "before-departure"
+    | "after-departure";
+  offset_minutes: number;
+  device_id: string;
+  device_name: string;
+  command_code: string;
+  command_label: string | null;
+  command_value: boolean;
+};
+
+type SmartlifeAutomationConfig = {
+  enabled: boolean;
+  region: SmartlifeRegion;
+  access_id: string;
+  access_secret: string;
+  rules: SmartlifeAutomationRule[];
+};
+
+type SmartlifeAutomationRunItem = {
+  key: string;
+  reservation_id: string;
+  gite_id: string | null;
+  gite_nom: string;
+  reservation_label: string;
+  rule_id: string;
+  rule_label: string;
+  device_id: string;
+  device_name: string;
+  command_code: string;
+  command_value: boolean;
+  trigger:
+    | "before-arrival"
+    | "after-arrival"
+    | "before-departure"
+    | "after-departure";
+  scheduled_at: string;
+  executed_at: string | null;
+  status: "executed" | "skipped" | "error";
+  message: string | null;
+};
+
+type SmartlifeAutomationRunSummary = {
+  checked_at: string;
+  scanned_rules_count: number;
+  scanned_reservations_count: number;
+  due_events_count: number;
+  executed_count: number;
+  skipped_count: number;
+  error_count: number;
+  note: string | null;
+  items: SmartlifeAutomationRunItem[];
+};
+
+type SmartlifeAutomationState = {
+  config: SmartlifeAutomationConfig;
+  scheduler: "internal" | "external";
+  running: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_success_at: string | null;
+  last_status: "idle" | "running" | "success" | "partial" | "skipped" | "error";
+  last_error: string | null;
+  last_result: SmartlifeAutomationRunSummary | null;
+  credentials_configured: boolean;
+};
+
+type SmartlifeDevicesResponse = {
+  devices: SmartlifeDevice[];
+};
+
+type SmartlifeAutomationRunResponse = {
+  ok: boolean;
+  state: SmartlifeAutomationState;
+  summary: SmartlifeAutomationRunSummary;
+};
+
 type SettingsPageProps = {
   onAuthSessionUpdated?: (session: ServerAuthSession) => void;
 };
@@ -631,6 +743,43 @@ const DEFAULT_DAILY_RESERVATION_EMAIL_STATE: DailyReservationEmailState = {
   smtp_issues: [],
 };
 
+const DEFAULT_SMARTLIFE_RULE = (giteId = ""): SmartlifeAutomationRule => ({
+  id:
+    globalThis.crypto?.randomUUID?.() ??
+    `smartlife-rule-${Math.random().toString(36).slice(2, 10)}`,
+  enabled: true,
+  label: "",
+  gite_ids: giteId ? [giteId] : [],
+  trigger: "before-arrival",
+  offset_minutes: 60,
+  device_id: "",
+  device_name: "",
+  command_code: "",
+  command_label: null,
+  command_value: true,
+});
+
+const DEFAULT_SMARTLIFE_CONFIG: SmartlifeAutomationConfig = {
+  enabled: false,
+  region: "eu",
+  access_id: "",
+  access_secret: "",
+  rules: [],
+};
+
+const DEFAULT_SMARTLIFE_STATE: SmartlifeAutomationState = {
+  config: DEFAULT_SMARTLIFE_CONFIG,
+  scheduler: "internal",
+  running: false,
+  next_run_at: null,
+  last_run_at: null,
+  last_success_at: null,
+  last_status: "idle",
+  last_error: null,
+  last_result: null,
+  credentials_configured: false,
+};
+
 const DEFAULT_SERVER_SECURITY_SETTINGS: ServerSecuritySettings = {
   enabled: false,
   passwordConfigured: false,
@@ -694,6 +843,35 @@ const createDailyReservationRecipientDraft =
     send_if_empty: false,
   });
 
+const createSmartlifeRuleDraft = (giteId = "") => DEFAULT_SMARTLIFE_RULE(giteId);
+
+const createSmartlifeRuleFromDevice = (
+  device: SmartlifeDevice,
+  giteId = "",
+): SmartlifeAutomationRule => {
+  const preferredCommand = getPreferredSmartlifeCommand(device);
+  return {
+    ...createSmartlifeRuleDraft(giteId),
+    label: device.name,
+    device_id: device.id,
+    device_name: device.name,
+    command_code: preferredCommand?.code ?? "",
+    command_label: preferredCommand
+      ? formatSmartlifeFunctionLabel(
+          preferredCommand.code,
+          preferredCommand.name,
+        )
+      : null,
+  };
+};
+
+const duplicateSmartlifeRule = (
+  rule: SmartlifeAutomationRule,
+): SmartlifeAutomationRule => ({
+  ...rule,
+  id: createSmartlifeRuleDraft().id,
+});
+
 const formatDailyReservationEmailSkippedReason = (
   reason: DailyReservationEmailRunSummary["skipped_reason"],
 ) => {
@@ -713,6 +891,131 @@ const isHtmlApiResponseError = (error: unknown) =>
 
 const buildDailyReservationEmailUnavailableMessage = () =>
   "Cette section n'est pas disponible sur ce serveur: le frontend reçoit du HTML au lieu du JSON API. Le backend en production n'est probablement pas à jour, ou la route /api/settings/daily-reservation-email est redirigée vers le frontend.";
+
+const formatSmartlifeRegionLabel = (region: SmartlifeRegion) => {
+  if (region === "eu") return "Europe centrale";
+  if (region === "eu-west") return "Europe de l'Ouest";
+  if (region === "us") return "États-Unis Ouest";
+  if (region === "us-e") return "États-Unis Est";
+  if (region === "in") return "Inde";
+  return "Chine";
+};
+
+const SMARTLIFE_CODE_LABELS: Record<string, string> = {
+  switch: "Interrupteur principal",
+  switch_1: "Interrupteur 1",
+  switch_2: "Interrupteur 2",
+  switch_3: "Interrupteur 3",
+  switch_4: "Interrupteur 4",
+  switch_5: "Interrupteur 5",
+  switch_6: "Interrupteur 6",
+  switch_usb1: "Port USB 1",
+  switch_usb2: "Port USB 2",
+  child_lock: "Verrou enfant",
+  countdown_1: "Compte à rebours 1",
+  countdown_2: "Compte à rebours 2",
+  countdown_3: "Compte à rebours 3",
+  countdown_4: "Compte à rebours 4",
+  cycle_time: "Programmation cyclique",
+  relay_status: "État après remise sous tension",
+  light_mode: "Mode du voyant",
+  indicator_mode: "Mode du voyant",
+  power_memory: "Mémoire de l'état",
+  temp_set: "Température de consigne",
+  temp_current: "Température actuelle",
+  cur_current: "Intensité actuelle",
+  cur_power: "Puissance actuelle",
+  cur_voltage: "Tension actuelle",
+  add_ele: "Énergie cumulée",
+};
+
+const formatSmartlifeCodeLabel = (code: string | null | undefined) => {
+  const normalized = String(code ?? "").trim();
+  if (!normalized) return "Commande";
+  return SMARTLIFE_CODE_LABELS[normalized] ?? normalized;
+};
+
+const looksMostlyChinese = (value: string | null | undefined) => {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  const chineseChars = text.match(/[\u3400-\u9fff]/g) ?? [];
+  return chineseChars.length >= Math.max(1, Math.floor(text.length / 3));
+};
+
+const formatSmartlifeFunctionLabel = (
+  code: string | null | undefined,
+  rawLabel?: string | null,
+) => {
+  const normalizedCode = String(code ?? "").trim();
+  const translated = formatSmartlifeCodeLabel(normalizedCode);
+  const label = String(rawLabel ?? "").trim();
+
+  if (!label) return translated;
+  if (looksMostlyChinese(label)) {
+    return normalizedCode ? `${translated} (${normalizedCode})` : translated;
+  }
+  if (label.toLowerCase() === translated.toLowerCase()) return translated;
+  if (normalizedCode && label.toLowerCase() === normalizedCode.toLowerCase()) {
+    return translated;
+  }
+
+  return normalizedCode
+    ? `${label} · ${translated} (${normalizedCode})`
+    : `${label} · ${translated}`;
+};
+
+const formatSmartlifeStatusLabel = (
+  code: string | null | undefined,
+  value: string | boolean | number | null,
+) => `${formatSmartlifeCodeLabel(code)}: ${String(value)}`;
+
+const formatSmartlifeRuleTrigger = (
+  trigger: SmartlifeAutomationRule["trigger"],
+) => {
+  if (trigger === "after-arrival") return "Après arrivée";
+  if (trigger === "before-departure") return "Avant départ";
+  if (trigger === "after-departure") return "Après départ";
+  return "Avant arrivée";
+};
+
+const formatSmartlifeOffsetHours = (offsetMinutes: number) => {
+  const hours = Math.max(0, Math.round(Number(offsetMinutes) / 60 || 0));
+  return `${hours} h`;
+};
+
+const formatSmartlifeCommandValue = (value: boolean) =>
+  value ? "Activer" : "Désactiver";
+
+const formatSmartlifeRunStatus = (
+  status: SmartlifeAutomationState["last_status"],
+) => {
+  if (status === "running") return "En cours";
+  if (status === "success") return "Succès";
+  if (status === "partial") return "Partiel";
+  if (status === "skipped") return "Sans action";
+  if (status === "error") return "Erreur";
+  return "Repos";
+};
+
+const formatSmartlifeItemStatus = (
+  status: SmartlifeAutomationRunItem["status"],
+) => {
+  if (status === "executed") return "Exécutée";
+  if (status === "error") return "Erreur";
+  return "Ignorée";
+};
+
+const getPreferredSmartlifeCommand = (
+  device: SmartlifeDevice | null | undefined,
+) => {
+  if (!device) return null;
+  return (
+    device.functions.find((item) => item.is_primary_switch) ??
+    device.functions.find((item) => item.type.toLowerCase().includes("bool")) ??
+    device.functions[0] ??
+    null
+  );
+};
 
 const formatImportLogTitle = (
   entry: Pick<ImportLogEntry, "source" | "status">,
@@ -988,6 +1291,31 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   >(null);
   const [dailyReservationEmailNotice, setDailyReservationEmailNotice] =
     useState<string | null>(null);
+  const [smartlifeState, setSmartlifeState] =
+    useState<SmartlifeAutomationState>(DEFAULT_SMARTLIFE_STATE);
+  const [smartlifeDraft, setSmartlifeDraft] =
+    useState<SmartlifeAutomationConfig>(DEFAULT_SMARTLIFE_CONFIG);
+  const [smartlifeDevices, setSmartlifeDevices] = useState<SmartlifeDevice[]>(
+    [],
+  );
+  const [loadingSmartlife, setLoadingSmartlife] = useState(true);
+  const [smartlifeLoaded, setSmartlifeLoaded] = useState(false);
+  const [loadingSmartlifeDevices, setLoadingSmartlifeDevices] = useState(false);
+  const [savingSmartlife, setSavingSmartlife] = useState(false);
+  const [runningSmartlife, setRunningSmartlife] = useState(false);
+  const [testingSmartlifeRuleId, setTestingSmartlifeRuleId] = useState<
+    string | null
+  >(null);
+  const [smartlifeDeviceFilter, setSmartlifeDeviceFilter] = useState("");
+  const [smartlifeConnectionOpen, setSmartlifeConnectionOpen] = useState(false);
+  const [smartlifeOpenRuleIds, setSmartlifeOpenRuleIds] = useState<string[]>(
+    [],
+  );
+  const [pendingSmartlifeScrollRuleId, setPendingSmartlifeScrollRuleId] =
+    useState<string | null>(null);
+  const [smartlifeError, setSmartlifeError] = useState<string | null>(null);
+  const [smartlifeNotice, setSmartlifeNotice] = useState<string | null>(null);
+  const smartlifeRuleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [serverSecuritySettings, setServerSecuritySettings] =
     useState<ServerSecuritySettings>(DEFAULT_SERVER_SECURITY_SETTINGS);
   const [serverSecurityDurationDraft, setServerSecurityDurationDraft] =
@@ -1146,6 +1474,96 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       ),
     [pumpConfigDraft.baseUrl, pumpConfigDraft.scrollSelector],
   );
+  const smartlifeDeviceMap = useMemo(
+    () => new Map(smartlifeDevices.map((device) => [device.id, device])),
+    [smartlifeDevices],
+  );
+  const filteredSmartlifeDevices = useMemo(() => {
+    const query = smartlifeDeviceFilter.trim().toLowerCase();
+    if (!query) return smartlifeDevices;
+
+    return smartlifeDevices.filter((device) => {
+      const searchable = [
+        device.name,
+        device.id,
+        device.product_name ?? "",
+        device.category,
+        ...device.functions.map((item) => `${item.name} ${item.code}`),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return searchable.includes(query);
+    });
+  }, [smartlifeDeviceFilter, smartlifeDevices]);
+  const groupedSmartlifeRules = useMemo(() => {
+    const giteLookup = new Map(
+      gites.map((gite, index) => [gite.id, { gite, index }]),
+    );
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        title: string;
+        color: string;
+        sortIndex: number;
+        rules: Array<{ rule: SmartlifeAutomationRule; displayIndex: number }>;
+      }
+    >();
+
+    const ensureGroup = (
+      key: string,
+      title: string,
+      color: string,
+      sortIndex: number,
+    ) => {
+      const existing = groups.get(key);
+      if (existing) return existing;
+
+      const created = {
+        key,
+        title,
+        color,
+        sortIndex,
+        rules: [] as Array<{
+          rule: SmartlifeAutomationRule;
+          displayIndex: number;
+        }>,
+      };
+      groups.set(key, created);
+      return created;
+    };
+
+    smartlifeDraft.rules.forEach((rule, index) => {
+      const uniqueGiteIds = Array.from(new Set(rule.gite_ids));
+      const singleGite =
+        uniqueGiteIds.length === 1
+          ? giteLookup.get(uniqueGiteIds[0]) ?? null
+          : null;
+
+      const group =
+        singleGite
+          ? ensureGroup(
+              singleGite.gite.id,
+              singleGite.gite.nom,
+              getGiteColor(singleGite.gite, singleGite.index),
+              singleGite.index,
+            )
+          : uniqueGiteIds.length > 1
+            ? ensureGroup(
+                "multiple",
+                "Plusieurs gîtes",
+                "#5f6675",
+                gites.length,
+              )
+            : ensureGroup("none", "Aucun gîte", "#7b8494", gites.length + 1);
+
+      group.rules.push({ rule, displayIndex: index });
+    });
+
+    return Array.from(groups.values()).sort(
+      (left, right) => left.sortIndex - right.sortIndex,
+    );
+  }, [gites, smartlifeDraft.rules]);
   const sourceImportUnknownIds = useMemo(
     () =>
       (sourceImportPreview?.unknown_gites ?? []).map(
@@ -1491,6 +1909,135 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     setDailyReservationEmailStateLoaded(true);
   };
 
+  const applySmartlifeState = (data: SmartlifeAutomationState) => {
+    const rules = Array.isArray(data?.config?.rules)
+      ? data.config.rules.map((rule) => ({
+          id:
+            String(rule?.id ?? "").trim() || createSmartlifeRuleDraft().id,
+          enabled: Boolean(rule?.enabled),
+          label: String(rule?.label ?? "").trim(),
+          gite_ids: Array.isArray(rule?.gite_ids)
+            ? [
+                ...new Set(
+                  rule.gite_ids
+                    .map((item) => String(item ?? "").trim())
+                    .filter(Boolean),
+                ),
+              ]
+            : [],
+          trigger:
+            rule?.trigger === "after-arrival"
+              ? "after-arrival"
+              : rule?.trigger === "before-departure"
+              ? "before-departure"
+              : rule?.trigger === "after-departure"
+                ? "after-departure"
+                : "before-arrival",
+          offset_minutes: Math.max(
+            0,
+            Math.min(
+              14 * 24 * 60,
+              Math.round(Number(rule?.offset_minutes ?? 0) || 0),
+            ),
+          ),
+          device_id: String(rule?.device_id ?? "").trim(),
+          device_name: String(rule?.device_name ?? "").trim(),
+          command_code: String(rule?.command_code ?? "").trim(),
+          command_label:
+            typeof rule?.command_label === "string" &&
+            rule.command_label.trim()
+              ? rule.command_label.trim()
+              : null,
+          command_value: Boolean(rule?.command_value),
+        }))
+      : [];
+
+    const nextState: SmartlifeAutomationState = {
+      config: {
+        enabled: Boolean(data?.config?.enabled),
+        region:
+          data?.config?.region === "eu-west" ||
+          data?.config?.region === "us" ||
+          data?.config?.region === "us-e" ||
+          data?.config?.region === "in" ||
+          data?.config?.region === "cn"
+            ? data.config.region
+            : "eu",
+        access_id: String(data?.config?.access_id ?? ""),
+        access_secret: String(data?.config?.access_secret ?? ""),
+        rules,
+      },
+      scheduler: data?.scheduler === "external" ? "external" : "internal",
+      running: Boolean(data?.running),
+      next_run_at: data?.next_run_at ?? null,
+      last_run_at: data?.last_run_at ?? null,
+      last_success_at: data?.last_success_at ?? null,
+      last_status:
+        data?.last_status === "running" ||
+        data?.last_status === "success" ||
+        data?.last_status === "partial" ||
+        data?.last_status === "skipped" ||
+        data?.last_status === "error"
+          ? data.last_status
+          : "idle",
+      last_error: data?.last_error ?? null,
+      last_result: data?.last_result
+        ? {
+            checked_at: data.last_result.checked_at,
+            scanned_rules_count: Number(data.last_result.scanned_rules_count) || 0,
+            scanned_reservations_count:
+              Number(data.last_result.scanned_reservations_count) || 0,
+            due_events_count: Number(data.last_result.due_events_count) || 0,
+            executed_count: Number(data.last_result.executed_count) || 0,
+            skipped_count: Number(data.last_result.skipped_count) || 0,
+            error_count: Number(data.last_result.error_count) || 0,
+            note: data.last_result.note ?? null,
+            items: Array.isArray(data.last_result.items)
+              ? data.last_result.items.map((item) => ({
+                  key: String(item?.key ?? ""),
+                  reservation_id: String(item?.reservation_id ?? ""),
+                  gite_id:
+                    typeof item?.gite_id === "string" && item.gite_id.trim()
+                      ? item.gite_id
+                      : null,
+                  gite_nom: String(item?.gite_nom ?? "").trim(),
+                  reservation_label: String(item?.reservation_label ?? "").trim(),
+                  rule_id: String(item?.rule_id ?? "").trim(),
+                  rule_label: String(item?.rule_label ?? "").trim(),
+                  device_id: String(item?.device_id ?? "").trim(),
+                  device_name: String(item?.device_name ?? "").trim(),
+                  command_code: String(item?.command_code ?? "").trim(),
+                  command_value: Boolean(item?.command_value),
+                  trigger:
+                    item?.trigger === "after-arrival"
+                      ? "after-arrival"
+                      : item?.trigger === "before-departure"
+                      ? "before-departure"
+                      : item?.trigger === "after-departure"
+                        ? "after-departure"
+                        : "before-arrival",
+                  scheduled_at: String(item?.scheduled_at ?? ""),
+                  executed_at: item?.executed_at ?? null,
+                  status:
+                    item?.status === "executed" || item?.status === "error"
+                      ? item.status
+                      : "skipped",
+                  message:
+                    typeof item?.message === "string" && item.message.trim()
+                      ? item.message.trim()
+                      : null,
+                }))
+              : [],
+          }
+        : null,
+      credentials_configured: Boolean(data?.credentials_configured),
+    };
+
+    setSmartlifeState(nextState);
+    setSmartlifeDraft(nextState.config);
+    setSmartlifeLoaded(true);
+  };
+
   const applyServerSecuritySettings = (data: ServerSecuritySettings) => {
     const nextSettings: ServerSecuritySettings = {
       enabled: Boolean(data.enabled || data.passwordConfigured),
@@ -1534,6 +2081,40 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
           : error.message ??
               "Impossible de charger la configuration de l'email quotidien.",
       );
+    }
+  };
+
+  const loadSmartlifeState = async () => {
+    try {
+      const data = await apiFetch<SmartlifeAutomationState>("/settings/smartlife");
+      setSmartlifeError(null);
+      applySmartlifeState(data);
+    } catch (error: any) {
+      setSmartlifeLoaded(false);
+      setSmartlifeError(
+        error.message ??
+          "Impossible de charger la configuration Smart Life.",
+      );
+    }
+  };
+
+  const loadSmartlifeDevices = async () => {
+    setLoadingSmartlifeDevices(true);
+    setSmartlifeError(null);
+    try {
+      const data = await apiFetch<SmartlifeDevicesResponse>(
+        "/settings/smartlife/devices",
+      );
+      setSmartlifeDevices(Array.isArray(data.devices) ? data.devices : []);
+      setSmartlifeNotice(
+        `${Array.isArray(data.devices) ? data.devices.length : 0} appareil(s) Smart Life chargé(s).`,
+      );
+    } catch (error: any) {
+      setSmartlifeError(
+        error.message ?? "Impossible de charger les appareils Smart Life.",
+      );
+    } finally {
+      setLoadingSmartlifeDevices(false);
     }
   };
 
@@ -1639,6 +2220,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     setLoadingSmsTexts(true);
     setLoadingDocumentEmailTexts(true);
     setLoadingDailyReservationEmail(true);
+    setLoadingSmartlife(true);
     setLoadingServerSecurity(true);
     Promise.all([
       loadManagers(),
@@ -1648,6 +2230,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       loadSmsTextSettings(),
       loadDocumentEmailTextSettings(),
       loadDailyReservationEmailState(),
+      loadSmartlifeState(),
       loadServerSecuritySettings(),
       loadCronState(),
       loadImportLog(),
@@ -1668,6 +2251,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         setSmsTextError(message);
         setDocumentEmailTextError(message);
         setDailyReservationEmailError(message);
+        setSmartlifeError(message);
         setServerSecurityError(message);
       })
       .finally(() => {
@@ -1679,6 +2263,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         setLoadingSmsTexts(false);
         setLoadingDocumentEmailTexts(false);
         setLoadingDailyReservationEmail(false);
+        setLoadingSmartlife(false);
         setLoadingServerSecurity(false);
       });
   }, []);
@@ -1702,6 +2287,23 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     }
   }, [pumpSessionCapture]);
+
+  useEffect(() => {
+    if (!pendingSmartlifeScrollRuleId) return;
+    const target = smartlifeRuleRefs.current[pendingSmartlifeScrollRuleId];
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    setPendingSmartlifeScrollRuleId(null);
+  }, [pendingSmartlifeScrollRuleId, smartlifeDraft.rules]);
+
+  useEffect(() => {
+    setSmartlifeOpenRuleIds((previous) =>
+      previous.filter((ruleId) =>
+        smartlifeDraft.rules.some((rule) => rule.id === ruleId),
+      ),
+    );
+  }, [smartlifeDraft.rules]);
 
   const saveDeclarationNightsSettings = async () => {
     setSavingDeclarationNights(true);
@@ -1972,6 +2574,172 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     } finally {
       setRunningDailyReservationEmail(false);
+    }
+  };
+
+  const saveSmartlifeSettings = async () => {
+    setSavingSmartlife(true);
+    setSmartlifeError(null);
+    setSmartlifeNotice(null);
+
+    try {
+      const accessId = smartlifeDraft.access_id.trim();
+      const accessSecret = smartlifeDraft.access_secret.trim();
+
+      if (smartlifeDraft.enabled && (!accessId || !accessSecret)) {
+        setSmartlifeError(
+          "Renseignez l'Access ID et l'Access Secret avant d'activer Smart Life.",
+        );
+        return;
+      }
+
+      const sanitizedRules = smartlifeDraft.rules
+        .map((rule, index) => ({
+          id: String(rule.id ?? "").trim() || createSmartlifeRuleDraft().id,
+          enabled: Boolean(rule.enabled),
+          label: String(rule.label ?? "").trim() || `Automatisation ${index + 1}`,
+          gite_ids: [
+            ...new Set(
+              (rule.gite_ids ?? [])
+                .map((item) => String(item ?? "").trim())
+                .filter(Boolean),
+            ),
+          ],
+          trigger:
+            rule.trigger === "after-arrival"
+              ? "after-arrival"
+              : rule.trigger === "before-departure"
+              ? "before-departure"
+              : rule.trigger === "after-departure"
+                ? "after-departure"
+                : "before-arrival",
+          offset_minutes: Math.max(
+            0,
+            Math.min(
+              14 * 24 * 60,
+              Math.round(Number(rule.offset_minutes) || 0),
+            ),
+          ),
+          device_id: String(rule.device_id ?? "").trim(),
+          device_name: String(rule.device_name ?? "").trim(),
+          command_code: String(rule.command_code ?? "").trim(),
+          command_label:
+            typeof rule.command_label === "string" && rule.command_label.trim()
+              ? rule.command_label.trim()
+              : null,
+          command_value: Boolean(rule.command_value),
+        }))
+        .filter(
+          (rule) =>
+            rule.gite_ids.length > 0 ||
+            rule.device_id ||
+            rule.command_code ||
+            rule.label,
+        );
+
+      const invalidRule = sanitizedRules.find(
+        (rule) =>
+          rule.enabled &&
+          (!rule.gite_ids.length || !rule.device_id || !rule.command_code),
+      );
+      if (invalidRule) {
+        setSmartlifeError(
+          `Complétez la règle "${invalidRule.label}": gîte(s), appareil et commande sont requis.`,
+        );
+        return;
+      }
+
+      const response = await apiFetch<SmartlifeAutomationState>(
+        "/settings/smartlife",
+        {
+          method: "PUT",
+          json: {
+            enabled: smartlifeDraft.enabled,
+            region: smartlifeDraft.region,
+            access_id: accessId,
+            access_secret: accessSecret,
+            rules: sanitizedRules,
+          },
+        },
+      );
+      applySmartlifeState(response);
+      setSmartlifeNotice("Automatisations Smart Life enregistrées.");
+    } catch (error: any) {
+      setSmartlifeError(
+        error.message ??
+          "Impossible d'enregistrer la configuration Smart Life.",
+      );
+    } finally {
+      setSavingSmartlife(false);
+    }
+  };
+
+  const runSmartlifeNow = async () => {
+    setRunningSmartlife(true);
+    setSmartlifeError(null);
+    setSmartlifeNotice(null);
+
+    try {
+      const response = await apiFetch<SmartlifeAutomationRunResponse>(
+        "/settings/smartlife/run-now",
+        {
+          method: "POST",
+        },
+      );
+      applySmartlifeState(response.state);
+      setSmartlifeNotice(
+        response.summary.executed_count > 0
+          ? `${response.summary.executed_count} commande(s) Smart Life exécutée(s).`
+          : response.summary.note || "Aucune commande Smart Life à exécuter.",
+      );
+    } catch (error: any) {
+      setSmartlifeError(
+        error.message ??
+          "Impossible de lancer l'automatisation Smart Life.",
+      );
+    } finally {
+      setRunningSmartlife(false);
+    }
+  };
+
+  const testSmartlifeRule = async (ruleId: string) => {
+    const rule = smartlifeDraft.rules.find((item) => item.id === ruleId);
+    if (!rule) return;
+
+    const deviceId = rule.device_id.trim();
+    const commandCode = rule.command_code.trim();
+    if (!deviceId || !commandCode) {
+      setSmartlifeError(
+        "Sélectionnez un appareil et une commande avant de lancer le test.",
+      );
+      return;
+    }
+
+    setTestingSmartlifeRuleId(ruleId);
+    setSmartlifeError(null);
+    setSmartlifeNotice(null);
+
+    try {
+      await apiFetch<{ ok: boolean }>("/settings/smartlife/test-command", {
+        method: "POST",
+        json: {
+          device_id: deviceId,
+          command_code: commandCode,
+          command_value: Boolean(rule.command_value),
+        },
+      });
+      setSmartlifeNotice(
+        `Commande test envoyée: ${formatSmartlifeCommandValue(Boolean(rule.command_value))} ${rule.device_name.trim() || deviceId}.`,
+      );
+      if (smartlifeDevices.length > 0) {
+        void loadSmartlifeDevices();
+      }
+    } catch (error: any) {
+      setSmartlifeError(
+        error.message ?? "Impossible d'envoyer la commande de test.",
+      );
+    } finally {
+      setTestingSmartlifeRuleId(null);
     }
   };
 
@@ -4218,6 +4986,1159 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   </>
                 )}
               </div>
+            </div>
+          </section>
+
+          <section
+            id="settings-smartlife"
+            className="settings-cluster"
+            hidden={activeSettingsSection !== "settings-smartlife"}
+            aria-labelledby="nav-settings-smartlife"
+          >
+            <div className="settings-cluster__header">
+              <div>
+                <div className="settings-cluster__eyebrow">Domotique</div>
+                <h2 className="settings-cluster__title">Smart Life</h2>
+              </div>
+              <p className="settings-cluster__text">
+                Activez ou coupez certains interrupteurs avant l'arrivée ou le
+                départ, en vous basant sur l'heure par défaut du gîte.
+              </p>
+            </div>
+            <div className="settings-cluster__grid">
+              <div className="card settings-card settings-card--green settings-card--span-12">
+                <div className="settings-card__topline">
+                  <span className="settings-card__tag">Automatisation</span>
+                  <span className="settings-card__badge">
+                    {smartlifeState.credentials_configured
+                      ? "Tuya prêt"
+                      : "Identifiants requis"}
+                  </span>
+                </div>
+                <div className="section-title">
+                  Interrupteurs Smart Life programmés
+                </div>
+                {loadingSmartlife ? (
+                  <div className="field-hint" style={{ marginTop: 12 }}>
+                    Chargement...
+                  </div>
+                ) : !smartlifeLoaded ? (
+                  <>
+                    <div className="note" style={{ marginTop: 16 }}>
+                      {smartlifeError ||
+                        "La configuration Smart Life n'a pas pu être chargée."}
+                    </div>
+                    <div className="actions" style={{ marginTop: 16 }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void loadSmartlifeState()}
+                        disabled={loadingSmartlife}
+                      >
+                        Recharger
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="field-hint" style={{ marginTop: 10 }}>
+                      {smartlifeState.scheduler === "external" ? (
+                        <>
+                          Déclenchement: <strong>cron HTTP externe</strong>
+                          {" · "}Dernier run:{" "}
+                          <strong>
+                            {formatIsoDateTimeFr(smartlifeState.last_run_at)}
+                          </strong>
+                          {" · "}Statut:{" "}
+                          <strong>
+                            {formatSmartlifeRunStatus(
+                              smartlifeState.last_status,
+                            )}
+                          </strong>
+                        </>
+                      ) : (
+                        <>
+                          Prochain passage:{" "}
+                          <strong>
+                            {formatIsoDateTimeFr(smartlifeState.next_run_at)}
+                          </strong>
+                          {" · "}Dernier run:{" "}
+                          <strong>
+                            {formatIsoDateTimeFr(smartlifeState.last_run_at)}
+                          </strong>
+                          {" · "}Statut:{" "}
+                          <strong>
+                            {formatSmartlifeRunStatus(
+                              smartlifeState.last_status,
+                            )}
+                          </strong>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="field-hint" style={{ marginTop: 6 }}>
+                      Appareils chargés: <strong>{smartlifeDevices.length}</strong>
+                      {" · "}Identifiants:{" "}
+                      <strong>
+                        {smartlifeState.credentials_configured
+                          ? "configurés"
+                          : "incomplets"}
+                      </strong>
+                    </div>
+
+                    {smartlifeState.last_result ? (
+                      <div className="field-hint" style={{ marginTop: 8 }}>
+                        Dernier passage: {smartlifeState.last_result.executed_count} exécutée(s),
+                        {" "}
+                        {smartlifeState.last_result.skipped_count} ignorée(s),
+                        {" "}
+                        {smartlifeState.last_result.error_count} erreur(s)
+                        {smartlifeState.last_result.note
+                          ? ` · ${smartlifeState.last_result.note}`
+                          : ""}
+                      </div>
+                    ) : null}
+
+                    <div style={{ marginTop: 18 }}>
+                      <div className="field-hint">
+                        Chaque règle cible un ou plusieurs gîtes, un appareil,
+                        une commande booléenne, et un décalage horaire avant ou
+                        après l'arrivée ou le départ.
+                      </div>
+                      <div
+                        className="settings-sms-texts"
+                        style={{ marginTop: 8 }}
+                      >
+                        {groupedSmartlifeRules.map((group) => (
+                          <div
+                            key={`smartlife-group-${group.key}`}
+                            className="settings-source-group"
+                            style={{
+                              borderColor: `${group.color}33`,
+                              background: `${group.color}08`,
+                            }}
+                          >
+                            <div className="settings-source-group__header">
+                              <div>
+                                <div
+                                  className="settings-source-group__title"
+                                  style={{ color: group.color }}
+                                >
+                                  {group.title}
+                                </div>
+                                <div className="field-hint">
+                                  {group.rules.length} règle(s)
+                                </div>
+                              </div>
+                              <span
+                                className="settings-card__badge"
+                                style={{
+                                  background: `${group.color}1f`,
+                                  borderColor: `${group.color}55`,
+                                  color: group.color,
+                                }}
+                              >
+                                {group.rules.length} règle(s)
+                              </span>
+                            </div>
+
+                            <div className="settings-sms-texts">
+                              {group.rules.map(({ rule, displayIndex }) => {
+                                const device =
+                                  smartlifeDeviceMap.get(rule.device_id) ?? null;
+                                const ruleGites = rule.gite_ids
+                                  .map(
+                                    (giteId) =>
+                                      gites.find((gite) => gite.id === giteId) ??
+                                      null,
+                                  )
+                                  .filter((value): value is Gite => Boolean(value));
+                                const availableFunctions =
+                                  device?.functions.filter((item) =>
+                                    item.type.toLowerCase().includes("bool"),
+                                  ) ?? [];
+                                const commandOptions =
+                                  availableFunctions.length > 0
+                                    ? availableFunctions
+                                    : device?.functions ?? [];
+                                const currentStatus = device?.status.find(
+                                  (item) => item.code === rule.command_code,
+                                );
+
+                                return (
+                                  <div
+                                    key={rule.id}
+                                    className="settings-sms-text-row"
+                                    ref={(node) => {
+                                      smartlifeRuleRefs.current[rule.id] = node;
+                                    }}
+                                  >
+                              <details
+                                className="settings-card-accordion"
+                                open={smartlifeOpenRuleIds.includes(rule.id)}
+                                onToggle={(event) => {
+                                  const isOpen = event.currentTarget.open;
+                                  setSmartlifeOpenRuleIds((previous) =>
+                                    isOpen
+                                      ? previous.includes(rule.id)
+                                        ? previous
+                                        : [...previous, rule.id]
+                                      : previous.filter(
+                                          (ruleId) => ruleId !== rule.id,
+                                        ),
+                                  );
+                                }}
+                              >
+                                <summary className="settings-card-accordion__summary">
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      gap: 16,
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <div style={{ minWidth: 0 }}>
+                                      <strong>
+                                        {rule.label.trim() ||
+                                          `Règle ${displayIndex + 1}`}
+                                      </strong>
+                                      <div
+                                        className="field-hint"
+                                        style={{ marginTop: 6 }}
+                                      >
+                                        {formatSmartlifeRuleTrigger(
+                                          rule.trigger,
+                                        )}{" "}
+                                        ·{" "}
+                                        {formatSmartlifeOffsetHours(
+                                          rule.offset_minutes,
+                                        )}{" "}
+                                        ·{" "}
+                                        {formatSmartlifeCommandValue(
+                                          rule.command_value,
+                                        )}
+                                        {" · "}Appareil:{" "}
+                                        <strong>
+                                          {rule.device_name ||
+                                            rule.device_id ||
+                                            "non défini"}
+                                        </strong>
+                                      </div>
+                                    </div>
+                                    <div className="settings-card-accordion__meta">
+                                      <span className="settings-card__badge">
+                                        {rule.enabled ? "Active" : "Inactive"}
+                                      </span>
+                                      {ruleGites.length > 0 ? (
+                                        ruleGites.map((gite, giteIndex) => {
+                                          const giteColor = getGiteColor(
+                                            gite,
+                                            giteIndex,
+                                          );
+
+                                          return (
+                                            <span
+                                              key={`${rule.id}-${gite.id}-badge`}
+                                              className="settings-card__badge"
+                                              style={{
+                                                background: `${giteColor}1f`,
+                                                borderColor: `${giteColor}55`,
+                                                color: giteColor,
+                                              }}
+                                            >
+                                              {gite.nom}
+                                            </span>
+                                          );
+                                        })
+                                      ) : (
+                                        <span className="settings-card__badge">
+                                          Aucun gîte
+                                        </span>
+                                      )}
+                                      {device ? (
+                                        <span
+                                          className="settings-card__badge"
+                                          style={{
+                                            background: device.online
+                                              ? "rgba(37, 171, 83, 0.12)"
+                                              : "rgba(120, 128, 145, 0.12)",
+                                            color: device.online
+                                              ? "#1f7a3d"
+                                              : "#5f6675",
+                                          }}
+                                        >
+                                          {device.online
+                                            ? "En ligne"
+                                            : "Hors ligne"}
+                                        </span>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        className="secondary"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          const duplicatedRule =
+                                            duplicateSmartlifeRule(rule);
+                                          setSmartlifeError(null);
+                                          setSmartlifeNotice(null);
+                                          setSmartlifeDraft((previous) => {
+                                            const ruleIndex =
+                                              previous.rules.findIndex(
+                                                (item) => item.id === rule.id,
+                                              );
+                                            if (ruleIndex === -1) {
+                                              return {
+                                                ...previous,
+                                                rules: [
+                                                  ...previous.rules,
+                                                  duplicatedRule,
+                                                ],
+                                              };
+                                            }
+
+                                            return {
+                                              ...previous,
+                                              rules: [
+                                                ...previous.rules.slice(
+                                                  0,
+                                                  ruleIndex + 1,
+                                                ),
+                                                duplicatedRule,
+                                                ...previous.rules.slice(
+                                                  ruleIndex + 1,
+                                                ),
+                                              ],
+                                            };
+                                          });
+                                        }}
+                                        disabled={
+                                          savingSmartlife ||
+                                          runningSmartlife ||
+                                          testingSmartlifeRuleId === rule.id
+                                        }
+                                      >
+                                        Dupliquer
+                                      </button>
+                                      <span
+                                        className="settings-accordion__icon"
+                                        aria-hidden="true"
+                                      />
+                                    </div>
+                                  </div>
+                                </summary>
+
+                                <div className="settings-card-accordion__content">
+                                  <div className="settings-sms-text-row__header">
+                                    <span className="field-hint">
+                                      Paramètres de la règle
+                                    </span>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: 8,
+                                        alignItems: "center",
+                                        flexWrap: "wrap",
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        className="secondary"
+                                        onClick={() =>
+                                          void saveSmartlifeSettings()
+                                        }
+                                        disabled={
+                                          savingSmartlife ||
+                                          runningSmartlife ||
+                                          testingSmartlifeRuleId === rule.id
+                                        }
+                                      >
+                                        {savingSmartlife
+                                          ? "Enregistrement..."
+                                          : "Sauvegarder"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="secondary"
+                                        onClick={() =>
+                                          void testSmartlifeRule(rule.id)
+                                        }
+                                        disabled={
+                                          savingSmartlife ||
+                                          runningSmartlife ||
+                                          testingSmartlifeRuleId === rule.id
+                                        }
+                                      >
+                                        {testingSmartlifeRuleId === rule.id
+                                          ? "Test..."
+                                          : "Tester"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="danger-link"
+                                        onClick={() => {
+                                          setSmartlifeError(null);
+                                          setSmartlifeNotice(null);
+                                          setSmartlifeDraft((previous) => ({
+                                            ...previous,
+                                            rules: previous.rules.filter(
+                                              (item) => item.id !== rule.id,
+                                            ),
+                                          }));
+                                        }}
+                                        disabled={
+                                          savingSmartlife ||
+                                          runningSmartlife ||
+                                          testingSmartlifeRuleId === rule.id
+                                        }
+                                      >
+                                        Supprimer
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid-2">
+                                <label className="field">
+                                  Libellé
+                                  <input
+                                    type="text"
+                                    value={rule.label}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setSmartlifeError(null);
+                                      setSmartlifeNotice(null);
+                                      setSmartlifeDraft((previous) => ({
+                                        ...previous,
+                                        rules: previous.rules.map((item) =>
+                                          item.id === rule.id
+                                            ? { ...item, label: value }
+                                            : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={savingSmartlife || runningSmartlife}
+                                    placeholder="Ex: Chauffage séjour"
+                                  />
+                                </label>
+                                <label className="field">
+                                  Active
+                                  <select
+                                    value={rule.enabled ? "1" : "0"}
+                                    onChange={(event) => {
+                                      setSmartlifeError(null);
+                                      setSmartlifeNotice(null);
+                                      setSmartlifeDraft((previous) => ({
+                                        ...previous,
+                                        rules: previous.rules.map((item) =>
+                                          item.id === rule.id
+                                            ? {
+                                                ...item,
+                                                enabled: event.target.value === "1",
+                                              }
+                                            : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={savingSmartlife || runningSmartlife}
+                                  >
+                                    <option value="1">Oui</option>
+                                    <option value="0">Non</option>
+                                  </select>
+                                </label>
+                                <label className="field">
+                                  Déclenchement
+                                  <select
+                                    value={rule.trigger}
+                                    onChange={(event) => {
+                                      const nextTrigger =
+                                        event.target.value === "after-arrival"
+                                          ? "after-arrival"
+                                          : event.target.value ===
+                                              "before-departure"
+                                            ? "before-departure"
+                                            : event.target.value ===
+                                                "after-departure"
+                                              ? "after-departure"
+                                              : "before-arrival";
+                                      setSmartlifeError(null);
+                                      setSmartlifeNotice(null);
+                                      setSmartlifeDraft((previous) => ({
+                                        ...previous,
+                                        rules: previous.rules.map((item) =>
+                                          item.id === rule.id
+                                            ? { ...item, trigger: nextTrigger }
+                                            : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={savingSmartlife || runningSmartlife}
+                                  >
+                                    <option value="before-arrival">
+                                      Avant arrivée
+                                    </option>
+                                    <option value="after-arrival">
+                                      Après arrivée
+                                    </option>
+                                    <option value="before-departure">
+                                      Avant départ
+                                    </option>
+                                    <option value="after-departure">
+                                      Après départ
+                                    </option>
+                                  </select>
+                                </label>
+                                <label className="field">
+                                  Heures
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={14 * 24}
+                                    value={Math.round(rule.offset_minutes / 60)}
+                                    onChange={(event) => {
+                                      setSmartlifeError(null);
+                                      setSmartlifeNotice(null);
+                                      const nextHours = Math.max(
+                                        0,
+                                        Math.min(
+                                          14 * 24,
+                                          Math.round(
+                                            Number(event.target.value) || 0,
+                                          ),
+                                        ),
+                                      );
+                                      setSmartlifeDraft((previous) => ({
+                                        ...previous,
+                                        rules: previous.rules.map((item) =>
+                                          item.id === rule.id
+                                            ? {
+                                                ...item,
+                                                offset_minutes: nextHours * 60,
+                                              }
+                                            : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={savingSmartlife || runningSmartlife}
+                                  />
+                                </label>
+                                <label className="field">
+                                  Action
+                                  <select
+                                    value={rule.command_value ? "1" : "0"}
+                                    onChange={(event) => {
+                                      setSmartlifeError(null);
+                                      setSmartlifeNotice(null);
+                                      setSmartlifeDraft((previous) => ({
+                                        ...previous,
+                                        rules: previous.rules.map((item) =>
+                                          item.id === rule.id
+                                            ? {
+                                                ...item,
+                                                command_value:
+                                                  event.target.value === "1",
+                                              }
+                                            : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={savingSmartlife || runningSmartlife}
+                                  >
+                                    <option value="1">Activer</option>
+                                    <option value="0">Désactiver</option>
+                                  </select>
+                                </label>
+                                <label className="field">
+                                  Appareil
+                                  <select
+                                    value={rule.device_id}
+                                    onChange={(event) => {
+                                      const nextDeviceId = event.target.value;
+                                      const nextDevice =
+                                        smartlifeDeviceMap.get(nextDeviceId) ?? null;
+                                      const preferredCommand =
+                                        getPreferredSmartlifeCommand(nextDevice);
+                                      setSmartlifeError(null);
+                                      setSmartlifeNotice(null);
+                                      setSmartlifeDraft((previous) => ({
+                                        ...previous,
+                                        rules: previous.rules.map((item) =>
+                                          item.id === rule.id
+                                            ? {
+                                                ...item,
+                                                device_id: nextDeviceId,
+                                                device_name: nextDevice?.name ?? "",
+                                                command_code:
+                                                  preferredCommand?.code ??
+                                                  item.command_code,
+                                                command_label: preferredCommand
+                                                  ? formatSmartlifeFunctionLabel(
+                                                      preferredCommand.code,
+                                                      preferredCommand.name,
+                                                    )
+                                                  : item.command_label,
+                                              }
+                                            : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={savingSmartlife || runningSmartlife}
+                                  >
+                                    <option value="">Sélectionner</option>
+                                    {rule.device_id &&
+                                    !smartlifeDeviceMap.has(rule.device_id) ? (
+                                      <option value={rule.device_id}>
+                                        {rule.device_name || rule.device_id}
+                                      </option>
+                                    ) : null}
+                                    {smartlifeDevices.map((deviceItem) => (
+                                      <option key={deviceItem.id} value={deviceItem.id}>
+                                        {deviceItem.name}
+                                        {deviceItem.product_name
+                                          ? ` · ${deviceItem.product_name}`
+                                          : ""}
+                                        {deviceItem.online
+                                          ? " · En ligne"
+                                          : " · Hors ligne"}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="field">
+                                  Commande
+                                  <select
+                                    value={rule.command_code}
+                                    onChange={(event) => {
+                                      const selectedFunction = commandOptions.find(
+                                        (item) => item.code === event.target.value,
+                                      );
+                                      setSmartlifeError(null);
+                                      setSmartlifeNotice(null);
+                                      setSmartlifeDraft((previous) => ({
+                                        ...previous,
+                                        rules: previous.rules.map((item) =>
+                                          item.id === rule.id
+                                            ? {
+                                                ...item,
+                                                command_code: event.target.value,
+                                                command_label: selectedFunction
+                                                  ? formatSmartlifeFunctionLabel(
+                                                      selectedFunction.code,
+                                                      selectedFunction.name,
+                                                    )
+                                                  : item.command_label,
+                                              }
+                                            : item,
+                                        ),
+                                      }));
+                                    }}
+                                    disabled={
+                                      savingSmartlife ||
+                                      runningSmartlife ||
+                                      !rule.device_id
+                                    }
+                                  >
+                                    <option value="">
+                                      {rule.device_id
+                                        ? commandOptions.length > 0
+                                          ? "Sélectionner"
+                                          : "Aucune commande détectée"
+                                        : "Choisir d'abord un appareil"}
+                                    </option>
+                                    {rule.command_code &&
+                                    !commandOptions.some(
+                                      (functionItem) =>
+                                        functionItem.code === rule.command_code,
+                                    ) ? (
+                                      <option value={rule.command_code}>
+                                        {formatSmartlifeFunctionLabel(
+                                          rule.command_code,
+                                          rule.command_label,
+                                        )}
+                                      </option>
+                                    ) : null}
+                                    {commandOptions.map((functionItem) => (
+                                      <option
+                                        key={`${rule.id}-${functionItem.code}`}
+                                        value={functionItem.code}
+                                      >
+                                        {formatSmartlifeFunctionLabel(
+                                          functionItem.code,
+                                          functionItem.name,
+                                        )}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+
+                              <div style={{ marginTop: 12 }}>
+                                <div className="field-hint">
+                                  Gîtes concernés
+                                </div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    gap: 10,
+                                    marginTop: 8,
+                                  }}
+                                >
+                                  {gites.map((gite) => (
+                                    <label
+                                      key={`${rule.id}-${gite.id}`}
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 6,
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={rule.gite_ids.includes(gite.id)}
+                                        onChange={(event) => {
+                                          setSmartlifeError(null);
+                                          setSmartlifeNotice(null);
+                                          setSmartlifeDraft((previous) => ({
+                                            ...previous,
+                                            rules: previous.rules.map((item) =>
+                                              item.id === rule.id
+                                                ? {
+                                                    ...item,
+                                                    gite_ids: event.target.checked
+                                                      ? [...item.gite_ids, gite.id]
+                                                      : item.gite_ids.filter(
+                                                          (giteId) => giteId !== gite.id,
+                                                        ),
+                                                  }
+                                                : item,
+                                            ),
+                                          }));
+                                        }}
+                                        disabled={savingSmartlife || runningSmartlife}
+                                      />
+                                      <span>{gite.nom}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="field-hint" style={{ marginTop: 10 }}>
+                                {formatSmartlifeRuleTrigger(rule.trigger)} ·{" "}
+                                {formatSmartlifeOffsetHours(rule.offset_minutes)} ·{" "}
+                                {formatSmartlifeCommandValue(rule.command_value)}
+                                {" · "}Appareil:{" "}
+                                <strong>{rule.device_name || rule.device_id || "non défini"}</strong>
+                                {" · "}Commande:{" "}
+                                <strong>
+                                  {formatSmartlifeFunctionLabel(
+                                    rule.command_code,
+                                    rule.command_label,
+                                  ) || "non définie"}
+                                </strong>
+                              </div>
+                              {device ? (
+                                <div className="field-hint" style={{ marginTop: 6 }}>
+                                  {device.online ? "En ligne" : "Hors ligne"}
+                                  {currentStatus
+                                    ? ` · Statut actuel ${formatSmartlifeStatusLabel(
+                                        currentStatus.code,
+                                        currentStatus.value,
+                                      )}`
+                                    : ""}
+                                </div>
+                              ) : null}
+                                </div>
+                              </details>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="actions" style={{ marginTop: 12 }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            const nextRule = createSmartlifeRuleDraft(
+                              gites[0]?.id ?? "",
+                            );
+                            setSmartlifeError(null);
+                            setSmartlifeNotice(null);
+                            setSmartlifeOpenRuleIds((previous) =>
+                              previous.includes(nextRule.id)
+                                ? previous
+                                : [...previous, nextRule.id],
+                            );
+                            setPendingSmartlifeScrollRuleId(nextRule.id);
+                            setSmartlifeDraft((previous) => ({
+                              ...previous,
+                              rules: [
+                                ...previous.rules,
+                                nextRule,
+                              ],
+                            }));
+                          }}
+                          disabled={savingSmartlife || runningSmartlife}
+                        >
+                          Ajouter une règle
+                        </button>
+                      </div>
+                    </div>
+
+                    {smartlifeState.last_result?.items.length ? (
+                      <div style={{ marginTop: 18 }}>
+                        <div className="field-hint">
+                          Derniers événements mémorisés
+                        </div>
+                        <div
+                          className="settings-sms-texts"
+                          style={{ marginTop: 8 }}
+                        >
+                          {smartlifeState.last_result.items
+                            .slice(0, 8)
+                            .map((item) => (
+                              <div
+                                key={item.key}
+                                className="settings-sms-text-row"
+                              >
+                                <div className="settings-sms-text-row__header">
+                                  <strong>{item.rule_label}</strong>
+                                  <span>{formatSmartlifeItemStatus(item.status)}</span>
+                                </div>
+                                <div className="field-hint">
+                                  {item.reservation_label}
+                                  {" · "}
+                                  {item.device_name}
+                                  {" · "}
+                                  {formatSmartlifeCodeLabel(item.command_code)}
+                                  {" · "}
+                                  {formatSmartlifeCommandValue(item.command_value)}
+                                </div>
+                                <div className="field-hint">
+                                  Prévu {formatIsoDateTimeFr(item.scheduled_at)}
+                                  {item.executed_at
+                                    ? ` · exécuté ${formatIsoDateTimeFr(item.executed_at)}`
+                                    : ""}
+                                  {item.message ? ` · ${item.message}` : ""}
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="actions" style={{ marginTop: 16 }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void loadSmartlifeState()}
+                        disabled={savingSmartlife || runningSmartlife}
+                      >
+                        Recharger
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void loadSmartlifeDevices()}
+                        disabled={
+                          savingSmartlife ||
+                          runningSmartlife ||
+                          loadingSmartlifeDevices
+                        }
+                      >
+                        {loadingSmartlifeDevices
+                          ? "Chargement..."
+                          : "Charger les appareils"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void runSmartlifeNow()}
+                        disabled={savingSmartlife || runningSmartlife}
+                      >
+                        {runningSmartlife ? "Exécution..." : "Lancer maintenant"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveSmartlifeSettings()}
+                        disabled={savingSmartlife || runningSmartlife}
+                      >
+                        {savingSmartlife ? "Enregistrement..." : "Enregistrer"}
+                      </button>
+                    </div>
+                    {smartlifeNotice ? (
+                      <div className="note note--success">{smartlifeNotice}</div>
+                    ) : null}
+                    {smartlifeError ? (
+                      <div className="note">{smartlifeError}</div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              {smartlifeLoaded ? (
+                <div className="card settings-card settings-card--span-12">
+                  <div className="settings-card__topline">
+                    <span className="settings-card__tag">Appareils</span>
+                    <span className="settings-card__badge">
+                      {smartlifeDevices.length} chargé(s)
+                    </span>
+                  </div>
+                  <div className="section-title">Appareils disponibles</div>
+                  <div className="field-hint">
+                    Clique sur <strong>Créer une règle</strong> pour
+                    préremplir une automatisation à partir d'un appareil.
+                  </div>
+                  <div className="grid-2" style={{ marginTop: 12 }}>
+                    <label className="field">
+                      Filtrer les appareils
+                      <input
+                        type="text"
+                        value={smartlifeDeviceFilter}
+                        onChange={(event) =>
+                          setSmartlifeDeviceFilter(event.target.value)
+                        }
+                        placeholder="Nom ou identifiant..."
+                        disabled={
+                          savingSmartlife ||
+                          runningSmartlife ||
+                          loadingSmartlifeDevices
+                        }
+                      />
+                    </label>
+                  </div>
+                  {loadingSmartlifeDevices ? (
+                    <div className="field-hint" style={{ marginTop: 12 }}>
+                      Chargement des appareils...
+                    </div>
+                  ) : smartlifeDevices.length > 0 ? (
+                    <>
+                      <div
+                        className="settings-sms-texts"
+                        style={{ marginTop: 8 }}
+                      >
+                        {filteredSmartlifeDevices.map((device) => (
+                          <div
+                            key={`smartlife-device-${device.id}`}
+                            className="settings-sms-text-row"
+                          >
+                            <div className="settings-sms-text-row__header">
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 10,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <strong>{device.name}</strong>
+                                <span
+                                  className="settings-card__badge"
+                                  style={{
+                                    background: device.online
+                                      ? "rgba(37, 171, 83, 0.12)"
+                                      : "rgba(120, 128, 145, 0.12)",
+                                    color: device.online
+                                      ? "#1f7a3d"
+                                      : "#5f6675",
+                                  }}
+                                >
+                                  {device.online ? "En ligne" : "Hors ligne"}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="secondary"
+                                onClick={() => {
+                                  const nextRule = createSmartlifeRuleFromDevice(
+                                    device,
+                                    gites[0]?.id ?? "",
+                                  );
+                                  setSmartlifeError(null);
+                                  setSmartlifeNotice(null);
+                                  setSmartlifeOpenRuleIds((previous) =>
+                                    previous.includes(nextRule.id)
+                                      ? previous
+                                      : [...previous, nextRule.id],
+                                  );
+                                  setPendingSmartlifeScrollRuleId(nextRule.id);
+                                  setSmartlifeDraft((previous) => ({
+                                    ...previous,
+                                    rules: [...previous.rules, nextRule],
+                                  }));
+                                }}
+                                disabled={savingSmartlife || runningSmartlife}
+                              >
+                                Créer une règle
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {filteredSmartlifeDevices.length === 0 ? (
+                        <div className="field-hint" style={{ marginTop: 8 }}>
+                          Aucun appareil ne correspond au filtre.
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="field-hint" style={{ marginTop: 12 }}>
+                      Aucun appareil chargé. Utilise <strong>Charger les appareils</strong>
+                      {" "}dans le cadre Automatisation.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+              {smartlifeLoaded ? (
+                <div className="card settings-card settings-card--span-12">
+                  <div className="settings-card__topline">
+                    <span className="settings-card__tag">Connexion</span>
+                    <span className="settings-card__badge">
+                      {smartlifeState.credentials_configured
+                        ? "Identifiants OK"
+                        : "Identifiants requis"}
+                    </span>
+                  </div>
+                  <div className="section-title">Connexion Tuya</div>
+                  <div className="field-hint">
+                    Région, identifiants et activation de l'automatisation.
+                  </div>
+                  <details
+                    className="settings-card-accordion"
+                    open={smartlifeConnectionOpen}
+                    onToggle={(event) =>
+                      setSmartlifeConnectionOpen(event.currentTarget.open)
+                    }
+                    style={{ marginTop: 16 }}
+                  >
+                    <summary className="settings-card-accordion__summary">
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 16,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div className="section-title">Paramètres Tuya</div>
+                          <div className="field-hint">
+                            Ouvrir pour modifier la région et les identifiants.
+                          </div>
+                        </div>
+                        <div className="settings-card-accordion__meta">
+                          <span className="settings-card__badge">
+                            {smartlifeDraft.enabled ? "Activé" : "Désactivé"}
+                          </span>
+                          <span className="settings-card__badge">
+                            {formatSmartlifeRegionLabel(smartlifeDraft.region)}
+                          </span>
+                          <span className="settings-card__badge">
+                            {smartlifeState.credentials_configured
+                              ? "Identifiants OK"
+                              : "Identifiants requis"}
+                          </span>
+                          <span
+                            className="settings-accordion__icon"
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="settings-card-accordion__content">
+                      <div className="grid-2">
+                        <label className="field">
+                          Activation
+                          <select
+                            value={smartlifeDraft.enabled ? "1" : "0"}
+                            onChange={(event) => {
+                              setSmartlifeError(null);
+                              setSmartlifeNotice(null);
+                              setSmartlifeDraft((previous) => ({
+                                ...previous,
+                                enabled: event.target.value === "1",
+                              }));
+                            }}
+                            disabled={savingSmartlife || runningSmartlife}
+                          >
+                            <option value="0">Désactivé</option>
+                            <option value="1">Activé</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          Région Tuya
+                          <select
+                            value={smartlifeDraft.region}
+                            onChange={(event) => {
+                              const nextRegion =
+                                event.target.value as SmartlifeRegion;
+                              setSmartlifeError(null);
+                              setSmartlifeNotice(null);
+                              setSmartlifeDraft((previous) => ({
+                                ...previous,
+                                region: nextRegion,
+                              }));
+                              setSmartlifeDevices([]);
+                            }}
+                            disabled={savingSmartlife || runningSmartlife}
+                          >
+                            {([
+                              "eu",
+                              "eu-west",
+                              "us",
+                              "us-e",
+                              "in",
+                              "cn",
+                            ] as SmartlifeRegion[]).map((region) => (
+                              <option key={region} value={region}>
+                                {formatSmartlifeRegionLabel(region)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          Access ID
+                          <input
+                            type="text"
+                            value={smartlifeDraft.access_id}
+                            onChange={(event) => {
+                              setSmartlifeError(null);
+                              setSmartlifeNotice(null);
+                              setSmartlifeDraft((previous) => ({
+                                ...previous,
+                                access_id: event.target.value,
+                              }));
+                            }}
+                            disabled={savingSmartlife || runningSmartlife}
+                            placeholder="Tuya Access ID"
+                          />
+                        </label>
+                        <label className="field">
+                          Access Secret
+                          <input
+                            type="password"
+                            value={smartlifeDraft.access_secret}
+                            onChange={(event) => {
+                              setSmartlifeError(null);
+                              setSmartlifeNotice(null);
+                              setSmartlifeDraft((previous) => ({
+                                ...previous,
+                                access_secret: event.target.value,
+                              }));
+                            }}
+                            disabled={savingSmartlife || runningSmartlife}
+                            placeholder="Tuya Access Secret"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              ) : null}
             </div>
           </section>
 

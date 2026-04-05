@@ -80,6 +80,14 @@ import {
 } from "../services/dailyReservationEmail.js";
 import type { DailyReservationEmailConfig } from "../services/dailyReservationEmailSettings.js";
 import {
+  getSmartlifeAutomationState,
+  listSmartlifeDevicesForSettings,
+  runSmartlifeAutomation,
+  sendSmartlifeTestCommand,
+  updateSmartlifeAutomationConfig,
+} from "../services/smartlifeAutomation.js";
+import type { SmartlifeAutomationConfig } from "../services/smartlifeSettings.js";
+import {
   buildServerSecuritySettingsState,
   getServerAuthSessionIdFromRequest,
   setServerAuthCookie,
@@ -276,6 +284,41 @@ const dailyReservationEmailSettingsSchema = z.object({
 });
 const dailyReservationEmailRunSchema = z.object({
   force: z.boolean().optional().default(false),
+});
+const smartlifeAutomationRuleSchema = z.object({
+  id: z.string().trim().min(1).optional(),
+  enabled: z.boolean().optional().default(true),
+  label: z.string().default(""),
+  gite_ids: z.array(z.string().trim().min(1)).default([]),
+  trigger: z
+    .enum([
+      "before-arrival",
+      "after-arrival",
+      "before-departure",
+      "after-departure",
+    ])
+    .default("before-arrival"),
+  offset_minutes: z.number().int().min(0).max(14 * 24 * 60).default(60),
+  device_id: z.string().default(""),
+  device_name: z.string().default(""),
+  command_code: z.string().default(""),
+  command_label: z
+    .preprocess(emptyStringToNull, z.string().trim().nullable())
+    .optional()
+    .default(null),
+  command_value: z.boolean().optional().default(true),
+});
+const smartlifeAutomationSettingsSchema = z.object({
+  enabled: z.boolean(),
+  region: z.enum(["eu", "eu-west", "us", "us-e", "in", "cn"]).default("eu"),
+  access_id: z.string().default(""),
+  access_secret: z.string().default(""),
+  rules: z.array(smartlifeAutomationRuleSchema).default([]),
+});
+const smartlifeTestCommandSchema = z.object({
+  device_id: z.string().trim().min(1),
+  command_code: z.string().trim().min(1),
+  command_value: z.boolean(),
 });
 const serverSecuritySettingsSchema = z.object({
   currentPassword: z.string().optional(),
@@ -1291,6 +1334,70 @@ router.put("/daily-reservation-email", async (req, res, next) => {
     next(error);
   }
 });
+
+router.get("/smartlife", (_req, res) => {
+  res.json(getSmartlifeAutomationState());
+});
+
+router.put("/smartlife", async (req, res, next) => {
+  try {
+    const payload = smartlifeAutomationSettingsSchema.parse(
+      req.body ?? {},
+    ) as SmartlifeAutomationConfig;
+    await updateSmartlifeAutomationConfig(payload);
+    res.json(getSmartlifeAutomationState());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/smartlife/devices", async (_req, res, next) => {
+  try {
+    const devices = await listSmartlifeDevicesForSettings();
+    res.json({ devices });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/smartlife/test-command", async (req, res, next) => {
+  try {
+    const payload = smartlifeTestCommandSchema.parse(req.body ?? {});
+    await sendSmartlifeTestCommand(payload);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/smartlife/run-now", async (_req, res, next) => {
+  try {
+    const summary = await runSmartlifeAutomation({ triggered_by: "manual" });
+    res.json({
+      ok: true,
+      state: getSmartlifeAutomationState(),
+      summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const runSmartlifeHttp = async (_req: any, res: any, next: (err?: unknown) => void) => {
+  try {
+    const summary = await runSmartlifeAutomation({ triggered_by: "http" });
+    res.json({
+      ok: true,
+      state: getSmartlifeAutomationState(),
+      summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+router.get("/smartlife/run", requireCronTriggerToken, runSmartlifeHttp);
+router.post("/smartlife/run", requireCronTriggerToken, runSmartlifeHttp);
 
 router.post("/daily-reservation-email/send", async (req, res, next) => {
   try {
