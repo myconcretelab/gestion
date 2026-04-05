@@ -9,6 +9,7 @@ import {
   type DocumentEmailTextSettings,
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
+import ContractReturnDrawer from "./shared/ContractReturnDrawer";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const toLocalDateKey = (value: Date) => {
@@ -59,6 +60,33 @@ type EmailComposerState = {
   body: string;
 };
 
+const PencilIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="M4 20h4l9.8-9.8a2 2 0 0 0 0-2.8l-1.2-1.2a2 2 0 0 0-2.8 0L4 16v4Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="m12.5 7.5 4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+  </svg>
+);
+
+const CrossIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="m8 8 8 8M16 8l-8 8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const ContratsListPage = () => {
   const [contrats, setContrats] = useState<Contrat[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
@@ -71,14 +99,12 @@ const ContratsListPage = () => {
   const [receptionUpdating, setReceptionUpdating] = useState<
     Record<string, boolean>
   >({});
-  const [arrhesUpdating, setArrhesUpdating] = useState<Record<string, boolean>>(
-    {},
-  );
   const [emailSending, setEmailSending] = useState<Record<string, boolean>>({});
   const [emailComposer, setEmailComposer] = useState<EmailComposerState | null>(
     null,
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [returnDrawerContractId, setReturnDrawerContractId] = useState<string | null>(null);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -163,34 +189,6 @@ const ContratsListPage = () => {
       setError((err as Error).message);
     } finally {
       setReceptionUpdating((prev) => {
-        const next = { ...prev };
-        delete next[contrat.id];
-        return next;
-      });
-    }
-  };
-
-  const toggleArrhes = async (contrat: Contrat) => {
-    const nextStatus =
-      contrat.statut_paiement_arrhes === "recu" ? "non_recu" : "recu";
-    setArrhesUpdating((prev) => ({ ...prev, [contrat.id]: true }));
-    try {
-      const updated = await apiFetch<Contrat>(
-        `/contracts/${contrat.id}/arrhes`,
-        {
-          method: "PATCH",
-          json: { statut_paiement_arrhes: nextStatus },
-        },
-      );
-      setError(null);
-      setNotice(null);
-      setContrats((prev) =>
-        prev.map((item) => (item.id === contrat.id ? updated : item)),
-      );
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setArrhesUpdating((prev) => {
         const next = { ...prev };
         delete next[contrat.id];
         return next;
@@ -292,6 +290,9 @@ const ContratsListPage = () => {
     }
   };
 
+  const selectedReturnDrawerContract =
+    contrats.find((contrat) => contrat.id === returnDrawerContractId) ?? null;
+
   return (
     <div>
       <DocumentEmailComposerDialog
@@ -322,6 +323,16 @@ const ContratsListPage = () => {
           setEmailComposer((prev) => (prev ? { ...prev, body: value } : prev))
         }
         onSubmit={sendEmail}
+      />
+      <ContractReturnDrawer
+        open={Boolean(selectedReturnDrawerContract)}
+        contract={selectedReturnDrawerContract}
+        onClose={() => setReturnDrawerContractId(null)}
+        onUpdated={(updated) => {
+          setError(null);
+          setNotice(null);
+          setContrats((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+        }}
       />
       <div className="card">
         <div className="section-title">Recherche</div>
@@ -394,11 +405,6 @@ const ContratsListPage = () => {
                 <tr key={contrat.id}>
                   <td>
                     <div className="contracts-date-cell">
-                      {returnBadge ? (
-                        <span className={returnBadge.className}>
-                          {returnBadge.label}
-                        </span>
-                      ) : null}
                       <span>
                         {formatDate(contrat.date_debut)} -{" "}
                         {formatDate(contrat.date_fin)}
@@ -408,57 +414,64 @@ const ContratsListPage = () => {
                   <td>{contrat.gite?.nom ?? ""}</td>
                   <td>{contrat.locataire_nom}</td>
                   <td>
-                    <div className="switch-cell">
-                      <div className="switch-group switch-group--table">
-                        <label className="switch">
-                          <input
-                            type="checkbox"
-                            checked={
-                              contrat.statut_reception_contrat === "recu"
-                            }
+                    {contrat.statut_reception_contrat === "recu" ? (
+                      <div className="contract-return-status">
+                        <button
+                          type="button"
+                          className="contract-return-status__badge"
+                          onClick={() => setReturnDrawerContractId(contrat.id)}
+                        >
+                          <span className="contract-return-status__text">Retour reçu</span>
+                          <strong>{formatDate(contrat.date_reception_contrat ?? contrat.date_derniere_modif)}</strong>
+                        </button>
+                        <div className="contract-return-status__actions">
+                          <button
+                            type="button"
+                            className="table-action table-action--icon table-action--neutral"
+                            onClick={() => setReturnDrawerContractId(contrat.id)}
+                            aria-label={`Modifier le retour du contrat ${contrat.numero_contrat}`}
+                          >
+                            <PencilIcon />
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action table-action--icon table-action--neutral"
+                            onClick={() => void toggleReception(contrat)}
                             disabled={Boolean(receptionUpdating[contrat.id])}
-                            onChange={() => toggleReception(contrat)}
-                          />
-                          <span className="slider" />
-                        </label>
-                        <span>
-                          {contrat.statut_reception_contrat === "recu"
-                            ? "Reçu"
-                            : "En attente"}
-                        </span>
-                      </div>
-                      {contrat.statut_reception_contrat === "recu" &&
-                      contrat.date_reception_contrat ? (
-                        <div className="switch-meta">
-                          Date de réception:{" "}
-                          {formatDate(contrat.date_reception_contrat)}
+                            aria-label={`Annuler la réception du contrat ${contrat.numero_contrat}`}
+                          >
+                            <CrossIcon />
+                          </button>
                         </div>
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="contract-return-pending">
+                        <button
+                          type="button"
+                          className="contract-return-trigger"
+                          onClick={() => setReturnDrawerContractId(contrat.id)}
+                        >
+                          Traiter le retour
+                        </button>
+                        <div className="contract-return-pending__meta">
+                          {returnBadge ? returnBadge.label : "Contrat en attente de retour"}
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td>
                     <div className="switch-cell">
-                      <div className="switch-group switch-group--table">
-                        <label className="switch">
-                          <input
-                            type="checkbox"
-                            checked={contrat.statut_paiement_arrhes === "recu"}
-                            disabled={Boolean(arrhesUpdating[contrat.id])}
-                            onChange={() => toggleArrhes(contrat)}
-                          />
-                          <span className="slider" />
-                        </label>
-                        <span>
-                          {contrat.statut_paiement_arrhes === "recu"
-                            ? "Payées"
-                            : "Non payées"}
-                        </span>
+                      <div className="switch-meta contract-arrhes-status">
+                        {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "En attente"}
                       </div>
-                      {contrat.statut_paiement_arrhes === "recu" &&
-                      contrat.date_paiement_arrhes ? (
+                      {contrat.date_paiement_arrhes ? (
                         <div className="switch-meta">
-                          Date de paiement:{" "}
-                          {formatDate(contrat.date_paiement_arrhes)}
+                          Date de paiement: {formatDate(contrat.date_paiement_arrhes)}
+                        </div>
+                      ) : null}
+                      {contrat.mode_paiement_arrhes ? (
+                        <div className="switch-meta">
+                          Mode: {contrat.mode_paiement_arrhes}
                         </div>
                       ) : null}
                     </div>

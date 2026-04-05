@@ -24,6 +24,11 @@
   --mobile-overlay-clearance: 148px;
   --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --shadow-strong: 0 18px 45px rgba(15, 23, 42, 0.12);
+  --shadow-soft: 0 6px 14px rgba(15, 23, 42, 0.08);
+  --shadow-action: 0 12px 24px rgba(15, 23, 42, 0.12);
+  --shadow-ring: 0 0 0 3px rgba(148, 163, 184, 0.18);
+  --shadow-ring-strong: 0 0 0 1px rgba(148, 163, 184, 0.22);
+  --shadow-inset-ring: inset 0 0 0 1px rgba(148, 163, 184, 0.3);
   --chip: #f3f4f6;
   --field-bg: #ffffff;
   --field-border: #e5e7eb;
@@ -1213,7 +1218,7 @@ body.app-scroll-locked {
 }
 
 .calendar-day--today::after {
-  box-shadow: inset 0 0 0 1px #eed9df;
+  box-shadow: var(--shadow-inset-ring);
   z-index: 1;
 }
 
@@ -1223,8 +1228,7 @@ body.app-scroll-locked {
 }
 
 .calendar-day--selected.calendar-day--today::after {
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--primary) 60%, #ffffff 40%);
+  box-shadow: var(--shadow-inset-ring);
 }
 
 .calendar-day__number-wrap {
@@ -1956,7 +1960,7 @@ body.app-scroll-locked {
   );
   box-shadow:
     0 16px 32px rgba(15, 23, 42, 0.08),
-    inset 0 0 0 1px color-mix(in srgb, var(--calendar-accent) 10%, #ffffff 90%);
+    var(--shadow-inset-ring);
 }
 
 .calendar-quick-create-sheet__section-toggle-copy {
@@ -2088,7 +2092,7 @@ body.app-scroll-locked {
   .calendar-quick-create-sheet__host-field
   input:focus {
   border-color: color-mix(in srgb, var(--calendar-accent) 62%, #ffffff 38%);
-  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.08);
+  box-shadow: var(--shadow-ring);
 }
 
 .calendar-quick-create-sheet__dates-band
@@ -2304,7 +2308,7 @@ body.app-scroll-locked {
 }
 
 .calendar-quick-create-sheet__switch-control input:focus-visible + span {
-  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.18);
+  box-shadow: var(--shadow-ring);
 }
 
 .calendar-quick-create-sheet__range-head {
@@ -2448,7 +2452,7 @@ body.app-scroll-locked {
   color: #ffffff;
   font-size: 0.86rem;
   font-weight: 800;
-  box-shadow: 0 12px 28px rgba(255, 90, 95, 0.24);
+  box-shadow: var(--shadow-action);
 }
 
 .calendar-quick-create-sheet__submit-content {
@@ -2477,14 +2481,14 @@ body.app-scroll-locked {
 .calendar-quick-create-sheet__submit--saving:disabled {
   background: linear-gradient(135deg, var(--primary) 0%, #ff385c 100%);
   color: #ffffff;
-  box-shadow: 0 12px 28px rgba(255, 90, 95, 0.24);
+  box-shadow: var(--shadow-action);
   cursor: wait;
 }
 
 .calendar-quick-create-sheet__submit--saved {
   background: linear-gradient(135deg, #0f766e 0%, #10b981 100%);
   color: #ffffff;
-  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.24);
+  box-shadow: var(--shadow-action);
 }
 
 .calendar-quick-create-sheet__submit--sms {
@@ -2576,7 +2580,7 @@ body.app-scroll-locked {
   color: #ffffff;
   font-size: 0.86rem;
   font-weight: 800;
-  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.22);
+  box-shadow: var(--shadow-soft);
 }
 
 .reservation-editor-page__delete:disabled {
@@ -3102,7 +3106,7 @@ body.app-scroll-locked {
     border-color: color-mix(in srgb, var(--primary) 72%, #ffffff 28%);
     background: linear-gradient(135deg, var(--primary) 0%, #ff385c 100%);
     color: #ffffff;
-    box-shadow: 0 12px 24px rgba(255, 90, 95, 0.2);
+    box-shadow: var(--shadow-action);
   }
 
   .calendar-board__scroll {
@@ -3159,7 +3163,7 @@ body.app-scroll-locked {
     border-radius: 999px;
     color: #9a6700;
     background: linear-gradient(180deg, #ffe9a3 0%, #f5c94c 100%);
-    box-shadow: 0 6px 14px rgba(154, 103, 0, 0.16);
+    box-shadow: var(--shadow-soft);
   }
 
   .calendar-month-section__summary-crown svg {
@@ -3784,7 +3788,7 @@ body {
 
 .gites-primary-action {
   background: linear-gradient(135deg, #ff5a5f 0%, #ff385c 100%);
-  box-shadow: 0 12px 24px rgba(255, 90, 95, 0.24);
+  box-shadow: var(--shadow-action);
 }
 
 .gites-primary-action:hover {
@@ -3819,7 +3823,7 @@ body {
 .gite-listing-card--selected {
   border-color: color-mix(in srgb, var(--gite-card-accent) 42%, white);
   box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--gite-card-accent) 14%, white),
+    0 0 0 4px rgba(226, 232, 240, 0.92),
     0 24px 44px rgba(15, 23, 42, 0.12);
 }
 
@@ -3829,7 +3833,7 @@ body {
 
 .gite-listing-card--drag-over {
   border-color: #fdba74;
-  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.18);
+  box-shadow: var(--shadow-ring);
 }
 
 .gite-listing-card__visual {
@@ -4177,7 +4181,7 @@ body {
 .settings-page .field textarea:focus-visible {
   outline: none;
   border-color: #ff5a5f;
-  box-shadow: 0 0 0 1px #ff5a5f;
+  box-shadow: var(--shadow-ring-strong);
 }
 
 .settings-page .field-group {
@@ -4728,7 +4732,7 @@ body {
   background: #0ea5e9;
   border-color: rgba(14, 165, 233, 0.36);
   box-shadow:
-    0 16px 30px rgba(14, 165, 233, 0.26),
+    0 16px 30px rgba(15, 23, 42, 0.16),
     0 6px 14px rgba(15, 23, 42, 0.12);
 }
 
@@ -4816,7 +4820,7 @@ body {
 .field--error select,
 .field--error textarea {
   border-color: #dc2626;
-  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.15);
+  box-shadow: var(--shadow-ring-strong);
 }
 
 .field-error {
@@ -4849,7 +4853,7 @@ button {
   color: #fff;
   cursor: pointer;
   font-weight: 600;
-  box-shadow: 0 6px 14px rgba(255, 90, 95, 0.28);
+  box-shadow: var(--shadow-soft);
 }
 
 button.secondary {
@@ -5030,7 +5034,7 @@ button.warning {
 .reservations-tab:focus-visible {
   outline: none;
   border-color: rgba(255, 90, 95, 0.9);
-  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.2);
+  box-shadow: var(--shadow-ring);
 }
 
 .reservations-tab--active {
@@ -5196,7 +5200,7 @@ button.warning {
 
 .reservations-month--urssaf-pending {
   border-color: #fda4af;
-  box-shadow: 0 0 0 3px rgba(251, 113, 133, 0.16);
+  box-shadow: var(--shadow-ring);
 }
 
 .reservations-month:first-of-type {
@@ -5967,8 +5971,8 @@ button.warning {
 .reservations-row--linked-focus td {
   background: linear-gradient(180deg, #fff8e8 0%, #fffdf7 100%);
   box-shadow:
-    inset 0 1px 0 rgba(245, 158, 11, 0.32),
-    inset 0 -1px 0 rgba(245, 158, 11, 0.24);
+    inset 0 1px 0 rgba(148, 163, 184, 0.28),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.18);
 }
 
 .reservations-row--saved-fade td {
@@ -6167,6 +6171,10 @@ button.warning {
   color: #0f172a;
 }
 
+.reservation-options-editor {
+  display: grid;
+}
+
 .reservations-options-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6300,6 +6308,37 @@ button.warning {
   gap: 8px;
 }
 
+.reservation-options-editor--compact .reservations-options-list {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.reservation-options-editor--compact .reservations-option-line {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.35fr);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border-color: #ece7e1;
+  background: #fff;
+}
+
+.reservation-options-editor--compact .reservations-option-main {
+  gap: 4px;
+}
+
+.reservation-options-editor--compact .reservations-option-controls {
+  justify-content: flex-end;
+}
+
+.reservation-options-editor--compact .reservations-option-count input {
+  width: 88px;
+  min-width: 88px;
+}
+
+.reservation-options-editor--compact .reservations-option-amount {
+  min-width: 78px;
+}
+
 @media (max-width: 1160px) {
   .gites-listing-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6324,6 +6363,10 @@ button.warning {
   }
 
   .reservations-option-line {
+    grid-template-columns: 1fr;
+  }
+
+  .reservation-options-editor--compact .reservations-option-line {
     grid-template-columns: 1fr;
   }
 
@@ -6427,6 +6470,12 @@ button.warning {
   font-weight: 600;
 }
 
+.contract-arrhes-status {
+  font-size: 0.82rem;
+  color: #111827;
+  font-weight: 700;
+}
+
 .contracts-date-cell {
   display: flex;
   flex-direction: column;
@@ -6439,6 +6488,108 @@ button.warning {
   text-transform: none;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.contract-return-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.contract-return-status__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #cdebd8;
+  border-radius: 999px;
+  background: #f3fbf6;
+  color: #1f6b43;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.contract-return-status__badge:hover,
+.contract-return-status__badge:focus-visible {
+  transform: translateY(-1px);
+  background: #edf9f1;
+  border-color: #b5dec4;
+}
+
+.contract-return-status__text {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.contract-return-status__badge strong {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.contract-return-status__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transform: translateX(-4px);
+  pointer-events: none;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.contract-return-status:hover .contract-return-status__actions,
+.contract-return-status:focus-within .contract-return-status__actions {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.contract-return-status__actions .table-action--icon {
+  margin-left: 0;
+  width: 30px;
+  height: 30px;
+}
+
+.contract-return-pending {
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+}
+
+.contract-return-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #ffd0d4;
+  background: #fff4f5;
+  color: #d8334a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.12s ease;
+}
+
+.contract-return-trigger:hover,
+.contract-return-trigger:focus-visible {
+  transform: translateY(-1px);
+  background: #ffecee;
+  border-color: #ffb7c0;
+}
+
+.contract-return-pending__meta {
+  font-size: 0.76rem;
+  color: #6b7280;
+  font-weight: 600;
 }
 
 .table-actions-cell {
@@ -6478,7 +6629,7 @@ button.warning {
 .table-action--primary {
   background: var(--accent);
   color: #ffffff;
-  box-shadow: 0 6px 14px rgba(255, 90, 95, 0.2);
+  box-shadow: var(--shadow-soft);
 }
 
 .table-action--neutral {
@@ -6549,7 +6700,7 @@ button.warning {
 .placeholder-target-select:focus-visible {
   outline: none;
   border-color: #fda4af;
-  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.18);
+  box-shadow: var(--shadow-ring);
 }
 
 .placeholder-target-select:disabled {
@@ -6729,6 +6880,267 @@ button.warning {
 .email-composer-dialog__preview-body a {
   color: #b45309;
   word-break: break-word;
+}
+
+.contract-return-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.34);
+  backdrop-filter: blur(4px);
+}
+
+.contract-return-drawer {
+  width: min(620px, 100%);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #fffefb 0%, #ffffff 100%);
+  border-left: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: -20px 0 40px rgba(15, 23, 42, 0.16);
+}
+
+.contract-return-drawer__header,
+.contract-return-drawer__footer {
+  padding: 22px 24px;
+}
+
+.contract-return-drawer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.contract-return-drawer__eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9a3412;
+}
+
+.contract-return-drawer__header h2 {
+  margin: 0;
+  font-size: 1.22rem;
+}
+
+.contract-return-drawer__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 10px;
+  color: #6b7280;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.contract-return-drawer__intro {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.contract-return-drawer__close {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #374151;
+  line-height: 0;
+}
+
+.contract-return-drawer__close svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  overflow: visible;
+  color: inherit;
+}
+
+.contract-return-drawer__close:hover,
+.contract-return-drawer__close:focus-visible {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.contract-return-drawer__close path {
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+.contract-return-drawer__body {
+  flex: 1;
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  overflow: auto;
+}
+
+.contract-return-drawer__section {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #ebe3dc;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #fffdf8 0%, #ffffff 100%);
+}
+
+.contract-return-drawer__section-head {
+  display: grid;
+  gap: 4px;
+}
+
+.contract-return-drawer__section-head strong {
+  font-size: 1rem;
+}
+
+.contract-return-drawer__section-head span {
+  color: #6b7280;
+  font-size: 0.84rem;
+}
+
+.contract-return-drawer__empty-state {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 4px 0 2px;
+}
+
+.contract-return-drawer__empty-state p {
+  margin: 0;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.contract-return-drawer__link-btn {
+  min-height: 34px;
+  padding-inline: 12px;
+}
+
+.contract-return-drawer__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.contract-return-drawer__grid--compact {
+  align-items: end;
+}
+
+.contract-return-drawer__toggle-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.contract-return-drawer__amount-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+}
+
+.contract-return-drawer__amount-card span,
+.contract-return-drawer__amount-card small {
+  color: #7c2d12;
+}
+
+.contract-return-drawer__amount-card strong {
+  font-size: 1.2rem;
+  color: #9a3412;
+}
+
+.contract-return-drawer__amount-card--soft {
+  border-color: #dbeafe;
+  background: #eff6ff;
+}
+
+.contract-return-drawer__amount-card--soft span,
+.contract-return-drawer__amount-card--soft small,
+.contract-return-drawer__amount-card--soft strong {
+  color: #1d4ed8;
+}
+
+.contract-return-drawer__options {
+  display: grid;
+  gap: 12px;
+}
+
+.contract-return-drawer__option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.35fr);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid #ece7e1;
+  background: #fff;
+}
+
+.contract-return-drawer__option-main {
+  display: grid;
+  gap: 4px;
+}
+
+.contract-return-drawer__option-main span {
+  color: #6b7280;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.contract-return-drawer__option-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.contract-return-drawer__option-controls input[type="number"] {
+  width: 88px;
+}
+
+.contract-return-drawer__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.contract-return-drawer__option-amount {
+  min-width: 78px;
+  text-align: right;
+  font-weight: 700;
+  color: #111827;
+}
+
+.contract-return-drawer__textarea {
+  min-height: 120px;
+  resize: vertical;
+  font: inherit;
+}
+
+.contract-return-drawer__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .back-link {
@@ -7899,7 +8311,7 @@ button.warning {
   border-radius: 999px;
   color: #9a6700;
   background: linear-gradient(180deg, #ffe9a3 0%, #f5c94c 100%);
-  box-shadow: 0 6px 14px rgba(154, 103, 0, 0.16);
+  box-shadow: var(--shadow-soft);
 }
 
 .stats-occupation-gauge-crown svg {
@@ -8566,6 +8978,31 @@ button.warning {
 
   .email-composer-dialog__footer button {
     width: 100%;
+  }
+
+  .contract-return-drawer {
+    width: 100%;
+  }
+
+  .contract-return-drawer__header,
+  .contract-return-drawer__body,
+  .contract-return-drawer__footer {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .contract-return-drawer__grid,
+  .contract-return-drawer__option-row {
+    grid-template-columns: 1fr;
+  }
+
+  .contract-return-drawer__option-controls {
+    justify-content: flex-start;
+  }
+
+  .contract-return-status {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 

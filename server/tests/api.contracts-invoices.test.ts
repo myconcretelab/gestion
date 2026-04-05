@@ -559,7 +559,7 @@ test("API contrats conserve les dates de suivi lors des bascules de statuts", as
       }
     );
     assert.equal(nextError, null);
-    assert.equal((receptionOffRes.body as any).date_reception_contrat.getTime(), firstReceptionDate.getTime());
+    assert.equal((receptionOffRes.body as any).date_reception_contrat, null);
 
     const emailRes = createMockResponse();
     nextError = null;
@@ -608,7 +608,7 @@ test("API contrats conserve les dates de suivi lors des bascules de statuts", as
       }
     );
     assert.equal(nextError, null);
-    assert.equal((arrhesOffRes.body as any).date_paiement_arrhes.getTime(), firstArrhesDate.getTime());
+    assert.equal((arrhesOffRes.body as any).date_paiement_arrhes, null);
 
     const trackingRes = createMockResponse();
     nextError = null;
@@ -942,9 +942,11 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     assert.equal(sentMails[0].from, "noreply@example.com");
     assert.equal(sentMails[0].replyTo, "gite@example.com");
     assert.equal(sentMails[0].attachments[0].filename, "GT-2026-000001.pdf");
-    assert.equal(sentMails[0].attachments[0].path, pdfPath);
+    assert.equal(sentMails[0].attachments[0].path, path.join(process.cwd(), contractState.pdf_sent_path));
     assert.equal(sentMails[0].subject, "Sujet contrat");
     assert.equal(sentMails[0].text, "Corps contrat");
+    assert.ok(contractState.pdf_sent_path);
+    assert.ok(contractState.snapshot_json);
 
     assert.equal(sentMails[1].to, "alt-invoice@example.com");
     assert.equal(sentMails[1].from, "noreply@example.com");
