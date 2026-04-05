@@ -148,11 +148,14 @@ model Contrat {
   afficher_cheque_menage_phrase Boolean @default(true)
   clauses                String
   pdf_path               String
+  pdf_sent_path          String?
+  snapshot_json          String?
   date_envoi_email       DateTime?
   statut_reception_contrat String   @default("non_recu")
   date_reception_contrat DateTime?
   statut_paiement_arrhes String   @default("non_recu")
   date_paiement_arrhes   DateTime?
+  mode_paiement_arrhes   String?
   notes                  String?
   reservation_id         String?
 

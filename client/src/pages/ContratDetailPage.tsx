@@ -197,6 +197,7 @@ const ContratDetailPage = () => {
 
   const contractReceived = contrat.statut_reception_contrat === "recu";
   const arrhesPaid = contrat.statut_paiement_arrhes === "recu";
+  const contractFrozen = Boolean(contrat.pdf_sent_path);
   const email = contrat.locataire_email;
   const phoneHref = contrat.locataire_tel
     ? contrat.locataire_tel.replace(/\s+/g, "")
@@ -245,7 +246,17 @@ const ContratDetailPage = () => {
             <div className="detail-number">{contrat.numero_contrat}</div>
           </div>
           <div className="actions">
-            <Link to={`/contrats/${contrat.id}/edition`}>Éditer</Link>
+            {contractFrozen ? (
+              <button
+                type="button"
+                disabled
+                title="Le contrat envoyé est figé. Utilisez le traitement du retour pour mettre à jour la réservation."
+              >
+                Contrat figé
+              </button>
+            ) : (
+              <Link to={`/contrats/${contrat.id}/edition`}>Éditer</Link>
+            )}
             <Link
               to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
             >
@@ -269,9 +280,11 @@ const ContratDetailPage = () => {
               </button>
             )}
             <button onClick={downloadPdf}>Télécharger PDF</button>
-            <button className="secondary" onClick={regenerate}>
-              Régénérer
-            </button>
+            {contractFrozen ? null : (
+              <button className="secondary" onClick={regenerate}>
+                Régénérer
+              </button>
+            )}
           </div>
         </div>
 
@@ -387,6 +400,11 @@ const ContratDetailPage = () => {
             {contrat.date_paiement_arrhes ? (
               <div className="arrhes-meta">
                 Date de paiement: {formatDate(contrat.date_paiement_arrhes)}
+              </div>
+            ) : null}
+            {contrat.mode_paiement_arrhes ? (
+              <div className="arrhes-meta">
+                Mode de paiement: {contrat.mode_paiement_arrhes}
               </div>
             ) : null}
             <label className="field">

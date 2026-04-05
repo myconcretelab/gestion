@@ -20,7 +20,7 @@ import {
 } from "../services/documentEmail.js";
 import { SmtpConfigurationError, SmtpDeliveryError } from "../services/mailer.js";
 import { toNumber, round2 } from "../utils/money.js";
-import { getPdfPaths } from "../utils/paths.js";
+import { getPdfPaths, getSentPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import {
   addDays,
@@ -95,6 +95,34 @@ const sendEmailSchema = z.object({
   body: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(20_000).nullable()).optional(),
 });
 
+const reservationPaymentSourceValues = [
+  "Abritel",
+  "Airbnb",
+  "Chèque",
+  "Espèces",
+  "HomeExchange",
+  "Virement",
+  "A définir",
+  "Gites de France",
+] as const;
+
+const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir"] as const;
+
+const returnProcessingSchema = z.object({
+  statut_reception_contrat: z.enum(["non_recu", "recu"]).optional(),
+  date_reception_contrat: nullableDateString,
+  statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
+  date_paiement_arrhes: nullableDateString,
+  mode_paiement_arrhes: z.preprocess(emptyStringToNull, z.enum(arrhesPaymentModeValues).nullable()).optional(),
+  notes: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  reservation: z
+    .object({
+      source_paiement: z.preprocess(emptyStringToNull, z.enum(reservationPaymentSourceValues).nullable()).optional(),
+      options: optionsSchema.optional(),
+    })
+    .optional(),
+});
+
 const previewSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().optional().default(""),
@@ -141,6 +169,41 @@ const hydrateContract = (contrat: any) => ({
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
 });
+
+const summarizeReservationOptions = (options: OptionsInput) => {
+  const labels: string[] = [];
+  const declarationFlags: boolean[] = [];
+
+  if (options.draps?.enabled) {
+    labels.push(`Draps x${Math.max(0, Math.round(options.draps.nb_lits ?? 0))}${options.draps.offert ? " offerts" : ""}`);
+    declarationFlags.push(Boolean(options.draps.declared));
+  }
+  if (options.linge_toilette?.enabled) {
+    labels.push(
+      `Linge x${Math.max(0, Math.round(options.linge_toilette.nb_personnes ?? 0))}${
+        options.linge_toilette.offert ? " offert" : ""
+      }`
+    );
+    declarationFlags.push(Boolean(options.linge_toilette.declared));
+  }
+  if (options.menage?.enabled) {
+    labels.push(`Ménage${options.menage.offert ? " offert" : ""}`);
+    declarationFlags.push(Boolean(options.menage.declared));
+  }
+  if (options.depart_tardif?.enabled) {
+    labels.push(`Départ tardif${options.depart_tardif.offert ? " offert" : ""}`);
+    declarationFlags.push(Boolean(options.depart_tardif.declared));
+  }
+  if (options.chiens?.enabled) {
+    labels.push(`Chiens x${Math.max(0, Math.round(options.chiens.nb ?? 0))}${options.chiens.offert ? " offerts" : ""}`);
+    declarationFlags.push(Boolean(options.chiens.declared));
+  }
+
+  return {
+    label: labels.join(" · "),
+    allDeclared: declarationFlags.length > 0 && declarationFlags.every(Boolean),
+  };
+};
 
 const parseOptionalTrackedDate = (value: string | null | undefined, label: string) => {
   if (value === undefined) return undefined;
@@ -195,6 +258,41 @@ const toContractEmailDocument = (contrat: any): ContractEmailDocument => ({
       }
     : undefined,
 });
+
+const isFrozenContract = (contrat: { pdf_sent_path?: string | null }) => Boolean(String(contrat.pdf_sent_path ?? "").trim());
+
+const buildFrozenContractSnapshot = (contrat: any) =>
+  JSON.stringify({
+    numero_contrat: contrat.numero_contrat,
+    gite_id: contrat.gite_id,
+    date_creation: contrat.date_creation,
+    date_envoi_email: new Date().toISOString(),
+    contract: toContractRenderInput(contrat),
+  });
+
+const ensureSentContractArchive = async (contrat: any, currentPdfAbsolutePath: string) => {
+  if (isFrozenContract(contrat)) {
+    return {
+      sentPdfRelativePath: contrat.pdf_sent_path,
+      sentPdfAbsolutePath: path.join(process.cwd(), contrat.pdf_sent_path),
+      snapshotJson: typeof contrat.snapshot_json === "string" ? contrat.snapshot_json : null,
+    };
+  }
+
+  const { relativePath: sentPdfRelativePath, absolutePath: sentPdfAbsolutePath } = getSentPdfPaths(
+    contrat.numero_contrat,
+    contrat.date_debut
+  );
+
+  await fs.mkdir(path.dirname(sentPdfAbsolutePath), { recursive: true });
+  await fs.copyFile(currentPdfAbsolutePath, sentPdfAbsolutePath);
+
+  return {
+    sentPdfRelativePath,
+    sentPdfAbsolutePath,
+    snapshotJson: buildFrozenContractSnapshot(contrat),
+  };
+};
 
 const contractTemplatePaths = [
   path.join(process.cwd(), "server/templates/contract.html"),
@@ -594,6 +692,12 @@ router.put("/:id", async (req, res, next) => {
     const data = contractSchema.parse(req.body);
     const existing = await prisma.contrat.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+    if (isFrozenContract(existing)) {
+      return res.status(409).json({
+        error:
+          "Ce contrat a déjà été envoyé et figé. Modifiez la réservation via le traitement du retour ou créez un avenant.",
+      });
+    }
 
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
@@ -752,10 +856,13 @@ router.post("/:id/send-email", async (req, res, next) => {
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
 
     let absolutePath = path.join(process.cwd(), contrat.pdf_path);
-    if (await shouldRegeneratePdf(contrat, absolutePath)) {
+    if (!isFrozenContract(contrat) && (await shouldRegeneratePdf(contrat, absolutePath))) {
       const regenerated = await regenerateStoredContractPdf(contrat);
       absolutePath = regenerated.pdfAbsolutePath;
     }
+
+    const archive = await ensureSentContractArchive(contrat, absolutePath);
+    absolutePath = archive.sentPdfAbsolutePath;
 
     const documentUrl = new URL(`/api/contracts/${req.params.id}/pdf`, `${req.protocol}://${req.get("host")}`).toString();
     await sendContractEmail(toContractEmailDocument(contrat), absolutePath, {
@@ -765,7 +872,11 @@ router.post("/:id/send-email", async (req, res, next) => {
 
     const updated = await prisma.contrat.update({
       where: { id: req.params.id },
-      data: { date_envoi_email: new Date() },
+      data: {
+        date_envoi_email: new Date(),
+        pdf_sent_path: archive.sentPdfRelativePath,
+        snapshot_json: archive.snapshotJson ?? contrat.snapshot_json ?? null,
+      },
       include: { gite: true },
     });
 
@@ -791,7 +902,7 @@ router.patch("/:id/reception", async (req, res, next) => {
         date_reception_contrat:
           data.statut_reception_contrat === "recu"
             ? existing.date_reception_contrat ?? new Date()
-            : existing.date_reception_contrat,
+            : null,
       },
       include: { gite: true },
     });
@@ -814,12 +925,162 @@ router.patch("/:id/arrhes", async (req, res, next) => {
       where: { id: req.params.id },
       data: {
         statut_paiement_arrhes: data.statut_paiement_arrhes,
-        date_paiement_arrhes:
-          data.statut_paiement_arrhes === "recu" ? existing.date_paiement_arrhes ?? new Date() : existing.date_paiement_arrhes,
+        date_paiement_arrhes: data.statut_paiement_arrhes === "recu" ? existing.date_paiement_arrhes ?? new Date() : null,
+        mode_paiement_arrhes: data.statut_paiement_arrhes === "recu" ? undefined : null,
       },
       include: { gite: true },
     });
     res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/return-processing", async (req, res, next) => {
+  try {
+    const data = returnProcessingSchema.parse(req.body ?? {});
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const nextReceptionStatus = data.statut_reception_contrat ?? existing.statut_reception_contrat;
+    const parsedReceptionDate =
+      data.date_reception_contrat === undefined
+        ? existing.date_reception_contrat
+        : parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat");
+    const nextReceptionDate =
+      nextReceptionStatus === "recu" ? parsedReceptionDate ?? existing.date_reception_contrat ?? new Date() : null;
+
+    const nextArrhesStatus = data.statut_paiement_arrhes ?? existing.statut_paiement_arrhes;
+    const parsedArrhesDate =
+      data.date_paiement_arrhes === undefined
+        ? existing.date_paiement_arrhes
+        : parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes");
+    const nextArrhesDate =
+      nextArrhesStatus === "recu" ? parsedArrhesDate ?? existing.date_paiement_arrhes ?? new Date() : null;
+    const nextArrhesPaymentMode =
+      nextArrhesStatus === "recu"
+        ? data.mode_paiement_arrhes === undefined
+          ? existing.mode_paiement_arrhes ?? null
+          : data.mode_paiement_arrhes
+        : null;
+
+    const updatedContract = await prisma.$transaction(async (tx) => {
+      if (data.reservation && existing.reservation_id) {
+        const reservation = await tx.reservation.findUnique({
+          where: { id: existing.reservation_id },
+        });
+        if (!reservation) {
+          throw new Error("Réservation liée introuvable.");
+        }
+
+        const reservationUpdate: Record<string, unknown> = {};
+        if (data.reservation.source_paiement !== undefined) {
+          reservationUpdate.source_paiement = data.reservation.source_paiement;
+        }
+        if (data.reservation.options !== undefined) {
+          const nextOptions = normalizeOptions(data.reservation.options as OptionsInput, existing.gite);
+          const summary = summarizeReservationOptions(nextOptions);
+          const totals = computeTotals({
+            dateDebut: reservation.date_entree,
+            dateFin: reservation.date_sortie,
+            prixParNuit: toNumber(reservation.prix_par_nuit),
+            remiseMontant: toNumber(reservation.remise_montant),
+            nbAdultes: reservation.nb_adultes,
+            nbEnfants: 0,
+            arrhesMontant: 0,
+            options: nextOptions,
+            gite: existing.gite,
+          });
+
+          reservationUpdate.options = encodeJsonField(nextOptions);
+          reservationUpdate.frais_optionnels_montant = round2(totals.optionsTotal);
+          reservationUpdate.frais_optionnels_libelle = summary.label || null;
+          reservationUpdate.frais_optionnels_declares = summary.allDeclared;
+        }
+
+        if (Object.keys(reservationUpdate).length > 0) {
+          await tx.reservation.update({
+            where: { id: reservation.id },
+            data: reservationUpdate,
+          });
+        }
+      }
+
+      return tx.contrat.update({
+        where: { id: existing.id },
+        data: {
+          statut_reception_contrat: nextReceptionStatus,
+          date_reception_contrat: nextReceptionDate,
+          statut_paiement_arrhes: nextArrhesStatus,
+          date_paiement_arrhes: nextArrhesDate,
+          mode_paiement_arrhes: nextArrhesPaymentMode,
+          notes: data.notes === undefined ? existing.notes : data.notes,
+        },
+        include: { gite: true },
+      });
+    });
+
+    res.json(hydrateContract(updatedContract));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/create-linked-reservation", async (req, res, next) => {
+  try {
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    if (existing.reservation_id) {
+      const updated = await prisma.contrat.findUnique({
+        where: { id: existing.id },
+        include: { gite: true },
+      });
+      return res.json(hydrateContract(updated));
+    }
+
+    const options = normalizeOptions(fromJsonString<OptionsInput>(existing.options, {}), existing.gite);
+    const totals = computeTotals({
+      dateDebut: existing.date_debut,
+      dateFin: existing.date_fin,
+      prixParNuit: toNumber(existing.prix_par_nuit),
+      remiseMontant: toNumber(existing.remise_montant),
+      nbAdultes: existing.nb_adultes,
+      nbEnfants: existing.nb_enfants_2_17,
+      arrhesMontant: toNumber(existing.arrhes_montant),
+      options,
+      gite: existing.gite,
+    });
+
+    const reservationId = await syncReservationFromDocument({
+      giteId: existing.gite_id,
+      locataireNom: existing.locataire_nom,
+      locataireTel: existing.locataire_tel,
+      locataireEmail: existing.locataire_email ?? null,
+      dateDebut: existing.date_debut,
+      dateFin: existing.date_fin,
+      nbNuits: totals.nbNuits,
+      nbAdultes: existing.nb_adultes,
+      prixParNuit: toNumber(existing.prix_par_nuit),
+      prixTotal: totals.montantBase,
+      remiseMontant: toNumber(existing.remise_montant),
+      options,
+      optionsTotal: totals.optionsTotal,
+    });
+
+    const updated = await prisma.contrat.update({
+      where: { id: existing.id },
+      data: { reservation_id: reservationId },
+      include: { gite: true },
+    });
+
+    res.json(hydrateContract(updated));
   } catch (err) {
     next(err);
   }
@@ -864,6 +1125,11 @@ router.post("/:id/regenerate", async (req, res, next) => {
       include: { gite: true },
     });
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
+    if (isFrozenContract(contrat)) {
+      return res.status(409).json({
+        error: "Le PDF envoyé est figé. La régénération du contrat original n'est plus autorisée.",
+      });
+    }
     await regenerateStoredContractPdf(contrat);
 
     res.json({ ok: true });
@@ -878,7 +1144,11 @@ router.delete("/:id", async (req, res, next) => {
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
     await prisma.contrat.delete({ where: { id: req.params.id } });
     const absolutePath = path.join(process.cwd(), contrat.pdf_path);
+    const sentAbsolutePath = contrat.pdf_sent_path ? path.join(process.cwd(), contrat.pdf_sent_path) : null;
     await fs.unlink(absolutePath).catch(() => undefined);
+    if (sentAbsolutePath && sentAbsolutePath !== absolutePath) {
+      await fs.unlink(sentAbsolutePath).catch(() => undefined);
+    }
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -893,8 +1163,9 @@ router.get("/:id/pdf", async (req, res, next) => {
     });
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
 
-    let absolutePath = path.join(process.cwd(), contrat.pdf_path);
-    if (await shouldRegeneratePdf(contrat, absolutePath)) {
+    const frozenPdfPath = isFrozenContract(contrat) ? String(contrat.pdf_sent_path) : null;
+    let absolutePath = frozenPdfPath ? path.join(process.cwd(), frozenPdfPath) : path.join(process.cwd(), contrat.pdf_path);
+    if (!frozenPdfPath && (await shouldRegeneratePdf(contrat, absolutePath))) {
       const regenerated = await regenerateStoredContractPdf(contrat);
       absolutePath = regenerated.pdfAbsolutePath;
     }
