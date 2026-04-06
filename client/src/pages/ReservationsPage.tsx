@@ -321,83 +321,6 @@ const ReservationEmailIcon = () => (
   </svg>
 );
 
-const ReservationEnergyBoltIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path
-      d="M13 2 6.5 12h4.6L9.8 22 17.5 11.4h-4.8L13 2Z"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const ReservationEnergyEuroIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path
-      d="M16.5 6.6A5.5 5.5 0 0 0 8 10.2v.3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M7 10.5h8.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-    />
-    <path
-      d="M7 14h7.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-    />
-    <path
-      d="M16.5 17.4A5.5 5.5 0 0 1 8 13.8v-.3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const ReservationEnergyMeterIcon = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <rect
-      x="4.5"
-      y="6"
-      width="15"
-      height="12"
-      rx="3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    />
-    <path
-      d="M8.2 14a4 4 0 1 1 7.6 0"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-    />
-    <path
-      d="M12 12.4 14.6 10.8"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
 const hasIcalToVerifyMarker = (comment: string | null | undefined) => {
   if (typeof comment !== "string") return false;
   return comment
@@ -4644,16 +4567,11 @@ const ReservationsPage = () => {
                                   </span>
                                   {hasDisplayedEnergyInline ? (
                                     <span className="reservations-energy-inline reservations-energy-inline--compact">
-                                      <span className="reservations-energy-inline__marker" aria-hidden="true">
-                                        <ReservationEnergyBoltIcon />
-                                      </span>
                                       <span className="reservations-energy-inline__item" title="Coût électricité">
-                                        <ReservationEnergyEuroIcon />
                                         {formatEuro(displayedEnergyCost)}
                                       </span>
                                       <span className="reservations-energy-inline__dot">·</span>
                                       <span className="reservations-energy-inline__item" title="Consommation électricité">
-                                        <ReservationEnergyMeterIcon />
                                         {formatKwh(displayedEnergyKwh)} kWh
                                       </span>
                                     </span>

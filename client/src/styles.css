@@ -6160,22 +6160,16 @@ button.warning {
   white-space: nowrap;
 }
 
-.reservations-energy-inline__marker,
 .reservations-energy-inline__item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.reservations-energy-inline__marker svg,
 .reservations-energy-inline__item svg {
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
-}
-
-.reservations-energy-inline__marker {
-  color: #1d4ed8;
 }
 
 .reservations-energy-inline__dot {
