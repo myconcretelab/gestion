@@ -194,6 +194,19 @@ const formatShortDate = (value: string) =>
     timeZone: "UTC",
   });
 const formatStayNights = (nights: number) => `${nights} nuit${nights > 1 ? "s" : ""}`;
+const getReservationDisplayedEnergyCost = (reservation: Reservation | null | undefined) => {
+  if (!reservation) return null;
+
+  const hasLiveEnergyData =
+    (reservation.energy_live_consumption_kwh ?? 0) > 0 ||
+    (reservation.energy_live_cost_eur ?? 0) > 0;
+  if (hasLiveEnergyData) {
+    return reservation.energy_live_cost_eur ?? 0;
+  }
+
+  const hasSavedEnergyData = reservation.energy_consumption_kwh > 0 || reservation.energy_cost_eur > 0;
+  return hasSavedEnergyData ? reservation.energy_cost_eur : null;
+};
 const formatLongDate = (value: string) =>
   parseIsoDate(value).toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -1288,6 +1301,9 @@ const TodayPage = () => {
           details={[
             { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
             { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
+            ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
+              ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
+              : []),
           ]}
           onClose={() => setMobileActionState(null)}
           onEdit={() => openMobileReservationEditPage(mobileActionReservation)}
