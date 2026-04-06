@@ -1642,7 +1642,7 @@ const CalendrierPage = () => {
             { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
             { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
             ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
-              ? [{ label: "Élec", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
+              ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
               : []),
           ]}
           onClose={() => setMobileActionReservationId(null)}
