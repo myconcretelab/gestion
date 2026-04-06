@@ -5544,6 +5544,13 @@ button.warning {
   white-space: nowrap;
 }
 
+.reservations-fees-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
 .reservations-nights-cell {
   display: inline-flex;
   align-items: center;
@@ -5639,7 +5646,7 @@ button.warning {
 .reservations-fees-trigger {
   all: unset;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   cursor: pointer;
 }
 
@@ -6140,6 +6147,40 @@ button.warning {
   font-size: 0.78rem;
   line-height: 1.35;
   color: #6b7280;
+}
+
+.reservations-energy-inline--compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #2563eb;
+  font-size: 0.67rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.reservations-energy-inline__marker,
+.reservations-energy-inline__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reservations-energy-inline__marker svg,
+.reservations-energy-inline__item svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.reservations-energy-inline__marker {
+  color: #1d4ed8;
+}
+
+.reservations-energy-inline__dot {
+  color: #93a4c2;
+  font-weight: 800;
 }
 
 .reservations-contact-card__title {
