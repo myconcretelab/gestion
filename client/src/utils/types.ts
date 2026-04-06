@@ -111,6 +111,10 @@ export type Reservation = {
   energy_consumption_kwh: number;
   energy_cost_eur: number;
   energy_price_per_kwh?: number | null;
+  energy_live_consumption_kwh?: number;
+  energy_live_cost_eur?: number;
+  energy_live_price_per_kwh?: number | null;
+  energy_live_recorded_at?: string | null;
   energy_tracking?: Array<{
     session_id: string;
     device_id: string;
