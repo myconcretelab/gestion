@@ -3943,6 +3943,10 @@ const ReservationsPage = () => {
                       const hasEnergyData =
                         reservation.energy_consumption_kwh > 0 ||
                         reservation.energy_cost_eur > 0;
+                      const hasLiveEnergyData =
+                        isCurrentReservation &&
+                        ((reservation.energy_live_consumption_kwh ?? 0) > 0 ||
+                          (reservation.energy_live_cost_eur ?? 0) > 0);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
 
                       return (
@@ -4458,6 +4462,11 @@ const ReservationsPage = () => {
                                       Élec {formatEuro(reservation.energy_cost_eur)} ·{" "}
                                       {formatKwh(reservation.energy_consumption_kwh)} kWh
                                     </span>
+                                  ) : hasLiveEnergyData ? (
+                                    <span className="reservations-total-value__meta">
+                                      Élec en cours {formatEuro(reservation.energy_live_cost_eur ?? 0)} ·{" "}
+                                      {formatKwh(reservation.energy_live_consumption_kwh ?? 0)} kWh
+                                    </span>
                                   ) : null}
                                 </button>
                               )}
@@ -4766,6 +4775,13 @@ const ReservationsPage = () => {
                                         Électricité: {formatKwh(reservation.energy_consumption_kwh)} kWh
                                         {" · "}
                                         {formatEuro(reservation.energy_cost_eur)}
+                                      </div>
+                                    ) : null}
+                                    {hasLiveEnergyData ? (
+                                      <div className="reservations-energy-inline">
+                                        Électricité en cours: {formatKwh(reservation.energy_live_consumption_kwh ?? 0)} kWh
+                                        {" · "}
+                                        {formatEuro(reservation.energy_live_cost_eur ?? 0)}
                                       </div>
                                     ) : null}
                                     <div className="reservations-contact-card">

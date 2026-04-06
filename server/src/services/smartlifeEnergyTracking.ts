@@ -29,6 +29,13 @@ export type ReservationEnergyTrackingEntry = {
   ended_by_rule_id: string | null;
 };
 
+export type ReservationLiveEnergySummary = {
+  energy_live_consumption_kwh: number;
+  energy_live_cost_eur: number;
+  energy_live_price_per_kwh: number | null;
+  energy_live_recorded_at: string;
+};
+
 type ReservationEnergyRow = {
   id: string;
   stay_group_id: string | null;
@@ -145,6 +152,60 @@ export const summarizeReservationEnergyTracking = (
               latestClosedEntry.stay_total_kwh,
           )
         : null,
+  };
+};
+
+export const summarizeLiveReservationEnergyTracking = (
+  entries: ReservationEnergyTrackingEntry[],
+  options: {
+    deviceTotalsById:
+      | Map<string, number>
+      | Record<string, number | null | undefined>;
+    electricity_price_per_kwh: NumericLike;
+    recorded_at?: Date | string;
+  },
+): ReservationLiveEnergySummary | null => {
+  const openEntries = entries.filter((entry) => entry.status === "open");
+  if (openEntries.length === 0) return null;
+
+  const getCurrentTotalKwh = (deviceId: string) => {
+    if (options.deviceTotalsById instanceof Map) {
+      return options.deviceTotalsById.get(deviceId);
+    }
+    return options.deviceTotalsById[deviceId];
+  };
+
+  const totalKwh = round4(
+    openEntries.reduce((sum, entry) => {
+      const currentTotalKwh = getCurrentTotalKwh(entry.device_id);
+      if (currentTotalKwh == null || !Number.isFinite(currentTotalKwh)) {
+        return sum;
+      }
+      return sum + Math.max(0, currentTotalKwh - entry.started_total_kwh);
+    }, 0),
+  );
+
+  const hasMatchedDevice = openEntries.some((entry) => {
+    const currentTotalKwh = getCurrentTotalKwh(entry.device_id);
+    return currentTotalKwh != null && Number.isFinite(currentTotalKwh);
+  });
+  if (!hasMatchedDevice) return null;
+
+  const electricityPricePerKwh = round4(
+    Math.max(0, toNumber(options.electricity_price_per_kwh)),
+  );
+  const recordedAt =
+    options.recorded_at instanceof Date
+      ? options.recorded_at.toISOString()
+      : typeof options.recorded_at === "string" && options.recorded_at.trim()
+        ? options.recorded_at.trim()
+        : new Date().toISOString();
+
+  return {
+    energy_live_consumption_kwh: totalKwh,
+    energy_live_cost_eur: round2(totalKwh * electricityPricePerKwh),
+    energy_live_price_per_kwh: electricityPricePerKwh,
+    energy_live_recorded_at: recordedAt,
   };
 };
 
@@ -364,4 +425,60 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
 
   await updateStayReservationTracking(reservations, entriesByReservationId);
   return `Compteur ${assignment.device_name || event.device_id}: ${stayTotalKwh.toFixed(2)} kWh · ${stayTotalCostEur.toFixed(2)} EUR.`;
+};
+
+export const loadLiveReservationEnergySummaries = async (
+  config: SmartlifeAutomationConfig,
+  reservations: Array<{
+    id: string;
+    energy_tracking: unknown;
+    gite?: {
+      electricity_price_per_kwh: NumericLike;
+    } | null;
+  }>,
+) => {
+  const entriesByReservationId = new Map(
+    reservations.map((reservation) => [
+      reservation.id,
+      parseReservationEnergyTracking(reservation.energy_tracking),
+    ]),
+  );
+  const deviceIds = [
+    ...new Set(
+      [...entriesByReservationId.values()]
+        .flat()
+        .filter((entry) => entry.status === "open")
+        .map((entry) => entry.device_id),
+    ),
+  ];
+  if (deviceIds.length === 0) {
+    return new Map<string, ReservationLiveEnergySummary>();
+  }
+
+  const deviceTotalsById = new Map<string, number>();
+  await Promise.all(
+    deviceIds.map(async (deviceId) => {
+      try {
+        const reading = await getSmartlifeDeviceTotalElectricityKwh(config, deviceId);
+        deviceTotalsById.set(deviceId, round4(reading.total_kwh));
+      } catch {
+        // Ignore per-device failures so a single offline meter does not hide every other live reading.
+      }
+    }),
+  );
+
+  const recordedAt = new Date().toISOString();
+  return reservations.reduce((summaries, reservation) => {
+    const entries = entriesByReservationId.get(reservation.id) ?? [];
+    const summary = summarizeLiveReservationEnergyTracking(entries, {
+      deviceTotalsById,
+      electricity_price_per_kwh:
+        reservation.gite?.electricity_price_per_kwh ?? 0,
+      recorded_at: recordedAt,
+    });
+    if (summary) {
+      summaries.set(reservation.id, summary);
+    }
+    return summaries;
+  }, new Map<string, ReservationLiveEnergySummary>());
 };

@@ -8,10 +8,16 @@ import { round2, toNumber } from "../utils/money.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { type OptionsInput } from "../services/contractCalculator.js";
 import {
+  loadLiveReservationEnergySummaries,
   parseReservationEnergyTracking,
   summarizeReservationEnergyTracking,
 } from "../services/smartlifeEnergyTracking.js";
 import { getGiteMonthlyEnergySummaries } from "../services/smartlifeMonthlyEnergy.js";
+import {
+  buildDefaultSmartlifeAutomationConfig,
+  hasSmartlifeCredentials,
+  readSmartlifeAutomationConfig,
+} from "../services/smartlifeSettings.js";
 import {
   getAirbnbCalendarRefreshJobStatus,
   queueAirbnbCalendarRefresh,
@@ -1262,7 +1268,23 @@ router.get("/", async (req, res, next) => {
         })
       : reservations;
 
-    res.json(filtered.map(hydrateReservation));
+    const hydratedReservations = filtered.map(hydrateReservation);
+    const smartlifeConfig = readSmartlifeAutomationConfig(
+      buildDefaultSmartlifeAutomationConfig(),
+    );
+    const liveEnergyByReservationId = hasSmartlifeCredentials(smartlifeConfig)
+      ? await loadLiveReservationEnergySummaries(
+          smartlifeConfig,
+          hydratedReservations,
+        )
+      : new Map();
+
+    res.json(
+      hydratedReservations.map((reservation) => ({
+        ...reservation,
+        ...(liveEnergyByReservationId.get(reservation.id) ?? {}),
+      })),
+    );
   } catch (err) {
     next(err);
   }
