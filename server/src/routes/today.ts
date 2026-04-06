@@ -3,6 +3,12 @@ import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { readTraceabilityLog } from "../services/importLog.js";
 import { readSourceColorSettings } from "../services/sourceColorSettings.js";
+import { loadLiveReservationEnergySummaries } from "../services/smartlifeEnergyTracking.js";
+import {
+  buildDefaultSmartlifeAutomationConfig,
+  hasSmartlifeCredentials,
+  readSmartlifeAutomationConfig,
+} from "../services/smartlifeSettings.js";
 import { readTodayStatuses, writeTodayStatuses } from "../services/todayStatuses.js";
 import { getReservationOriginSystem } from "../utils/reservationOrigin.js";
 
@@ -131,7 +137,15 @@ router.get("/overview", async (req, res, next) => {
           date_sortie: { gte: today },
         },
         include: {
-          gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+          gite: {
+            select: {
+              id: true,
+              nom: true,
+              prefixe_contrat: true,
+              ordre: true,
+              electricity_price_per_kwh: true,
+            },
+          },
         },
         orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
       }),
@@ -145,6 +159,11 @@ router.get("/overview", async (req, res, next) => {
       buildRecentAppActivity(recentActivitySince),
     ]);
 
+    const smartlifeConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
+    const liveEnergyByReservationId = hasSmartlifeCredentials(smartlifeConfig)
+      ? await loadLiveReservationEnergySummaries(smartlifeConfig, reservations)
+      : new Map();
+
     const recentImportLog = readTraceabilityLog()
       .filter((entry) => {
         const parsed = parseDateTime(entry.at);
@@ -157,7 +176,10 @@ router.get("/overview", async (req, res, next) => {
       days,
       gites,
       managers,
-      reservations,
+      reservations: reservations.map((reservation) => ({
+        ...reservation,
+        ...(liveEnergyByReservationId.get(reservation.id) ?? {}),
+      })),
       statuses: readTodayStatuses(),
       source_colors: readSourceColorSettings().colors,
       unassigned_count: unassignedCount,
