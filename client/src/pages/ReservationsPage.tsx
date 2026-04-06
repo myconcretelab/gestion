@@ -3797,6 +3797,19 @@ const ReservationsPage = () => {
                     getMonthlyEnergySummaryKey(activeTab, year, monthIndex),
                   ) ?? null
                 : null;
+            const monthEnergySummariesForAllGites = isAllGitesTab
+              ? [...monthlyEnergySummaries]
+                  .filter((energySummary) => energySummary.month === monthIndex)
+                  .sort((a, b) => {
+                    const orderA = giteOrderById.get(a.gite_id) ?? Number.MAX_SAFE_INTEGER;
+                    const orderB = giteOrderById.get(b.gite_id) ?? Number.MAX_SAFE_INTEGER;
+                    if (orderA !== orderB) return orderA - orderB;
+
+                    const nameA = giteById.get(a.gite_id)?.nom ?? "";
+                    const nameB = giteById.get(b.gite_id)?.nom ?? "";
+                    return nameA.localeCompare(nameB, "fr", { sensitivity: "base" });
+                  })
+              : [];
 
             return (
               <section
@@ -3846,6 +3859,23 @@ const ReservationsPage = () => {
                       </span>
                       <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
+                      {isAllGitesTab
+                        ? monthEnergySummariesForAllGites.map((energySummary) => {
+                            const energyGite = giteById.get(energySummary.gite_id);
+                            const energyLabel = energyGite?.nom ?? "Gîte";
+
+                            return (
+                              <span
+                                key={getMonthlyEnergySummaryKey(energySummary.gite_id, energySummary.year, energySummary.month)}
+                                className="reservations-summary-pill reservations-summary-pill--energy reservations-summary-pill--energy-gite"
+                                title={`${energyLabel}: ${formatKwh(energySummary.total_kwh)} kWh relevés sur ${energySummary.device_count} compteur(s)`}
+                              >
+                                <span className="reservations-summary-pill__gite-name">{energyLabel}</span>
+                                <span>Élec {formatEuro(energySummary.total_cost_eur)}</span>
+                              </span>
+                            );
+                          })
+                        : null}
                       {activeGiteMonthlyEnergy ? (
                         <span
                           className="reservations-summary-pill reservations-summary-pill--energy"

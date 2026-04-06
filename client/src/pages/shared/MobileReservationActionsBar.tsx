@@ -140,6 +140,8 @@ const MobileReservationActionsBar = ({
 }: MobileReservationActionsBarProps) => {
   if (!open) return null;
 
+  const hasThreePrimaryActions = Boolean(onEdit && smsHref && phoneHref && !airbnbUrl);
+
   return (
     <div className="mobile-reservation-actions" role="status" aria-live="polite">
       <div className="mobile-reservation-actions__panel">
@@ -178,7 +180,14 @@ const MobileReservationActionsBar = ({
             </button>
           </div>
         ) : (
-          <div className="mobile-reservation-actions__buttons">
+          <div
+            className={[
+              "mobile-reservation-actions__buttons",
+              hasThreePrimaryActions ? "mobile-reservation-actions__buttons--triple" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
             {onEdit ? (
               <button type="button" className="mobile-reservation-actions__edit" onClick={onEdit}>
                 <EditIcon />

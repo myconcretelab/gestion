@@ -2699,6 +2699,19 @@ body.app-scroll-locked {
   flex-wrap: wrap;
 }
 
+.mobile-reservation-actions__buttons--triple {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) repeat(2, minmax(72px, 1fr));
+  align-items: stretch;
+  flex-wrap: nowrap;
+}
+
+.mobile-reservation-actions__buttons--triple .mobile-reservation-actions__edit,
+.mobile-reservation-actions__buttons--triple .mobile-reservation-actions__icon-button--labeled {
+  width: 100%;
+  min-width: 0;
+}
+
 .mobile-reservation-actions__edit {
   flex: 1 1 180px;
   min-height: 46px;
@@ -5423,6 +5436,18 @@ button.warning {
   border-color: #fcd34d;
   background: #fffbeb;
   color: #92400e;
+}
+
+.reservations-summary-pill--energy-gite {
+  gap: 6px;
+}
+
+.reservations-summary-pill__gite-name {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
 }
 
 .reservations-summary-pill--guest-nights {
@@ -8896,6 +8921,10 @@ button.warning {
 
   .mobile-reservation-actions__buttons {
     gap: 8px;
+  }
+
+  .mobile-reservation-actions__buttons--triple {
+    grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(68px, 1fr));
   }
 
   .calendar-quick-create-bar__content span {
