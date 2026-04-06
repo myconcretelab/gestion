@@ -39,6 +39,18 @@ import {
 const router = Router();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const reservationGiteSelect = {
+  id: true,
+  nom: true,
+  prefixe_contrat: true,
+  ordre: true,
+  electricity_price_per_kwh: true,
+} as const;
+const reservationPlaceholderSelect = {
+  id: true,
+  abbreviation: true,
+  label: true,
+} as const;
 
 const emptyStringToNull = (value: unknown) => {
   if (value === null || value === undefined) return null;
@@ -523,8 +535,8 @@ const findConflicts = async (params: {
   return prisma.reservation.findMany({
     where,
     include: {
-      gite: { select: { id: true, nom: true, prefixe_contrat: true } },
-      placeholder: { select: { id: true, abbreviation: true, label: true } },
+      gite: { select: reservationGiteSelect },
+      placeholder: { select: reservationPlaceholderSelect },
     },
     orderBy: { date_entree: "asc" },
   });
@@ -1243,8 +1255,8 @@ router.get("/", async (req, res, next) => {
     const reservations = await prisma.reservation.findMany({
       where,
       include: {
-        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
-        placeholder: { select: { id: true, abbreviation: true, label: true } },
+        gite: { select: reservationGiteSelect },
+        placeholder: { select: reservationPlaceholderSelect },
       },
       orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
     });
@@ -1320,15 +1332,12 @@ router.get("/prefill/:id", async (req, res, next) => {
       include: {
         gite: {
           select: {
-            id: true,
-            nom: true,
-            prefixe_contrat: true,
-            ordre: true,
+            ...reservationGiteSelect,
             heure_arrivee_defaut: true,
             heure_depart_defaut: true,
           },
         },
-        placeholder: { select: { id: true, abbreviation: true, label: true } },
+        placeholder: { select: reservationPlaceholderSelect },
       },
     });
     if (!reservation) return res.status(404).json({ error: "Réservation introuvable" });
@@ -1375,8 +1384,8 @@ router.get("/:id", async (req, res, next) => {
     const reservation = await prisma.reservation.findUnique({
       where: { id: req.params.id },
       include: {
-        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
-        placeholder: { select: { id: true, abbreviation: true, label: true } },
+        gite: { select: reservationGiteSelect },
+        placeholder: { select: reservationPlaceholderSelect },
       },
     });
 
@@ -1422,8 +1431,8 @@ router.post("/:id/energy/start", async (req, res, next) => {
         OR: [{ id: targetReservation.id }, { stay_group_id: stayGroupId }],
       },
       include: {
-        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
-        placeholder: { select: { id: true, abbreviation: true, label: true } },
+        gite: { select: reservationGiteSelect },
+        placeholder: { select: reservationPlaceholderSelect },
       },
       orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     });

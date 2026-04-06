@@ -110,6 +110,42 @@ test("GET /reservations/:id retourne la reservation hydratee", async () => {
   }
 });
 
+test("GET /reservations charge le tarif elec du gite pour le calcul live", async () => {
+  const originalFindMany = prisma.reservation.findMany;
+  let capturedArgs: any = null;
+
+  try {
+    prisma.reservation.findMany = async (args?: any) => {
+      capturedArgs = args ?? null;
+      return [];
+    };
+
+    const reservationsRouterModule = await import("../src/routes/reservations.ts");
+    const get = getRouteHandler(reservationsRouterModule.default, "get", "/");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await get(
+      {
+        body: {},
+        params: {},
+        query: {},
+        headers: {},
+      },
+      response,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal(capturedArgs?.include?.gite?.select?.electricity_price_per_kwh, true);
+  } finally {
+    prisma.reservation.findMany = originalFindMany;
+  }
+});
+
 test("GET /reservations/placeholders est declare avant /reservations/:id", async () => {
   const reservationsRouterModule = await import("../src/routes/reservations.ts");
   const getRoutePaths = reservationsRouterModule.default.stack
