@@ -94,6 +94,12 @@ type ReservationCreateResponse = Reservation & {
   airbnb_calendar_refresh?: AirbnbCalendarRefreshCreateStatus;
 };
 
+type ReservationEnergyStartResponse = {
+  updated_reservations: Reservation[];
+  messages: string[];
+  errors: string[];
+};
+
 type ImportColumnField =
   | "hote_nom"
   | "telephone"
@@ -935,6 +941,7 @@ const ReservationsPage = () => {
   const [inlineCell, setInlineCell] = useState<InlineCell | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [splittingId, setSplittingId] = useState<string | null>(null);
+  const [startingEnergyById, setStartingEnergyById] = useState<Record<string, boolean>>({});
   const [newRows, setNewRows] = useState<Record<number, ReservationDraft>>({});
   const [insertRowIndexByMonth, setInsertRowIndexByMonth] = useState<Record<number, number | null>>({});
   const [importOpen, setImportOpen] = useState(false);
@@ -1703,6 +1710,57 @@ const ReservationsPage = () => {
     const draft = draftsRef.current[rowId];
     if (!draft) return false;
     return persistExistingRow(rowId, draft);
+  };
+
+  const mergeUpdatedReservations = (updatedReservations: Reservation[]) => {
+    if (updatedReservations.length === 0) return;
+    setReservations((previous) => {
+      const byId = new Map(updatedReservations.map((reservation) => [reservation.id, reservation]));
+      return previous.map((reservation) => byId.get(reservation.id) ?? reservation);
+    });
+  };
+
+  const startLiveEnergyTracking = async (reservation: Reservation) => {
+    setError(null);
+    setStartingEnergyById((previous) => ({ ...previous, [reservation.id]: true }));
+
+    try {
+      const response = await apiFetch<ReservationEnergyStartResponse>(
+        `/reservations/${reservation.id}/energy/start`,
+        { method: "POST" },
+      );
+      mergeUpdatedReservations(response.updated_reservations ?? []);
+
+      const messageParts = [...(response.messages ?? []), ...(response.errors ?? [])]
+        .filter(Boolean)
+        .slice(0, 3);
+      dispatchAppNotice({
+        label: "Énergie",
+        tone: response.errors?.length ? "error" : "success",
+        message:
+          messageParts.join(" · ") ||
+          "Le comptage énergie a été initialisé pour cette réservation.",
+        timeoutMs: 5200,
+        role: response.errors?.length ? "alert" : "status",
+      });
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      dispatchAppNotice({
+        label: "Énergie",
+        tone: "error",
+        message,
+        timeoutMs: 5200,
+        role: "alert",
+      });
+    } finally {
+      setStartingEnergyById((previous) => {
+        if (!previous[reservation.id]) return previous;
+        const next = { ...previous };
+        delete next[reservation.id];
+        return next;
+      });
+    }
   };
 
   const closeEditMode = (rowId: string) => {
@@ -3940,6 +3998,9 @@ const ReservationsPage = () => {
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
                       const telephoneHref = buildTelephoneHref(reservation.telephone);
+                      const hasOpenEnergySession = Boolean(
+                        reservation.energy_tracking?.some((entry) => entry.status === "open"),
+                      );
                       const hasEnergyData =
                         reservation.energy_consumption_kwh > 0 ||
                         reservation.energy_cost_eur > 0;
@@ -3947,6 +4008,11 @@ const ReservationsPage = () => {
                         isCurrentReservation &&
                         ((reservation.energy_live_consumption_kwh ?? 0) > 0 ||
                           (reservation.energy_live_cost_eur ?? 0) > 0);
+                      const canStartLiveEnergyTracking =
+                        isCurrentReservation &&
+                        Boolean(reservation.gite_id) &&
+                        !hasOpenEnergySession;
+                      const isStartingLiveEnergy = Boolean(startingEnergyById[reservation.id]);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
 
                       return (
@@ -4782,6 +4848,25 @@ const ReservationsPage = () => {
                                         Électricité en cours: {formatKwh(reservation.energy_live_consumption_kwh ?? 0)} kWh
                                         {" · "}
                                         {formatEuro(reservation.energy_live_cost_eur ?? 0)}
+                                      </div>
+                                    ) : null}
+                                    {canStartLiveEnergyTracking ? (
+                                      <div className="reservations-energy-inline">
+                                        <button
+                                          type="button"
+                                          className="table-action table-action--neutral"
+                                          onClick={() => startLiveEnergyTracking(reservation).catch((err) => setError((err as Error).message))}
+                                          disabled={
+                                            isStartingLiveEnergy ||
+                                            rowSaveState === "saving" ||
+                                            deletingId === reservation.id
+                                          }
+                                          title="Initialiser le relevé de départ maintenant"
+                                        >
+                                          {isStartingLiveEnergy ? "Initialisation..." : "Démarrer comptage"}
+                                        </button>
+                                        {" "}
+                                        Relevé de départ manuel pour afficher la consommation en cours.
                                       </div>
                                     ) : null}
                                     <div className="reservations-contact-card">

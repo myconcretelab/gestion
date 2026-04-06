@@ -10,6 +10,7 @@ import { type OptionsInput } from "../services/contractCalculator.js";
 import {
   loadLiveReservationEnergySummaries,
   parseReservationEnergyTracking,
+  startManualReservationEnergyTracking,
   summarizeReservationEnergyTracking,
 } from "../services/smartlifeEnergyTracking.js";
 import { getGiteMonthlyEnergySummaries } from "../services/smartlifeMonthlyEnergy.js";
@@ -1384,6 +1385,63 @@ router.get("/:id", async (req, res, next) => {
     }
 
     return res.json(hydrateReservation(reservation));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/energy/start", async (req, res, next) => {
+  try {
+    const smartlifeConfig = readSmartlifeAutomationConfig(
+      buildDefaultSmartlifeAutomationConfig(),
+    );
+    if (!hasSmartlifeCredentials(smartlifeConfig)) {
+      return res.status(400).json({
+        error: "Le suivi Smart Life n'est pas configuré.",
+      });
+    }
+
+    const targetReservation = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        stay_group_id: true,
+      },
+    });
+    if (!targetReservation) {
+      return res.status(404).json({ error: "Réservation introuvable" });
+    }
+
+    const result = await startManualReservationEnergyTracking(
+      smartlifeConfig,
+      targetReservation.id,
+    );
+    const stayGroupId = targetReservation.stay_group_id ?? targetReservation.id;
+    const reservations = await prisma.reservation.findMany({
+      where: {
+        OR: [{ id: targetReservation.id }, { stay_group_id: stayGroupId }],
+      },
+      include: {
+        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+        placeholder: { select: { id: true, abbreviation: true, label: true } },
+      },
+      orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+
+    const hydratedReservations = reservations.map(hydrateReservation);
+    const liveEnergyByReservationId = await loadLiveReservationEnergySummaries(
+      smartlifeConfig,
+      hydratedReservations,
+    );
+
+    return res.json({
+      updated_reservations: hydratedReservations.map((reservation) => ({
+        ...reservation,
+        ...(liveEnergyByReservationId.get(reservation.id) ?? {}),
+      })),
+      messages: result.messages,
+      errors: result.errors,
+    });
   } catch (err) {
     next(err);
   }

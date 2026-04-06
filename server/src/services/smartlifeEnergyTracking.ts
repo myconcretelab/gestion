@@ -36,6 +36,11 @@ export type ReservationLiveEnergySummary = {
   energy_live_recorded_at: string;
 };
 
+export type ManualReservationEnergyStartResult = {
+  messages: string[];
+  errors: string[];
+};
+
 type ReservationEnergyRow = {
   id: string;
   stay_group_id: string | null;
@@ -481,4 +486,71 @@ export const loadLiveReservationEnergySummaries = async (
     }
     return summaries;
   }, new Map<string, ReservationLiveEnergySummary>());
+};
+
+export const startManualReservationEnergyTracking = async (
+  config: SmartlifeAutomationConfig,
+  reservationId: string,
+): Promise<ManualReservationEnergyStartResult> => {
+  const reservation = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    select: {
+      id: true,
+      gite_id: true,
+    },
+  });
+
+  if (!reservation) {
+    throw new Error(`Réservation introuvable: ${reservationId}.`);
+  }
+  if (!reservation.gite_id) {
+    throw new Error("La réservation doit être rattachée à un gîte.");
+  }
+
+  const assignments = config.meter_assignments.reduce<SmartlifeEnergyMeterAssignment[]>(
+    (items, assignment) => {
+      if (!assignment.enabled || assignment.gite_id !== reservation.gite_id) {
+        return items;
+      }
+      if (!assignment.device_id.trim()) return items;
+      if (items.some((item) => item.device_id === assignment.device_id)) {
+        return items;
+      }
+      items.push(assignment);
+      return items;
+    },
+    [],
+  );
+
+  if (assignments.length === 0) {
+    throw new Error("Aucun compteur énergie actif n'est associé à ce gîte.");
+  }
+
+  const messages: string[] = [];
+  const errors: string[] = [];
+
+  for (const assignment of assignments) {
+    try {
+      const message = await trackSmartlifeEnergyForAutomationEvent(config, {
+        reservation_id: reservation.id,
+        gite_id: reservation.gite_id,
+        device_id: assignment.device_id,
+        device_name: assignment.device_name,
+        action: "energy-start",
+        command_value: true,
+        rule_id: "manual-live-start",
+      });
+      if (message) {
+        messages.push(message);
+      }
+    } catch (error) {
+      errors.push(
+        error instanceof Error
+          ? error.message
+          : `Impossible d'initialiser ${assignment.device_name || assignment.device_id}.`,
+      );
+    }
+  }
+
+  return { messages, errors };
 };
