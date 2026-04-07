@@ -5438,6 +5438,34 @@ button.warning {
   color: #92400e;
 }
 
+.reservations-summary-pill--energy-incomplete {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.reservations-summary-pill--energy-action {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.reservations-summary-pill--energy-action:hover:not(:disabled) {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  color: #78350f;
+}
+
+.reservations-summary-pill--energy-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .reservations-summary-pill--energy-gite {
   gap: 6px;
 }
