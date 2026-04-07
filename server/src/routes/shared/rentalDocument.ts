@@ -34,6 +34,7 @@ export const optionsSchema = z.object({
     .object({
       enabled: z.boolean(),
       nb: z.number().int().min(0).optional(),
+      prix_unitaire: z.number().min(0).optional(),
       offert: z.boolean().optional(),
       declared: z.boolean().optional(),
     })

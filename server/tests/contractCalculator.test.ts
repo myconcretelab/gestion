@@ -62,3 +62,30 @@ test("computeTotals utilise le forfait personnalise du depart tardif", () => {
   assert.equal(totals.optionsTotal, 27.5);
   assert.equal(totals.totalGlobal, 327.5);
 });
+
+test("computeTotals utilise le tarif chien personnalise", () => {
+  const totals = computeTotals({
+    dateDebut: new Date("2026-03-01T00:00:00.000Z"),
+    dateFin: new Date("2026-03-04T00:00:00.000Z"),
+    prixParNuit: 100,
+    remiseMontant: 0,
+    nbAdultes: 2,
+    nbEnfants: 0,
+    arrhesMontant: 0,
+    options: {
+      chiens: { enabled: true, nb: 2, prix_unitaire: 7.5 },
+    },
+    gite: {
+      taxe_sejour_par_personne_par_nuit: 1.5,
+      options_draps_par_lit: 12,
+      options_linge_toilette_par_personne: 8,
+      options_menage_forfait: 20,
+      options_depart_tardif_forfait: 15,
+      options_chiens_forfait: 5,
+    },
+  });
+
+  assert.equal(totals.optionsDetail.chiens, 45);
+  assert.equal(totals.optionsTotal, 45);
+  assert.equal(totals.totalGlobal, 345);
+});

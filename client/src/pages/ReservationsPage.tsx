@@ -553,6 +553,10 @@ const computeReservationOptionsPreview = (
     options.depart_tardif.prix_forfait !== undefined
       ? round2(Math.max(0, Number(options.depart_tardif.prix_forfait ?? 0)))
       : round2(Number(gite?.options_depart_tardif_forfait ?? 0));
+  const chiensTarif =
+    options.chiens.prix_unitaire !== undefined
+      ? round2(Math.max(0, Number(options.chiens.prix_unitaire ?? 0)))
+      : round2(Number(gite?.options_chiens_forfait ?? 0));
 
   const draps = options.draps.enabled
     ? options.draps.offert
@@ -577,7 +581,7 @@ const computeReservationOptionsPreview = (
   const chiens = options.chiens.enabled
     ? options.chiens.offert
       ? 0
-      : round2(Number(gite?.options_chiens_forfait ?? 0) * chiensQty * nights)
+      : round2(chiensTarif * chiensQty * nights)
     : 0;
 
   const labels: string[] = [];

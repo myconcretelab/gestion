@@ -144,7 +144,7 @@ export type ContratOptions = {
   linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
   menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
   depart_tardif?: { enabled: boolean; prix_forfait?: number; offert?: boolean; declared?: boolean };
-  chiens?: { enabled: boolean; nb?: number; offert?: boolean; declared?: boolean };
+  chiens?: { enabled: boolean; nb?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   regle_animaux_acceptes?: boolean;
   regle_bois_premiere_flambee?: boolean;
   regle_tiers_personnes_info?: boolean;

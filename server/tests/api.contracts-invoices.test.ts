@@ -150,7 +150,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       linge_toilette: { enabled: true, nb_personnes: 1 },
       menage: { enabled: true },
       depart_tardif: { enabled: false },
-      chiens: { enabled: true, nb: 2 },
+      chiens: { enabled: true, nb: 2, prix_unitaire: 5 },
     };
 
     const contractPayload = {
@@ -195,6 +195,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(Number(lastCreatedReservationData.prix_total), 300);
     assert.equal(Number(lastCreatedReservationData.remise_montant), 10);
     assert.equal((createContractRes.body as any).reservation_id, "r-contract-created");
+    assert.equal((createContractRes.body as any).options.chiens.prix_unitaire, 5);
 
     const updateContractRes = createMockResponse();
     nextError = null;
@@ -266,6 +267,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(Number((createInvoiceRes.body as any).solde_montant), 272);
     assert.equal(Number((createInvoiceRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((createInvoiceRes.body as any).reservation_id, "r-invoice-created");
+    assert.equal((createInvoiceRes.body as any).options.chiens.prix_unitaire, 5);
     assert.equal(lastCreatedReservationData.telephone, null);
     assert.equal(lastCreatedReservationData.email, "client.facture@example.com");
     assert.equal(lastCreatedReservationData.frais_optionnels_libelle, "Draps x2 · Linge x1 · Ménage · Chiens x2");
