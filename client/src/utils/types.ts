@@ -77,9 +77,15 @@ export type ReservationMonthlyEnergySummary = {
   gite_id: string;
   year: number;
   month: number;
-  total_kwh: number;
-  total_cost_eur: number;
+  status: "complete" | "incomplete";
+  total_kwh: number | null;
+  total_cost_eur: number | null;
   device_count: number;
+  complete_device_count: number;
+  missing_opening_count: number;
+  missing_closing_count: number;
+  invalid_device_count: number;
+  is_partial_month: boolean;
 };
 
 export type Reservation = {

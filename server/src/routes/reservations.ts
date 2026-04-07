@@ -13,7 +13,10 @@ import {
   startManualReservationEnergyTracking,
   summarizeReservationEnergyTracking,
 } from "../services/smartlifeEnergyTracking.js";
-import { getGiteMonthlyEnergySummaries } from "../services/smartlifeMonthlyEnergy.js";
+import {
+  getGiteMonthlyEnergySummaries,
+  startSmartlifeCurrentMonthForGite,
+} from "../services/smartlifeMonthlyEnergy.js";
 import {
   buildDefaultSmartlifeAutomationConfig,
   hasSmartlifeCredentials,
@@ -104,6 +107,10 @@ const importPayloadSchema = z.object({
 });
 
 const assignPlaceholderSchema = z.object({
+  gite_id: z.string().trim().min(1),
+});
+
+const monthlyEnergyStartSchema = z.object({
   gite_id: z.string().trim().min(1),
 });
 
@@ -1320,6 +1327,28 @@ router.get("/monthly-energy", async (req, res, next) => {
     });
 
     return res.json(summaries);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/monthly-energy/start", async (req, res, next) => {
+  try {
+    const smartlifeConfig = readSmartlifeAutomationConfig(
+      buildDefaultSmartlifeAutomationConfig(),
+    );
+    if (!hasSmartlifeCredentials(smartlifeConfig)) {
+      return res.status(400).json({
+        error: "Le suivi Smart Life n'est pas configuré.",
+      });
+    }
+
+    const payload = monthlyEnergyStartSchema.parse(req.body);
+    const result = await startSmartlifeCurrentMonthForGite(smartlifeConfig, {
+      gite_id: payload.gite_id,
+    });
+
+    return res.json(result);
   } catch (err) {
     next(err);
   }

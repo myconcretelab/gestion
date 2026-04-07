@@ -100,6 +100,16 @@ type ReservationEnergyStartResponse = {
   errors: string[];
 };
 
+type MonthlyEnergyStartResponse = {
+  year: number;
+  month: number;
+  started_count: number;
+  already_started_count: number;
+  error_count: number;
+  messages: string[];
+  errors: string[];
+};
+
 type ImportColumnField =
   | "hote_nom"
   | "telephone"
@@ -359,6 +369,9 @@ const formatKwh = (value: number) =>
 
 const getMonthlyEnergySummaryKey = (giteId: string, year: number, month: number) =>
   `${giteId}:${year}-${pad2(month)}`;
+
+const getMonthlyEnergyTrackingControlKey = (giteId: string, year: number, month: number) =>
+  `${giteId}:${year}-${pad2(month)}:start`;
 
 const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
   `${year}-${pad2(month)}-${managerId}`;
@@ -946,6 +959,7 @@ const ReservationsPage = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [splittingId, setSplittingId] = useState<string | null>(null);
   const [startingEnergyById, setStartingEnergyById] = useState<Record<string, boolean>>({});
+  const [startingMonthlyEnergyByKey, setStartingMonthlyEnergyByKey] = useState<Record<string, boolean>>({});
   const [newRows, setNewRows] = useState<Record<number, ReservationDraft>>({});
   const [insertRowIndexByMonth, setInsertRowIndexByMonth] = useState<Record<number, number | null>>({});
   const [importOpen, setImportOpen] = useState(false);
@@ -1416,6 +1430,112 @@ const ReservationsPage = () => {
     return map;
   }, [gites]);
 
+  const renderMonthlyEnergyIndicator = (options: {
+    giteId: string | null | undefined;
+    monthIndex: number;
+    summary: ReservationMonthlyEnergySummary | null;
+    showGiteName?: boolean;
+  }) => {
+    const giteId = String(options.giteId ?? "").trim();
+    if (!giteId) return null;
+
+    const giteName = giteById.get(giteId)?.nom ?? "Gîte";
+    const showGiteName = options.showGiteName === true;
+    const isCurrentMonthPeriod =
+      year === currentPeriod.year && options.monthIndex === currentPeriod.month;
+    const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, options.monthIndex);
+    const isStartingMonthlyEnergy = Boolean(startingMonthlyEnergyByKey[controlKey]);
+    const energySummary = options.summary;
+
+    if (energySummary) {
+      if (
+        energySummary.status === "complete" &&
+        energySummary.total_kwh !== null &&
+        energySummary.total_cost_eur !== null
+      ) {
+        const titleParts = [
+          `${giteName}: ${formatKwh(energySummary.total_kwh)} kWh relevés sur ${energySummary.device_count} compteur(s)`,
+        ];
+        if (energySummary.is_partial_month) {
+          titleParts.push("Mois partiel: comptage démarré après le 1er.");
+        }
+
+        return (
+          <span
+            className={`reservations-summary-pill reservations-summary-pill--energy ${
+              showGiteName ? "reservations-summary-pill--energy-gite" : ""
+            }`}
+            title={titleParts.join(" · ")}
+          >
+            {showGiteName ? (
+              <span className="reservations-summary-pill__gite-name">{giteName}</span>
+            ) : null}
+            <span>Élec {formatEuro(energySummary.total_cost_eur)}</span>
+          </span>
+        );
+      }
+
+      const detailParts: string[] = [];
+      if (energySummary.complete_device_count > 0) {
+        detailParts.push(
+          `${energySummary.complete_device_count}/${energySummary.device_count} compteur(s) complets`,
+        );
+      }
+      if (energySummary.missing_opening_count > 0) {
+        detailParts.push(
+          `${energySummary.missing_opening_count} sans relevé de départ`,
+        );
+      }
+      if (energySummary.missing_closing_count > 0) {
+        detailParts.push(
+          `${energySummary.missing_closing_count} sans relevé de fin`,
+        );
+      }
+      if (energySummary.invalid_device_count > 0) {
+        detailParts.push(`${energySummary.invalid_device_count} relevé(s) invalide(s)`);
+      }
+      if (energySummary.is_partial_month) {
+        detailParts.push("Comptage démarré en cours de mois.");
+      }
+
+      return (
+        <span
+          className={`reservations-summary-pill reservations-summary-pill--energy reservations-summary-pill--energy-incomplete ${
+            showGiteName ? "reservations-summary-pill--energy-gite" : ""
+          }`}
+          title={`${giteName}: mois incomplet.${detailParts.length > 0 ? ` ${detailParts.join(" · ")}` : ""}`}
+        >
+          {showGiteName ? (
+            <span className="reservations-summary-pill__gite-name">{giteName}</span>
+          ) : null}
+          <span>Mois incomplet</span>
+        </span>
+      );
+    }
+
+    if (!isCurrentMonthPeriod) return null;
+
+    return (
+      <button
+        type="button"
+        className={`reservations-summary-pill reservations-summary-pill--energy reservations-summary-pill--energy-action ${
+          showGiteName ? "reservations-summary-pill--energy-gite" : ""
+        }`}
+        title="Démarrer le comptage du mois en cours à partir du relevé actuel. Le premier mois sera partiel."
+        onClick={(event) => {
+          event.stopPropagation();
+          void startMonthlyEnergyTracking(giteId, options.monthIndex);
+        }}
+        disabled={isStartingMonthlyEnergy}
+      >
+        {showGiteName ? (
+          <span className="reservations-summary-pill__gite-name">{giteName}</span>
+        ) : null}
+        <span>{isStartingMonthlyEnergy ? "Démarrage..." : "Démarrer élec"}</span>
+      </button>
+    );
+  };
+
   const reservationsByMonth = useMemo(() => {
     const map = new Map<number, Reservation[]>();
     for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
@@ -1762,6 +1882,53 @@ const ReservationsPage = () => {
         if (!previous[reservation.id]) return previous;
         const next = { ...previous };
         delete next[reservation.id];
+        return next;
+      });
+    }
+  };
+
+  const startMonthlyEnergyTracking = async (giteId: string, targetMonth: number) => {
+    const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, targetMonth);
+    setError(null);
+    setStartingMonthlyEnergyByKey((previous) => ({ ...previous, [controlKey]: true }));
+
+    try {
+      const response = await apiFetch<MonthlyEnergyStartResponse>(
+        "/reservations/monthly-energy/start",
+        {
+          method: "POST",
+          json: { gite_id: giteId },
+        },
+      );
+      await load();
+
+      const messageParts = [...(response.messages ?? []), ...(response.errors ?? [])]
+        .filter(Boolean)
+        .slice(0, 3);
+      dispatchAppNotice({
+        label: "Énergie",
+        tone: response.errors?.length ? "error" : "success",
+        message:
+          messageParts.join(" · ") ||
+          "Le comptage mensuel a été lancé à partir du relevé actuel.",
+        timeoutMs: 5200,
+        role: response.errors?.length ? "alert" : "status",
+      });
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      dispatchAppNotice({
+        label: "Énergie",
+        tone: "error",
+        message,
+        timeoutMs: 5200,
+        role: "alert",
+      });
+    } finally {
+      setStartingMonthlyEnergyByKey((previous) => {
+        if (!previous[controlKey]) return previous;
+        const next = { ...previous };
+        delete next[controlKey];
         return next;
       });
     }
@@ -2402,12 +2569,12 @@ const ReservationsPage = () => {
   const isAllGitesTab = activeTab === ALL_GITES_TAB;
   const showUnassignedTab = reservations.some((reservation) => !reservation.gite_id);
   const currentPeriod = useMemo(() => {
-    const now = new Date();
+    const now = new Date(currentTimeMs);
     return {
       year: now.getUTCFullYear(),
       month: now.getUTCMonth() + 1,
     };
-  }, []);
+  }, [currentTimeMs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3864,30 +4031,26 @@ const ReservationsPage = () => {
                       <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
                       {isAllGitesTab
-                        ? monthEnergySummariesForAllGites.map((energySummary) => {
-                            const energyGite = giteById.get(energySummary.gite_id);
-                            const energyLabel = energyGite?.nom ?? "Gîte";
-
-                            return (
-                              <span
-                                key={getMonthlyEnergySummaryKey(energySummary.gite_id, energySummary.year, energySummary.month)}
-                                className="reservations-summary-pill reservations-summary-pill--energy reservations-summary-pill--energy-gite"
-                                title={`${energyLabel}: ${formatKwh(energySummary.total_kwh)} kWh relevés sur ${energySummary.device_count} compteur(s)`}
-                              >
-                                <span className="reservations-summary-pill__gite-name">{energyLabel}</span>
-                                <span>Élec {formatEuro(energySummary.total_cost_eur)}</span>
-                              </span>
-                            );
+                        ? monthEnergySummariesForAllGites.map((energySummary) => (
+                            <Fragment
+                              key={getMonthlyEnergySummaryKey(energySummary.gite_id, energySummary.year, energySummary.month)}
+                            >
+                              {renderMonthlyEnergyIndicator({
+                                giteId: energySummary.gite_id,
+                                monthIndex,
+                                summary: energySummary,
+                                showGiteName: true,
+                              })}
+                            </Fragment>
+                          ))
+                        : null}
+                      {!isAllGitesTab
+                        ? renderMonthlyEnergyIndicator({
+                            giteId: activeTab,
+                            monthIndex,
+                            summary: activeGiteMonthlyEnergy,
                           })
                         : null}
-                      {activeGiteMonthlyEnergy ? (
-                        <span
-                          className="reservations-summary-pill reservations-summary-pill--energy"
-                          title={`${formatKwh(activeGiteMonthlyEnergy.total_kwh)} kWh relevés sur ${activeGiteMonthlyEnergy.device_count} compteur(s)`}
-                        >
-                          Élec {formatEuro(activeGiteMonthlyEnergy.total_cost_eur)}
-                        </span>
-                      ) : null}
                       {monthHasZeroTotalReservations ? (
                         <span
                           className="reservations-summary-pill reservations-summary-pill--needs-completion"
@@ -4080,14 +4243,11 @@ const ReservationsPage = () => {
                                     <span className="reservations-summary-pill reservations-summary-pill--revenue">
                                       {formatEuro(groupSummary.revenue)}
                                     </span>
-                                    {groupMonthlyEnergy ? (
-                                      <span
-                                        className="reservations-summary-pill reservations-summary-pill--energy"
-                                        title={`${formatKwh(groupMonthlyEnergy.total_kwh)} kWh relevés sur ${groupMonthlyEnergy.device_count} compteur(s)`}
-                                      >
-                                        Élec {formatEuro(groupMonthlyEnergy.total_cost_eur)}
-                                      </span>
-                                    ) : null}
+                                    {renderMonthlyEnergyIndicator({
+                                      giteId: groupKey === UNASSIGNED_TAB ? null : groupKey,
+                                      monthIndex,
+                                      summary: groupMonthlyEnergy,
+                                    })}
                                     {groupOccupation !== null ? (
                                       <div className="reservations-gite-group-row__occupation">
                                         <OccupationGaugeDial
