@@ -60,6 +60,10 @@ export type GiteMonthlyEnergySummary = {
   status: "complete" | "incomplete";
   total_kwh: number | null;
   total_cost_eur: number | null;
+  live_total_kwh: number | null;
+  live_total_cost_eur: number | null;
+  live_recorded_at: string | null;
+  live_device_count: number;
   device_count: number;
   complete_device_count: number;
   missing_opening_count: number;
@@ -138,6 +142,11 @@ const isPartialOpeningForPeriod = (row: MonthlyReadingRow, period: MonthPeriod) 
     row.opening_recorded_at.getDate() > 1
   );
 };
+
+type LoadDeviceTotalKwh = (
+  config: SmartlifeAutomationConfig,
+  deviceId: string,
+) => Promise<number>;
 
 export const recordSmartlifeMonthlyEnergySnapshots = async (
   config: SmartlifeAutomationConfig,
@@ -489,6 +498,10 @@ export const summarizeGiteMonthlyEnergyRows = (rows: MonthlyReadingRow[]) => {
       status: isComplete ? "complete" : "incomplete",
       total_kwh: isComplete ? round4(totalKwh) : null,
       total_cost_eur: isComplete ? round2(totalKwh * electricityPricePerKwh) : null,
+      live_total_kwh: null,
+      live_total_cost_eur: null,
+      live_recorded_at: null,
+      live_device_count: 0,
       device_count: periodRows.length,
       complete_device_count: completeDeviceCount,
       missing_opening_count: missingOpeningCount,
@@ -505,10 +518,91 @@ export const summarizeGiteMonthlyEnergyRows = (rows: MonthlyReadingRow[]) => {
   });
 };
 
+export const hydrateLiveGiteMonthlyEnergySummaries = async (params: {
+  summaries: GiteMonthlyEnergySummary[];
+  rows: MonthlyReadingRow[];
+  config: SmartlifeAutomationConfig;
+  now?: Date;
+  loadDeviceTotalKwh?: LoadDeviceTotalKwh;
+}) => {
+  const now = params.now ?? new Date();
+  const currentPeriod = getLocalMonthPeriod(now);
+  const loadDeviceTotalKwh =
+    params.loadDeviceTotalKwh ??
+    (async (config: SmartlifeAutomationConfig, deviceId: string) =>
+      round4((await getSmartlifeDeviceTotalElectricityKwh(config, deviceId)).total_kwh));
+
+  const rowsBySummaryKey = new Map<string, MonthlyReadingRow[]>();
+  for (const row of params.rows) {
+    if (row.year !== currentPeriod.year || row.month !== currentPeriod.month) continue;
+    const key = `${row.gite_id}:${row.year}-${String(row.month).padStart(2, "0")}`;
+    const bucket = rowsBySummaryKey.get(key);
+    if (bucket) {
+      bucket.push(row);
+    } else {
+      rowsBySummaryKey.set(key, [row]);
+    }
+  }
+
+  const nextSummaries = [...params.summaries];
+  await Promise.all(
+    nextSummaries.map(async (summary, index) => {
+      if (
+        summary.year !== currentPeriod.year ||
+        summary.month !== currentPeriod.month ||
+        summary.status !== "incomplete"
+      ) {
+        return;
+      }
+
+      const key = `${summary.gite_id}:${summary.year}-${String(summary.month).padStart(2, "0")}`;
+      const periodRows = rowsBySummaryKey.get(key) ?? [];
+      if (periodRows.length === 0) return;
+
+      const electricityPricePerKwh = round4(
+        Math.max(0, toNumber(periodRows[0]?.gite?.electricity_price_per_kwh ?? 0)),
+      );
+
+      const liveContributions = await Promise.all(
+        periodRows.map(async (row) => {
+          if (!hasValidOpeningReading(row)) return;
+          try {
+            const currentTotalKwh = await loadDeviceTotalKwh(params.config, row.device_id);
+            return Math.max(0, currentTotalKwh - toNumber(row.opening_total_kwh));
+          } catch {
+            // Keep incomplete months visible even if a live reading fails for one device.
+            return null;
+          }
+        }),
+      );
+
+      const liveValues = liveContributions.filter(
+        (value): value is number => value != null && Number.isFinite(value),
+      );
+      const liveDeviceCount = liveValues.length;
+      const liveTotalKwh = liveValues.reduce((sum, value) => sum + value, 0);
+
+      if (liveDeviceCount === 0) return;
+
+      nextSummaries[index] = {
+        ...summary,
+        live_total_kwh: round4(liveTotalKwh),
+        live_total_cost_eur: round2(liveTotalKwh * electricityPricePerKwh),
+        live_recorded_at: now.toISOString(),
+        live_device_count: liveDeviceCount,
+      };
+    }),
+  );
+
+  return nextSummaries;
+};
+
 export const getGiteMonthlyEnergySummaries = async (params: {
   year: number;
   month?: number | null;
   gite_id?: string | null;
+  config?: SmartlifeAutomationConfig | null;
+  now?: Date;
 }) => {
   const month =
     params.month && params.month >= 1 && params.month <= 12 ? params.month : null;
@@ -544,5 +638,15 @@ export const getGiteMonthlyEnergySummaries = async (params: {
     ],
   });
 
-  return summarizeGiteMonthlyEnergyRows(rows);
+  const summaries = summarizeGiteMonthlyEnergyRows(rows);
+  if (!params.config) {
+    return summaries;
+  }
+
+  return hydrateLiveGiteMonthlyEnergySummaries({
+    summaries,
+    rows,
+    config: params.config,
+    now: params.now,
+  });
 };

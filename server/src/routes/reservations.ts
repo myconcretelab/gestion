@@ -1321,10 +1321,14 @@ router.get("/monthly-energy", async (req, res, next) => {
       return res.status(400).json({ error: "Paramètre year invalide." });
     }
 
+    const smartlifeConfig = readSmartlifeAutomationConfig(
+      buildDefaultSmartlifeAutomationConfig(),
+    );
     const summaries = await getGiteMonthlyEnergySummaries({
       year: Number(year),
       month: Number.isFinite(month) && month >= 1 && month <= 12 ? Number(month) : null,
       gite_id: giteId || null,
+      config: hasSmartlifeCredentials(smartlifeConfig) ? smartlifeConfig : null,
     });
 
     return res.json(summaries);
