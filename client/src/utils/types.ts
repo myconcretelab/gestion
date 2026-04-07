@@ -80,6 +80,10 @@ export type ReservationMonthlyEnergySummary = {
   status: "complete" | "incomplete";
   total_kwh: number | null;
   total_cost_eur: number | null;
+  live_total_kwh: number | null;
+  live_total_cost_eur: number | null;
+  live_recorded_at: string | null;
+  live_device_count: number;
   device_count: number;
   complete_device_count: number;
   missing_opening_count: number;

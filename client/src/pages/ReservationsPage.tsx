@@ -1485,6 +1485,14 @@ const ReservationsPage = () => {
       }
 
       const detailParts: string[] = [];
+      if (
+        energySummary.live_total_cost_eur !== null &&
+        energySummary.live_total_kwh !== null
+      ) {
+        detailParts.push(
+          `Live ${formatKwh(energySummary.live_total_kwh)} kWh · ${formatEuro(energySummary.live_total_cost_eur)} sur ${energySummary.live_device_count}/${energySummary.device_count} compteur(s)`,
+        );
+      }
       if (energySummary.complete_device_count > 0) {
         detailParts.push(
           `${energySummary.complete_device_count}/${energySummary.device_count} compteur(s) complets`,
@@ -1517,7 +1525,11 @@ const ReservationsPage = () => {
           {showGiteName ? (
             <span className="reservations-summary-pill__gite-name">{giteName}</span>
           ) : null}
-          <span>Mois incomplet</span>
+          <span>
+            {energySummary.live_total_cost_eur !== null
+              ? `Élec ${formatEuro(energySummary.live_total_cost_eur)}`
+              : "Mois incomplet"}
+          </span>
         </span>
       );
     }
