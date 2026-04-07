@@ -97,6 +97,10 @@ const getEnabledAssignments = (config: SmartlifeAutomationConfig) => {
   );
 };
 
+export const getEnabledMonthlyEnergyGiteIds = (
+  config: SmartlifeAutomationConfig,
+) => [...new Set(getEnabledAssignments(config).map((assignment) => assignment.gite_id))];
+
 const getLocalMonthPeriod = (value: Date): MonthPeriod => ({
   year: value.getFullYear(),
   month: value.getMonth() + 1,

@@ -939,6 +939,7 @@ const ReservationsPage = () => {
   const [monthlyEnergySummaries, setMonthlyEnergySummaries] = useState<
     ReservationMonthlyEnergySummary[]
   >([]);
+  const [monthlyEnergyEligibleGiteIds, setMonthlyEnergyEligibleGiteIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>("");
   const [year, setYear] = useState<number>(currentYear);
   const [availableYears, setAvailableYears] = useState<number[]>([currentYear]);
@@ -1132,13 +1133,14 @@ const ReservationsPage = () => {
     energyParams.set("year", String(year));
     if (month) energyParams.set("month", String(month));
 
-    const [gitesData, placeholdersData, reservationsData, monthlyEnergyData, yearsData] = await Promise.all([
+    const [gitesData, placeholdersData, reservationsData, monthlyEnergyData, monthlyEnergyEligibleGitesData, yearsData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Reservation[]>(`/reservations?${params.toString()}`),
       apiFetch<ReservationMonthlyEnergySummary[]>(
         `/reservations/monthly-energy?${energyParams.toString()}`,
       ),
+      apiFetch<string[]>("/reservations/monthly-energy/eligible-gites"),
       apiFetch<number[]>("/reservations/years"),
     ]);
 
@@ -1146,6 +1148,7 @@ const ReservationsPage = () => {
     setPlaceholders(placeholdersData);
     setReservations(reservationsData);
     setMonthlyEnergySummaries(monthlyEnergyData);
+    setMonthlyEnergyEligibleGiteIds(monthlyEnergyEligibleGitesData);
     setAvailableYears([...new Set([currentYear, ...yearsData])].sort((a, b) => b - a));
 
     setActiveTab((current) => {
@@ -1422,6 +1425,11 @@ const ReservationsPage = () => {
     return map;
   }, [monthlyEnergySummaries]);
 
+  const monthlyEnergyEligibleGiteIdSet = useMemo(
+    () => new Set(monthlyEnergyEligibleGiteIds),
+    [monthlyEnergyEligibleGiteIds],
+  );
+
   const giteOrderById = useMemo(() => {
     const map = new Map<string, number>();
     gites.forEach((gite, index) => {
@@ -1443,6 +1451,7 @@ const ReservationsPage = () => {
     const showGiteName = options.showGiteName === true;
     const isCurrentMonthPeriod =
       year === currentPeriod.year && options.monthIndex === currentPeriod.month;
+    const hasEligibleMonthlyEnergyMeter = monthlyEnergyEligibleGiteIdSet.has(giteId);
     const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, options.monthIndex);
     const isStartingMonthlyEnergy = Boolean(startingMonthlyEnergyByKey[controlKey]);
     const energySummary = options.summary;
@@ -1513,7 +1522,7 @@ const ReservationsPage = () => {
       );
     }
 
-    if (!isCurrentMonthPeriod) return null;
+    if (!isCurrentMonthPeriod || !hasEligibleMonthlyEnergyMeter) return null;
 
     return (
       <button

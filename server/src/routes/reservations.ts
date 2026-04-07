@@ -15,6 +15,7 @@ import {
 } from "../services/smartlifeEnergyTracking.js";
 import {
   getGiteMonthlyEnergySummaries,
+  getEnabledMonthlyEnergyGiteIds,
   startSmartlifeCurrentMonthForGite,
 } from "../services/smartlifeMonthlyEnergy.js";
 import {
@@ -1327,6 +1328,21 @@ router.get("/monthly-energy", async (req, res, next) => {
     });
 
     return res.json(summaries);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/monthly-energy/eligible-gites", async (_req, res, next) => {
+  try {
+    const smartlifeConfig = readSmartlifeAutomationConfig(
+      buildDefaultSmartlifeAutomationConfig(),
+    );
+    if (!hasSmartlifeCredentials(smartlifeConfig)) {
+      return res.json([] as string[]);
+    }
+
+    return res.json(getEnabledMonthlyEnergyGiteIds(smartlifeConfig));
   } catch (err) {
     next(err);
   }
