@@ -419,6 +419,160 @@ test("syncIcalReservations ne supprime pas une reservation manuelle absente hors
   }
 });
 
+test("syncIcalReservations ne supprime pas une reservation iCal enrichie absente du flux", async () => {
+  const originalFindManySources = prisma.icalSource.findMany;
+  const originalFindManyReservations = prisma.reservation.findMany;
+  const originalDelete = prisma.reservation.delete;
+  const originalUpdate = prisma.reservation.update;
+  const originalFetch = global.fetch;
+  const updatedReservations: Array<{ id: string; commentaire: string | null | undefined }> = [];
+
+  try {
+    prisma.icalSource.findMany = async () => createActiveSource();
+    prisma.reservation.findMany = async () => [
+      {
+        id: "reservation-enriched-missing",
+        gite_id: "gite-1",
+        hote_nom: "Juliette JOVET",
+        date_entree: new Date("2026-04-04T00:00:00.000Z"),
+        date_sortie: new Date("2026-04-07T00:00:00.000Z"),
+        origin_system: "ical",
+        export_to_ical: false,
+        source_paiement: "A définir",
+        commentaire: null,
+        telephone: "06 38 82 42 36",
+        email: null,
+        prix_total: 210,
+        prix_par_nuit: 70,
+        gite: {
+          nom: "Gite test",
+        },
+      },
+    ];
+    prisma.reservation.delete = async () => {
+      throw new Error("reservation.delete ne doit pas etre appele pour une reservation iCal enrichie.");
+    };
+    prisma.reservation.update = async ({ where, data }: any) => {
+      updatedReservations.push({
+        id: where.id,
+        commentaire: data.commentaire,
+      });
+      return { id: where.id, ...data } as any;
+    };
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        text: async () => "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR",
+      }) as Response) as typeof fetch;
+
+    const result = await syncIcalReservations();
+
+    assert.equal(result.deleted_count, 0);
+    assert.equal(result.to_verify_marked_count, 1);
+    assert.deepEqual(updatedReservations, [
+      {
+        id: "reservation-enriched-missing",
+        commentaire: "[ICAL_TO_VERIFY]",
+      },
+    ]);
+  } finally {
+    prisma.icalSource.findMany = originalFindManySources;
+    prisma.reservation.findMany = originalFindManyReservations;
+    prisma.reservation.delete = originalDelete;
+    prisma.reservation.update = originalUpdate;
+    global.fetch = originalFetch;
+  }
+});
+
+test("syncIcalReservations ne supprime pas une reservation iCal si le flux courant se chevauche sur une autre periode", async () => {
+  const originalFindManySources = prisma.icalSource.findMany;
+  const originalFindFirst = prisma.reservation.findFirst;
+  const originalFindManyReservations = prisma.reservation.findMany;
+  const originalDelete = prisma.reservation.delete;
+  const originalUpdate = prisma.reservation.update;
+  const originalFetch = global.fetch;
+  const updatedReservations: Array<{ id: string; commentaire: string | null | undefined }> = [];
+
+  try {
+    prisma.icalSource.findMany = async () => createActiveSource();
+    prisma.reservation.findFirst = async ({ where }: any) => {
+      if (where.date_entree instanceof Date && where.date_sortie instanceof Date) {
+        return null;
+      }
+
+      if (where.date_entree?.lt instanceof Date && where.date_sortie?.gt instanceof Date) {
+        return { id: "reservation-overlap" } as any;
+      }
+
+      return null;
+    };
+    prisma.reservation.findMany = async () => [
+      {
+        id: "reservation-overlap",
+        gite_id: "gite-1",
+        hote_nom: "Juliette JOVET",
+        date_entree: new Date("2026-04-04T00:00:00.000Z"),
+        date_sortie: new Date("2026-04-07T00:00:00.000Z"),
+        origin_system: "ical",
+        export_to_ical: false,
+        source_paiement: "A définir",
+        commentaire: null,
+        telephone: null,
+        email: null,
+        prix_total: 0,
+        prix_par_nuit: 0,
+        gite: {
+          nom: "Gite test",
+        },
+      },
+    ];
+    prisma.reservation.delete = async () => {
+      throw new Error("reservation.delete ne doit pas etre appele pour une reservation iCal qui se chevauche avec le flux courant.");
+    };
+    prisma.reservation.update = async ({ where, data }: any) => {
+      updatedReservations.push({
+        id: where.id,
+        commentaire: data.commentaire,
+      });
+      return { id: where.id, ...data } as any;
+    };
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        text: async () => `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:airbnb-shifted-period
+DTSTART;VALUE=DATE:20260405
+DTEND;VALUE=DATE:20260407
+SUMMARY:Airbnb (Not available)
+END:VEVENT
+END:VCALENDAR`,
+      }) as Response) as typeof fetch;
+
+    const result = await syncIcalReservations();
+
+    assert.equal(result.deleted_count, 0);
+    assert.equal(result.counts.conflict, 1);
+    assert.equal(result.to_verify_marked_count, 1);
+    assert.deepEqual(updatedReservations, [
+      {
+        id: "reservation-overlap",
+        commentaire: "[ICAL_TO_VERIFY]",
+      },
+    ]);
+  } finally {
+    prisma.icalSource.findMany = originalFindManySources;
+    prisma.reservation.findFirst = originalFindFirst;
+    prisma.reservation.findMany = originalFindManyReservations;
+    prisma.reservation.delete = originalDelete;
+    prisma.reservation.update = originalUpdate;
+    global.fetch = originalFetch;
+  }
+});
+
 test("syncIcalReservations relance Pump apres creation Airbnb si l'option est activee", async () => {
   const settingsBackup = backupFile(path.join(env.DATA_DIR, "ical-cron-settings.json"));
   const originalFindManySources = prisma.icalSource.findMany;
