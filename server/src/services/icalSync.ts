@@ -15,7 +15,12 @@ import {
   updateIcalCronRunState,
   type IcalCronRunStatus,
 } from "./icalCronRunState.js";
-import { isUnknownHostName, normalizeImportedHostName, toImportedReservationHostName } from "../utils/reservationText.js";
+import {
+  hasMeaningfulImportedComment,
+  isUnknownHostName,
+  normalizeImportedHostName,
+  toImportedReservationHostName,
+} from "../utils/reservationText.js";
 import {
   resolveIcalReservationSource,
   shouldPreferIcalReservation,
@@ -257,6 +262,26 @@ const mergeIcalToVerifyMarker = (comment: string | null | undefined, enabled: bo
   if (!enabled) return cleaned || null;
   return cleaned.length > 0 ? `${ICAL_TO_VERIFY_MARKER}\n${cleaned}` : ICAL_TO_VERIFY_MARKER;
 };
+
+const hasNonEmptyText = (value: string | null | undefined) => typeof value === "string" && value.trim().length > 0;
+
+const toFiniteNumber = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const hasMeaningfulMissingIcalReservationDetails = (reservation: {
+  telephone?: string | null;
+  email?: string | null;
+  commentaire?: string | null;
+  prix_total?: unknown;
+  prix_par_nuit?: unknown;
+}) =>
+  hasNonEmptyText(reservation.telephone) ||
+  hasNonEmptyText(reservation.email) ||
+  hasMeaningfulImportedComment(stripIcalToVerifyMarker(reservation.commentaire)) ||
+  toFiniteNumber(reservation.prix_total) > 0 ||
+  toFiniteNumber(reservation.prix_par_nuit) > 0;
 
 const getReservationPeriodKey = (params: { gite_id: string; date_entree: string; date_sortie: string }) =>
   `${params.gite_id}|${params.date_entree}|${params.date_sortie}`;
@@ -757,6 +782,15 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       })
     )
   );
+  const parsedPeriodsByGite = new Map<string, Array<{ date_entree: string; date_sortie: string }>>();
+  for (const item of loaded.parsed) {
+    const current = parsedPeriodsByGite.get(item.gite_id) ?? [];
+    current.push({
+      date_entree: item.date_entree,
+      date_sortie: item.date_sortie,
+    });
+    parsedPeriodsByGite.set(item.gite_id, current);
+  }
 
   const sourceByGite = new Map<string, Set<string>>();
   for (const source of loaded.sources) {
@@ -781,6 +815,10 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       export_to_ical: true,
       source_paiement: true,
       commentaire: true,
+      telephone: true,
+      email: true,
+      prix_total: true,
+      prix_par_nuit: true,
       gite: {
         select: {
           nom: true,
@@ -825,14 +863,23 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       date_sortie: toIsoDate(reservation.date_sortie),
     });
     const shouldBeMarked = !parsedPeriodKeys.has(periodKey);
-    const shouldDeleteMissingIcalReservation = shouldBeMarked && (originSystem === "ical" || platformManagedByIcal);
+    const reservationCheckIn = toIsoDate(reservation.date_entree);
+    const reservationCheckOut = toIsoDate(reservation.date_sortie);
+    const overlapsCurrentParsedReservation = (parsedPeriodsByGite.get(giteId) ?? []).some(
+      (item) => item.date_entree < reservationCheckOut && item.date_sortie > reservationCheckIn
+    );
+    const shouldDeleteMissingIcalReservation =
+      shouldBeMarked &&
+      !overlapsCurrentParsedReservation &&
+      !hasMeaningfulMissingIcalReservationDetails(reservation) &&
+      (originSystem === "ical" || platformManagedByIcal);
 
     if (shouldDeleteMissingIcalReservation) {
       deleted_items.push({
         giteName: reservation.gite?.nom ?? "",
         giteId,
-        checkIn: toIsoDate(reservation.date_entree),
-        checkOut: toIsoDate(reservation.date_sortie),
+        checkIn: reservationCheckIn,
+        checkOut: reservationCheckOut,
         source: normalizedSource,
       });
       await prisma.reservation.delete({
