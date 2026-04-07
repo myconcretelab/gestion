@@ -80,3 +80,22 @@ test("computeTotals client utilise le forfait personnalise du depart tardif", ()
   assert.equal(totals.optionsTotal, 27.5);
   assert.equal(totals.totalGlobal, 327.5);
 });
+
+test("computeTotals client utilise le tarif chien personnalise", () => {
+  const totals = computeTotals({
+    dateDebut: "2026-03-01",
+    dateFin: "2026-03-04",
+    prixParNuit: 100,
+    remiseMontant: 0,
+    nbAdultes: 2,
+    nbEnfants: 0,
+    arrhesMontant: 0,
+    options: {
+      chiens: { enabled: true, nb: 2, prix_unitaire: 7.5 },
+    },
+    gite,
+  });
+
+  assert.equal(totals.optionsTotal, 45);
+  assert.equal(totals.totalGlobal, 345);
+});

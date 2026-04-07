@@ -25,6 +25,11 @@ const resolveDepartTardifTarif = (options: OptionsInput, gite: GiteLike) =>
     ? toNumber(options.depart_tardif.prix_forfait)
     : toNumber(gite.options_depart_tardif_forfait);
 
+const resolveChiensTarif = (options: OptionsInput, gite: GiteLike) =>
+  options.chiens?.prix_unitaire !== undefined
+    ? toNumber(options.chiens.prix_unitaire)
+    : toNumber(gite.options_chiens_forfait);
+
 const writePlaceholderPdf = async (outputPath: string) => {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, MINIMAL_PDF_BUFFER);
@@ -507,7 +512,7 @@ const buildOptionsBandRowsHtml = (params: {
   }
   if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
     const nbChiens = options.chiens.nb ?? 1;
-    const tarif = toNumber(gite.options_chiens_forfait);
+    const tarif = resolveChiensTarif(options, gite);
     const base = round2(tarif * nbChiens * nbNuits);
     rows.push(
       `<tr class="band-option"><td>Chiens (${nbChiens} x ${nbNuits} nuit(s) x ${formatEuro(
@@ -543,7 +548,7 @@ const buildClausesHtml = (params: {
   if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
     clauses.push(
       `Animaux acceptés sous réserve de respecter les lieux. Supplément chiens: ${formatEuro(
-        toNumber(gite.options_chiens_forfait)
+        resolveChiensTarif(options, gite)
       )} / nuit.`
     );
   }
@@ -881,7 +886,7 @@ const buildInvoiceOptionsRowsHtml = (params: {
   }
   if (options.chiens?.enabled) {
     const nbChiens = options.chiens.nb ?? 1;
-    const tarif = toNumber(gite.options_chiens_forfait);
+    const tarif = resolveChiensTarif(options, gite);
     const baseAmount = round2(tarif * nbChiens * totals.nbNuits);
     addOptionRows({
       label: `Chiens (${nbChiens} x ${totals.nbNuits} nuit(s) x ${formatEuro(tarif)})`,

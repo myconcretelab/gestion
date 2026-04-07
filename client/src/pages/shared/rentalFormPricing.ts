@@ -39,6 +39,11 @@ const resolveDepartTardifTarif = (params: { options: ContratOptions; selectedGit
     ? Number(params.options.depart_tardif.prix_forfait ?? 0)
     : Number(params.selectedGite?.options_depart_tardif_forfait ?? 0);
 
+const resolveChiensTarif = (params: { options: ContratOptions; selectedGite: Gite | null }) =>
+  params.options.chiens?.prix_unitaire !== undefined
+    ? Number(params.options.chiens.prix_unitaire ?? 0)
+    : Number(params.selectedGite?.options_chiens_forfait ?? 0);
+
 export const useRentalFormPricing = (params: {
   gites: Gite[];
   giteId: string;
@@ -114,7 +119,7 @@ export const useRentalFormPricing = (params: {
   const lingeTarif = Number(selectedGite?.options_linge_toilette_par_personne ?? 0);
   const menageTarif = Number(selectedGite?.options_menage_forfait ?? 0);
   const departTardifTarif = resolveDepartTardifTarif({ options: params.options, selectedGite });
-  const chiensTarif = Number(selectedGite?.options_chiens_forfait ?? 0);
+  const chiensTarif = resolveChiensTarif({ options: params.options, selectedGite });
 
   const regleAnimauxAcceptes = params.options.regle_animaux_acceptes ?? false;
   const regleBoisPremiereFlambee = params.options.regle_bois_premiere_flambee ?? false;

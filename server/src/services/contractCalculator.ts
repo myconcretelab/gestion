@@ -6,7 +6,7 @@ export type OptionsInput = {
   linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
   menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
   depart_tardif?: { enabled: boolean; prix_forfait?: number; offert?: boolean; declared?: boolean };
-  chiens?: { enabled: boolean; nb?: number; offert?: boolean; declared?: boolean };
+  chiens?: { enabled: boolean; nb?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   regle_animaux_acceptes?: boolean;
   regle_bois_premiere_flambee?: boolean;
   regle_tiers_personnes_info?: boolean;
@@ -45,6 +45,11 @@ const resolveDepartTardifTarif = (params: { options: OptionsInput; gite: GitePri
     ? toNumber(params.options.depart_tardif.prix_forfait)
     : toNumber(params.gite.options_depart_tardif_forfait);
 
+const resolveChiensTarif = (params: { options: OptionsInput; gite: GitePricing }) =>
+  params.options.chiens?.prix_unitaire !== undefined
+    ? toNumber(params.options.chiens.prix_unitaire)
+    : toNumber(params.gite.options_chiens_forfait);
+
 export const computeTotals = (params: {
   dateDebut: Date;
   dateFin: Date;
@@ -67,7 +72,7 @@ export const computeTotals = (params: {
   const lingeTarif = toNumber(params.gite.options_linge_toilette_par_personne);
   const menageTarif = toNumber(params.gite.options_menage_forfait);
   const departTardifTarif = resolveDepartTardifTarif(params);
-  const chiensTarif = toNumber(params.gite.options_chiens_forfait);
+  const chiensTarif = resolveChiensTarif(params);
 
   const draps = params.options.draps?.enabled
     ? params.options.draps?.offert

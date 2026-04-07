@@ -17,6 +17,11 @@ const resolveDepartTardifTarif = (params: { options: ContratOptions; gite?: Gite
     ? Number(params.options.depart_tardif.prix_forfait ?? 0)
     : Number(params.gite?.options_depart_tardif_forfait ?? 0);
 
+const resolveChiensTarif = (params: { options: ContratOptions; gite?: Gite | null }) =>
+  params.options.chiens?.prix_unitaire !== undefined
+    ? Number(params.options.chiens.prix_unitaire ?? 0)
+    : Number(params.gite?.options_chiens_forfait ?? 0);
+
 export const computeTotals = (params: {
   dateDebut: string;
   dateFin: string;
@@ -53,7 +58,7 @@ export const computeTotals = (params: {
   const lingeTarif = Number(gite?.options_linge_toilette_par_personne ?? 0);
   const menageTarif = Number(gite?.options_menage_forfait ?? 0);
   const departTardifTarif = resolveDepartTardifTarif({ options: params.options, gite });
-  const chiensTarif = Number(gite?.options_chiens_forfait ?? 0);
+  const chiensTarif = resolveChiensTarif({ options: params.options, gite });
 
   const draps = params.options.draps?.enabled
     ? params.options.draps?.offert

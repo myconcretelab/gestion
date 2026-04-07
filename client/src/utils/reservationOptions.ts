@@ -16,6 +16,11 @@ const resolveDepartTardifTarif = (params: { options: ContratOptions; gite: Gite 
     ? round2(Math.max(0, Number(params.options.depart_tardif.prix_forfait ?? 0)))
     : round2(Number(params.gite?.options_depart_tardif_forfait ?? 0));
 
+const resolveChiensTarif = (params: { options: ContratOptions; gite: Gite | null }) =>
+  params.options.chiens?.prix_unitaire !== undefined
+    ? round2(Math.max(0, Number(params.options.chiens.prix_unitaire ?? 0)))
+    : round2(Number(params.gite?.options_chiens_forfait ?? 0));
+
 export const mergeReservationOptions = (value?: ContratOptions | null): ContratOptions => ({
   draps: { enabled: false, nb_lits: 0, offert: false, declared: false, ...(value?.draps ?? {}) },
   linge_toilette: { enabled: false, nb_personnes: 0, offert: false, declared: false, ...(value?.linge_toilette ?? {}) },
@@ -108,7 +113,7 @@ export const computeReservationOptionsPreview = (
   const chiens = options.chiens.enabled
     ? options.chiens.offert
       ? 0
-      : round2(Number(params.gite?.options_chiens_forfait ?? 0) * chiensQty * nights)
+      : round2(resolveChiensTarif({ options, gite: params.gite }) * chiensQty * nights)
     : 0;
 
   const labels: string[] = [];

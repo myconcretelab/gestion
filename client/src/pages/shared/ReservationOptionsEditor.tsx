@@ -146,6 +146,8 @@ const ReservationOptionsEditor = ({
     });
   };
 
+  const chiensTarif = normalizedOptions.chiens?.prix_unitaire ?? gite?.options_chiens_forfait ?? 0;
+
   return (
     <div className={`reservation-options-editor reservation-options-editor--${layout}`}>
       <div className="reservations-options-list">
@@ -346,7 +348,7 @@ const ReservationOptionsEditor = ({
         <div className="reservations-option-line">
           <div className="reservations-option-main">
             <span className="reservations-option-title">Chiens</span>
-            <span className="field-hint">{formatEuro(gite?.options_chiens_forfait ?? 0)} / nuit / chien</span>
+            <span className="field-hint">{formatEuro(chiensTarif)} / nuit / chien</span>
             <div className="reservations-option-switches">
               <div className="switch-group switch-group--table">
                 <span>Activer</span>
@@ -384,6 +386,22 @@ const ReservationOptionsEditor = ({
                 value={normalizedOptions.chiens?.nb ?? 0}
                 disabled={!normalizedOptions.chiens?.enabled}
                 onChange={(event) => setCount("chiens", Number(event.target.value))}
+              />
+            </label>
+            <label className="reservations-option-count">
+              Prix / nuit
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={chiensTarif}
+                disabled={!normalizedOptions.chiens?.enabled}
+                onChange={(event) =>
+                  commit((previous) => ({
+                    ...previous,
+                    chiens: { ...previous.chiens, prix_unitaire: roundMoneyInput(Number(event.target.value)) },
+                  }))
+                }
               />
             </label>
             <span className="reservations-option-amount">{formatEuro(preview.byKey.chiens)}</span>
