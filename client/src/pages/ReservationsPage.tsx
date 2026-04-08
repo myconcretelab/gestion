@@ -4557,7 +4557,7 @@ const ReservationsPage = () => {
                                         ? "Mise à jour..."
                                         : isRemainingDuePaid
                                           ? "Restant dû payé"
-                                          : "Restant dû"}
+                                          : `Restant dû : ${formatEuro(linkedContract.solde_montant)}`}
                                     </button>
                                   ) : null}
                                 </div>
