@@ -98,6 +98,7 @@ type CalendarMonthData = {
   weeks: CalendarWeek[];
   occupiedNights: number;
   occupancyRate: number;
+  revenueTotal: number;
 };
 
 type HoveredReservationState = {
@@ -129,6 +130,11 @@ type FloatingPopoverLayout = {
 } | null;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const round2 = (value: number) => Math.round(value * 100) / 100;
+const formatRoundedEuro = (value: number | string) =>
+  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(
+    Number(value ?? 0)
+  );
 
 const parseIsoDate = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
@@ -182,6 +188,18 @@ const getReservationOverlapNights = (reservation: Reservation, from: Date, to: D
   const overlapStart = Math.max(entry.getTime(), from.getTime());
   const overlapEnd = Math.min(exit.getTime(), to.getTime());
   return overlapEnd > overlapStart ? Math.round((overlapEnd - overlapStart) / DAY_MS) : 0;
+};
+
+const getReservationMonthlyRevenue = (reservation: Reservation, from: Date, to: Date) => {
+  const overlapNights = getReservationOverlapNights(reservation, from, to);
+  const totalNights = Math.max(0, Number(reservation.nb_nuits ?? 0));
+  const totalPrice = Number(reservation.prix_total ?? 0);
+
+  if (overlapNights <= 0 || totalNights <= 0 || totalPrice <= 0) {
+    return 0;
+  }
+
+  return round2((totalPrice * overlapNights) / totalNights);
 };
 
 const getReservationDisplayLabel = (reservation: Reservation) => reservation.hote_nom.trim() || reservation.hote_nom;
@@ -374,6 +392,9 @@ const buildCalendarMonthData = ({
 
   const occupiedNights = monthReservations.reduce((sum, reservation) => sum + getReservationOverlapNights(reservation, monthStart, monthEnd), 0);
   const occupancyRate = daysInMonth > 0 ? occupiedNights / daysInMonth : 0;
+  const revenueTotal = round2(
+    monthReservations.reduce((sum, reservation) => sum + getReservationMonthlyRevenue(reservation, monthStart, monthEnd), 0)
+  );
 
   return {
     index: monthIndex,
@@ -385,6 +406,7 @@ const buildCalendarMonthData = ({
     weeks,
     occupiedNights,
     occupancyRate,
+    revenueTotal,
   };
 };
 
@@ -1336,7 +1358,11 @@ const CalendrierPage = () => {
                             <CrownIcon />
                           </span>
                         ) : null}
-                        <span>{monthData.reservations.length} séjour{monthData.reservations.length > 1 ? "s" : ""}</span>
+                        <span>
+                          {usesViewportScroll
+                            ? formatRoundedEuro(monthData.revenueTotal)
+                            : `${monthData.reservations.length} séjour${monthData.reservations.length > 1 ? "s" : ""}`}
+                        </span>
                         <strong>{Math.round(monthData.occupancyRate * 100)}%</strong>
                       </div>
                     </header>
