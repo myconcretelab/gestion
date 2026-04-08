@@ -84,6 +84,10 @@ const arrhesStatusSchema = z.object({
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]),
 });
 
+const balanceStatusSchema = z.object({
+  statut_paiement_solde: z.enum(["non_regle", "regle"]),
+});
+
 const trackingDatesSchema = z.object({
   date_reception_contrat: nullableDateString,
   date_paiement_arrhes: nullableDateString,
@@ -937,6 +941,22 @@ router.patch("/:id/arrhes", async (req, res, next) => {
       },
       include: { gite: true },
     });
+    res.json(hydrateContractForTrackingStatusResponse(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/solde", async (req, res, next) => {
+  try {
+    const data = balanceStatusSchema.parse(req.body);
+    const contrat = await prisma.contrat.update({
+      where: { id: req.params.id },
+      data: {
+        statut_paiement_solde: data.statut_paiement_solde,
+      },
+    });
+
     res.json(hydrateContractForTrackingStatusResponse(contrat));
   } catch (err) {
     next(err);

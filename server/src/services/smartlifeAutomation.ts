@@ -291,6 +291,7 @@ const buildDueEvents = (
         trigger: rule.trigger,
         scheduled_at: scheduledDate.toISOString(),
         executed_at: null,
+        previous_executed_at: null,
         status: "skipped",
         message: null,
         scheduledDate,
@@ -308,7 +309,13 @@ export const runSmartlifeAutomation = async (options?: {
   triggered_by?: "manual" | "scheduler" | "startup" | "http";
   now?: Date;
 }): Promise<SmartlifeAutomationRunSummary> => {
-  if (activeRunPromise) return activeRunPromise;
+  if (activeRunPromise) {
+    // eslint-disable-next-line no-console
+    console.info(
+      `[smartlife-automation] run coalesced triggered_by=${options?.triggered_by ?? "unknown"} active_run=existing-promise`,
+    );
+    return activeRunPromise;
+  }
 
   activeRunPromise = (async () => {
     const now = options?.now ?? new Date();
@@ -366,12 +373,18 @@ export const runSmartlifeAutomation = async (options?: {
       let errorCount = 0;
 
       for (const event of dueEvents) {
-        if (executedEventKeys[event.key]) {
+        const previousExecutedAt = executedEventKeys[event.key] ?? null;
+        if (previousExecutedAt) {
           skippedCount += 1;
+          // eslint-disable-next-line no-console
+          console.info(
+            `[smartlife-automation] duplicate event skipped key=${event.key} previously_executed_at=${previousExecutedAt}`,
+          );
           items.push({
             ...event,
+            previous_executed_at: previousExecutedAt,
             status: "skipped",
-            message: "Commande déjà exécutée pour ce créneau.",
+            message: `Commande déjà exécutée pour ce créneau. Key: ${event.key}. Exécutée à ${previousExecutedAt}.`,
           });
           continue;
         }
@@ -409,6 +422,7 @@ export const runSmartlifeAutomation = async (options?: {
           items.push({
             ...event,
             executed_at: executedAt,
+            previous_executed_at: null,
             status: "executed",
             message: executionMessage,
           });
@@ -416,6 +430,7 @@ export const runSmartlifeAutomation = async (options?: {
           errorCount += 1;
           items.push({
             ...event,
+            previous_executed_at: null,
             status: "error",
             message:
               error instanceof Error

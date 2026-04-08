@@ -157,6 +157,7 @@ model Contrat {
   date_reception_contrat DateTime?
   statut_paiement_arrhes String   @default("non_recu")
   date_paiement_arrhes   DateTime?
+  statut_paiement_solde  String   @default("non_regle")
   mode_paiement_arrhes   String?
   notes                  String?
   reservation_id         String?

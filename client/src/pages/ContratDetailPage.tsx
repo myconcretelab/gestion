@@ -204,6 +204,7 @@ const ContratDetailPage = () => {
     : "";
   const receptionDateEnabled = contractReceived || Boolean(receptionDateInput);
   const arrhesDateEnabled = arrhesPaid || Boolean(arrhesPaymentDateInput);
+  const showArrhesDeadline = !arrhesPaid && Boolean(contrat.arrhes_date_limite);
   const pdfVersion =
     contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
   const pdfUrl = `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
@@ -333,73 +334,61 @@ const ContratDetailPage = () => {
                 />
                 <span className="slider" />
               </label>
-              <span>
-                {contractReceived ? "Reçu en retour" : "En attente de retour"}
-              </span>
+              <span>Reçu en retour</span>
             </div>
-            <div
-              className={`arrhes-status ${contractReceived ? "arrhes-status--paid" : "arrhes-status--pending"}`}
-            >
-              {contractReceived ? "Reçu" : "Non reçu"}
-            </div>
-            {contrat.date_reception_contrat ? (
-              <div className="arrhes-meta">
-                Date enregistrée: {formatDate(contrat.date_reception_contrat)}
-              </div>
-            ) : null}
-            <label className="field">
-              Date de réception du contrat
-              <div className="field-row field-row--compact">
+            <div className="arrhes-card__editor">
+              <label className="field">
+                Date de réception du contrat
                 <input
                   type="date"
                   value={receptionDateInput}
                   disabled={!receptionDateEnabled}
                   onChange={(e) => setReceptionDateInput(e.target.value)}
                 />
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!receptionDateEnabled || dateSaving === "reception"}
-                  onClick={() => saveTrackingDate("reception")}
-                >
-                  {dateSaving === "reception"
-                    ? "Enregistrement..."
-                    : "Enregistrer"}
-                </button>
-              </div>
-            </label>
+              </label>
+              <button
+                type="button"
+                className="secondary arrhes-card__save"
+                disabled={!receptionDateEnabled || dateSaving === "reception"}
+                onClick={() => saveTrackingDate("reception")}
+              >
+                {dateSaving === "reception"
+                  ? "Enregistrement..."
+                  : "Enregistrer"}
+              </button>
+            </div>
           </div>
 
           <div
             className={`arrhes-card ${arrhesPaid ? "arrhes-card--paid" : "arrhes-card--pending"}`}
           >
             <div className="arrhes-label">Arrhes</div>
-            <div className="arrhes-amount">
-              {formatEuro(contrat.arrhes_montant)}
+            <div className="arrhes-card__header">
+              <div className="arrhes-amount arrhes-amount--compact">
+                {formatEuro(contrat.arrhes_montant)}
+              </div>
+              <div className="switch-group arrhes-card__toggle">
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={arrhesPaid}
+                    disabled={arrhesUpdating}
+                    onChange={toggleArrhes}
+                  />
+                  <span className="slider" />
+                </label>
+                <span>Payées</span>
+              </div>
             </div>
-            <div className="switch-group">
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={arrhesPaid}
-                  disabled={arrhesUpdating}
-                  onChange={toggleArrhes}
-                />
-                <span className="slider" />
-              </label>
-              <span>{arrhesPaid ? "Payées" : "Non payées"}</span>
+            <div className="arrhes-balance">
+              <div className="arrhes-balance__label">Reste dû</div>
+              <div className="arrhes-amount">
+                {formatEuro(contrat.solde_montant)}
+              </div>
             </div>
-            <div
-              className={`arrhes-status ${arrhesPaid ? "arrhes-status--paid" : "arrhes-status--pending"}`}
-            >
-              {arrhesPaid ? "Payées" : "Non payées"}
-            </div>
-            <div className="arrhes-meta">
-              À régler avant le {formatDate(contrat.arrhes_date_limite)}
-            </div>
-            {contrat.date_paiement_arrhes ? (
+            {showArrhesDeadline ? (
               <div className="arrhes-meta">
-                Date de paiement: {formatDate(contrat.date_paiement_arrhes)}
+                À régler avant le {formatDate(contrat.arrhes_date_limite)}
               </div>
             ) : null}
             {contrat.mode_paiement_arrhes ? (
@@ -407,27 +396,27 @@ const ContratDetailPage = () => {
                 Mode de paiement: {contrat.mode_paiement_arrhes}
               </div>
             ) : null}
-            <label className="field">
-              Date de paiement des arrhes
-              <div className="field-row field-row--compact">
+            <div className="arrhes-card__editor">
+              <label className="field">
+                Date de paiement des arrhes
                 <input
                   type="date"
                   value={arrhesPaymentDateInput}
                   disabled={!arrhesDateEnabled}
                   onChange={(e) => setArrhesPaymentDateInput(e.target.value)}
                 />
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!arrhesDateEnabled || dateSaving === "arrhes"}
-                  onClick={() => saveTrackingDate("arrhes")}
-                >
-                  {dateSaving === "arrhes"
-                    ? "Enregistrement..."
-                    : "Enregistrer"}
-                </button>
-              </div>
-            </label>
+              </label>
+              <button
+                type="button"
+                className="secondary arrhes-card__save"
+                disabled={!arrhesDateEnabled || dateSaving === "arrhes"}
+                onClick={() => saveTrackingDate("arrhes")}
+              >
+                {dateSaving === "arrhes"
+                  ? "Enregistrement..."
+                  : "Enregistrer"}
+              </button>
+            </div>
           </div>
 
           <div className="detail-block detail-block--contact">
