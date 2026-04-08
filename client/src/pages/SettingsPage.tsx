@@ -593,6 +593,7 @@ type SmartlifeAutomationRunItem = {
     | "after-departure";
   scheduled_at: string;
   executed_at: string | null;
+  previous_executed_at: string | null;
   status: "executed" | "skipped" | "error";
   message: string | null;
 };
@@ -2368,6 +2369,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                             : "before-arrival",
                     scheduled_at: String(item?.scheduled_at ?? ""),
                     executed_at: item?.executed_at ?? null,
+                    previous_executed_at: item?.previous_executed_at ?? null,
                     status:
                       item?.status === "executed" || item?.status === "error"
                         ? item.status
@@ -6493,7 +6495,13 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                   {item.executed_at
                                     ? ` · exécuté ${formatIsoDateTimeFr(item.executed_at)}`
                                     : ""}
+                                  {item.previous_executed_at
+                                    ? ` · déjà exécuté ${formatIsoDateTimeFr(item.previous_executed_at)}`
+                                    : ""}
                                   {item.message ? ` · ${item.message}` : ""}
+                                </div>
+                                <div className="field-hint">
+                                  event.key: {item.key}
                                 </div>
                               </div>
                             ))}

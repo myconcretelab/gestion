@@ -5619,6 +5619,7 @@ button.warning {
 .reservations-current-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   border-radius: 999px;
   padding: 2px 7px;
   background: #dcfce7;
@@ -5629,6 +5630,7 @@ button.warning {
   line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .reservations-row-flags {
@@ -5636,9 +5638,10 @@ button.warning {
   top: -8px;
   left: 2px;
   display: inline-flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: flex-start;
-  gap: 3px;
+  gap: 4px;
   z-index: 2;
   pointer-events: none;
 }
@@ -5688,6 +5691,39 @@ button.warning {
   border-color: #facc15;
   color: #854d0e;
   white-space: nowrap;
+}
+
+.reservations-current-pill--balance {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.reservations-current-pill--balance-paid {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.reservations-current-pill--interactive {
+  pointer-events: auto;
+  cursor: pointer;
+  appearance: none;
+  box-shadow: none;
+  transition:
+    transform 0.12s ease,
+    filter 0.16s ease;
+}
+
+.reservations-current-pill--interactive:hover,
+.reservations-current-pill--interactive:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(0.98);
+}
+
+.reservations-current-pill--interactive:disabled {
+  cursor: wait;
+  opacity: 0.78;
 }
 
 .reservations-fees-cell {
@@ -6614,27 +6650,21 @@ button.warning {
   gap: 8px;
 }
 
-.contract-return-status__badge {
+.contract-return-status__link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid #cdebd8;
-  border-radius: 999px;
-  background: #f3fbf6;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #1f6b43;
   cursor: pointer;
-  transition:
-    transform 0.12s ease,
-    border-color 0.18s ease,
-    background 0.18s ease;
+  transition: opacity 0.16s ease;
 }
 
-.contract-return-status__badge:hover,
-.contract-return-status__badge:focus-visible {
-  transform: translateY(-1px);
-  background: #edf9f1;
-  border-color: #b5dec4;
+.contract-return-status__link:hover,
+.contract-return-status__link:focus-visible {
+  opacity: 0.82;
 }
 
 .contract-return-status__text {
@@ -6642,7 +6672,7 @@ button.warning {
   font-weight: 700;
 }
 
-.contract-return-status__badge strong {
+.contract-return-status__link strong {
   font-size: 0.82rem;
   font-weight: 700;
 }
@@ -7383,34 +7413,56 @@ button.warning {
   font-weight: 700;
 }
 
+.arrhes-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .arrhes-amount {
   font-size: 1.8rem;
   font-weight: 700;
   color: #111827;
 }
 
-.arrhes-status {
-  font-size: 0.85rem;
+.arrhes-amount--compact {
+  font-size: 1rem;
+}
+
+.arrhes-balance {
+  display: grid;
+  gap: 4px;
+}
+
+.arrhes-balance__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
   font-weight: 700;
-  border-radius: 999px;
-  padding: 6px 12px;
-  width: fit-content;
-}
-
-.arrhes-status--paid {
-  background: #16a34a;
-  color: #ffffff;
-}
-
-.arrhes-status--pending {
-  background: #f59e0b;
-  color: #111827;
 }
 
 .arrhes-meta {
   font-size: 0.85rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.arrhes-card__editor {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.arrhes-card__save {
+  align-self: flex-start;
+}
+
+.arrhes-card__toggle {
+  margin-left: auto;
 }
 
 .field-hint {

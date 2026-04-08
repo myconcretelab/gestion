@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
-import { formatDate } from "../utils/format";
+import { formatDate, formatEuro } from "../utils/format";
 import {
   buildDocumentEmailDraft,
   buildDocumentEmailTemplateSettings,
@@ -394,6 +394,7 @@ const ContratsListPage = () => {
               <th>Locataire</th>
               <th>Reçu en retour</th>
               <th>Arrhes payées</th>
+              <th>Restant dû</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -418,7 +419,7 @@ const ContratsListPage = () => {
                       <div className="contract-return-status">
                         <button
                           type="button"
-                          className="contract-return-status__badge"
+                          className="contract-return-status__link"
                           onClick={() => setReturnDrawerContractId(contrat.id)}
                         >
                           <span className="contract-return-status__text">Retour reçu</span>
@@ -476,8 +477,11 @@ const ContratsListPage = () => {
                       ) : null}
                     </div>
                   </td>
+                  <td>
+                    <strong>{formatEuro(contrat.solde_montant)}</strong>
+                  </td>
                   <td className="table-actions-cell">
-                    <div className="table-actions">
+                    <div className="reservations-actions-cell">
                       <Link
                         className="table-action table-action--neutral"
                         to={`/contrats/${contrat.id}`}
@@ -503,19 +507,31 @@ const ContratsListPage = () => {
                           Email
                         </button>
                       )}
-                      <Link
-                        className="table-action table-action--neutral"
-                        to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
-                      >
-                        Facturer
-                      </Link>
-                      <button
-                        className="table-action table-action--danger"
-                        onClick={() => remove(contrat)}
-                        disabled={deletingId === contrat.id}
-                      >
-                        Supprimer
-                      </button>
+                      <div className="reservations-actions-menu">
+                        <button
+                          type="button"
+                          className="table-action table-action--neutral reservations-actions-trigger"
+                          title="Actions"
+                        >
+                          ⋯
+                        </button>
+                        <div className="reservations-row-actions">
+                          <Link
+                            className="table-action table-action--neutral"
+                            to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
+                          >
+                            Facturer
+                          </Link>
+                          <button
+                            type="button"
+                            className="table-action table-action--danger"
+                            onClick={() => remove(contrat)}
+                            disabled={deletingId === contrat.id}
+                          >
+                            Supprimer
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </td>
                 </tr>

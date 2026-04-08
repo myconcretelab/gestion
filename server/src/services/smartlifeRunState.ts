@@ -38,6 +38,7 @@ export type SmartlifeAutomationRunItem = {
     | "after-departure";
   scheduled_at: string;
   executed_at: string | null;
+  previous_executed_at: string | null;
   status: "executed" | "skipped" | "error";
   message: string | null;
 };
@@ -157,6 +158,7 @@ const normalizeRunItem = (value: unknown): SmartlifeAutomationRunItem | null => 
           : "before-arrival",
     scheduled_at: scheduledAt,
     executed_at: parseIsoDateTime(item.executed_at),
+    previous_executed_at: parseIsoDateTime(item.previous_executed_at),
     status:
       item.status === "executed" || item.status === "error"
         ? item.status

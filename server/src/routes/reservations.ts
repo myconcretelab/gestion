@@ -55,6 +55,14 @@ const reservationPlaceholderSelect = {
   abbreviation: true,
   label: true,
 } as const;
+const reservationLinkedContractSelect = {
+  id: true,
+  reservation_id: true,
+  numero_contrat: true,
+  statut_paiement_arrhes: true,
+  statut_paiement_solde: true,
+  solde_montant: true,
+} as const;
 
 const emptyStringToNull = (value: unknown) => {
   if (value === null || value === undefined) return null;
@@ -590,6 +598,60 @@ const hydrateReservation = (reservation: any) => {
         : toNumber(reservation.energy_price_per_kwh),
     energy_tracking: energyTracking,
   };
+};
+
+const hydrateReservationLinkedContract = (contract: any) => ({
+  id: contract.id,
+  numero_contrat: contract.numero_contrat,
+  statut_paiement_arrhes: contract.statut_paiement_arrhes,
+  statut_paiement_solde: contract.statut_paiement_solde,
+  solde_montant: toNumber(contract.solde_montant),
+});
+
+const attachLinkedContractsToReservations = async <T extends { id: string }>(
+  reservations: T[],
+) => {
+  if (reservations.length === 0) {
+    return reservations.map((reservation) => ({
+      ...reservation,
+      linked_contract: null,
+    }));
+  }
+
+  const contracts = await prisma.contrat.findMany({
+    where: {
+      reservation_id: {
+        in: reservations.map((reservation) => reservation.id),
+      },
+    },
+    select: reservationLinkedContractSelect,
+    orderBy: [{ date_creation: "desc" }, { id: "desc" }],
+  });
+
+  const linkedContractByReservationId = new Map<
+    string,
+    ReturnType<typeof hydrateReservationLinkedContract>
+  >();
+  for (const contract of contracts) {
+    if (!contract.reservation_id) continue;
+    if (linkedContractByReservationId.has(contract.reservation_id)) continue;
+    linkedContractByReservationId.set(
+      contract.reservation_id,
+      hydrateReservationLinkedContract(contract),
+    );
+  }
+
+  return reservations.map((reservation) => ({
+    ...reservation,
+    linked_contract: linkedContractByReservationId.get(reservation.id) ?? null,
+  }));
+};
+
+const hydrateReservationWithLinkedContract = async (reservation: any) => {
+  const [hydrated] = await attachLinkedContractsToReservations([
+    hydrateReservation(reservation),
+  ]);
+  return hydrated;
 };
 
 const loadIntegratedReservationRows = async (originReference: string) =>
@@ -1289,7 +1351,9 @@ router.get("/", async (req, res, next) => {
         })
       : reservations;
 
-    const hydratedReservations = filtered.map(hydrateReservation);
+    const hydratedReservations = await attachLinkedContractsToReservations(
+      filtered.map(hydrateReservation),
+    );
     const smartlifeConfig = readSmartlifeAutomationConfig(
       buildDefaultSmartlifeAutomationConfig(),
     );
@@ -1395,7 +1459,7 @@ router.get("/prefill/:id", async (req, res, next) => {
       return res.status(400).json({ error: "La réservation doit être associée à un gîte pour préremplir un document." });
     }
 
-    return res.json(hydrateReservation(reservation));
+    return res.json(await hydrateReservationWithLinkedContract(reservation));
   } catch (err) {
     next(err);
   }
@@ -1442,7 +1506,7 @@ router.get("/:id", async (req, res, next) => {
       return res.status(404).json({ error: "Réservation introuvable" });
     }
 
-    return res.json(hydrateReservation(reservation));
+    return res.json(await hydrateReservationWithLinkedContract(reservation));
   } catch (err) {
     next(err);
   }
@@ -1545,7 +1609,9 @@ router.post("/", async (req, res, next) => {
       })
     );
 
-    const hydratedCreated = createdReservations.map(hydrateReservation);
+    const hydratedCreated = await attachLinkedContractsToReservations(
+      createdReservations.map(hydrateReservation),
+    );
     const airbnbCalendarRefresh = await buildAirbnbCalendarRefreshCreateResult(association);
     if (hydratedCreated.length > 1) {
       return res.status(201).json({
@@ -1727,7 +1793,9 @@ router.post("/:id/split", async (req, res, next) => {
       return created;
     });
 
-    const hydratedCreated = createdReservations.map(hydrateReservation);
+    const hydratedCreated = await attachLinkedContractsToReservations(
+      createdReservations.map(hydrateReservation),
+    );
     return res.status(201).json({
       ...hydratedCreated[0],
       created_reservations: hydratedCreated,
@@ -1793,7 +1861,7 @@ router.put("/:id", async (req, res, next) => {
       },
     });
 
-    return res.json(hydrateReservation(reservation));
+    return res.json(await hydrateReservationWithLinkedContract(reservation));
   } catch (err) {
     next(err);
   }

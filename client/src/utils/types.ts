@@ -92,6 +92,14 @@ export type ReservationMonthlyEnergySummary = {
   is_partial_month: boolean;
 };
 
+export type ReservationLinkedContract = {
+  id: string;
+  numero_contrat: string;
+  statut_paiement_arrhes: "non_recu" | "recu";
+  statut_paiement_solde: "non_regle" | "regle";
+  solde_montant: number;
+};
+
 export type Reservation = {
   id: string;
   gite_id?: string | null;
@@ -147,6 +155,7 @@ export type Reservation = {
   updatedAt?: string;
   gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre">;
   placeholder?: Pick<ReservationPlaceholder, "id" | "abbreviation" | "label">;
+  linked_contract?: ReservationLinkedContract | null;
 };
 
 export type ContratOptions = {
@@ -196,6 +205,7 @@ export type Contrat = {
   date_reception_contrat?: string | null;
   statut_paiement_arrhes: "non_recu" | "recu";
   date_paiement_arrhes?: string | null;
+  statut_paiement_solde: "non_regle" | "regle";
   mode_paiement_arrhes?: "Chèque" | "Virement" | "Espèces" | "A définir" | null;
   notes?: string | null;
   reservation_id?: string | null;

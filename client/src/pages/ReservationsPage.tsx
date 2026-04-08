@@ -36,6 +36,7 @@ import {
   type SchoolHoliday,
 } from "../utils/schoolHolidays";
 import type {
+  Contrat,
   ContratOptions,
   Gite,
   Reservation,
@@ -361,6 +362,19 @@ const resizeCommentTextarea = (element: HTMLTextAreaElement | null) => {
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
+const toFiniteNumberOrNull = (value: unknown) => {
+  if (value == null || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const toNonNegativeCount = (value: unknown) => {
+  const parsed = toFiniteNumberOrNull(value);
+  return parsed == null ? 0 : Math.max(0, Math.round(parsed));
+};
+
+const round4 = (value: number) => Math.round(value * 10_000) / 10_000;
+
 const formatKwh = (value: number) =>
   new Intl.NumberFormat("fr-FR", {
     minimumFractionDigits: value >= 10 ? 2 : 3,
@@ -372,6 +386,41 @@ const getMonthlyEnergySummaryKey = (giteId: string, year: number, month: number)
 
 const getMonthlyEnergyTrackingControlKey = (giteId: string, year: number, month: number) =>
   `${giteId}:${year}-${pad2(month)}:start`;
+
+const normalizeReservationMonthlyEnergySummary = (
+  value: Partial<ReservationMonthlyEnergySummary> | null | undefined,
+): ReservationMonthlyEnergySummary | null => {
+  if (!value) return null;
+
+  const giteId = String(value.gite_id ?? "").trim();
+  const year = toNonNegativeCount(value.year);
+  const month = toNonNegativeCount(value.month);
+  if (!giteId || year <= 0 || month < 1 || month > 12) {
+    return null;
+  }
+
+  return {
+    gite_id: giteId,
+    year,
+    month,
+    status: value.status === "complete" ? "complete" : "incomplete",
+    total_kwh: toFiniteNumberOrNull(value.total_kwh),
+    total_cost_eur: toFiniteNumberOrNull(value.total_cost_eur),
+    live_total_kwh: toFiniteNumberOrNull(value.live_total_kwh),
+    live_total_cost_eur: toFiniteNumberOrNull(value.live_total_cost_eur),
+    live_recorded_at:
+      typeof value.live_recorded_at === "string" && value.live_recorded_at.trim()
+        ? value.live_recorded_at.trim()
+        : null,
+    live_device_count: toNonNegativeCount(value.live_device_count),
+    device_count: toNonNegativeCount(value.device_count),
+    complete_device_count: toNonNegativeCount(value.complete_device_count),
+    missing_opening_count: toNonNegativeCount(value.missing_opening_count),
+    missing_closing_count: toNonNegativeCount(value.missing_closing_count),
+    invalid_device_count: toNonNegativeCount(value.invalid_device_count),
+    is_partial_month: value.is_partial_month === true,
+  };
+};
 
 const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
   `${year}-${pad2(month)}-${managerId}`;
@@ -959,6 +1008,7 @@ const ReservationsPage = () => {
   const [inlineCell, setInlineCell] = useState<InlineCell | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [splittingId, setSplittingId] = useState<string | null>(null);
+  const [balanceStatusUpdatingByContractId, setBalanceStatusUpdatingByContractId] = useState<Record<string, boolean>>({});
   const [startingEnergyById, setStartingEnergyById] = useState<Record<string, boolean>>({});
   const [startingMonthlyEnergyByKey, setStartingMonthlyEnergyByKey] = useState<Record<string, boolean>>({});
   const [newRows, setNewRows] = useState<Record<number, ReservationDraft>>({});
@@ -1147,7 +1197,11 @@ const ReservationsPage = () => {
     setGites(gitesData);
     setPlaceholders(placeholdersData);
     setReservations(reservationsData);
-    setMonthlyEnergySummaries(monthlyEnergyData);
+    setMonthlyEnergySummaries(
+      monthlyEnergyData
+        .map((item) => normalizeReservationMonthlyEnergySummary(item))
+        .filter((item): item is ReservationMonthlyEnergySummary => item !== null),
+    );
     setMonthlyEnergyEligibleGiteIds(monthlyEnergyEligibleGitesData);
     setAvailableYears([...new Set([currentYear, ...yearsData])].sort((a, b) => b - a));
 
@@ -1176,6 +1230,53 @@ const ReservationsPage = () => {
 
       return current;
     });
+  };
+
+  const toggleLinkedContractBalanceStatus = async (reservation: Reservation) => {
+    const linkedContract = reservation.linked_contract;
+    if (!linkedContract) return;
+
+    const nextStatus =
+      linkedContract.statut_paiement_solde === "regle" ? "non_regle" : "regle";
+
+    setBalanceStatusUpdatingByContractId((previous) => ({
+      ...previous,
+      [linkedContract.id]: true,
+    }));
+
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${linkedContract.id}/solde`, {
+        method: "PATCH",
+        json: {
+          statut_paiement_solde: nextStatus,
+        },
+      });
+
+      setReservations((previous) =>
+        previous.map((item) =>
+          item.linked_contract?.id === updated.id
+            ? {
+                ...item,
+                linked_contract: item.linked_contract
+                  ? {
+                      ...item.linked_contract,
+                      statut_paiement_solde: updated.statut_paiement_solde,
+                    }
+                  : item.linked_contract,
+              }
+            : item,
+        ),
+      );
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBalanceStatusUpdatingByContractId((previous) => {
+        const next = { ...previous };
+        delete next[linkedContract.id];
+        return next;
+      });
+    }
   };
 
   useEffect(() => {
@@ -1438,6 +1539,74 @@ const ReservationsPage = () => {
     return map;
   }, [gites]);
 
+  const monthlyEnergyLiveFallbackByKey = useMemo(() => {
+    const liveByStayKey = new Map<
+      string,
+      {
+        summaryKey: string;
+        live_total_kwh: number;
+        live_total_cost_eur: number;
+      }
+    >();
+
+    for (const reservation of visibleReservations) {
+      const giteId = String(reservation.gite_id ?? "").trim();
+      if (!giteId) continue;
+
+      const liveTotalKwh = toFiniteNumberOrNull(reservation.energy_live_consumption_kwh);
+      const liveTotalCostEur = toFiniteNumberOrNull(reservation.energy_live_cost_eur);
+      if (liveTotalKwh == null || liveTotalCostEur == null) continue;
+      if (liveTotalKwh <= 0 && liveTotalCostEur <= 0) continue;
+
+      const entryDate = new Date(reservation.date_entree);
+      if (Number.isNaN(entryDate.getTime())) continue;
+
+      const monthIndex = entryDate.getUTCMonth() + 1;
+      const summaryKey = getMonthlyEnergySummaryKey(giteId, year, monthIndex);
+      const stayKey = String(reservation.stay_group_id ?? reservation.id).trim() || reservation.id;
+      const uniqueKey = `${summaryKey}:${stayKey}`;
+      const previous = liveByStayKey.get(uniqueKey);
+
+      if (
+        !previous ||
+        liveTotalCostEur > previous.live_total_cost_eur ||
+        liveTotalKwh > previous.live_total_kwh
+      ) {
+        liveByStayKey.set(uniqueKey, {
+          summaryKey,
+          live_total_kwh: liveTotalKwh,
+          live_total_cost_eur: liveTotalCostEur,
+        });
+      }
+    }
+
+    const bySummaryKey = new Map<
+      string,
+      {
+        live_total_kwh: number;
+        live_total_cost_eur: number;
+      }
+    >();
+
+    liveByStayKey.forEach((item) => {
+      const current = bySummaryKey.get(item.summaryKey);
+      if (current) {
+        bySummaryKey.set(item.summaryKey, {
+          live_total_kwh: round4(current.live_total_kwh + item.live_total_kwh),
+          live_total_cost_eur: round2(current.live_total_cost_eur + item.live_total_cost_eur),
+        });
+        return;
+      }
+
+      bySummaryKey.set(item.summaryKey, {
+        live_total_kwh: round4(item.live_total_kwh),
+        live_total_cost_eur: round2(item.live_total_cost_eur),
+      });
+    });
+
+    return bySummaryKey;
+  }, [visibleReservations, year]);
+
   const renderMonthlyEnergyIndicator = (options: {
     giteId: string | null | undefined;
     monthIndex: number;
@@ -1455,15 +1624,29 @@ const ReservationsPage = () => {
     const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, options.monthIndex);
     const isStartingMonthlyEnergy = Boolean(startingMonthlyEnergyByKey[controlKey]);
     const energySummary = options.summary;
+    const liveFallback = monthlyEnergyLiveFallbackByKey.get(
+      getMonthlyEnergySummaryKey(giteId, year, options.monthIndex),
+    );
 
     if (energySummary) {
+      const deviceCount = toNonNegativeCount(energySummary.device_count);
+      const completeDeviceCount = toNonNegativeCount(energySummary.complete_device_count);
+      const missingOpeningCount = toNonNegativeCount(energySummary.missing_opening_count);
+      const missingClosingCount = toNonNegativeCount(energySummary.missing_closing_count);
+      const invalidDeviceCount = toNonNegativeCount(energySummary.invalid_device_count);
+      const liveDeviceCount = toNonNegativeCount(energySummary.live_device_count);
+      const liveTotalKwh =
+        toFiniteNumberOrNull(energySummary.live_total_kwh) ?? liveFallback?.live_total_kwh ?? null;
+      const liveTotalCostEur =
+        toFiniteNumberOrNull(energySummary.live_total_cost_eur) ?? liveFallback?.live_total_cost_eur ?? null;
+
       if (
         energySummary.status === "complete" &&
         energySummary.total_kwh !== null &&
         energySummary.total_cost_eur !== null
       ) {
         const titleParts = [
-          `${giteName}: ${formatKwh(energySummary.total_kwh)} kWh relevés sur ${energySummary.device_count} compteur(s)`,
+          `${giteName}: ${formatKwh(energySummary.total_kwh)} kWh relevés sur ${deviceCount} compteur(s)`,
         ];
         if (energySummary.is_partial_month) {
           titleParts.push("Mois partiel: comptage démarré après le 1er.");
@@ -1485,31 +1668,31 @@ const ReservationsPage = () => {
       }
 
       const detailParts: string[] = [];
-      if (
-        energySummary.live_total_cost_eur !== null &&
-        energySummary.live_total_kwh !== null
-      ) {
+      if (liveTotalCostEur !== null && liveTotalKwh !== null) {
+        const liveDetail = `Live ${formatKwh(liveTotalKwh)} kWh · ${formatEuro(liveTotalCostEur)}`;
+        if (liveDeviceCount > 0 && deviceCount > 0) {
+          detailParts.push(`${liveDetail} sur ${liveDeviceCount}/${deviceCount} compteur(s)`);
+        } else {
+          detailParts.push(liveDetail);
+        }
+      }
+      if (completeDeviceCount > 0) {
         detailParts.push(
-          `Live ${formatKwh(energySummary.live_total_kwh)} kWh · ${formatEuro(energySummary.live_total_cost_eur)} sur ${energySummary.live_device_count}/${energySummary.device_count} compteur(s)`,
+          `${completeDeviceCount}/${deviceCount} compteur(s) complets`,
         );
       }
-      if (energySummary.complete_device_count > 0) {
+      if (missingOpeningCount > 0) {
         detailParts.push(
-          `${energySummary.complete_device_count}/${energySummary.device_count} compteur(s) complets`,
+          `${missingOpeningCount} sans relevé de départ`,
         );
       }
-      if (energySummary.missing_opening_count > 0) {
+      if (missingClosingCount > 0) {
         detailParts.push(
-          `${energySummary.missing_opening_count} sans relevé de départ`,
+          `${missingClosingCount} sans relevé de fin`,
         );
       }
-      if (energySummary.missing_closing_count > 0) {
-        detailParts.push(
-          `${energySummary.missing_closing_count} sans relevé de fin`,
-        );
-      }
-      if (energySummary.invalid_device_count > 0) {
-        detailParts.push(`${energySummary.invalid_device_count} relevé(s) invalide(s)`);
+      if (invalidDeviceCount > 0) {
+        detailParts.push(`${invalidDeviceCount} relevé(s) invalide(s)`);
       }
       if (energySummary.is_partial_month) {
         detailParts.push("Comptage démarré en cours de mois.");
@@ -1526,8 +1709,8 @@ const ReservationsPage = () => {
             <span className="reservations-summary-pill__gite-name">{giteName}</span>
           ) : null}
           <span>
-            {energySummary.live_total_cost_eur !== null
-              ? `Élec ${formatEuro(energySummary.live_total_cost_eur)}`
+            {liveTotalCostEur !== null
+              ? `Élec ${formatEuro(liveTotalCostEur)}`
               : "Mois incomplet"}
           </span>
         </span>
@@ -4215,6 +4398,12 @@ const ReservationsPage = () => {
                       const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
+                      const linkedContract = reservation.linked_contract ?? null;
+                      const hasRemainingDuePill = linkedContract?.statut_paiement_arrhes === "recu";
+                      const isRemainingDuePaid = linkedContract?.statut_paiement_solde === "regle";
+                      const isRemainingDueUpdating = linkedContract
+                        ? Boolean(balanceStatusUpdatingByContractId[linkedContract.id])
+                        : false;
                       const telephoneHref = buildTelephoneHref(reservation.telephone);
                       const hasOpenEnergySession = Boolean(
                         reservation.energy_tracking?.some((entry) => entry.status === "open"),
@@ -4312,6 +4501,7 @@ const ReservationsPage = () => {
                               isArrivalTomorrow ||
                               isDepartureTomorrow ||
                               isIcalToVerify ||
+                              hasRemainingDuePill ||
                               holidayNightCount > 0 ? (
                                 <div className="reservations-row-flags">
                                   {isRecentImported ? (
@@ -4346,6 +4536,29 @@ const ReservationsPage = () => {
                                     >
                                       Vacances · {formatNightsLabel(holidayNightCount)}
                                     </span>
+                                  ) : null}
+                                  {hasRemainingDuePill && linkedContract ? (
+                                    <button
+                                      type="button"
+                                      className={`reservations-current-pill reservations-current-pill--interactive ${
+                                        isRemainingDuePaid
+                                          ? "reservations-current-pill--balance-paid"
+                                          : "reservations-current-pill--balance"
+                                      }`}
+                                      onClick={() => void toggleLinkedContractBalanceStatus(reservation)}
+                                      disabled={isRemainingDueUpdating}
+                                      title={`${
+                                        isRemainingDuePaid
+                                          ? "Marquer le restant dû comme non payé"
+                                          : "Marquer le restant dû comme payé"
+                                      } · ${formatEuro(linkedContract.solde_montant)}`}
+                                    >
+                                      {isRemainingDueUpdating
+                                        ? "Mise à jour..."
+                                        : isRemainingDuePaid
+                                          ? "Restant dû payé"
+                                          : "Restant dû"}
+                                    </button>
                                   ) : null}
                                 </div>
                               ) : null}
