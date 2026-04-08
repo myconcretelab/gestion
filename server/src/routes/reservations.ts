@@ -618,6 +618,13 @@ const attachLinkedContractsToReservations = async <T extends { id: string }>(
     }));
   }
 
+  if (!process.env.DATABASE_URL) {
+    return reservations.map((reservation) => ({
+      ...reservation,
+      linked_contract: null,
+    }));
+  }
+
   const contracts = await prisma.contrat.findMany({
     where: {
       reservation_id: {
