@@ -5,6 +5,7 @@ import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import ReservationOptionsEditor from "./shared/ReservationOptionsEditor";
 import { mergeOptions } from "./shared/rentalForm";
 import {
+  computeGuestNightsByGite,
   computeUrssafByManager,
   parseStatisticsPayload,
   type ParsedStatisticsPayload,
@@ -163,6 +164,22 @@ type ReservationOptionsPreview = {
 type ReservationFeesBreakdown = {
   declared: number;
   undeclared: number;
+};
+
+type GuestNightDeclarationRow = {
+  year: number;
+  month: number;
+  gite_id: string;
+  guest_nights: number;
+  declared_at: string;
+};
+type GuestNightDeclarationsByKey = Record<string, GuestNightDeclarationRow>;
+type GuestNightUndeclaredItem = {
+  month: number;
+  giteId: string;
+  giteName: string;
+  managerName: string | null;
+  guestNights: number;
 };
 
 type UrssafDeclarationRow = {
@@ -425,6 +442,12 @@ const normalizeReservationMonthlyEnergySummary = (
 const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
   `${year}-${pad2(month)}-${managerId}`;
 
+const buildGuestNightDeclarationCheckKey = (year: number, month: number, giteId: string) =>
+  `${year}-${pad2(month)}-${giteId}`;
+
+const formatManagerDisplayName = (manager: Gite["gestionnaire"] | null | undefined) =>
+  [manager?.nom?.trim(), manager?.prenom?.trim()].filter(Boolean).join(" ");
+
 const isUrssafConcernedMonth = (
   targetYear: number,
   targetMonth: number,
@@ -572,9 +595,6 @@ const getGiteNightlyPriceSuggestions = (gite: Gite | null) => {
 
   return suggestions;
 };
-
-const computeReservationGuestNights = (reservation: Pick<Reservation, "nb_nuits" | "nb_adultes">) =>
-  Math.max(0, Number(reservation.nb_nuits ?? 0)) * Math.max(0, Number(reservation.nb_adultes ?? 0));
 
 const toNonNegativeInt = (value: unknown, fallback = 0) => {
   const numeric = Number(value);
@@ -1024,6 +1044,8 @@ const ReservationsPage = () => {
   const [reservationOptions, setReservationOptions] = useState<Record<string, ContratOptions>>({});
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [declarationExcludedSources, setDeclarationExcludedSources] = useState<string[]>(["Airbnb"]);
+  const [guestNightDeclarationsByKey, setGuestNightDeclarationsByKey] = useState<GuestNightDeclarationsByKey>({});
+  const [savingGuestNightDeclarationByKey, setSavingGuestNightDeclarationByKey] = useState<Record<string, boolean>>({});
   const [urssafDeclarationsByKey, setUrssafDeclarationsByKey] = useState<UrssafDeclarationsByKey>({});
   const [savingUrssafDeclarationByMonth, setSavingUrssafDeclarationByMonth] = useState<Record<number, boolean>>({});
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
@@ -2782,6 +2804,30 @@ const ReservationsPage = () => {
 
   useEffect(() => {
     let cancelled = false;
+    apiFetch<GuestNightDeclarationRow[]>(`/guest-night-declarations?year=${year}`)
+      .then((rows) => {
+        if (cancelled) return;
+        const loadedDeclarations: GuestNightDeclarationsByKey = {};
+        rows.forEach((item) => {
+          const key = buildGuestNightDeclarationCheckKey(item.year, item.month, item.gite_id);
+          loadedDeclarations[key] = {
+            ...item,
+            guest_nights: toNonNegativeInt(item.guest_nights),
+          };
+        });
+        setGuestNightDeclarationsByKey((previous) => ({ ...previous, ...loadedDeclarations }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [year]);
+
+  useEffect(() => {
+    let cancelled = false;
     apiFetch<UrssafDeclarationRow[]>(`/urssaf-declarations?year=${year}`)
       .then((rows) => {
         if (cancelled) return;
@@ -2812,6 +2858,106 @@ const ReservationsPage = () => {
     const managerId = giteById.get(activeTab)?.gestionnaire?.id ?? null;
     return managerId ? [managerId] : [];
   }, [activeTab, giteById, gites]);
+
+  const activeGuestNightGiteIds = useMemo(() => {
+    if (activeTab === UNASSIGNED_TAB || !activeTab) return [] as string[];
+    if (activeTab === ALL_GITES_TAB) {
+      return gites.map((gite) => gite.id);
+    }
+    return giteById.has(activeTab) ? [activeTab] : [];
+  }, [activeTab, giteById, gites]);
+
+  const activeGuestNightManagerTitle = useMemo(() => {
+    if (!activeTab || activeTab === ALL_GITES_TAB || activeTab === UNASSIGNED_TAB) return null;
+    const managerName = formatManagerDisplayName(giteById.get(activeTab)?.gestionnaire);
+    return managerName || null;
+  }, [activeTab, giteById]);
+
+  const guestNightSummaryByMonthForActiveTab = useMemo(() => {
+    const byMonth = new Map<number, { guestNights: number; undeclaredGuestNights: number }>();
+    if (!statisticsDataset) return byMonth;
+    if (activeGuestNightGiteIds.length === 0) return byMonth;
+
+    const activeGiteIdSet = new Set(activeGuestNightGiteIds);
+    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+      let guestNights = 0;
+      let undeclaredGuestNights = 0;
+      const guestNightsByGite = computeGuestNightsByGite(
+        statisticsDataset.entriesByGite,
+        statisticsDataset.gites,
+        year,
+        monthIndex,
+        declarationExcludedSources
+      );
+
+      guestNightsByGite.forEach((item) => {
+        if (!activeGiteIdSet.has(item.giteId)) return;
+        guestNights += item.guestNights;
+        const key = buildGuestNightDeclarationCheckKey(year, monthIndex, item.giteId);
+        if (!guestNightDeclarationsByKey[key]) {
+          undeclaredGuestNights += item.guestNights;
+        }
+      });
+
+      byMonth.set(monthIndex, { guestNights, undeclaredGuestNights });
+    }
+
+    return byMonth;
+  }, [activeGuestNightGiteIds, declarationExcludedSources, guestNightDeclarationsByKey, statisticsDataset, year]);
+
+  const undeclaredGuestNightItemsForActiveTab = useMemo<GuestNightUndeclaredItem[]>(() => {
+    const items: GuestNightUndeclaredItem[] = [];
+    if (!statisticsDataset) return items;
+    if (activeGuestNightGiteIds.length === 0) return items;
+    if (year !== currentPeriod.year) return items;
+
+    const activeGiteIdSet = new Set(activeGuestNightGiteIds);
+    for (let monthIndex = 1; monthIndex < currentPeriod.month; monthIndex += 1) {
+      const guestNightsByGite = computeGuestNightsByGite(
+        statisticsDataset.entriesByGite,
+        statisticsDataset.gites,
+        year,
+        monthIndex,
+        declarationExcludedSources
+      );
+
+      guestNightsByGite.forEach((item) => {
+        if (!activeGiteIdSet.has(item.giteId)) return;
+        const key = buildGuestNightDeclarationCheckKey(year, monthIndex, item.giteId);
+        if (guestNightDeclarationsByKey[key]) return;
+        items.push({
+          month: monthIndex,
+          giteId: item.giteId,
+          giteName: item.giteName,
+          managerName: item.managerName,
+          guestNights: toNonNegativeInt(item.guestNights),
+        });
+      });
+    }
+
+    return items.sort(
+      (left, right) =>
+        left.month - right.month ||
+        left.giteName.localeCompare(right.giteName, "fr", { sensitivity: "base" })
+    );
+  }, [activeGuestNightGiteIds, currentPeriod.month, currentPeriod.year, declarationExcludedSources, guestNightDeclarationsByKey, statisticsDataset, year]);
+
+  const showGuestNightReminder = undeclaredGuestNightItemsForActiveTab.length > 0;
+  const guestNightReminderPeriodLabel = String(year);
+
+  const activeUrssafManagerTitle = useMemo(() => {
+    if (!activeTab || activeManagerIds.length !== 1) return null;
+
+    if (activeTab !== ALL_GITES_TAB) {
+      const activeManagerName = formatManagerDisplayName(giteById.get(activeTab)?.gestionnaire);
+      return activeManagerName || null;
+    }
+
+    const managerName = formatManagerDisplayName(
+      gites.find((gite) => gite.gestionnaire?.id === activeManagerIds[0])?.gestionnaire
+    );
+    return managerName || null;
+  }, [activeManagerIds, activeTab, giteById, gites]);
 
   const declaredUrssafByMonthForActiveTab = useMemo(() => {
     if (activeManagerIds.length === 0) return new Map<number, { amount: number; count: number }>();
@@ -2887,10 +3033,6 @@ const ReservationsPage = () => {
     const now = new Date();
     return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
   }, []);
-  const declarationExcludedSourceKeys = useMemo(
-    () => new Set(declarationExcludedSources.map((source) => normalizeTextKey(source)).filter(Boolean)),
-    [declarationExcludedSources]
-  );
 
   const isMonthExpandedByDefault = useCallback(
     (monthIndex: number) => {
@@ -3099,6 +3241,44 @@ const ReservationsPage = () => {
     }
   };
 
+  const markGuestNightDeclarationDone = async (item: GuestNightUndeclaredItem) => {
+    const declarationKey = buildGuestNightDeclarationCheckKey(year, item.month, item.giteId);
+    if (savingGuestNightDeclarationByKey[declarationKey]) return;
+
+    setSavingGuestNightDeclarationByKey((previous) => ({
+      ...previous,
+      [declarationKey]: true,
+    }));
+
+    try {
+      const saved = await apiFetch<GuestNightDeclarationRow>("/guest-night-declarations", {
+        method: "POST",
+        json: {
+          year,
+          month: item.month,
+          gite_id: item.giteId,
+          guest_nights: item.guestNights,
+        },
+      });
+
+      setGuestNightDeclarationsByKey((previous) => ({
+        ...previous,
+        [buildGuestNightDeclarationCheckKey(saved.year, saved.month, saved.gite_id)]: {
+          ...saved,
+          guest_nights: toNonNegativeInt(saved.guest_nights),
+        },
+      }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingGuestNightDeclarationByKey((previous) => {
+        const next = { ...previous };
+        delete next[declarationKey];
+        return next;
+      });
+    }
+  };
+
   const unresolvedImportRequiredFields =
     importPreview?.missing_required_fields.filter((field) => !(importColumnMap[field] ?? "").trim()) ?? [];
   const exportRows = useMemo(() => {
@@ -3259,28 +3439,17 @@ const ReservationsPage = () => {
   };
 
   const monthSummary = (list: Reservation[]) => {
-    let guestNights = 0;
-    let declaredGuestNights = 0;
     let zeroTotalReservationsCount = 0;
 
     list.forEach((item) => {
-      const reservationGuestNights = computeReservationGuestNights(item);
-      guestNights += reservationGuestNights;
       if (round2(Number(item.prix_total ?? 0)) === 0) {
         zeroTotalReservationsCount += 1;
-      }
-
-      const normalizedSource = normalizeTextKey(normalizeReservationSource(item.source_paiement));
-      if (!declarationExcludedSourceKeys.has(normalizedSource)) {
-        declaredGuestNights += reservationGuestNights;
       }
     });
 
     return {
       count: list.length,
       nights: list.reduce((acc, item) => acc + item.nb_nuits, 0),
-      guestNights,
-      declaredGuestNights,
       zeroTotalReservationsCount,
       revenue: list.reduce((acc, item) => acc + item.prix_total, 0),
       fees: list.reduce((acc, item) => acc + (item.frais_optionnels_montant ?? 0), 0),
@@ -4066,10 +4235,77 @@ const ReservationsPage = () => {
 
         {!activeTab && <div className="field-hint">Créez un gîte pour commencer à saisir des réservations.</div>}
 
+        {activeTab && showGuestNightReminder && (
+          <div className="reservations-urssaf-reminder reservations-urssaf-reminder--guest-nights">
+            <div className="reservations-urssaf-reminder__head">
+              <strong>
+                {activeGuestNightManagerTitle && activeGite?.nom
+                  ? `Déclaration nuitées ${activeGuestNightManagerTitle} • ${guestNightReminderPeriodLabel} • ${activeGite.nom}`
+                  : activeGuestNightManagerTitle
+                    ? `Déclaration nuitées ${activeGuestNightManagerTitle} • ${guestNightReminderPeriodLabel}`
+                    : activeGite?.nom
+                      ? `Déclaration nuitées ${guestNightReminderPeriodLabel} • ${activeGite.nom}`
+                      : `Déclaration nuitées: ${guestNightReminderPeriodLabel}`}
+              </strong>
+              <span>
+                {formatPluralLabel(undeclaredGuestNightItemsForActiveTab.length, "déclaration", "déclarations")} non faite(s)
+              </span>
+            </div>
+            <div className="reservations-urssaf-reminder__list">
+              {undeclaredGuestNightItemsForActiveTab.map((item) => {
+                const declarationKey = buildGuestNightDeclarationCheckKey(year, item.month, item.giteId);
+                const titleParts = [`${MONTHS[item.month - 1]} ${year}`];
+                if (activeTab === ALL_GITES_TAB) {
+                  titleParts.push(item.giteName);
+                }
+                const titleLabel = titleParts.join(" • ");
+
+                return (
+                  <div key={declarationKey} className="reservations-urssaf-reminder__item">
+                    <div>
+                      <div className="reservations-urssaf-reminder__manager">{titleLabel}</div>
+                      <div className="reservations-urssaf-reminder__amount">
+                        {formatPluralLabel(item.guestNights, "nuitée", "nuitées")}
+                      </div>
+                    </div>
+                    <div className="reservations-urssaf-reminder__actions">
+                      <button
+                        type="button"
+                        className="table-action table-action--neutral reservations-urssaf-reminder__copy"
+                        onClick={() => {
+                          copyRoundedAmount(item.guestNights);
+                        }}
+                        title={`Copier le nombre de nuitées pour ${titleLabel}`}
+                      >
+                        Copier
+                      </button>
+                      <button
+                        type="button"
+                        className="table-action table-action--primary reservations-urssaf-reminder__check"
+                        onClick={() => {
+                          void markGuestNightDeclarationDone(item);
+                        }}
+                        title={`Valider la déclaration des nuitées pour ${titleLabel}`}
+                        disabled={Boolean(savingGuestNightDeclarationByKey[declarationKey])}
+                      >
+                        Déclaré
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {activeTab && showUrssafReminder && (
           <div className="reservations-urssaf-reminder">
             <div className="reservations-urssaf-reminder__head">
-              <strong>Déclaration URSSAF: {urssafReminderPeriodLabel}</strong>
+              <strong>
+                {activeUrssafManagerTitle
+                  ? `Déclaration URSSAF ${activeUrssafManagerTitle}: ${urssafReminderPeriodLabel}`
+                  : `Déclaration URSSAF: ${urssafReminderPeriodLabel}`}
+              </strong>
               <span>{formatPluralLabel(undeclaredUrssafItemsForActiveTab.length, "mois", "mois")} non déclaré(s)</span>
             </div>
             <div className="reservations-urssaf-reminder__list">
@@ -4128,6 +4364,10 @@ const ReservationsPage = () => {
           monthsToRender.map((monthIndex) => {
             const list = reservationsByMonth.get(monthIndex) ?? [];
             const summary = monthSummary(list);
+            const guestNightSummary = guestNightSummaryByMonthForActiveTab.get(monthIndex) ?? {
+              guestNights: 0,
+              undeclaredGuestNights: 0,
+            };
             const addAllowed = activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB && Boolean(activeGite?.id);
             const newRow = newRows[monthIndex] ?? (addAllowed && activeGite ? buildEmptyDraft(year, monthIndex, activeGite) : null);
             const rawInsertIndex = insertRowIndexByMonth[monthIndex];
@@ -4227,10 +4467,10 @@ const ReservationsPage = () => {
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.count, "réservation", "réservations")}</span>
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.nights, "nuit", "nuits")}</span>
                       <span className="reservations-summary-pill reservations-summary-pill--guest-nights">
-                        Total {formatPluralLabel(summary.guestNights, "nuitée", "nuitées")}
+                        Total {formatPluralLabel(guestNightSummary.guestNights, "nuitée", "nuitées")}
                       </span>
                       <span className="reservations-summary-pill reservations-summary-pill--guest-nights-declared">
-                        {formatPluralLabel(summary.declaredGuestNights, "nuitée", "nuitées")} à déclarer
+                        {formatPluralLabel(guestNightSummary.undeclaredGuestNights, "nuitée", "nuitées")} à déclarer
                       </span>
                       <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
