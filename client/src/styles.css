@@ -5123,6 +5123,11 @@ button.warning {
   gap: 10px;
 }
 
+.reservations-urssaf-reminder--guest-nights {
+  border-color: #bfdbfe;
+  background: linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%);
+}
+
 .reservations-urssaf-reminder__head {
   display: flex;
   justify-content: space-between;
@@ -5130,6 +5135,10 @@ button.warning {
   gap: 10px;
   flex-wrap: wrap;
   color: #7f1d1d;
+}
+
+.reservations-urssaf-reminder--guest-nights .reservations-urssaf-reminder__head {
+  color: #1d4ed8;
 }
 
 .reservations-urssaf-reminder__head strong {
@@ -5140,6 +5149,10 @@ button.warning {
   font-size: 0.78rem;
   font-weight: 700;
   color: #9f1239;
+}
+
+.reservations-urssaf-reminder--guest-nights .reservations-urssaf-reminder__head span {
+  color: #0f766e;
 }
 
 .reservations-urssaf-reminder__list {
@@ -5158,16 +5171,28 @@ button.warning {
   padding: 10px 12px;
 }
 
+.reservations-urssaf-reminder--guest-nights .reservations-urssaf-reminder__item {
+  border-color: #bfdbfe;
+}
+
 .reservations-urssaf-reminder__manager {
   font-size: 0.84rem;
   font-weight: 700;
   color: #881337;
 }
 
+.reservations-urssaf-reminder--guest-nights .reservations-urssaf-reminder__manager {
+  color: #1d4ed8;
+}
+
 .reservations-urssaf-reminder__amount {
   font-size: 0.8rem;
   color: #4c1d95;
   font-weight: 700;
+}
+
+.reservations-urssaf-reminder--guest-nights .reservations-urssaf-reminder__amount {
+  color: #0f766e;
 }
 
 .reservations-urssaf-reminder__flags {

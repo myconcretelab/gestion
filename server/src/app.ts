@@ -12,6 +12,7 @@ import invoicesRouter from "./routes/invoices.js";
 import reservationsRouter from "./routes/reservations.js";
 import statisticsRouter from "./routes/statistics.js";
 import settingsRouter from "./routes/settings.js";
+import guestNightDeclarationsRouter from "./routes/guestNightDeclarations.js";
 import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
 import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
@@ -105,6 +106,7 @@ export const createApp = () => {
   app.use("/api/reservations", reservationsRouter);
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/guest-night-declarations", guestNightDeclarationsRouter);
   app.use("/api/urssaf-declarations", urssafDeclarationsRouter);
   app.use("/api/school-holidays", schoolHolidaysRouter);
   app.use("/api/today", todayRouter);

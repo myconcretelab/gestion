@@ -58,6 +58,7 @@ model Gite {
   contrats                             Contrat[]
   factures                             Facture[]
   reservations                         Reservation[]
+  guest_night_declarations             GuestNightDeclaration[]
   monthly_energy_readings              GiteMonthlyEnergyReading[]
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
@@ -98,6 +99,24 @@ model UrssafDeclaration {
   @@index([year, month], map: "urssaf_declarations_period_idx")
   @@index([gestionnaire_id], map: "urssaf_declarations_manager_idx")
   @@map("urssaf_declarations")
+}
+
+model GuestNightDeclaration {
+  id           String   @id @default(cuid())
+  year         Int
+  month        Int
+  gite_id      String
+  guest_nights Int      @default(0)
+  declared_at  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  gite         Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@unique([year, month, gite_id], map: "guest_night_declarations_period_gite_key")
+  @@index([year, month], map: "guest_night_declarations_period_idx")
+  @@index([gite_id], map: "guest_night_declarations_gite_idx")
+  @@map("guest_night_declarations")
 }
 
 model IcalSource {
