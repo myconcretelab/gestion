@@ -1,6 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { format } from "date-fns";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
@@ -608,6 +609,54 @@ const hydrateReservationLinkedContract = (contract: any) => ({
   solde_montant: toNumber(contract.solde_montant),
 });
 
+const loadLinkedContracts = async (reservationIds: string[]) => {
+  const uniqueReservationIds = [...new Set(reservationIds.filter(Boolean))];
+  if (uniqueReservationIds.length === 0) {
+    return [] as Array<{
+      id: string;
+      reservation_id: string | null;
+      numero_contrat: string;
+      statut_paiement_arrhes: string;
+      statut_paiement_solde: string;
+      solde_montant: number;
+    }>;
+  }
+
+  if ((process.env.DATABASE_URL ?? "").startsWith("file:")) {
+    return prisma.$queryRaw<
+      Array<{
+        id: string;
+        reservation_id: string | null;
+        numero_contrat: string;
+        statut_paiement_arrhes: string;
+        statut_paiement_solde: string;
+        solde_montant: number;
+      }>
+    >(Prisma.sql`
+      SELECT
+        "id",
+        "reservation_id",
+        "numero_contrat",
+        "statut_paiement_arrhes",
+        "statut_paiement_solde",
+        "solde_montant"
+      FROM "contrats"
+      WHERE "reservation_id" IN (${Prisma.join(uniqueReservationIds)})
+      ORDER BY "date_creation" DESC, "id" DESC
+    `);
+  }
+
+  return prisma.contrat.findMany({
+    where: {
+      reservation_id: {
+        in: uniqueReservationIds,
+      },
+    },
+    select: reservationLinkedContractSelect,
+    orderBy: [{ date_creation: "desc" }, { id: "desc" }],
+  });
+};
+
 const attachLinkedContractsToReservations = async <T extends { id: string }>(
   reservations: T[],
 ) => {
@@ -625,15 +674,9 @@ const attachLinkedContractsToReservations = async <T extends { id: string }>(
     }));
   }
 
-  const contracts = await prisma.contrat.findMany({
-    where: {
-      reservation_id: {
-        in: reservations.map((reservation) => reservation.id),
-      },
-    },
-    select: reservationLinkedContractSelect,
-    orderBy: [{ date_creation: "desc" }, { id: "desc" }],
-  });
+  const contracts = await loadLinkedContracts(
+    reservations.map((reservation) => reservation.id),
+  );
 
   const linkedContractByReservationId = new Map<
     string,

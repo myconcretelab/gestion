@@ -5151,8 +5151,20 @@ button.warning {
   color: #9f1239;
 }
 
+.reservations-urssaf-reminder__head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .reservations-urssaf-reminder--guest-nights .reservations-urssaf-reminder__head span {
   color: #0f766e;
+}
+
+.reservations-urssaf-reminder__link {
+  min-width: 126px;
 }
 
 .reservations-urssaf-reminder__list {
@@ -5225,6 +5237,11 @@ button.warning {
 
   .reservations-urssaf-reminder__actions {
     width: 100%;
+  }
+
+  .reservations-urssaf-reminder__head-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 
