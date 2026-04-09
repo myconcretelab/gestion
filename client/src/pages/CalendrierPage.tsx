@@ -314,8 +314,10 @@ const buildCalendarMonthData = ({
 
   const segmentsByWeek = new Map<number, CalendarWeekSegment[]>();
   for (const reservation of monthReservations) {
-    const reservationStart = new Date(Math.max(parseIsoDate(reservation.date_entree).getTime(), monthStart.getTime()));
-    const reservationEnd = new Date(Math.min(parseIsoDate(reservation.date_sortie).getTime(), monthEnd.getTime()));
+    const actualReservationStart = parseIsoDate(reservation.date_entree);
+    const actualReservationEnd = parseIsoDate(reservation.date_sortie);
+    const reservationStart = new Date(Math.max(actualReservationStart.getTime(), monthStart.getTime()));
+    const reservationEnd = new Date(Math.min(actualReservationEnd.getTime(), monthEnd.getTime()));
     const reservationEndOffset = Math.floor((reservationEnd.getTime() - gridStart.getTime()) / DAY_MS);
     const reservationEndColumn = (reservationEndOffset % 7) + 1;
     const endsAtNextWeekStart =
@@ -346,8 +348,8 @@ const buildCalendarMonthData = ({
           label: getReservationDisplayLabel(reservation),
           showLabel: partStart.getTime() === reservationStart.getTime() || (pointIndex === 0 && cursor.getTime() > reservationStart.getTime()),
           isPast: partEndExclusive.getTime() <= todayDate.getTime(),
-          continuesFromPreviousWeek: partStart.getTime() > reservationStart.getTime(),
-          continuesToNextWeek: partEndExclusive.getTime() < reservationEnd.getTime() || endsAtNextWeekStart,
+          continuesFromPreviousWeek: actualReservationStart.getTime() < partStart.getTime(),
+          continuesToNextWeek: actualReservationEnd.getTime() > partEndExclusive.getTime() || endsAtNextWeekStart,
           isDepartureMarker: false,
           reservation,
         });

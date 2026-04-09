@@ -4239,17 +4239,28 @@ const ReservationsPage = () => {
           <div className="reservations-urssaf-reminder reservations-urssaf-reminder--guest-nights">
             <div className="reservations-urssaf-reminder__head">
               <strong>
-                {activeGuestNightManagerTitle && activeGite?.nom
-                  ? `Déclaration nuitées ${activeGuestNightManagerTitle} • ${guestNightReminderPeriodLabel} • ${activeGite.nom}`
-                  : activeGuestNightManagerTitle
-                    ? `Déclaration nuitées ${activeGuestNightManagerTitle} • ${guestNightReminderPeriodLabel}`
-                    : activeGite?.nom
-                      ? `Déclaration nuitées ${guestNightReminderPeriodLabel} • ${activeGite.nom}`
-                      : `Déclaration nuitées: ${guestNightReminderPeriodLabel}`}
+                {[
+                  "Déclaration taxe de séjour",
+                  activeGuestNightManagerTitle,
+                  guestNightReminderPeriodLabel,
+                  activeGite?.nom
+                ]
+                  .filter(Boolean)
+                  .join(" • ")}
               </strong>
-              <span>
-                {formatPluralLabel(undeclaredGuestNightItemsForActiveTab.length, "déclaration", "déclarations")} non faite(s)
-              </span>
+              <div className="reservations-urssaf-reminder__head-actions">
+                <span>
+                  {formatPluralLabel(undeclaredGuestNightItemsForActiveTab.length, "déclaration", "déclarations")} non faite(s)
+                </span>
+                <a
+                  className="table-action table-action--neutral reservations-urssaf-reminder__link"
+                  href="https://ploermelcommunaute.taxesejour.fr/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Accéder au site
+                </a>
+              </div>
             </div>
             <div className="reservations-urssaf-reminder__list">
               {undeclaredGuestNightItemsForActiveTab.map((item) => {
@@ -4306,7 +4317,17 @@ const ReservationsPage = () => {
                   ? `Déclaration URSSAF ${activeUrssafManagerTitle}: ${urssafReminderPeriodLabel}`
                   : `Déclaration URSSAF: ${urssafReminderPeriodLabel}`}
               </strong>
-              <span>{formatPluralLabel(undeclaredUrssafItemsForActiveTab.length, "mois", "mois")} non déclaré(s)</span>
+              <div className="reservations-urssaf-reminder__head-actions">
+                <span>{formatPluralLabel(undeclaredUrssafItemsForActiveTab.length, "mois", "mois")} non déclaré(s)</span>
+                <a
+                  className="table-action table-action--neutral reservations-urssaf-reminder__link"
+                  href="https://www.autoentrepreneur.urssaf.fr/portail/accueil.html"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Accéder au site
+                </a>
+              </div>
             </div>
             <div className="reservations-urssaf-reminder__list">
               {undeclaredUrssafItemsForActiveTab.map((item) => (
