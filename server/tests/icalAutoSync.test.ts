@@ -9,6 +9,7 @@ import {
   syncIcalReservations,
   updateIcalSyncCronConfig,
 } from "../src/services/icalSync.ts";
+import { readIcalConflictRecords, writeIcalConflictRecords } from "../src/services/icalConflicts.ts";
 import { env } from "../src/config/env.ts";
 import { writeImportLog, type ImportLogEntry } from "../src/services/importLog.ts";
 
@@ -219,14 +220,15 @@ test("runAppLoadIcalSync reutilise une synchro iCal deja en cours", async () => 
 });
 
 test("syncIcalReservations supprime les reservations iCal plateforme absentes du flux", async () => {
+  const conflictsBackup = backupFile(path.join(env.DATA_DIR, "ical-conflicts.json"));
   const originalFindManySources = prisma.icalSource.findMany;
   const originalFindManyReservations = prisma.reservation.findMany;
   const originalDelete = prisma.reservation.delete;
   const originalUpdate = prisma.reservation.update;
   const originalFetch = global.fetch;
-  const deletedIds: string[] = [];
 
   try {
+    writeIcalConflictRecords([]);
     prisma.icalSource.findMany = async () => createActiveSource();
     prisma.reservation.findMany = async () => [
       {
@@ -241,9 +243,8 @@ test("syncIcalReservations supprime les reservations iCal plateforme absentes du
         commentaire: null,
       },
     ];
-    prisma.reservation.delete = async ({ where }: any) => {
-      deletedIds.push(where.id);
-      return { id: where.id } as any;
+    prisma.reservation.delete = async () => {
+      throw new Error("reservation.delete ne doit pas etre appele pour un conflit iCal absent.");
     };
     prisma.reservation.update = async () => {
       throw new Error("reservation.update ne doit pas etre appele pour une reservation plateforme supprimee.");
@@ -256,28 +257,33 @@ test("syncIcalReservations supprime les reservations iCal plateforme absentes du
       }) as Response) as typeof fetch;
 
     const result = await syncIcalReservations();
+    const conflicts = readIcalConflictRecords();
 
-    assert.equal(result.deleted_count, 1);
-    assert.equal(result.to_verify_marked_count, 0);
-    assert.deepEqual(deletedIds, ["reservation-platform"]);
+    assert.equal(result.deleted_count, 0);
+    assert.equal(result.to_verify_marked_count, 1);
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]?.type, "deleted");
+    assert.equal(conflicts[0]?.reservation_id, "reservation-platform");
   } finally {
     prisma.icalSource.findMany = originalFindManySources;
     prisma.reservation.findMany = originalFindManyReservations;
     prisma.reservation.delete = originalDelete;
     prisma.reservation.update = originalUpdate;
     global.fetch = originalFetch;
+    restoreFile(conflictsBackup);
   }
 });
 
 test("syncIcalReservations supprime une reservation iCal absente meme hors source plateforme", async () => {
+  const conflictsBackup = backupFile(path.join(env.DATA_DIR, "ical-conflicts.json"));
   const originalFindManySources = prisma.icalSource.findMany;
   const originalFindManyReservations = prisma.reservation.findMany;
   const originalDelete = prisma.reservation.delete;
   const originalUpdate = prisma.reservation.update;
   const originalFetch = global.fetch;
-  const deletedIds: string[] = [];
 
   try {
+    writeIcalConflictRecords([]);
     prisma.icalSource.findMany = async () => createActiveSource();
     prisma.reservation.findMany = async () => [
       {
@@ -292,9 +298,8 @@ test("syncIcalReservations supprime une reservation iCal absente meme hors sourc
         commentaire: null,
       },
     ];
-    prisma.reservation.delete = async ({ where }: any) => {
-      deletedIds.push(where.id);
-      return { id: where.id } as any;
+    prisma.reservation.delete = async () => {
+      throw new Error("reservation.delete ne doit pas etre appele pour une reservation iCal absente.");
     };
     prisma.reservation.update = async () => {
       throw new Error("reservation.update ne doit pas etre appele pour une reservation iCal supprimee.");
@@ -307,28 +312,33 @@ test("syncIcalReservations supprime une reservation iCal absente meme hors sourc
       }) as Response) as typeof fetch;
 
     const result = await syncIcalReservations();
+    const conflicts = readIcalConflictRecords();
 
-    assert.equal(result.deleted_count, 1);
-    assert.equal(result.to_verify_marked_count, 0);
-    assert.deepEqual(deletedIds, ["reservation-virement"]);
+    assert.equal(result.deleted_count, 0);
+    assert.equal(result.to_verify_marked_count, 1);
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]?.type, "deleted");
+    assert.equal(conflicts[0]?.reservation_id, "reservation-virement");
   } finally {
     prisma.icalSource.findMany = originalFindManySources;
     prisma.reservation.findMany = originalFindManyReservations;
     prisma.reservation.delete = originalDelete;
     prisma.reservation.update = originalUpdate;
     global.fetch = originalFetch;
+    restoreFile(conflictsBackup);
   }
 });
 
 test("syncIcalReservations supprime une reservation plateforme absente meme si elle semble creee dans l'app", async () => {
+  const conflictsBackup = backupFile(path.join(env.DATA_DIR, "ical-conflicts.json"));
   const originalFindManySources = prisma.icalSource.findMany;
   const originalFindManyReservations = prisma.reservation.findMany;
   const originalDelete = prisma.reservation.delete;
   const originalUpdate = prisma.reservation.update;
   const originalFetch = global.fetch;
-  const deletedIds: string[] = [];
 
   try {
+    writeIcalConflictRecords([]);
     prisma.icalSource.findMany = async () => createActiveSource();
     prisma.reservation.findMany = async () => [
       {
@@ -343,9 +353,8 @@ test("syncIcalReservations supprime une reservation plateforme absente meme si e
         commentaire: null,
       },
     ];
-    prisma.reservation.delete = async ({ where }: any) => {
-      deletedIds.push(where.id);
-      return { id: where.id } as any;
+    prisma.reservation.delete = async () => {
+      throw new Error("reservation.delete ne doit pas etre appele pour une reservation plateforme absente.");
     };
     prisma.reservation.update = async () => {
       throw new Error("reservation.update ne doit pas etre appele pour une reservation plateforme supprimee.");
@@ -358,16 +367,20 @@ test("syncIcalReservations supprime une reservation plateforme absente meme si e
       }) as Response) as typeof fetch;
 
     const result = await syncIcalReservations();
+    const conflicts = readIcalConflictRecords();
 
-    assert.equal(result.deleted_count, 1);
-    assert.equal(result.to_verify_marked_count, 0);
-    assert.deepEqual(deletedIds, ["reservation-app-airbnb"]);
+    assert.equal(result.deleted_count, 0);
+    assert.equal(result.to_verify_marked_count, 1);
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]?.type, "deleted");
+    assert.equal(conflicts[0]?.reservation_id, "reservation-app-airbnb");
   } finally {
     prisma.icalSource.findMany = originalFindManySources;
     prisma.reservation.findMany = originalFindManyReservations;
     prisma.reservation.delete = originalDelete;
     prisma.reservation.update = originalUpdate;
     global.fetch = originalFetch;
+    restoreFile(conflictsBackup);
   }
 });
 
@@ -420,14 +433,15 @@ test("syncIcalReservations ne supprime pas une reservation manuelle absente hors
 });
 
 test("syncIcalReservations ne supprime pas une reservation iCal enrichie absente du flux", async () => {
+  const conflictsBackup = backupFile(path.join(env.DATA_DIR, "ical-conflicts.json"));
   const originalFindManySources = prisma.icalSource.findMany;
   const originalFindManyReservations = prisma.reservation.findMany;
   const originalDelete = prisma.reservation.delete;
   const originalUpdate = prisma.reservation.update;
   const originalFetch = global.fetch;
-  const updatedReservations: Array<{ id: string; commentaire: string | null | undefined }> = [];
 
   try {
+    writeIcalConflictRecords([]);
     prisma.icalSource.findMany = async () => createActiveSource();
     prisma.reservation.findMany = async () => [
       {
@@ -452,12 +466,8 @@ test("syncIcalReservations ne supprime pas une reservation iCal enrichie absente
     prisma.reservation.delete = async () => {
       throw new Error("reservation.delete ne doit pas etre appele pour une reservation iCal enrichie.");
     };
-    prisma.reservation.update = async ({ where, data }: any) => {
-      updatedReservations.push({
-        id: where.id,
-        commentaire: data.commentaire,
-      });
-      return { id: where.id, ...data } as any;
+    prisma.reservation.update = async () => {
+      throw new Error("reservation.update ne doit pas etre appele pour une reservation iCal enrichie absente.");
     };
     global.fetch = (async () =>
       ({
@@ -467,34 +477,34 @@ test("syncIcalReservations ne supprime pas une reservation iCal enrichie absente
       }) as Response) as typeof fetch;
 
     const result = await syncIcalReservations();
+    const conflicts = readIcalConflictRecords();
 
     assert.equal(result.deleted_count, 0);
     assert.equal(result.to_verify_marked_count, 1);
-    assert.deepEqual(updatedReservations, [
-      {
-        id: "reservation-enriched-missing",
-        commentaire: "[ICAL_TO_VERIFY]",
-      },
-    ]);
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]?.type, "deleted");
+    assert.equal(conflicts[0]?.reservation_id, "reservation-enriched-missing");
   } finally {
     prisma.icalSource.findMany = originalFindManySources;
     prisma.reservation.findMany = originalFindManyReservations;
     prisma.reservation.delete = originalDelete;
     prisma.reservation.update = originalUpdate;
     global.fetch = originalFetch;
+    restoreFile(conflictsBackup);
   }
 });
 
 test("syncIcalReservations ne supprime pas une reservation iCal si le flux courant se chevauche sur une autre periode", async () => {
+  const conflictsBackup = backupFile(path.join(env.DATA_DIR, "ical-conflicts.json"));
   const originalFindManySources = prisma.icalSource.findMany;
   const originalFindFirst = prisma.reservation.findFirst;
   const originalFindManyReservations = prisma.reservation.findMany;
   const originalDelete = prisma.reservation.delete;
   const originalUpdate = prisma.reservation.update;
   const originalFetch = global.fetch;
-  const updatedReservations: Array<{ id: string; commentaire: string | null | undefined }> = [];
 
   try {
+    writeIcalConflictRecords([]);
     prisma.icalSource.findMany = async () => createActiveSource();
     prisma.reservation.findFirst = async ({ where }: any) => {
       if (where.date_entree instanceof Date && where.date_sortie instanceof Date) {
@@ -530,12 +540,8 @@ test("syncIcalReservations ne supprime pas une reservation iCal si le flux coura
     prisma.reservation.delete = async () => {
       throw new Error("reservation.delete ne doit pas etre appele pour une reservation iCal qui se chevauche avec le flux courant.");
     };
-    prisma.reservation.update = async ({ where, data }: any) => {
-      updatedReservations.push({
-        id: where.id,
-        commentaire: data.commentaire,
-      });
-      return { id: where.id, ...data } as any;
+    prisma.reservation.update = async () => {
+      throw new Error("reservation.update ne doit pas etre appele pour une reservation iCal qui se chevauche avec le flux courant.");
     };
     global.fetch = (async () =>
       ({
@@ -553,16 +559,14 @@ END:VCALENDAR`,
       }) as Response) as typeof fetch;
 
     const result = await syncIcalReservations();
+    const conflicts = readIcalConflictRecords();
 
     assert.equal(result.deleted_count, 0);
     assert.equal(result.counts.conflict, 1);
     assert.equal(result.to_verify_marked_count, 1);
-    assert.deepEqual(updatedReservations, [
-      {
-        id: "reservation-overlap",
-        commentaire: "[ICAL_TO_VERIFY]",
-      },
-    ]);
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]?.type, "deleted");
+    assert.equal(conflicts[0]?.reservation_id, "reservation-overlap");
   } finally {
     prisma.icalSource.findMany = originalFindManySources;
     prisma.reservation.findFirst = originalFindFirst;
@@ -570,6 +574,7 @@ END:VCALENDAR`,
     prisma.reservation.delete = originalDelete;
     prisma.reservation.update = originalUpdate;
     global.fetch = originalFetch;
+    restoreFile(conflictsBackup);
   }
 });
 

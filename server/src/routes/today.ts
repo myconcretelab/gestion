@@ -2,6 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { readTraceabilityLog } from "../services/importLog.js";
+import {
+  getIcalConflictRecord,
+  listOpenIcalConflictRecords,
+  updateIcalConflictRecord,
+  type IcalConflictResolutionAction,
+} from "../services/icalConflicts.js";
 import { readSourceColorSettings } from "../services/sourceColorSettings.js";
 import { loadLiveReservationEnergySummaries } from "../services/smartlifeEnergyTracking.js";
 import {
@@ -21,6 +27,30 @@ const statusSchema = z.object({
   done: z.boolean(),
   user: z.string().trim().max(80).optional().default(""),
 });
+const icalConflictResolutionSchema = z.object({
+  action: z.enum(["keep_reservation", "apply_ical", "delete_reservation"]),
+});
+
+const conflictReservationSelect = {
+  id: true,
+  gite_id: true,
+  hote_nom: true,
+  date_entree: true,
+  date_sortie: true,
+  source_paiement: true,
+  commentaire: true,
+  airbnb_url: true,
+  origin_system: true,
+  origin_reference: true,
+  gite: {
+    select: {
+      id: true,
+      nom: true,
+      prefixe_contrat: true,
+      ordre: true,
+    },
+  },
+} as const;
 
 const getRecentActivitySince = () => {
   const today = new Date();
@@ -33,6 +63,32 @@ const parseDateTime = (value: string | Date | null | undefined) => {
   const parsed = value instanceof Date ? value : new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
+
+const parseIsoDate = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const parsed = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
+
+const formatIsoDateFr = (value: Date | string) => {
+  const parsed = value instanceof Date ? value : parseDateTime(value);
+  if (!parsed) return String(value ?? "");
+  return parsed.toLocaleDateString("fr-FR", { timeZone: "UTC" });
+};
+
+const buildOverlapConflictPayload = (conflicts: Array<{ id: string; hote_nom: string; date_entree: Date; date_sortie: Date }>) => ({
+  error: "Chevauchement détecté sur ce gîte.",
+  conflicts: conflicts.map((conflict) => ({
+    id: conflict.id,
+    hote_nom: conflict.hote_nom,
+    date_entree: conflict.date_entree,
+    date_sortie: conflict.date_sortie,
+    label: `${conflict.hote_nom} (${formatIsoDateFr(conflict.date_entree)} - ${formatIsoDateFr(conflict.date_sortie)})`,
+  })),
+});
 
 const buildRecentAppActivity = async (since: Date) => {
   const rows = await prisma.reservation.findMany({
@@ -121,7 +177,8 @@ router.get("/overview", async (req, res, next) => {
     const endExclusive = new Date(today.getTime() + days * DAY_MS);
     const recentActivitySince = getRecentActivitySince();
 
-    const [gites, managers, reservations, unassignedCount, recentAppActivity] = await Promise.all([
+    const openIcalConflicts = listOpenIcalConflictRecords();
+    const [gites, managers, reservations, unassignedCount, recentAppActivity, conflictReservations] = await Promise.all([
       prisma.gite.findMany({
         select: { id: true, nom: true, prefixe_contrat: true, ordre: true },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
@@ -157,6 +214,12 @@ router.get("/overview", async (req, res, next) => {
         },
       }),
       buildRecentAppActivity(recentActivitySince),
+      openIcalConflicts.length > 0
+        ? prisma.reservation.findMany({
+            where: { id: { in: openIcalConflicts.map((item) => item.reservation_id) } },
+            select: conflictReservationSelect,
+          })
+        : Promise.resolve([]),
     ]);
 
     const smartlifeConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
@@ -170,6 +233,8 @@ router.get("/overview", async (req, res, next) => {
         return parsed ? parsed.getTime() >= recentActivitySince.getTime() : false;
       })
       .slice(0, RECENT_ACTIVITY_LIMIT);
+
+    const conflictReservationById = new Map(conflictReservations.map((reservation) => [reservation.id, reservation]));
 
     return res.json({
       today: today.toISOString().slice(0, 10),
@@ -185,6 +250,10 @@ router.get("/overview", async (req, res, next) => {
       unassigned_count: unassignedCount,
       recent_import_log: recentImportLog,
       recent_app_activity: recentAppActivity,
+      ical_conflicts: openIcalConflicts.map((conflict) => ({
+        ...conflict,
+        reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
+      })),
     });
   } catch (error) {
     return next(error);
@@ -207,6 +276,115 @@ router.post("/statuses/:id", (req, res, next) => {
     statuses[statusId] = payload;
     writeTodayStatuses(statuses);
     return res.json(payload);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/ical-conflicts/:id/resolve", async (req, res, next) => {
+  try {
+    const conflict = getIcalConflictRecord(String(req.params.id ?? "").trim());
+    if (!conflict || conflict.status !== "open") {
+      return res.status(404).json({ error: "Conflit iCal introuvable." });
+    }
+
+    const payload = icalConflictResolutionSchema.parse(req.body ?? {});
+    const action = payload.action as IcalConflictResolutionAction;
+
+    if (action === "keep_reservation") {
+      const updated = updateIcalConflictRecord(conflict.id, (record) => ({
+        ...record,
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        resolution_action: "keep_reservation",
+      }));
+      return res.json({ ok: true, conflict: updated });
+    }
+
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: conflict.reservation_id },
+      select: {
+        id: true,
+        gite_id: true,
+        placeholder_id: true,
+        hote_nom: true,
+        date_entree: true,
+        date_sortie: true,
+      },
+    });
+
+    if (action === "delete_reservation" || (action === "apply_ical" && conflict.type === "deleted")) {
+      if (reservation) {
+        await prisma.reservation.delete({ where: { id: reservation.id } });
+      }
+      const updated = updateIcalConflictRecord(conflict.id, (record) => ({
+        ...record,
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        resolution_action: action,
+      }));
+      return res.json({ ok: true, conflict: updated });
+    }
+
+    if (action === "apply_ical" && conflict.type === "modified") {
+      if (!reservation) {
+        return res.status(404).json({ error: "La réservation liée au conflit est introuvable." });
+      }
+      if (!conflict.incoming_snapshot) {
+        return res.status(400).json({ error: "Le conflit iCal ne contient pas de version entrante à appliquer." });
+      }
+
+      const nextCheckIn = parseIsoDate(conflict.incoming_snapshot.date_entree);
+      const nextCheckOut = parseIsoDate(conflict.incoming_snapshot.date_sortie);
+      if (!nextCheckIn || !nextCheckOut || nextCheckOut.getTime() <= nextCheckIn.getTime()) {
+        return res.status(400).json({ error: "Les dates iCal à appliquer sont invalides." });
+      }
+
+      const overlapConflicts = await prisma.reservation.findMany({
+        where: {
+          gite_id: reservation.gite_id,
+          date_entree: { lt: nextCheckOut },
+          date_sortie: { gt: nextCheckIn },
+          NOT: { id: reservation.id },
+        },
+        select: {
+          id: true,
+          hote_nom: true,
+          date_entree: true,
+          date_sortie: true,
+        },
+        orderBy: { date_entree: "asc" },
+      });
+      if (overlapConflicts.length > 0) {
+        return res.status(409).json(buildOverlapConflictPayload(overlapConflicts));
+      }
+
+      const nbNuits = Math.max(1, Math.round((nextCheckOut.getTime() - nextCheckIn.getTime()) / DAY_MS));
+      await prisma.reservation.update({
+        where: { id: reservation.id },
+        data: {
+          hote_nom: conflict.incoming_snapshot.hote_nom ?? reservation.hote_nom,
+          date_entree: nextCheckIn,
+          date_sortie: nextCheckOut,
+          nb_nuits: nbNuits,
+          source_paiement: conflict.incoming_snapshot.final_source ?? conflict.incoming_snapshot.source_paiement ?? undefined,
+          airbnb_url: conflict.incoming_snapshot.airbnb_url,
+        },
+      });
+
+      const updated = updateIcalConflictRecord(conflict.id, (record) => ({
+        ...record,
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        resolution_action: "apply_ical",
+      }));
+      return res.json({ ok: true, conflict: updated });
+    }
+
+    return res.status(400).json({ error: "Action de résolution non gérée pour ce conflit." });
   } catch (error) {
     return next(error);
   }
