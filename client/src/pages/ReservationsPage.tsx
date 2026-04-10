@@ -1,7 +1,19 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ChangeEvent,
+  type DragEvent,
+  type KeyboardEvent,
+} from "react";
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
+import GiteTabs, { type GiteTabItem } from "./shared/GiteTabs";
 import ReservationOptionsEditor from "./shared/ReservationOptionsEditor";
 import { mergeOptions } from "./shared/rentalForm";
 import {
@@ -212,6 +224,11 @@ type ReservationsViewSnapshot = {
 
 type DeclarationNightsSettings = {
   excluded_sources: string[];
+};
+
+type ReservationsStickyOffsets = {
+  topbar: number;
+  tabs: number;
 };
 
 const MONTHS = [
@@ -1053,6 +1070,7 @@ const ReservationsPage = () => {
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [linkedFocusReservationId, setLinkedFocusReservationId] = useState<string | null>(null);
+  const [stickyOffsets, setStickyOffsets] = useState<ReservationsStickyOffsets>({ topbar: 74, tabs: 52 });
 
   const reservationsRef = useRef<Reservation[]>([]);
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
@@ -1958,6 +1976,57 @@ const ReservationsPage = () => {
       if (rafId) window.cancelAnimationFrame(rafId);
     };
   }, [activeTab, monthExpandedByIndex, monthsToRender, reservationsByMonth, year]);
+
+  useEffect(() => {
+    const measure = () => {
+      const topbarNode = document.querySelector<HTMLElement>(".topbar");
+      const tabsNode = document.querySelector<HTMLElement>(".reservations-tabs--sticky");
+      const nextTopbar = Math.round(topbarNode?.getBoundingClientRect().height ?? 74);
+      const nextTabs = Math.round(tabsNode?.getBoundingClientRect().height ?? 52);
+
+      setStickyOffsets((current) => {
+        if (current.topbar === nextTopbar && current.tabs === nextTabs) {
+          return current;
+        }
+        return { topbar: nextTopbar, tabs: nextTabs };
+      });
+    };
+
+    measure();
+
+    const topbarNode = document.querySelector<HTMLElement>(".topbar");
+    const tabsNode = document.querySelector<HTMLElement>(".reservations-tabs--sticky");
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            measure();
+          })
+        : null;
+
+    if (resizeObserver && topbarNode) {
+      resizeObserver.observe(topbarNode);
+    }
+
+    if (resizeObserver && tabsNode) {
+      resizeObserver.observe(tabsNode);
+    }
+
+    window.addEventListener("resize", measure);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [activeTab, gites.length, month]);
+
+  const pageStyle = useMemo(
+    () =>
+      ({
+        "--reservations-sticky-top": `${stickyOffsets.topbar}px`,
+        "--reservations-month-head-top": `${stickyOffsets.topbar + stickyOffsets.tabs}px`,
+      }) satisfies CSSProperties,
+    [stickyOffsets.tabs, stickyOffsets.topbar]
+  );
 
   const getRowDraft = (reservation: Reservation) => drafts[reservation.id] ?? toDraft(reservation);
 
@@ -3928,8 +3997,56 @@ const ReservationsPage = () => {
     );
   };
 
+  const reservationTabItems: GiteTabItem[] = [
+    ...gites.map((gite) => {
+      const recentImportedCount = recentImportedCountByTab.get(gite.id) ?? 0;
+      const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
+
+      return {
+        id: gite.id,
+        label: gite.nom,
+        badge: recentImportedCount,
+        badgeLabel: recentImportedLabel,
+        draggable: !reorderingTabs,
+        disabled: reorderingTabs,
+        isDragging: draggedGiteId === gite.id,
+        isDragOver: dragOverGiteId === gite.id && draggedGiteId !== gite.id,
+        onDragStart: (event) => handleTabDragStart(event, gite.id),
+        onDragOver: (event) => handleTabDragOver(event, gite.id),
+        onDrop: (event) => void handleTabDrop(event, gite.id),
+        onDragEnd: handleTabDragEnd,
+        title: reorderingTabs
+          ? "Réorganisation en cours..."
+          : recentImportedLabel
+            ? `${recentImportedLabel}. Glisser-déposer pour réorganiser`
+            : "Glisser-déposer pour réorganiser",
+      };
+    }),
+    ...(showUnassignedTab
+      ? (() => {
+          const recentImportedCount = recentImportedCountByTab.get(UNASSIGNED_TAB) ?? 0;
+          const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
+
+          return [
+            {
+              id: UNASSIGNED_TAB,
+              label: "Non attribuées",
+              badge: recentImportedCount,
+              badgeLabel: recentImportedLabel,
+              title: recentImportedLabel ?? undefined,
+            } satisfies GiteTabItem,
+          ];
+        })()
+      : []),
+    {
+      id: ALL_GITES_TAB,
+      label: "Tous les gîtes",
+      variant: "all",
+    },
+  ];
+
   return (
-    <div>
+    <div style={pageStyle}>
       <div className="card">
         <div className="section-title">Filtres & import</div>
         {error && <div className="note">{error}</div>}
@@ -4150,82 +4267,7 @@ const ReservationsPage = () => {
       <div className="card">
         <div className="section-title">Réservations</div>
 
-        <div className="reservations-tabs">
-          {gites.map((gite) => (
-            (() => {
-              const recentImportedCount = recentImportedCountByTab.get(gite.id) ?? 0;
-              const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
-
-              return (
-                <button
-                  type="button"
-                  key={gite.id}
-                  className={`reservations-tab ${activeTab === gite.id ? "reservations-tab--active" : ""} ${
-                    draggedGiteId === gite.id ? "reservations-tab--dragging" : ""
-                  } ${dragOverGiteId === gite.id && draggedGiteId !== gite.id ? "reservations-tab--drag-over" : ""}`}
-                  draggable={!reorderingTabs}
-                  onDragStart={(event) => handleTabDragStart(event, gite.id)}
-                  onDragOver={(event) => handleTabDragOver(event, gite.id)}
-                  onDrop={(event) => void handleTabDrop(event, gite.id)}
-                  onDragEnd={handleTabDragEnd}
-                  onClick={() => handleTabChange(gite.id)}
-                  disabled={reorderingTabs}
-                  title={
-                    reorderingTabs
-                      ? "Réorganisation en cours..."
-                      : recentImportedLabel
-                        ? `${recentImportedLabel}. Glisser-déposer pour réorganiser`
-                        : "Glisser-déposer pour réorganiser"
-                  }
-                >
-                  <span className="reservations-tab__label">{gite.nom}</span>
-                  {recentImportedCount > 0 ? (
-                    <span
-                      className="reservations-tab__badge"
-                      aria-label={recentImportedLabel ?? undefined}
-                      title={recentImportedLabel ?? undefined}
-                    >
-                      {recentImportedCount}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })()
-          ))}
-          {showUnassignedTab && (
-            (() => {
-              const recentImportedCount = recentImportedCountByTab.get(UNASSIGNED_TAB) ?? 0;
-              const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
-
-              return (
-                <button
-                  type="button"
-                  className={`reservations-tab ${activeTab === UNASSIGNED_TAB ? "reservations-tab--active" : ""}`}
-                  onClick={() => handleTabChange(UNASSIGNED_TAB)}
-                  title={recentImportedLabel ?? undefined}
-                >
-                  <span className="reservations-tab__label">Non attribuées</span>
-                  {recentImportedCount > 0 ? (
-                    <span
-                      className="reservations-tab__badge"
-                      aria-label={recentImportedLabel ?? undefined}
-                      title={recentImportedLabel ?? undefined}
-                    >
-                      {recentImportedCount}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })()
-          )}
-          <button
-            type="button"
-            className={`reservations-tab reservations-tab--all ${activeTab === ALL_GITES_TAB ? "reservations-tab--active" : ""}`}
-            onClick={() => handleTabChange(ALL_GITES_TAB)}
-          >
-            <span className="reservations-tab__label">Tous les gîtes</span>
-          </button>
-        </div>
+        <GiteTabs activeId={activeTab} items={reservationTabItems} onChange={handleTabChange} sticky />
 
         {activeTab === UNASSIGNED_TAB && placeholders.length > 0 && (
           <div className="field-hint reservations-unassigned-hint">
