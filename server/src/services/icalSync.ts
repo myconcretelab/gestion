@@ -22,6 +22,12 @@ import {
   toImportedReservationHostName,
 } from "../utils/reservationText.js";
 import {
+  buildIcalConflictFingerprint,
+  syncIcalConflictRecords,
+  type IcalConflictDraft,
+  type IcalConflictSnapshot,
+} from "./icalConflicts.js";
+import {
   resolveIcalReservationSource,
   shouldPreferIcalReservation,
   shouldUpdateIcalReservationSource,
@@ -101,6 +107,7 @@ export type IcalPreviewItem = ParsedIcalReservation & {
   status: IcalSyncStatus;
   existing_id: string | null;
   conflict_id: string | null;
+  conflict_reason?: "overlap" | "modified";
   update_fields: Array<"airbnb_url" | "hote_nom" | "source_paiement">;
 };
 
@@ -497,6 +504,56 @@ const buildUpdateData = (existing: any, reservation: ParsedIcalReservation) => {
   return { fields, data };
 };
 
+const buildReservationSnapshot = (reservation: {
+  id: string;
+  gite_id?: string | null;
+  hote_nom?: string | null;
+  date_entree: Date | string;
+  date_sortie: Date | string;
+  source_paiement?: string | null;
+  airbnb_url?: string | null;
+  commentaire?: string | null;
+  origin_system?: string | null;
+  origin_reference?: string | null;
+  gite?: { nom?: string | null } | null;
+}): IcalConflictSnapshot => ({
+  reservation_id: reservation.id,
+  gite_id: reservation.gite_id ?? null,
+  gite_nom: reservation.gite?.nom?.trim() || null,
+  hote_nom: toOptionalConflictText(reservation.hote_nom),
+  date_entree: typeof reservation.date_entree === "string" ? reservation.date_entree.slice(0, 10) : toIsoDate(reservation.date_entree),
+  date_sortie: typeof reservation.date_sortie === "string" ? reservation.date_sortie.slice(0, 10) : toIsoDate(reservation.date_sortie),
+  source_paiement: toOptionalConflictText(reservation.source_paiement),
+  airbnb_url: toOptionalConflictText(reservation.airbnb_url),
+  commentaire: toOptionalConflictText(stripIcalToVerifyMarker(reservation.commentaire)),
+  origin_system: toOptionalConflictText(reservation.origin_system),
+  origin_reference: toOptionalConflictText(reservation.origin_reference),
+});
+
+const buildIncomingSnapshot = (reservation: ParsedIcalReservation): IcalConflictSnapshot => ({
+  reservation_id: reservation.id,
+  gite_id: reservation.gite_id,
+  gite_nom: reservation.gite_nom,
+  hote_nom: toOptionalConflictText(reservation.hote_nom),
+  date_entree: reservation.date_entree,
+  date_sortie: reservation.date_sortie,
+  source_paiement: toOptionalConflictText(resolveReservationSource(reservation)),
+  airbnb_url: toOptionalConflictText(reservation.airbnb_url),
+  commentaire: null,
+  origin_system: "ical",
+  origin_reference: toOptionalConflictText(reservation.uid),
+  source_type: toOptionalConflictText(reservation.source_type),
+  final_source: toOptionalConflictText(resolveReservationSource(reservation)),
+  summary: toOptionalConflictText(reservation.summary),
+  description: toOptionalConflictText(reservation.description),
+});
+
+const toOptionalConflictText = (value: string | null | undefined) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]) => {
   const preview: IcalPreviewItem[] = [];
 
@@ -534,6 +591,36 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
       continue;
     }
 
+    const modified = await prisma.reservation.findFirst({
+      where: {
+        gite_id: reservation.gite_id,
+        origin_system: "ical",
+        origin_reference: reservation.uid,
+      },
+      select: {
+        id: true,
+        date_entree: true,
+        date_sortie: true,
+      },
+    });
+
+    if (modified) {
+      const hasSameDates =
+        toIsoDate(modified.date_entree) === reservation.date_entree && toIsoDate(modified.date_sortie) === reservation.date_sortie;
+      if (!hasSameDates) {
+        preview.push({
+          ...reservation,
+          final_source: finalSource,
+          status: "conflict",
+          existing_id: null,
+          conflict_id: modified.id,
+          conflict_reason: "modified",
+          update_fields: [],
+        });
+        continue;
+      }
+    }
+
     const conflict = await prisma.reservation.findFirst({
       where: {
         gite_id: reservation.gite_id,
@@ -550,6 +637,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
         status: "conflict",
         existing_id: null,
         conflict_id: conflict.id,
+        conflict_reason: "overlap",
         update_fields: [],
       });
       continue;
@@ -770,6 +858,7 @@ const runPumpFollowUpIfNeeded = async (result: IcalSyncResult): Promise<IcalSync
 const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof loadParsedIcalReservations>>) => {
   const giteIds = [...new Set(loaded.sources.map((source) => source.gite_id))];
   if (giteIds.length === 0) {
+    syncIcalConflictRecords([]);
     return { marked_count: 0, cleared_count: 0, deleted_count: 0, deleted_items: [] };
   }
 
@@ -812,6 +901,7 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       date_entree: true,
       date_sortie: true,
       origin_system: true,
+      origin_reference: true,
       export_to_ical: true,
       source_paiement: true,
       commentaire: true,
@@ -829,8 +919,15 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
 
   let marked_count = 0;
   let cleared_count = 0;
-  let deleted_count = 0;
+  const deleted_count = 0;
   const deleted_items: Array<{ giteName: string; giteId: string; checkIn: string; checkOut: string; source: string }> = [];
+  const conflictDrafts: IcalConflictDraft[] = [];
+  const parsedByOriginReference = new Map<string, ParsedIcalReservation>();
+  for (const item of loaded.parsed) {
+    const uid = toOptionalConflictText(item.uid);
+    if (!uid) continue;
+    parsedByOriginReference.set(`${item.gite_id}|${uid}`, item);
+  }
 
   for (const reservation of existingReservations) {
     const giteId = reservation.gite_id;
@@ -857,6 +954,31 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
       (normalizedSource === DEFAULT_SOURCE && isUnknownHostName(reservation.hote_nom));
     if (!likelyManagedByIcal) continue;
 
+    const originReference = toOptionalConflictText((reservation as { origin_reference?: string | null }).origin_reference);
+    const parsedByOrigin =
+      originReference && reservation.gite_id ? parsedByOriginReference.get(`${reservation.gite_id}|${originReference}`) ?? null : null;
+    if (parsedByOrigin) {
+      const currentCheckIn = toIsoDate(reservation.date_entree);
+      const currentCheckOut = toIsoDate(reservation.date_sortie);
+      if (currentCheckIn !== parsedByOrigin.date_entree || currentCheckOut !== parsedByOrigin.date_sortie) {
+        const draftBase = {
+          type: "modified" as const,
+          reservation_id: reservation.id,
+          gite_id: reservation.gite_id,
+          reservation_snapshot: buildReservationSnapshot({
+            ...reservation,
+            origin_reference: originReference,
+          }),
+          incoming_snapshot: buildIncomingSnapshot(parsedByOrigin),
+        };
+        conflictDrafts.push({
+          ...draftBase,
+          fingerprint: buildIcalConflictFingerprint(draftBase),
+        });
+      }
+      continue;
+    }
+
     const periodKey = getReservationPeriodKey({
       gite_id: giteId,
       date_entree: toIsoDate(reservation.date_entree),
@@ -865,42 +987,26 @@ const syncMissingReservationsToVerify = async (loaded: Awaited<ReturnType<typeof
     const shouldBeMarked = !parsedPeriodKeys.has(periodKey);
     const reservationCheckIn = toIsoDate(reservation.date_entree);
     const reservationCheckOut = toIsoDate(reservation.date_sortie);
-    const overlapsCurrentParsedReservation = (parsedPeriodsByGite.get(giteId) ?? []).some(
-      (item) => item.date_entree < reservationCheckOut && item.date_sortie > reservationCheckIn
-    );
-    const shouldDeleteMissingIcalReservation =
-      shouldBeMarked &&
-      !overlapsCurrentParsedReservation &&
-      !hasMeaningfulMissingIcalReservationDetails(reservation) &&
-      (originSystem === "ical" || platformManagedByIcal);
+    if (!shouldBeMarked) continue;
 
-    if (shouldDeleteMissingIcalReservation) {
-      deleted_items.push({
-        giteName: reservation.gite?.nom ?? "",
-        giteId,
-        checkIn: reservationCheckIn,
-        checkOut: reservationCheckOut,
-        source: normalizedSource,
-      });
-      await prisma.reservation.delete({
-        where: { id: reservation.id },
-      });
-      deleted_count += 1;
-      continue;
-    }
-
-    const nextComment = mergeIcalToVerifyMarker(reservation.commentaire, shouldBeMarked);
-    const currentComment = typeof reservation.commentaire === "string" ? reservation.commentaire.trim() : null;
-    if (nextComment === currentComment) continue;
-
-    await prisma.reservation.update({
-      where: { id: reservation.id },
-      data: { commentaire: nextComment },
+    const draftBase = {
+      type: "deleted" as const,
+      reservation_id: reservation.id,
+      gite_id: reservation.gite_id,
+      reservation_snapshot: buildReservationSnapshot({
+        ...reservation,
+        origin_reference: originReference,
+      }),
+      incoming_snapshot: null,
+    };
+    conflictDrafts.push({
+      ...draftBase,
+      fingerprint: buildIcalConflictFingerprint(draftBase),
     });
-
-    if (shouldBeMarked) marked_count += 1;
-    else cleared_count += 1;
+    marked_count += 1;
   }
+
+  syncIcalConflictRecords(conflictDrafts);
 
   return { marked_count, cleared_count, deleted_count, deleted_items };
 };

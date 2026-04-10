@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as
 import { useNavigate } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
-import { apiFetch } from "../utils/api";
+import { apiFetch, isApiError } from "../utils/api";
 import { formatEuro } from "../utils/format";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -43,6 +43,7 @@ type TodayOverviewPayload = {
   unassigned_count: number;
   recent_import_log: TodayImportLogEntry[];
   recent_app_activity: TodayAppActivityEntry[];
+  ical_conflicts: TodayIcalConflict[];
 };
 
 type TodayImportLogEntry = {
@@ -88,6 +89,54 @@ type TodayAppActivityEntry = {
   gite_name: string;
   guest_name: string;
   source: string | null;
+};
+
+type TodayIcalConflictSnapshot = {
+  reservation_id: string;
+  gite_id: string | null;
+  gite_nom: string | null;
+  hote_nom: string | null;
+  date_entree: string;
+  date_sortie: string;
+  source_paiement: string | null;
+  airbnb_url: string | null;
+  commentaire: string | null;
+  origin_system: string | null;
+  origin_reference: string | null;
+  source_type?: string | null;
+  final_source?: string | null;
+  summary?: string | null;
+  description?: string | null;
+};
+
+type TodayIcalConflictReservation = {
+  id: string;
+  gite_id: string | null;
+  hote_nom: string;
+  date_entree: string;
+  date_sortie: string;
+  source_paiement: string | null;
+  commentaire: string | null;
+  airbnb_url: string | null;
+  origin_system: string | null;
+  origin_reference: string | null;
+  gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre"> | null;
+};
+
+type TodayIcalConflict = {
+  id: string;
+  type: "deleted" | "modified";
+  status: "open" | "resolved";
+  fingerprint: string;
+  reservation_id: string;
+  gite_id: string | null;
+  detected_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  resolution_action: "keep_reservation" | "apply_ical" | "delete_reservation" | null;
+  reservation_snapshot: TodayIcalConflictSnapshot;
+  incoming_snapshot: TodayIcalConflictSnapshot | null;
+  reservation: TodayIcalConflictReservation | null;
 };
 
 type TodayEventType = "arrival" | "depart" | "both";
@@ -194,6 +243,16 @@ const formatShortDate = (value: string) =>
     timeZone: "UTC",
   });
 const formatStayNights = (nights: number) => `${nights} nuit${nights > 1 ? "s" : ""}`;
+const formatDateTimeFr = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 const getReservationDisplayedEnergyCost = (reservation: Reservation | null | undefined) => {
   if (!reservation) return null;
 
@@ -235,6 +294,59 @@ const getEventDateLabel = (value: string) =>
     month: "long",
     timeZone: "UTC",
   });
+
+const getIcalConflictTypeLabel = (type: TodayIcalConflict["type"]) =>
+  type === "modified" ? "Modification détectée" : "Suppression détectée";
+
+const getIcalConflictIntro = (conflict: TodayIcalConflict) =>
+  conflict.type === "modified"
+    ? "La réservation existe encore dans le flux iCal, mais ses informations ont changé. Rien n'a été appliqué automatiquement."
+    : "La réservation a disparu du flux iCal. Rien n'a été supprimé automatiquement.";
+
+const getConflictCurrentSnapshot = (conflict: TodayIcalConflict): TodayIcalConflictSnapshot => ({
+  reservation_id: conflict.reservation?.id ?? conflict.reservation_snapshot.reservation_id,
+  gite_id: conflict.reservation?.gite_id ?? conflict.reservation_snapshot.gite_id,
+  gite_nom: conflict.reservation?.gite?.nom ?? conflict.reservation_snapshot.gite_nom,
+  hote_nom: conflict.reservation?.hote_nom ?? conflict.reservation_snapshot.hote_nom,
+  date_entree: conflict.reservation?.date_entree?.slice(0, 10) ?? conflict.reservation_snapshot.date_entree,
+  date_sortie: conflict.reservation?.date_sortie?.slice(0, 10) ?? conflict.reservation_snapshot.date_sortie,
+  source_paiement: conflict.reservation?.source_paiement ?? conflict.reservation_snapshot.source_paiement,
+  airbnb_url: conflict.reservation?.airbnb_url ?? conflict.reservation_snapshot.airbnb_url,
+  commentaire: conflict.reservation?.commentaire ?? conflict.reservation_snapshot.commentaire,
+  origin_system: conflict.reservation?.origin_system ?? conflict.reservation_snapshot.origin_system,
+  origin_reference: conflict.reservation?.origin_reference ?? conflict.reservation_snapshot.origin_reference,
+  source_type: conflict.reservation_snapshot.source_type,
+  final_source: conflict.reservation_snapshot.final_source,
+  summary: conflict.reservation_snapshot.summary,
+  description: conflict.reservation_snapshot.description,
+});
+
+const getIcalConflictDiffLabels = (conflict: TodayIcalConflict) => {
+  if (conflict.type === "deleted" || !conflict.incoming_snapshot) {
+    return ["Absent du flux"];
+  }
+
+  const current = getConflictCurrentSnapshot(conflict);
+  const next = conflict.incoming_snapshot;
+  const labels: string[] = [];
+  if (current.date_entree !== next.date_entree || current.date_sortie !== next.date_sortie) labels.push("Dates");
+  if ((current.hote_nom ?? "") !== (next.hote_nom ?? "")) labels.push("Nom");
+  if ((current.source_paiement ?? "") !== (next.final_source ?? next.source_paiement ?? "")) labels.push("Source");
+  if ((current.airbnb_url ?? "") !== (next.airbnb_url ?? "")) labels.push("Lien Airbnb");
+  return labels.length > 0 ? labels : ["Métadonnées"];
+};
+
+const buildConflictReservationHref = (conflict: TodayIcalConflict) => {
+  const current = getConflictCurrentSnapshot(conflict);
+  const giteId = current.gite_id;
+  if (!giteId) return "/reservations";
+  const startDate = parseIsoDate(current.date_entree);
+  const params = new URLSearchParams();
+  params.set("focus", conflict.reservation_id);
+  params.set("year", String(startDate.getUTCFullYear()));
+  params.set("tab", giteId);
+  return `/reservations?${params.toString()}#reservation-${conflict.reservation_id}`;
+};
 
 const buildEventStatusId = (giteId: string, dateIso: string, type: TodayEventType) => `today:${giteId}:${dateIso}:${type}`;
 
@@ -505,6 +617,7 @@ const TodayPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
+  const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
     getMatchesMediaQuery(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`)
   );
@@ -562,6 +675,7 @@ const TodayPage = () => {
   const unassignedCount = overview?.unassigned_count ?? 0;
   const recentImportLog = overview?.recent_import_log ?? [];
   const recentAppActivity = overview?.recent_app_activity ?? [];
+  const icalConflicts = overview?.ical_conflicts ?? [];
   const mobileActionEvent = useMemo(
     () =>
       mobileActionState?.mode === "rotation-choice"
@@ -891,6 +1005,33 @@ const TodayPage = () => {
     }
   };
 
+  const resolveIcalConflict = async (
+    conflict: TodayIcalConflict,
+    action: "keep_reservation" | "apply_ical" | "delete_reservation"
+  ) => {
+    setResolvingConflictId(conflict.id);
+    try {
+      setError(null);
+      await apiFetch(`/today/ical-conflicts/${encodeURIComponent(conflict.id)}/resolve`, {
+        method: "POST",
+        json: { action },
+      });
+      await loadData({ preserveContent: true });
+    } catch (err) {
+      let message = (err as Error).message;
+      if (isApiError(err) && Array.isArray((err.payload as any)?.conflicts)) {
+        const conflicts = (err.payload as any).conflicts as Array<{ label?: string }>;
+        const suffix = conflicts.map((item) => item.label).filter(Boolean).join(" · ");
+        if (suffix) {
+          message = `${message} ${suffix}`;
+        }
+      }
+      setError(message);
+    } finally {
+      setResolvingConflictId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className={`today-page${usesViewportScroll && mobileActionState ? " today-page--mobile-overlay-visible" : ""}`}>
@@ -1052,6 +1193,128 @@ const TodayPage = () => {
           </div>
         </div>
       </section>
+
+      {icalConflicts.length > 0 ? (
+        <section className="today-conflicts-card">
+          <div className="today-section-head today-section-head--conflicts">
+            <div>
+              <div className="section-title">Conflits iCal</div>
+              <div className="field-hint">
+                {icalConflicts.length} décision{icalConflicts.length > 1 ? "s" : ""} en attente
+              </div>
+            </div>
+          </div>
+
+          <div className="today-conflicts-list">
+            {icalConflicts.map((conflict) => {
+              const current = getConflictCurrentSnapshot(conflict);
+              const incoming = conflict.incoming_snapshot;
+              const diffLabels = getIcalConflictDiffLabels(conflict);
+              const canApplyIcal = conflict.type === "modified" && Boolean(incoming) && Boolean(conflict.reservation);
+
+              return (
+                <article key={conflict.id} className={`today-conflict-card today-conflict-card--${conflict.type}`}>
+                  <div className="today-conflict-card__top">
+                    <div className="today-conflict-card__header">
+                      <span className={`today-conflict-card__kind today-conflict-card__kind--${conflict.type}`}>
+                        {getIcalConflictTypeLabel(conflict.type)}
+                      </span>
+                      <strong>{current.gite_nom || "Sans gîte"}</strong>
+                      <span>Détecté le {formatDateTimeFr(conflict.detected_at)}</span>
+                    </div>
+
+                    <div className="today-conflict-card__diffs">
+                      {diffLabels.map((label) => (
+                        <span key={`${conflict.id}:${label}`} className="today-conflict-card__diff-chip">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="today-conflict-card__intro">{getIcalConflictIntro(conflict)}</p>
+
+                  <div className="today-conflict-card__grid">
+                    <section className="today-conflict-card__panel">
+                      <span className="today-conflict-card__panel-label">Réservation actuelle</span>
+                      <strong>{current.hote_nom || "Réservation"}</strong>
+                      <div className="today-conflict-card__dates">
+                        {formatLongDate(current.date_entree)} → {formatLongDate(current.date_sortie)}
+                      </div>
+                      <div className="today-conflict-card__meta">
+                        <span>{current.source_paiement || "A définir"}</span>
+                        {current.origin_reference ? <span>UID {current.origin_reference}</span> : null}
+                      </div>
+                      {current.commentaire ? <div className="today-conflict-card__note">{current.commentaire}</div> : null}
+                    </section>
+
+                    <section className="today-conflict-card__panel today-conflict-card__panel--incoming">
+                      <span className="today-conflict-card__panel-label">Version iCal</span>
+                      {incoming ? (
+                        <>
+                          <strong>{incoming.hote_nom || incoming.summary || "Événement iCal"}</strong>
+                          <div className="today-conflict-card__dates">
+                            {formatLongDate(incoming.date_entree)} → {formatLongDate(incoming.date_sortie)}
+                          </div>
+                          <div className="today-conflict-card__meta">
+                            <span>{incoming.final_source || incoming.source_paiement || incoming.source_type || "iCal"}</span>
+                            {incoming.summary ? <span>{incoming.summary}</span> : null}
+                          </div>
+                          {incoming.description ? <div className="today-conflict-card__note">{incoming.description}</div> : null}
+                        </>
+                      ) : (
+                        <>
+                          <strong>Absente du flux iCal</strong>
+                          <div className="today-conflict-card__empty">
+                            Aucun événement correspondant n&apos;a été retrouvé lors de la dernière synchronisation.
+                          </div>
+                        </>
+                      )}
+                    </section>
+                  </div>
+
+                  <div className="today-conflict-card__actions">
+                    <button
+                      type="button"
+                      className="table-action table-action--neutral"
+                      onClick={() => void resolveIcalConflict(conflict, "keep_reservation")}
+                      disabled={resolvingConflictId === conflict.id}
+                    >
+                      Conserver
+                    </button>
+                    {conflict.type === "modified" ? (
+                      <button
+                        type="button"
+                        className="table-action table-action--primary"
+                        onClick={() => void resolveIcalConflict(conflict, "apply_ical")}
+                        disabled={!canApplyIcal || resolvingConflictId === conflict.id}
+                      >
+                        Appliquer iCal
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="table-action table-action--danger"
+                        onClick={() => void resolveIcalConflict(conflict, "delete_reservation")}
+                        disabled={resolvingConflictId === conflict.id}
+                      >
+                        Supprimer la réservation
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="table-action"
+                      onClick={() => navigate(buildConflictReservationHref(conflict))}
+                    >
+                      Ouvrir
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <div className="today-events-grid">
         {[
