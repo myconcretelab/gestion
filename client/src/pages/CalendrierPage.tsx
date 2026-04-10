@@ -13,6 +13,7 @@ import {
 import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
+import GiteTabs from "./shared/GiteTabs";
 import {
   buildCalendarReservationReturnHref,
   buildMobileReservationEditorHref,
@@ -617,6 +618,7 @@ const CalendrierPage = () => {
   }, [selectedGiteId, year]);
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
+  const calendarGiteTabItems = useMemo(() => gites.map((gite) => ({ id: gite.id, label: gite.nom })), [gites]);
   const giteOrderById = useMemo(() => {
     const map = new Map<string, number>();
     gites.forEach((gite, index) => {
@@ -1251,21 +1253,50 @@ const CalendrierPage = () => {
           ) : null}
 
           <div className="calendar-hero__actions">
-            <label className="calendar-pill-select">
-              <span>Gîte</span>
-              <select
-                value={selectedGiteId}
-                onChange={(event) => {
-                  setSelectedGiteId(event.target.value);
-                }}
-              >
-                {gites.map((gite) => (
-                  <option key={gite.id} value={gite.id}>
-                    {gite.nom}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {usesViewportScroll ? (
+              <label className="calendar-pill-select">
+                <span>Gîte</span>
+                <select
+                  value={selectedGiteId}
+                  onChange={(event) => {
+                    setSelectedGiteId(event.target.value);
+                  }}
+                >
+                  {gites.map((gite) => (
+                    <option key={gite.id} value={gite.id}>
+                      {gite.nom}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <GiteTabs
+                activeId={selectedGiteId}
+                items={calendarGiteTabItems}
+                onChange={setSelectedGiteId}
+                ariaLabel="Sélection du gîte"
+                className="reservations-tabs--calendar"
+              />
+            )}
+
+            <button
+              type="button"
+              className="calendar-today-button"
+              onClick={() => {
+                if (year === currentYear) {
+                  pendingScrollTargetRef.current = null;
+                  if (!scrollToDate(todayIso)) {
+                    scrollToMonth(currentMonthIndex);
+                  }
+                } else {
+                  pendingScrollTargetRef.current = { kind: "date", value: todayIso };
+                  setYear(currentYear);
+                }
+                setHoveredReservation(null);
+              }}
+            >
+              Aujourd&apos;hui
+            </button>
 
             <div className="calendar-year-switch" aria-label="Sélection de l'année">
               <button
@@ -1292,25 +1323,6 @@ const CalendrierPage = () => {
                 ›
               </button>
             </div>
-
-            <button
-              type="button"
-              className="calendar-today-button"
-              onClick={() => {
-                if (year === currentYear) {
-                  pendingScrollTargetRef.current = null;
-                  if (!scrollToDate(todayIso)) {
-                    scrollToMonth(currentMonthIndex);
-                  }
-                } else {
-                  pendingScrollTargetRef.current = { kind: "date", value: todayIso };
-                  setYear(currentYear);
-                }
-                setHoveredReservation(null);
-              }}
-            >
-              Aujourd&apos;hui
-            </button>
           </div>
         </div>
       </section>
