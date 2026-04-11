@@ -21,6 +21,23 @@ test("buildDailyReservationEmailMessage construit un digest avec reservations", 
         created_at: "2026-04-03T10:30:00.000Z",
       },
     ],
+    icalConflicts: [
+      {
+        id: "conflict-1",
+        type: "modified",
+        detected_at: "2026-04-04T05:00:00.000Z",
+        gite_nom: "La Clairière",
+        current_hote_nom: "Camille Martin",
+        current_date_entree: "2026-05-10",
+        current_date_sortie: "2026-05-13",
+        current_source: "Airbnb",
+        incoming_hote_nom: "Camille M.",
+        incoming_date_entree: "2026-05-11",
+        incoming_date_sortie: "2026-05-14",
+        incoming_source: "Airbnb",
+        diff_labels: ["Dates", "Nom"],
+      },
+    ],
     totalsByGite: [
       {
         gite_id: "g1",
@@ -49,6 +66,11 @@ test("buildDailyReservationEmailMessage construit un digest avec reservations", 
   assert.match(message.html, /Réservations du mois/);
   assert.match(message.html, /Camille Martin/);
   assert.match(message.html, /Le Refuge/);
+  assert.match(message.text, /Conflits iCal en attente/);
+  assert.match(message.text, /Modification détectée/);
+  assert.match(message.text, /iCal : Camille M\./);
+  assert.match(message.html, /Conflits iCal en attente/);
+  assert.match(message.html, /Version iCal/);
 });
 
 test("buildDailyReservationEmailMessage gère l'absence de nouvelles reservations", () => {
@@ -76,4 +98,6 @@ test("buildDailyReservationEmailMessage gère l'absence de nouvelles reservation
     /Aucune nouvelle réservation créée sur les dernières 24 heures/,
   );
   assert.match(message.html, /Aucune nouvelle réservation n&#39;a été créée|Aucune nouvelle réservation n'a été créée/);
+  assert.doesNotMatch(message.text, /Conflits iCal en attente/);
+  assert.doesNotMatch(message.html, /Conflits iCal en attente/);
 });
