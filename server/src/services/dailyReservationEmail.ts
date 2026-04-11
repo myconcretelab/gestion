@@ -2,6 +2,11 @@ import prisma from "../db/prisma.js";
 import { formatEuro } from "../utils/money.js";
 import { getSmtpConfigIssues, sendSmtpMail } from "./mailer.js";
 import {
+  listOpenIcalConflictRecords,
+  type IcalConflictRecord,
+  type IcalConflictType,
+} from "./icalConflicts.js";
+import {
   buildDefaultDailyReservationEmailConfig,
   mergeDailyReservationEmailConfig,
   readDailyReservationEmailConfig,
@@ -30,12 +35,29 @@ type DailyReservationDigestReservation = {
   created_at: string;
 };
 
+type DailyReservationDigestIcalConflict = {
+  id: string;
+  type: IcalConflictType;
+  detected_at: string;
+  gite_nom: string;
+  current_hote_nom: string | null;
+  current_date_entree: string;
+  current_date_sortie: string;
+  current_source: string | null;
+  incoming_hote_nom: string | null;
+  incoming_date_entree: string | null;
+  incoming_date_sortie: string | null;
+  incoming_source: string | null;
+  diff_labels: string[];
+};
+
 type DailyReservationDigestMessageInput = {
   generatedAt: Date;
   windowStart: Date;
   windowEnd: Date;
   monthStart: Date;
   reservations: DailyReservationDigestReservation[];
+  icalConflicts?: DailyReservationDigestIcalConflict[];
   totalsByGite: DailyReservationEmailGiteTotal[];
   totalAmount: number;
   totalReservationsCount: number;
@@ -129,8 +151,41 @@ const formatMonthLabel = (monthStart: Date) =>
     year: "numeric",
   });
 
+const getIcalConflictTypeLabel = (type: IcalConflictType) =>
+  type === "modified" ? "Modification détectée" : "Suppression détectée";
+
+const getIcalConflictIntro = (type: IcalConflictType) =>
+  type === "modified"
+    ? "La réservation existe encore dans le flux iCal, mais ses informations ont changé. Rien n'a été appliqué automatiquement."
+    : "La réservation a disparu du flux iCal. Rien n'a été supprimé automatiquement.";
+
+const getConflictCurrentSnapshot = (conflict: IcalConflictRecord) => ({
+  gite_nom: conflict.reservation_snapshot.gite_nom,
+  hote_nom: conflict.reservation_snapshot.hote_nom,
+  date_entree: conflict.reservation_snapshot.date_entree,
+  date_sortie: conflict.reservation_snapshot.date_sortie,
+  source_paiement: conflict.reservation_snapshot.source_paiement,
+  airbnb_url: conflict.reservation_snapshot.airbnb_url,
+});
+
+const getIcalConflictDiffLabels = (conflict: IcalConflictRecord) => {
+  if (conflict.type === "deleted" || !conflict.incoming_snapshot) {
+    return ["Absent du flux"];
+  }
+
+  const current = getConflictCurrentSnapshot(conflict);
+  const next = conflict.incoming_snapshot;
+  const labels: string[] = [];
+  if (current.date_entree !== next.date_entree || current.date_sortie !== next.date_sortie) labels.push("Dates");
+  if ((current.hote_nom ?? "") !== (next.hote_nom ?? "")) labels.push("Nom");
+  if ((current.source_paiement ?? "") !== (next.final_source ?? next.source_paiement ?? "")) labels.push("Source");
+  if ((current.airbnb_url ?? "") !== (next.airbnb_url ?? "")) labels.push("Lien Airbnb");
+  return labels.length > 0 ? labels : ["Métadonnées"];
+};
+
 const buildPlainTextDigest = (input: DailyReservationDigestMessageInput) => {
   const monthLabel = formatMonthLabel(input.monthStart);
+  const icalConflicts = input.icalConflicts ?? [];
   const lines = [
     `Point quotidien des réservations`,
     `Période analysée : ${formatWindowLabel(input.windowStart, input.windowEnd)}`,
@@ -161,6 +216,20 @@ const buildPlainTextDigest = (input: DailyReservationDigestMessageInput) => {
     );
   }
 
+  if (icalConflicts.length > 0) {
+    lines.push("");
+    lines.push("Conflits iCal en attente :");
+    for (const conflict of icalConflicts) {
+      lines.push(
+        `- ${conflict.gite_nom} | ${getIcalConflictTypeLabel(conflict.type)} | ${conflict.diff_labels.join(", ")} | actuelle : ${conflict.current_hote_nom || "Réservation"} (${formatDateOnly(conflict.current_date_entree)} -> ${formatDateOnly(conflict.current_date_sortie)})${
+          conflict.type === "modified" && conflict.incoming_date_entree && conflict.incoming_date_sortie
+            ? ` | iCal : ${conflict.incoming_hote_nom || "Événement iCal"} (${formatDateOnly(conflict.incoming_date_entree)} -> ${formatDateOnly(conflict.incoming_date_sortie)})`
+            : ""
+        }`,
+      );
+    }
+  }
+
   return lines.join("\n");
 };
 
@@ -178,6 +247,7 @@ const renderMetricCardHtml = (label: string, value: string, tone = "#1d1d1f") =>
 
 const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
   const monthLabel = formatMonthLabel(input.monthStart);
+  const icalConflicts = input.icalConflicts ?? [];
   const reservationCardsHtml =
     input.reservations.length > 0
       ? input.reservations
@@ -232,6 +302,63 @@ const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
       </tr>`,
     )
     .join("");
+
+  const icalConflictsHtml =
+    icalConflicts.length > 0
+      ? `<tr>
+          <td style="padding:28px 0 10px;font-size:20px;line-height:1.3;font-weight:700;color:#1d1d1f;">Conflits iCal en attente</td>
+        </tr>
+        ${icalConflicts
+          .map(
+            (conflict) => `<tr>
+              <td style="padding:0 0 16px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #ece7e2;border-radius:24px;">
+                  <tr>
+                    <td style="padding:20px 22px 18px;">
+                      <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:#ff385c;font-weight:700;">${escapeHtml(conflict.gite_nom)}</div>
+                      <div style="margin-top:8px;font-size:20px;line-height:1.3;color:#1d1d1f;font-weight:700;">${escapeHtml(getIcalConflictTypeLabel(conflict.type))}</div>
+                      <div style="margin-top:10px;font-size:14px;line-height:1.7;color:#48423d;">
+                        ${escapeHtml(getIcalConflictIntro(conflict.type))}
+                      </div>
+                      <div style="margin-top:12px;font-size:12px;line-height:1.6;color:#8d857d;text-transform:uppercase;letter-spacing:0.04em;">
+                        ${escapeHtml(conflict.diff_labels.join(" • "))}
+                      </div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-top:18px;border-collapse:collapse;">
+                        <tr>
+                          <td style="padding:0 12px 0 0;vertical-align:top;width:50%;">
+                            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:#8d857d;">Réservation actuelle</div>
+                            <div style="margin-top:6px;font-size:15px;font-weight:600;color:#1d1d1f;">${escapeHtml(conflict.current_hote_nom || "Réservation")}</div>
+                            <div style="margin-top:4px;font-size:14px;line-height:1.6;color:#48423d;">${escapeHtml(`${formatDateOnly(conflict.current_date_entree)} -> ${formatDateOnly(conflict.current_date_sortie)}`)}</div>
+                            ${
+                              conflict.current_source
+                                ? `<div style="margin-top:4px;font-size:13px;line-height:1.5;color:#6d665f;">${escapeHtml(conflict.current_source)}</div>`
+                                : ""
+                            }
+                          </td>
+                          <td style="padding:0;vertical-align:top;width:50%;">
+                            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:#8d857d;">Version iCal</div>
+                            ${
+                              conflict.type === "modified" && conflict.incoming_date_entree && conflict.incoming_date_sortie
+                                ? `<div style="margin-top:6px;font-size:15px;font-weight:600;color:#1d1d1f;">${escapeHtml(conflict.incoming_hote_nom || "Événement iCal")}</div>
+                                   <div style="margin-top:4px;font-size:14px;line-height:1.6;color:#48423d;">${escapeHtml(`${formatDateOnly(conflict.incoming_date_entree)} -> ${formatDateOnly(conflict.incoming_date_sortie)}`)}</div>
+                                   ${
+                                     conflict.incoming_source
+                                       ? `<div style="margin-top:4px;font-size:13px;line-height:1.5;color:#6d665f;">${escapeHtml(conflict.incoming_source)}</div>`
+                                       : ""
+                                   }`
+                                : `<div style="margin-top:6px;font-size:15px;font-weight:600;color:#1d1d1f;">Absente du flux iCal</div>`
+                            }
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>`,
+          )
+          .join("")}`
+      : "";
 
   return `<!doctype html>
 <html lang="fr">
@@ -289,6 +416,7 @@ const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
                 </table>
               </td>
             </tr>
+            ${icalConflictsHtml}
           </table>
         </td>
       </tr>
@@ -503,11 +631,39 @@ const getActiveRecipients = (
 const getRecipientsForCurrentDigest = (
   recipients: DailyReservationEmailRecipientConfig[],
   reservationsCount: number,
+  icalConflictsCount: number,
   force: boolean,
 ) => {
   const activeRecipients = getActiveRecipients(recipients);
-  if (force || reservationsCount > 0) return activeRecipients;
+  if (force || reservationsCount > 0 || icalConflictsCount > 0) {
+    return activeRecipients;
+  }
   return activeRecipients.filter((recipient) => recipient.send_if_empty);
+};
+
+const buildOpenIcalConflicts = async (): Promise<
+  DailyReservationDigestIcalConflict[]
+> => {
+  const conflicts = listOpenIcalConflictRecords();
+  return conflicts.map((conflict) => ({
+    id: conflict.id,
+    type: conflict.type,
+    detected_at: conflict.detected_at,
+    gite_nom: conflict.reservation_snapshot.gite_nom ?? "Sans gîte",
+    current_hote_nom: conflict.reservation_snapshot.hote_nom,
+    current_date_entree: conflict.reservation_snapshot.date_entree,
+    current_date_sortie: conflict.reservation_snapshot.date_sortie,
+    current_source: conflict.reservation_snapshot.source_paiement,
+    incoming_hote_nom: conflict.incoming_snapshot?.hote_nom ?? conflict.incoming_snapshot?.summary ?? null,
+    incoming_date_entree: conflict.incoming_snapshot?.date_entree ?? null,
+    incoming_date_sortie: conflict.incoming_snapshot?.date_sortie ?? null,
+    incoming_source:
+      conflict.incoming_snapshot?.final_source ??
+      conflict.incoming_snapshot?.source_paiement ??
+      conflict.incoming_snapshot?.source_type ??
+      null,
+    diff_labels: getIcalConflictDiffLabels(conflict),
+  }));
 };
 
 export const runDailyReservationEmail = async (options?: {
@@ -577,9 +733,10 @@ export const runDailyReservationEmail = async (options?: {
 
     try {
       const { monthStart, monthEnd } = getMonthBoundaries(now);
-      const [reservations, totalsByGite] = await Promise.all([
+      const [reservations, totalsByGite, icalConflicts] = await Promise.all([
         buildNewReservations(windowStart, windowEnd),
         buildTotalsByGite(monthStart, monthEnd),
+        buildOpenIcalConflicts(),
       ]);
 
       const totalAmount = totalsByGite.reduce(
@@ -593,6 +750,7 @@ export const runDailyReservationEmail = async (options?: {
       const recipientTargets = getRecipientsForCurrentDigest(
         currentConfig.recipients,
         reservations.length,
+        icalConflicts.length,
         Boolean(options?.force),
       );
 
@@ -641,6 +799,7 @@ export const runDailyReservationEmail = async (options?: {
         windowEnd,
         monthStart,
         reservations,
+        icalConflicts,
         totalsByGite,
         totalAmount,
         totalReservationsCount,
