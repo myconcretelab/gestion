@@ -21,15 +21,25 @@ load_env_file "$ROOT_DIR/.env"
 load_env_file "$ROOT_DIR/.env.production"
 load_env_file "$ROOT_DIR/.env.update"
 
-reset_generated_prisma_schema() {
-  local schema_path="server/prisma/postgres/schema.prisma"
-  if ! git ls-files --error-unmatch "$schema_path" >/dev/null 2>&1; then
-    return
-  fi
-  if ! git diff --quiet -- "$schema_path" || ! git diff --cached --quiet -- "$schema_path"; then
-    echo "==> Reset generated Prisma schema (${schema_path})"
-    git restore --staged --worktree -- "$schema_path"
-  fi
+format_elapsed() {
+  local total_seconds="$1"
+  local minutes=$((total_seconds / 60))
+  local seconds=$((total_seconds % 60))
+  printf "%dm%02ds" "$minutes" "$seconds"
+}
+
+run_step() {
+  local label="$1"
+  shift
+
+  local started_at ended_at
+  started_at=$(date +%s)
+  echo "==> ${label}"
+
+  "$@"
+
+  ended_at=$(date +%s)
+  echo "==> ${label} done in $(format_elapsed $((ended_at - started_at)))"
 }
 
 has_local_changes() {
@@ -45,8 +55,6 @@ has_local_changes() {
   return 1
 }
 
-reset_generated_prisma_schema
-
 STASH_CREATED=0
 if has_local_changes; then
   STASH_CREATED=1
@@ -55,8 +63,7 @@ if has_local_changes; then
   git stash push --include-untracked -m "$STASH_MESSAGE" >/dev/null
 fi
 
-echo "==> Pull latest code"
-git pull
+run_step "Pull latest code" git pull
 
 if [[ "$STASH_CREATED" == "1" ]]; then
   echo "==> Reapply stashed changes"
@@ -70,12 +77,10 @@ NPM_INSTALL_MODE="${NPM_INSTALL_MODE:-ci}"
 
 case "$NPM_INSTALL_MODE" in
   ci)
-    echo "==> Install/update dependencies with npm ci"
-    npm ci --include=optional
+    run_step "Install/update dependencies with npm ci" npm ci --include=optional
     ;;
   install)
-    echo "==> Install/update dependencies with npm install (keeps existing node_modules)"
-    npm install --include=optional
+    run_step "Install/update dependencies with npm install (keeps existing node_modules)" npm install --include=optional
     ;;
   *)
     echo "Invalid NPM_INSTALL_MODE='${NPM_INSTALL_MODE}'. Expected 'ci' or 'install'."
@@ -115,25 +120,23 @@ if [[ "${SKIP_PLAYWRIGHT_INSTALL:-0}" != "1" ]]; then
     echo "==>          With npm ci, browsers are removed and must be reinstalled each deploy."
   fi
   # Use the server workspace binary to avoid npx fetching a mismatched Playwright version.
-  PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH_VALUE}" npm exec --workspace=server playwright install chromium
+  run_step \
+    "Install Playwright Chromium" \
+    env PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH_VALUE}" npm exec --workspace=server playwright install chromium
 fi
 
-echo "==> Generate Prisma client (PostgreSQL)"
-npm run prod:generate
+run_step "Generate Prisma client (PostgreSQL)" npm run prod:generate
 
 if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
-  echo "==> Run tests"
-  npm run test
+  run_step "Run tests" npm run test
 else
   echo "==> Skip tests (SKIP_TESTS=1)"
 fi
 
-echo "==> Apply database migrations (PostgreSQL)"
-npm run prod:migrate
+run_step "Apply database migrations (PostgreSQL)" npm run prod:migrate
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  echo "==> Build client + server"
-  npm run build
+  run_step "Build client + server" npm run build
 fi
 
 restart_server() {
@@ -143,8 +146,7 @@ restart_server() {
   fi
 
   if [[ -n "${RESTART_CMD:-}" ]]; then
-    echo "==> Restart server with RESTART_CMD"
-    bash -lc "${RESTART_CMD}"
+    run_step "Restart server with RESTART_CMD" bash -lc "${RESTART_CMD}"
     return
   fi
 
@@ -154,12 +156,13 @@ restart_server() {
       exit 1
     fi
 
-    echo "==> Restart Alwaysdata site ${ALWAYSDATA_SITE_ID}"
-    curl --fail --silent --show-error \
-      -X POST \
-      --basic \
-      --user "${ALWAYSDATA_API_TOKEN} account=${ALWAYSDATA_ACCOUNT}:" \
-      "https://api.alwaysdata.com/v1/site/${ALWAYSDATA_SITE_ID}/restart/" >/dev/null
+    run_step \
+      "Restart Alwaysdata site ${ALWAYSDATA_SITE_ID}" \
+      curl --fail --silent --show-error \
+        -X POST \
+        --basic \
+        --user "${ALWAYSDATA_API_TOKEN} account=${ALWAYSDATA_ACCOUNT}:" \
+        "https://api.alwaysdata.com/v1/site/${ALWAYSDATA_SITE_ID}/restart/"
     return
   fi
 

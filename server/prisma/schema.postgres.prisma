@@ -301,9 +301,16 @@ model Reservation {
   placeholder               ReservationPlaceholder?  @relation(fields: [placeholder_id], references: [id])
 
   @@index([gite_id, date_entree])
+  @@index([gite_id, date_sortie], map: "reservations_gite_id_date_sortie_idx")
   @@index([gite_id, export_to_ical, date_entree], map: "reservations_gite_export_to_ical_date_entree_idx")
+  @@index([date_entree, createdAt], map: "reservations_date_entree_createdAt_idx")
+  @@index([date_sortie], map: "reservations_date_sortie_idx")
+  @@index([createdAt, date_entree], map: "reservations_createdAt_date_entree_idx")
+  @@index([updatedAt, createdAt], map: "reservations_updatedAt_createdAt_idx")
   @@index([origin_system, origin_reference], map: "reservations_origin_system_origin_reference_idx")
+  @@index([origin_system, createdAt], map: "reservations_origin_system_createdAt_idx")
   @@index([placeholder_id, date_entree])
+  @@index([placeholder_id, date_sortie], map: "reservations_placeholder_id_date_sortie_idx")
   @@index([stay_group_id], map: "reservations_stay_group_id_idx")
   @@map("reservations")
 }
