@@ -110,8 +110,6 @@ const normalizeRuleAction = (
     .toLowerCase();
   if (normalized === "device-on") return "device-on";
   if (normalized === "device-off") return "device-off";
-  if (normalized === "energy-start") return "energy-start";
-  if (normalized === "energy-stop") return "energy-stop";
   return fallback;
 };
 

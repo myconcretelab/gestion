@@ -211,13 +211,14 @@ test("hydrateLiveGiteMonthlyEnergySummaries calcule un montant live pour le mois
       access_id: "id",
       access_secret: "secret",
       rules: [],
-      meter_assignments: [
+      energy_devices: [
         {
           id: "assign-1",
           enabled: true,
           gite_id: "gite-1",
           device_id: "device-1",
           device_name: "Compteur",
+          role: "primary",
         },
       ],
     },

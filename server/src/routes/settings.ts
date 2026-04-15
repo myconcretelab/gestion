@@ -300,7 +300,7 @@ const smartlifeAutomationRuleSchema = z.object({
     .default("before-arrival"),
   offset_minutes: z.number().int().min(0).max(14 * 24 * 60).default(60),
   action: z
-    .enum(["device-on", "device-off", "energy-start", "energy-stop"])
+    .enum(["device-on", "device-off"])
     .optional()
     .default("device-on"),
   device_id: z.string().default(""),
@@ -312,20 +312,33 @@ const smartlifeAutomationRuleSchema = z.object({
     .default(null),
   command_value: z.boolean().optional().default(true),
 });
-const smartlifeMeterAssignmentSchema = z.object({
+const smartlifeEnergyDeviceSchema = z.object({
   id: z.string().trim().min(1).optional(),
   enabled: z.boolean().optional().default(true),
   gite_id: z.string().trim().min(1),
   device_id: z.string().trim().min(1),
   device_name: z.string().default(""),
+  role: z.enum(["primary", "informational"]).default("informational"),
 });
 const smartlifeAutomationSettingsSchema = z.object({
   enabled: z.boolean(),
   region: z.enum(["eu", "eu-west", "us", "us-e", "in", "cn"]).default("eu"),
-  access_id: z.string().default(""),
-  access_secret: z.string().default(""),
+  access_id: z.string().optional(),
+  access_secret: z.string().optional(),
   rules: z.array(smartlifeAutomationRuleSchema).default([]),
-  meter_assignments: z.array(smartlifeMeterAssignmentSchema).default([]),
+  energy_devices: z.array(smartlifeEnergyDeviceSchema).default([]),
+});
+const smartlifeConnectionSettingsSchema = smartlifeAutomationSettingsSchema.pick({
+  enabled: true,
+  region: true,
+  access_id: true,
+  access_secret: true,
+});
+const smartlifeRulesSettingsSchema = z.object({
+  rules: z.array(smartlifeAutomationRuleSchema).default([]),
+});
+const smartlifeMeterSettingsSchema = z.object({
+  energy_devices: z.array(smartlifeEnergyDeviceSchema).default([]),
 });
 const smartlifeTestCommandSchema = z.object({
   device_id: z.string().trim().min(1),
@@ -1355,7 +1368,43 @@ router.put("/smartlife", async (req, res, next) => {
   try {
     const payload = smartlifeAutomationSettingsSchema.parse(
       req.body ?? {},
-    ) as SmartlifeAutomationConfig;
+    ) as unknown as Partial<SmartlifeAutomationConfig>;
+    await updateSmartlifeAutomationConfig(payload);
+    res.json(getSmartlifeAutomationState());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/smartlife/connection", async (req, res, next) => {
+  try {
+    const payload = smartlifeConnectionSettingsSchema.parse(
+      req.body ?? {},
+    ) as unknown as Partial<SmartlifeAutomationConfig>;
+    await updateSmartlifeAutomationConfig(payload);
+    res.json(getSmartlifeAutomationState());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/smartlife/rules", async (req, res, next) => {
+  try {
+    const payload = smartlifeRulesSettingsSchema.parse(
+      req.body ?? {},
+    ) as unknown as Partial<SmartlifeAutomationConfig>;
+    await updateSmartlifeAutomationConfig(payload);
+    res.json(getSmartlifeAutomationState());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/smartlife/meters", async (req, res, next) => {
+  try {
+    const payload = smartlifeMeterSettingsSchema.parse(
+      req.body ?? {},
+    ) as unknown as Partial<SmartlifeAutomationConfig>;
     await updateSmartlifeAutomationConfig(payload);
     res.json(getSmartlifeAutomationState());
   } catch (error) {

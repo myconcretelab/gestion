@@ -6,9 +6,9 @@ import type { NumericLike } from "../utils/money.js";
 import type {
   SmartlifeAutomationConfig,
   SmartlifeAutomationRuleAction,
-  SmartlifeEnergyMeterAssignment,
+  SmartlifeEnergyDeviceAssignment,
 } from "./smartlifeSettings.js";
-import { isSmartlifeEnergyTrackingAction } from "./smartlifeSettings.js";
+import { getEnabledSmartlifePrimaryEnergyDeviceForGite } from "./smartlifeSettings.js";
 import { getSmartlifeDeviceTotalElectricityKwh } from "./smartlifeClient.js";
 
 export type ReservationEnergyTrackingEntry = {
@@ -240,20 +240,11 @@ const allocateByWeight = (
   });
 };
 
-const getEnabledMeterAssignment = (
+const getEnabledPrimaryEnergyDevice = (
   config: SmartlifeAutomationConfig,
-  event: SmartlifeEnergyEvent,
-): SmartlifeEnergyMeterAssignment | null => {
-  if (!event.gite_id) return null;
-  return (
-    config.meter_assignments.find(
-      (assignment) =>
-        assignment.enabled &&
-        assignment.gite_id === event.gite_id &&
-        assignment.device_id === event.device_id,
-    ) ?? null
-  );
-};
+  giteId: string | null | undefined,
+): SmartlifeEnergyDeviceAssignment | null =>
+  getEnabledSmartlifePrimaryEnergyDeviceForGite(config, giteId);
 
 const loadStayReservations = async (reservationId: string) => {
   const reservation = await prisma.reservation.findUnique({
@@ -301,10 +292,14 @@ const loadStayReservations = async (reservationId: string) => {
     : [reservation];
 };
 
-const buildOpenEntry = (event: SmartlifeEnergyEvent, totalKwh: number) => ({
+const buildOpenEntry = (
+  assignment: SmartlifeEnergyDeviceAssignment,
+  event: SmartlifeEnergyEvent,
+  totalKwh: number,
+) => ({
   session_id: crypto.randomUUID(),
-  device_id: event.device_id,
-  device_name: event.device_name.trim() || event.device_id,
+  device_id: assignment.device_id,
+  device_name: assignment.device_name.trim() || assignment.device_id,
   status: "open" as const,
   started_at: new Date().toISOString(),
   ended_at: null,
@@ -344,19 +339,14 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
   config: SmartlifeAutomationConfig,
   event: SmartlifeEnergyEvent,
 ) => {
-  const assignment = getEnabledMeterAssignment(config, event);
+  const assignment = getEnabledPrimaryEnergyDevice(config, event.gite_id);
   if (!assignment) {
-    if (isSmartlifeEnergyTrackingAction(event.action)) {
-      throw new Error(
-        `Aucun compteur total_ele actif n'est associé au gîte pour ${event.device_name || event.device_id}.`,
-      );
-    }
     return null;
   }
 
   const reading = await getSmartlifeDeviceTotalElectricityKwh(
     config,
-    event.device_id,
+    assignment.device_id,
   );
   const reservations = await loadStayReservations(event.reservation_id);
   const entriesByReservationId = new Map(
@@ -369,28 +359,28 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
 
   if (event.command_value) {
     const hasOpenSession = referenceEntries.some(
-      (entry) => entry.device_id === event.device_id && entry.status === "open",
+      (entry) => entry.device_id === assignment.device_id && entry.status === "open",
     );
     if (hasOpenSession) {
-      return `Compteur ${assignment.device_name || event.device_id}: session déjà ouverte.`;
+      return `Compteur ${assignment.device_name || assignment.device_id}: session déjà ouverte.`;
     }
 
-    const openEntry = buildOpenEntry(event, reading.total_kwh);
+    const openEntry = buildOpenEntry(assignment, event, reading.total_kwh);
     reservations.forEach((reservation) => {
       const entries = entriesByReservationId.get(reservation.id) ?? [];
       entriesByReservationId.set(reservation.id, [...entries, openEntry]);
     });
     await updateStayReservationTracking(reservations, entriesByReservationId);
-    return `Compteur ${assignment.device_name || event.device_id}: départ relevé à ${reading.total_kwh.toFixed(2)} kWh.`;
+    return `Compteur ${assignment.device_name || assignment.device_id}: départ relevé à ${reading.total_kwh.toFixed(2)} kWh.`;
   }
 
   const openEntry = [...referenceEntries]
     .reverse()
     .find(
-      (entry) => entry.device_id === event.device_id && entry.status === "open",
+      (entry) => entry.device_id === assignment.device_id && entry.status === "open",
     );
   if (!openEntry) {
-    return `Compteur ${assignment.device_name || event.device_id}: aucune session ouverte à clôturer.`;
+    return `Compteur ${assignment.device_name || assignment.device_id}: aucune session ouverte à clôturer.`;
   }
 
   const stayTotalKwh = round4(
@@ -429,7 +419,7 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
   });
 
   await updateStayReservationTracking(reservations, entriesByReservationId);
-  return `Compteur ${assignment.device_name || event.device_id}: ${stayTotalKwh.toFixed(2)} kWh · ${stayTotalCostEur.toFixed(2)} EUR.`;
+  return `Compteur ${assignment.device_name || assignment.device_id}: ${stayTotalKwh.toFixed(2)} kWh · ${stayTotalCostEur.toFixed(2)} EUR.`;
 };
 
 export const loadLiveReservationEnergySummaries = async (
@@ -507,49 +497,33 @@ export const startManualReservationEnergyTracking = async (
     throw new Error("La réservation doit être rattachée à un gîte.");
   }
 
-  const assignments = config.meter_assignments.reduce<SmartlifeEnergyMeterAssignment[]>(
-    (items, assignment) => {
-      if (!assignment.enabled || assignment.gite_id !== reservation.gite_id) {
-        return items;
-      }
-      if (!assignment.device_id.trim()) return items;
-      if (items.some((item) => item.device_id === assignment.device_id)) {
-        return items;
-      }
-      items.push(assignment);
-      return items;
-    },
-    [],
-  );
-
-  if (assignments.length === 0) {
+  const assignment = getEnabledPrimaryEnergyDevice(config, reservation.gite_id);
+  if (!assignment) {
     throw new Error("Aucun compteur énergie actif n'est associé à ce gîte.");
   }
 
   const messages: string[] = [];
   const errors: string[] = [];
 
-  for (const assignment of assignments) {
-    try {
-      const message = await trackSmartlifeEnergyForAutomationEvent(config, {
-        reservation_id: reservation.id,
-        gite_id: reservation.gite_id,
-        device_id: assignment.device_id,
-        device_name: assignment.device_name,
-        action: "energy-start",
-        command_value: true,
-        rule_id: "manual-live-start",
-      });
-      if (message) {
-        messages.push(message);
-      }
-    } catch (error) {
-      errors.push(
-        error instanceof Error
-          ? error.message
-          : `Impossible d'initialiser ${assignment.device_name || assignment.device_id}.`,
-      );
+  try {
+    const message = await trackSmartlifeEnergyForAutomationEvent(config, {
+      reservation_id: reservation.id,
+      gite_id: reservation.gite_id,
+      device_id: assignment.device_id,
+      device_name: assignment.device_name,
+      action: "device-on",
+      command_value: true,
+      rule_id: "manual-live-start",
+    });
+    if (message) {
+      messages.push(message);
     }
+  } catch (error) {
+    errors.push(
+      error instanceof Error
+        ? error.message
+        : `Impossible d'initialiser ${assignment.device_name || assignment.device_id}.`,
+    );
   }
 
   return { messages, errors };
