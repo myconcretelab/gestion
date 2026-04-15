@@ -198,30 +198,48 @@ export const listSmartlifeDevices = async (
   config: SmartlifeAutomationConfig,
 ): Promise<SmartlifeDevice[]> => {
   const context = getContext(config);
-  const response = await context.request<{
-    last_row_key?: string;
-    has_more?: boolean;
-    total?: number;
-    devices?: Array<{
-      id: string;
-      name?: string;
-      product_name?: string;
-      category?: string;
-      online?: boolean;
-    }>;
-  }>({
-    path: "/v1.0/iot-01/associated-users/devices",
-    method: "GET",
-    query: {
-      size: 100,
-    },
-  });
-  if (!response.success) {
-    throw new Error(response.msg || "Impossible de lister les appareils Tuya.");
+  const rawDevices: Array<{
+    id: string;
+    name?: string;
+    product_name?: string;
+    category?: string;
+    online?: boolean;
+  }> = [];
+  let lastRowKey: string | undefined;
+
+  while (true) {
+    const response = await context.request<{
+      last_row_key?: string;
+      has_more?: boolean;
+      total?: number;
+      devices?: Array<{
+        id: string;
+        name?: string;
+        product_name?: string;
+        category?: string;
+        online?: boolean;
+      }>;
+    }>({
+      path: "/v1.0/iot-01/associated-users/devices",
+      method: "GET",
+      query: {
+        size: 100,
+        ...(lastRowKey ? { last_row_key: lastRowKey } : {}),
+      },
+    });
+    if (!response.success) {
+      throw new Error(response.msg || "Impossible de lister les appareils Tuya.");
+    }
+
+    rawDevices.push(...(response.result?.devices ?? []));
+    if (!response.result?.has_more || !response.result.last_row_key) {
+      break;
+    }
+    lastRowKey = response.result.last_row_key;
   }
 
   const devices = await Promise.all(
-    (response.result?.devices ?? []).map(async (device) => {
+    rawDevices.map(async (device) => {
       const detailPromise = context.device.detail({ device_id: device.id });
       const functionsPromise = context.deviceFunction.specification({
         device_id: device.id,

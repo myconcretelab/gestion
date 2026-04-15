@@ -526,7 +526,10 @@ export const runSmartlifeAutomation = async (options?: {
 export const getSmartlifeAutomationState = (): SmartlifeAutomationState => {
   const state = readSmartlifeAutomationRunState();
   return {
-    config: cronConfig,
+    config: {
+      ...cronConfig,
+      access_secret: "",
+    },
     scheduler:
       env.SMARTLIFE_AUTOMATION_SCHEDULER as SmartlifeAutomationState["scheduler"],
     running: cronRunning || Boolean(activeRunPromise) || state.running,

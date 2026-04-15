@@ -1,6 +1,9 @@
 import prisma from "../db/prisma.js";
 import { round2, toNumber, type NumericLike } from "../utils/money.js";
-import type { SmartlifeAutomationConfig } from "./smartlifeSettings.js";
+import {
+  getEnabledSmartlifePrimaryEnergyDevices,
+  type SmartlifeAutomationConfig,
+} from "./smartlifeSettings.js";
 import { getSmartlifeDeviceTotalElectricityKwh } from "./smartlifeClient.js";
 
 const round4 = (value: number) => Math.round(value * 10_000) / 10_000;
@@ -80,25 +83,11 @@ const buildPeriodKey = (
 ) => `${giteId}:${year}-${String(month).padStart(2, "0")}:${deviceId}`;
 
 const getEnabledAssignments = (config: SmartlifeAutomationConfig) => {
-  const seen = new Set<string>();
-  return config.meter_assignments.reduce<EnabledAssignment[]>(
-    (items, assignment) => {
-      if (!assignment.enabled) return items;
-      const giteId = String(assignment.gite_id ?? "").trim();
-      const deviceId = String(assignment.device_id ?? "").trim();
-      if (!giteId || !deviceId) return items;
-      const key = `${giteId}:${deviceId}`;
-      if (seen.has(key)) return items;
-      seen.add(key);
-      items.push({
-        gite_id: giteId,
-        device_id: deviceId,
-        device_name: String(assignment.device_name ?? "").trim() || deviceId,
-      });
-      return items;
-    },
-    [],
-  );
+  return getEnabledSmartlifePrimaryEnergyDevices(config).map((assignment) => ({
+    gite_id: assignment.gite_id,
+    device_id: assignment.device_id,
+    device_name: assignment.device_name,
+  }));
 };
 
 export const getEnabledMonthlyEnergyGiteIds = (

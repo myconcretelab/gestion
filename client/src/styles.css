@@ -5075,6 +5075,44 @@ button.secondary {
   box-shadow: none;
 }
 
+.smartlife-rule-save-button {
+  min-width: 132px;
+}
+
+.smartlife-rule-save-button__content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 92px;
+}
+
+.smartlife-rule-save-button__content--icon {
+  min-width: 24px;
+}
+
+.smartlife-rule-save-button--saving,
+.smartlife-rule-save-button--saving:disabled {
+  background: linear-gradient(135deg, var(--primary) 0%, #ff385c 100%);
+  color: #ffffff;
+  box-shadow: var(--shadow-action);
+  cursor: wait;
+}
+
+.smartlife-rule-save-button--saved,
+.smartlife-rule-save-button--saved:disabled {
+  background: linear-gradient(135deg, #0f766e 0%, #10b981 100%);
+  color: #ffffff;
+  box-shadow: var(--shadow-action);
+}
+
+.smartlife-rule-save-button--error,
+.smartlife-rule-save-button--error:disabled {
+  background: linear-gradient(135deg, #991b1b 0%, #ef4444 100%);
+  color: #ffffff;
+  box-shadow: var(--shadow-action);
+}
+
 button.warning {
   background: #f59e0b;
 }
