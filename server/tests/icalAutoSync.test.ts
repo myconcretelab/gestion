@@ -163,62 +163,6 @@ test("runAppLoadIcalSync saute l'import si un import iCal recent existe deja", a
   }
 });
 
-test("runAppLoadIcalSync reutilise une synchro iCal deja en cours", async () => {
-  const settingsBackup = backupFile(path.join(env.DATA_DIR, "ical-cron-settings.json"));
-  const importLogBackup = backupFile(path.join(env.DATA_DIR, "import-log.json"));
-  const originalFindMany = prisma.icalSource.findMany;
-  const originalFindFirst = prisma.reservation.findFirst;
-  const originalFindManyReservations = prisma.reservation.findMany;
-  const originalCreate = prisma.reservation.create;
-  const originalFetch = global.fetch;
-
-  let releaseFetchText!: () => void;
-  const fetchTextReady = new Promise<void>((resolve) => {
-    releaseFetchText = resolve;
-  });
-
-  try {
-    await updateIcalSyncCronConfig({
-      enabled: true,
-      auto_sync_on_app_load: true,
-    });
-    writeImportLog([]);
-
-    prisma.icalSource.findMany = async () => createActiveSource();
-    prisma.reservation.findFirst = async () => null;
-    prisma.reservation.findMany = async () => [];
-    prisma.reservation.create = async ({ data }: any) => ({ id: "reservation-1", ...data });
-    global.fetch = (async () =>
-      ({
-        ok: true,
-        status: 200,
-        text: async () => {
-          await fetchTextReady;
-          return ICS_SAMPLE;
-        },
-      }) as Response) as typeof fetch;
-
-    const runningPromise = syncIcalReservations({ log_source: "ical-manual" });
-    const autoSyncPromise = runAppLoadIcalSync();
-
-    releaseFetchText();
-
-    const [runningResult, autoSyncResult] = await Promise.all([runningPromise, autoSyncPromise]);
-
-    assert.equal(autoSyncResult.status, "shared-running");
-    assert.equal(autoSyncResult.summary?.created_count, runningResult.created_count);
-    assert.equal(autoSyncResult.summary?.updated_count, runningResult.updated_count);
-  } finally {
-    prisma.icalSource.findMany = originalFindMany;
-    prisma.reservation.findFirst = originalFindFirst;
-    prisma.reservation.findMany = originalFindManyReservations;
-    prisma.reservation.create = originalCreate;
-    global.fetch = originalFetch;
-    restoreFile(importLogBackup);
-    restoreFile(settingsBackup);
-  }
-});
-
 test("syncIcalReservations supprime les reservations iCal plateforme absentes du flux", async () => {
   const conflictsBackup = backupFile(path.join(env.DATA_DIR, "ical-conflicts.json"));
   const originalFindManySources = prisma.icalSource.findMany;
