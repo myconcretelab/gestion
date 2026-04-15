@@ -33,7 +33,6 @@ const getRouteHandler = (router: any, method: "get", routePath: string) => {
 test("GET /today/overview inclut les départs du jour", async () => {
   const originals = {
     giteFindMany: prisma.gite.findMany,
-    managerFindMany: prisma.gestionnaire.findMany,
     reservationFindMany: prisma.reservation.findMany,
     reservationCount: prisma.reservation.count,
   };
@@ -44,7 +43,6 @@ test("GET /today/overview inclut les départs du jour", async () => {
 
   try {
     prisma.gite.findMany = async () => [{ id: "g1", nom: "Mauron", prefixe_contrat: "MA", ordre: 1 }];
-    prisma.gestionnaire.findMany = async () => [];
     prisma.reservation.findMany = async ({ where }: any) => {
       if (where?.date_entree && where?.date_sortie) {
         overviewReservationsWhere = where;
@@ -125,12 +123,13 @@ test("GET /today/overview inclut les départs du jour", async () => {
     assert.equal(body.reservations.length, 1);
     assert.equal(body.reservations[0].hote_nom, "Phonsine");
     assert.equal(new Date(body.reservations[0].date_sortie).toISOString().slice(0, 10), "2026-03-29");
+    assert.ok(!("managers" in body));
+    assert.ok(!("statuses" in body));
     assert.equal(body.new_reservations.length, 1);
     assert.equal(body.new_reservations[0].hote_nom, "Camille Martin");
     assert.equal(body.new_reservations[0].nb_nuits, 3);
   } finally {
     prisma.gite.findMany = originals.giteFindMany;
-    prisma.gestionnaire.findMany = originals.managerFindMany;
     prisma.reservation.findMany = originals.reservationFindMany;
     prisma.reservation.count = originals.reservationCount;
   }

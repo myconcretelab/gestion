@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
@@ -12,38 +12,38 @@ import {
 } from "../utils/paymentColors";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import { buildMobileReservationEditorHref } from "./shared/mobileReservationEditor";
-import type { Gestionnaire, Gite, Reservation } from "../utils/types";
+import type { Gite, Reservation } from "../utils/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOTAL_DAY_COUNT = 14;
 const MOBILE_RESERVATION_BREAKPOINT = 760;
-const USER_STORAGE_KEY = "contrats-today-user";
 const TODAY_RETURN_HREF = "/aujourdhui";
 const TRASH_COLORS = {
   yellow: "#FFCB05",
   darkGreen: "#104911",
 };
 
-type TodayStatuses = Record<
-  string,
-  {
-    done: boolean;
-    user: string;
-  }
->;
-
-type TodayOverviewPayload = {
+type TodayPrimaryOverviewPayload = {
   today: string;
   days: number;
   notification_days: number;
   gites: Gite[];
-  managers: Gestionnaire[];
   reservations: Reservation[];
-  statuses: TodayStatuses;
   source_colors: Record<string, string>;
+};
+
+type TodayDeferredReservationEnergy = Pick<
+  Reservation,
+  "energy_live_consumption_kwh" | "energy_live_cost_eur" | "energy_live_price_per_kwh" | "energy_live_recorded_at"
+>;
+
+type TodayDeferredOverviewPayload = {
+  days: number;
+  notification_days: number;
   unassigned_count: number;
   new_reservations: TodayNewReservationNotification[];
   ical_conflicts: TodayIcalConflict[];
+  live_energy_by_reservation_id: Record<string, TodayDeferredReservationEnergy>;
 };
 
 type TodayNewReservationNotification = {
@@ -111,7 +111,6 @@ type TodayEventType = "arrival" | "depart" | "both";
 
 type TodayEvent = {
   id: string;
-  statusId: string;
   type: TodayEventType;
   dateIso: string;
   giteId: string;
@@ -168,15 +167,6 @@ type TodayMobileActionState =
     }
   | null;
 
-const getStoredTodayUser = () => {
-  if (typeof window === "undefined") return "";
-  try {
-    return window.localStorage.getItem(USER_STORAGE_KEY) ?? "";
-  } catch {
-    return "";
-  }
-};
-
 const getMatchesMediaQuery = (query: string) =>
   typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query).matches : false;
 
@@ -204,7 +194,6 @@ const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
 const addUtcDays = (value: Date, days: number) => new Date(value.getTime() + days * DAY_MS);
 const diffUtcDays = (left: Date, right: Date) => Math.round((left.getTime() - right.getTime()) / DAY_MS);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const formatManagerName = (manager: Gestionnaire) => `${manager.prenom} ${manager.nom}`.trim();
 const formatShortDate = (value: string) =>
   parseIsoDate(value).toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -317,8 +306,6 @@ const buildConflictReservationHref = (conflict: TodayIcalConflict) => {
   return `/reservations?${params.toString()}#reservation-${conflict.reservation_id}`;
 };
 
-const buildEventStatusId = (giteId: string, dateIso: string, type: TodayEventType) => `today:${giteId}:${dateIso}:${type}`;
-
 const mixHexColors = (baseHex: string, targetHex: string, weight: number) => {
   const parse = (value: string) => {
     const normalized = value.replace("#", "").trim();
@@ -392,7 +379,6 @@ const buildTodayEvents = (reservations: Reservation[], todayIso: string, lastVis
 
       return {
         id: `${primaryReservation.gite_id}:${entry.dateIso}:${type}`,
-        statusId: buildEventStatusId(primaryReservation.gite_id, entry.dateIso, type),
         type,
         dateIso: entry.dateIso,
         giteId: primaryReservation.gite_id,
@@ -544,40 +530,74 @@ const getEventIcon = (type: TodayEventType) => {
 
 const TodayPage = () => {
   const navigate = useNavigate();
-  const [overview, setOverview] = useState<TodayOverviewPayload | null>(null);
+  const [primaryOverview, setPrimaryOverview] = useState<TodayPrimaryOverviewPayload | null>(null);
+  const [deferredOverview, setDeferredOverview] = useState<TodayDeferredOverviewPayload | null>(null);
   const [notificationDayCount, setNotificationDayCount] = useState(1);
   const [notificationSliderValue, setNotificationSliderValue] = useState(1);
-  const [selectedUser, setSelectedUser] = useState(() => getStoredTodayUser());
   const [mobileActionState, setMobileActionState] = useState<TodayMobileActionState>(null);
   const [loading, setLoading] = useState(true);
+  const [deferredLoading, setDeferredLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
+  const primaryRequestIdRef = useRef(0);
+  const deferredRequestIdRef = useRef(0);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
     getMatchesMediaQuery(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`)
   );
 
-  const loadData = async (options?: { preserveContent?: boolean; notificationDays?: number }) => {
-    const shouldShowLoader = !options?.preserveContent || !overview;
+  const buildOverviewQuery = (notificationDays: number) =>
+    `/today/overview?days=${TOTAL_DAY_COUNT}&notification_days=${notificationDays}`;
+
+  const loadDeferredData = async (options?: { notificationDays?: number }) => {
     const nextNotificationDays = options?.notificationDays ?? notificationDayCount;
+    const requestId = ++deferredRequestIdRef.current;
+    setDeferredLoading(true);
+
+    try {
+      const payload = await apiFetch<TodayDeferredOverviewPayload>(
+        `${buildOverviewQuery(nextNotificationDays).replace("/today/overview", "/today/overview/deferred")}`
+      );
+      if (requestId !== deferredRequestIdRef.current) return;
+      setDeferredOverview(payload);
+      setNotificationDayCount((current) => (current === payload.notification_days ? current : payload.notification_days));
+    } catch (err: any) {
+      if (requestId !== deferredRequestIdRef.current) return;
+      setError(err.message ?? "Impossible de charger les données complémentaires de la page Aujourd'hui.");
+    } finally {
+      if (requestId === deferredRequestIdRef.current) {
+        setDeferredLoading(false);
+      }
+    }
+  };
+
+  const loadData = async (options?: { preserveContent?: boolean; notificationDays?: number }) => {
+    const shouldShowLoader = !options?.preserveContent || !primaryOverview;
+    const nextNotificationDays = options?.notificationDays ?? notificationDayCount;
+    const requestId = ++primaryRequestIdRef.current;
     if (shouldShowLoader) {
       setLoading(true);
     }
 
     try {
       setError(null);
-      const payload = await apiFetch<TodayOverviewPayload>(
-        `/today/overview?days=${TOTAL_DAY_COUNT}&notification_days=${nextNotificationDays}`
+      const payload = await apiFetch<TodayPrimaryOverviewPayload>(
+        `${buildOverviewQuery(nextNotificationDays).replace("/today/overview", "/today/overview/primary")}`
       );
-      setOverview(payload);
+      if (requestId !== primaryRequestIdRef.current) return;
+      setPrimaryOverview(payload);
       setNotificationDayCount((current) => (current === payload.notification_days ? current : payload.notification_days));
     } catch (err: any) {
+      if (requestId !== primaryRequestIdRef.current) return;
       setError(err.message ?? "Impossible de charger la page Aujourd'hui.");
+      return;
     } finally {
-      if (shouldShowLoader) {
+      if (shouldShowLoader && requestId === primaryRequestIdRef.current) {
         setLoading(false);
       }
     }
+
+    if (requestId !== primaryRequestIdRef.current) return;
+    void loadDeferredData({ notificationDays: nextNotificationDays });
   };
 
   useEffect(() => {
@@ -604,20 +624,25 @@ const TodayPage = () => {
     return subscribeToMediaQueryChange(mediaQuery, handleChange);
   }, []);
 
-  const todayIso = overview?.today ?? toIsoDate(new Date());
-  const totalDays = overview?.days ?? TOTAL_DAY_COUNT;
+  const todayIso = primaryOverview?.today ?? toIsoDate(new Date());
+  const totalDays = primaryOverview?.days ?? TOTAL_DAY_COUNT;
   const todayDate = useMemo(() => parseIsoDate(todayIso), [todayIso]);
   const tomorrowIso = useMemo(() => toIsoDate(addUtcDays(todayDate, 1)), [todayDate]);
   const lastVisibleDate = useMemo(() => addUtcDays(todayDate, totalDays - 1), [todayDate, totalDays]);
   const lastVisibleIso = useMemo(() => toIsoDate(lastVisibleDate), [lastVisibleDate]);
 
-  const gites = overview?.gites ?? [];
-  const managers = overview?.managers ?? [];
-  const reservations = overview?.reservations ?? [];
-  const statuses = overview?.statuses ?? {};
-  const unassignedCount = overview?.unassigned_count ?? 0;
-  const newReservations = overview?.new_reservations ?? [];
-  const icalConflicts = overview?.ical_conflicts ?? [];
+  const gites = primaryOverview?.gites ?? [];
+  const reservations = useMemo(
+    () =>
+      (primaryOverview?.reservations ?? []).map((reservation) => ({
+        ...reservation,
+        ...(deferredOverview?.live_energy_by_reservation_id?.[reservation.id] ?? {}),
+      })),
+    [deferredOverview?.live_energy_by_reservation_id, primaryOverview?.reservations]
+  );
+  const unassignedCount = deferredOverview?.unassigned_count ?? 0;
+  const newReservations = deferredOverview?.new_reservations ?? [];
+  const icalConflicts = deferredOverview?.ical_conflicts ?? [];
   const mobileActionEvent = useMemo(
     () =>
       mobileActionState?.mode === "rotation-choice"
@@ -633,37 +658,14 @@ const TodayPage = () => {
     [mobileActionState, reservations]
   );
 
-  const managerOptions = useMemo(
-    () =>
-      managers
-        .map(formatManagerName)
-        .filter(Boolean)
-        .sort((left, right) => left.localeCompare(right, "fr", { sensitivity: "base" })),
-    [managers]
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(USER_STORAGE_KEY, selectedUser);
-    } catch {
-      // Ignore local storage write failures on restrictive mobile browsers.
-    }
-  }, [selectedUser]);
-
-  useEffect(() => {
-    if (managerOptions.length === 0 || selectedUser) return;
-    setSelectedUser(managerOptions[0]);
-  }, [managerOptions, selectedUser]);
-
   useEffect(() => {
     if (usesViewportScroll) return;
     setMobileActionState(null);
   }, [usesViewportScroll]);
 
   const paymentColorMap = useMemo(
-    () => buildPaymentColorMap(overview?.source_colors ?? DEFAULT_PAYMENT_SOURCE_COLORS),
-    [overview?.source_colors]
+    () => buildPaymentColorMap(primaryOverview?.source_colors ?? DEFAULT_PAYMENT_SOURCE_COLORS),
+    [primaryOverview?.source_colors]
   );
 
   const days = useMemo(
@@ -862,50 +864,7 @@ const TodayPage = () => {
   const commitNotificationDayCount = (nextValue: number) => {
     if (nextValue === notificationDayCount) return;
     setNotificationDayCount(nextValue);
-    void loadData({ preserveContent: true, notificationDays: nextValue });
-  };
-
-  const toggleStatus = async (event: TodayEvent) => {
-    const current = statuses[event.statusId];
-    const nextValue = {
-      done: !current?.done,
-      user: selectedUser,
-    };
-
-    setSavingStatusId(event.statusId);
-    setOverview((previous) =>
-      previous
-        ? {
-            ...previous,
-            statuses: {
-              ...previous.statuses,
-              [event.statusId]: nextValue,
-            },
-          }
-        : previous
-    );
-
-    try {
-      await apiFetch(`/today/statuses/${encodeURIComponent(event.statusId)}`, {
-        method: "POST",
-        json: nextValue,
-      });
-    } catch (err: any) {
-      setOverview((previous) =>
-        previous
-          ? {
-              ...previous,
-              statuses: {
-                ...previous.statuses,
-                [event.statusId]: current ?? { done: false, user: "" },
-              },
-            }
-          : previous
-      );
-      setError(err.message ?? "Impossible d'enregistrer le statut.");
-    } finally {
-      setSavingStatusId(null);
-    }
+    void loadDeferredData({ notificationDays: nextValue });
   };
 
   const resolveIcalConflict = async (
@@ -1059,7 +1018,6 @@ const TodayPage = () => {
                     ))}
 
                     {row.markers.map((marker) => {
-                      const status = statuses[marker.event.statusId];
                       const prefix =
                         marker.event.gitePrefix.trim().slice(0, 2).toUpperCase() ||
                         marker.event.giteName.trim().slice(0, 1).toUpperCase();
@@ -1070,7 +1028,6 @@ const TodayPage = () => {
                           type="button"
                           className={[
                             "today-timeline__marker",
-                            status?.done ? "today-timeline__marker--done" : "",
                             marker.event.dateIso === todayIso ? "today-timeline__marker--pulse" : "",
                           ]
                             .filter(Boolean)
@@ -1128,7 +1085,8 @@ const TodayPage = () => {
           </div>
           <span className="today-utility-strip__detail">
             Semaine {evenWeek ? "paire" : "impaire"}
-            {unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
+            {deferredOverview && unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
+            {!deferredOverview && deferredLoading ? " · Chargement des indicateurs..." : ""}
           </span>
         </div>
 
@@ -1164,6 +1122,7 @@ const TodayPage = () => {
             step={1}
             value={notificationSliderValue}
             className="today-utility-strip__slider"
+            disabled={deferredLoading && !deferredOverview}
             onChange={(event) => setNotificationSliderValue(Number(event.target.value))}
             onPointerUp={() => commitNotificationDayCount(notificationSliderValue)}
             onBlur={() => commitNotificationDayCount(notificationSliderValue)}
@@ -1187,13 +1146,18 @@ const TodayPage = () => {
           <div>
             <div className="section-title">Centre de notifications</div>
             <div className="field-hint">
-              {notificationItems.length} notification{notificationItems.length > 1 ? "s" : ""} sur{" "}
-              {formatNotificationDayLabel(notificationDayCount)}
+              {deferredOverview
+                ? `${notificationItems.length} notification${notificationItems.length > 1 ? "s" : ""} sur ${formatNotificationDayLabel(
+                    notificationDayCount
+                  )}`
+                : "Chargement des notifications..."}
             </div>
           </div>
         </div>
 
-        {notificationItems.length === 0 ? (
+        {!deferredOverview && deferredLoading ? (
+          <div className="today-notifications-empty">Chargement des notifications et conflits iCal...</div>
+        ) : notificationItems.length === 0 ? (
           <div className="today-notifications-empty">Aucun conflit iCal ni nouvelle réservation sur cette période.</div>
         ) : (
           <div className="today-notifications-list">
@@ -1375,8 +1339,6 @@ const TodayPage = () => {
               {group.events.length === 0 ? <div className="today-events-empty">Aucune arrivée ni départ.</div> : null}
 
               {group.events.map((event) => {
-                const status = statuses[event.statusId];
-                const canToggle = event.dateIso === todayIso || event.dateIso === tomorrowIso;
                 const phone = getReservationPhone(event.arrivalReservation) || getReservationPhone(event.departureReservation);
                 const comment =
                   event.type === "depart"
@@ -1392,27 +1354,15 @@ const TodayPage = () => {
                 return (
                   <article
                     key={event.id}
-                    className={[
-                      "today-event-card",
-                      `today-event-card--${event.type}`,
-                      status?.done ? "today-event-card--done" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
+                    className={["today-event-card", `today-event-card--${event.type}`].join(" ")}
                     style={{ "--today-event-accent": eventColor } as CSSProperties}
                   >
-                    <button
-                      type="button"
-                      className={["today-event-card__toggle", status?.done ? "today-event-card__toggle--done" : ""].filter(Boolean).join(" ")}
-                      onClick={() => (canToggle ? void toggleStatus(event) : undefined)}
-                      disabled={!canToggle || savingStatusId === event.statusId}
-                      title={canToggle ? "Marquer comme traité" : "Le suivi est réservé à aujourd'hui et demain"}
-                    >
+                    <div className="today-event-card__toggle" aria-hidden="true">
                       <span className="today-event-card__toggle-prefix">
                         {event.gitePrefix.trim().slice(0, 2).toUpperCase() || event.giteName.trim().slice(0, 1).toUpperCase()}
                       </span>
                       <span className="today-event-card__toggle-icon">{getEventIcon(event.type)}</span>
-                    </button>
+                    </div>
 
                     <div className="today-event-card__body" {...getMobileCardActionProps(event)}>
                       <div className="today-event-card__topline">
@@ -1434,8 +1384,6 @@ const TodayPage = () => {
                     </div>
 
                     <div className="today-event-card__aside" {...getMobileCardActionProps(event)}>
-                      {status?.done && status.user ? <span className="badge">Traité par {status.user}</span> : null}
-
                       <div className="today-event-card__meta">
                         <span>{event.source || "A définir"}</span>
                         <span>{event.primaryReservation.nb_adultes} adulte(s)</span>
