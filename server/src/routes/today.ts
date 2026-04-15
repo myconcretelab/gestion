@@ -16,7 +16,6 @@ import {
   readSmartlifeAutomationConfig,
 } from "../services/smartlifeSettings.js";
 import { buildNewReservations } from "../services/dailyReservationEmail.js";
-import { readTodayStatuses, writeTodayStatuses } from "../services/todayStatuses.js";
 import { getReservationOriginSystem } from "../utils/reservationOrigin.js";
 
 const router = Router();
@@ -26,10 +25,6 @@ const RECENT_ACTIVITY_LIMIT = 36;
 const DEFAULT_NOTIFICATION_DAY_COUNT = 1;
 const MAX_NOTIFICATION_DAY_COUNT = 5;
 
-const statusSchema = z.object({
-  done: z.boolean(),
-  user: z.string().trim().max(80).optional().default(""),
-});
 const icalConflictResolutionSchema = z.object({
   action: z.enum(["keep_reservation", "apply_ical", "delete_reservation"]),
 });
@@ -98,6 +93,86 @@ const buildOverlapConflictPayload = (conflicts: Array<{ id: string; hote_nom: st
     label: `${conflict.hote_nom} (${formatIsoDateFr(conflict.date_entree)} - ${formatIsoDateFr(conflict.date_sortie)})`,
   })),
 });
+
+const parseOverviewParams = (query: Record<string, unknown>) => {
+  const daysRaw = typeof query.days === "string" ? Number.parseInt(query.days, 10) : 14;
+  const days = Number.isFinite(daysRaw) ? Math.min(21, Math.max(7, daysRaw)) : 14;
+  const notificationDaysRaw =
+    typeof query.notification_days === "string"
+      ? Number.parseInt(query.notification_days, 10)
+      : DEFAULT_NOTIFICATION_DAY_COUNT;
+  const notificationDays = Number.isFinite(notificationDaysRaw)
+    ? Math.min(MAX_NOTIFICATION_DAY_COUNT, Math.max(1, notificationDaysRaw))
+    : DEFAULT_NOTIFICATION_DAY_COUNT;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  return {
+    days,
+    notificationDays,
+    today,
+    endExclusive: new Date(today.getTime() + days * DAY_MS),
+    notificationSince: getNotificationSince(notificationDays),
+    recentActivitySince: getRecentActivitySince(),
+  };
+};
+
+const buildOverviewReservationsWhere = (today: Date, endExclusive: Date) => ({
+  gite_id: { not: null },
+  date_entree: { lt: endExclusive },
+  date_sortie: { gte: today },
+});
+
+const loadOverviewReservations = (today: Date, endExclusive: Date) =>
+  prisma.reservation.findMany({
+    where: buildOverviewReservationsWhere(today, endExclusive),
+    include: {
+      gite: {
+        select: {
+          id: true,
+          nom: true,
+          prefixe_contrat: true,
+          ordre: true,
+          electricity_price_per_kwh: true,
+        },
+      },
+    },
+    orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
+  });
+
+const loadOverviewLiveEnergyByReservationId = async (today: Date, endExclusive: Date) => {
+  const smartlifeConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
+  if (!hasSmartlifeCredentials(smartlifeConfig)) {
+    return {} as Record<
+      string,
+      {
+        energy_live_consumption_kwh: number;
+        energy_live_cost_eur: number;
+        energy_live_price_per_kwh: number | null;
+        energy_live_recorded_at: string;
+      }
+    >;
+  }
+
+  const reservations = await prisma.reservation.findMany({
+    where: buildOverviewReservationsWhere(today, endExclusive),
+    select: {
+      id: true,
+      energy_tracking: true,
+      gite: {
+        select: {
+          electricity_price_per_kwh: true,
+        },
+      },
+    },
+  });
+  if (reservations.length === 0) {
+    return {};
+  }
+
+  const liveEnergyByReservationId = await loadLiveReservationEnergySummaries(smartlifeConfig, reservations);
+  return Object.fromEntries(liveEnergyByReservationId.entries());
+};
 
 const buildRecentAppActivity = async (since: Date) => {
   const rows = await prisma.reservation.findMany({
@@ -177,52 +252,90 @@ const buildRecentAppActivity = async (since: Date) => {
     .slice(0, RECENT_ACTIVITY_LIMIT);
 };
 
-router.get("/overview", async (req, res, next) => {
+router.get("/overview/primary", async (req, res, next) => {
   try {
-    const daysRaw = typeof req.query.days === "string" ? Number.parseInt(req.query.days, 10) : 14;
-    const days = Number.isFinite(daysRaw) ? Math.min(21, Math.max(7, daysRaw)) : 14;
-    const notificationDaysRaw =
-      typeof req.query.notification_days === "string"
-        ? Number.parseInt(req.query.notification_days, 10)
-        : DEFAULT_NOTIFICATION_DAY_COUNT;
-    const notificationDays = Number.isFinite(notificationDaysRaw)
-      ? Math.min(MAX_NOTIFICATION_DAY_COUNT, Math.max(1, notificationDaysRaw))
-      : DEFAULT_NOTIFICATION_DAY_COUNT;
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const endExclusive = new Date(today.getTime() + days * DAY_MS);
-    const recentActivitySince = getRecentActivitySince();
-    const notificationSince = getNotificationSince(notificationDays);
-
-    const openIcalConflicts = listOpenIcalConflictRecords();
-    const [gites, managers, reservations, unassignedCount, recentAppActivity, conflictReservations, newReservations] = await Promise.all([
+    const { days, notificationDays, today, endExclusive } = parseOverviewParams(req.query as Record<string, unknown>);
+    const [gites, reservations] = await Promise.all([
       prisma.gite.findMany({
         select: { id: true, nom: true, prefixe_contrat: true, ordre: true },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
-      prisma.gestionnaire.findMany({
-        select: { id: true, prenom: true, nom: true },
-        orderBy: [{ nom: "asc" }, { prenom: "asc" }],
-      }),
-      prisma.reservation.findMany({
+      loadOverviewReservations(today, endExclusive),
+    ]);
+
+    return res.json({
+      today: toIsoDate(today),
+      days,
+      notification_days: notificationDays,
+      gites,
+      reservations,
+      source_colors: readSourceColorSettings().colors,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get("/overview/deferred", async (req, res, next) => {
+  try {
+    const { days, notificationDays, today, endExclusive, notificationSince } = parseOverviewParams(
+      req.query as Record<string, unknown>
+    );
+    const openIcalConflicts = listOpenIcalConflictRecords();
+    const [unassignedCount, conflictReservations, newReservations, liveEnergyByReservationId] = await Promise.all([
+      prisma.reservation.count({
         where: {
-          gite_id: { not: null },
+          gite_id: null,
           date_entree: { lt: endExclusive },
           date_sortie: { gte: today },
         },
-        include: {
-          gite: {
-            select: {
-              id: true,
-              nom: true,
-              prefixe_contrat: true,
-              ordre: true,
-              electricity_price_per_kwh: true,
-            },
-          },
-        },
-        orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
       }),
+      openIcalConflicts.length > 0
+        ? prisma.reservation.findMany({
+            where: { id: { in: openIcalConflicts.map((item) => item.reservation_id) } },
+            select: conflictReservationSelect,
+          })
+        : Promise.resolve([]),
+      buildNewReservations(notificationSince, new Date()),
+      loadOverviewLiveEnergyByReservationId(today, endExclusive),
+    ]);
+
+    const conflictReservationById = new Map(conflictReservations.map((reservation) => [reservation.id, reservation]));
+
+    return res.json({
+      days,
+      notification_days: notificationDays,
+      unassigned_count: unassignedCount,
+      new_reservations: newReservations,
+      live_energy_by_reservation_id: liveEnergyByReservationId,
+      ical_conflicts: openIcalConflicts
+        .filter((conflict) => {
+          const detectedAt = parseDateTime(conflict.detected_at);
+          return detectedAt ? detectedAt.getTime() >= notificationSince.getTime() : false;
+        })
+        .map((conflict) => ({
+          ...conflict,
+          reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
+        })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get("/overview", async (req, res, next) => {
+  try {
+    const { days, notificationDays, today, endExclusive, recentActivitySince, notificationSince } = parseOverviewParams(
+      req.query as Record<string, unknown>
+    );
+
+    const openIcalConflicts = listOpenIcalConflictRecords();
+    const [gites, reservations, unassignedCount, recentAppActivity, conflictReservations, newReservations] = await Promise.all([
+      prisma.gite.findMany({
+        select: { id: true, nom: true, prefixe_contrat: true, ordre: true },
+        orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      }),
+      loadOverviewReservations(today, endExclusive),
       prisma.reservation.count({
         where: {
           gite_id: null,
@@ -259,12 +372,10 @@ router.get("/overview", async (req, res, next) => {
       days,
       notification_days: notificationDays,
       gites,
-      managers,
       reservations: reservations.map((reservation) => ({
         ...reservation,
         ...(liveEnergyByReservationId.get(reservation.id) ?? {}),
       })),
-      statuses: readTodayStatuses(),
       source_colors: readSourceColorSettings().colors,
       unassigned_count: unassignedCount,
       new_reservations: newReservations,
@@ -280,27 +391,6 @@ router.get("/overview", async (req, res, next) => {
           reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
         })),
     });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.get("/statuses", (_req, res) => {
-  res.json(readTodayStatuses());
-});
-
-router.post("/statuses/:id", (req, res, next) => {
-  try {
-    const statusId = String(req.params.id ?? "").trim();
-    if (!/^[a-zA-Z0-9:_-]{1,160}$/.test(statusId)) {
-      return res.status(400).json({ error: "Identifiant de statut invalide." });
-    }
-
-    const payload = statusSchema.parse(req.body ?? {});
-    const statuses = readTodayStatuses();
-    statuses[statusId] = payload;
-    writeTodayStatuses(statuses);
-    return res.json(payload);
   } catch (error) {
     return next(error);
   }
