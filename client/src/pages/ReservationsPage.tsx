@@ -15,6 +15,7 @@ import { Link, useLocation } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import GiteTabs, { type GiteTabItem } from "./shared/GiteTabs";
 import ReservationOptionsEditor from "./shared/ReservationOptionsEditor";
+import ReservationContractIcon from "./shared/ReservationContractIcon";
 import { mergeOptions } from "./shared/rentalForm";
 import {
   computeGuestNightsByGite,
@@ -1301,6 +1302,7 @@ const ReservationsPage = () => {
                   ? {
                       ...item.linked_contract,
                       statut_paiement_solde: updated.statut_paiement_solde,
+                      solde_montant: updated.solde_montant,
                     }
                   : item.linked_contract,
               }
@@ -4911,7 +4913,7 @@ const ReservationsPage = () => {
                                 >
                                   <span className="reservations-host-inline">
                                     <span className="reservations-host-inline__name">{getEditableHostName(reservation.hote_nom)}</span>
-                                    {reservation.telephone || reservation.email ? (
+                                    {reservation.telephone || reservation.email || reservation.linked_contract ? (
                                       <span className="reservations-host-inline__contacts" aria-hidden="true">
                                         {reservation.telephone ? (
                                           <span className="reservations-host-inline__contact-indicator" title="Téléphone renseigné">
@@ -4921,6 +4923,11 @@ const ReservationsPage = () => {
                                         {reservation.email ? (
                                           <span className="reservations-host-inline__contact-indicator" title="Email renseigné">
                                             <ReservationEmailIcon />
+                                          </span>
+                                        ) : null}
+                                        {reservation.linked_contract ? (
+                                          <span className="reservations-host-inline__contact-indicator" title="Contrat lié">
+                                            <ReservationContractIcon />
                                           </span>
                                         ) : null}
                                       </span>

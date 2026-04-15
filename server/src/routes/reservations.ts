@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
-import { round2, toNumber } from "../utils/money.js";
+import { getRemainingDueAmount, round2, toNumber } from "../utils/money.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { type OptionsInput } from "../services/contractCalculator.js";
 import {
@@ -606,7 +606,10 @@ const hydrateReservationLinkedContract = (contract: any) => ({
   numero_contrat: contract.numero_contrat,
   statut_paiement_arrhes: contract.statut_paiement_arrhes,
   statut_paiement_solde: contract.statut_paiement_solde,
-  solde_montant: toNumber(contract.solde_montant),
+  solde_montant: getRemainingDueAmount(
+    contract.solde_montant,
+    contract.statut_paiement_solde,
+  ),
 });
 
 const loadLinkedContracts = async (reservationIds: string[]) => {

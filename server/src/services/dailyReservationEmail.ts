@@ -23,8 +23,9 @@ import {
   type DailyReservationEmailRunStatus,
 } from "./dailyReservationEmailRunState.js";
 
-type DailyReservationDigestReservation = {
+export type DailyReservationDigestReservation = {
   id: string;
+  gite_id: string | null;
   gite_nom: string;
   hote_nom: string;
   date_entree: string;
@@ -560,7 +561,7 @@ const buildTotalsByGite = async (monthStart: Date, monthEnd: Date) => {
     .map(({ ordre: _ordre, ...item }) => item);
 };
 
-const buildNewReservations = async (windowStart: Date, windowEnd: Date) => {
+export const buildNewReservations = async (windowStart: Date, windowEnd: Date) => {
   const rows = await prisma.reservation.findMany({
     where: {
       createdAt: {
@@ -570,6 +571,7 @@ const buildNewReservations = async (windowStart: Date, windowEnd: Date) => {
     },
     select: {
       id: true,
+      gite_id: true,
       hote_nom: true,
       date_entree: true,
       date_sortie: true,
@@ -589,6 +591,7 @@ const buildNewReservations = async (windowStart: Date, windowEnd: Date) => {
 
   return rows.map((row) => ({
     id: row.id,
+    gite_id: row.gite_id ?? null,
     gite_nom: row.gite?.nom ?? "Sans gîte assigné",
     hote_nom: row.hote_nom,
     date_entree: row.date_entree.toISOString().slice(0, 10),

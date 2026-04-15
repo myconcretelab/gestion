@@ -24,6 +24,7 @@ const ContratDetailPage = () => {
   const [pdfNonce] = useState(() => Date.now());
   const [receptionUpdating, setReceptionUpdating] = useState(false);
   const [arrhesUpdating, setArrhesUpdating] = useState(false);
+  const [balanceUpdating, setBalanceUpdating] = useState(false);
   const [dateSaving, setDateSaving] = useState<"reception" | "arrhes" | null>(
     null,
   );
@@ -93,6 +94,26 @@ const ContratDetailPage = () => {
       setError((err as Error).message);
     } finally {
       setArrhesUpdating(false);
+    }
+  };
+
+  const toggleBalance = async () => {
+    if (!id || !contrat) return;
+    const nextStatus =
+      contrat.statut_paiement_solde === "regle" ? "non_regle" : "regle";
+    setBalanceUpdating(true);
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${id}/solde`, {
+        method: "PATCH",
+        json: { statut_paiement_solde: nextStatus },
+      });
+      setError(null);
+      setNotice(null);
+      setContrat(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBalanceUpdating(false);
     }
   };
 
@@ -197,6 +218,7 @@ const ContratDetailPage = () => {
 
   const contractReceived = contrat.statut_reception_contrat === "recu";
   const arrhesPaid = contrat.statut_paiement_arrhes === "recu";
+  const balancePaid = contrat.statut_paiement_solde === "regle";
   const contractFrozen = Boolean(contrat.pdf_sent_path);
   const email = contrat.locataire_email;
   const phoneHref = contrat.locataire_tel
@@ -382,10 +404,27 @@ const ContratDetailPage = () => {
             </div>
             <div className="arrhes-balance">
               <div className="arrhes-balance__label">Reste dû</div>
-              <div className="arrhes-amount">
-                {formatEuro(contrat.solde_montant)}
+              <div className="arrhes-card__header">
+                <div className="arrhes-amount">
+                  {formatEuro(contrat.solde_montant)}
+                </div>
+                <div className="switch-group arrhes-card__toggle">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={balancePaid}
+                      disabled={balanceUpdating}
+                      onChange={toggleBalance}
+                    />
+                    <span className="slider" />
+                  </label>
+                  <span>Payé</span>
+                </div>
               </div>
             </div>
+            {balancePaid ? (
+              <div className="arrhes-meta">Solde réglé</div>
+            ) : null}
             {showArrhesDeadline ? (
               <div className="arrhes-meta">
                 À régler avant le {formatDate(contrat.arrhes_date_limite)}

@@ -7,6 +7,11 @@ export const toNumber = (value: NumericLike | null | undefined): number => {
   return Number(value.toString());
 };
 
+export const getRemainingDueAmount = (
+  value: NumericLike | null | undefined,
+  paymentStatus?: string | null,
+): number => (paymentStatus === "regle" ? 0 : toNumber(value));
+
 export const round2 = (value: number): number => Math.round(value * 100) / 100;
 
 export const formatEuro = (value: number): string =>

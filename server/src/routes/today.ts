@@ -15,6 +15,7 @@ import {
   hasSmartlifeCredentials,
   readSmartlifeAutomationConfig,
 } from "../services/smartlifeSettings.js";
+import { buildNewReservations } from "../services/dailyReservationEmail.js";
 import { readTodayStatuses, writeTodayStatuses } from "../services/todayStatuses.js";
 import { getReservationOriginSystem } from "../utils/reservationOrigin.js";
 
@@ -22,6 +23,8 @@ const router = Router();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_ACTIVITY_DAY_COUNT = 3;
 const RECENT_ACTIVITY_LIMIT = 36;
+const DEFAULT_NOTIFICATION_DAY_COUNT = 1;
+const MAX_NOTIFICATION_DAY_COUNT = 5;
 
 const statusSchema = z.object({
   done: z.boolean(),
@@ -56,6 +59,12 @@ const getRecentActivitySince = () => {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   return new Date(today.getTime() - (RECENT_ACTIVITY_DAY_COUNT - 1) * DAY_MS);
+};
+
+const getNotificationSince = (dayCount: number) => {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return new Date(today.getTime() - (dayCount - 1) * DAY_MS);
 };
 
 const parseDateTime = (value: string | Date | null | undefined) => {
@@ -172,13 +181,21 @@ router.get("/overview", async (req, res, next) => {
   try {
     const daysRaw = typeof req.query.days === "string" ? Number.parseInt(req.query.days, 10) : 14;
     const days = Number.isFinite(daysRaw) ? Math.min(21, Math.max(7, daysRaw)) : 14;
+    const notificationDaysRaw =
+      typeof req.query.notification_days === "string"
+        ? Number.parseInt(req.query.notification_days, 10)
+        : DEFAULT_NOTIFICATION_DAY_COUNT;
+    const notificationDays = Number.isFinite(notificationDaysRaw)
+      ? Math.min(MAX_NOTIFICATION_DAY_COUNT, Math.max(1, notificationDaysRaw))
+      : DEFAULT_NOTIFICATION_DAY_COUNT;
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     const endExclusive = new Date(today.getTime() + days * DAY_MS);
     const recentActivitySince = getRecentActivitySince();
+    const notificationSince = getNotificationSince(notificationDays);
 
     const openIcalConflicts = listOpenIcalConflictRecords();
-    const [gites, managers, reservations, unassignedCount, recentAppActivity, conflictReservations] = await Promise.all([
+    const [gites, managers, reservations, unassignedCount, recentAppActivity, conflictReservations, newReservations] = await Promise.all([
       prisma.gite.findMany({
         select: { id: true, nom: true, prefixe_contrat: true, ordre: true },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
@@ -220,6 +237,7 @@ router.get("/overview", async (req, res, next) => {
             select: conflictReservationSelect,
           })
         : Promise.resolve([]),
+      buildNewReservations(notificationSince, new Date()),
     ]);
 
     const smartlifeConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
@@ -239,6 +257,7 @@ router.get("/overview", async (req, res, next) => {
     return res.json({
       today: today.toISOString().slice(0, 10),
       days,
+      notification_days: notificationDays,
       gites,
       managers,
       reservations: reservations.map((reservation) => ({
@@ -248,12 +267,18 @@ router.get("/overview", async (req, res, next) => {
       statuses: readTodayStatuses(),
       source_colors: readSourceColorSettings().colors,
       unassigned_count: unassignedCount,
+      new_reservations: newReservations,
       recent_import_log: recentImportLog,
       recent_app_activity: recentAppActivity,
-      ical_conflicts: openIcalConflicts.map((conflict) => ({
-        ...conflict,
-        reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
-      })),
+      ical_conflicts: openIcalConflicts
+        .filter((conflict) => {
+          const detectedAt = parseDateTime(conflict.detected_at);
+          return detectedAt ? detectedAt.getTime() >= notificationSince.getTime() : false;
+        })
+        .map((conflict) => ({
+          ...conflict,
+          reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
+        })),
     });
   } catch (error) {
     return next(error);
