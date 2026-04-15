@@ -20,6 +20,7 @@ model Gite {
   adresse_ligne1                       String
   adresse_ligne2                       String?
   capacite_max                         Int
+  nb_adultes_max                       Int      @default(1)
   nb_adultes_habituel                  Int      @default(1)
   proprietaires_noms                   String
   proprietaires_adresse                String
@@ -43,6 +44,7 @@ model Gite {
   caution_montant_defaut               Decimal  @default(0) @db.Decimal(10,2)
   cheque_menage_montant_defaut         Decimal  @default(0) @db.Decimal(10,2)
   arrhes_taux_defaut                   Decimal  @default(0.2) @db.Decimal(5,4)
+  electricity_price_per_kwh            Decimal  @default(0) @db.Decimal(10,4)
   prix_nuit_liste                      Json?
   caracteristiques                     String?
   airbnb_listing_id                    String?
@@ -56,6 +58,8 @@ model Gite {
   contrats                             Contrat[]
   factures                             Facture[]
   reservations                         Reservation[]
+  guest_night_declarations             GuestNightDeclaration[]
+  monthly_energy_readings              GiteMonthlyEnergyReading[]
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
 
@@ -95,6 +99,24 @@ model UrssafDeclaration {
   @@index([year, month], map: "urssaf_declarations_period_idx")
   @@index([gestionnaire_id], map: "urssaf_declarations_manager_idx")
   @@map("urssaf_declarations")
+}
+
+model GuestNightDeclaration {
+  id           String   @id @default(cuid())
+  year         Int
+  month        Int
+  gite_id      String
+  guest_nights Int      @default(0)
+  declared_at  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  gite         Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@unique([year, month, gite_id], map: "guest_night_declarations_period_gite_key")
+  @@index([year, month], map: "guest_night_declarations_period_idx")
+  @@index([gite_id], map: "guest_night_declarations_gite_idx")
+  @@map("guest_night_declarations")
 }
 
 model IcalSource {
@@ -147,11 +169,15 @@ model Contrat {
   afficher_cheque_menage_phrase Boolean @default(true)
   clauses                Json
   pdf_path               String
+  pdf_sent_path          String?
+  snapshot_json          String?
   date_envoi_email       DateTime?
   statut_reception_contrat String   @default("non_recu")
   date_reception_contrat DateTime?
   statut_paiement_arrhes String   @default("non_recu")
   date_paiement_arrhes   DateTime?
+  statut_paiement_solde  String   @default("non_regle")
+  mode_paiement_arrhes   String?
   notes                  String?
   reservation_id         String?
 
@@ -240,6 +266,7 @@ model ReservationPlaceholder {
 model Reservation {
   id                        String                   @id @default(cuid())
   gite_id                   String?
+  stay_group_id             String?
   placeholder_id            String?
   origin_system             String?
   origin_reference          String?
@@ -263,6 +290,10 @@ model Reservation {
   frais_optionnels_libelle  String?
   frais_optionnels_declares Boolean                  @default(false)
   options                   Json                     @default("{}")
+  energy_consumption_kwh    Decimal                  @default(0) @db.Decimal(12,4)
+  energy_cost_eur           Decimal                  @default(0) @db.Decimal(10,2)
+  energy_price_per_kwh      Decimal?                 @db.Decimal(10,4)
+  energy_tracking           Json                     @default("[]")
   createdAt                 DateTime                 @default(now())
   updatedAt                 DateTime                 @updatedAt
 
@@ -280,5 +311,28 @@ model Reservation {
   @@index([origin_system, createdAt], map: "reservations_origin_system_createdAt_idx")
   @@index([placeholder_id, date_entree])
   @@index([placeholder_id, date_sortie], map: "reservations_placeholder_id_date_sortie_idx")
+  @@index([stay_group_id], map: "reservations_stay_group_id_idx")
   @@map("reservations")
+}
+
+model GiteMonthlyEnergyReading {
+  id                  String    @id @default(cuid())
+  gite_id             String
+  year                Int
+  month               Int
+  device_id           String
+  device_name         String
+  opening_total_kwh   Decimal?  @db.Decimal(12,4)
+  opening_recorded_at DateTime?
+  closing_total_kwh   Decimal?  @db.Decimal(12,4)
+  closing_recorded_at DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  gite                Gite      @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@unique([gite_id, year, month, device_id], map: "gite_monthly_energy_readings_period_device_key")
+  @@index([year, month], map: "gite_monthly_energy_readings_period_idx")
+  @@index([gite_id, year, month], map: "gite_monthly_energy_readings_gite_period_idx")
+  @@map("gite_monthly_energy_readings")
 }
