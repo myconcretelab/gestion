@@ -1753,7 +1753,13 @@ const CalendrierPage = () => {
           subtitle={`${formatShortDate(mobileActionReservation.date_entree)} → ${formatShortDate(mobileActionReservation.date_sortie)}`}
           details={[
             { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
-            { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
+            {
+              label: "Total",
+              value: formatEuro(mobileActionReservation.prix_total, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              }),
+            },
             ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
               ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
               : []),
