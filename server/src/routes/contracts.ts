@@ -19,7 +19,7 @@ import {
   type ContractEmailDocument,
 } from "../services/documentEmail.js";
 import { SmtpConfigurationError, SmtpDeliveryError } from "../services/mailer.js";
-import { toNumber, round2 } from "../utils/money.js";
+import { getRemainingDueAmount, toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths, getSentPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import {
@@ -162,7 +162,10 @@ const hydrateContractMoneyFields = (contract: any) => ({
       ? contract.taxe_sejour_calculee
       : toNumber(contract.taxe_sejour_calculee),
   arrhes_montant: toNumber(contract.arrhes_montant),
-  solde_montant: toNumber(contract.solde_montant),
+  solde_montant: getRemainingDueAmount(
+    contract.solde_montant,
+    contract.statut_paiement_solde,
+  ),
   caution_montant: toNumber(contract.caution_montant),
   cheque_menage_montant: toNumber(contract.cheque_menage_montant),
 });
@@ -955,6 +958,7 @@ router.patch("/:id/solde", async (req, res, next) => {
       data: {
         statut_paiement_solde: data.statut_paiement_solde,
       },
+      include: { gite: true },
     });
 
     res.json(hydrateContractForTrackingStatusResponse(contrat));

@@ -35,60 +35,28 @@ type TodayStatuses = Record<
 type TodayOverviewPayload = {
   today: string;
   days: number;
+  notification_days: number;
   gites: Gite[];
   managers: Gestionnaire[];
   reservations: Reservation[];
   statuses: TodayStatuses;
   source_colors: Record<string, string>;
   unassigned_count: number;
-  recent_import_log: TodayImportLogEntry[];
-  recent_app_activity: TodayAppActivityEntry[];
+  new_reservations: TodayNewReservationNotification[];
   ical_conflicts: TodayIcalConflict[];
 };
 
-type TodayImportLogEntry = {
+type TodayNewReservationNotification = {
   id: string;
-  at: string;
-  source: string;
-  status?: "success" | "error";
-  errorMessage?: string | null;
-  selectionCount: number;
-  inserted: number;
-  updated: number;
-  deleted?: number;
-  insertedItems?: Array<{
-    giteName?: string;
-    giteId?: string;
-    checkIn?: string;
-    checkOut?: string;
-    source?: string;
-  }>;
-  updatedItems?: Array<{
-    giteName?: string;
-    giteId?: string;
-    checkIn?: string;
-    checkOut?: string;
-    source?: string;
-    updatedFields?: string[];
-  }>;
-  deletedItems?: Array<{
-    giteName?: string;
-    giteId?: string;
-    checkIn?: string;
-    checkOut?: string;
-    source?: string;
-  }>;
-};
-
-type TodayAppActivityEntry = {
-  id: string;
-  at: string;
-  type: "created" | "updated";
-  reservation_id: string;
   gite_id: string | null;
-  gite_name: string;
-  guest_name: string;
-  source: string | null;
+  gite_nom: string;
+  hote_nom: string;
+  date_entree: string;
+  date_sortie: string;
+  nb_nuits: number;
+  prix_total: number;
+  source_paiement: string | null;
+  created_at: string;
 };
 
 type TodayIcalConflictSnapshot = {
@@ -175,18 +143,19 @@ type TimelineRow = {
   blockedDateIsos: Set<string>;
 };
 
-type TodayActivitySourceCount = {
-  label: string;
-  count: number;
-  color: string;
-};
-
-type TodayActivitySummary = {
-  kind: "created" | "updated" | "deleted";
-  label: string;
-  total: number;
-  sources: TodayActivitySourceCount[];
-};
+type TodayNotificationItem =
+  | {
+      id: string;
+      kind: "reservation";
+      at: string;
+      reservation: TodayNewReservationNotification;
+    }
+  | {
+      id: string;
+      kind: "ical_conflict";
+      at: string;
+      conflict: TodayIcalConflict;
+    };
 
 type TodayMobileActionState =
   | {
@@ -350,21 +319,6 @@ const buildConflictReservationHref = (conflict: TodayIcalConflict) => {
 
 const buildEventStatusId = (giteId: string, dateIso: string, type: TodayEventType) => `today:${giteId}:${dateIso}:${type}`;
 
-const formatImportSource = (source: string | null | undefined) => {
-  const normalized = String(source ?? "").trim().toLowerCase();
-  if (normalized === "ical-manual") return "ICAL manuel";
-  if (normalized === "ical-cron") return "ICAL cron";
-  if (normalized === "ical-startup") return "ICAL démarrage";
-  if (normalized === "pump") return "Pump";
-  if (normalized === "pump-cron") return "Pump cron";
-  if (normalized === "pump-ical-follow-up") return "Pump après iCal";
-  if (normalized === "pump-refresh") return "Pump refresh";
-  return source || "Import";
-};
-
-const isPumpRefreshImportSource = (source: string | null | undefined) =>
-  String(source ?? "").trim().toLowerCase() === "pump-refresh";
-
 const mixHexColors = (baseHex: string, targetHex: string, weight: number) => {
   const parse = (value: string) => {
     const normalized = value.replace("#", "").trim();
@@ -395,39 +349,6 @@ const getTrashTextColor = (background: string) => {
   const blue = Number.parseInt(normalized.slice(4, 6), 16);
   const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
   return luminance > 0.62 ? mixHexColors(background, "#111827", 0.64) : mixHexColors(background, "#ffffff", 0.48);
-};
-
-const buildActivitySourceCounts = (
-  items: Array<{ source?: string | null }> | undefined,
-  fallbackTotal: number,
-  paymentColorMap: Record<string, string>
-) => {
-  const counts = new Map<string, number>();
-
-  (items ?? []).forEach((item) => {
-    const label = String(item.source ?? "").trim() || "A définir";
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  });
-
-  if (counts.size === 0) {
-    return fallbackTotal > 0
-      ? [
-          {
-            label: "Non détaillé",
-            count: fallbackTotal,
-            color: "#d1d5db",
-          },
-        ]
-      : [];
-  }
-
-  return [...counts.entries()]
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "fr", { sensitivity: "base" }))
-    .map(([label, count]) => ({
-      label,
-      count,
-      color: getPaymentColorFromMap(label, paymentColorMap),
-    }));
 };
 
 const buildTodayEvents = (reservations: Reservation[], todayIso: string, lastVisibleIso: string) => {
@@ -516,6 +437,18 @@ const buildReservationFocusHref = (event: TodayEvent) => {
   params.set("tab", event.giteId);
   return `/reservations?${params.toString()}#reservation-${event.primaryReservation.id}`;
 };
+
+const buildReservationHref = (reservationId: string, giteId: string | null | undefined, startDateIso: string) => {
+  if (!giteId) return "/reservations";
+  const reservationStartDate = parseIsoDate(startDateIso);
+  const params = new URLSearchParams();
+  params.set("focus", reservationId);
+  params.set("year", String(reservationStartDate.getUTCFullYear()));
+  params.set("tab", giteId);
+  return `/reservations?${params.toString()}#reservation-${reservationId}`;
+};
+
+const formatNotificationDayLabel = (dayCount: number) => `${dayCount} jour${dayCount > 1 ? "s" : ""}`;
 
 const buildReservationCreateHref = (giteId: string, dateIso: string) => {
   const date = parseIsoDate(dateIso);
@@ -612,6 +545,8 @@ const getEventIcon = (type: TodayEventType) => {
 const TodayPage = () => {
   const navigate = useNavigate();
   const [overview, setOverview] = useState<TodayOverviewPayload | null>(null);
+  const [notificationDayCount, setNotificationDayCount] = useState(1);
+  const [notificationSliderValue, setNotificationSliderValue] = useState(1);
   const [selectedUser, setSelectedUser] = useState(() => getStoredTodayUser());
   const [mobileActionState, setMobileActionState] = useState<TodayMobileActionState>(null);
   const [loading, setLoading] = useState(true);
@@ -622,16 +557,20 @@ const TodayPage = () => {
     getMatchesMediaQuery(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`)
   );
 
-  const loadData = async (options?: { preserveContent?: boolean }) => {
+  const loadData = async (options?: { preserveContent?: boolean; notificationDays?: number }) => {
     const shouldShowLoader = !options?.preserveContent || !overview;
+    const nextNotificationDays = options?.notificationDays ?? notificationDayCount;
     if (shouldShowLoader) {
       setLoading(true);
     }
 
     try {
       setError(null);
-      const payload = await apiFetch<TodayOverviewPayload>(`/today/overview?days=${TOTAL_DAY_COUNT}`);
+      const payload = await apiFetch<TodayOverviewPayload>(
+        `/today/overview?days=${TOTAL_DAY_COUNT}&notification_days=${nextNotificationDays}`
+      );
       setOverview(payload);
+      setNotificationDayCount((current) => (current === payload.notification_days ? current : payload.notification_days));
     } catch (err: any) {
       setError(err.message ?? "Impossible de charger la page Aujourd'hui.");
     } finally {
@@ -644,6 +583,10 @@ const TodayPage = () => {
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    setNotificationSliderValue((current) => (current === notificationDayCount ? current : notificationDayCount));
+  }, [notificationDayCount]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -673,8 +616,7 @@ const TodayPage = () => {
   const reservations = overview?.reservations ?? [];
   const statuses = overview?.statuses ?? {};
   const unassignedCount = overview?.unassigned_count ?? 0;
-  const recentImportLog = overview?.recent_import_log ?? [];
-  const recentAppActivity = overview?.recent_app_activity ?? [];
+  const newReservations = overview?.new_reservations ?? [];
   const icalConflicts = overview?.ical_conflicts ?? [];
   const mobileActionEvent = useMemo(
     () =>
@@ -817,15 +759,6 @@ const TodayPage = () => {
 
   const eventsToday = useMemo(() => todayEvents.filter((event) => event.dateIso === todayIso), [todayEvents, todayIso]);
   const eventsTomorrow = useMemo(() => todayEvents.filter((event) => event.dateIso === tomorrowIso), [todayEvents, tomorrowIso]);
-  const activeStayCount = useMemo(
-    () =>
-      reservations.filter(
-        (reservation) =>
-          parseIsoDate(reservation.date_entree).getTime() <= todayDate.getTime() &&
-          parseIsoDate(reservation.date_sortie).getTime() > todayDate.getTime()
-      ).length,
-    [reservations, todayDate]
-  );
   const filledGiteCount = useMemo(
     () =>
       new Set(
@@ -859,6 +792,31 @@ const TodayPage = () => {
       rate: occupiedSlots / totalSlots,
     };
   }, [timelineRows, totalDays]);
+
+  const notificationItems = useMemo<TodayNotificationItem[]>(
+    () =>
+      [
+        ...newReservations.map(
+          (reservation) =>
+            ({
+              id: `reservation:${reservation.id}`,
+              kind: "reservation",
+              at: reservation.created_at,
+              reservation,
+            }) satisfies TodayNotificationItem
+        ),
+        ...icalConflicts.map(
+          (conflict) =>
+            ({
+              id: `ical-conflict:${conflict.id}`,
+              kind: "ical_conflict",
+              at: conflict.detected_at,
+              conflict,
+            }) satisfies TodayNotificationItem
+        ),
+      ].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime()),
+    [icalConflicts, newReservations]
+  );
 
   const openMobileReservationEditPage = (reservation: Reservation) => {
     navigate(buildMobileReservationEditHref(reservation.id));
@@ -901,66 +859,11 @@ const TodayPage = () => {
   const mauronTrashTextColor = useMemo(() => getTrashTextColor(mauronTrashColor), [mauronTrashColor]);
   const neantTrashTextColor = useMemo(() => getTrashTextColor(neantTrashColor), [neantTrashColor]);
 
-  const recentActivitySummary = useMemo<TodayActivitySummary[]>(() => {
-    const summaries = new Map<"created" | "updated" | "deleted", Map<string, number>>([
-      ["created", new Map()],
-      ["updated", new Map()],
-      ["deleted", new Map()],
-    ]);
-    const totals = new Map<"created" | "updated" | "deleted", number>([
-      ["created", 0],
-      ["updated", 0],
-      ["deleted", 0],
-    ]);
-
-    const addSourceCount = (kind: "created" | "updated" | "deleted", label: string, count: number) => {
-      if (count <= 0) return;
-      totals.set(kind, (totals.get(kind) ?? 0) + count);
-      const sourceMap = summaries.get(kind);
-      if (!sourceMap) return;
-      sourceMap.set(label, (sourceMap.get(label) ?? 0) + count);
-    };
-
-    recentImportLog.forEach((entry) => {
-      if (entry.status === "error" || isPumpRefreshImportSource(entry.source)) return;
-
-      buildActivitySourceCounts(entry.insertedItems, entry.inserted ?? 0, paymentColorMap).forEach((source) =>
-        addSourceCount("created", source.label, source.count)
-      );
-      buildActivitySourceCounts(entry.updatedItems, entry.updated ?? 0, paymentColorMap).forEach((source) =>
-        addSourceCount("updated", source.label, source.count)
-      );
-      buildActivitySourceCounts(entry.deletedItems, entry.deleted ?? 0, paymentColorMap).forEach((source) =>
-        addSourceCount("deleted", source.label, source.count)
-      );
-    });
-
-    recentAppActivity.forEach((entry) => {
-      addSourceCount(entry.type, "App", 1);
-    });
-
-    const toSources = (kind: "created" | "updated" | "deleted") =>
-      [...(summaries.get(kind)?.entries() ?? [])]
-        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "fr", { sensitivity: "base" }))
-        .map(([label, count]) => ({
-          label:
-            kind === "created"
-              ? label === "App"
-                ? "Direct"
-                : label === "A définir"
-                  ? "Direct externe"
-                  : label
-              : label,
-          count,
-          color: label === "App" ? "#94a3b8" : getPaymentColorFromMap(label, paymentColorMap),
-        }));
-
-    return [
-      { kind: "created", label: "Ajouts", total: totals.get("created") ?? 0, sources: toSources("created") },
-      { kind: "deleted", label: "Suppressions", total: totals.get("deleted") ?? 0, sources: toSources("deleted") },
-      { kind: "updated", label: "Mises à jour", total: totals.get("updated") ?? 0, sources: toSources("updated") },
-    ];
-  }, [paymentColorMap, recentAppActivity, recentImportLog]);
+  const commitNotificationDayCount = (nextValue: number) => {
+    if (nextValue === notificationDayCount) return;
+    setNotificationDayCount(nextValue);
+    void loadData({ preserveContent: true, notificationDays: nextValue });
+  };
 
   const toggleStatus = async (event: TodayEvent) => {
     const current = statuses[event.statusId];
@@ -1194,26 +1097,165 @@ const TodayPage = () => {
         </div>
       </section>
 
-      {icalConflicts.length > 0 ? (
-        <section className="today-conflicts-card">
-          <div className="today-section-head today-section-head--conflicts">
-            <div>
-              <div className="section-title">Conflits iCal</div>
-              <div className="field-hint">
-                {icalConflicts.length} décision{icalConflicts.length > 1 ? "s" : ""} en attente
-              </div>
+      <section className="today-utility-strip">
+        <div className="today-utility-strip__block today-utility-strip__block--trash">
+          <span className="today-utility-strip__label">Poubelles</span>
+          <div className="today-trash-inline__chips">
+            <span
+              className="today-trash-chip"
+              style={
+                {
+                  "--today-trash-bg": mauronTrashColor,
+                  "--today-trash-fg": mauronTrashTextColor,
+                } as CSSProperties
+              }
+            >
+              <TrashIcon />
+              Mauron
+            </span>
+            <span
+              className="today-trash-chip"
+              style={
+                {
+                  "--today-trash-bg": neantTrashColor,
+                  "--today-trash-fg": neantTrashTextColor,
+                } as CSSProperties
+              }
+            >
+              <TrashIcon />
+              Néant
+            </span>
+          </div>
+          <span className="today-utility-strip__detail">
+            Semaine {evenWeek ? "paire" : "impaire"}
+            {unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
+          </span>
+        </div>
+
+        <div className="today-utility-strip__block today-utility-strip__block--fill">
+          <span className="today-utility-strip__label">Remplissage du jour</span>
+          <div className="today-utility-strip__fill">
+            <OccupationGaugeDial
+              id={`today-fill-rate-${todayIso}`}
+              occupation={filledGiteRate}
+              highlighted={false}
+              animate={false}
+              size={{ width: 60, height: 28 }}
+              className="today-utility-strip__fill-gauge"
+            />
+            <div className="today-utility-strip__fill-copy">
+              <strong>{Math.round(filledGiteRate * 100)}%</strong>
+              <span>
+                {filledGiteCount}/{gites.length || 0} gîte{gites.length > 1 ? "s" : ""}
+              </span>
             </div>
           </div>
+        </div>
 
-          <div className="today-conflicts-list">
-            {icalConflicts.map((conflict) => {
+        <div className="today-utility-strip__block today-utility-strip__block--archive">
+          <div className="today-utility-strip__slider-head">
+            <span className="today-utility-strip__label">Archives notifications</span>
+            <strong>{formatNotificationDayLabel(notificationSliderValue)}</strong>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={5}
+            step={1}
+            value={notificationSliderValue}
+            className="today-utility-strip__slider"
+            onChange={(event) => setNotificationSliderValue(Number(event.target.value))}
+            onPointerUp={() => commitNotificationDayCount(notificationSliderValue)}
+            onBlur={() => commitNotificationDayCount(notificationSliderValue)}
+            onKeyUp={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) {
+                return;
+              }
+              commitNotificationDayCount(Number((event.currentTarget as HTMLInputElement).value));
+            }}
+            aria-label="Nombre de jours d'archives des notifications"
+          />
+          <div className="today-utility-strip__scale" aria-hidden="true">
+            <span>1 j</span>
+            <span>5 j</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="today-notifications-card">
+        <div className="today-section-head today-section-head--notifications">
+          <div>
+            <div className="section-title">Centre de notifications</div>
+            <div className="field-hint">
+              {notificationItems.length} notification{notificationItems.length > 1 ? "s" : ""} sur{" "}
+              {formatNotificationDayLabel(notificationDayCount)}
+            </div>
+          </div>
+        </div>
+
+        {notificationItems.length === 0 ? (
+          <div className="today-notifications-empty">Aucun conflit iCal ni nouvelle réservation sur cette période.</div>
+        ) : (
+          <div className="today-notifications-list">
+            {notificationItems.map((item) => {
+              if (item.kind === "reservation") {
+                const reservation = item.reservation;
+                const reservationSourceColor = getPaymentColorFromMap(reservation.source_paiement, paymentColorMap);
+
+                return (
+                  <article
+                    key={item.id}
+                    className="today-notification-card today-notification-card--reservation"
+                    style={{ "--today-notification-accent": reservationSourceColor } as CSSProperties}
+                  >
+                    <div className="today-notification-card__top">
+                      <div className="today-notification-card__header">
+                        <span className="today-notification-card__kind today-notification-card__kind--reservation">
+                          Nouvelle réservation
+                        </span>
+                        <strong>{reservation.gite_nom || "Sans gîte"}</strong>
+                        <span>Créée le {formatDateTimeFr(reservation.created_at)}</span>
+                      </div>
+                    </div>
+
+                    <div className="today-notification-card__reservation-body">
+                      <strong className="today-notification-card__headline">{reservation.hote_nom || "Réservation"}</strong>
+                      <div className="today-notification-card__dates">
+                        {formatLongDate(reservation.date_entree)} → {formatLongDate(reservation.date_sortie)}
+                      </div>
+                      <div className="today-notification-card__meta">
+                        <span>
+                          {reservation.nb_nuits} nuit{reservation.nb_nuits > 1 ? "s" : ""}
+                        </span>
+                        <span>{reservation.source_paiement || "A définir"}</span>
+                      </div>
+                    </div>
+
+                    <div className="today-notification-card__reservation-footer">
+                      <div className="today-notification-card__metric">
+                        <span>Montant</span>
+                        <strong>{formatEuro(reservation.prix_total)}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        className="table-action"
+                        onClick={() => navigate(buildReservationHref(reservation.id, reservation.gite_id, reservation.date_entree))}
+                      >
+                        Ouvrir
+                      </button>
+                    </div>
+                  </article>
+                );
+              }
+
+              const conflict = item.conflict;
               const current = getConflictCurrentSnapshot(conflict);
               const incoming = conflict.incoming_snapshot;
               const diffLabels = getIcalConflictDiffLabels(conflict);
               const canApplyIcal = conflict.type === "modified" && Boolean(incoming) && Boolean(conflict.reservation);
 
               return (
-                <article key={conflict.id} className={`today-conflict-card today-conflict-card--${conflict.type}`}>
+                <article key={item.id} className={`today-conflict-card today-conflict-card--${conflict.type}`}>
                   <div className="today-conflict-card__top">
                     <div className="today-conflict-card__header">
                       <span className={`today-conflict-card__kind today-conflict-card__kind--${conflict.type}`}>
@@ -1313,8 +1355,8 @@ const TodayPage = () => {
               );
             })}
           </div>
-        </section>
-      ) : null}
+        )}
+      </section>
 
       <div className="today-events-grid">
         {[
@@ -1427,114 +1469,7 @@ const TodayPage = () => {
         ))}
       </div>
 
-      <section className="today-hero">
-        <div className="today-hero__header">
-          <div>
-            <div className="today-hero__eyebrow">Exploitation</div>
-            <h1 className="today-hero__title">Aujourd&apos;hui</h1>
-            <p className="today-hero__text">Vue immédiate pour mobile: arrivées, départs, séjours en cours et suivi journalier.</p>
-          </div>
-        </div>
-
-        <div className="today-kpis">
-          <article className="today-kpi today-kpi--fill">
-            <span className="today-kpi__label">Remplissage du jour</span>
-            <div className="today-kpi__fill">
-              <div className="today-kpi__fill-copy">
-                <strong className="today-kpi__value">
-                  {filledGiteCount}/{gites.length || 0}
-                </strong>
-                <span className="today-kpi__detail">
-                  gîte{gites.length > 1 ? "s" : ""} rempli{filledGiteCount > 1 ? "s" : ""}
-                </span>
-              </div>
-              <OccupationGaugeDial
-                id={`today-fill-rate-${todayIso}`}
-                occupation={filledGiteRate}
-                highlighted={false}
-                animate={false}
-                size={{ width: 76, height: 36 }}
-                className="today-kpi__fill-gauge"
-              />
-            </div>
-          </article>
-        </div>
-
-        <div className="today-trash-inline">
-          <div className="today-trash-inline__chips">
-            <span
-              className="today-trash-chip"
-              style={
-                {
-                  "--today-trash-bg": mauronTrashColor,
-                  "--today-trash-fg": mauronTrashTextColor,
-                } as CSSProperties
-              }
-            >
-              <TrashIcon />
-              Mauron
-            </span>
-            <span
-              className="today-trash-chip"
-              style={
-                {
-                  "--today-trash-bg": neantTrashColor,
-                  "--today-trash-fg": neantTrashTextColor,
-                } as CSSProperties
-              }
-            >
-              <TrashIcon />
-              Néant
-            </span>
-          </div>
-          <span className="today-trash-inline__detail">
-            Semaine {evenWeek ? "paire" : "impaire"}
-            {unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
-          </span>
-        </div>
-
-        <div className="today-activity">
-          <div className="today-section-head today-section-head--activity">
-            <div>
-              <div className="section-title">Résumé 3 jours</div>
-              <div className="field-hint">Vue compacte des mouvements iCal, Pump et app</div>
-            </div>
-          </div>
-
-          {recentActivitySummary.every((item) => item.total === 0) ? (
-            <div className="today-activity__empty">Aucun ajout, suppression ou mise à jour sur les 3 derniers jours.</div>
-          ) : (
-            <div className="today-activity-compact">
-              {recentActivitySummary.map((item) => (
-                <article key={item.kind} className="today-activity-compact__card">
-                  <div className="today-activity-compact__top">
-                    <span className={`today-activity__action-label today-activity__action-label--${item.kind}`}>{item.label}</span>
-                    <strong className="today-activity-compact__value">{item.total}</strong>
-                  </div>
-
-                  {item.sources.length > 0 ? (
-                    <div className="today-activity__source-list">
-                      {item.sources.map((source) => (
-                        <span
-                          key={`${item.kind}:${source.label}`}
-                          className="today-activity__source-chip"
-                          style={{ "--today-activity-source": source.color } as CSSProperties}
-                        >
-                          {source.label} {source.count}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="today-activity-compact__empty">Aucun</div>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {error ? <div className="note">{error}</div> : null}
-      </section>
+      {error ? <div className="note">{error}</div> : null}
 
       {usesViewportScroll && mobileActionState?.mode === "rotation-choice" && mobileActionEvent ? (
         <MobileReservationActionsBar
@@ -1563,7 +1498,13 @@ const TodayPage = () => {
           subtitle={`${formatShortDate(mobileActionReservation.date_entree)} → ${formatShortDate(mobileActionReservation.date_sortie)}`}
           details={[
             { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
-            { label: "Total", value: formatEuro(mobileActionReservation.prix_total) },
+            {
+              label: "Total",
+              value: formatEuro(mobileActionReservation.prix_total, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
+              }),
+            },
             ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
               ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
               : []),

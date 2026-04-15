@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import ReservationContractIcon from "./ReservationContractIcon";
 
 export type MobileReservationActionsBarMode = "actions" | "rotation-choice";
 
@@ -20,6 +21,13 @@ type MobileReservationActionsBarProps = {
   onSelectDeparture?: () => void;
   arrivalLabel?: string;
   departureLabel?: string;
+  highlightedCard?: {
+    label: string;
+    value: string;
+    hint?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+  };
 };
 
 const EditIcon = () => (
@@ -137,6 +145,7 @@ const MobileReservationActionsBar = ({
   onSelectDeparture,
   arrivalLabel = "Arrivée",
   departureLabel = "Départ",
+  highlightedCard,
 }: MobileReservationActionsBarProps) => {
   if (!open) return null;
 
@@ -158,6 +167,39 @@ const MobileReservationActionsBar = ({
                   </div>
                 ))}
               </div>
+            ) : null}
+            {highlightedCard ? (
+              highlightedCard.onClick && !highlightedCard.disabled ? (
+                <button
+                  type="button"
+                  className="mobile-reservation-actions__highlight-card mobile-reservation-actions__highlight-card--interactive"
+                  onClick={highlightedCard.onClick}
+                >
+                  <span className="mobile-reservation-actions__highlight-icon" aria-hidden="true">
+                    <ReservationContractIcon />
+                  </span>
+                  <span className="mobile-reservation-actions__highlight-copy">
+                    <span className="mobile-reservation-actions__highlight-label">{highlightedCard.label}</span>
+                    <strong className="mobile-reservation-actions__highlight-value">{highlightedCard.value}</strong>
+                    {highlightedCard.hint ? (
+                      <span className="mobile-reservation-actions__highlight-hint">{highlightedCard.hint}</span>
+                    ) : null}
+                  </span>
+                </button>
+              ) : (
+                <div className="mobile-reservation-actions__highlight-card">
+                  <span className="mobile-reservation-actions__highlight-icon" aria-hidden="true">
+                    <ReservationContractIcon />
+                  </span>
+                  <span className="mobile-reservation-actions__highlight-copy">
+                    <span className="mobile-reservation-actions__highlight-label">{highlightedCard.label}</span>
+                    <strong className="mobile-reservation-actions__highlight-value">{highlightedCard.value}</strong>
+                    {highlightedCard.hint ? (
+                      <span className="mobile-reservation-actions__highlight-hint">{highlightedCard.hint}</span>
+                    ) : null}
+                  </span>
+                </div>
+              )
             ) : null}
           </div>
           <button

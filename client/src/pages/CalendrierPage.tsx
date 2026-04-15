@@ -13,12 +13,13 @@ import {
 import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
+import ReservationContractIcon from "./shared/ReservationContractIcon";
 import GiteTabs from "./shared/GiteTabs";
 import {
   buildCalendarReservationReturnHref,
   buildMobileReservationEditorHref,
 } from "./shared/mobileReservationEditor";
-import type { Gite, Reservation } from "../utils/types";
+import type { Contrat, Gite, Reservation } from "../utils/types";
 
 const MONTHS = [
   "Janvier",
@@ -431,6 +432,7 @@ const CalendrierPage = () => {
   const [floatingPopoverLayout, setFloatingPopoverLayout] = useState<FloatingPopoverLayout>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
   const [mobileActionReservationId, setMobileActionReservationId] = useState<string | null>(null);
+  const [balanceStatusUpdatingByContractId, setBalanceStatusUpdatingByContractId] = useState<Record<string, boolean>>({});
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -616,6 +618,50 @@ const CalendrierPage = () => {
     setSelectedDateRange(null);
     setMobileActionReservationId(null);
   }, [selectedGiteId, year]);
+
+  const markLinkedContractBalancePaid = useCallback(async (reservation: Reservation) => {
+    const linkedContract = reservation.linked_contract;
+    if (!linkedContract || linkedContract.statut_paiement_solde === "regle") return;
+
+    setBalanceStatusUpdatingByContractId((previous) => ({
+      ...previous,
+      [linkedContract.id]: true,
+    }));
+
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${linkedContract.id}/solde`, {
+        method: "PATCH",
+        json: { statut_paiement_solde: "regle" },
+      });
+
+      setReservations((previous) =>
+        previous.map((item) =>
+          item.linked_contract?.id === updated.id
+            ? {
+                ...item,
+                linked_contract: item.linked_contract
+                  ? {
+                      ...item.linked_contract,
+                      statut_paiement_solde: updated.statut_paiement_solde,
+                      solde_montant: updated.solde_montant,
+                    }
+                  : item.linked_contract,
+              }
+            : item,
+        ),
+      );
+      setError(null);
+    } catch (err) {
+      if (isApiError(err)) setError(err.message);
+      else setError("Impossible d'enregistrer le paiement du restant dû.");
+    } finally {
+      setBalanceStatusUpdatingByContractId((previous) => {
+        const next = { ...previous };
+        delete next[linkedContract.id];
+        return next;
+      });
+    }
+  }, []);
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
   const calendarGiteTabItems = useMemo(() => gites.map((gite) => ({ id: gite.id, label: gite.nom })), [gites]);
@@ -1533,7 +1579,20 @@ const CalendrierPage = () => {
                                     {segment.showLabel ? (
                                       <>
                                         <span className="calendar-reservation__content">
-                                          <strong className="calendar-reservation__label">{segment.label}</strong>
+                                          <strong className="calendar-reservation__label">
+                                            <span className="calendar-reservation__label-group">
+                                              {segment.reservation.linked_contract ? (
+                                                <span
+                                                  className="calendar-reservation__contract-indicator"
+                                                  title="Contrat lié"
+                                                  aria-hidden="true"
+                                                >
+                                                  <ReservationContractIcon />
+                                                </span>
+                                              ) : null}
+                                              <span className="calendar-reservation__label-text">{segment.label}</span>
+                                            </span>
+                                          </strong>
                                           <span className="calendar-reservation__price">{formatEuro(segment.reservation.prix_total)}</span>
                                         </span>
                                       </>
@@ -1579,7 +1638,14 @@ const CalendrierPage = () => {
             {hoveredReservationDetails?.month?.index === activeMonthIndex ? (
               <article className="calendar-stay calendar-stay--highlighted calendar-stay--focused">
                 <div className="calendar-stay__head">
-                  <strong>{hoveredReservationDetails.reservation.hote_nom}</strong>
+                  <strong className="calendar-stay__title">
+                    {hoveredReservationDetails.reservation.linked_contract ? (
+                      <span className="calendar-reservation__contract-indicator" title="Contrat lié" aria-hidden="true">
+                        <ReservationContractIcon />
+                      </span>
+                    ) : null}
+                    <span>{hoveredReservationDetails.reservation.hote_nom}</span>
+                  </strong>
                   <span>
                     {hoveredReservationDetails.reservation.nb_adultes} adulte
                     {hoveredReservationDetails.reservation.nb_adultes > 1 ? "s" : ""}
@@ -1642,7 +1708,14 @@ const CalendrierPage = () => {
                 maxHeight: floatingPopoverLayout.maxHeight,
               }}
             >
-              <div className="calendar-floating-popover__title">{hoveredReservationDetails.reservation.hote_nom}</div>
+              <div className="calendar-floating-popover__title">
+                {hoveredReservationDetails.reservation.linked_contract ? (
+                  <span className="calendar-reservation__contract-indicator" title="Contrat lié" aria-hidden="true">
+                    <ReservationContractIcon />
+                  </span>
+                ) : null}
+                <span>{hoveredReservationDetails.reservation.hote_nom}</span>
+              </div>
               <div className="calendar-floating-popover__row">
                 <span>Séjour</span>
                 <strong>
@@ -1691,6 +1764,30 @@ const CalendrierPage = () => {
               monthNumber: activeMonthIndex + 1,
               year,
             })
+          }
+          highlightedCard={
+            mobileActionReservation.linked_contract
+              ? {
+                  label: "Restant dû contrat",
+                  value: formatEuro(mobileActionReservation.linked_contract.solde_montant),
+                  hint:
+                    mobileActionReservation.linked_contract.statut_paiement_solde === "regle"
+                      ? "Solde payé"
+                      : balanceStatusUpdatingByContractId[mobileActionReservation.linked_contract.id]
+                        ? "Mise à jour..."
+                        : "Touchez pour marquer comme payé",
+                  onClick:
+                    mobileActionReservation.linked_contract.statut_paiement_solde === "regle" ||
+                    balanceStatusUpdatingByContractId[mobileActionReservation.linked_contract.id]
+                      ? undefined
+                      : () => {
+                          void markLinkedContractBalancePaid(mobileActionReservation);
+                        },
+                  disabled: Boolean(
+                    balanceStatusUpdatingByContractId[mobileActionReservation.linked_contract.id],
+                  ),
+                }
+              : undefined
           }
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
           smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}

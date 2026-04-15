@@ -11,6 +11,7 @@ test("buildDailyReservationEmailMessage construit un digest avec reservations", 
     reservations: [
       {
         id: "res-1",
+        gite_id: "g1",
         gite_nom: "La Clairière",
         hote_nom: "Camille Martin",
         date_entree: "2026-05-10",
