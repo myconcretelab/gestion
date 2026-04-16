@@ -676,7 +676,14 @@ router.post("/:id/send-email", async (req, res, next) => {
       documentUrl,
       customMessage: emailDraft,
     });
-    res.json(hydrateInvoice(contrat));
+
+    const updated = await prisma.facture.update({
+      where: { id: req.params.id },
+      data: { date_envoi_email: new Date() },
+      include: { gite: true },
+    });
+
+    res.json(hydrateInvoice(updated));
   } catch (err) {
     return handleDocumentEmailError(err, res, next);
   }

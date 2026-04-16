@@ -245,6 +245,14 @@ const FactureDetailPage = () => {
               )}
             </div>
             <div className="detail-item">
+              <span className="detail-label">Dernier envoi email</span>
+              <span className="detail-value">
+                {facture.date_envoi_email
+                  ? formatDate(facture.date_envoi_email)
+                  : "—"}
+              </span>
+            </div>
+            <div className="detail-item">
               <span className="detail-label">Téléphone</span>
               {facture.locataire_tel ? (
                 <a className="detail-link" href={`tel:${phoneHref}`}>

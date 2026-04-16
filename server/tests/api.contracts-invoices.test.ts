@@ -880,6 +880,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     contratFindUnique: prisma.contrat.findUnique,
     contratUpdate: prisma.contrat.update,
     factureFindUnique: prisma.facture.findUnique,
+    factureUpdate: prisma.facture.update,
     nodemailerCreateTransport: nodemailer.createTransport,
     SMTP_HOST: env.SMTP_HOST,
     SMTP_PORT: env.SMTP_PORT,
@@ -933,7 +934,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     },
   };
 
-  const invoiceState = {
+  let invoiceState = {
     id: "f1",
     numero_facture: "GT-2026-01",
     gite_id: "g1",
@@ -963,6 +964,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     afficher_cheque_menage_phrase: true,
     clauses: "{}",
     pdf_path: relativePdfPath,
+    date_envoi_email: null,
     statut_paiement: "non_reglee",
     notes: null,
     reservation_id: null,
@@ -1006,6 +1008,10 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
       return { ...contractState };
     };
     prisma.facture.findUnique = async () => ({ ...invoiceState });
+    prisma.facture.update = async ({ data }: any) => {
+      invoiceState = { ...invoiceState, ...data };
+      return { ...invoiceState };
+    };
 
     const contractsRouterModule = await import("../src/routes/contracts.ts");
     const invoicesRouterModule = await import("../src/routes/invoices.ts");
@@ -1048,6 +1054,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     );
     assert.equal(nextError, null);
     assert.equal(invoiceRes.statusCode, 200);
+    assert.ok((invoiceRes.body as any).date_envoi_email);
 
     assert.equal(sentMails.length, 2);
     assert.equal(sentMails[0].to, "alt-contract@example.com");
@@ -1070,6 +1077,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     prisma.contrat.findUnique = original.contratFindUnique;
     prisma.contrat.update = original.contratUpdate;
     prisma.facture.findUnique = original.factureFindUnique;
+    prisma.facture.update = original.factureUpdate;
     nodemailer.createTransport = original.nodemailerCreateTransport;
     env.SMTP_HOST = original.SMTP_HOST;
     env.SMTP_PORT = original.SMTP_PORT;
