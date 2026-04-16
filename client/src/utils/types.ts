@@ -95,6 +95,8 @@ export type ReservationMonthlyEnergySummary = {
 export type ReservationLinkedContract = {
   id: string;
   numero_contrat: string;
+  heure_arrivee?: string | null;
+  heure_depart?: string | null;
   statut_paiement_arrhes: "non_recu" | "recu";
   statut_paiement_solde: "non_regle" | "regle";
   solde_montant: number;
@@ -153,7 +155,8 @@ export type Reservation = {
   options?: ContratOptions;
   createdAt?: string;
   updatedAt?: string;
-  gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre">;
+  gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre"> &
+    Partial<Pick<Gite, "heure_arrivee_defaut" | "heure_depart_defaut">>;
   placeholder?: Pick<ReservationPlaceholder, "id" | "abbreviation" | "label">;
   linked_contract?: ReservationLinkedContract | null;
 };

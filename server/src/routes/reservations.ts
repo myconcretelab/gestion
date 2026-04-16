@@ -50,6 +50,8 @@ const reservationGiteSelect = {
   nom: true,
   prefixe_contrat: true,
   ordre: true,
+  heure_arrivee_defaut: true,
+  heure_depart_defaut: true,
   electricity_price_per_kwh: true,
 } as const;
 const reservationPlaceholderSelect = {
@@ -61,6 +63,8 @@ const reservationLinkedContractSelect = {
   id: true,
   reservation_id: true,
   numero_contrat: true,
+  heure_arrivee: true,
+  heure_depart: true,
   statut_paiement_arrhes: true,
   statut_paiement_solde: true,
   solde_montant: true,
@@ -616,6 +620,14 @@ const hydrateReservation = (reservation: any) => {
 const hydrateReservationLinkedContract = (contract: any) => ({
   id: contract.id,
   numero_contrat: contract.numero_contrat,
+  heure_arrivee:
+    typeof contract.heure_arrivee === "string" && contract.heure_arrivee.trim()
+      ? contract.heure_arrivee.trim()
+      : null,
+  heure_depart:
+    typeof contract.heure_depart === "string" && contract.heure_depart.trim()
+      ? contract.heure_depart.trim()
+      : null,
   statut_paiement_arrhes: contract.statut_paiement_arrhes,
   statut_paiement_solde: contract.statut_paiement_solde,
   solde_montant: getRemainingDueAmount(
@@ -631,6 +643,8 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
       id: string;
       reservation_id: string | null;
       numero_contrat: string;
+      heure_arrivee: string | null;
+      heure_depart: string | null;
       statut_paiement_arrhes: string;
       statut_paiement_solde: string;
       solde_montant: number;
@@ -643,6 +657,8 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
         id: string;
         reservation_id: string | null;
         numero_contrat: string;
+        heure_arrivee: string | null;
+        heure_depart: string | null;
         statut_paiement_arrhes: string;
         statut_paiement_solde: string;
         solde_montant: number;
@@ -652,6 +668,8 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
         "id",
         "reservation_id",
         "numero_contrat",
+        "heure_arrivee",
+        "heure_depart",
         "statut_paiement_arrhes",
         "statut_paiement_solde",
         "solde_montant"
