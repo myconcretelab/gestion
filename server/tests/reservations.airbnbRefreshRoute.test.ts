@@ -146,6 +146,70 @@ test("GET /reservations charge le tarif elec du gite pour le calcul live", async
   }
 });
 
+test("GET /reservations/calendar charge un payload primaire filtre par chevauchement annuel", async () => {
+  const originals = {
+    giteFindMany: prisma.gite.findMany,
+    reservationFindMany: prisma.reservation.findMany,
+    contratFindMany: prisma.contrat.findMany,
+  };
+  let capturedReservationArgs: any = null;
+
+  try {
+    prisma.gite.findMany = async () => [
+      { id: "gite-1", nom: "Gite test", prefixe_contrat: "GT", ordre: 1 },
+    ];
+    prisma.reservation.findMany = async (args?: any) => {
+      capturedReservationArgs = args ?? null;
+      return [
+        {
+          id: "reservation-1",
+          gite_id: "gite-1",
+          hote_nom: "Client Test",
+          date_entree: new Date("2025-12-29T00:00:00.000Z"),
+          date_sortie: new Date("2026-01-03T00:00:00.000Z"),
+          nb_nuits: 5,
+          nb_adultes: 2,
+          prix_total: 500,
+          source_paiement: "Airbnb",
+        },
+      ];
+    };
+    prisma.contrat.findMany = async () => [
+      { reservation_id: "reservation-1" },
+    ];
+
+    const reservationsRouterModule = await import("../src/routes/reservations.ts");
+    const get = getRouteHandler(reservationsRouterModule.default, "get", "/calendar");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await get(
+      {
+        body: {},
+        params: {},
+        query: { year: "2026" },
+        headers: {},
+      },
+      response,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal(capturedReservationArgs?.where?.date_entree?.lt?.toISOString(), "2027-01-01T00:00:00.000Z");
+    assert.equal(capturedReservationArgs?.where?.date_sortie?.gt?.toISOString(), "2026-01-01T00:00:00.000Z");
+    assert.equal((response.body as any).gites[0].id, "gite-1");
+    assert.equal((response.body as any).reservations[0].has_linked_contract, true);
+    assert.equal(typeof (response.body as any).source_colors, "object");
+  } finally {
+    prisma.gite.findMany = originals.giteFindMany;
+    prisma.reservation.findMany = originals.reservationFindMany;
+    prisma.contrat.findMany = originals.contratFindMany;
+  }
+});
+
 test("GET /reservations/placeholders est declare avant /reservations/:id", async () => {
   const reservationsRouterModule = await import("../src/routes/reservations.ts");
   const getRoutePaths = reservationsRouterModule.default.stack

@@ -29,6 +29,7 @@ import {
   queueAirbnbCalendarRefresh,
   type AirbnbCalendarRefreshCreateResult,
 } from "../services/airbnbCalendarRefresh.js";
+import { readSourceColorSettings } from "../services/sourceColorSettings.js";
 import {
   normalizeReservationCommissionMode,
   sanitizeReservationAmount,
@@ -63,6 +64,17 @@ const reservationLinkedContractSelect = {
   statut_paiement_arrhes: true,
   statut_paiement_solde: true,
   solde_montant: true,
+} as const;
+const calendarReservationSelect = {
+  id: true,
+  gite_id: true,
+  hote_nom: true,
+  date_entree: true,
+  date_sortie: true,
+  nb_nuits: true,
+  nb_adultes: true,
+  prix_total: true,
+  source_paiement: true,
 } as const;
 
 const emptyStringToNull = (value: unknown) => {
@@ -1423,6 +1435,72 @@ router.get("/", async (req, res, next) => {
         ...(liveEnergyByReservationId.get(reservation.id) ?? {}),
       })),
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/calendar", async (req, res, next) => {
+  try {
+    const yearRaw = typeof req.query.year === "string" ? Number.parseInt(req.query.year, 10) : Number.NaN;
+    if (!Number.isInteger(yearRaw) || yearRaw < 2000 || yearRaw > 2100) {
+      return res.status(400).json({ error: "Paramètre year invalide." });
+    }
+
+    const year = Number(yearRaw);
+    const from = makeUtcDate(year, 1, 1);
+    const to = makeUtcDate(year + 1, 1, 1);
+
+    const [gites, reservationRows] = await Promise.all([
+      prisma.gite.findMany({
+        select: {
+          id: true,
+          nom: true,
+          prefixe_contrat: true,
+          ordre: true,
+        },
+        orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      }),
+      prisma.reservation.findMany({
+        where: {
+          gite_id: { not: null },
+          date_entree: { lt: to },
+          date_sortie: { gt: from },
+        },
+        select: calendarReservationSelect,
+        orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
+      }),
+    ]);
+
+    const reservationIds = reservationRows.map((reservation) => reservation.id);
+    const linkedContracts =
+      reservationIds.length > 0
+        ? await prisma.contrat.findMany({
+            where: {
+              reservation_id: {
+                in: reservationIds,
+              },
+            },
+            select: {
+              reservation_id: true,
+            },
+          })
+        : [];
+    const reservationIdsWithLinkedContract = new Set(
+      linkedContracts
+        .map((contract) => contract.reservation_id)
+        .filter((reservationId): reservationId is string => Boolean(reservationId))
+    );
+
+    return res.json({
+      year,
+      gites,
+      reservations: reservationRows.map((reservation) => ({
+        ...reservation,
+        has_linked_contract: reservationIdsWithLinkedContract.has(reservation.id),
+      })),
+      source_colors: readSourceColorSettings().colors,
+    });
   } catch (err) {
     next(err);
   }
