@@ -12,7 +12,7 @@ import {
   type SmartlifeAutomationRule,
 } from "./smartlifeSettings.js";
 import {
-  buildDefaultSmartlifeAutomationRunState,
+  mergeSmartlifeAutomationRunItems,
   pruneExecutedEventKeys,
   readSmartlifeAutomationRunState,
   updateSmartlifeAutomationRunState,
@@ -339,7 +339,11 @@ export const runSmartlifeAutomation = async (options?: {
           skipped_count: 0,
           error_count: 0,
           note: "Automatisation désactivée.",
-          items: [],
+          items: mergeSmartlifeAutomationRunItems(
+            stateBefore.last_result?.items ?? [],
+            [],
+            RESULT_ITEMS_LIMIT,
+          ),
         });
         updateSmartlifeAutomationRunState({
           running: false,
@@ -467,6 +471,11 @@ export const runSmartlifeAutomation = async (options?: {
         );
       }
       const note = noteParts.join(" ");
+      const recentItems = mergeSmartlifeAutomationRunItems(
+        stateBefore.last_result?.items ?? [],
+        items,
+        RESULT_ITEMS_LIMIT,
+      );
       const summary = buildSummary({
         checkedAt: now,
         scanned_rules_count: cronConfig.rules.length,
@@ -476,7 +485,7 @@ export const runSmartlifeAutomation = async (options?: {
         skipped_count: skippedCount,
         error_count: errorCount,
         note,
-        items,
+        items: recentItems,
       });
 
       const lastStatus: SmartlifeAutomationRunStatus =
