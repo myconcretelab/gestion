@@ -66,6 +66,41 @@ export type PersistedSmartlifeAutomationRunState = {
   executed_event_keys: Record<string, string>;
 };
 
+const getRunItemTimestamp = (item: SmartlifeAutomationRunItem) => {
+  const value = item.executed_at ?? item.previous_executed_at ?? item.scheduled_at;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const shouldPreserveExistingRunItem = (
+  existing: SmartlifeAutomationRunItem,
+  incoming: SmartlifeAutomationRunItem,
+) => incoming.status === "skipped" && existing.status !== "skipped";
+
+export const mergeSmartlifeAutomationRunItems = (
+  previousItems: SmartlifeAutomationRunItem[],
+  nextItems: SmartlifeAutomationRunItem[],
+  limit = Number.POSITIVE_INFINITY,
+): SmartlifeAutomationRunItem[] => {
+  const merged = new Map<string, SmartlifeAutomationRunItem>();
+
+  for (const item of previousItems) {
+    merged.set(item.key, item);
+  }
+
+  for (const item of nextItems) {
+    const existing = merged.get(item.key);
+    if (existing && shouldPreserveExistingRunItem(existing, item)) {
+      continue;
+    }
+    merged.set(item.key, item);
+  }
+
+  return [...merged.values()]
+    .sort((left, right) => getRunItemTimestamp(right) - getRunItemTimestamp(left))
+    .slice(0, Math.max(0, Math.floor(limit)));
+};
+
 const ensureDataDir = () => {
   if (!fs.existsSync(env.DATA_DIR)) {
     fs.mkdirSync(env.DATA_DIR, { recursive: true });
