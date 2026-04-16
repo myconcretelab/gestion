@@ -35,6 +35,10 @@ import { dispatchAppNotice } from "../utils/appNotices";
 import { isRecentImportedReservation } from "../utils/recentImportsBadge";
 import { formatDate, formatEuro } from "../utils/format";
 import {
+  formatEuroPerDay,
+  getReservationEnergyAverageDailyCost,
+} from "../utils/reservationEnergy";
+import {
   computeReservationBaseStayTotalFromAdjustedStay,
   computeReservationPricingPreview,
   normalizeReservationCommissionMode,
@@ -4732,8 +4736,16 @@ const ReservationsPage = () => {
                           : hasEnergyData
                             ? reservation.energy_consumption_kwh
                             : null;
+                      const displayedEnergyDailyCost =
+                        hasLiveEnergyData
+                          ? getReservationEnergyAverageDailyCost(reservation, "live")
+                          : hasEnergyData
+                            ? getReservationEnergyAverageDailyCost(reservation, "saved")
+                            : null;
                       const hasDisplayedEnergyInline =
-                        displayedEnergyCost !== null && displayedEnergyKwh !== null;
+                        displayedEnergyCost !== null &&
+                        displayedEnergyKwh !== null &&
+                        displayedEnergyDailyCost !== null;
                       const canStartLiveEnergyTracking =
                         isCurrentReservation &&
                         Boolean(reservation.gite_id) &&
@@ -5309,8 +5321,8 @@ const ReservationsPage = () => {
                                         {formatEuro(displayedEnergyCost)}
                                       </span>
                                       <span className="reservations-energy-inline__dot">·</span>
-                                      <span className="reservations-energy-inline__item" title="Consommation électricité">
-                                        {formatKwh(displayedEnergyKwh)} kWh
+                                      <span className="reservations-energy-inline__item" title="Coût moyen électricité par jour">
+                                        {formatEuroPerDay(displayedEnergyDailyCost)}
                                       </span>
                                     </span>
                                   ) : null}
