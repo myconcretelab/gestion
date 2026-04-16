@@ -303,6 +303,7 @@ const FacturesListPage = () => {
               <th>Gîte</th>
               <th>Client</th>
               <th>Total</th>
+              <th>Envoyée le</th>
               <th>Réglée</th>
               <th>Actions</th>
             </tr>
@@ -321,6 +322,11 @@ const FacturesListPage = () => {
                   <td>{facture.gite?.nom ?? ""}</td>
                   <td>{facture.locataire_nom}</td>
                   <td>{formatEuro(totalMontant)}</td>
+                  <td>
+                    {facture.date_envoi_email
+                      ? formatDate(facture.date_envoi_email)
+                      : "—"}
+                  </td>
                   <td>
                     <div className="switch-group switch-group--table">
                       <label className="switch">

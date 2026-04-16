@@ -242,6 +242,7 @@ export type Facture = {
   afficher_cheque_menage_phrase: boolean;
   clauses: Record<string, unknown>;
   pdf_path: string;
+  date_envoi_email?: string | null;
   statut_paiement: "non_reglee" | "reglee";
   notes?: string | null;
   reservation_id?: string | null;

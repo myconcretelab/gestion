@@ -229,6 +229,7 @@ model Facture {
   afficher_cheque_menage_phrase Boolean @default(true)
   clauses                Json
   pdf_path               String
+  date_envoi_email       DateTime?
   statut_paiement        String   @default("non_reglee")
   notes                  String?
   reservation_id         String?
