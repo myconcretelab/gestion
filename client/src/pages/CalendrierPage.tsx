@@ -81,7 +81,7 @@ type CalendarWeekSegment = {
   continuesFromPreviousWeek: boolean;
   continuesToNextWeek: boolean;
   isDepartureMarker: boolean;
-  reservation: Reservation;
+  reservation: CalendarReservation;
 };
 
 type CalendarWeek = {
@@ -96,7 +96,7 @@ type CalendarMonthData = {
   title: string;
   subtitle: string;
   daysInMonth: number;
-  reservations: Reservation[];
+  reservations: CalendarReservation[];
   weeks: CalendarWeek[];
   occupiedNights: number;
   occupancyRate: number;
@@ -116,8 +116,35 @@ type SelectedDateRange = {
   endIso: string;
 } | null;
 
-type SourceColorSettings = {
-  colors: Record<string, string>;
+type CalendarGite = Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre">;
+
+type CalendarReservation = Pick<
+  Reservation,
+  "id" | "gite_id" | "hote_nom" | "date_entree" | "date_sortie" | "nb_nuits" | "nb_adultes" | "prix_total" | "source_paiement"
+> &
+  Partial<
+    Pick<
+      Reservation,
+      | "telephone"
+      | "commentaire"
+      | "airbnb_url"
+      | "linked_contract"
+      | "energy_consumption_kwh"
+      | "energy_cost_eur"
+      | "energy_live_consumption_kwh"
+      | "energy_live_cost_eur"
+      | "energy_live_price_per_kwh"
+      | "energy_live_recorded_at"
+    >
+  > & {
+    has_linked_contract?: boolean;
+  };
+
+type CalendarPrimaryPayload = {
+  year: number;
+  gites: CalendarGite[];
+  reservations: CalendarReservation[];
+  source_colors: Record<string, string>;
 };
 
 type PendingCalendarScrollTarget =
@@ -160,7 +187,10 @@ const formatShortDate = (value: string) =>
   });
 
 const formatStayNights = (nights: number) => `${nights} nuit${nights > 1 ? "s" : ""}`;
-const getReservationDisplayedEnergyCost = (reservation: Reservation | null | undefined) => {
+const hasLinkedContract = (reservation: CalendarReservation | null | undefined) =>
+  Boolean(reservation?.linked_contract || reservation?.has_linked_contract);
+
+const getReservationDisplayedEnergyCost = (reservation: CalendarReservation | null | undefined) => {
   if (!reservation) return null;
 
   const hasLiveEnergyData =
@@ -170,8 +200,8 @@ const getReservationDisplayedEnergyCost = (reservation: Reservation | null | und
     return reservation.energy_live_cost_eur ?? 0;
   }
 
-  const hasSavedEnergyData = reservation.energy_consumption_kwh > 0 || reservation.energy_cost_eur > 0;
-  return hasSavedEnergyData ? reservation.energy_cost_eur : null;
+  const hasSavedEnergyData = (reservation.energy_consumption_kwh ?? 0) > 0 || (reservation.energy_cost_eur ?? 0) > 0;
+  return hasSavedEnergyData ? (reservation.energy_cost_eur ?? 0) : null;
 };
 
 const formatLongDate = (value: string) =>
@@ -181,10 +211,10 @@ const formatLongDate = (value: string) =>
     timeZone: "UTC",
   });
 
-const overlapsRange = (reservation: Reservation, from: Date, to: Date) =>
+const overlapsRange = (reservation: CalendarReservation, from: Date, to: Date) =>
   parseIsoDate(reservation.date_entree) < to && parseIsoDate(reservation.date_sortie) > from;
 
-const getReservationOverlapNights = (reservation: Reservation, from: Date, to: Date) => {
+const getReservationOverlapNights = (reservation: CalendarReservation, from: Date, to: Date) => {
   const entry = parseIsoDate(reservation.date_entree);
   const exit = parseIsoDate(reservation.date_sortie);
   const overlapStart = Math.max(entry.getTime(), from.getTime());
@@ -192,7 +222,7 @@ const getReservationOverlapNights = (reservation: Reservation, from: Date, to: D
   return overlapEnd > overlapStart ? Math.round((overlapEnd - overlapStart) / DAY_MS) : 0;
 };
 
-const getReservationMonthlyRevenue = (reservation: Reservation, from: Date, to: Date) => {
+const getReservationMonthlyRevenue = (reservation: CalendarReservation, from: Date, to: Date) => {
   const overlapNights = getReservationOverlapNights(reservation, from, to);
   const totalNights = Math.max(0, Number(reservation.nb_nuits ?? 0));
   const totalPrice = Number(reservation.prix_total ?? 0);
@@ -204,7 +234,7 @@ const getReservationMonthlyRevenue = (reservation: Reservation, from: Date, to: 
   return round2((totalPrice * overlapNights) / totalNights);
 };
 
-const getReservationDisplayLabel = (reservation: Reservation) => reservation.hote_nom.trim() || reservation.hote_nom;
+const getReservationDisplayLabel = (reservation: CalendarReservation) => reservation.hote_nom.trim() || reservation.hote_nom;
 
 const hexToRgba = (hex: string, alpha: number) => {
   const sanitized = hex.replace("#", "");
@@ -252,7 +282,7 @@ const buildCalendarMonthData = ({
 }: {
   year: number;
   monthIndex: number;
-  reservations: Reservation[];
+  reservations: CalendarReservation[];
   schoolHolidayDates: ReadonlySet<string>;
   todayDate: Date;
   todayIso: string;
@@ -422,8 +452,10 @@ const CalendrierPage = () => {
   const currentMonthIndex = now.getUTCMonth();
   const todayIso = toIsoDate(new Date(Date.UTC(currentYear, now.getUTCMonth(), now.getUTCDate())));
 
-  const [gites, setGites] = useState<Gite[]>([]);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [gites, setGites] = useState<CalendarGite[]>([]);
+  const [reservations, setReservations] = useState<CalendarReservation[]>([]);
+  const [reservationDetailsById, setReservationDetailsById] = useState<Record<string, Partial<CalendarReservation>>>({});
+  const [reservationDetailsLoadingById, setReservationDetailsLoadingById] = useState<Record<string, boolean>>({});
   const [selectedGiteId, setSelectedGiteId] = useState("");
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
   const [year, setYear] = useState(currentYear);
@@ -463,23 +495,21 @@ const CalendrierPage = () => {
       setLoading(true);
       setError(null);
 
-      const [gitesData, reservationsData, sourceColorSettings] = await Promise.all([
-        apiFetch<Gite[]>("/gites"),
-        apiFetch<Reservation[]>("/reservations"),
-        apiFetch<SourceColorSettings>("/settings/source-colors"),
-      ]);
+      const payload = await apiFetch<CalendarPrimaryPayload>(`/reservations/calendar?year=${year}`);
 
-      setGites(gitesData);
-      setReservations(reservationsData);
-      setSourceColors(sourceColorSettings.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
-      setSelectedGiteId((previous) => previous || gitesData[0]?.id || "");
+      setGites(payload.gites);
+      setReservations(payload.reservations);
+      setReservationDetailsById({});
+      setReservationDetailsLoadingById({});
+      setSourceColors(payload.source_colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
+      setSelectedGiteId((previous) => previous || payload.gites[0]?.id || "");
     } catch (err) {
       if (isApiError(err)) setError(err.message);
       else setError("Impossible de charger le calendrier.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [year]);
 
   useEffect(() => {
     void loadData();
@@ -619,7 +649,7 @@ const CalendrierPage = () => {
     setMobileActionReservationId(null);
   }, [selectedGiteId, year]);
 
-  const markLinkedContractBalancePaid = useCallback(async (reservation: Reservation) => {
+  const markLinkedContractBalancePaid = useCallback(async (reservation: CalendarReservation) => {
     const linkedContract = reservation.linked_contract;
     if (!linkedContract || linkedContract.statut_paiement_solde === "regle") return;
 
@@ -634,22 +664,24 @@ const CalendrierPage = () => {
         json: { statut_paiement_solde: "regle" },
       });
 
-      setReservations((previous) =>
-        previous.map((item) =>
-          item.linked_contract?.id === updated.id
-            ? {
-                ...item,
-                linked_contract: item.linked_contract
-                  ? {
-                      ...item.linked_contract,
-                      statut_paiement_solde: updated.statut_paiement_solde,
-                      solde_montant: updated.solde_montant,
-                    }
-                  : item.linked_contract,
-              }
-            : item,
-        ),
-      );
+      setReservationDetailsById((previous) => {
+        const currentDetails = previous[reservation.id];
+        if (!currentDetails?.linked_contract || currentDetails.linked_contract.id !== updated.id) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [reservation.id]: {
+            ...currentDetails,
+            linked_contract: {
+              ...currentDetails.linked_contract,
+              statut_paiement_solde: updated.statut_paiement_solde,
+              solde_montant: updated.solde_montant,
+            },
+          },
+        };
+      });
       setError(null);
     } catch (err) {
       if (isApiError(err)) setError(err.message);
@@ -708,12 +740,26 @@ const CalendrierPage = () => {
     [accentColor, viewportStickyOffsets.hero, viewportStickyOffsets.topbar, viewportStickyOffsets.weekdays]
   );
 
+  const reservationsWithDetails = useMemo(
+    () =>
+      reservations.map((reservation) => {
+        const details = reservationDetailsById[reservation.id];
+        return {
+          ...reservation,
+          ...details,
+          has_linked_contract:
+            reservation.has_linked_contract ?? details?.has_linked_contract ?? Boolean(details?.linked_contract),
+        } satisfies CalendarReservation;
+      }),
+    [reservationDetailsById, reservations]
+  );
+
   const reservationsForGite = useMemo(
     () =>
-      reservations
+      reservationsWithDetails
         .filter((reservation) => reservation.gite_id === selectedGiteId)
         .sort((left, right) => parseIsoDate(left.date_entree).getTime() - parseIsoDate(right.date_entree).getTime()),
-    [reservations, selectedGiteId]
+    [reservationsWithDetails, selectedGiteId]
   );
   const occupationByMonthByGite = useMemo(() => {
     const byGite = new Map<string, Map<number, number>>();
@@ -725,7 +771,7 @@ const CalendrierPage = () => {
       byGite.set(gite.id, byMonth);
     });
 
-    reservations.forEach((reservation) => {
+    reservationsWithDetails.forEach((reservation) => {
       if (!reservation.gite_id) return;
       const byMonth = byGite.get(reservation.gite_id);
       if (!byMonth) return;
@@ -745,7 +791,7 @@ const CalendrierPage = () => {
     });
 
     return byGite;
-  }, [gites, monthBoundaries, reservations]);
+  }, [gites, monthBoundaries, reservationsWithDetails]);
   const topOccupationGiteIdByMonth = useMemo(() => {
     const leadersByMonth = new Map<number, string | null>();
 
@@ -784,6 +830,45 @@ const CalendrierPage = () => {
     () => (mobileActionReservationId ? reservationsForGite.find((reservation) => reservation.id === mobileActionReservationId) ?? null : null),
     [mobileActionReservationId, reservationsForGite]
   );
+
+  useEffect(() => {
+    const reservationIdsToLoad = [hoveredReservation?.reservationId, mobileActionReservationId].filter(
+      (reservationId): reservationId is string => Boolean(reservationId)
+    );
+    if (!reservationIdsToLoad.length) return;
+
+    reservationIdsToLoad.forEach((reservationId) => {
+      if (reservationDetailsById[reservationId] || reservationDetailsLoadingById[reservationId]) return;
+
+      setReservationDetailsLoadingById((previous) => {
+        if (previous[reservationId]) return previous;
+        return {
+          ...previous,
+          [reservationId]: true,
+        };
+      });
+
+      void apiFetch<Reservation>(`/reservations/${reservationId}`)
+        .then((details) => {
+          setReservationDetailsById((previous) => ({
+            ...previous,
+            [reservationId]: {
+              ...previous[reservationId],
+              ...details,
+              has_linked_contract: previous[reservationId]?.has_linked_contract ?? Boolean(details.linked_contract),
+            },
+          }));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          setReservationDetailsLoadingById((previous) => {
+            const next = { ...previous };
+            delete next[reservationId];
+            return next;
+          });
+        });
+    });
+  }, [hoveredReservation?.reservationId, mobileActionReservationId, reservationDetailsById, reservationDetailsLoadingById]);
 
   useEffect(() => {
     let cancelled = false;
@@ -955,7 +1040,7 @@ const CalendrierPage = () => {
   );
 
   const openReservationInListing = useCallback(
-    (reservation: Reservation, options?: { monthNumber?: number; year?: number }) => {
+    (reservation: CalendarReservation, options?: { monthNumber?: number; year?: number }) => {
       const params = new URLSearchParams();
       const reservationStartDate = parseIsoDate(reservation.date_entree);
       params.set("focus", reservation.id);
@@ -969,7 +1054,7 @@ const CalendrierPage = () => {
   );
 
   const openMobileReservationEditPage = useCallback(
-    (reservation: Reservation, options?: { monthNumber?: number; year?: number }) => {
+    (reservation: CalendarReservation, options?: { monthNumber?: number; year?: number }) => {
       const reservationStartDate = parseIsoDate(reservation.date_entree);
       const targetYear = options?.year ?? reservationStartDate.getUTCFullYear();
       const targetMonth = options?.monthNumber ?? reservationStartDate.getUTCMonth() + 1;
@@ -993,7 +1078,7 @@ const CalendrierPage = () => {
   );
 
   const handleReservationOpen = useCallback(
-    (reservation: Reservation, options?: { monthNumber?: number; year?: number }) => {
+    (reservation: CalendarReservation, options?: { monthNumber?: number; year?: number }) => {
       if (usesViewportScroll) {
         setSelectedDateRange(null);
         setMobileActionReservationId((current) => (current === reservation.id ? null : reservation.id));
@@ -1581,7 +1666,7 @@ const CalendrierPage = () => {
                                         <span className="calendar-reservation__content">
                                           <strong className="calendar-reservation__label">
                                             <span className="calendar-reservation__label-group">
-                                              {segment.reservation.linked_contract ? (
+                                              {hasLinkedContract(segment.reservation) ? (
                                                 <span
                                                   className="calendar-reservation__contract-indicator"
                                                   title="Contrat lié"
@@ -1639,7 +1724,7 @@ const CalendrierPage = () => {
               <article className="calendar-stay calendar-stay--highlighted calendar-stay--focused">
                 <div className="calendar-stay__head">
                   <strong className="calendar-stay__title">
-                    {hoveredReservationDetails.reservation.linked_contract ? (
+                    {hasLinkedContract(hoveredReservationDetails.reservation) ? (
                       <span className="calendar-reservation__contract-indicator" title="Contrat lié" aria-hidden="true">
                         <ReservationContractIcon />
                       </span>
@@ -1709,7 +1794,7 @@ const CalendrierPage = () => {
               }}
             >
               <div className="calendar-floating-popover__title">
-                {hoveredReservationDetails.reservation.linked_contract ? (
+                {hasLinkedContract(hoveredReservationDetails.reservation) ? (
                   <span className="calendar-reservation__contract-indicator" title="Contrat lié" aria-hidden="true">
                     <ReservationContractIcon />
                   </span>
@@ -1793,6 +1878,14 @@ const CalendrierPage = () => {
                     balanceStatusUpdatingByContractId[mobileActionReservation.linked_contract.id],
                   ),
                 }
+              : hasLinkedContract(mobileActionReservation)
+                ? {
+                    label: "Contrat lié",
+                    value: "Chargement...",
+                    hint: reservationDetailsLoadingById[mobileActionReservation.id]
+                      ? "Détails du contrat en cours de chargement"
+                      : "Détails du contrat indisponibles",
+                  }
               : undefined
           }
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
