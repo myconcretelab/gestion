@@ -194,6 +194,7 @@ export const syncIcalConflictRecords = (drafts: IcalConflictDraft[]) => {
     current.map((record) => [`${record.reservation_id}:${record.type}`, record] as const)
   );
   const nextRecords: IcalConflictRecord[] = [];
+  const retainedRecordIds = new Set<string>();
 
   for (const draft of drafts) {
     const reservationKey = `${draft.reservation_id}:${draft.type}`;
@@ -219,7 +220,7 @@ export const syncIcalConflictRecords = (drafts: IcalConflictDraft[]) => {
     }
 
     const fingerprintChanged = existing.fingerprint !== draft.fingerprint;
-    nextRecords.push({
+    const nextRecord = {
       ...existing,
       type: draft.type,
       fingerprint: draft.fingerprint,
@@ -232,7 +233,16 @@ export const syncIcalConflictRecords = (drafts: IcalConflictDraft[]) => {
       detected_at: fingerprintChanged ? now : existing.detected_at,
       resolved_at: fingerprintChanged ? null : existing.resolved_at,
       resolution_action: fingerprintChanged ? null : existing.resolution_action,
-    });
+    };
+    nextRecords.push(nextRecord);
+    retainedRecordIds.add(nextRecord.id);
+  }
+
+  for (const record of current) {
+    if (retainedRecordIds.has(record.id)) continue;
+    if (record.status !== "resolved") continue;
+    if (record.resolution_action !== "keep_reservation") continue;
+    nextRecords.push(record);
   }
 
   nextRecords.sort((left, right) => {
