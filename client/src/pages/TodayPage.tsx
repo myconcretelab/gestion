@@ -259,7 +259,7 @@ const getIcalConflictTypeLabel = (type: TodayIcalConflict["type"]) =>
 const getIcalConflictIntro = (conflict: TodayIcalConflict) =>
   conflict.type === "modified"
     ? "La réservation existe encore dans le flux iCal, mais ses informations ont changé. Rien n'a été appliqué automatiquement."
-    : "La réservation a disparu du flux iCal. Rien n'a été supprimé automatiquement.";
+    : "La réservation a disparu du flux iCal.";
 
 const getConflictCurrentSnapshot = (conflict: TodayIcalConflict): TodayIcalConflictSnapshot => ({
   reservation_id: conflict.reservation?.id ?? conflict.reservation_snapshot.reservation_id,
@@ -1174,31 +1174,35 @@ const TodayPage = () => {
                   >
                     <div className="today-notification-card__top">
                       <div className="today-notification-card__header">
-                        <span className="today-notification-card__kind today-notification-card__kind--reservation">
-                          Nouvelle réservation
-                        </span>
+                        <div className="today-notification-card__header-top">
+                          <span className="today-notification-card__kind today-notification-card__kind--reservation">
+                            Nouvelle réservation
+                          </span>
+                          <span className="today-notification-card__timestamp">
+                            Créée le {formatDateTimeFr(reservation.created_at)}
+                          </span>
+                        </div>
                         <strong>{reservation.gite_nom || "Sans gîte"}</strong>
-                        <span>Créée le {formatDateTimeFr(reservation.created_at)}</span>
                       </div>
                     </div>
 
                     <div className="today-notification-card__reservation-body">
-                      <strong className="today-notification-card__headline">{reservation.hote_nom || "Réservation"}</strong>
-                      <div className="today-notification-card__dates">
-                        {formatLongDate(reservation.date_entree)} → {formatLongDate(reservation.date_sortie)}
+                      <div className="today-notification-card__reservation-row">
+                        <strong className="today-notification-card__headline">{reservation.hote_nom || "Réservation"}</strong>
+                        <div className="today-notification-card__dates">
+                          {formatLongDate(reservation.date_entree)} → {formatLongDate(reservation.date_sortie)}
+                        </div>
                       </div>
+                    </div>
+
+                    <div className="today-notification-card__reservation-footer">
                       <div className="today-notification-card__meta">
                         <span>
                           {reservation.nb_nuits} nuit{reservation.nb_nuits > 1 ? "s" : ""}
                         </span>
                         <span>{reservation.source_paiement || "A définir"}</span>
-                      </div>
-                    </div>
-
-                    <div className="today-notification-card__reservation-footer">
-                      <div className="today-notification-card__metric">
-                        <span>Montant</span>
-                        <strong>{formatEuro(reservation.prix_total)}</strong>
+                        <span className="today-notification-card__metric-inline-label">Montant</span>
+                        <strong className="today-notification-card__metric-inline-value">{formatEuro(reservation.prix_total)}</strong>
                       </div>
                       <button
                         type="button"

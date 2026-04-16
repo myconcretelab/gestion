@@ -524,7 +524,7 @@ body.app-scroll-locked {
 .today-notification-card {
   --today-notification-accent: #d1d5db;
   display: grid;
-  gap: 16px;
+  gap: 12px;
   padding: 18px;
   border-radius: 24px;
   border: 1px solid #ebe3dc;
@@ -554,16 +554,25 @@ body.app-scroll-locked {
   gap: 6px;
 }
 
+.today-notification-card__header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .today-notification-card__header strong,
 .today-notification-card__headline {
   color: #111827;
   font-size: 1.08rem;
 }
 
-.today-notification-card__header span:last-child {
+.today-notification-card__timestamp {
   color: #6b7280;
   font-size: 0.82rem;
   line-height: 1.45;
+  white-space: nowrap;
 }
 
 .today-notification-card__kind {
@@ -588,38 +597,40 @@ body.app-scroll-locked {
   gap: 8px;
 }
 
-.today-notification-card__dates,
-.today-notification-card__meta {
-  color: #4b5563;
-  font-size: 0.86rem;
-  line-height: 1.5;
+.today-notification-card__reservation-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 18px;
+  flex-wrap: wrap;
 }
 
 .today-notification-card__dates {
   font-weight: 700;
   color: #1f2937;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .today-notification-card__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 8px 12px;
+  color: #4b5563;
+  font-size: 0.86rem;
+  line-height: 1.5;
 }
 
 .today-notification-card__reservation-footer {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
 }
 
-.today-notification-card__metric {
-  display: grid;
-  gap: 4px;
-}
-
-.today-notification-card__metric span {
+.today-notification-card__metric-inline-label {
   color: #8d857d;
   font-size: 0.72rem;
   font-weight: 800;
@@ -627,9 +638,9 @@ body.app-scroll-locked {
   text-transform: uppercase;
 }
 
-.today-notification-card__metric strong {
+.today-notification-card__metric-inline-value {
   color: #111827;
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   line-height: 1;
 }
 
@@ -9500,6 +9511,15 @@ button.warning {
   .today-notification-card__reservation-footer,
   .today-conflict-card__diffs {
     justify-content: flex-start;
+  }
+
+  .today-notification-card__header-top,
+  .today-notification-card__reservation-row {
+    justify-content: flex-start;
+  }
+
+  .today-notification-card__timestamp {
+    white-space: normal;
   }
 
   .today-conflict-card__grid {
