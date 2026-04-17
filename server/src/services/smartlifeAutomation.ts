@@ -51,6 +51,10 @@ type ReservationCandidate = {
   hote_nom: string;
   date_entree: Date;
   date_sortie: Date;
+  linked_contract: {
+    heure_arrivee: string | null;
+    heure_depart: string | null;
+  } | null;
   gite: {
     id: string;
     nom: string;
@@ -62,6 +66,11 @@ type ReservationCandidate = {
 type DueEvent = SmartlifeAutomationRunItem & {
   scheduledDate: Date;
   rule: SmartlifeAutomationRule;
+};
+
+type RotationBoundary = {
+  reservationId: string;
+  anchorDate: Date;
 };
 
 let cronTimer: NodeJS.Timeout | null = null;
@@ -85,6 +94,34 @@ const formatDateLabel = (value: Date) =>
     month: "2-digit",
     year: "numeric",
   });
+
+const formatTimeLabel = (value: Date) =>
+  value.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
+
+const isDepartureTrigger = (trigger: SmartlifeAutomationRule["trigger"]) =>
+  trigger === "before-departure" || trigger === "after-departure";
+
+const isArrivalTrigger = (trigger: SmartlifeAutomationRule["trigger"]) =>
+  trigger === "before-arrival" || trigger === "after-arrival";
+
+const getReservationArrivalTime = (reservation: ReservationCandidate) =>
+  String(
+    reservation.linked_contract?.heure_arrivee ??
+      reservation.gite?.heure_arrivee_defaut ??
+      "00:00",
+  ).trim() || reservation.gite?.heure_arrivee_defaut || "00:00";
+
+const getReservationDepartureTime = (reservation: ReservationCandidate) =>
+  String(
+    reservation.linked_contract?.heure_depart ??
+      reservation.gite?.heure_depart_defaut ??
+      "00:00",
+  ).trim() || reservation.gite?.heure_depart_defaut || "00:00";
 
 const combineDateWithTime = (value: Date, time: string) => {
   const [hoursRaw, minutesRaw] = String(time ?? "00:00").split(":");
@@ -181,7 +218,7 @@ const loadReservationCandidates = async (
   if (giteIds.length === 0) return [];
 
   const { start, end } = buildReservationQueryWindow(config, now);
-  return prisma.reservation.findMany({
+  const reservations = await prisma.reservation.findMany({
     where: {
       gite_id: { in: giteIds },
       OR: [
@@ -205,6 +242,7 @@ const loadReservationCandidates = async (
       hote_nom: true,
       date_entree: true,
       date_sortie: true,
+      createdAt: true,
       gite: {
         select: {
           id: true,
@@ -216,9 +254,56 @@ const loadReservationCandidates = async (
     },
     orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   });
+
+  const reservationIds = reservations.map((reservation) => reservation.id);
+  const linkedContracts =
+    reservationIds.length > 0
+      ? await prisma.contrat.findMany({
+          where: {
+            reservation_id: {
+              in: reservationIds,
+            },
+          },
+          select: {
+            reservation_id: true,
+            heure_arrivee: true,
+            heure_depart: true,
+          },
+          orderBy: [{ date_creation: "desc" }, { id: "desc" }],
+        })
+      : [];
+
+  const linkedContractByReservationId = new Map<
+    string,
+    ReservationCandidate["linked_contract"]
+  >();
+  for (const contract of linkedContracts) {
+    if (!contract.reservation_id) continue;
+    if (linkedContractByReservationId.has(contract.reservation_id)) continue;
+    linkedContractByReservationId.set(contract.reservation_id, {
+      heure_arrivee:
+        typeof contract.heure_arrivee === "string" && contract.heure_arrivee.trim()
+          ? contract.heure_arrivee.trim()
+          : null,
+      heure_depart:
+        typeof contract.heure_depart === "string" && contract.heure_depart.trim()
+          ? contract.heure_depart.trim()
+          : null,
+    });
+  }
+
+  return reservations.map((reservation) => ({
+    id: reservation.id,
+    gite_id: reservation.gite_id,
+    hote_nom: reservation.hote_nom,
+    date_entree: reservation.date_entree,
+    date_sortie: reservation.date_sortie,
+    linked_contract: linkedContractByReservationId.get(reservation.id) ?? null,
+    gite: reservation.gite,
+  }));
 };
 
-const buildDueEvents = (
+export const buildDueEvents = (
   config: SmartlifeAutomationConfig,
   reservations: ReservationCandidate[],
   now: Date,
@@ -247,8 +332,8 @@ const buildDueEvents = (
       const baseTime =
         rule.trigger === "before-departure" ||
         rule.trigger === "after-departure"
-          ? reservation.gite.heure_depart_defaut
-          : reservation.gite.heure_arrivee_defaut;
+          ? getReservationDepartureTime(reservation)
+          : getReservationArrivalTime(reservation);
       const anchorDate = combineDateWithTime(baseDate, baseTime);
       const direction =
         rule.trigger === "after-arrival" ||
@@ -303,6 +388,141 @@ const buildDueEvents = (
   return dueEvents.sort(
     (left, right) => left.scheduledDate.getTime() - right.scheduledDate.getTime(),
   );
+};
+
+const getRotationKey = (giteId: string, date: Date) => `${giteId}:${toIsoDate(date)}`;
+
+const getEarliestCounterpartArrival = (
+  boundaries: RotationBoundary[],
+  reservationId: string,
+) => {
+  let match: RotationBoundary | null = null;
+  for (const boundary of boundaries) {
+    if (boundary.reservationId === reservationId) continue;
+    if (!match || boundary.anchorDate.getTime() < match.anchorDate.getTime()) {
+      match = boundary;
+    }
+  }
+  return match;
+};
+
+const getLatestCounterpartDeparture = (
+  boundaries: RotationBoundary[],
+  reservationId: string,
+) => {
+  let match: RotationBoundary | null = null;
+  for (const boundary of boundaries) {
+    if (boundary.reservationId === reservationId) continue;
+    if (!match || boundary.anchorDate.getTime() > match.anchorDate.getTime()) {
+      match = boundary;
+    }
+  }
+  return match;
+};
+
+const buildRotationBoundaryMaps = (reservations: ReservationCandidate[]) => {
+  const arrivalsByKey = new Map<string, RotationBoundary[]>();
+  const departuresByKey = new Map<string, RotationBoundary[]>();
+
+  const register = (
+    map: Map<string, RotationBoundary[]>,
+    key: string,
+    boundary: RotationBoundary,
+  ) => {
+    const current = map.get(key) ?? [];
+    current.push(boundary);
+    map.set(key, current);
+  };
+
+  for (const reservation of reservations) {
+    if (!reservation.gite_id || !reservation.gite) continue;
+
+    register(arrivalsByKey, getRotationKey(reservation.gite_id, reservation.date_entree), {
+      reservationId: reservation.id,
+      anchorDate: combineDateWithTime(
+        reservation.date_entree,
+        getReservationArrivalTime(reservation),
+      ),
+    });
+    register(
+      departuresByKey,
+      getRotationKey(reservation.gite_id, reservation.date_sortie),
+      {
+        reservationId: reservation.id,
+        anchorDate: combineDateWithTime(
+          reservation.date_sortie,
+          getReservationDepartureTime(reservation),
+        ),
+      },
+    );
+  }
+
+  return { arrivalsByKey, departuresByKey };
+};
+
+export const applySameDayRotationGuards = (
+  dueEvents: DueEvent[],
+  reservations: ReservationCandidate[],
+) => {
+  const reservationById = new Map(reservations.map((reservation) => [reservation.id, reservation]));
+  const { arrivalsByKey, departuresByKey } = buildRotationBoundaryMaps(reservations);
+  const actionableEvents: DueEvent[] = [];
+  const skippedEvents: SmartlifeAutomationRunItem[] = [];
+
+  for (const event of dueEvents) {
+    const reservation = reservationById.get(event.reservation_id);
+    if (!reservation?.gite_id || !reservation.gite) {
+      actionableEvents.push(event);
+      continue;
+    }
+
+    if (isDepartureTrigger(event.trigger)) {
+      const key = getRotationKey(reservation.gite_id, reservation.date_sortie);
+      const nextArrival = getEarliestCounterpartArrival(
+        arrivalsByKey.get(key) ?? [],
+        reservation.id,
+      );
+      if (
+        nextArrival &&
+        event.scheduledDate.getTime() >= nextArrival.anchorDate.getTime()
+      ) {
+        skippedEvents.push({
+          ...event,
+          status: "skipped",
+          message:
+            `Commande ignorée: rotation le même jour, une arrivée commence à ${formatTimeLabel(nextArrival.anchorDate)}.`,
+        });
+        continue;
+      }
+    }
+
+    if (isArrivalTrigger(event.trigger)) {
+      const key = getRotationKey(reservation.gite_id, reservation.date_entree);
+      const previousDeparture = getLatestCounterpartDeparture(
+        departuresByKey.get(key) ?? [],
+        reservation.id,
+      );
+      if (
+        previousDeparture &&
+        event.scheduledDate.getTime() < previousDeparture.anchorDate.getTime()
+      ) {
+        skippedEvents.push({
+          ...event,
+          status: "skipped",
+          message:
+            `Commande ignorée: rotation le même jour, le séjour précédent se termine à ${formatTimeLabel(previousDeparture.anchorDate)}.`,
+        });
+        continue;
+      }
+    }
+
+    actionableEvents.push(event);
+  }
+
+  return {
+    actionableEvents,
+    skippedEvents,
+  };
 };
 
 export const runSmartlifeAutomation = async (options?: {
@@ -367,19 +587,24 @@ export const runSmartlifeAutomation = async (options?: {
       );
       const reservations = await loadReservationCandidates(cronConfig, now);
       const dueEvents = buildDueEvents(cronConfig, reservations, now);
+      const { actionableEvents, skippedEvents: rotationSkippedItems } =
+        applySameDayRotationGuards(dueEvents, reservations);
       const executedEventKeys = {
         ...stateBefore.executed_event_keys,
       };
 
-      const items: SmartlifeAutomationRunItem[] = [];
+      const items: SmartlifeAutomationRunItem[] = [...rotationSkippedItems];
       let executedCount = 0;
-      let skippedCount = 0;
+      let skippedCount = rotationSkippedItems.length;
       let errorCount = 0;
+      let duplicateSkippedCount = 0;
+      const rotationSkippedCount = rotationSkippedItems.length;
 
-      for (const event of dueEvents) {
+      for (const event of actionableEvents) {
         const previousExecutedAt = executedEventKeys[event.key] ?? null;
         if (previousExecutedAt) {
           skippedCount += 1;
+          duplicateSkippedCount += 1;
           // eslint-disable-next-line no-console
           console.info(
             `[smartlife-automation] duplicate event skipped key=${event.key} previously_executed_at=${previousExecutedAt}`,
@@ -454,8 +679,17 @@ export const runSmartlifeAutomation = async (options?: {
               ? "Toutes les commandes dues ont échoué."
               : executedCount > 0
                 ? "Commandes Smart Life exécutées."
+                : rotationSkippedCount > 0 && duplicateSkippedCount === 0
+                  ? "Commandes Smart Life ignorées pour respecter la rotation le même jour."
+                  : rotationSkippedCount > 0
+                    ? "Aucune nouvelle commande Smart Life exécutée."
                 : "Toutes les commandes dues avaient déjà été exécutées.",
       ];
+      if (rotationSkippedCount > 0) {
+        noteParts.push(
+          `${rotationSkippedCount} commande(s) ignorée(s) pour respecter une rotation départ/arrivée le même jour.`,
+        );
+      }
       if (
         monthlyEnergyCapture.triggered &&
         (monthlyEnergyCapture.opened_count > 0 ||
