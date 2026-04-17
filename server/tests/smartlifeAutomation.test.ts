@@ -44,6 +44,23 @@ const buildReservation = (params: {
   },
 });
 
+const buildExpectedScheduledAt = (
+  dateIso: string,
+  time: string,
+  offsetMinutes: number,
+  direction: 1 | -1,
+) => {
+  const value = new Date(`${dateIso}T00:00:00.000Z`);
+  const [hoursRaw, minutesRaw] = time.split(":");
+  value.setHours(
+    Number.parseInt(hoursRaw ?? "0", 10),
+    Number.parseInt(minutesRaw ?? "0", 10),
+    0,
+    0,
+  );
+  return new Date(value.getTime() + direction * offsetMinutes * 60 * 1000).toISOString();
+};
+
 test("ignore une regle de depart qui tomberait apres l'arrivee suivante le meme jour", () => {
   const reservations = [
     buildReservation({
@@ -247,7 +264,10 @@ test("utilise l'heure d'arrivee du contrat lie pour declencher une regle", () =>
   );
 
   assert.equal(dueEvents.length, 1);
-  assert.equal(dueEvents[0]?.scheduled_at, "2026-04-17T12:00:00.000Z");
+  assert.equal(
+    dueEvents[0]?.scheduled_at,
+    buildExpectedScheduledAt("2026-04-17", "15:00", 60, -1),
+  );
 });
 
 test("utilise les heures du contrat lie pour la garde rotation le meme jour", () => {
@@ -299,7 +319,10 @@ test("utilise les heures du contrat lie pour la garde rotation le meme jour", ()
   );
 
   assert.equal(dueEvents.length, 1);
-  assert.equal(dueEvents[0]?.scheduled_at, "2026-04-17T16:00:00.000Z");
+  assert.equal(
+    dueEvents[0]?.scheduled_at,
+    buildExpectedScheduledAt("2026-04-17", "11:00", 7 * 60, 1),
+  );
   assert.equal(actionableEvents.length, 1);
   assert.equal(skippedEvents.length, 0);
 });
