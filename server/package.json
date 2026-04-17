@@ -24,15 +24,16 @@
     "cron:ical:dev": "tsx src/cli/run-ical-sync-cron.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.2",
-    "@tuya/tuya-connector-nodejs": "^2.1.2",
+    "@prisma/client": "^6.19.3",
+    "axios": "^1.15.0",
     "cors": "^2.8.5",
     "date-fns": "^3.6.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "node-ical": "^0.20.1",
-    "nodemailer": "^8.0.3",
+    "node-ical": "^0.26.0",
+    "nodemailer": "^8.0.5",
     "playwright": "^1.48.2",
+    "qs": "^6.15.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -40,7 +41,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^20.16.5",
     "@types/nodemailer": "^7.0.11",
-    "prisma": "^6.19.2",
+    "prisma": "^6.19.3",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2"
   },
