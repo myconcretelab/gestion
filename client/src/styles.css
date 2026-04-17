@@ -256,9 +256,15 @@ body.app-scroll-locked {
 }
 
 .today-utility-strip__detail {
+  display: grid;
+  gap: 2px;
   color: #6b7280;
   font-size: 0.82rem;
   line-height: 1.5;
+}
+
+.today-utility-strip__detail strong {
+  color: #1f2937;
 }
 
 .today-utility-strip__fill {

@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+UPDATE_SCRIPT="${DEPLOY_UPDATE_SCRIPT:-/Users/sebsoaz/bin/update}"
+UPDATE_TARGET="${DEPLOY_UPDATE_TARGET:-gestion}"
+DEFAULT_COMMIT_MESSAGE="chore: deploy $(date '+%Y-%m-%d %H:%M:%S')"
+DRY_RUN=0
+NO_COMMIT=0
+NO_PUSH=0
+NO_UPDATE=0
+COMMIT_MESSAGE=""
+
+usage() {
+  cat <<EOF
+Usage:
+  bin/deploy [commit message]
+  bin/deploy --message "Mon message"
+  bin/deploy --dry
+
+Options:
+  --message, -m  Message de commit a utiliser si des changements locaux existent
+  --dry          Affiche les commandes sans les executer
+  --no-commit    N'ajoute pas/commit pas les changements locaux
+  --no-push      N'envoie pas la branche courante
+  --no-update    Ne lance pas ${UPDATE_SCRIPT} ${UPDATE_TARGET}
+  --help, -h     Affiche cette aide
+EOF
+}
+
+log() {
+  printf "[deploy] %s\n" "$*"
+}
+
+die() {
+  printf "[deploy] %s\n" "$*" >&2
+  exit 1
+}
+
+run_cmd() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf "[dry-run] "
+    printf "%q " "$@"
+    printf "\n"
+    return 0
+  fi
+
+  "$@"
+}
+
+has_local_changes() {
+  if ! git diff --quiet; then
+    return 0
+  fi
+  if ! git diff --cached --quiet; then
+    return 0
+  fi
+  if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+current_branch() {
+  git branch --show-current
+}
+
+upstream_ref() {
+  git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --message|-m)
+      [[ $# -ge 2 ]] || die "Option $1 sans message"
+      COMMIT_MESSAGE="$2"
+      shift 2
+      ;;
+    --dry)
+      DRY_RUN=1
+      shift
+      ;;
+    --no-commit)
+      NO_COMMIT=1
+      shift
+      ;;
+    --no-push)
+      NO_PUSH=1
+      shift
+      ;;
+    --no-update)
+      NO_UPDATE=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      if [[ -n "$COMMIT_MESSAGE" ]]; then
+        die "Un seul message de commit est accepte"
+      fi
+      COMMIT_MESSAGE="$1"
+      shift
+      ;;
+  esac
+done
+
+[[ -d .git ]] || die "Ce dossier n'est pas un repo Git"
+[[ -x "$UPDATE_SCRIPT" ]] || die "Script de mise en prod introuvable ou non executable: $UPDATE_SCRIPT"
+
+BRANCH="$(current_branch)"
+[[ -n "$BRANCH" ]] || die "Impossible de determiner la branche courante"
+
+UPSTREAM="$(upstream_ref)"
+if [[ -z "$UPSTREAM" && "$NO_PUSH" != "1" ]]; then
+  die "Aucune branche distante configuree pour ${BRANCH}. Configure l'upstream ou relance avec --no-push."
+fi
+
+if [[ "$NO_COMMIT" != "1" && has_local_changes ]]; then
+  if [[ -z "$COMMIT_MESSAGE" ]]; then
+    COMMIT_MESSAGE="$DEFAULT_COMMIT_MESSAGE"
+  fi
+  log "Commit des changements locaux"
+  run_cmd git add -A
+  run_cmd git commit -m "$COMMIT_MESSAGE"
+elif [[ "$NO_COMMIT" == "1" && has_local_changes ]]; then
+  log "Changements locaux detectes, commit ignore (--no-commit)"
+else
+  log "Aucun changement local a commit"
+fi
+
+if [[ "$NO_PUSH" != "1" ]]; then
+  log "Push de ${BRANCH} vers ${UPSTREAM}"
+  run_cmd git push
+else
+  log "Push ignore (--no-push)"
+fi
+
+if [[ "$NO_UPDATE" != "1" ]]; then
+  log "Lancement de ${UPDATE_SCRIPT} ${UPDATE_TARGET}"
+  run_cmd "$UPDATE_SCRIPT" "$UPDATE_TARGET"
+else
+  log "Mise a jour distante ignoree (--no-update)"
+fi
+
+log "Deploiement termine"

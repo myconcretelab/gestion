@@ -128,6 +128,24 @@ SEED_SKIP_PDF=1 npm run seed
 
 ## Deploy AlwaysData
 
+Deploiement local rapide depuis ce repo:
+
+```bash
+bin/deploy
+```
+
+Par defaut, le script:
+
+- cree un commit si le repo a des changements locaux (`chore: deploy YYYY-MM-DD HH:MM:SS` si aucun message n'est fourni)
+- pousse la branche courante
+- lance `/Users/sebsoaz/bin/update gestion`
+
+Vous pouvez aussi preciser un message:
+
+```bash
+bin/deploy "fix: ajuste le calcul des arrhes"
+```
+
 1. Configurer les variables d'environnement (via l'interface AlwaysData):
 
 - `DATABASE_URL=postgresql://myconcretelab:YOUR_PASSWORD@postgresql-myconcretelab.alwaysdata.net:5432/myconcretelab_contrats?schema=public`

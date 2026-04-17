@@ -18,6 +18,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const TOTAL_DAY_COUNT = 14;
 const MOBILE_RESERVATION_BREAKPOINT = 760;
 const TODAY_RETURN_HREF = "/aujourdhui";
+const TRASH_COLLECTION_DAY = 3;
+const TRASH_SWITCH_HOUR = 16;
 const TRASH_COLORS = {
   yellow: "#FFCB05",
   darkGreen: "#104911",
@@ -237,6 +239,38 @@ const getWeekNumber = (value: Date) => {
   date.setUTCDate(date.getUTCDate() + 4 - dayNumber);
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   return Math.ceil(((date.getTime() - yearStart.getTime()) / DAY_MS + 1) / 7);
+};
+
+const getLocalDateUtcStamp = (value: Date) => Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+
+const getLocalDateWeekNumber = (value: Date) =>
+  getWeekNumber(new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())));
+
+const getNextTrashPickupDate = (value: Date) => {
+  const dayOfWeek = value.getDay();
+  const isCollectionWednesdayBeforeSwitch = dayOfWeek === TRASH_COLLECTION_DAY && value.getHours() < TRASH_SWITCH_HOUR;
+  const daysUntilCollectionDay = (TRASH_COLLECTION_DAY - dayOfWeek + 7) % 7;
+  const daysToAdd = isCollectionWednesdayBeforeSwitch ? 0 : daysUntilCollectionDay === 0 ? 7 : daysUntilCollectionDay;
+
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate() + daysToAdd);
+};
+
+const capitalizeFirstLetter = (value: string) => (value ? `${value.slice(0, 1).toUpperCase()}${value.slice(1)}` : value);
+
+const formatTrashPickupDateLabel = (value: Date) =>
+  capitalizeFirstLetter(
+    value.toLocaleDateString("fr-FR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    })
+  );
+
+const getTrashPickupRelativeLabel = (now: Date, pickupDate: Date) => {
+  const diffDays = Math.round((getLocalDateUtcStamp(pickupDate) - getLocalDateUtcStamp(now)) / DAY_MS);
+  if (diffDays <= 0) return "Aujourd'hui";
+  if (diffDays === 1) return "Demain";
+  return formatTrashPickupDateLabel(pickupDate);
 };
 
 const getReservationGuestName = (reservation: Reservation | null | undefined) =>
@@ -539,6 +573,7 @@ const TodayPage = () => {
   const [deferredLoading, setDeferredLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
+  const [trashNow, setTrashNow] = useState(() => new Date());
   const primaryRequestIdRef = useRef(0);
   const deferredRequestIdRef = useRef(0);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
@@ -622,6 +657,14 @@ const TodayPage = () => {
     };
 
     return subscribeToMediaQueryChange(mediaQuery, handleChange);
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setTrashNow(new Date());
+    }, 30_000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
   const todayIso = primaryOverview?.today ?? toIsoDate(new Date());
@@ -855,7 +898,9 @@ const TodayPage = () => {
         }
       : {};
 
-  const evenWeek = useMemo(() => getWeekNumber(todayDate) % 2 === 0, [todayDate]);
+  const nextTrashPickupDate = useMemo(() => getNextTrashPickupDate(trashNow), [trashNow]);
+  const trashPickupLabel = useMemo(() => getTrashPickupRelativeLabel(trashNow, nextTrashPickupDate), [nextTrashPickupDate, trashNow]);
+  const evenWeek = useMemo(() => getLocalDateWeekNumber(nextTrashPickupDate) % 2 === 0, [nextTrashPickupDate]);
   const mauronTrashColor = evenWeek ? TRASH_COLORS.yellow : TRASH_COLORS.darkGreen;
   const neantTrashColor = evenWeek ? TRASH_COLORS.darkGreen : TRASH_COLORS.yellow;
   const mauronTrashTextColor = useMemo(() => getTrashTextColor(mauronTrashColor), [mauronTrashColor]);
@@ -1083,11 +1128,13 @@ const TodayPage = () => {
               Néant
             </span>
           </div>
-          <span className="today-utility-strip__detail">
-            Semaine {evenWeek ? "paire" : "impaire"}
-            {deferredOverview && unassignedCount > 0 ? ` · ${unassignedCount} sans gîte masquée(s)` : ""}
-            {!deferredOverview && deferredLoading ? " · Chargement des indicateurs..." : ""}
-          </span>
+          <div className="today-utility-strip__detail">
+            {deferredOverview && unassignedCount > 0 ? <span>{unassignedCount} sans gîte masquée(s)</span> : null}
+            {!deferredOverview && deferredLoading ? <span>Chargement des indicateurs...</span> : null}
+            <span>
+              Prochain passage : <strong>{trashPickupLabel}</strong>
+            </span>
+          </div>
         </div>
 
         <div className="today-utility-strip__block today-utility-strip__block--fill">
