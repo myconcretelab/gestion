@@ -62,7 +62,16 @@ if (wantsPostgres) {
     process.exit(1);
   }
 }
-const prismaCli = path.join(process.cwd(), "node_modules", "prisma", "build", "index.js");
+const prismaCliCandidates = [
+  path.join(process.cwd(), "node_modules", "prisma", "build", "index.js"),
+  path.join(process.cwd(), "..", "node_modules", "prisma", "build", "index.js"),
+];
+const prismaCli = prismaCliCandidates.find((candidate) => fs.existsSync(candidate));
+
+if (!prismaCli) {
+  console.error("Unable to locate Prisma CLI in local or hoisted node_modules.");
+  process.exit(1);
+}
 
 const result = spawnSync(process.execPath, [prismaCli, ...args], {
   stdio: "inherit",

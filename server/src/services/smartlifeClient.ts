@@ -1,4 +1,4 @@
-import { TuyaContext } from "@tuya/tuya-connector-nodejs";
+import { TuyaContext } from "./tuyaSdk.js";
 import type { SmartlifeAutomationConfig, SmartlifeRegion } from "./smartlifeSettings.js";
 
 export type SmartlifeDeviceFunction = {
@@ -423,7 +423,10 @@ export const getSmartlifeDevice = async (
     .map((item: Partial<{ code: string; value: string | boolean | number | null }>) =>
       normalizeStatusEntry(item),
     )
-    .filter((item): item is SmartlifeDeviceStatusEntry => item !== null);
+    .filter(
+      (item: SmartlifeDeviceStatusEntry | null): item is SmartlifeDeviceStatusEntry =>
+        item !== null,
+    );
   const totalEleInfo = buildTotalEleInfo(functions, status);
 
   return {
