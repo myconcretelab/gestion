@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applySameDayRotationGuards,
+  buildSkippedRotationEnergyTrackingPlan,
   buildDueEvents,
 } from "../src/services/smartlifeAutomation.ts";
 import type { SmartlifeAutomationConfig } from "../src/services/smartlifeSettings.ts";
@@ -61,7 +62,7 @@ const buildExpectedScheduledAt = (
   return new Date(value.getTime() + direction * offsetMinutes * 60 * 1000).toISOString();
 };
 
-test("ignore une regle de depart qui tomberait apres l'arrivee suivante le meme jour", () => {
+test("ignore les commandes off/on quand une rotation a lieu le meme jour", () => {
   const reservations = [
     buildReservation({
       id: "reservation-depart",
@@ -111,14 +112,20 @@ test("ignore une regle de depart qui tomberait apres l'arrivee suivante le meme 
   const { actionableEvents, skippedEvents } = applySameDayRotationGuards(dueEvents, reservations);
 
   assert.equal(dueEvents.length, 2);
-  assert.equal(actionableEvents.length, 1);
-  assert.equal(actionableEvents[0]?.rule_id, "rule-before-arrival");
-  assert.equal(skippedEvents.length, 1);
-  assert.equal(skippedEvents[0]?.rule_id, "rule-after-departure");
-  assert.match(skippedEvents[0]?.message ?? "", /rotation le meme jour|rotation le même jour/i);
+  assert.equal(actionableEvents.length, 0);
+  assert.equal(skippedEvents.length, 2);
+  assert.deepEqual(
+    skippedEvents.map((event) => event.rule_id).sort(),
+    ["rule-after-departure", "rule-before-arrival"],
+  );
+  assert.ok(
+    skippedEvents.every((event) =>
+      /rotation le meme jour|rotation le même jour/i.test(event.message ?? ""),
+    ),
+  );
 });
 
-test("ignore une regle d'arrivee qui tomberait avant le depart precedent le meme jour", () => {
+test("ignore aussi une commande d'arrivee meme si elle tomberait apres le depart precedent", () => {
   const reservations = [
     buildReservation({
       id: "reservation-depart",
@@ -168,13 +175,15 @@ test("ignore une regle d'arrivee qui tomberait avant le depart precedent le meme
   const { actionableEvents, skippedEvents } = applySameDayRotationGuards(dueEvents, reservations);
 
   assert.equal(dueEvents.length, 2);
-  assert.equal(actionableEvents.length, 1);
-  assert.equal(actionableEvents[0]?.rule_id, "rule-after-departure");
-  assert.equal(skippedEvents.length, 1);
-  assert.equal(skippedEvents[0]?.rule_id, "rule-before-arrival");
+  assert.equal(actionableEvents.length, 0);
+  assert.equal(skippedEvents.length, 2);
+  assert.deepEqual(
+    skippedEvents.map((event) => event.rule_id).sort(),
+    ["rule-after-departure", "rule-before-arrival"],
+  );
 });
 
-test("conserve les commandes placees dans la fenetre entre depart et arrivee", () => {
+test("ignore aussi les commandes placees entre depart et arrivee lors d'une rotation", () => {
   const reservations = [
     buildReservation({
       id: "reservation-depart",
@@ -224,8 +233,8 @@ test("conserve les commandes placees dans la fenetre entre depart et arrivee", (
   const { actionableEvents, skippedEvents } = applySameDayRotationGuards(dueEvents, reservations);
 
   assert.equal(dueEvents.length, 2);
-  assert.equal(actionableEvents.length, 2);
-  assert.equal(skippedEvents.length, 0);
+  assert.equal(actionableEvents.length, 0);
+  assert.equal(skippedEvents.length, 2);
 });
 
 test("utilise l'heure d'arrivee du contrat lie pour declencher une regle", () => {
@@ -270,7 +279,7 @@ test("utilise l'heure d'arrivee du contrat lie pour declencher une regle", () =>
   );
 });
 
-test("utilise les heures du contrat lie pour la garde rotation le meme jour", () => {
+test("utilise les heures du contrat lie pour detecter une rotation sans coupure", () => {
   const reservations = [
     buildReservation({
       id: "reservation-depart",
@@ -323,6 +332,99 @@ test("utilise les heures du contrat lie pour la garde rotation le meme jour", ()
     dueEvents[0]?.scheduled_at,
     buildExpectedScheduledAt("2026-04-17", "11:00", 7 * 60, 1),
   );
-  assert.equal(actionableEvents.length, 1);
-  assert.equal(skippedEvents.length, 0);
+  assert.equal(actionableEvents.length, 0);
+  assert.equal(skippedEvents.length, 1);
+});
+
+test("prepare une bascule energie logique apres la fin du sejour precedent", () => {
+  const reservations = [
+    buildReservation({
+      id: "reservation-depart",
+      guest: "Client sortant",
+      checkIn: "2026-04-14",
+      checkOut: "2026-04-17",
+      linkedContract: {
+        heure_depart: "18:00",
+      },
+    }),
+    buildReservation({
+      id: "reservation-arrivee",
+      guest: "Client entrant",
+      checkIn: "2026-04-17",
+      checkOut: "2026-04-20",
+      linkedContract: {
+        heure_arrivee: "17:00",
+      },
+    }),
+  ];
+  const config = buildConfig([
+    {
+      id: "rule-before-arrival",
+      enabled: true,
+      label: "Prechauffage",
+      gite_ids: ["gite-1"],
+      trigger: "before-arrival",
+      offset_minutes: 8 * 60,
+      action: "device-on",
+      device_id: "device-1",
+      device_name: "Chauffage",
+      command_code: "switch_1",
+      command_label: "Interrupteur",
+      command_value: true,
+    },
+    {
+      id: "rule-after-departure",
+      enabled: true,
+      label: "Couper en fin de menage",
+      gite_ids: ["gite-1"],
+      trigger: "after-departure",
+      offset_minutes: 1 * 60,
+      action: "device-off",
+      device_id: "device-1",
+      device_name: "Chauffage",
+      command_code: "switch_1",
+      command_label: "Interrupteur",
+      command_value: false,
+    },
+  ]);
+
+  const dueEventsBeforeDeparture = buildDueEvents(
+    config,
+    reservations,
+    new Date("2026-04-17T10:30:00.000Z"),
+  );
+  const skippedBeforeDeparture = applySameDayRotationGuards(
+    dueEventsBeforeDeparture,
+    reservations,
+  ).skippedEvents;
+  const planBeforeDeparture = buildSkippedRotationEnergyTrackingPlan(
+    skippedBeforeDeparture,
+    reservations,
+    new Date("2026-04-17T10:30:00.000Z"),
+  );
+
+  assert.deepEqual(
+    planBeforeDeparture.map((event) => event.rule_id),
+    [],
+  );
+
+  const dueEventsAfterDeparture = buildDueEvents(
+    config,
+    reservations,
+    new Date("2026-04-17T19:30:00.000Z"),
+  );
+  const skippedAfterDeparture = applySameDayRotationGuards(
+    dueEventsAfterDeparture,
+    reservations,
+  ).skippedEvents;
+  const planAfterDeparture = buildSkippedRotationEnergyTrackingPlan(
+    skippedAfterDeparture,
+    reservations,
+    new Date("2026-04-17T19:30:00.000Z"),
+  );
+
+  assert.deepEqual(
+    planAfterDeparture.map((event) => event.rule_id),
+    ["rule-after-departure", "rule-before-arrival"],
+  );
 });

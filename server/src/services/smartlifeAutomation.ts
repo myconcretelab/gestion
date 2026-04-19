@@ -2,6 +2,7 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import {
   buildDefaultSmartlifeAutomationConfig,
+  getEnabledSmartlifePrimaryEnergyDeviceForGite,
   getSmartlifeRuleCommandValue,
   hasSmartlifeCredentials,
   isSmartlifeDeviceCommandAction,
@@ -30,7 +31,7 @@ import { recordSmartlifeMonthlyEnergySnapshots } from "./smartlifeMonthlyEnergy.
 
 const CRON_INTERVAL_MS = 60 * 1000;
 const EXECUTION_GRACE_MS = 24 * 60 * 60 * 1000;
-const RESULT_ITEMS_LIMIT = 20;
+const RESULT_ITEMS_LIMIT = 15;
 
 export type SmartlifeAutomationState = {
   config: SmartlifeAutomationConfig;
@@ -460,6 +461,52 @@ const buildRotationBoundaryMaps = (reservations: ReservationCandidate[]) => {
   return { arrivalsByKey, departuresByKey };
 };
 
+const getRotationEnergyTrackingKey = (event: DueEvent) =>
+  `${event.key}|rotation-energy`;
+
+export const buildSkippedRotationEnergyTrackingPlan = (
+  skippedEvents: DueEvent[],
+  reservations: ReservationCandidate[],
+  now: Date,
+) => {
+  const reservationById = new Map(
+    reservations.map((reservation) => [reservation.id, reservation]),
+  );
+  const { departuresByKey } = buildRotationBoundaryMaps(reservations);
+  const departures: DueEvent[] = [];
+  const arrivals: DueEvent[] = [];
+
+  for (const event of skippedEvents) {
+    const reservation = reservationById.get(event.reservation_id);
+    if (!reservation?.gite_id || !reservation.gite) continue;
+
+    if (isDepartureTrigger(event.trigger)) {
+      departures.push(event);
+      continue;
+    }
+
+    if (!isArrivalTrigger(event.trigger)) {
+      continue;
+    }
+
+    const key = getRotationKey(reservation.gite_id, reservation.date_entree);
+    const previousDeparture = getLatestCounterpartDeparture(
+      departuresByKey.get(key) ?? [],
+      reservation.id,
+    );
+    if (
+      previousDeparture &&
+      now.getTime() < previousDeparture.anchorDate.getTime()
+    ) {
+      continue;
+    }
+
+    arrivals.push(event);
+  }
+
+  return [...departures, ...arrivals];
+};
+
 export const applySameDayRotationGuards = (
   dueEvents: DueEvent[],
   reservations: ReservationCandidate[],
@@ -467,7 +514,7 @@ export const applySameDayRotationGuards = (
   const reservationById = new Map(reservations.map((reservation) => [reservation.id, reservation]));
   const { arrivalsByKey, departuresByKey } = buildRotationBoundaryMaps(reservations);
   const actionableEvents: DueEvent[] = [];
-  const skippedEvents: SmartlifeAutomationRunItem[] = [];
+  const skippedEvents: DueEvent[] = [];
 
   for (const event of dueEvents) {
     const reservation = reservationById.get(event.reservation_id);
@@ -482,15 +529,12 @@ export const applySameDayRotationGuards = (
         arrivalsByKey.get(key) ?? [],
         reservation.id,
       );
-      if (
-        nextArrival &&
-        event.scheduledDate.getTime() >= nextArrival.anchorDate.getTime()
-      ) {
+      if (nextArrival) {
         skippedEvents.push({
           ...event,
           status: "skipped",
           message:
-            `Commande ignorée: rotation le même jour, une arrivée commence à ${formatTimeLabel(nextArrival.anchorDate)}.`,
+            `Commande ignorée: rotation le même jour, aucune coupure pendant le changement de locataire (arrivée à ${formatTimeLabel(nextArrival.anchorDate)}).`,
         });
         continue;
       }
@@ -502,15 +546,12 @@ export const applySameDayRotationGuards = (
         departuresByKey.get(key) ?? [],
         reservation.id,
       );
-      if (
-        previousDeparture &&
-        event.scheduledDate.getTime() < previousDeparture.anchorDate.getTime()
-      ) {
+      if (previousDeparture) {
         skippedEvents.push({
           ...event,
           status: "skipped",
           message:
-            `Commande ignorée: rotation le même jour, le séjour précédent se termine à ${formatTimeLabel(previousDeparture.anchorDate)}.`,
+            `Commande ignorée: rotation le même jour, alimentation maintenue depuis le séjour précédent (départ à ${formatTimeLabel(previousDeparture.anchorDate)}).`,
         });
         continue;
       }
@@ -592,6 +633,14 @@ export const runSmartlifeAutomation = async (options?: {
       const executedEventKeys = {
         ...stateBefore.executed_event_keys,
       };
+      const skippedItemByKey = new Map(
+        rotationSkippedItems.map((item) => [item.key, item]),
+      );
+      const rotationEnergyTrackingPlan = buildSkippedRotationEnergyTrackingPlan(
+        rotationSkippedItems,
+        reservations,
+        now,
+      );
 
       const items: SmartlifeAutomationRunItem[] = [...rotationSkippedItems];
       let executedCount = 0;
@@ -599,6 +648,58 @@ export const runSmartlifeAutomation = async (options?: {
       let errorCount = 0;
       let duplicateSkippedCount = 0;
       const rotationSkippedCount = rotationSkippedItems.length;
+      let rotationEnergyTrackedCount = 0;
+
+      for (const event of rotationEnergyTrackingPlan) {
+        const trackingKey = getRotationEnergyTrackingKey(event);
+        const previousTrackedAt = executedEventKeys[trackingKey] ?? null;
+        if (previousTrackedAt) {
+          continue;
+        }
+
+        if (
+          !getEnabledSmartlifePrimaryEnergyDeviceForGite(
+            cronConfig,
+            event.gite_id,
+          )
+        ) {
+          continue;
+        }
+
+        try {
+          const trackingMessage =
+            (await trackSmartlifeEnergyForAutomationEvent(cronConfig, {
+              reservation_id: event.reservation_id,
+              gite_id: event.gite_id,
+              device_id: event.device_id,
+              device_name: event.device_name,
+              action: event.action,
+              command_value: event.command_value,
+              rule_id: event.rule_id,
+            })) ?? null;
+
+          executedEventKeys[trackingKey] = now.toISOString();
+          rotationEnergyTrackedCount += 1;
+
+          const skippedItem = skippedItemByKey.get(event.key);
+          if (skippedItem && trackingMessage) {
+            skippedItem.message = skippedItem.message
+              ? `${skippedItem.message} ${trackingMessage}`
+              : trackingMessage;
+          }
+        } catch (trackingError) {
+          const skippedItem = skippedItemByKey.get(event.key);
+          if (skippedItem) {
+            const trackingMessage =
+              trackingError instanceof Error
+                ? `Énergie: ${trackingError.message}`
+                : "Énergie: suivi impossible.";
+            skippedItem.message = skippedItem.message
+              ? `${skippedItem.message} ${trackingMessage}`
+              : trackingMessage;
+          }
+        }
+      }
 
       for (const event of actionableEvents) {
         const previousExecutedAt = executedEventKeys[event.key] ?? null;
@@ -613,7 +714,7 @@ export const runSmartlifeAutomation = async (options?: {
             ...event,
             previous_executed_at: previousExecutedAt,
             status: "skipped",
-            message: `Commande déjà exécutée pour ce créneau. Key: ${event.key}. Exécutée à ${previousExecutedAt}.`,
+            message: `Commande déjà exécutée pour ce créneau. Exécutée à ${previousExecutedAt}.`,
           });
           continue;
         }
@@ -688,6 +789,11 @@ export const runSmartlifeAutomation = async (options?: {
       if (rotationSkippedCount > 0) {
         noteParts.push(
           `${rotationSkippedCount} commande(s) ignorée(s) pour respecter une rotation départ/arrivée le même jour.`,
+        );
+      }
+      if (rotationEnergyTrackedCount > 0) {
+        noteParts.push(
+          `${rotationEnergyTrackedCount} bascule(s) énergie effectuée(s) sans commande physique.`,
         );
       }
       if (
