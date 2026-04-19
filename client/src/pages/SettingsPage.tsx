@@ -6738,32 +6738,62 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                             .map((item) => (
                               <div
                                 key={item.key}
-                                className="settings-sms-text-row"
+                                className="settings-sms-text-row smartlife-log-item"
                               >
-                                <div className="settings-sms-text-row__header">
-                                  <strong>{item.rule_label}</strong>
-                                  <span>{formatSmartlifeItemStatus(item.status)}</span>
+                                <div className="settings-sms-text-row__header smartlife-log-item__header">
+                                  <div className="smartlife-log-item__title-group">
+                                    <span className="smartlife-log-item__eyebrow">
+                                      {item.gite_nom || "Smart Life"}
+                                    </span>
+                                    <strong>{item.rule_label}</strong>
+                                  </div>
+                                  <span
+                                    className={`smartlife-log-item__status smartlife-log-item__status--${item.status}`}
+                                  >
+                                    {formatSmartlifeItemStatus(item.status)}
+                                  </span>
                                 </div>
-                                <div className="field-hint">
+                                <div className="smartlife-log-item__reservation">
                                   {item.reservation_label}
-                                  {" · "}
-                                  {item.device_name}
-                                  {" · "}
-                                  {formatSmartlifeRuleAction(item.action)}
-                                  {item.command_code
-                                    ? ` · ${formatSmartlifeCodeLabel(item.command_code)}`
-                                    : ""}
                                 </div>
-                                <div className="field-hint">
-                                  Prévu {formatIsoDateTimeFr(item.scheduled_at)}
-                                  {item.executed_at
-                                    ? ` · exécuté ${formatIsoDateTimeFr(item.executed_at)}`
-                                    : ""}
-                                  {item.previous_executed_at
-                                    ? ` · déjà exécuté ${formatIsoDateTimeFr(item.previous_executed_at)}`
-                                    : ""}
-                                  {item.message ? ` · ${item.message}` : ""}
+                                <div className="smartlife-log-item__meta">
+                                  <span>{item.device_name || "Sans appareil"}</span>
+                                  <span>{formatSmartlifeRuleAction(item.action)}</span>
+                                  {item.command_code ? (
+                                    <span>{formatSmartlifeCodeLabel(item.command_code)}</span>
+                                  ) : null}
                                 </div>
+                                <div className="smartlife-log-item__timeline">
+                                  <span className="smartlife-log-item__timeline-item">
+                                    <span className="smartlife-log-item__timeline-label">
+                                      Prévu
+                                    </span>
+                                    <strong>{formatIsoDateTimeFr(item.scheduled_at)}</strong>
+                                  </span>
+                                  {item.executed_at ? (
+                                    <span className="smartlife-log-item__timeline-item">
+                                      <span className="smartlife-log-item__timeline-label">
+                                        Exécuté
+                                      </span>
+                                      <strong>{formatIsoDateTimeFr(item.executed_at)}</strong>
+                                    </span>
+                                  ) : null}
+                                  {item.previous_executed_at ? (
+                                    <span className="smartlife-log-item__timeline-item">
+                                      <span className="smartlife-log-item__timeline-label">
+                                        Déjà fait
+                                      </span>
+                                      <strong>
+                                        {formatIsoDateTimeFr(item.previous_executed_at)}
+                                      </strong>
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {item.message ? (
+                                  <div className="smartlife-log-item__message">
+                                    {item.message}
+                                  </div>
+                                ) : null}
                               </div>
                             ))}
                         </div>
