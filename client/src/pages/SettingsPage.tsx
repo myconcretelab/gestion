@@ -877,6 +877,8 @@ const IMPORT_LOG_FETCH_COUNT = 20;
 const IMPORT_LOG_VISIBLE_COUNT = 5;
 const IMPORT_LOG_VISIBLE_STEP = 5;
 const IMPORT_LOG_EVENT_VISIBLE_COUNT = 2;
+const SMARTLIFE_LOG_VISIBLE_COUNT = 5;
+const SMARTLIFE_LOG_VISIBLE_STEP = 5;
 
 const formatIsoDateFr = (value: string) => {
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -1682,6 +1684,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     string | null
   >(null);
   const [smartlifeSecretDirty, setSmartlifeSecretDirty] = useState(false);
+  const [smartlifeLogVisibleCount, setSmartlifeLogVisibleCount] = useState(
+    SMARTLIFE_LOG_VISIBLE_COUNT,
+  );
   const [smartlifeRuleSaveStates, setSmartlifeRuleSaveStates] = useState<
     Record<string, SmartlifeRuleSaveState>
   >({});
@@ -2459,6 +2464,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     };
 
     setSmartlifeState(nextState);
+    setSmartlifeLogVisibleCount(SMARTLIFE_LOG_VISIBLE_COUNT);
     setSmartlifeDraft((previous) => ({
       enabled: options?.preserveConnection
         ? previous.enabled
@@ -6728,7 +6734,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                           style={{ marginTop: 8 }}
                         >
                           {smartlifeState.last_result.items
-                            .slice(0, 8)
+                            .slice(0, smartlifeLogVisibleCount)
                             .map((item) => (
                               <div
                                 key={item.key}
@@ -6758,12 +6764,31 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                     : ""}
                                   {item.message ? ` · ${item.message}` : ""}
                                 </div>
-                                <div className="field-hint">
-                                  event.key: {item.key}
-                                </div>
                               </div>
                             ))}
                         </div>
+                        {smartlifeState.last_result.items.length >
+                        smartlifeLogVisibleCount ? (
+                          <div
+                            className="field-hint"
+                            style={{ marginTop: 10 }}
+                          >
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() =>
+                                setSmartlifeLogVisibleCount((previous) =>
+                                  Math.min(
+                                    smartlifeState.last_result?.items.length ?? 0,
+                                    previous + SMARTLIFE_LOG_VISIBLE_STEP,
+                                  ),
+                                )
+                              }
+                            >
+                              Charger plus
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
 
