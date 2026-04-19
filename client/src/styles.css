@@ -5182,6 +5182,120 @@ body {
   font-size: 0.92rem;
 }
 
+.smartlife-log-item {
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  border-color: #d7dde6;
+  background:
+    linear-gradient(180deg, rgba(247, 249, 252, 0.92), rgba(255, 255, 255, 1));
+}
+
+.smartlife-log-item__header {
+  align-items: flex-start;
+}
+
+.smartlife-log-item__title-group {
+  display: grid;
+  gap: 4px;
+}
+
+.smartlife-log-item__eyebrow {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.smartlife-log-item__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.smartlife-log-item__status--executed {
+  background: rgba(37, 171, 83, 0.14);
+  color: #1f7a3d;
+}
+
+.smartlife-log-item__status--skipped {
+  background: rgba(226, 179, 64, 0.14);
+  color: #a16207;
+}
+
+.smartlife-log-item__status--error {
+  background: rgba(214, 69, 69, 0.14);
+  color: #b42318;
+}
+
+.smartlife-log-item__reservation {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.smartlife-log-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.smartlife-log-item__meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475467;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.smartlife-log-item__timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.smartlife-log-item__timeline-item {
+  display: grid;
+  gap: 3px;
+  min-width: 148px;
+}
+
+.smartlife-log-item__timeline-label {
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.smartlife-log-item__timeline-item strong {
+  color: #0f172a;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.smartlife-log-item__message {
+  padding-top: 10px;
+  border-top: 1px dashed #d7dde6;
+  color: #475467;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
 @media (max-width: 1120px) {
   .settings-layout {
     grid-template-columns: 200px minmax(0, 1fr);
@@ -5207,6 +5321,10 @@ body {
   .settings-sms-text-row__header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .smartlife-log-item__status {
+    min-width: 0;
   }
 }
 
