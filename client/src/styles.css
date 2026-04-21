@@ -7143,58 +7143,6 @@ button.warning {
   color: #111827;
 }
 
-.reservations-pricing-card {
-  border: 1px solid #dbe4f0;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f1f5f9 100%);
-  padding: 12px;
-  display: grid;
-  gap: 12px;
-}
-
-.reservations-pricing-card__head {
-  display: grid;
-  gap: 4px;
-}
-
-.reservations-pricing-card__form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.reservations-pricing-card__field {
-  display: grid;
-  gap: 6px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #334155;
-}
-
-.reservations-pricing-card__field input,
-.reservations-pricing-card__field select {
-  width: 100%;
-}
-
-.reservations-pricing-card__commission-inputs {
-  display: grid;
-  grid-template-columns: minmax(140px, 0.9fr) minmax(0, 1fr);
-  gap: 8px;
-}
-
-.reservations-pricing-card__totals {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 12px;
-  align-items: center;
-  font-size: 0.85rem;
-}
-
-.reservations-pricing-card__totals strong {
-  text-align: right;
-  color: #0f172a;
-}
-
 .reservations-total-value {
   display: inline-grid;
   gap: 3px;
@@ -7292,11 +7240,6 @@ button.warning {
 
   .reservations-option-controls {
     justify-content: flex-start;
-  }
-
-  .reservations-pricing-card__form,
-  .reservations-pricing-card__commission-inputs {
-    grid-template-columns: 1fr;
   }
 
 }

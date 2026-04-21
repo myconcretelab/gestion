@@ -121,6 +121,16 @@ const ReservationOptionsEditor = ({
     });
   };
 
+  const setOffert = (key: ReservationServiceOptionKey, offert: boolean) => {
+    commit((previous) => {
+      if (key === "draps") return { ...previous, draps: { ...previous.draps, offert } };
+      if (key === "linge_toilette") return { ...previous, linge_toilette: { ...previous.linge_toilette, offert } };
+      if (key === "chiens") return { ...previous, chiens: { ...previous.chiens, offert } };
+      if (key === "menage") return { ...previous, menage: { ...previous.menage, offert } };
+      return { ...previous, depart_tardif: { ...previous.depart_tardif, offert } };
+    });
+  };
+
   const setCount = (key: "draps" | "linge_toilette" | "chiens", value: number) => {
     const count = toNonNegativeInt(value, 0);
     commit((previous) => {
@@ -165,6 +175,18 @@ const ReservationOptionsEditor = ({
                     type="checkbox"
                     checked={normalizedOptions.draps?.enabled ?? false}
                     onChange={(event) => toggleServiceOption("draps", event.target.checked)}
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              <div className="switch-group switch-group--table">
+                <span>Offert</span>
+                <label className="switch switch--compact switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={normalizedOptions.draps?.offert ?? false}
+                    disabled={!normalizedOptions.draps?.enabled}
+                    onChange={(event) => setOffert("draps", event.target.checked)}
                   />
                   <span className="slider" />
                 </label>
@@ -227,6 +249,18 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
+              <div className="switch-group switch-group--table">
+                <span>Offert</span>
+                <label className="switch switch--compact switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={normalizedOptions.linge_toilette?.offert ?? false}
+                    disabled={!normalizedOptions.linge_toilette?.enabled}
+                    onChange={(event) => setOffert("linge_toilette", event.target.checked)}
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
               {showDeclaredToggle ? (
                 <div className="switch-group switch-group--table">
                   <span>Déclaré</span>
@@ -274,6 +308,18 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
+              <div className="switch-group switch-group--table">
+                <span>Offert</span>
+                <label className="switch switch--compact switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={normalizedOptions.menage?.offert ?? false}
+                    disabled={!normalizedOptions.menage?.enabled}
+                    onChange={(event) => setOffert("menage", event.target.checked)}
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
               {showDeclaredToggle ? (
                 <div className="switch-group switch-group--table">
                   <span>Déclaré</span>
@@ -309,6 +355,18 @@ const ReservationOptionsEditor = ({
                     type="checkbox"
                     checked={normalizedOptions.depart_tardif?.enabled ?? false}
                     onChange={(event) => toggleServiceOption("depart_tardif", event.target.checked)}
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              <div className="switch-group switch-group--table">
+                <span>Offert</span>
+                <label className="switch switch--compact switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={normalizedOptions.depart_tardif?.offert ?? false}
+                    disabled={!normalizedOptions.depart_tardif?.enabled}
+                    onChange={(event) => setOffert("depart_tardif", event.target.checked)}
                   />
                   <span className="slider" />
                 </label>
@@ -357,6 +415,18 @@ const ReservationOptionsEditor = ({
                     type="checkbox"
                     checked={normalizedOptions.chiens?.enabled ?? false}
                     onChange={(event) => toggleServiceOption("chiens", event.target.checked)}
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              <div className="switch-group switch-group--table">
+                <span>Offert</span>
+                <label className="switch switch--compact switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={normalizedOptions.chiens?.offert ?? false}
+                    disabled={!normalizedOptions.chiens?.enabled}
+                    onChange={(event) => setOffert("chiens", event.target.checked)}
                   />
                   <span className="slider" />
                 </label>
