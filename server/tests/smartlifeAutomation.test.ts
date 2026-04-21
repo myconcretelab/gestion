@@ -21,6 +21,11 @@ const buildReservation = (params: {
   guest: string;
   checkIn: string;
   checkOut: string;
+  options?: {
+    depart_tardif?: {
+      enabled?: boolean;
+    };
+  };
   linkedContract?: {
     heure_arrivee?: string | null;
     heure_depart?: string | null;
@@ -31,6 +36,7 @@ const buildReservation = (params: {
   hote_nom: params.guest,
   date_entree: new Date(`${params.checkIn}T00:00:00.000Z`),
   date_sortie: new Date(`${params.checkOut}T00:00:00.000Z`),
+  options: params.options ?? {},
   linked_contract: params.linkedContract
     ? {
         heure_arrivee: params.linkedContract.heure_arrivee ?? null,
@@ -276,6 +282,50 @@ test("utilise l'heure d'arrivee du contrat lie pour declencher une regle", () =>
   assert.equal(
     dueEvents[0]?.scheduled_at,
     buildExpectedScheduledAt("2026-04-17", "15:00", 60, -1),
+  );
+});
+
+test("utilise l'heure de depart tardif des options quand il n'y a pas de contrat lie", () => {
+  const reservations = [
+    buildReservation({
+      id: "reservation-depart-tardif",
+      guest: "Client tardif",
+      checkIn: "2026-04-14",
+      checkOut: "2026-04-17",
+      options: {
+        depart_tardif: {
+          enabled: true,
+        },
+      },
+    }),
+  ];
+  const config = buildConfig([
+    {
+      id: "rule-after-departure",
+      enabled: true,
+      label: "Couper apres depart tardif",
+      gite_ids: ["gite-1"],
+      trigger: "after-departure",
+      offset_minutes: 60,
+      action: "device-off",
+      device_id: "device-1",
+      device_name: "Chauffage",
+      command_code: "switch_1",
+      command_label: "Interrupteur",
+      command_value: false,
+    },
+  ]);
+
+  const dueEvents = buildDueEvents(
+    config,
+    reservations,
+    new Date("2026-04-17T18:30:00.000Z"),
+  );
+
+  assert.equal(dueEvents.length, 1);
+  assert.equal(
+    dueEvents[0]?.scheduled_at,
+    buildExpectedScheduledAt("2026-04-17", "17:00", 60, 1),
   );
 });
 

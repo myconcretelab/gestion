@@ -1,5 +1,7 @@
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
+import { fromJsonString } from "../utils/jsonFields.js";
+import { type OptionsInput } from "./contractCalculator.js";
 import {
   buildDefaultSmartlifeAutomationConfig,
   getEnabledSmartlifePrimaryEnergyDeviceForGite,
@@ -32,6 +34,7 @@ import { recordSmartlifeMonthlyEnergySnapshots } from "./smartlifeMonthlyEnergy.
 const CRON_INTERVAL_MS = 60 * 1000;
 const EXECUTION_GRACE_MS = 24 * 60 * 60 * 1000;
 const RESULT_ITEMS_LIMIT = 15;
+const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
 
 export type SmartlifeAutomationState = {
   config: SmartlifeAutomationConfig;
@@ -52,6 +55,7 @@ type ReservationCandidate = {
   hote_nom: string;
   date_entree: Date;
   date_sortie: Date;
+  options: OptionsInput;
   linked_contract: {
     heure_arrivee: string | null;
     heure_depart: string | null;
@@ -120,7 +124,9 @@ const getReservationArrivalTime = (reservation: ReservationCandidate) =>
 const getReservationDepartureTime = (reservation: ReservationCandidate) =>
   String(
     reservation.linked_contract?.heure_depart ??
-      reservation.gite?.heure_depart_defaut ??
+      (reservation.options.depart_tardif?.enabled
+        ? LATE_CHECKOUT_DEPARTURE_TIME
+        : reservation.gite?.heure_depart_defaut) ??
       "00:00",
   ).trim() || reservation.gite?.heure_depart_defaut || "00:00";
 
@@ -243,6 +249,7 @@ const loadReservationCandidates = async (
       hote_nom: true,
       date_entree: true,
       date_sortie: true,
+      options: true,
       createdAt: true,
       gite: {
         select: {
@@ -299,6 +306,7 @@ const loadReservationCandidates = async (
     hote_nom: reservation.hote_nom,
     date_entree: reservation.date_entree,
     date_sortie: reservation.date_sortie,
+    options: fromJsonString<OptionsInput>(reservation.options, {}),
     linked_contract: linkedContractByReservationId.get(reservation.id) ?? null,
     gite: reservation.gite,
   }));
