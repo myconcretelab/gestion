@@ -417,9 +417,6 @@ const MobileReservationEditorPage = () => {
             placeholder_id: editingReservation.placeholder_id ?? undefined,
             airbnb_url: editingReservation.airbnb_url ?? undefined,
             ...savePayload.payload,
-            remise_montant: editingReservation.remise_montant ?? 0,
-            commission_channel_mode: editingReservation.commission_channel_mode ?? "euro",
-            commission_channel_value: editingReservation.commission_channel_value ?? 0,
           },
         });
 

@@ -30,11 +30,6 @@ import {
   type AirbnbCalendarRefreshCreateResult,
 } from "../services/airbnbCalendarRefresh.js";
 import { readSourceColorSettings } from "../services/sourceColorSettings.js";
-import {
-  normalizeReservationCommissionMode,
-  sanitizeReservationAmount,
-  sanitizeReservationCommissionValue,
-} from "../services/reservationPricing.js";
 import { optionsSchema } from "./shared/rentalDocument.js";
 import {
   buildReservationOriginData,
@@ -108,9 +103,6 @@ const reservationPayloadSchema = z.object({
   price_driver: z.enum(["nightly", "total"]).optional(),
   source_paiement: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   commentaire: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
-  remise_montant: z.coerce.number().min(0).max(999999).optional().default(0),
-  commission_channel_mode: z.enum(["euro", "percent"]).optional().default("euro"),
-  commission_channel_value: z.coerce.number().min(0).max(999999).optional().default(0),
   frais_optionnels_montant: z.coerce.number().min(0).optional().default(0),
   frais_optionnels_libelle: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   frais_optionnels_declares: z.boolean().optional().default(false),
@@ -217,6 +209,7 @@ const RESERVATION_SOURCES = [
 type ReservationSource = (typeof RESERVATION_SOURCES)[number];
 
 const DEFAULT_RESERVATION_SOURCE: ReservationSource = "A définir";
+const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
 
 const SOURCE_BY_NORMALIZED_KEY = new Map<string, ReservationSource>([
   [normalizeTextKey("Abritel"), "Abritel"],
@@ -232,6 +225,14 @@ const SOURCE_BY_NORMALIZED_KEY = new Map<string, ReservationSource>([
   [normalizeTextKey("Gites de France"), "Gites de France"],
   [normalizeTextKey("Gite de France"), "Gites de France"],
 ]);
+
+const shouldApplyLateCheckoutDepartureTime = (
+  previousOptionsRaw: unknown,
+  nextOptions: OptionsInput | null | undefined,
+) => {
+  const previousOptions = fromJsonString<OptionsInput>(previousOptionsRaw, {});
+  return Boolean(nextOptions?.depart_tardif?.enabled) && !Boolean(previousOptions.depart_tardif?.enabled);
+};
 
 const normalizeReservationSource = (value: unknown): ReservationSource | null => {
   if (typeof value !== "string") return null;
@@ -471,11 +472,6 @@ const buildReservationSegmentRecords = (
 
   const priceTotalsBySegment = allocateAmountByNights(computed.prixTotal, segments);
   const optionalFeesBySegment = allocateAmountByNights(round2(payload.frais_optionnels_montant ?? 0), segments);
-  const remiseBySegment = allocateAmountByNights(round2(payload.remise_montant ?? 0), segments);
-  const commissionMode = normalizeReservationCommissionMode(payload.commission_channel_mode);
-  const commissionValue = sanitizeReservationCommissionValue(payload.commission_channel_value ?? 0, commissionMode);
-  const commissionBySegment =
-    commissionMode === "euro" ? allocateAmountByNights(round2(commissionValue), segments) : segments.map(() => commissionValue);
   const encodedOptions = encodeJsonField(payload.options ?? {});
   const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
 
@@ -505,9 +501,9 @@ const buildReservationSegmentRecords = (
           prix_total: prixTotal,
           source_paiement,
           commentaire: payload.commentaire ?? null,
-          remise_montant: remiseBySegment[index] ?? 0,
-          commission_channel_mode: commissionMode,
-          commission_channel_value: commissionBySegment[index] ?? 0,
+          remise_montant: 0,
+          commission_channel_mode: "euro",
+          commission_channel_value: 0,
           frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
           frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
           frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
@@ -600,8 +596,8 @@ const hydrateReservation = (reservation: any) => {
     prix_par_nuit: toNumber(reservation.prix_par_nuit),
     prix_total: toNumber(reservation.prix_total),
     remise_montant: toNumber(reservation.remise_montant),
-    commission_channel_mode: normalizeReservationCommissionMode(reservation.commission_channel_mode),
-    commission_channel_value: toNumber(reservation.commission_channel_value),
+    commission_channel_mode: "euro",
+    commission_channel_value: 0,
     frais_optionnels_montant: toNumber(reservation.frais_optionnels_montant),
     options: fromJsonString<OptionsInput>(reservation.options, {}),
     stay_group_id: typeof reservation.stay_group_id === "string" ? reservation.stay_group_id : null,
@@ -1868,16 +1864,6 @@ router.post("/:id/split", async (req, res, next) => {
 
     const priceTotalsBySegment = allocateAmountByNights(toNumber(existing.prix_total), segments);
     const optionalFeesBySegment = allocateAmountByNights(toNumber(existing.frais_optionnels_montant), segments);
-    const remiseBySegment = allocateAmountByNights(toNumber(existing.remise_montant), segments);
-    const existingCommissionMode = normalizeReservationCommissionMode(existing.commission_channel_mode);
-    const existingCommissionValue = sanitizeReservationCommissionValue(
-      existing.commission_channel_value,
-      existingCommissionMode
-    );
-    const commissionBySegment =
-      existingCommissionMode === "euro"
-        ? allocateAmountByNights(round2(existingCommissionValue), segments)
-        : segments.map(() => existingCommissionValue);
     const encodedOptions = encodeJsonField(fromJsonString<OptionsInput>(existing.options, {}));
 
     const createdReservations = await prisma.$transaction(async (tx) => {
@@ -1906,9 +1892,9 @@ router.post("/:id/split", async (req, res, next) => {
             prix_total: prixTotal,
             source_paiement: existing.source_paiement,
             commentaire: existing.commentaire,
-            remise_montant: remiseBySegment[index] ?? 0,
-            commission_channel_mode: existingCommissionMode,
-            commission_channel_value: commissionBySegment[index] ?? 0,
+            remise_montant: 0,
+            commission_channel_mode: "euro",
+            commission_channel_value: 0,
             frais_optionnels_montant: optionalFeesBySegment[index] ?? 0,
             frais_optionnels_libelle: existing.frais_optionnels_libelle,
             frais_optionnels_declares: existing.frais_optionnels_declares,
@@ -1975,39 +1961,59 @@ router.put("/:id", async (req, res, next) => {
       return res.status(409).json(buildConflictPayload(conflicts));
     }
 
-    const reservation = await prisma.reservation.update({
-      where: { id: existing.id },
-      data: {
-        gite_id: association.gite_id,
-        stay_group_id: existing.stay_group_id ?? existing.id,
-        placeholder_id: association.placeholder_id,
-        airbnb_url: payload.airbnb_url !== undefined ? payload.airbnb_url ?? null : existing.airbnb_url,
-        hote_nom: payload.hote_nom,
-        telephone: payload.telephone ?? null,
-        email: payload.email ?? null,
-        date_entree: computed.dateEntree,
-        date_sortie: computed.dateSortie,
-        nb_nuits: computed.nbNuits,
-        nb_adultes: payload.nb_adultes,
-        prix_par_nuit: computed.prixParNuit,
-        prix_total: computed.prixTotal,
-        source_paiement,
-        commentaire: payload.commentaire ?? null,
-        remise_montant: sanitizeReservationAmount(payload.remise_montant ?? 0),
-        commission_channel_mode: normalizeReservationCommissionMode(payload.commission_channel_mode),
-        commission_channel_value: sanitizeReservationCommissionValue(
-          payload.commission_channel_value ?? 0,
-          normalizeReservationCommissionMode(payload.commission_channel_mode)
-        ),
-        frais_optionnels_montant: round2(payload.frais_optionnels_montant ?? 0),
-        frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
-        frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
-        options: encodeJsonField(payload.options ?? {}),
-      },
-      include: {
-        gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
-        placeholder: { select: { id: true, abbreviation: true, label: true } },
-      },
+    const shouldUpdateLinkedContractDepartureTime = shouldApplyLateCheckoutDepartureTime(
+      existing.options,
+      payload.options,
+    );
+
+    const reservation = await prisma.$transaction(async (tx) => {
+      const updatedReservation = await tx.reservation.update({
+        where: { id: existing.id },
+        data: {
+          gite_id: association.gite_id,
+          stay_group_id: existing.stay_group_id ?? existing.id,
+          placeholder_id: association.placeholder_id,
+          airbnb_url: payload.airbnb_url !== undefined ? payload.airbnb_url ?? null : existing.airbnb_url,
+          hote_nom: payload.hote_nom,
+          telephone: payload.telephone ?? null,
+          email: payload.email ?? null,
+          date_entree: computed.dateEntree,
+          date_sortie: computed.dateSortie,
+          nb_nuits: computed.nbNuits,
+          nb_adultes: payload.nb_adultes,
+          prix_par_nuit: computed.prixParNuit,
+          prix_total: computed.prixTotal,
+          source_paiement,
+          commentaire: payload.commentaire ?? null,
+          remise_montant: 0,
+          commission_channel_mode: "euro",
+          commission_channel_value: 0,
+          frais_optionnels_montant: round2(payload.frais_optionnels_montant ?? 0),
+          frais_optionnels_libelle: payload.frais_optionnels_libelle ?? null,
+          frais_optionnels_declares: payload.frais_optionnels_declares ?? false,
+          options: encodeJsonField(payload.options ?? {}),
+        },
+        include: {
+          gite: { select: { id: true, nom: true, prefixe_contrat: true, ordre: true } },
+          placeholder: { select: { id: true, abbreviation: true, label: true } },
+        },
+      });
+
+      if (shouldUpdateLinkedContractDepartureTime) {
+        const latestLinkedContract = await tx.contrat.findFirst({
+          where: { reservation_id: existing.id },
+          select: { id: true },
+          orderBy: [{ date_creation: "desc" }, { id: "desc" }],
+        });
+        if (latestLinkedContract) {
+          await tx.contrat.update({
+            where: { id: latestLinkedContract.id },
+            data: { heure_depart: LATE_CHECKOUT_DEPARTURE_TIME },
+          });
+        }
+      }
+
+      return updatedReservation;
     });
 
     return res.json(await hydrateReservationWithLinkedContract(reservation));
@@ -2284,9 +2290,6 @@ router.post("/import", async (req, res, next) => {
           prix_total: row.prix_total,
           source_paiement: row.source_paiement,
           commentaire: row.commentaire,
-          remise_montant: 0,
-          commission_channel_mode: "euro",
-          commission_channel_value: 0,
           frais_optionnels_montant: row.frais_optionnels_montant,
           frais_optionnels_libelle: row.frais_optionnels_libelle,
           frais_optionnels_declares: row.frais_optionnels_declares,

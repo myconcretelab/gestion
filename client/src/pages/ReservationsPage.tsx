@@ -39,14 +39,6 @@ import {
   getReservationEnergyAverageDailyCost,
 } from "../utils/reservationEnergy";
 import {
-  computeReservationBaseStayTotalFromAdjustedStay,
-  computeReservationPricingPreview,
-  normalizeReservationCommissionMode,
-  sanitizeReservationAmount,
-  sanitizeReservationCommissionValue,
-  type ReservationCommissionMode,
-} from "../utils/reservationPricing";
-import {
   buildSchoolHolidayDateSet,
   computeReservationHolidayNightCount,
   getReservationDateRange,
@@ -81,14 +73,10 @@ type ReservationDraft = {
   prix_total: number;
   source_paiement: string;
   commentaire: string;
-  remise_montant: number;
-  commission_channel_mode: ReservationCommissionMode;
-  commission_channel_value: number;
   frais_optionnels_montant: number;
   frais_optionnels_libelle: string;
   frais_optionnels_declares: boolean;
   price_driver: "nightly" | "total";
-  pricing_options_total_basis: number;
 };
 
 type ImportPreview = {
@@ -710,78 +698,14 @@ const computeReservationOptionsPreview = (
   };
 };
 
-const computeReservationPricingDetails = (draft: ReservationDraft, previewOptionsTotal: number) =>
-  computeReservationPricingPreview({
-    baseStayTotal: computeReservationBaseStayTotalFromAdjustedStay({
-      adjustedStayTotal: draft.prix_total,
-      previewOptionsTotal: draft.pricing_options_total_basis,
-      commissionMode: draft.commission_channel_mode,
-      commissionValue: draft.commission_channel_value,
-      remiseMontant: draft.remise_montant,
-    }),
-    nights: draft.nb_nuits,
-    previewOptionsTotal,
-    commissionMode: draft.commission_channel_mode,
-    commissionValue: draft.commission_channel_value,
-    remiseMontant: draft.remise_montant,
-  });
-
-const applyReservationPricingHelpers = (params: {
-  draft: ReservationDraft;
-  previewOptionsTotal: number;
-  commissionMode?: ReservationCommissionMode;
-  commissionValue?: number;
-  remiseMontant?: number;
-}) => {
-  const { draft, previewOptionsTotal } = params;
-  const commissionMode = normalizeReservationCommissionMode(params.commissionMode ?? draft.commission_channel_mode);
-  const commissionValue = sanitizeReservationCommissionValue(
-    params.commissionValue ?? draft.commission_channel_value,
-    commissionMode
-  );
-  const remiseMontant = sanitizeReservationAmount(params.remiseMontant ?? draft.remise_montant);
-  const sanitizedPreviewOptionsTotal = sanitizeReservationAmount(previewOptionsTotal);
-  const baseStayTotal = computeReservationBaseStayTotalFromAdjustedStay({
-    adjustedStayTotal: draft.prix_total,
-    previewOptionsTotal: draft.pricing_options_total_basis,
-    commissionMode: draft.commission_channel_mode,
-    commissionValue: draft.commission_channel_value,
-    remiseMontant: draft.remise_montant,
-  });
-  const pricing = computeReservationPricingPreview({
-    baseStayTotal,
-    nights: draft.nb_nuits,
-    previewOptionsTotal: sanitizedPreviewOptionsTotal,
-    commissionMode,
-    commissionValue,
-    remiseMontant,
-  });
-
-  return {
-    ...draft,
-    prix_total: pricing.adjustedStayTotal,
-    prix_par_nuit: pricing.adjustedNightlyPrice,
-    remise_montant: remiseMontant,
-    commission_channel_mode: commissionMode,
-    commission_channel_value: commissionValue,
-    pricing_options_total_basis: sanitizedPreviewOptionsTotal,
-  };
-};
-
 const buildReservationPricingAdjustedDraft = (params: {
   draft: ReservationDraft;
   optionPreview: ReservationOptionsPreview;
 }) => {
-  const { draft, optionPreview } = params;
-  const nextDraft = applyReservationPricingHelpers({
-    draft,
-    previewOptionsTotal: optionPreview.total,
-  });
-
   return {
-    ...nextDraft,
-    frais_optionnels_montant: optionPreview.total,
-    frais_optionnels_libelle: optionPreview.label,
+    ...params.draft,
+    frais_optionnels_montant: params.optionPreview.total,
+    frais_optionnels_libelle: params.optionPreview.label,
   };
 };
 
@@ -875,17 +799,10 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     prix_total: Number(reservation.prix_total ?? 0),
     source_paiement: normalizeReservationSource(reservation.source_paiement),
     commentaire: stripIcalToVerifyMarker(reservation.commentaire),
-    remise_montant: sanitizeReservationAmount(reservation.remise_montant ?? 0),
-    commission_channel_mode: normalizeReservationCommissionMode(reservation.commission_channel_mode),
-    commission_channel_value: sanitizeReservationCommissionValue(
-      reservation.commission_channel_value ?? 0,
-      normalizeReservationCommissionMode(reservation.commission_channel_mode)
-    ),
     frais_optionnels_montant: Number(reservation.frais_optionnels_montant ?? 0),
     frais_optionnels_libelle: reservation.frais_optionnels_libelle ?? "",
     frais_optionnels_declares: Boolean(reservation.frais_optionnels_declares),
     price_driver: "nightly",
-    pricing_options_total_basis: Number(reservation.frais_optionnels_montant ?? 0),
   };
   return recalcDraft(draft);
 };
@@ -914,14 +831,10 @@ const buildEmptyDraft = (
     prix_total: overrides.prix_total ?? 0,
     source_paiement: overrides.source_paiement ?? DEFAULT_RESERVATION_SOURCE,
     commentaire: overrides.commentaire ?? "",
-    remise_montant: overrides.remise_montant ?? 0,
-    commission_channel_mode: overrides.commission_channel_mode ?? "euro",
-    commission_channel_value: overrides.commission_channel_value ?? 0,
     frais_optionnels_montant: overrides.frais_optionnels_montant ?? 0,
     frais_optionnels_libelle: overrides.frais_optionnels_libelle ?? "",
     frais_optionnels_declares: overrides.frais_optionnels_declares ?? false,
     price_driver: overrides.price_driver ?? "nightly",
-    pricing_options_total_basis: overrides.pricing_options_total_basis ?? 0,
   });
 };
 
@@ -940,12 +853,6 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions, keepIcalTo
     prix_total: draft.prix_total,
     source_paiement: normalizeReservationSource(draft.source_paiement),
     commentaire: buildCommentWithIcalToVerifyMarker(draft.commentaire, keepIcalToVerifyMarker),
-    remise_montant: sanitizeReservationAmount(draft.remise_montant),
-    commission_channel_mode: normalizeReservationCommissionMode(draft.commission_channel_mode),
-    commission_channel_value: sanitizeReservationCommissionValue(
-      draft.commission_channel_value,
-      normalizeReservationCommissionMode(draft.commission_channel_mode)
-    ),
     frais_optionnels_montant: draft.frais_optionnels_montant,
     frais_optionnels_libelle: draft.frais_optionnels_libelle.trim() || null,
     frais_optionnels_declares: draft.frais_optionnels_declares,
@@ -2803,13 +2710,7 @@ const ReservationsPage = () => {
     setDrafts((previous) => ({
       ...previous,
       [reservation.id]: {
-        ...applyReservationPricingHelpers({
-          draft: previous[reservation.id] ?? draft,
-          previewOptionsTotal: 0,
-          commissionMode: "euro",
-          commissionValue: 0,
-          remiseMontant: 0,
-        }),
+        ...(previous[reservation.id] ?? draft),
         frais_optionnels_montant: 0,
         frais_optionnels_libelle: "",
         frais_optionnels_declares: false,
@@ -4684,7 +4585,6 @@ const ReservationsPage = () => {
                       const optionGite = resolveReservationGite(reservation, draft);
                       const nightlySuggestions = getGiteNightlyPriceSuggestions(optionGite);
                       const optionPreview = computeReservationOptionsPreview(optionDraft, draft, optionGite);
-                      const pricingDetails = computeReservationPricingDetails(draft, optionPreview.total);
                       const feeBreakdown = computeReservationFeesBreakdown({
                         reservation,
                         draft,
@@ -5686,11 +5586,6 @@ const ReservationsPage = () => {
                                       <div>
                                         <div className="reservations-options-builder__title-row">
                                           <strong>Options contrat/devis</strong>
-                                          {optionGite && (
-                                            <span className="reservations-options-builder__title-total">
-                                              Total recalculé: {formatEuro(pricingDetails.adjustedTotal)}
-                                            </span>
-                                          )}
                                         </div>
                                         <div className="field-hint">
                                           {optionGite ? `Tarifs ${optionGite.nom}` : "Associez un gîte pour utiliser les options."}
@@ -5711,82 +5606,6 @@ const ReservationsPage = () => {
                                             updateReservationOptionsSelection(reservation, draft, () => nextOptions)
                                           }
                                         />
-                                        <div className="reservations-pricing-card">
-                                          <div className="reservations-pricing-card__head">
-                                            <strong>Commission channel et réduction</strong>
-                                            <div className="field-hint">Ajuste directement le total et le prix/nuit</div>
-                                          </div>
-                                          <div className="reservations-pricing-card__form">
-                                            <label className="reservations-pricing-card__field">
-                                              <span>Commission</span>
-                                              <div className="reservations-pricing-card__commission-inputs">
-                                                <select
-                                                  value={draft.commission_channel_mode}
-                                                  onChange={(event) => {
-                                                    const nextMode = normalizeReservationCommissionMode(event.target.value);
-                                                    updateExistingField(reservation, (prev) => ({
-                                                      ...applyReservationPricingHelpers({
-                                                        draft: prev,
-                                                        previewOptionsTotal: optionPreview.total,
-                                                        commissionMode: nextMode,
-                                                        commissionValue: prev.commission_channel_value,
-                                                      }),
-                                                    }));
-                                                  }}
-                                                >
-                                                  <option value="euro">Montant €</option>
-                                                  <option value="percent">Pourcentage %</option>
-                                                </select>
-                                                <input
-                                                  type="number"
-                                                  min={0}
-                                                  max={draft.commission_channel_mode === "percent" ? 99.99 : undefined}
-                                                  step={1}
-                                                  value={draft.commission_channel_value}
-                                                  onChange={(event) =>
-                                                    updateExistingField(reservation, (prev) => ({
-                                                      ...applyReservationPricingHelpers({
-                                                        draft: prev,
-                                                        previewOptionsTotal: optionPreview.total,
-                                                        commissionValue: Number(event.target.value),
-                                                      }),
-                                                    }))
-                                                  }
-                                                />
-                                              </div>
-                                            </label>
-                                            <label className="reservations-pricing-card__field">
-                                              <span>Réduction offerte</span>
-                                              <input
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                value={draft.remise_montant}
-                                                onChange={(event) =>
-                                                  updateExistingField(reservation, (prev) => ({
-                                                    ...applyReservationPricingHelpers({
-                                                      draft: prev,
-                                                      previewOptionsTotal: optionPreview.total,
-                                                      remiseMontant: Number(event.target.value),
-                                                    }),
-                                                  }))
-                                                }
-                                              />
-                                            </label>
-                                          </div>
-                                          <div className="reservations-pricing-card__totals">
-                                            <span>Total avant ajustement</span>
-                                            <strong>{formatEuro(pricingDetails.baseTotal)}</strong>
-                                            <span>Commission channel</span>
-                                            <strong>-{formatEuro(pricingDetails.commissionAmount)}</strong>
-                                            <span>Réduction offerte</span>
-                                            <strong>-{formatEuro(draft.remise_montant)}</strong>
-                                            <span>Total recalculé</span>
-                                            <strong>{formatEuro(pricingDetails.adjustedTotal)}</strong>
-                                            <span>Prix/nuit recalculé</span>
-                                            <strong>{formatEuro(pricingDetails.adjustedNightlyPrice)}</strong>
-                                          </div>
-                                        </div>
                                         <div className="reservations-options-builder__foot">
                                           <div className="field-hint">
                                             Libellé généré: {optionPreview.label || "Aucune option sélectionnée"}

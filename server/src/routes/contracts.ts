@@ -111,6 +111,7 @@ const reservationPaymentSourceValues = [
 ] as const;
 
 const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir"] as const;
+const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
 
 const returnProcessingSchema = z.object({
   statut_reception_contrat: z.enum(["non_recu", "recu"]).optional(),
@@ -126,6 +127,14 @@ const returnProcessingSchema = z.object({
     })
     .optional(),
 });
+
+const shouldApplyLateCheckoutDepartureTime = (
+  previousOptionsRaw: unknown,
+  nextOptions: OptionsInput | null | undefined,
+) => {
+  const previousOptions = fromJsonString<OptionsInput>(previousOptionsRaw, {});
+  return Boolean(nextOptions?.depart_tardif?.enabled) && !Boolean(previousOptions.depart_tardif?.enabled);
+};
 
 const previewSchema = z.object({
   gite_id: z.string().min(1),
@@ -1021,6 +1030,10 @@ router.patch("/:id/return-processing", async (req, res, next) => {
         }
         if (data.reservation.options !== undefined) {
           const nextOptions = normalizeOptions(data.reservation.options as OptionsInput, existing.gite);
+          const shouldUpdateDepartureTime = shouldApplyLateCheckoutDepartureTime(
+            reservation.options,
+            nextOptions,
+          );
           const summary = summarizeReservationOptions(nextOptions);
           const totals = computeTotals({
             dateDebut: reservation.date_entree,
@@ -1038,6 +1051,13 @@ router.patch("/:id/return-processing", async (req, res, next) => {
           reservationUpdate.frais_optionnels_montant = round2(totals.optionsTotal);
           reservationUpdate.frais_optionnels_libelle = summary.label || null;
           reservationUpdate.frais_optionnels_declares = summary.allDeclared;
+
+          if (shouldUpdateDepartureTime) {
+            await tx.contrat.update({
+              where: { id: existing.id },
+              data: { heure_depart: LATE_CHECKOUT_DEPARTURE_TIME },
+            });
+          }
         }
 
         if (Object.keys(reservationUpdate).length > 0) {
