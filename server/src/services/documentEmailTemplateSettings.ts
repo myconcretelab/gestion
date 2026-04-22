@@ -48,12 +48,20 @@ const ensureDataDir = () => {
 };
 
 const DEFAULT_TEMPLATES = defaults as DocumentEmailTemplateSettings;
+const LEGACY_CONTRACT_ARRHES_LINE =
+  "Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de {{arrhesMontant}} avant le {{arrhesDateLimiteLong}}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit {{soldeMontant}}, sera à régler à votre arrivée.";
+const MODERN_CONTRACT_ARRHES_LINE = "{{arrhesInstruction}}";
 
 const normalizeBodyLines = (value: unknown, fallback: string[]) => {
   if (!Array.isArray(value)) return fallback;
   const lines = value.map((line) => String(line ?? "").replace(/\r\n/g, "\n"));
   return lines.length > 0 ? lines : fallback;
 };
+
+const normalizeContractBodyLines = (lines: string[]) =>
+  lines.map((line) =>
+    line.trim() === LEGACY_CONTRACT_ARRHES_LINE ? MODERN_CONTRACT_ARRHES_LINE : line
+  );
 
 const normalizeTemplate = (
   input: Partial<DocumentEmailTemplate> | null | undefined,
@@ -71,10 +79,16 @@ const normalizeTemplate = (
 
 const normalizeSettings = (
   input: Partial<DocumentEmailTemplateSettings> | null | undefined,
-): DocumentEmailTemplateSettings => ({
-  contrat: normalizeTemplate(input?.contrat, DEFAULT_TEMPLATES.contrat),
-  facture: normalizeTemplate(input?.facture, DEFAULT_TEMPLATES.facture),
-});
+): DocumentEmailTemplateSettings => {
+  const contrat = normalizeTemplate(input?.contrat, DEFAULT_TEMPLATES.contrat);
+  return {
+    contrat: {
+      ...contrat,
+      bodyLines: normalizeContractBodyLines(contrat.bodyLines),
+    },
+    facture: normalizeTemplate(input?.facture, DEFAULT_TEMPLATES.facture),
+  };
+};
 
 export const buildDefaultDocumentEmailTemplateSettings =
   (): DocumentEmailTemplateSettings => normalizeSettings(DEFAULT_TEMPLATES);

@@ -33,12 +33,33 @@ const DocumentEmailComposerDialog = ({
 }: DocumentEmailComposerDialogProps) => {
   const titleId = useId();
   const subjectRef = useRef<HTMLInputElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const sendingRef = useRef(sending);
+  const previousOpenRef = useRef(false);
+  const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const previewHtml = useMemo(() => renderEmailBodyHtml(body), [body]);
 
   useEffect(() => {
-    if (!open) return;
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    sendingRef.current = sending;
+  }, [sending]);
+
+  useEffect(() => {
+    if (!open) {
+      previousOpenRef.current = false;
+      return;
+    }
+
+    const isOpening = !previousOpenRef.current;
+    previousOpenRef.current = true;
+    if (!isOpening) return;
 
     const previousOverflow = document.body.style.overflow;
+    previousActiveElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.classList.add(APP_SCROLL_LOCK_CLASS);
     document.documentElement.classList.add(APP_SCROLL_LOCK_CLASS);
     document.body.style.overflow = "hidden";
@@ -49,7 +70,7 @@ const DocumentEmailComposerDialog = ({
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !sending) onClose();
+      if (event.key === "Escape" && !sendingRef.current) onCloseRef.current();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -59,8 +80,10 @@ const DocumentEmailComposerDialog = ({
       document.body.classList.remove(APP_SCROLL_LOCK_CLASS);
       document.documentElement.classList.remove(APP_SCROLL_LOCK_CLASS);
       document.body.style.overflow = previousOverflow;
+      previousActiveElementRef.current?.focus();
+      previousActiveElementRef.current = null;
     };
-  }, [open, onClose, sending]);
+  }, [open]);
 
   if (!open || typeof document === "undefined") return null;
 

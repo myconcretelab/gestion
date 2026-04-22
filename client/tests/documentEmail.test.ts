@@ -47,6 +47,36 @@ test("buildDocumentMailtoHref rend le texte detaille du contrat depuis le templa
   assert.match(mail.body, /https:\/\/destination-broceliande\.com\//);
 });
 
+test("buildDocumentMailtoHref adapte le texte du contrat quand les arrhes sont deja recues", () => {
+  const href = buildDocumentMailtoHref({
+    recipient: "mickael@example.com",
+    documentType: "contrat",
+    documentNumber: "LIB-2026-000123",
+    documentUrl: "https://example.com/contracts/LIB-2026-000123.pdf",
+    locataireNom: "Mickael",
+    giteNom: "Liberté",
+    dateDebut: "2026-06-05",
+    heureArrivee: "17:00",
+    dateFin: "2026-06-07",
+    heureDepart: "17:00",
+    nbNuits: 2,
+    arrhesMontant: 170,
+    arrhesDateLimite: "2026-01-30",
+    statutPaiementArrhes: "recu",
+    datePaiementArrhes: "2026-01-12",
+    modePaiementArrhes: "Virement",
+    soldeMontant: 800,
+  });
+
+  assert.ok(href);
+  const mail = extractMailtoParts(href);
+
+  assert.match(mail.body, /arrhes de 170€ ont déjà été reçues le lundi 12 janvier 2026\./);
+  assert.match(mail.body, /Mode de paiement enregistré : Virement\./);
+  assert.doesNotMatch(mail.body, /accompagné du règlement des arrhes/);
+  assert.match(mail.body, /contrat signé avant le vendredi 30 janvier 2026/);
+});
+
 test("buildDocumentMailtoHref conserve le template simple pour les factures", () => {
   const href = buildDocumentMailtoHref({
     recipient: "client@example.com",
