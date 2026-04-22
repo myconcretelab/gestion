@@ -11,6 +11,7 @@ import {
   extractValidationFieldErrors,
   formatDateInput,
   getDocumentAdultsMax,
+  getDocumentChildrenConfiguredMax,
   getDocumentChildrenMax,
   mergeOptions,
   nextDayFromInput,
@@ -337,6 +338,10 @@ const ContratFormPage = () => {
   }, [selectedGite, isEdit, editingContract, prefilledReservationGiteId]);
 
   useEffect(() => {
+    setNbEnfants((current) => clampDocumentChildren(current, selectedGite, nbAdultes));
+  }, [selectedGite, nbAdultes]);
+
+  useEffect(() => {
     if (regleAnimauxAcceptes) return;
     setOptions((prev) => {
       const chiens = prev.chiens ?? { enabled: false, nb: 0, offert: false };
@@ -368,7 +373,8 @@ const ContratFormPage = () => {
   }, [statutArrhes, datePaiementArrhes]);
 
   const adultesMax = useMemo(() => getDocumentAdultsMax(selectedGite), [selectedGite]);
-  const enfantsMax = useMemo(() => getDocumentChildrenMax(selectedGite), [selectedGite]);
+  const enfantsConfiguredMax = useMemo(() => getDocumentChildrenConfiguredMax(selectedGite), [selectedGite]);
+  const enfantsMax = useMemo(() => getDocumentChildrenMax(selectedGite, nbAdultes), [selectedGite, nbAdultes]);
   const adultOptions = useMemo(() => Array.from({ length: adultesMax }, (_, index) => index + 1), [adultesMax]);
   const childrenOptions = useMemo(() => Array.from({ length: enfantsMax + 1 }, (_, index) => index), [enfantsMax]);
 
@@ -609,7 +615,7 @@ const ContratFormPage = () => {
               value={nbEnfants}
               onChange={(e) => {
                 clearFieldError("nb_enfants_2_17");
-                setNbEnfants(clampDocumentChildren(Number(e.target.value), selectedGite));
+                setNbEnfants(clampDocumentChildren(Number(e.target.value), selectedGite, nbAdultes));
               }}
             >
               {childrenOptions.map((value) => (
@@ -619,9 +625,9 @@ const ContratFormPage = () => {
               ))}
             </select>
             <div className="field-hint">
-              {enfantsMax > 0
-                ? `Max ${enfantsMax} enfant(s) pour ce gîte.`
-                : "Aucun enfant configuré pour ce gîte."}
+              {enfantsConfiguredMax === 0
+                ? "Aucun enfant configuré pour ce gîte."
+                : `Max ${enfantsMax} enfant(s) avec ${nbAdultes} adulte(s) sélectionné(s).`}
             </div>
             {renderFieldError("nb_enfants_2_17")}
           </label>

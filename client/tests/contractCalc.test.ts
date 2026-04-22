@@ -11,6 +11,7 @@ const gite: Gite = {
   capacite_max: 6,
   nb_adultes_max: 4,
   nb_adultes_habituel: 4,
+  nb_enfants_max: 2,
   proprietaires_noms: "Proprio",
   proprietaires_adresse: "Adresse proprio",
   telephones: [],

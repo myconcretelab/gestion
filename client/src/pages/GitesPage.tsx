@@ -11,6 +11,7 @@ const emptyForm = {
   capacite_max: 1,
   nb_adultes_max: 1,
   nb_adultes_habituel: 1,
+  nb_enfants_max: 0,
   proprietaires_noms: "",
   proprietaires_adresse: "",
   site_web: "",
@@ -124,6 +125,7 @@ const GitesPage = () => {
       capacite_max: selected.capacite_max,
       nb_adultes_max: selected.nb_adultes_max,
       nb_adultes_habituel: selected.nb_adultes_habituel,
+      nb_enfants_max: selected.nb_enfants_max,
       proprietaires_noms: selected.proprietaires_noms,
       proprietaires_adresse: selected.proprietaires_adresse,
       site_web: selected.site_web ?? "",
@@ -473,6 +475,7 @@ const GitesPage = () => {
                 `${gite.capacite_max} voyageurs`,
                 `${gite.nb_adultes_max} adultes max`,
                 `${gite.nb_adultes_habituel} adultes habituels`,
+                `${gite.nb_enfants_max} enfants max`,
                 gite.regle_animaux_acceptes ? "Animaux ok" : null,
                 gite.regle_bois_premiere_flambee ? "Bois inclus" : null,
               ].filter((tag): tag is string => Boolean(tag));
@@ -712,6 +715,15 @@ const GitesPage = () => {
               />
             </label>
             <label className="field">
+              Nombre d'enfants max
+              <input
+                type="number"
+                min={0}
+                value={form.nb_enfants_max}
+                onChange={(e) => handleChange("nb_enfants_max", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
               Gestionnaire
               <select
                 value={form.gestionnaire_id}
@@ -733,6 +745,9 @@ const GitesPage = () => {
                 placeholder="48504640"
               />
             </label>
+          </div>
+          <div className="field-hint">
+            La somme `adultes max + enfants max` ne peut pas dépasser la capacité max du gîte.
           </div>
         </div>
 

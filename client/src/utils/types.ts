@@ -17,6 +17,7 @@ export type Gite = {
   capacite_max: number;
   nb_adultes_max: number;
   nb_adultes_habituel: number;
+  nb_enfants_max: number;
   proprietaires_noms: string;
   proprietaires_adresse: string;
   site_web?: string | null;
