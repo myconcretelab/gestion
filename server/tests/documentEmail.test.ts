@@ -65,6 +65,36 @@ test("buildContractEmailMessage construit un email de contrat exploitable", () =
   assert.match(message.html, /<p>Bonjour Mickael,/);
 });
 
+test("buildContractEmailMessage adapte le texte quand les arrhes sont deja recues", () => {
+  const message = buildContractEmailMessage(
+    {
+      numero_contrat: "GT-2026-000001",
+      locataire_nom: "Mickael",
+      locataire_email: "mickael@example.com",
+      gite: { nom: "Liberté", email: "gite@example.com" },
+      date_debut: "2026-06-05",
+      heure_arrivee: "17:00",
+      date_fin: "2026-06-07",
+      heure_depart: "10:00",
+      nb_nuits: 2,
+      arrhes_montant: 170,
+      arrhes_date_limite: "2026-01-30",
+      statut_paiement_arrhes: "recu",
+      date_paiement_arrhes: "2026-01-12",
+      mode_paiement_arrhes: "Virement",
+      solde_montant: 800,
+    },
+    {
+      documentUrl: "https://example.com/contracts/GT-2026-000001.pdf",
+    }
+  );
+
+  assert.match(message.text, /arrhes de 170€ ont déjà été reçues le lundi 12 janvier 2026\./);
+  assert.match(message.text, /Mode de paiement enregistré : Virement\./);
+  assert.doesNotMatch(message.text, /accompagné du règlement des arrhes/);
+  assert.match(message.text, /contrat signé avant le vendredi 30 janvier 2026/);
+});
+
 test("buildInvoiceEmailMessage construit un email de facture exploitable", () => {
   const message = buildInvoiceEmailMessage(
     {

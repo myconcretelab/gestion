@@ -40,9 +40,11 @@ type ContractFieldKey =
   | "remise_montant"
   | "arrhes_montant"
   | "arrhes_date_limite"
+  | "date_paiement_arrhes"
   | "caution_montant"
   | "cheque_menage_montant"
-  | "statut_paiement_arrhes";
+  | "statut_paiement_arrhes"
+  | "mode_paiement_arrhes";
 
 type FieldErrors = Partial<Record<ContractFieldKey, string>>;
 
@@ -62,15 +64,19 @@ const contractFieldKeys: ContractFieldKey[] = [
   "remise_montant",
   "arrhes_montant",
   "arrhes_date_limite",
+  "date_paiement_arrhes",
   "caution_montant",
   "cheque_menage_montant",
   "statut_paiement_arrhes",
+  "mode_paiement_arrhes",
 ];
 
 const contractFieldKeySet = new Set<ContractFieldKey>(contractFieldKeys);
 
 const getValidationFieldErrors = (error: unknown): FieldErrors =>
   extractValidationFieldErrors(error, contractFieldKeySet, "date_fin");
+
+const todayInputValue = () => formatDateInput(new Date());
 
 const ContratFormPage = () => {
   const { id } = useParams();
@@ -96,6 +102,8 @@ const ContratFormPage = () => {
   const [arrhesDateLimite, setArrhesDateLimite] = useState("");
   const [arrhesAuto, setArrhesAuto] = useState(true);
   const [arrhesDateTouched, setArrhesDateTouched] = useState(false);
+  const [datePaiementArrhes, setDatePaiementArrhes] = useState("");
+  const [modePaiementArrhes, setModePaiementArrhes] = useState("");
   const [cautionMontant, setCautionMontant] = useState(0);
   const [chequeMenageMontant, setChequeMenageMontant] = useState(0);
   const [cautionTouched, setCautionTouched] = useState(false);
@@ -156,6 +164,11 @@ const ContratFormPage = () => {
         setArrhesMontant(Number(data.arrhes_montant ?? 0).toFixed(2));
         setArrhesDateTouched(true);
         setArrhesDateLimite(toDateInputValue(data.arrhes_date_limite));
+        setDatePaiementArrhes(
+          toDateInputValue(data.date_paiement_arrhes) ||
+            (data.statut_paiement_arrhes === "recu" ? todayInputValue() : "")
+        );
+        setModePaiementArrhes(data.mode_paiement_arrhes ?? "");
         setCautionTouched(true);
         setChequeMenageTouched(true);
         setCautionMontant(Number(data.caution_montant ?? 0));
@@ -212,6 +225,8 @@ const ContratFormPage = () => {
         setOptions(prefill.options);
         setArrhesAuto(true);
         setArrhesMontant("");
+        setDatePaiementArrhes("");
+        setModePaiementArrhes("");
         setClausesText("");
         setStatutArrhes("non_recu");
       })
@@ -347,6 +362,11 @@ const ContratFormPage = () => {
     if (Number.isFinite(arrhesAutoValue)) setArrhesMontant(arrhesAutoValue.toFixed(2));
   }, [arrhesAuto, arrhesAutoValue]);
 
+  useEffect(() => {
+    if (statutArrhes !== "recu" || datePaiementArrhes) return;
+    setDatePaiementArrhes(todayInputValue());
+  }, [statutArrhes, datePaiementArrhes]);
+
   const adultesMax = useMemo(() => getDocumentAdultsMax(selectedGite), [selectedGite]);
   const enfantsMax = useMemo(() => getDocumentChildrenMax(selectedGite), [selectedGite]);
   const adultOptions = useMemo(() => Array.from({ length: adultesMax }, (_, index) => index + 1), [adultesMax]);
@@ -381,6 +401,12 @@ const ContratFormPage = () => {
     if (arrhesMontant.trim()) {
       payload.arrhes_montant = Number(arrhesMontant);
     }
+    if (statutArrhes === "recu" && datePaiementArrhes) {
+      payload.date_paiement_arrhes = datePaiementArrhes;
+    }
+    if (statutArrhes === "recu" && modePaiementArrhes) {
+      payload.mode_paiement_arrhes = modePaiementArrhes;
+    }
 
     return payload;
   }, [
@@ -406,6 +432,8 @@ const ContratFormPage = () => {
     clausesText,
     statutArrhes,
     arrhesMontant,
+    datePaiementArrhes,
+    modePaiementArrhes,
     linkedReservationId,
   ]);
 
@@ -780,7 +808,11 @@ const ContratFormPage = () => {
                 value={statutArrhes}
                 onChange={(e) => {
                   clearFieldError("statut_paiement_arrhes");
-                  setStatutArrhes(e.target.value as any);
+                  const nextStatus = e.target.value as "non_recu" | "recu";
+                  if (nextStatus === "recu" && !datePaiementArrhes) {
+                    setDatePaiementArrhes(todayInputValue());
+                  }
+                  setStatutArrhes(nextStatus);
                 }}
               >
                 <option value="non_recu">Non reçues</option>
@@ -788,6 +820,39 @@ const ContratFormPage = () => {
               </select>
               {renderFieldError("statut_paiement_arrhes")}
             </label>
+            {statutArrhes === "recu" ? (
+              <>
+                <label className={getFieldClassName("date_paiement_arrhes")}>
+                  Date de paiement
+                  <input
+                    type="date"
+                    value={datePaiementArrhes}
+                    onChange={(e) => {
+                      clearFieldError("date_paiement_arrhes");
+                      setDatePaiementArrhes(e.target.value);
+                    }}
+                  />
+                  {renderFieldError("date_paiement_arrhes")}
+                </label>
+                <label className={getFieldClassName("mode_paiement_arrhes")}>
+                  Mode de paiement
+                  <select
+                    value={modePaiementArrhes}
+                    onChange={(e) => {
+                      clearFieldError("mode_paiement_arrhes");
+                      setModePaiementArrhes(e.target.value);
+                    }}
+                  >
+                    <option value="">Non renseigné</option>
+                    <option value="Chèque">Chèque</option>
+                    <option value="Virement">Virement</option>
+                    <option value="Espèces">Espèces</option>
+                    <option value="A définir">A définir</option>
+                  </select>
+                  {renderFieldError("mode_paiement_arrhes")}
+                </label>
+              </>
+            ) : null}
           </div>
 
           <div className="field-group">

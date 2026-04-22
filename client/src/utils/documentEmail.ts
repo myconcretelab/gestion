@@ -23,6 +23,9 @@ type BuildContractMailtoHrefParams = BuildDocumentMailtoHrefBaseParams & {
   nbNuits: number;
   arrhesMontant: number;
   arrhesDateLimite: string;
+  statutPaiementArrhes?: "non_recu" | "recu";
+  datePaiementArrhes?: string | null;
+  modePaiementArrhes?: string | null;
   soldeMontant: number;
 };
 
@@ -122,6 +125,28 @@ const formatEuroText = (value: number | string) => {
 
 const formatStayDuration = (value: number) =>
   `${value} ${value > 1 ? "nuits" : "nuit"}`;
+
+const buildArrhesInstruction = (params: {
+  arrhesMontant: string;
+  arrhesDateLimiteLong: string;
+  soldeMontant: string;
+  statutPaiementArrhes?: "non_recu" | "recu";
+  datePaiementArrhes?: string | null;
+  modePaiementArrhes?: string | null;
+}) => {
+  if (params.statutPaiementArrhes === "recu") {
+    const dateText = params.datePaiementArrhes
+      ? ` le ${formatLongDate(params.datePaiementArrhes)}`
+      : "";
+    const modeText = params.modePaiementArrhes
+      ? ` Mode de paiement enregistré : ${params.modePaiementArrhes}.`
+      : "";
+
+    return `Les arrhes de ${params.arrhesMontant} ont déjà été reçues${dateText}.${modeText} Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;
+  }
+
+  return `Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de ${params.arrhesMontant} avant le ${params.arrhesDateLimiteLong}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;
+};
 
 const renderTemplateLine = (line: string, values: Record<string, string>) =>
   line.replace(/{{(\w+)}}/g, (_, key: string) => values[key] ?? "");
@@ -226,6 +251,14 @@ export const buildDocumentMailtoHref = (
   if (documentType === "contrat") {
     const activitiesList = (template.activities ?? []).join("\n\n");
     Object.assign(templateValues, {
+      arrhesInstruction: buildArrhesInstruction({
+        arrhesMontant: formatEuroText(params.arrhesMontant),
+        arrhesDateLimiteLong: formatLongDate(params.arrhesDateLimite),
+        soldeMontant: formatEuroText(params.soldeMontant),
+        statutPaiementArrhes: params.statutPaiementArrhes,
+        datePaiementArrhes: params.datePaiementArrhes,
+        modePaiementArrhes: params.modePaiementArrhes,
+      }),
       stayDuration: formatStayDuration(params.nbNuits),
       giteReference: safeGiteNom ? `au ${safeGiteNom}` : "dans notre gîte",
       dateDebutLong: formatLongDate(params.dateDebut),

@@ -75,6 +75,9 @@ export type ContractRenderInput = {
   remise_montant: NumericLike;
   arrhes_montant: NumericLike;
   arrhes_date_limite: Date;
+  statut_paiement_arrhes?: "non_recu" | "recu";
+  date_paiement_arrhes?: Date | string | null;
+  mode_paiement_arrhes?: string | null;
   solde_montant: NumericLike;
   cheque_menage_montant: NumericLike;
   caution_montant: NumericLike;
@@ -306,6 +309,58 @@ const buildPaiementSurPlaceHtml = (params: {
   }
 
   return `<p>Le montant restant de la location, soit ${params.soldeMontant} sera payé le jour de la remise des clés${tail}</p>`;
+};
+
+const buildReservationTermsHtml = (params: {
+  emailContact: string;
+  arrhesDateLimite: string;
+  arrhesMontant: string;
+  statutPaiementArrhes?: "non_recu" | "recu";
+  datePaiementArrhes?: Date | string | null;
+  modePaiementArrhes?: string | null;
+}) => {
+  if (params.statutPaiementArrhes === "recu") {
+    const receiptDetails: string[] = [];
+    const paymentDateLabel = formatOptionalDate(params.datePaiementArrhes, "");
+    if (paymentDateLabel) {
+      receiptDetails.push(`le ${escapeHtml(paymentDateLabel)}`);
+    }
+
+    const receiptSentence = `Les arrhes de ${params.arrhesMontant} ont déjà été reçues${
+      receiptDetails.length ? ` ${receiptDetails.join(" ")}` : ""
+    }.`;
+    const paymentModeSentence = params.modePaiementArrhes
+      ? ` Mode de paiement enregistré : ${escapeHtml(params.modePaiementArrhes)}.`
+      : "";
+
+    return `
+      <p>${receiptSentence}${paymentModeSentence}</p>
+      <p>
+        Merci de me retourner à mon adresse ou par email (${escapeHtml(
+          params.emailContact
+        )}) avant le ${escapeHtml(params.arrhesDateLimite)} un exemplaire du présent contrat daté et signé avec la mention « lu et approuvé ».
+      </p>
+      <p>
+        Au-delà de cette date et sans nouvelle de votre part cette proposition sera annulée et je disposerai de la location à ma convenance. Le présent contrat est établi en 2 exemplaires.
+      </p>
+    `;
+  }
+
+  return `
+    <p>
+      Cette location prendra effet si je reçois à mon adresse ou par email (${escapeHtml(
+        params.emailContact
+      )})
+      avant le ${escapeHtml(params.arrhesDateLimite)} :
+    </p>
+    <ul>
+      <li>Un exemplaire du présent contrat daté et signé avec la mention « lu et approuvé ».</li>
+      <li>Un règlement d'arrhes de ${params.arrhesMontant}.</li>
+    </ul>
+    <p>
+      Au-delà de cette date et sans nouvelle de votre part cette proposition sera annulée et je disposerai de la location à ma convenance. Le présent contrat est établi en 2 exemplaires.
+    </p>
+  `;
 };
 
 const parseJsonField = <T>(value: unknown, fallback: T): T => {
@@ -752,6 +807,14 @@ const buildContractHtml = async (params: {
     )} / adulte / nuit)`,
     arrhesMontant: formatEuro(toNumber(params.contract.arrhes_montant)),
     arrhesDateLimite: formatDate(params.contract.arrhes_date_limite),
+    reservationTermsHtml: buildReservationTermsHtml({
+      emailContact: params.gite.email ?? "contact@gites-broceliande.com",
+      arrhesDateLimite: formatDate(params.contract.arrhes_date_limite),
+      arrhesMontant: formatEuro(toNumber(params.contract.arrhes_montant)),
+      statutPaiementArrhes: params.contract.statut_paiement_arrhes,
+      datePaiementArrhes: params.contract.date_paiement_arrhes,
+      modePaiementArrhes: params.contract.mode_paiement_arrhes,
+    }),
     paiementSurPlaceHtml: buildPaiementSurPlaceHtml({
       soldeMontant: formatEuro(toNumber(params.contract.solde_montant)),
       chequeMenageMontant: formatEuro(toNumber(params.contract.cheque_menage_montant)),
@@ -767,7 +830,6 @@ const buildContractHtml = async (params: {
     clausesHtml: buildClausesHtml({ gite: params.gite, options, clauses }),
     lieuSignature: params.gite.adresse_ligne2 ?? params.gite.adresse_ligne1,
     dateSignature: formatDate(new Date()),
-    emailContact: params.gite.email ?? "contact@gites-broceliande.com",
     conditionsHtml,
   });
 };

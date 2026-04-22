@@ -194,6 +194,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(Number(lastCreatedReservationData.prix_par_nuit), 100);
     assert.equal(Number(lastCreatedReservationData.prix_total), 300);
     assert.equal(Number(lastCreatedReservationData.remise_montant), 10);
+    assert.equal((createContractRes.body as any).mode_paiement_arrhes, null);
     assert.equal((createContractRes.body as any).reservation_id, "r-contract-created");
     assert.equal((createContractRes.body as any).options.chiens.prix_unitaire, 5);
 
@@ -224,6 +225,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     assert.equal(updateContractRes.statusCode, 200);
     assert.equal(Number((updateContractRes.body as any).solde_montant), 359.5);
     assert.equal(Number((updateContractRes.body as any).taxe_sejour_calculee), 9);
+    assert.equal((updateContractRes.body as any).mode_paiement_arrhes, null);
     assert.equal((updateContractRes.body as any).reservation_id, "r-contract");
     assert.equal((updateContractRes.body as any).options.depart_tardif.prix_forfait, 27.5);
 
@@ -333,6 +335,118 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
     restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
 
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("API contrats initialise la date et le mode quand les arrhes sont deja recues a la creation", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "contrats-arrhes-recu-test-"));
+  const envBackup = {
+    DATA_DIR: process.env.DATA_DIR,
+    SKIP_PDF_GENERATION: process.env.SKIP_PDF_GENERATION,
+    BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD,
+  };
+
+  process.env.DATA_DIR = tempDir;
+  process.env.SKIP_PDF_GENERATION = "1";
+  process.env.BASIC_AUTH_PASSWORD = "";
+
+  const prismaModule = await import("../src/db/prisma.ts");
+  const prisma = prismaModule.default as any;
+
+  const original = {
+    giteFindUnique: prisma.gite.findUnique,
+    contratCounterUpsert: prisma.contratCounter.upsert,
+    contratCreate: prisma.contrat.create,
+    reservationFindUnique: prisma.reservation.findUnique,
+    reservationFindMany: prisma.reservation.findMany,
+    reservationCreate: prisma.reservation.create,
+  };
+
+  try {
+    prisma.gite.findUnique = async () => ({
+      id: "g1",
+      prefixe_contrat: "GT",
+      capacite_max: 6,
+      nb_adultes_max: 4,
+      nb_adultes_habituel: 4,
+      arrhes_taux_defaut: 0.2,
+      regle_animaux_acceptes: true,
+      regle_bois_premiere_flambee: false,
+      regle_tiers_personnes_info: false,
+      taxe_sejour_par_personne_par_nuit: 1.5,
+      options_draps_par_lit: 12,
+      options_linge_toilette_par_personne: 8,
+      options_menage_forfait: 20,
+      options_depart_tardif_forfait: 15,
+      options_chiens_forfait: 5,
+    });
+    prisma.contratCounter.upsert = async () => ({ lastNumber: 1 });
+    prisma.contrat.create = async ({ data }: any) => ({ id: "c1", ...data });
+    prisma.reservation.findUnique = async () => null;
+    prisma.reservation.findMany = async () => [];
+    prisma.reservation.create = async () => ({ id: "r1" });
+
+    const contractsRouterModule = await import("../src/routes/contracts.ts");
+    const contractPost = getRouteHandler(contractsRouterModule.default, "post", "/");
+
+    const createContractRes = createMockResponse();
+    let nextError: unknown = null;
+    await contractPost(
+      {
+        body: {
+          gite_id: "g1",
+          locataire_nom: "Client Contrat",
+          locataire_adresse: "Adresse",
+          locataire_tel: "0700000000",
+          nb_adultes: 2,
+          nb_enfants_2_17: 0,
+          date_debut: "2026-03-01",
+          heure_arrivee: "17:00",
+          date_fin: "2026-03-04",
+          heure_depart: "12:00",
+          prix_par_nuit: 100,
+          remise_montant: 0,
+          options: {},
+          arrhes_montant: 100,
+          arrhes_date_limite: "2026-02-15",
+          caution_montant: 300,
+          cheque_menage_montant: 80,
+          afficher_caution_phrase: true,
+          afficher_cheque_menage_phrase: true,
+          clauses: {},
+          notes: null,
+          statut_paiement_arrhes: "recu",
+          date_paiement_arrhes: "2026-02-01",
+          mode_paiement_arrhes: "Virement",
+        },
+        params: {},
+        query: {},
+      },
+      createContractRes,
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(createContractRes.statusCode, 201);
+    assert.equal((createContractRes.body as any).statut_paiement_arrhes, "recu");
+    assert.equal((createContractRes.body as any).mode_paiement_arrhes, "Virement");
+    assert.equal(
+      (createContractRes.body as any).date_paiement_arrhes.toISOString(),
+      new Date("2026-02-01").toISOString()
+    );
+  } finally {
+    prisma.gite.findUnique = original.giteFindUnique;
+    prisma.contratCounter.upsert = original.contratCounterUpsert;
+    prisma.contrat.create = original.contratCreate;
+    prisma.reservation.findUnique = original.reservationFindUnique;
+    prisma.reservation.findMany = original.reservationFindMany;
+    prisma.reservation.create = original.reservationCreate;
+    restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
+    restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
+    restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
     await rm(tempDir, { recursive: true, force: true });
   }
 });

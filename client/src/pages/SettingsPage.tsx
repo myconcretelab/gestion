@@ -753,7 +753,7 @@ const DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS: DocumentEmailTextSettings = {
       "Lien de téléchargement du contrat :",
       "{{documentUrl}}",
       "",
-      "Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de {{arrhesMontant}} avant le {{arrhesDateLimiteLong}}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit {{soldeMontant}}, sera à régler à votre arrivée.",
+      "{{arrhesInstruction}}",
       "",
       "Si vous voulez des idées d'activités pour votre escapade mauronnaise, voici ce que je peux vous conseiller :",
       "",
@@ -5127,8 +5127,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   {"{{dateDebutLong}}"}, {"{{heureArrivee}}"},{" "}
                   {"{{dateFinLong}}"}, {"{{heureDepart}}"},{" "}
                   {"{{arrhesMontant}}"}, {"{{arrhesDateLimiteLong}}"},{" "}
-                  {"{{soldeMontant}}"}, {"{{activitiesList}}"}, {"{{guideUrl}}"}
-                  , {"{{destinationUrl}}"}
+                  {"{{arrhesInstruction}}"}, {"{{soldeMontant}}"},{" "}
+                  {"{{activitiesList}}"}, {"{{guideUrl}}"}, {"{{destinationUrl}}"}
                 </div>
                 {loadingDocumentEmailTexts ? (
                   <div className="field-hint" style={{ marginTop: 12 }}>

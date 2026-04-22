@@ -45,6 +45,7 @@ const emptyStringToNull = (value: unknown) => {
 };
 
 const nullableDateString = z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional();
+const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir"] as const;
 
 const contractSchema = z.object({
   gite_id: z.string().min(1),
@@ -73,6 +74,7 @@ const contractSchema = z.object({
   date_reception_contrat: nullableDateString,
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
   date_paiement_arrhes: nullableDateString,
+  mode_paiement_arrhes: z.preprocess(emptyStringToNull, z.enum(arrhesPaymentModeValues).nullable()).optional(),
   reservation_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
 });
 
@@ -109,8 +111,6 @@ const reservationPaymentSourceValues = [
   "A définir",
   "Gites de France",
 ] as const;
-
-const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir"] as const;
 const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
 
 const returnProcessingSchema = z.object({
@@ -160,6 +160,8 @@ const previewSchema = z.object({
   clauses: z.record(z.any()).optional(),
   notes: z.string().optional().nullable(),
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
+  date_paiement_arrhes: optionalDateString,
+  mode_paiement_arrhes: z.preprocess(emptyStringToNull, z.enum(arrhesPaymentModeValues).nullable()).optional(),
 });
 
 const hydrateContractMoneyFields = (contract: any) => ({
@@ -235,6 +237,37 @@ const parseOptionalTrackedDate = (value: string | null | undefined, label: strin
   return parsed;
 };
 
+const resolveArrhesTracking = (params: {
+  statutPaiementArrhes?: "non_recu" | "recu";
+  datePaiementArrhes?: string | null;
+  modePaiementArrhes?: (typeof arrhesPaymentModeValues)[number] | null;
+  existingDatePaiementArrhes?: Date | null;
+  existingModePaiementArrhes?: string | null;
+}) => {
+  const nextArrhesStatus = params.statutPaiementArrhes ?? "non_recu";
+  const explicitArrhesDate = parseOptionalTrackedDate(
+    params.datePaiementArrhes,
+    "date_paiement_arrhes"
+  );
+
+  if (nextArrhesStatus !== "recu") {
+    return {
+      statut_paiement_arrhes: nextArrhesStatus,
+      date_paiement_arrhes: null,
+      mode_paiement_arrhes: null,
+    };
+  }
+
+  return {
+    statut_paiement_arrhes: nextArrhesStatus,
+    date_paiement_arrhes: explicitArrhesDate ?? params.existingDatePaiementArrhes ?? new Date(),
+    mode_paiement_arrhes:
+      params.modePaiementArrhes === undefined
+        ? params.existingModePaiementArrhes ?? null
+        : params.modePaiementArrhes,
+  };
+};
+
 const toContractRenderInput = (contrat: any): ContractRenderInput => ({
   numero_contrat: contrat.numero_contrat,
   locataire_nom: contrat.locataire_nom,
@@ -250,6 +283,9 @@ const toContractRenderInput = (contrat: any): ContractRenderInput => ({
   remise_montant: contrat.remise_montant,
   arrhes_montant: contrat.arrhes_montant,
   arrhes_date_limite: contrat.arrhes_date_limite,
+  statut_paiement_arrhes: contrat.statut_paiement_arrhes ?? "non_recu",
+  date_paiement_arrhes: contrat.date_paiement_arrhes ?? null,
+  mode_paiement_arrhes: contrat.mode_paiement_arrhes ?? null,
   solde_montant: contrat.solde_montant,
   cheque_menage_montant: contrat.cheque_menage_montant,
   caution_montant: contrat.caution_montant,
@@ -272,6 +308,9 @@ const toContractEmailDocument = (contrat: any): ContractEmailDocument => ({
   nb_nuits: contrat.nb_nuits,
   arrhes_montant: toNumber(contrat.arrhes_montant),
   arrhes_date_limite: contrat.arrhes_date_limite,
+  statut_paiement_arrhes: contrat.statut_paiement_arrhes ?? "non_recu",
+  date_paiement_arrhes: contrat.date_paiement_arrhes ?? null,
+  mode_paiement_arrhes: contrat.mode_paiement_arrhes ?? null,
   solde_montant: toNumber(contrat.solde_montant),
   gite: contrat.gite
     ? {
@@ -452,6 +491,11 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
 
   const arrhesDateLimite = data.arrhes_date_limite ? parseDate(data.arrhes_date_limite) : addDays(new Date(), 15);
   if (data.arrhes_date_limite) ensureValidDate(arrhesDateLimite, "arrhes_date_limite");
+  const arrhesTracking = resolveArrhesTracking({
+    statutPaiementArrhes: data.statut_paiement_arrhes ?? "non_recu",
+    datePaiementArrhes: data.date_paiement_arrhes,
+    modePaiementArrhes: data.mode_paiement_arrhes,
+  });
 
   const contractForPdf: ContractRenderInput = {
     numero_contrat: "BROUILLON",
@@ -468,6 +512,9 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
     remise_montant: data.remise_montant ?? 0,
     arrhes_montant: arrhesMontant,
     arrhes_date_limite: arrhesDateLimite,
+    statut_paiement_arrhes: arrhesTracking.statut_paiement_arrhes,
+    date_paiement_arrhes: arrhesTracking.date_paiement_arrhes,
+    mode_paiement_arrhes: arrhesTracking.mode_paiement_arrhes,
     solde_montant: totals.solde,
     cheque_menage_montant: data.cheque_menage_montant ?? 0,
     caution_montant: data.caution_montant ?? 0,
@@ -627,6 +674,11 @@ router.post("/", async (req, res, next) => {
       options,
       gite,
     });
+    const arrhesTracking = resolveArrhesTracking({
+      statutPaiementArrhes: data.statut_paiement_arrhes ?? "non_recu",
+      datePaiementArrhes: data.date_paiement_arrhes,
+      modePaiementArrhes: data.mode_paiement_arrhes,
+    });
 
     const numeroContrat = await generateContractNumber(
       data.gite_id,
@@ -687,8 +739,9 @@ router.post("/", async (req, res, next) => {
         date_envoi_email: null,
         statut_reception_contrat: data.statut_reception_contrat ?? "non_recu",
         date_reception_contrat: parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat") ?? null,
-        statut_paiement_arrhes: data.statut_paiement_arrhes ?? "non_recu",
-        date_paiement_arrhes: parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes") ?? null,
+        statut_paiement_arrhes: arrhesTracking.statut_paiement_arrhes,
+        date_paiement_arrhes: arrhesTracking.date_paiement_arrhes,
+        mode_paiement_arrhes: arrhesTracking.mode_paiement_arrhes,
         notes: data.notes ?? null,
         reservation_id: reservationId,
       },
@@ -766,6 +819,15 @@ router.put("/:id", async (req, res, next) => {
       options,
       gite,
     });
+    const nextArrhesStatus =
+      data.statut_paiement_arrhes ?? (existing.statut_paiement_arrhes === "recu" ? "recu" : "non_recu");
+    const arrhesTracking = resolveArrhesTracking({
+      statutPaiementArrhes: nextArrhesStatus,
+      datePaiementArrhes: data.date_paiement_arrhes,
+      modePaiementArrhes: data.mode_paiement_arrhes,
+      existingDatePaiementArrhes: existing.date_paiement_arrhes,
+      existingModePaiementArrhes: existing.mode_paiement_arrhes,
+    });
 
     const reservationId = await syncReservationFromDocument({
       explicitReservationId: data.reservation_id ?? null,
@@ -824,11 +886,9 @@ router.put("/:id", async (req, res, next) => {
           data.date_reception_contrat === undefined
             ? existing.date_reception_contrat
             : parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat"),
-        statut_paiement_arrhes: data.statut_paiement_arrhes ?? existing.statut_paiement_arrhes ?? "non_recu",
-        date_paiement_arrhes:
-          data.date_paiement_arrhes === undefined
-            ? existing.date_paiement_arrhes
-            : parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes"),
+        statut_paiement_arrhes: arrhesTracking.statut_paiement_arrhes,
+        date_paiement_arrhes: arrhesTracking.date_paiement_arrhes,
+        mode_paiement_arrhes: arrhesTracking.mode_paiement_arrhes,
         notes: data.notes ?? null,
         reservation_id: reservationId,
       },

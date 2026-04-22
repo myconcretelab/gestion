@@ -27,6 +27,9 @@ export type ContractEmailDocument = BaseDocumentEmail & {
   nb_nuits: number;
   arrhes_montant: number;
   arrhes_date_limite: string | Date;
+  statut_paiement_arrhes?: "non_recu" | "recu";
+  date_paiement_arrhes?: string | Date | null;
+  mode_paiement_arrhes?: string | null;
   solde_montant: number;
 };
 
@@ -105,6 +108,28 @@ const formatEuroText = (value: number | string) => {
 
 const formatStayDuration = (value: number) =>
   `${value} ${value > 1 ? "nuits" : "nuit"}`;
+
+const buildArrhesInstruction = (params: {
+  arrhesMontant: string;
+  arrhesDateLimiteLong: string;
+  soldeMontant: string;
+  statutPaiementArrhes?: "non_recu" | "recu";
+  datePaiementArrhes?: string | Date | null;
+  modePaiementArrhes?: string | null;
+}) => {
+  if (params.statutPaiementArrhes === "recu") {
+    const dateText = params.datePaiementArrhes
+      ? ` le ${formatLongDate(params.datePaiementArrhes)}`
+      : "";
+    const modeText = params.modePaiementArrhes
+      ? ` Mode de paiement enregistré : ${params.modePaiementArrhes}.`
+      : "";
+
+    return `Les arrhes de ${params.arrhesMontant} ont déjà été reçues${dateText}.${modeText} Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;
+  }
+
+  return `Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de ${params.arrhesMontant} avant le ${params.arrhesDateLimiteLong}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;
+};
 
 const escapeHtml = (value: string) =>
   value
@@ -206,6 +231,14 @@ export const buildContractEmailMessage = (
     arrhesMontant: formatEuroText(contract.arrhes_montant),
     arrhesDateLimiteLong: formatLongDate(contract.arrhes_date_limite),
     soldeMontant: formatEuroText(contract.solde_montant),
+    arrhesInstruction: buildArrhesInstruction({
+      arrhesMontant: formatEuroText(contract.arrhes_montant),
+      arrhesDateLimiteLong: formatLongDate(contract.arrhes_date_limite),
+      soldeMontant: formatEuroText(contract.solde_montant),
+      statutPaiementArrhes: contract.statut_paiement_arrhes,
+      datePaiementArrhes: contract.date_paiement_arrhes,
+      modePaiementArrhes: contract.mode_paiement_arrhes,
+    }),
     activitiesList: (template.activities ?? []).join("\n\n"),
     guideUrl: template.guideUrl ?? "",
     destinationUrl: template.destinationUrl ?? "",
