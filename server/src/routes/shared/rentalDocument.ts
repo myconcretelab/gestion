@@ -140,7 +140,7 @@ const getConfiguredChildrenMax = (gite: {
   const capaciteMax = Math.max(1, toSafeInt(gite.capacite_max, 1));
   const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_max, capaciteMax)));
   const fallbackChildren = Math.max(0, capaciteMax - maxAdults);
-  return Math.min(capaciteMax, Math.max(0, toSafeInt(gite.nb_enfants_max ?? fallbackChildren, fallbackChildren)));
+  return Math.max(0, toSafeInt(gite.nb_enfants_max ?? fallbackChildren, fallbackChildren));
 };
 
 export const getDocumentOccupancyLimits = (
