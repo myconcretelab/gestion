@@ -132,19 +132,35 @@ const toSafeInt = (value: unknown, fallback: number) => {
   return Number.isFinite(normalized) ? normalized : fallback;
 };
 
-export const getDocumentOccupancyLimits = (gite: { capacite_max: number; nb_adultes_max: number }) => {
+const getConfiguredChildrenMax = (gite: {
+  capacite_max: number;
+  nb_adultes_max: number;
+  nb_enfants_max?: number | null;
+}) => {
   const capaciteMax = Math.max(1, toSafeInt(gite.capacite_max, 1));
   const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_max, capaciteMax)));
-  const maxChildren = Math.max(0, capaciteMax - maxAdults);
-  return { capaciteMax, maxAdults, maxChildren };
+  const fallbackChildren = Math.max(0, capaciteMax - maxAdults);
+  return Math.min(capaciteMax, Math.max(0, toSafeInt(gite.nb_enfants_max ?? fallbackChildren, fallbackChildren)));
+};
+
+export const getDocumentOccupancyLimits = (
+  gite: { capacite_max: number; nb_adultes_max: number; nb_enfants_max?: number | null },
+  nbAdultes = 0
+) => {
+  const capaciteMax = Math.max(1, toSafeInt(gite.capacite_max, 1));
+  const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_max, capaciteMax)));
+  const configuredMaxChildren = getConfiguredChildrenMax(gite);
+  const remainingCapacity = Math.max(0, capaciteMax - Math.max(0, toSafeInt(nbAdultes, 0)));
+  const maxChildren = Math.min(configuredMaxChildren, remainingCapacity);
+  return { capaciteMax, maxAdults, configuredMaxChildren, maxChildren };
 };
 
 export const validateDocumentOccupancy = (params: {
-  gite: { capacite_max: number; nb_adultes_max: number };
+  gite: { capacite_max: number; nb_adultes_max: number; nb_enfants_max?: number | null };
   nbAdultes: number;
   nbEnfants: number;
 }) => {
-  const limits = getDocumentOccupancyLimits(params.gite);
+  const limits = getDocumentOccupancyLimits(params.gite, params.nbAdultes);
   const issues: ConstructorParameters<typeof ZodError>[0] = [];
 
   if (params.nbAdultes > limits.maxAdults) {
@@ -160,9 +176,11 @@ export const validateDocumentOccupancy = (params: {
       code: "custom",
       path: ["nb_enfants_2_17"],
       message:
-        limits.maxChildren === 0
+        limits.configuredMaxChildren === 0
           ? "Aucun enfant n'est configuré pour ce gîte."
-          : `Le nombre d'enfants ne peut pas dépasser ${limits.maxChildren} pour ce gîte.`,
+          : limits.maxChildren < limits.configuredMaxChildren
+            ? `Avec ${params.nbAdultes} adulte(s), le nombre d'enfants ne peut pas dépasser ${limits.maxChildren} pour ce gîte.`
+            : `Le nombre d'enfants ne peut pas dépasser ${limits.configuredMaxChildren} pour ce gîte.`,
     });
   }
 

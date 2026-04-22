@@ -26,6 +26,7 @@ const giteSchemaShape = {
   capacite_max: z.coerce.number().int().min(1),
   nb_adultes_max: z.coerce.number().int().min(1),
   nb_adultes_habituel: z.coerce.number().int().min(1),
+  nb_enfants_max: z.coerce.number().int().min(0).optional(),
   proprietaires_noms: z.string().trim().min(1),
   proprietaires_adresse: z.string().trim().min(1),
   site_web: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
@@ -55,8 +56,18 @@ const giteSchemaShape = {
   gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
 };
 
-const validateAdultLimits = (
-  value: { nb_adultes_max: number; nb_adultes_habituel: number; capacite_max: number },
+const resolveChildrenMax = (value: {
+  nb_adultes_max: number;
+  capacite_max: number;
+  nb_enfants_max?: number | null;
+}) => {
+  const fallback = Math.max(0, value.capacite_max - value.nb_adultes_max);
+  const normalized = Math.trunc(Number(value.nb_enfants_max ?? fallback));
+  return Number.isFinite(normalized) ? Math.max(0, normalized) : fallback;
+};
+
+const validateOccupancyLimits = (
+  value: { nb_adultes_max: number; nb_adultes_habituel: number; capacite_max: number; nb_enfants_max?: number | null },
   ctx: z.RefinementCtx
 ) => {
   if (value.nb_adultes_max > value.capacite_max) {
@@ -74,9 +85,18 @@ const validateAdultLimits = (
       message: "Le nombre d'adultes habituel ne peut pas dépasser le nombre d'adultes max.",
     });
   }
+
+  const nbEnfantsMax = resolveChildrenMax(value);
+  if (value.nb_adultes_max + nbEnfantsMax > value.capacite_max) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["nb_enfants_max"],
+      message: "Le total adultes max + enfants max ne peut pas dépasser la capacité max.",
+    });
+  }
 };
 
-const giteSchema = z.object(giteSchemaShape).superRefine(validateAdultLimits);
+const giteSchema = z.object(giteSchemaShape).superRefine(validateOccupancyLimits);
 const giteReorderSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1),
 });
@@ -86,7 +106,7 @@ const giteImportItemSchema = z.object({
   id: z.string().trim().min(1).optional(),
   ordre: z.coerce.number().int().min(0).optional(),
 }).superRefine((value, ctx) =>
-  validateAdultLimits(
+  validateOccupancyLimits(
     {
       ...value,
       nb_adultes_max: value.nb_adultes_max ?? value.capacite_max,
@@ -102,6 +122,7 @@ type GiteImportInput = z.infer<typeof giteImportItemSchema>;
 
 const toGitePersistenceData = (payload: GiteInput) => ({
   ...payload,
+  nb_enfants_max: resolveChildrenMax(payload),
   prefixe_contrat: payload.prefixe_contrat.trim().toUpperCase(),
   telephones: encodeJsonField(payload.telephones),
   prix_nuit_liste: encodeJsonField(payload.prix_nuit_liste),
@@ -109,9 +130,14 @@ const toGitePersistenceData = (payload: GiteInput) => ({
 
 const toGiteInput = (payload: GiteImportInput): GiteInput => {
   const { id: _id, ordre: _ordre, ...data } = payload;
+  const nb_adultes_max = payload.nb_adultes_max ?? payload.capacite_max;
   return {
     ...data,
-    nb_adultes_max: payload.nb_adultes_max ?? payload.capacite_max,
+    nb_adultes_max,
+    nb_enfants_max: resolveChildrenMax({
+      ...payload,
+      nb_adultes_max,
+    }),
   };
 };
 
@@ -463,6 +489,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         capacite_max: existing.capacite_max,
         nb_adultes_max: existing.nb_adultes_max,
         nb_adultes_habituel: existing.nb_adultes_habituel,
+        nb_enfants_max: existing.nb_enfants_max,
         proprietaires_noms: existing.proprietaires_noms,
         proprietaires_adresse: existing.proprietaires_adresse,
         site_web: existing.site_web,

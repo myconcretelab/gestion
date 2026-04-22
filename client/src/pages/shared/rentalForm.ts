@@ -114,13 +114,20 @@ export const getDocumentAdultsMax = (gite?: Gite | null) => {
   return Math.min(capaciteMax, adultsMax);
 };
 
-export const getDocumentChildrenMax = (gite?: Gite | null) => {
+export const getDocumentChildrenConfiguredMax = (gite?: Gite | null) => {
   const capaciteMax = Math.max(1, toSafeInt(gite?.capacite_max ?? 1, 1));
-  return Math.max(0, capaciteMax - getDocumentAdultsMax(gite));
+  const fallback = Math.max(0, capaciteMax - getDocumentAdultsMax(gite));
+  return Math.min(capaciteMax, Math.max(0, toSafeInt(gite?.nb_enfants_max ?? fallback, fallback)));
+};
+
+export const getDocumentChildrenMax = (gite?: Gite | null, nbAdultes?: number) => {
+  const capaciteMax = Math.max(1, toSafeInt(gite?.capacite_max ?? 1, 1));
+  const adults = Math.max(0, toSafeInt(nbAdultes ?? 0, 0));
+  return Math.min(getDocumentChildrenConfiguredMax(gite), Math.max(0, capaciteMax - adults));
 };
 
 export const clampDocumentAdults = (value: number, gite?: Gite | null) =>
   Math.min(getDocumentAdultsMax(gite), Math.max(1, toSafeInt(value, 1)));
 
-export const clampDocumentChildren = (value: number, gite?: Gite | null) =>
-  Math.min(getDocumentChildrenMax(gite), Math.max(0, toSafeInt(value, 0)));
+export const clampDocumentChildren = (value: number, gite?: Gite | null, nbAdultes?: number) =>
+  Math.min(getDocumentChildrenMax(gite, nbAdultes), Math.max(0, toSafeInt(value, 0)));

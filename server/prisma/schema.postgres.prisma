@@ -22,6 +22,7 @@ model Gite {
   capacite_max                         Int
   nb_adultes_max                       Int      @default(1)
   nb_adultes_habituel                  Int      @default(1)
+  nb_enfants_max                       Int      @default(0)
   proprietaires_noms                   String
   proprietaires_adresse                String
   site_web                             String?
