@@ -117,7 +117,7 @@ export const getDocumentAdultsMax = (gite?: Gite | null) => {
 export const getDocumentChildrenConfiguredMax = (gite?: Gite | null) => {
   const capaciteMax = Math.max(1, toSafeInt(gite?.capacite_max ?? 1, 1));
   const fallback = Math.max(0, capaciteMax - getDocumentAdultsMax(gite));
-  return Math.min(capaciteMax, Math.max(0, toSafeInt(gite?.nb_enfants_max ?? fallback, fallback)));
+  return Math.max(0, toSafeInt(gite?.nb_enfants_max ?? fallback, fallback));
 };
 
 export const getDocumentChildrenMax = (gite?: Gite | null, nbAdultes?: number) => {

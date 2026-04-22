@@ -746,9 +746,6 @@ const GitesPage = () => {
               />
             </label>
           </div>
-          <div className="field-hint">
-            La somme `adultes max + enfants max` ne peut pas dépasser la capacité max du gîte.
-          </div>
         </div>
 
         <div className="form-section">

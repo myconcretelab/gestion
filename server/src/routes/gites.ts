@@ -85,15 +85,6 @@ const validateOccupancyLimits = (
       message: "Le nombre d'adultes habituel ne peut pas dépasser le nombre d'adultes max.",
     });
   }
-
-  const nbEnfantsMax = resolveChildrenMax(value);
-  if (value.nb_adultes_max + nbEnfantsMax > value.capacite_max) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["nb_enfants_max"],
-      message: "Le total adultes max + enfants max ne peut pas dépasser la capacité max.",
-    });
-  }
 };
 
 const giteSchema = z.object(giteSchemaShape).superRefine(validateOccupancyLimits);
