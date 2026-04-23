@@ -27,31 +27,45 @@ const toDateKey = (value: string) => {
   return trimmed.includes("T") ? trimmed.slice(0, 10) : trimmed;
 };
 
+const formatCompactDate = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+      });
+};
+
+const normalizeInternalComment = (value: string | null | undefined) =>
+  String(value ?? "").trim();
+
 const getReturnBadge = (contrat: Contrat) => {
   if (contrat.statut_reception_contrat === "recu") return null;
 
   const dueDateKey = toDateKey(contrat.arrhes_date_limite);
   const todayKey = toLocalDateKey(new Date());
-  const formattedDueDate = formatDate(contrat.arrhes_date_limite);
+  const formattedDueDate = formatCompactDate(contrat.arrhes_date_limite);
 
   if (dueDateKey < todayKey) {
     return {
       className:
         "reservations-current-pill reservations-current-pill--departure-today contrats-return-pill",
-      label: `Retour attendu depuis le ${formattedDueDate}`,
+      label: `Attendu depuis le ${formattedDueDate}`,
     };
   }
 
   if (dueDateKey === todayKey) {
     return {
       className: "reservations-current-pill contrats-return-pill",
-      label: "Retour attendu aujourd'hui",
+      label: "Attendu aujourd'hui",
     };
   }
 
   return {
     className: "reservations-current-pill contrats-return-pill",
-    label: `Retour attendu avant le ${formattedDueDate}`,
+    label: `Attendu avant le ${formattedDueDate}`,
   };
 };
 
@@ -113,6 +127,8 @@ const ContratsListPage = () => {
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [returnDrawerContractId, setReturnDrawerContractId] = useState<string | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [commentSaving, setCommentSaving] = useState<Record<string, boolean>>({});
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -160,6 +176,11 @@ const ContratsListPage = () => {
       .then((contratsData) => {
         setError(null);
         setContrats(contratsData);
+        setCommentDrafts(
+          Object.fromEntries(
+            contratsData.map((contrat) => [contrat.id, contrat.commentaire_interne ?? ""]),
+          ),
+        );
       })
       .catch((err) => {
         if (isAbortError(err)) return;
@@ -254,6 +275,50 @@ const ContratsListPage = () => {
     } catch (err) {
       setError((err as Error).message);
       setNotice(null);
+    }
+  };
+
+  const saveInternalComment = async (contrat: Contrat) => {
+    const draft = commentDrafts[contrat.id] ?? "";
+    if (
+      normalizeInternalComment(draft) ===
+      normalizeInternalComment(contrat.commentaire_interne)
+    ) {
+      if (draft !== (contrat.commentaire_interne ?? "")) {
+        setCommentDrafts((prev) => ({
+          ...prev,
+          [contrat.id]: contrat.commentaire_interne ?? "",
+        }));
+      }
+      return;
+    }
+
+    setCommentSaving((prev) => ({ ...prev, [contrat.id]: true }));
+    try {
+      const updated = await apiFetch<Contrat>(
+        `/contracts/${contrat.id}/internal-comment`,
+        {
+          method: "PATCH",
+          json: { commentaire_interne: draft },
+        },
+      );
+      setError(null);
+      setNotice(null);
+      setContrats((prev) =>
+        prev.map((item) => (item.id === contrat.id ? updated : item)),
+      );
+      setCommentDrafts((prev) => ({
+        ...prev,
+        [contrat.id]: updated.commentaire_interne ?? "",
+      }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCommentSaving((prev) => {
+        const next = { ...prev };
+        delete next[contrat.id];
+        return next;
+      });
     }
   };
 
@@ -436,6 +501,7 @@ const ContratsListPage = () => {
               <th>Locataire</th>
               <th>Reçu en retour</th>
               <th>Arrhes payées</th>
+              <th>Commentaire</th>
               <th>Restant dû</th>
               <th>Actions</th>
             </tr>
@@ -459,14 +525,10 @@ const ContratsListPage = () => {
                   <td>
                     {contrat.statut_reception_contrat === "recu" ? (
                       <div className="contract-return-status">
-                        <button
-                          type="button"
-                          className="contract-return-status__link"
-                          onClick={() => setReturnDrawerContractId(contrat.id)}
-                        >
+                        <div className="contract-return-status__summary">
                           <span className="contract-return-status__text">Retour reçu</span>
                           <strong>{formatDate(contrat.date_reception_contrat ?? contrat.date_derniere_modif)}</strong>
-                        </button>
+                        </div>
                         <div className="contract-return-status__actions">
                           <button
                             type="button"
@@ -503,19 +565,49 @@ const ContratsListPage = () => {
                     )}
                   </td>
                   <td>
-                    <div className="switch-cell">
-                      <div className="switch-meta contract-arrhes-status">
-                        {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "En attente"}
-                      </div>
+                      <div className="switch-cell">
+                        <div className="switch-meta contract-arrhes-status">
+                          {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "En attente"}
+                        </div>
                       {contrat.date_paiement_arrhes ? (
-                        <div className="switch-meta">
-                          Date de paiement: {formatDate(contrat.date_paiement_arrhes)}
+                        <div className="switch-meta contract-tracking-meta">
+                          Payé le {formatDate(contrat.date_paiement_arrhes)}
                         </div>
                       ) : null}
                       {contrat.mode_paiement_arrhes ? (
-                        <div className="switch-meta">
-                          Mode: {contrat.mode_paiement_arrhes}
+                        <div className="switch-meta contract-tracking-meta">
+                          {contrat.mode_paiement_arrhes}
                         </div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="contract-comment-cell">
+                    <div className="contract-comment-editor">
+                      <textarea
+                        className="contract-comment-editor__input"
+                        rows={2}
+                        value={commentDrafts[contrat.id] ?? ""}
+                        placeholder="Commentaire interne"
+                        disabled={Boolean(commentSaving[contrat.id])}
+                        onChange={(event) =>
+                          setCommentDrafts((prev) => ({
+                            ...prev,
+                            [contrat.id]: event.target.value,
+                          }))
+                        }
+                        onBlur={() => {
+                          void saveInternalComment(contrat);
+                        }}
+                        onKeyDown={(event) => {
+                          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                            event.preventDefault();
+                            void saveInternalComment(contrat);
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+                      {commentSaving[contrat.id] ? (
+                        <div className="contract-comment-editor__meta">Enregistrement...</div>
                       ) : null}
                     </div>
                   </td>

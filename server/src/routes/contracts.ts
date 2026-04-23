@@ -95,6 +95,10 @@ const trackingDatesSchema = z.object({
   date_paiement_arrhes: nullableDateString,
 });
 
+const internalCommentSchema = z.object({
+  commentaire_interne: z.preprocess(emptyStringToNull, z.string().trim().nullable()),
+});
+
 const sendEmailSchema = z.object({
   recipient: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
   subject: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(200).nullable()).optional(),
@@ -544,6 +548,12 @@ router.get("/", async (req, res, next) => {
       to,
       numeroField: "numero_contrat",
     });
+    if (q) {
+      where.OR = [
+        ...(Array.isArray(where.OR) ? where.OR : []),
+        { commentaire_interne: { contains: q, mode: "insensitive" } },
+      ];
+    }
 
     const contrats = await prisma.contrat.findMany({
       where,
@@ -1232,6 +1242,27 @@ router.patch("/:id/tracking-dates", async (req, res, next) => {
             data: nextData,
             include: { gite: true },
           });
+
+    res.json(hydrateContract(contrat));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/internal-comment", async (req, res, next) => {
+  try {
+    const data = internalCommentSchema.parse(req.body ?? {});
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const contrat = await prisma.contrat.update({
+      where: { id: req.params.id },
+      data: { commentaire_interne: data.commentaire_interne },
+      include: { gite: true },
+    });
 
     res.json(hydrateContract(contrat));
   } catch (err) {

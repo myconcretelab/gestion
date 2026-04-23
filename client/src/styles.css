@@ -7335,7 +7335,7 @@ button.warning {
 }
 
 .contract-arrhes-status {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   color: #111827;
   font-weight: 700;
 }
@@ -7360,30 +7360,20 @@ button.warning {
   gap: 8px;
 }
 
-.contract-return-status__link {
+.contract-return-status__summary {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: #1f6b43;
-  cursor: pointer;
-  transition: opacity 0.16s ease;
-}
-
-.contract-return-status__link:hover,
-.contract-return-status__link:focus-visible {
-  opacity: 0.82;
 }
 
 .contract-return-status__text {
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   font-weight: 700;
 }
 
-.contract-return-status__link strong {
-  font-size: 0.82rem;
+.contract-return-status__summary strong {
+  font-size: 0.76rem;
   font-weight: 700;
 }
 
@@ -7447,6 +7437,47 @@ button.warning {
 .contract-return-pending__meta {
   font-size: 0.76rem;
   color: #6b7280;
+  font-weight: 600;
+}
+
+.contract-tracking-meta {
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.contract-comment-cell {
+  min-width: 220px;
+  width: 220px;
+}
+
+.contract-comment-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.contract-comment-editor__input {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  resize: vertical;
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.contract-comment-editor__input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-ring);
+}
+
+.contract-comment-editor__meta {
+  font-size: 0.7rem;
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -8117,6 +8148,22 @@ button.warning {
   text-decoration: none;
   border-bottom: 1px solid rgba(17, 24, 39, 0.2);
   width: fit-content;
+}
+
+.detail-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.detail-block--internal-comment {
+  grid-column: 1 / -1;
+}
+
+.detail-block__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .arrhes-card {

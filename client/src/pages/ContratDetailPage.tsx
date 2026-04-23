@@ -43,6 +43,11 @@ const ContratDetailPage = () => {
   const [emailComposer, setEmailComposer] = useState<EmailComposerState | null>(
     null,
   );
+  const [internalCommentDraft, setInternalCommentDraft] = useState("");
+  const [internalCommentSaving, setInternalCommentSaving] = useState(false);
+
+  const normalizeInternalComment = (value: string | null | undefined) =>
+    String(value ?? "").trim();
 
   const load = async () => {
     if (!id) return;
@@ -58,6 +63,10 @@ const ContratDetailPage = () => {
     setReceptionDateInput(toDateInputValue(contrat?.date_reception_contrat));
     setArrhesPaymentDateInput(toDateInputValue(contrat?.date_paiement_arrhes));
   }, [contrat?.date_reception_contrat, contrat?.date_paiement_arrhes]);
+
+  useEffect(() => {
+    setInternalCommentDraft(contrat?.commentaire_interne ?? "");
+  }, [contrat?.commentaire_interne]);
 
   const regenerate = async () => {
     if (!id) return;
@@ -235,6 +244,35 @@ const ContratDetailPage = () => {
     );
   };
 
+  const saveInternalComment = async () => {
+    if (!id || !contrat) return;
+    if (
+      normalizeInternalComment(internalCommentDraft) ===
+      normalizeInternalComment(contrat.commentaire_interne)
+    ) {
+      if (internalCommentDraft !== (contrat.commentaire_interne ?? "")) {
+        setInternalCommentDraft(contrat.commentaire_interne ?? "");
+      }
+      return;
+    }
+
+    setInternalCommentSaving(true);
+    try {
+      const updated = await apiFetch<Contrat>(`/contracts/${id}/internal-comment`, {
+        method: "PATCH",
+        json: { commentaire_interne: internalCommentDraft },
+      });
+      setError(null);
+      setNotice("Commentaire enregistré.");
+      setContrat(updated);
+    } catch (err) {
+      setNotice(null);
+      setError((err as Error).message);
+    } finally {
+      setInternalCommentSaving(false);
+    }
+  };
+
   if (error && !contrat) return <div className="note">{error}</div>;
   if (!contrat) return <div>Chargement...</div>;
 
@@ -252,6 +290,9 @@ const ContratDetailPage = () => {
   const pdfVersion =
     contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
   const pdfUrl = `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
+  const internalCommentDirty =
+    normalizeInternalComment(internalCommentDraft) !==
+    normalizeInternalComment(contrat.commentaire_interne);
 
   return (
     <div>
@@ -535,6 +576,40 @@ const ContratDetailPage = () => {
               ) : (
                 <span className="detail-value">—</span>
               )}
+            </div>
+          </div>
+
+          <div className="detail-block detail-block--internal-comment">
+            <div className="detail-item">
+              <span className="detail-label">Commentaire interne</span>
+              <span className="detail-hint">
+                Visible uniquement par le gestionnaire. Non inclus dans le contrat PDF.
+              </span>
+            </div>
+            <label className="field">
+              <textarea
+                rows={6}
+                value={internalCommentDraft}
+                placeholder="Ajouter un commentaire interne"
+                disabled={internalCommentSaving}
+                onChange={(event) => setInternalCommentDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                    event.preventDefault();
+                    void saveInternalComment();
+                  }
+                }}
+              />
+            </label>
+            <div className="detail-block__actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={!internalCommentDirty || internalCommentSaving}
+                onClick={() => void saveInternalComment()}
+              >
+                {internalCommentSaving ? "Enregistrement..." : "Enregistrer"}
+              </button>
             </div>
           </div>
         </div>

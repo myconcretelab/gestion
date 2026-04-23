@@ -180,6 +180,7 @@ model Contrat {
   statut_paiement_solde  String   @default("non_regle")
   mode_paiement_arrhes   String?
   notes                  String?
+  commentaire_interne    String?
   reservation_id         String?
 
   gite                   Gite     @relation(fields: [gite_id], references: [id])

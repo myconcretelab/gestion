@@ -212,6 +212,7 @@ export type Contrat = {
   statut_paiement_solde: "non_regle" | "regle";
   mode_paiement_arrhes?: "Chèque" | "Virement" | "Espèces" | "A définir" | null;
   notes?: string | null;
+  commentaire_interne?: string | null;
   reservation_id?: string | null;
   gite?: Gite;
 };
