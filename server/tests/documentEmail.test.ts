@@ -115,7 +115,7 @@ test("buildInvoiceEmailMessage construit un email de facture exploitable", () =>
   assert.match(message.html, /Facture Liberté GT-2026-01|agréable séjour au Liberté/);
 });
 
-test("buildContractEmailMessage peut preparer un email avec PDF en piece jointe", () => {
+test("buildContractEmailMessage peut preparer un email avec PDF sans mention explicite de piece jointe", () => {
   const message = buildContractEmailMessage(
     {
       numero_contrat: "GT-2026-000001",
@@ -138,8 +138,8 @@ test("buildContractEmailMessage peut preparer un email avec PDF en piece jointe"
   );
 
   assert.match(message.text, /veuillez trouver ci-joint le contrat de location/);
-  assert.match(message.text, /Document joint :/);
-  assert.match(message.text, /Le contrat PDF est joint à cet email\./);
+  assert.doesNotMatch(message.text, /Document joint :/);
+  assert.doesNotMatch(message.text, /Le contrat PDF est joint à cet email\./);
   assert.doesNotMatch(message.text, /https:\/\/example.com\/contracts\/GT-2026-000001\.pdf/);
 });
 
