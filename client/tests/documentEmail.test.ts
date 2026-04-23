@@ -71,8 +71,7 @@ test("buildDocumentMailtoHref adapte le texte du contrat quand les arrhes sont d
   assert.ok(href);
   const mail = extractMailtoParts(href);
 
-  assert.match(mail.body, /arrhes de 170€ ont déjà été reçues le lundi 12 janvier 2026\./);
-  assert.match(mail.body, /Mode de paiement enregistré : Virement\./);
+  assert.match(mail.body, /arrhes de 170€ ont déjà été reçues le lundi 12 janvier 2026, par virement\./);
   assert.doesNotMatch(mail.body, /accompagné du règlement des arrhes/);
   assert.match(mail.body, /contrat signé avant le vendredi 30 janvier 2026/);
 });
