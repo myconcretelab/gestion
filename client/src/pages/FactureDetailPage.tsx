@@ -6,7 +6,10 @@ import { formatDate, formatEuro } from "../utils/format";
 import {
   buildDocumentEmailDraft,
   buildDocumentEmailTemplateSettings,
+  type BuildDocumentEmailDraftParams,
+  type DocumentEmailDeliveryMode,
   type DocumentEmailTextSettings,
+  type DocumentEmailTemplateSettings,
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 
@@ -14,6 +17,11 @@ type EmailComposerState = {
   recipient: string;
   subject: string;
   body: string;
+  deliveryMode: DocumentEmailDeliveryMode;
+  draftParams: BuildDocumentEmailDraftParams;
+  templateSettings: DocumentEmailTemplateSettings;
+  autoSubject: string;
+  autoBody: string;
 };
 
 const FactureDetailPage = () => {
@@ -55,20 +63,30 @@ const FactureDetailPage = () => {
       const emailTextSettings = await apiFetch<DocumentEmailTextSettings>(
         "/settings/document-email-texts",
       );
-      setError(null);
-      setEmailComposer(
-        buildDocumentEmailDraft(
-          {
-            recipient: facture.locataire_email,
-            documentType: "facture",
-            documentNumber: facture.numero_facture,
-            documentUrl,
-            locataireNom: facture.locataire_nom,
-            giteNom: facture.gite?.nom,
-          },
-          buildDocumentEmailTemplateSettings(emailTextSettings),
-        ),
+      const templateSettings = buildDocumentEmailTemplateSettings(
+        emailTextSettings,
       );
+      const draftParams: BuildDocumentEmailDraftParams = {
+        recipient: facture.locataire_email,
+        documentType: "facture",
+        documentNumber: facture.numero_facture,
+        documentUrl,
+        locataireNom: facture.locataire_nom,
+        giteNom: facture.gite?.nom,
+        deliveryMode: "attachment",
+      };
+      const draft = buildDocumentEmailDraft(draftParams, templateSettings);
+      setError(null);
+      setEmailComposer({
+        recipient: draft.recipient ?? facture.locataire_email,
+        subject: draft.subject,
+        body: draft.body,
+        deliveryMode: draftParams.deliveryMode ?? "attachment",
+        draftParams,
+        templateSettings,
+        autoSubject: draft.subject,
+        autoBody: draft.body,
+      });
     } catch (err) {
       setError((err as Error).message);
     }
@@ -84,6 +102,7 @@ const FactureDetailPage = () => {
           recipient: emailComposer.recipient,
           subject: emailComposer.subject,
           body: emailComposer.body,
+          deliveryMode: emailComposer.deliveryMode,
         },
       });
       setError(null);
@@ -131,6 +150,7 @@ const FactureDetailPage = () => {
         recipient={emailComposer?.recipient ?? ""}
         subject={emailComposer?.subject ?? ""}
         body={emailComposer?.body ?? ""}
+        deliveryMode={emailComposer?.deliveryMode ?? "attachment"}
         sending={emailSending}
         onClose={() => setEmailComposer(null)}
         onRecipientChange={(value) =>
@@ -145,6 +165,28 @@ const FactureDetailPage = () => {
         }
         onBodyChange={(value) =>
           setEmailComposer((prev) => (prev ? { ...prev, body: value } : prev))
+        }
+        onDeliveryModeChange={(value) =>
+          setEmailComposer((prev) => {
+            if (!prev) return prev;
+            const nextDraftParams = { ...prev.draftParams, deliveryMode: value };
+            const nextDraft = buildDocumentEmailDraft(
+              nextDraftParams,
+              prev.templateSettings,
+            );
+            return {
+              ...prev,
+              deliveryMode: value,
+              draftParams: nextDraftParams,
+              subject:
+                prev.subject === prev.autoSubject
+                  ? nextDraft.subject
+                  : prev.subject,
+              body: prev.body === prev.autoBody ? nextDraft.body : prev.body,
+              autoSubject: nextDraft.subject,
+              autoBody: nextDraft.body,
+            };
+          })
         }
         onSubmit={sendEmail}
       />
