@@ -84,8 +84,8 @@ const buildDeliveryTemplateValues = (
     return {
       documentDeliveryIntroContract: "ci-joint",
       documentDeliveryIntroSentence: "",
-      documentDeliveryLabel: "Document joint :",
-      documentDeliveryValue: "Le contrat PDF est joint à cet email.",
+      documentDeliveryLabel: "",
+      documentDeliveryValue: "",
     };
   }
 
@@ -101,11 +101,32 @@ const buildDeliveryTemplateValues = (
 
   return {
     documentDeliveryIntroContract: "",
-    documentDeliveryIntroSentence:
-      "Vous trouverez votre facture en pièce jointe.",
-    documentDeliveryLabel: "Document joint :",
-    documentDeliveryValue: "La facture PDF est jointe à cet email.",
+    documentDeliveryIntroSentence: "Je vous transmets votre facture.",
+    documentDeliveryLabel: "",
+    documentDeliveryValue: "",
   };
+};
+
+const renderBodyLines = (
+  bodyLines: string[],
+  values: Record<string, string>,
+) => {
+  const renderedLines = bodyLines
+    .map((line) => renderTemplateLine(line, values))
+    .map((line) => line.replace(/\s{2,}/g, " ").trim());
+  const compactedLines: string[] = [];
+
+  for (const line of renderedLines) {
+    if (line === "" && compactedLines[compactedLines.length - 1] === "") {
+      continue;
+    }
+    compactedLines.push(line);
+  }
+
+  while (compactedLines[0] === "") compactedLines.shift();
+  while (compactedLines[compactedLines.length - 1] === "") compactedLines.pop();
+
+  return compactedLines.join("\n");
 };
 
 export type ContractDocumentEmailTextTemplate = {
@@ -326,10 +347,7 @@ export const buildDocumentMailtoHref = (
     });
   }
   const subject = renderSubjectTemplate(template, templateValues);
-
-  const body = template.bodyLines
-    .map((line) => renderTemplateLine(line, templateValues))
-    .join("\n");
+  const body = renderBodyLines(template.bodyLines, templateValues);
 
   return buildMailtoHref({ recipient, subject, body });
 };
