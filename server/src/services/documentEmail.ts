@@ -54,6 +54,8 @@ type BuiltEmailMessage = {
   html: string;
 };
 
+export type DocumentEmailDeliveryMode = "attachment" | "download_link";
+
 type CustomEmailContent = {
   recipient?: string | null;
   subject?: string | null;
@@ -172,6 +174,52 @@ const buildHtmlFromLines = (lines: string[]) => {
 const normalizeRecipient = (value: string | null | undefined) =>
   String(value ?? "").trim();
 
+const resolveDeliveryMode = (
+  value?: DocumentEmailDeliveryMode | null,
+): DocumentEmailDeliveryMode => (value === "download_link" ? "download_link" : "attachment");
+
+const buildDeliveryTemplateValues = (
+  documentType: "contrat" | "facture",
+  deliveryMode: DocumentEmailDeliveryMode,
+  documentUrl: string,
+) => {
+  if (documentType === "contrat") {
+    if (deliveryMode === "download_link") {
+      return {
+        documentDeliveryIntroContract: "ci-dessous le lien vers",
+        documentDeliveryIntroSentence: "",
+        documentDeliveryLabel: "Lien de téléchargement du contrat :",
+        documentDeliveryValue: documentUrl,
+      };
+    }
+
+    return {
+      documentDeliveryIntroContract: "ci-joint",
+      documentDeliveryIntroSentence: "",
+      documentDeliveryLabel: "Document joint :",
+      documentDeliveryValue: "Le contrat PDF est joint à cet email.",
+    };
+  }
+
+  if (deliveryMode === "download_link") {
+    return {
+      documentDeliveryIntroContract: "",
+      documentDeliveryIntroSentence:
+        "Je vous joins un lien de téléchargement vers votre facture.",
+      documentDeliveryLabel: "Lien de téléchargement de la facture :",
+      documentDeliveryValue: documentUrl,
+    };
+  }
+
+  return {
+    documentDeliveryIntroContract: "",
+    documentDeliveryIntroSentence:
+      "Vous trouverez votre facture en pièce jointe.",
+    documentDeliveryLabel: "Document joint :",
+    documentDeliveryValue: "La facture PDF est jointe à cet email.",
+  };
+};
+
 const buildGreeting = (locataireNom: string) => {
   const trimmedName = locataireNom.trim();
   return trimmedName ? `Bonjour ${trimmedName},` : "Bonjour,";
@@ -212,13 +260,19 @@ const normalizeCustomEmailContent = (
 
 export const buildContractEmailMessage = (
   contract: ContractEmailDocument,
-  options?: { documentUrl?: string | null; customMessage?: CustomEmailContent },
+  options?: {
+    documentUrl?: string | null;
+    customMessage?: CustomEmailContent;
+    deliveryMode?: DocumentEmailDeliveryMode | null;
+  },
 ): BuiltEmailMessage => {
   const template = readDocumentEmailTemplateSettings().contrat;
   const giteName = String(contract.gite?.nom ?? "").trim();
+  const deliveryMode = resolveDeliveryMode(options?.deliveryMode ?? "download_link");
+  const documentUrl = String(options?.documentUrl ?? "").trim();
   const templateValues: Record<string, string> = {
     greeting: buildGreeting(contract.locataire_nom),
-    documentUrl: String(options?.documentUrl ?? "").trim(),
+    documentUrl,
     giteName,
     documentNumber: contract.numero_contrat.trim(),
     locataireNom: contract.locataire_nom.trim(),
@@ -242,6 +296,7 @@ export const buildContractEmailMessage = (
     activitiesList: (template.activities ?? []).join("\n\n"),
     guideUrl: template.guideUrl ?? "",
     destinationUrl: template.destinationUrl ?? "",
+    ...buildDeliveryTemplateValues("contrat", deliveryMode, documentUrl),
   };
   const subject = renderSubjectTemplate(template, templateValues);
 
@@ -258,17 +313,24 @@ export const buildContractEmailMessage = (
 
 export const buildInvoiceEmailMessage = (
   invoice: InvoiceEmailDocument,
-  options?: { documentUrl?: string | null; customMessage?: CustomEmailContent },
+  options?: {
+    documentUrl?: string | null;
+    customMessage?: CustomEmailContent;
+    deliveryMode?: DocumentEmailDeliveryMode | null;
+  },
 ): BuiltEmailMessage => {
   const template = readDocumentEmailTemplateSettings().facture;
   const giteName = String(invoice.gite?.nom ?? "").trim();
+  const deliveryMode = resolveDeliveryMode(options?.deliveryMode ?? "download_link");
+  const documentUrl = String(options?.documentUrl ?? "").trim();
   const templateValues: Record<string, string> = {
     greeting: buildGreeting(invoice.locataire_nom),
-    documentUrl: String(options?.documentUrl ?? "").trim(),
+    documentUrl,
     giteName,
     documentNumber: invoice.numero_facture.trim(),
     locataireNom: invoice.locataire_nom.trim(),
     giteSentence: giteName ? ` au ${giteName}.` : ".",
+    ...buildDeliveryTemplateValues("facture", deliveryMode, documentUrl),
   };
   const subject = renderSubjectTemplate(template, templateValues);
 
@@ -294,7 +356,11 @@ const ensureAttachmentReadable = async (attachmentPath: string) => {
 export const sendContractEmail = async (
   contract: ContractEmailDocument,
   attachmentPath: string,
-  options?: { documentUrl?: string | null; customMessage?: CustomEmailContent },
+  options?: {
+    documentUrl?: string | null;
+    customMessage?: CustomEmailContent;
+    deliveryMode?: DocumentEmailDeliveryMode | null;
+  },
 ) => {
   const recipient = normalizeRecipient(
     options?.customMessage?.recipient ?? contract.locataire_email,
@@ -306,29 +372,41 @@ export const sendContractEmail = async (
     );
   }
 
-  await ensureAttachmentReadable(attachmentPath);
-
-  const message = buildContractEmailMessage(contract, options);
+  const deliveryMode = resolveDeliveryMode(options?.deliveryMode);
+  if (deliveryMode === "attachment") {
+    await ensureAttachmentReadable(attachmentPath);
+  }
+  const message = buildContractEmailMessage(contract, {
+    ...options,
+    deliveryMode,
+  });
   return sendSmtpMail({
     to: recipient,
     subject: message.subject,
     text: message.text,
     html: message.html,
     replyTo: getReplyTo(contract.gite?.email),
-    attachments: [
-      {
-        filename: `${contract.numero_contrat}.pdf`,
-        path: attachmentPath,
-        contentType: "application/pdf",
-      },
-    ],
+    attachments:
+      deliveryMode === "attachment"
+        ? [
+            {
+              filename: `${contract.numero_contrat}.pdf`,
+              path: attachmentPath,
+              contentType: "application/pdf",
+            },
+          ]
+        : undefined,
   });
 };
 
 export const sendInvoiceEmail = async (
   invoice: InvoiceEmailDocument,
   attachmentPath: string,
-  options?: { documentUrl?: string | null; customMessage?: CustomEmailContent },
+  options?: {
+    documentUrl?: string | null;
+    customMessage?: CustomEmailContent;
+    deliveryMode?: DocumentEmailDeliveryMode | null;
+  },
 ) => {
   const recipient = normalizeRecipient(
     options?.customMessage?.recipient ?? invoice.locataire_email,
@@ -340,21 +418,29 @@ export const sendInvoiceEmail = async (
     );
   }
 
-  await ensureAttachmentReadable(attachmentPath);
-
-  const message = buildInvoiceEmailMessage(invoice, options);
+  const deliveryMode = resolveDeliveryMode(options?.deliveryMode);
+  if (deliveryMode === "attachment") {
+    await ensureAttachmentReadable(attachmentPath);
+  }
+  const message = buildInvoiceEmailMessage(invoice, {
+    ...options,
+    deliveryMode,
+  });
   return sendSmtpMail({
     to: recipient,
     subject: message.subject,
     text: message.text,
     html: message.html,
     replyTo: getReplyTo(invoice.gite?.email),
-    attachments: [
-      {
-        filename: `${invoice.numero_facture}.pdf`,
-        path: attachmentPath,
-        contentType: "application/pdf",
-      },
-    ],
+    attachments:
+      deliveryMode === "attachment"
+        ? [
+            {
+              filename: `${invoice.numero_facture}.pdf`,
+              path: attachmentPath,
+              contentType: "application/pdf",
+            },
+          ]
+        : undefined,
   });
 };

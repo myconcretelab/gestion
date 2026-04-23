@@ -12,6 +12,7 @@ type BuildDocumentMailtoHrefBaseParams = {
   documentUrl: string;
   locataireNom: string;
   giteNom?: string | null;
+  deliveryMode?: DocumentEmailDeliveryMode;
 };
 
 type BuildContractMailtoHrefParams = BuildDocumentMailtoHrefBaseParams & {
@@ -39,6 +40,8 @@ type BuildDocumentMailtoHrefParams =
 
 export type BuildDocumentEmailDraftParams = BuildDocumentMailtoHrefParams;
 
+export type DocumentEmailDeliveryMode = "attachment" | "download_link";
+
 export type DocumentEmailDraft = {
   recipient?: string | null;
   subject: string;
@@ -57,6 +60,52 @@ export type DocumentEmailTemplateSettings = Record<
   BuildDocumentMailtoHrefParams["documentType"],
   DocumentEmailTemplate
 >;
+
+const resolveDeliveryMode = (
+  value?: DocumentEmailDeliveryMode | null,
+): DocumentEmailDeliveryMode => (value === "download_link" ? "download_link" : "attachment");
+
+const buildDeliveryTemplateValues = (
+  documentType: BuildDocumentMailtoHrefParams["documentType"],
+  deliveryMode: DocumentEmailDeliveryMode,
+  documentUrl: string,
+) => {
+  if (documentType === "contrat") {
+    if (deliveryMode === "download_link") {
+      return {
+        documentDeliveryIntroContract: "ci-dessous le lien vers",
+        documentDeliveryIntroSentence: "",
+        documentDeliveryLabel: "Lien de téléchargement du contrat :",
+        documentDeliveryValue: documentUrl,
+      };
+    }
+
+    return {
+      documentDeliveryIntroContract: "ci-joint",
+      documentDeliveryIntroSentence: "",
+      documentDeliveryLabel: "Document joint :",
+      documentDeliveryValue: "Le contrat PDF est joint à cet email.",
+    };
+  }
+
+  if (deliveryMode === "download_link") {
+    return {
+      documentDeliveryIntroContract: "",
+      documentDeliveryIntroSentence:
+        "Je vous joins un lien de téléchargement vers votre facture.",
+      documentDeliveryLabel: "Lien de téléchargement de la facture :",
+      documentDeliveryValue: documentUrl,
+    };
+  }
+
+  return {
+    documentDeliveryIntroContract: "",
+    documentDeliveryIntroSentence:
+      "Vous trouverez votre facture en pièce jointe.",
+    documentDeliveryLabel: "Document joint :",
+    documentDeliveryValue: "La facture PDF est jointe à cet email.",
+  };
+};
 
 export type ContractDocumentEmailTextTemplate = {
   subject: string;
@@ -233,6 +282,7 @@ export const buildDocumentMailtoHref = (
     ...documentTemplates[documentType],
     ...(templateSettings?.[documentType] ?? {}),
   };
+  const deliveryMode = resolveDeliveryMode(params.deliveryMode);
   const safeDocumentNumber = documentNumber.trim();
   const safeGiteNom = String(giteNom ?? "").trim();
   const safeLocataireNom = locataireNom.trim();
@@ -246,6 +296,7 @@ export const buildDocumentMailtoHref = (
     documentNumber: safeDocumentNumber,
     locataireNom: safeLocataireNom,
     giteSentence: safeGiteNom ? ` au ${safeGiteNom}.` : ".",
+    ...buildDeliveryTemplateValues(documentType, deliveryMode, documentUrl.trim()),
   };
 
   if (documentType === "contrat") {

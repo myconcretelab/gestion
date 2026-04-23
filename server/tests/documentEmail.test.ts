@@ -115,6 +115,34 @@ test("buildInvoiceEmailMessage construit un email de facture exploitable", () =>
   assert.match(message.html, /Facture Liberté GT-2026-01|agréable séjour au Liberté/);
 });
 
+test("buildContractEmailMessage peut preparer un email avec PDF en piece jointe", () => {
+  const message = buildContractEmailMessage(
+    {
+      numero_contrat: "GT-2026-000001",
+      locataire_nom: "Mickael",
+      locataire_email: "mickael@example.com",
+      gite: { nom: "Liberté", email: "gite@example.com" },
+      date_debut: "2026-06-05",
+      heure_arrivee: "17:00",
+      date_fin: "2026-06-07",
+      heure_depart: "10:00",
+      nb_nuits: 2,
+      arrhes_montant: 170,
+      arrhes_date_limite: "2026-01-30",
+      solde_montant: 800,
+    },
+    {
+      documentUrl: "https://example.com/contracts/GT-2026-000001.pdf",
+      deliveryMode: "attachment",
+    }
+  );
+
+  assert.match(message.text, /veuillez trouver ci-joint le contrat de location/);
+  assert.match(message.text, /Document joint :/);
+  assert.match(message.text, /Le contrat PDF est joint à cet email\./);
+  assert.doesNotMatch(message.text, /https:\/\/example.com\/contracts\/GT-2026-000001\.pdf/);
+});
+
 test("buildContractEmailMessage accepte un sujet et un corps personnalises", () => {
   const message = buildContractEmailMessage(
     {

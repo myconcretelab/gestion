@@ -99,6 +99,7 @@ const sendEmailSchema = z.object({
   recipient: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
   subject: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(200).nullable()).optional(),
   body: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(20_000).nullable()).optional(),
+  deliveryMode: z.enum(["attachment", "download_link"]).optional().default("attachment"),
 });
 
 const reservationPaymentSourceValues = [
@@ -949,6 +950,7 @@ router.post("/:id/send-email", async (req, res, next) => {
     const documentUrl = new URL(`/api/contracts/${req.params.id}/pdf`, `${req.protocol}://${req.get("host")}`).toString();
     await sendContractEmail(toContractEmailDocument(contrat), absolutePath, {
       documentUrl,
+      deliveryMode: emailDraft.deliveryMode,
       customMessage: emailDraft,
     });
 

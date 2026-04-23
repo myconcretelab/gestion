@@ -51,6 +51,20 @@ const DEFAULT_TEMPLATES = defaults as DocumentEmailTemplateSettings;
 const LEGACY_CONTRACT_ARRHES_LINE =
   "Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de {{arrhesMontant}} avant le {{arrhesDateLimiteLong}}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit {{soldeMontant}}, sera à régler à votre arrivée.";
 const MODERN_CONTRACT_ARRHES_LINE = "{{arrhesInstruction}}";
+const LEGACY_CONTRACT_DELIVERY_INTRO_LINE =
+  "Suite à votre appel, veuillez trouver ci-dessous le lien vers le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.";
+const MODERN_CONTRACT_DELIVERY_INTRO_LINE =
+  "Suite à votre appel, veuillez trouver {{documentDeliveryIntroContract}} le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.";
+const LEGACY_INVOICE_DELIVERY_INTRO_LINE =
+  "Je vous joins un lien de téléchargement vers votre facture.";
+const MODERN_INVOICE_DELIVERY_INTRO_LINE =
+  "{{documentDeliveryIntroSentence}}";
+const LEGACY_CONTRACT_DELIVERY_LABEL_LINE =
+  "Lien de téléchargement du contrat :";
+const LEGACY_INVOICE_DELIVERY_LABEL_LINE = "Le lien de téléchargement :";
+const MODERN_DELIVERY_LABEL_LINE = "{{documentDeliveryLabel}}";
+const LEGACY_DELIVERY_VALUE_LINE = "{{documentUrl}}";
+const MODERN_DELIVERY_VALUE_LINE = "{{documentDeliveryValue}}";
 
 const normalizeBodyLines = (value: unknown, fallback: string[]) => {
   if (!Array.isArray(value)) return fallback;
@@ -60,7 +74,26 @@ const normalizeBodyLines = (value: unknown, fallback: string[]) => {
 
 const normalizeContractBodyLines = (lines: string[]) =>
   lines.map((line) =>
-    line.trim() === LEGACY_CONTRACT_ARRHES_LINE ? MODERN_CONTRACT_ARRHES_LINE : line
+    line.trim() === LEGACY_CONTRACT_ARRHES_LINE
+      ? MODERN_CONTRACT_ARRHES_LINE
+      : line.trim() === LEGACY_CONTRACT_DELIVERY_INTRO_LINE
+        ? MODERN_CONTRACT_DELIVERY_INTRO_LINE
+        : line.trim() === LEGACY_CONTRACT_DELIVERY_LABEL_LINE
+          ? MODERN_DELIVERY_LABEL_LINE
+          : line.trim() === LEGACY_DELIVERY_VALUE_LINE
+            ? MODERN_DELIVERY_VALUE_LINE
+            : line
+  );
+
+const normalizeInvoiceBodyLines = (lines: string[]) =>
+  lines.map((line) =>
+    line.trim() === LEGACY_INVOICE_DELIVERY_INTRO_LINE
+      ? MODERN_INVOICE_DELIVERY_INTRO_LINE
+      : line.trim() === LEGACY_INVOICE_DELIVERY_LABEL_LINE
+        ? MODERN_DELIVERY_LABEL_LINE
+        : line.trim() === LEGACY_DELIVERY_VALUE_LINE
+          ? MODERN_DELIVERY_VALUE_LINE
+          : line
   );
 
 const normalizeTemplate = (
@@ -81,12 +114,16 @@ const normalizeSettings = (
   input: Partial<DocumentEmailTemplateSettings> | null | undefined,
 ): DocumentEmailTemplateSettings => {
   const contrat = normalizeTemplate(input?.contrat, DEFAULT_TEMPLATES.contrat);
+  const facture = normalizeTemplate(input?.facture, DEFAULT_TEMPLATES.facture);
   return {
     contrat: {
       ...contrat,
       bodyLines: normalizeContractBodyLines(contrat.bodyLines),
     },
-    facture: normalizeTemplate(input?.facture, DEFAULT_TEMPLATES.facture),
+    facture: {
+      ...facture,
+      bodyLines: normalizeInvoiceBodyLines(facture.bodyLines),
+    },
   };
 };
 

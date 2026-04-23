@@ -974,7 +974,7 @@ test("API contrats expose un restant du a zero quand le solde est regle", async 
   }
 });
 
-test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe", async () => {
+test("API envoie les contrats et factures via SMTP selon le mode PDF choisi", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "contrats-email-test-"));
   const pdfPath = path.join(tempDir, "document.pdf");
   await writeFile(pdfPath, "pdf");
@@ -1155,7 +1155,12 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
     nextError = null;
     await invoiceSend(
       {
-        body: { recipient: "alt-invoice@example.com", subject: "Sujet facture", body: "Corps facture" },
+        body: {
+          recipient: "alt-invoice@example.com",
+          subject: "Sujet facture",
+          body: "Corps facture",
+          deliveryMode: "download_link",
+        },
         params: { id: "f1" },
         query: {},
         protocol: "https",
@@ -1183,8 +1188,7 @@ test("API envoie les contrats et factures via SMTP avec le PDF en piece jointe",
 
     assert.equal(sentMails[1].to, "alt-invoice@example.com");
     assert.deepEqual(sentMails[1].from, { name: "", address: "noreply@example.com" });
-    assert.equal(sentMails[1].attachments[0].filename, "GT-2026-01.pdf");
-    assert.equal(sentMails[1].attachments[0].path, pdfPath);
+    assert.equal(sentMails[1].attachments, undefined);
     assert.equal(sentMails[1].subject, "Sujet facture");
     assert.equal(sentMails[1].text, "Corps facture");
   } finally {
