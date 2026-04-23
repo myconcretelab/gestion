@@ -622,25 +622,6 @@ const ContratsListPage = () => {
                       >
                         Détails
                       </Link>
-                      {contrat.locataire_email ? (
-                        <button
-                          type="button"
-                          className="table-action table-action--neutral"
-                          onClick={() => void openEmailComposer(contrat)}
-                          disabled={Boolean(emailSending[contrat.id])}
-                        >
-                          {emailSending[contrat.id] ? "Envoi..." : "Email"}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="table-action table-action--neutral"
-                          disabled
-                          title="Email locataire non renseigné"
-                        >
-                          Email
-                        </button>
-                      )}
                       <div className="reservations-actions-menu">
                         <button
                           type="button"
@@ -650,6 +631,25 @@ const ContratsListPage = () => {
                           ⋯
                         </button>
                         <div className="reservations-row-actions">
+                          {contrat.locataire_email ? (
+                            <button
+                              type="button"
+                              className="table-action table-action--neutral"
+                              onClick={() => void openEmailComposer(contrat)}
+                              disabled={Boolean(emailSending[contrat.id])}
+                            >
+                              {emailSending[contrat.id] ? "Envoi..." : "Email"}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="table-action table-action--neutral"
+                              disabled
+                              title="Email locataire non renseigné"
+                            >
+                              Email
+                            </button>
+                          )}
                           <Link
                             className="table-action table-action--neutral"
                             to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
