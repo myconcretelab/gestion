@@ -63,7 +63,8 @@ export type DocumentEmailTemplateSettings = Record<
 
 const resolveDeliveryMode = (
   value?: DocumentEmailDeliveryMode | null,
-): DocumentEmailDeliveryMode => (value === "download_link" ? "download_link" : "attachment");
+): DocumentEmailDeliveryMode =>
+  value === "attachment" ? "attachment" : "download_link";
 
 const buildDeliveryTemplateValues = (
   documentType: BuildDocumentMailtoHrefParams["documentType"],
