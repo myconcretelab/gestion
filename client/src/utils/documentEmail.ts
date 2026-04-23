@@ -197,6 +197,14 @@ const formatEuroText = (value: number | string) => {
 const formatStayDuration = (value: number) =>
   `${value} ${value > 1 ? "nuits" : "nuit"}`;
 
+const formatArrhesPaymentMethod = (value: string) => {
+  const trimmedValue = String(value ?? "").trim();
+  if (!trimmedValue) return "";
+  if (/^par\s+/i.test(trimmedValue)) return trimmedValue;
+  if (/^[A-Z0-9\s]+$/.test(trimmedValue)) return `par ${trimmedValue}`;
+  return `par ${trimmedValue.charAt(0).toLowerCase()}${trimmedValue.slice(1)}`;
+};
+
 const buildArrhesInstruction = (params: {
   arrhesMontant: string;
   arrhesDateLimiteLong: string;
@@ -209,11 +217,16 @@ const buildArrhesInstruction = (params: {
     const dateText = params.datePaiementArrhes
       ? ` le ${formatLongDate(params.datePaiementArrhes)}`
       : "";
-    const modeText = params.modePaiementArrhes
-      ? ` Mode de paiement enregistré : ${params.modePaiementArrhes}.`
-      : "";
+    const paymentMethod = formatArrhesPaymentMethod(
+      params.modePaiementArrhes ?? "",
+    );
+    const modeText = paymentMethod
+      ? params.datePaiementArrhes
+        ? `, ${paymentMethod}.`
+        : ` ${paymentMethod}.`
+      : ".";
 
-    return `Les arrhes de ${params.arrhesMontant} ont déjà été reçues${dateText}.${modeText} Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;
+    return `Les arrhes de ${params.arrhesMontant} ont déjà été reçues${dateText}${modeText} Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;
   }
 
   return `Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de ${params.arrhesMontant} avant le ${params.arrhesDateLimiteLong}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;

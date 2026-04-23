@@ -89,8 +89,7 @@ test("buildContractEmailMessage adapte le texte quand les arrhes sont deja recue
     }
   );
 
-  assert.match(message.text, /arrhes de 170€ ont déjà été reçues le lundi 12 janvier 2026\./);
-  assert.match(message.text, /Mode de paiement enregistré : Virement\./);
+  assert.match(message.text, /arrhes de 170€ ont déjà été reçues le lundi 12 janvier 2026, par virement\./);
   assert.doesNotMatch(message.text, /accompagné du règlement des arrhes/);
   assert.match(message.text, /contrat signé avant le vendredi 30 janvier 2026/);
 });
