@@ -6955,6 +6955,7 @@ button.warning {
 .reservations-row-details td {
   background: #f9fafb;
   overflow: hidden;
+  overflow-anchor: none;
   transition:
     padding-top 280ms ease,
     padding-bottom 280ms ease;
@@ -6965,6 +6966,7 @@ button.warning {
   opacity: 1;
   transform: translateY(0);
   overflow: hidden;
+  overflow-anchor: none;
   transition:
     max-height 280ms ease,
     opacity 240ms ease,
