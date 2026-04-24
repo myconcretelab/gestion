@@ -51,6 +51,9 @@ const DEFAULT_MONTH_SCROLL_OFFSET = 104;
 const DEFAULT_DAY_SCROLL_OFFSET = 76;
 const DEFAULT_MOBILE_TOPBAR_OFFSET = 56;
 const RENDERED_MONTH_RADIUS = 2;
+const MONTH_SWITCH_LEAD_RATIO = 0.24;
+const MONTH_SWITCH_LEAD_MIN = 120;
+const MONTH_SWITCH_LEAD_MAX = 260;
 
 const CrownIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1115,6 +1118,12 @@ const CalendrierPage = () => {
     [usesViewportScroll, viewportStickyOffsets.hero, viewportStickyOffsets.topbar, viewportStickyOffsets.weekdays]
   );
 
+  const getMonthSwitchLead = useCallback(() => {
+    const viewportHeight = usesViewportScroll ? window.innerHeight : boardScrollRef.current?.clientHeight ?? 0;
+    if (viewportHeight <= 0) return 0;
+    return clamp(Math.round(viewportHeight * MONTH_SWITCH_LEAD_RATIO), MONTH_SWITCH_LEAD_MIN, MONTH_SWITCH_LEAD_MAX);
+  }, [usesViewportScroll]);
+
   const scrollToMonth = useCallback((monthIndex: number, behavior: ScrollBehavior = "smooth") => {
     const target = monthSectionRefs.current[monthIndex];
     if (!target) return false;
@@ -1200,12 +1209,13 @@ const CalendrierPage = () => {
     let frameId = 0;
 
     const updateVisibleMonth = () => {
+      const monthSwitchLead = getMonthSwitchLead();
       const currentTop = usesViewportScroll
-        ? getViewportScrollTop() + getScrollOffset("month")
+        ? getViewportScrollTop() + getScrollOffset("month") + monthSwitchLead
         : (() => {
             const container = boardScrollRef.current;
             if (!container) return 0;
-            return container.scrollTop + getScrollOffset("month");
+            return container.scrollTop + getScrollOffset("month") + monthSwitchLead;
           })();
       let nextActiveMonthIndex = 0;
 
@@ -1240,7 +1250,7 @@ const CalendrierPage = () => {
       window.removeEventListener("resize", handleScroll);
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [calendarMonths, getScrollOffset, selectedGiteId, usesViewportScroll]);
+  }, [calendarMonths, getMonthSwitchLead, getScrollOffset, selectedGiteId, usesViewportScroll]);
 
   useEffect(() => {
     if (usesViewportScroll || !hoveredReservation?.segmentKey) {

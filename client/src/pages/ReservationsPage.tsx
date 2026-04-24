@@ -2148,6 +2148,28 @@ const ReservationsPage = () => {
     setClosingDetails((previous) => ({ ...previous, [rowId]: false }));
   };
 
+  const preserveReservationRowViewportPosition = useCallback((rowId: string, update: () => void) => {
+    const row = document.getElementById(`reservation-${rowId}`);
+    const rowTopBeforeUpdate = row?.getBoundingClientRect().top ?? null;
+
+    update();
+
+    if (rowTopBeforeUpdate === null) return;
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const nextRow = document.getElementById(`reservation-${rowId}`);
+        if (!nextRow) return;
+
+        const rowTopAfterUpdate = nextRow.getBoundingClientRect().top;
+        const scrollDelta = rowTopAfterUpdate - rowTopBeforeUpdate;
+        if (Math.abs(scrollDelta) < 1) return;
+
+        window.scrollBy({ top: scrollDelta, behavior: "auto" });
+      });
+    });
+  }, []);
+
   const startSavedRowFade = (rowId: string) => {
     setSavedRowFade((previous) => ({ ...previous, [rowId]: true }));
     if (savedRowFadeTimers.current[rowId]) {
@@ -2171,8 +2193,10 @@ const ReservationsPage = () => {
       return;
     }
 
-    setExpandedDetails((previous) => ({ ...previous, [rowId]: false }));
-    setClosingDetails((previous) => ({ ...previous, [rowId]: true }));
+    preserveReservationRowViewportPosition(rowId, () => {
+      setExpandedDetails((previous) => ({ ...previous, [rowId]: false }));
+      setClosingDetails((previous) => ({ ...previous, [rowId]: true }));
+    });
 
     if (detailsCloseTimers.current[rowId]) {
       window.clearTimeout(detailsCloseTimers.current[rowId]);
@@ -2720,22 +2744,27 @@ const ReservationsPage = () => {
 
   const toggleDetails = (reservation: Reservation) => {
     setEditingRows((previous) => ({ ...previous, [reservation.id]: true }));
-    setExpandedDetails((previous) => {
-      const willOpen = !previous[reservation.id];
-      if (willOpen) {
-        setClosingDetails((closingState) => ({ ...closingState, [reservation.id]: false }));
-        const draft = draftsRef.current[reservation.id] ?? toDraft(reservation);
-        setReservationOptions((optionState) =>
-          optionState[reservation.id]
-            ? optionState
-            : {
-                ...optionState,
-                [reservation.id]: mergeOptions(reservation.options ?? buildDefaultReservationOptions(draft)),
-              }
-        );
-      }
-      return { ...previous, [reservation.id]: willOpen };
-    });
+    const isCurrentlyExpanded = Boolean(expandedDetails[reservation.id]);
+
+    if (isCurrentlyExpanded) {
+      preserveReservationRowViewportPosition(reservation.id, () => {
+        setExpandedDetails((previous) => ({ ...previous, [reservation.id]: false }));
+        setClosingDetails((previous) => ({ ...previous, [reservation.id]: false }));
+      });
+      return;
+    }
+
+    setExpandedDetails((previous) => ({ ...previous, [reservation.id]: true }));
+    setClosingDetails((closingState) => ({ ...closingState, [reservation.id]: false }));
+    const draft = draftsRef.current[reservation.id] ?? toDraft(reservation);
+    setReservationOptions((optionState) =>
+      optionState[reservation.id]
+        ? optionState
+        : {
+            ...optionState,
+            [reservation.id]: mergeOptions(reservation.options ?? buildDefaultReservationOptions(draft)),
+          }
+    );
   };
 
   const handleFeesTriggerClick = async (params: {
