@@ -11,7 +11,11 @@ export type SmartlifeRegion =
   | "in"
   | "cn";
 
-export type SmartlifeAutomationRuleAction = "device-on" | "device-off";
+export type SmartlifeAutomationRuleAction =
+  | "device-on"
+  | "device-off"
+  | "energy-start"
+  | "energy-stop";
 
 export type SmartlifeEnergyDeviceRole = "primary" | "informational";
 
@@ -167,7 +171,7 @@ export const isSmartlifeDeviceCommandAction = (
 
 export const getSmartlifeRuleCommandValue = (
   action: SmartlifeAutomationRuleAction,
-) => action === "device-on";
+) => action === "device-on" || action === "energy-start";
 
 const normalizeRule = (
   value: unknown,

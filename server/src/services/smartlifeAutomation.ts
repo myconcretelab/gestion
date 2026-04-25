@@ -221,7 +221,15 @@ const loadReservationCandidates = async (
   const enabledRules = config.rules.filter(
     (rule) => rule.enabled && rule.gite_ids.length > 0,
   );
-  const giteIds = [...new Set(enabledRules.flatMap((rule) => rule.gite_ids))];
+  const energyTrackingGiteIds = config.energy_devices
+    .filter((assignment) => assignment.enabled && assignment.role === "primary")
+    .map((assignment) => assignment.gite_id);
+  const giteIds = [
+    ...new Set([
+      ...enabledRules.flatMap((rule) => rule.gite_ids),
+      ...energyTrackingGiteIds,
+    ]),
+  ];
   if (giteIds.length === 0) return [];
 
   const { start, end } = buildReservationQueryWindow(config, now);
@@ -310,6 +318,148 @@ const loadReservationCandidates = async (
     linked_contract: linkedContractByReservationId.get(reservation.id) ?? null,
     gite: reservation.gite,
   }));
+};
+
+const buildRuleCoverageByTrigger = (config: SmartlifeAutomationConfig) => {
+  const arrivalGiteIds = new Set<string>();
+  const departureGiteIds = new Set<string>();
+
+  for (const rule of config.rules) {
+    if (!rule.enabled) continue;
+    if (!rule.gite_ids.length) continue;
+    if (!rule.device_id.trim()) continue;
+    if (
+      isSmartlifeDeviceCommandAction(rule.action) &&
+      !rule.command_code.trim()
+    ) {
+      continue;
+    }
+
+    const target = isArrivalTrigger(rule.trigger)
+      ? arrivalGiteIds
+      : departureGiteIds;
+    rule.gite_ids.forEach((giteId) => target.add(giteId));
+  }
+
+  return { arrivalGiteIds, departureGiteIds };
+};
+
+export const buildFallbackEnergyTrackingEvents = (
+  config: SmartlifeAutomationConfig,
+  reservations: ReservationCandidate[],
+  now: Date,
+): DueEvent[] => {
+  const { arrivalGiteIds, departureGiteIds } = buildRuleCoverageByTrigger(config);
+  const dueEvents: DueEvent[] = [];
+
+  const registerFallbackEvent = (params: {
+    reservation: ReservationCandidate;
+    trigger: DueEvent["trigger"];
+    action: DueEvent["action"];
+    ruleId: string;
+    ruleLabel: string;
+    assignment: NonNullable<ReturnType<typeof getEnabledSmartlifePrimaryEnergyDeviceForGite>>;
+    scheduledDate: Date;
+  }) => {
+    if (params.scheduledDate.getTime() > now.getTime()) return;
+    if (now.getTime() - params.scheduledDate.getTime() > EXECUTION_GRACE_MS) {
+      return;
+    }
+
+    const key = [
+      params.ruleId,
+      params.reservation.id,
+      params.reservation.gite_id,
+      params.assignment.device_id,
+      params.action,
+      params.scheduledDate.toISOString(),
+    ].join("|");
+    const commandValue = getSmartlifeRuleCommandValue(params.action);
+
+    dueEvents.push({
+      key,
+      reservation_id: params.reservation.id,
+      gite_id: params.reservation.gite_id,
+      gite_nom: params.reservation.gite?.nom ?? "",
+      reservation_label: `${params.reservation.hote_nom} (${formatDateLabel(
+        params.reservation.date_entree,
+      )} -> ${formatDateLabel(params.reservation.date_sortie)})`,
+      rule_id: params.ruleId,
+      rule_label: params.ruleLabel,
+      device_id: params.assignment.device_id,
+      device_name:
+        params.assignment.device_name.trim() || params.assignment.device_id,
+      action: params.action,
+      command_code: "",
+      command_value: commandValue,
+      trigger: params.trigger,
+      scheduled_at: params.scheduledDate.toISOString(),
+      executed_at: null,
+      previous_executed_at: null,
+      status: "skipped",
+      message: null,
+      scheduledDate: params.scheduledDate,
+      rule: {
+        id: params.ruleId,
+        enabled: true,
+        label: params.ruleLabel,
+        gite_ids: params.reservation.gite_id ? [params.reservation.gite_id] : [],
+        trigger: params.trigger,
+        offset_minutes: 0,
+        action: params.action,
+        device_id: params.assignment.device_id,
+        device_name:
+          params.assignment.device_name.trim() || params.assignment.device_id,
+        command_code: "",
+        command_label: null,
+        command_value: commandValue,
+      },
+    });
+  };
+
+  for (const reservation of reservations) {
+    if (!reservation.gite_id || !reservation.gite) continue;
+
+    const assignment = getEnabledSmartlifePrimaryEnergyDeviceForGite(
+      config,
+      reservation.gite_id,
+    );
+    if (!assignment) continue;
+
+    if (!arrivalGiteIds.has(reservation.gite_id)) {
+      registerFallbackEvent({
+        reservation,
+        trigger: "after-arrival",
+        action: "energy-start",
+        ruleId: "fallback-energy-start",
+        ruleLabel: "Suivi energie automatique a l'arrivee",
+        assignment,
+        scheduledDate: combineDateWithTime(
+          reservation.date_entree,
+          getReservationArrivalTime(reservation),
+        ),
+      });
+    }
+
+    if (!departureGiteIds.has(reservation.gite_id)) {
+      registerFallbackEvent({
+        reservation,
+        trigger: "after-departure",
+        action: "energy-stop",
+        ruleId: "fallback-energy-stop",
+        ruleLabel: "Suivi energie automatique au depart",
+        assignment,
+        scheduledDate: combineDateWithTime(
+          reservation.date_sortie,
+          getReservationDepartureTime(reservation),
+        ),
+      });
+    }
+  }
+
+  return dueEvents.sort(
+    (left, right) => left.scheduledDate.getTime() - right.scheduledDate.getTime(),
+  );
 };
 
 export const buildDueEvents = (
@@ -635,7 +785,13 @@ export const runSmartlifeAutomation = async (options?: {
         now,
       );
       const reservations = await loadReservationCandidates(cronConfig, now);
-      const dueEvents = buildDueEvents(cronConfig, reservations, now);
+      const dueEvents = [
+        ...buildDueEvents(cronConfig, reservations, now),
+        ...buildFallbackEnergyTrackingEvents(cronConfig, reservations, now),
+      ].sort(
+        (left, right) =>
+          left.scheduledDate.getTime() - right.scheduledDate.getTime(),
+      );
       const { actionableEvents, skippedEvents: rotationSkippedItems } =
         applySameDayRotationGuards(dueEvents, reservations);
       const executedEventKeys = {

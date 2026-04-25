@@ -4,16 +4,20 @@ import {
   applySameDayRotationGuards,
   buildSkippedRotationEnergyTrackingPlan,
   buildDueEvents,
+  buildFallbackEnergyTrackingEvents,
 } from "../src/services/smartlifeAutomation.ts";
 import type { SmartlifeAutomationConfig } from "../src/services/smartlifeSettings.ts";
 
-const buildConfig = (rules: SmartlifeAutomationConfig["rules"]): SmartlifeAutomationConfig => ({
+const buildConfig = (
+  rules: SmartlifeAutomationConfig["rules"],
+  energyDevices: SmartlifeAutomationConfig["energy_devices"] = [],
+): SmartlifeAutomationConfig => ({
   enabled: true,
   region: "eu",
   access_id: "",
   access_secret: "",
   rules,
-  energy_devices: [],
+  energy_devices: energyDevices,
 });
 
 const buildReservation = (params: {
@@ -128,6 +132,94 @@ test("ignore les commandes off/on quand une rotation a lieu le meme jour", () =>
     skippedEvents.every((event) =>
       /rotation le meme jour|rotation le même jour/i.test(event.message ?? ""),
     ),
+  );
+});
+
+test("cree un demarrage energie automatique si un compteur primaire existe sans regle d'arrivee", () => {
+  const reservations = [
+    buildReservation({
+      id: "reservation-arrivee",
+      guest: "Client entrant",
+      checkIn: "2026-04-17",
+      checkOut: "2026-04-20",
+    }),
+  ];
+  const config = buildConfig([], [
+    {
+      id: "meter-primary",
+      enabled: true,
+      gite_id: "gite-1",
+      device_id: "meter-1",
+      device_name: "Compteur principal",
+      role: "primary",
+    },
+  ]);
+
+  const dueEvents = buildFallbackEnergyTrackingEvents(
+    config,
+    reservations,
+    new Date("2026-04-17T19:00:00.000Z"),
+  );
+
+  assert.equal(dueEvents.length, 1);
+  assert.equal(dueEvents[0]?.rule_id, "fallback-energy-start");
+  assert.equal(dueEvents[0]?.action, "energy-start");
+  assert.equal(
+    dueEvents[0]?.scheduled_at,
+    buildExpectedScheduledAt("2026-04-17", "17:00", 0, 1),
+  );
+});
+
+test("cree seulement la fermeture energie automatique quand une regle d'arrivee existe deja", () => {
+  const reservations = [
+    buildReservation({
+      id: "reservation-depart",
+      guest: "Client sortant",
+      checkIn: "2026-04-14",
+      checkOut: "2026-04-17",
+    }),
+  ];
+  const config = buildConfig(
+    [
+      {
+        id: "rule-before-arrival",
+        enabled: true,
+        label: "Prechauffage",
+        gite_ids: ["gite-1"],
+        trigger: "before-arrival",
+        offset_minutes: 90,
+        action: "device-on",
+        device_id: "device-1",
+        device_name: "Chauffage",
+        command_code: "switch_1",
+        command_label: "Interrupteur",
+        command_value: true,
+      },
+    ],
+    [
+      {
+        id: "meter-primary",
+        enabled: true,
+        gite_id: "gite-1",
+        device_id: "meter-1",
+        device_name: "Compteur principal",
+        role: "primary",
+      },
+    ],
+  );
+
+  const dueEvents = buildFallbackEnergyTrackingEvents(
+    config,
+    reservations,
+    new Date("2026-04-17T19:00:00.000Z"),
+  );
+
+  assert.equal(dueEvents.length, 1);
+  assert.equal(dueEvents[0]?.rule_id, "fallback-energy-stop");
+  assert.equal(dueEvents[0]?.action, "energy-stop");
+  assert.equal(
+    dueEvents[0]?.scheduled_at,
+    buildExpectedScheduledAt("2026-04-17", "12:00", 0, 1),
   );
 });
 
