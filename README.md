@@ -126,24 +126,26 @@ Le seed crée 2 gîtes et 2 contrats. Pour ignorer la génération PDF lors du s
 SEED_SKIP_PDF=1 npm run seed
 ```
 
-## Deploy AlwaysData
+## Mise a jour AlwaysData
 
-Deploiement local rapide depuis ce repo:
+Le script `./update` du repo fait maintenant uniquement:
+
+- `git pull`
+- reinstall des dependances (`npm ci` par defaut, ou `NPM_INSTALL_MODE=install`)
+- `npm run build`
+
+Mode leger:
 
 ```bash
-bin/deploy
+./update --light
 ```
 
-Par defaut, le script:
+Ce mode fait uniquement `git pull` puis `npm run build`, sans reinstaller les dependances.
 
-- cree un commit si le repo a des changements locaux (`chore: deploy YYYY-MM-DD HH:MM:SS` si aucun message n'est fourni)
-- pousse la branche courante
-- lance `/Users/sebsoaz/bin/update gestion`
-
-Vous pouvez aussi preciser un message:
+Le wrapper local `/Users/sebsoaz/bin/update` transmet aussi cette option:
 
 ```bash
-bin/deploy "fix: ajuste le calcul des arrhes"
+/Users/sebsoaz/bin/update gestion --light
 ```
 
 1. Configurer les variables d'environnement (via l'interface AlwaysData):
@@ -153,31 +155,24 @@ bin/deploy "fix: ajuste le calcul des arrhes"
 - `NODE_ENV=production`
 - `PORT=4000`
 - `CLIENT_DIST_DIR=/home/USER/app/client/dist`
-- `PLAYWRIGHT_BROWSERS_PATH=/home/USER/.cache/ms-playwright` (recommande pour eviter les re-telechargements, utilisez un chemin absolu)
 - `PLAYWRIGHT_HEADLESS=true` par defaut implicite en production (`NODE_ENV=production`) ; vous pouvez l'ajouter explicitement pour rendre le comportement visible
-- (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` (et conserve `node_modules`)
+- (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` au lieu de `npm ci`
 - (optionnel) `BASIC_AUTH_PASSWORD=...` pour initialiser le premier mot de passe serveur hashé au premier démarrage
 - (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
 - (optionnel) `ICAL_SYNC_ENABLED=true`
 - (optionnel) `CRON_TRIGGER_TOKEN=...` pour déclencher le cron iCal via URL HTTP
 - (optionnel) `PUMP_IMPORT_CRON_SCHEDULER=external` pour déclencher Pump via cron HTTP
 - (optionnel) `PUMP_ALERT_EMAIL_TO=...`, `PUMP_ALERT_EMAIL_FROM=...`, `SMTP_HOST=...`, `SMTP_PORT=587`, `SMTP_SECURE=false`, `SMTP_USER=...`, `SMTP_PASS=...`
-- (optionnel) `RESTART_CMD=...` ou `ALWAYSDATA_API_TOKEN` + `ALWAYSDATA_ACCOUNT` + `ALWAYSDATA_SITE_ID` pour que `./update` redemarre le serveur
 
 Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
-Note: evitez `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright` dans les fichiers `.env`; utilisez `/home/USER/.cache/ms-playwright`.
-Note: `PLAYWRIGHT_BROWSERS_PATH=0` stocke les navigateurs dans `node_modules` et force souvent un re-telechargement apres `npm ci`.
-Note: `NPM_INSTALL_MODE=ci` est le comportement par defaut (reproductible, mais supprime `node_modules`), `NPM_INSTALL_MODE=install` evite cette suppression.
-Note: `./update` charge automatiquement `.env`, `.env.production` et `.env.update`.
+Note: `NPM_INSTALL_MODE=ci` est le comportement par defaut. `NPM_INSTALL_MODE=install` conserve `node_modules`.
 
-2. Build, generation Prisma et migrations:
+2. Mettre a jour le code puis build:
 
 ```bash
 npm ci --include=optional
-# ou: npm install --include=optional (si vous voulez conserver node_modules)
+# ou: NPM_INSTALL_MODE=install ./update
 npm run build
-npm run prod:generate
-npm run prod:migrate
 ```
 
 3. Lancer le serveur:
