@@ -7447,9 +7447,40 @@ button.warning {
   line-height: 1.35;
 }
 
+.contracts-table {
+  table-layout: fixed;
+}
+
+.contracts-table__col--dates {
+  width: 15%;
+}
+
+.contracts-table__col--gite {
+  width: 8%;
+}
+
+.contracts-table__col--locataire {
+  width: 10%;
+}
+
+.contracts-table__col--retour {
+  width: 20%;
+}
+
+.contracts-table__col--arrhes {
+  width: 10%;
+}
+
+.contracts-table__col--restant {
+  width: 8%;
+}
+
+.contracts-table__col--actions {
+  width: 160px;
+}
+
 .contract-comment-cell {
-  min-width: 220px;
-  width: 220px;
+  width: auto;
 }
 
 .contract-comment-editor {
@@ -7463,7 +7494,8 @@ button.warning {
   padding: 8px 10px;
   border: 1px solid var(--field-border);
   border-radius: 10px;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   background: var(--field-bg);
   color: var(--ink);
   font: inherit;
