@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
@@ -129,6 +129,13 @@ const ContratsListPage = () => {
   const [returnDrawerContractId, setReturnDrawerContractId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentSaving, setCommentSaving] = useState<Record<string, boolean>>({});
+  const commentInputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+
+  const resizeCommentInput = (input: HTMLTextAreaElement | null) => {
+    if (!input) return;
+    input.style.height = "0px";
+    input.style.height = `${input.scrollHeight}px`;
+  };
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -196,6 +203,12 @@ const ContratsListPage = () => {
       controller.abort();
     };
   }, [debouncedQueryString]);
+
+  useEffect(() => {
+    Object.values(commentInputRefs.current).forEach((input) => {
+      resizeCommentInput(input);
+    });
+  }, [commentDrafts, contrats]);
 
   const toggleReception = async (contrat: Contrat) => {
     const nextStatus =
@@ -493,7 +506,17 @@ const ContratsListPage = () => {
             </span>
           </Link>
         </div>
-        <table className="table">
+        <table className="table contracts-table">
+          <colgroup>
+            <col className="contracts-table__col contracts-table__col--dates" />
+            <col className="contracts-table__col contracts-table__col--gite" />
+            <col className="contracts-table__col contracts-table__col--locataire" />
+            <col className="contracts-table__col contracts-table__col--retour" />
+            <col className="contracts-table__col contracts-table__col--arrhes" />
+            <col className="contracts-table__col contracts-table__col--commentaire" />
+            <col className="contracts-table__col contracts-table__col--restant" />
+            <col className="contracts-table__col contracts-table__col--actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>Dates</th>
@@ -586,15 +609,20 @@ const ContratsListPage = () => {
                       <textarea
                         className="contract-comment-editor__input"
                         rows={2}
+                        ref={(input) => {
+                          commentInputRefs.current[contrat.id] = input;
+                          resizeCommentInput(input);
+                        }}
                         value={commentDrafts[contrat.id] ?? ""}
                         placeholder="Commentaire interne"
                         disabled={Boolean(commentSaving[contrat.id])}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          resizeCommentInput(event.currentTarget);
                           setCommentDrafts((prev) => ({
                             ...prev,
                             [contrat.id]: event.target.value,
-                          }))
-                        }
+                          }));
+                        }}
                         onBlur={() => {
                           void saveInternalComment(contrat);
                         }}
