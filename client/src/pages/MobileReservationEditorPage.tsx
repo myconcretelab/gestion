@@ -505,6 +505,41 @@ const MobileReservationEditorPage = () => {
       ? "Réservation enregistrée"
       : quickReservationPrimaryActionLabel;
 
+  const renderSaveButton = (className?: string) => (
+    <button
+      type="button"
+      className={`calendar-quick-create-sheet__submit${
+        quickReservationSaving
+          ? " calendar-quick-create-sheet__submit--saving"
+          : quickReservationSaved
+            ? " calendar-quick-create-sheet__submit--saved"
+            : ""
+      }${className ? ` ${className}` : ""}`}
+      onClick={handlePrimaryAction}
+      disabled={quickReservationSaving}
+      aria-label={quickReservationPrimaryActionStatusLabel}
+      title={quickReservationPrimaryActionStatusLabel}
+    >
+      <span className="u-visually-hidden" aria-live="polite" aria-atomic="true">
+        {quickReservationPrimaryActionStatusLabel}
+      </span>
+      <span
+        className={`calendar-quick-create-sheet__submit-content${
+          quickReservationSaving || quickReservationSaved ? " calendar-quick-create-sheet__submit-content--icon" : ""
+        }`}
+        aria-hidden="true"
+      >
+        {quickReservationSaving ? (
+          <SaveSpinnerIcon />
+        ) : quickReservationSaved ? (
+          <SaveCheckIcon />
+        ) : (
+          <span>{quickReservationPrimaryActionLabel}</span>
+        )}
+      </span>
+    </button>
+  );
+
   const handleDeleteReservation = useCallback(async () => {
     if (!editingReservation || quickReservationDeleting) return;
 
@@ -562,16 +597,7 @@ const MobileReservationEditorPage = () => {
           <ArrowLeftIcon />
           <span>Retour {origin === "calendar" ? "calendrier" : "today"}</span>
         </button>
-        {editingReservation ? (
-          <button
-            type="button"
-            className="reservation-editor-page__delete"
-            onClick={handleDeleteReservation}
-            disabled={quickReservationSaving || quickReservationDeleting}
-          >
-            {quickReservationDeleting ? "Suppression..." : "Supprimer"}
-          </button>
-        ) : null}
+        {renderSaveButton("reservation-editor-page__save reservation-editor-page__save--header")}
       </div>
 
       <section className="reservation-editor-page__panel">
@@ -631,6 +657,21 @@ const MobileReservationEditorPage = () => {
                   placeholder="06 12 34 56 78"
                   onChange={(event) => handleQuickReservationFieldChange("telephone", event.target.value)}
                 />
+              </label>
+
+              <label className="field field--small calendar-quick-create-sheet__host-field calendar-quick-create-sheet__host-field--source">
+                <span className="calendar-quick-create-sheet__source-label">Mode de paiement</span>
+                <select
+                  data-reservation-field="source_paiement"
+                  value={quickReservationDraft.source_paiement}
+                  onChange={(event) => handleQuickReservationFieldChange("source_paiement", event.target.value)}
+                >
+                  {RESERVATION_SOURCES.map((source) => (
+                    <option key={source} value={source}>
+                      {source}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <div className="calendar-quick-create-sheet__dates-band">
@@ -712,21 +753,6 @@ const MobileReservationEditorPage = () => {
                   </div>
                 )}
               </div>
-
-              <label className="field field--small calendar-quick-create-sheet__host-field">
-                Source
-                <select
-                  data-reservation-field="source_paiement"
-                  value={quickReservationDraft.source_paiement}
-                  onChange={(event) => handleQuickReservationFieldChange("source_paiement", event.target.value)}
-                >
-                  {RESERVATION_SOURCES.map((source) => (
-                    <option key={source} value={source}>
-                      {source}
-                    </option>
-                  ))}
-                </select>
-              </label>
 
               <label className="field field--small calendar-quick-create-sheet__note-field">
                 Note
@@ -940,38 +966,7 @@ const MobileReservationEditorPage = () => {
         </div>
 
         <div className="calendar-quick-create-sheet__footer reservation-editor-page__footer">
-          <button
-            type="button"
-            className={`calendar-quick-create-sheet__submit${
-              quickReservationSaving
-                ? " calendar-quick-create-sheet__submit--saving"
-                : quickReservationSaved
-                  ? " calendar-quick-create-sheet__submit--saved"
-                  : ""
-            }`}
-            onClick={handlePrimaryAction}
-            disabled={quickReservationSaving}
-            aria-label={quickReservationPrimaryActionStatusLabel}
-            title={quickReservationPrimaryActionStatusLabel}
-          >
-            <span className="u-visually-hidden" aria-live="polite" aria-atomic="true">
-              {quickReservationPrimaryActionStatusLabel}
-            </span>
-            <span
-              className={`calendar-quick-create-sheet__submit-content${
-                quickReservationSaving || quickReservationSaved ? " calendar-quick-create-sheet__submit-content--icon" : ""
-              }`}
-              aria-hidden="true"
-            >
-              {quickReservationSaving ? (
-                <SaveSpinnerIcon />
-              ) : quickReservationSaved ? (
-                <SaveCheckIcon />
-              ) : (
-                <span>{quickReservationPrimaryActionLabel}</span>
-              )}
-            </span>
-          </button>
+          {renderSaveButton("reservation-editor-page__save")}
           <button
             type="button"
             className="calendar-quick-create-sheet__submit calendar-quick-create-sheet__submit--sms"
@@ -984,6 +979,16 @@ const MobileReservationEditorPage = () => {
             <ArrowLeftIcon />
             <span>Retour</span>
           </button>
+          {editingReservation ? (
+            <button
+              type="button"
+              className="reservation-editor-page__delete reservation-editor-page__delete--footer"
+              onClick={handleDeleteReservation}
+              disabled={quickReservationSaving || quickReservationDeleting}
+            >
+              {quickReservationDeleting ? "Suppression..." : "Supprimer"}
+            </button>
+          ) : null}
         </div>
       </section>
     </div>
