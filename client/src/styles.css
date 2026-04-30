@@ -8288,6 +8288,11 @@ button.warning {
   gap: 12px;
 }
 
+.reservation-details-drawer__header-cards {
+  display: grid;
+  gap: 10px;
+}
+
 .reservation-details-drawer__total-card {
   min-width: 176px;
   display: grid;
@@ -8306,6 +8311,54 @@ button.warning {
 
 .reservation-details-drawer__total-card strong {
   font-size: 1.1rem;
+}
+
+.reservation-details-drawer__energy-card {
+  min-width: 220px;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #d1fae5;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ecfdf5 0%, #f8fffb 100%);
+}
+
+.reservation-details-drawer__energy-card span,
+.reservation-details-drawer__energy-card small,
+.reservation-details-drawer__energy-card strong {
+  color: #047857;
+}
+
+.reservation-details-drawer__energy-card strong {
+  font-size: 1.1rem;
+}
+
+.reservation-details-drawer__energy-card-submeta {
+  color: #065f46;
+}
+
+.reservation-details-drawer__energy-devices {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(4, 120, 87, 0.2);
+}
+
+.reservation-details-drawer__energy-device {
+  display: grid;
+  gap: 2px;
+}
+
+.reservation-details-drawer__energy-device span {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.reservation-details-drawer__energy-device small {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #065f46;
 }
 
 .reservation-details-drawer__body {
@@ -10303,6 +10356,10 @@ button.warning {
   }
 
   .reservation-details-drawer__total-card {
+    min-width: 0;
+  }
+
+  .reservation-details-drawer__energy-card {
     min-width: 0;
   }
 }
