@@ -14,6 +14,7 @@ import { flushSync } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import GiteTabs, { type GiteTabItem } from "./shared/GiteTabs";
+import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 import ReservationOptionsEditor from "./shared/ReservationOptionsEditor";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
 import { mergeOptions } from "./shared/rentalForm";
@@ -928,6 +929,11 @@ const scheduleLazyTask = (callback: () => void) => {
   return () => window.clearTimeout(timeoutId);
 };
 
+const matchesMobileInlineBreakpoint = () =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia(`(max-width: ${MOBILE_INLINE_INSERT_BREAKPOINT}px)`).matches;
+
 const ReservationsPage = () => {
   const currentYear = new Date().getUTCFullYear();
   const location = useLocation();
@@ -983,6 +989,7 @@ const ReservationsPage = () => {
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [linkedFocusReservationId, setLinkedFocusReservationId] = useState<string | null>(null);
   const [stickyOffsets, setStickyOffsets] = useState<ReservationsStickyOffsets>({ topbar: 74, tabs: 52 });
+  const [isMobileInlineLayout, setIsMobileInlineLayout] = useState(matchesMobileInlineBreakpoint);
 
   const reservationsRef = useRef<Reservation[]>([]);
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
@@ -1027,6 +1034,42 @@ const ReservationsPage = () => {
   useEffect(() => {
     reservationOptionsRef.current = reservationOptions;
   }, [reservationOptions]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_INLINE_INSERT_BREAKPOINT}px)`);
+    const syncLayoutMode = () => setIsMobileInlineLayout(mediaQuery.matches);
+
+    syncLayoutMode();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncLayoutMode);
+      return () => mediaQuery.removeEventListener("change", syncLayoutMode);
+    }
+
+    mediaQuery.addListener(syncLayoutMode);
+    return () => mediaQuery.removeListener(syncLayoutMode);
+  }, []);
+
+  useEffect(() => {
+    if (isMobileInlineLayout) return;
+
+    setExpandedDetails((previous) => {
+      const openRowIds = Object.entries(previous)
+        .filter(([, open]) => open)
+        .map(([rowId]) => rowId);
+      if (openRowIds.length <= 1) return previous;
+      return { [openRowIds[0]]: true };
+    });
+    setClosingDetails((previous) => {
+      const openRowIds = Object.entries(expandedDetails)
+        .filter(([, open]) => open)
+        .map(([rowId]) => rowId);
+      if (openRowIds.length <= 1 && Object.keys(previous).length <= 1) return previous;
+      const keptRowId = openRowIds[0];
+      return keptRowId ? { [keptRowId]: false } : {};
+    });
+  }, [expandedDetails, isMobileInlineLayout]);
 
   useEffect(() => {
     let timeoutId: number | null = null;
@@ -2185,7 +2228,7 @@ const ReservationsPage = () => {
     const shouldHighlightSaved = options.highlightSaved === true;
     const hasOpenDetails = Boolean(expandedDetails[rowId]);
 
-    if (!hasOpenDetails) {
+    if (!hasOpenDetails || !isMobileInlineLayout) {
       closeEditMode(rowId);
       if (shouldHighlightSaved) {
         startSavedRowFade(rowId);
@@ -2252,6 +2295,15 @@ const ReservationsPage = () => {
 
   const clearDraft = (rowId: string) => {
     setDrafts((previous) => {
+      if (!previous[rowId]) return previous;
+      const next = { ...previous };
+      delete next[rowId];
+      return next;
+    });
+  };
+
+  const clearReservationOptionsDraft = (rowId: string) => {
+    setReservationOptions((previous) => {
       if (!previous[rowId]) return previous;
       const next = { ...previous };
       delete next[rowId];
@@ -2742,11 +2794,28 @@ const ReservationsPage = () => {
     }));
   };
 
+  const discardReservationDetails = (reservation: Reservation) => {
+    const rowId = reservation.id;
+    if (saveTimers.current[rowId]) {
+      window.clearTimeout(saveTimers.current[rowId]);
+      delete saveTimers.current[rowId];
+    }
+    setInlineCell((previous) => (previous?.rowId === rowId ? null : previous));
+    clearDraft(rowId);
+    clearReservationOptionsDraft(rowId);
+    clearRowFeedback(rowId);
+    closeEditModeWithAnimation(rowId);
+  };
+
   const toggleDetails = (reservation: Reservation) => {
     setEditingRows((previous) => ({ ...previous, [reservation.id]: true }));
     const isCurrentlyExpanded = Boolean(expandedDetails[reservation.id]);
 
     if (isCurrentlyExpanded) {
+      if (!isMobileInlineLayout) {
+        closeEditMode(reservation.id);
+        return;
+      }
       preserveReservationRowViewportPosition(reservation.id, () => {
         setExpandedDetails((previous) => ({ ...previous, [reservation.id]: false }));
         setClosingDetails((previous) => ({ ...previous, [reservation.id]: false }));
@@ -2754,8 +2823,10 @@ const ReservationsPage = () => {
       return;
     }
 
-    setExpandedDetails((previous) => ({ ...previous, [reservation.id]: true }));
-    setClosingDetails((closingState) => ({ ...closingState, [reservation.id]: false }));
+    setExpandedDetails((previous) => (isMobileInlineLayout ? { ...previous, [reservation.id]: true } : { [reservation.id]: true }));
+    setClosingDetails((closingState) =>
+      isMobileInlineLayout ? { ...closingState, [reservation.id]: false } : { [reservation.id]: false }
+    );
     const draft = draftsRef.current[reservation.id] ?? toDraft(reservation);
     setReservationOptions((optionState) =>
       optionState[reservation.id]
@@ -3534,10 +3605,7 @@ const ReservationsPage = () => {
     setError(null);
     setNewRows((previous) => ({ ...previous, [requestedCreateMonthIndex]: nextDraft }));
     setInsertRowIndexByMonth((previous) => ({ ...previous, [requestedCreateMonthIndex]: nextInsertIndex }));
-    const shouldKeepInlineListingMode =
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia(`(max-width: ${MOBILE_INLINE_INSERT_BREAKPOINT}px)`).matches;
+    const shouldKeepInlineListingMode = matchesMobileInlineBreakpoint();
 
     if (shouldKeepInlineListingMode) {
       scrollGridCellIntoView(requestedCreateMonthIndex, nextInsertIndex, 0);
@@ -4681,6 +4749,172 @@ const ReservationsPage = () => {
                         !hasOpenEnergySession;
                       const isStartingLiveEnergy = Boolean(startingEnergyById[reservation.id]);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
+                      const isDetailsInlineVisible = isMobileInlineLayout && (isDetailsExpanded || isDetailsClosing);
+                      const isDetailsDrawerVisible = !isMobileInlineLayout && isDetailsExpanded;
+                      const isDetailsBusy = rowSaveState === "saving" || deletingId === reservation.id;
+                      const reservationDetailsContent = (
+                        <div className={`reservations-details-grid ${isDetailsDrawerVisible ? "reservations-details-grid--drawer" : ""}`}>
+                          {hasEnergyData ? (
+                            <div className="reservations-energy-inline">
+                              Électricité: {formatKwh(reservation.energy_consumption_kwh)} kWh
+                              {" · "}
+                              {formatEuro(reservation.energy_cost_eur)}
+                            </div>
+                          ) : null}
+                          {hasLiveEnergyData ? (
+                            <div className="reservations-energy-inline">
+                              Électricité en cours: {formatKwh(reservation.energy_live_consumption_kwh ?? 0)} kWh
+                              {" · "}
+                              {formatEuro(reservation.energy_live_cost_eur ?? 0)}
+                            </div>
+                          ) : null}
+                          {canStartLiveEnergyTracking ? (
+                            <div className="reservations-energy-inline">
+                              <button
+                                type="button"
+                                className="table-action table-action--neutral"
+                                onClick={() => startLiveEnergyTracking(reservation).catch((err) => setError((err as Error).message))}
+                                disabled={isStartingLiveEnergy || isDetailsBusy}
+                                title="Initialiser le relevé de départ maintenant"
+                              >
+                                {isStartingLiveEnergy ? "Initialisation..." : "Démarrer comptage"}
+                              </button>
+                              {" "}
+                              Relevé de départ manuel pour afficher la consommation en cours.
+                            </div>
+                          ) : null}
+                          <div className="reservations-contact-card">
+                            <div className="reservations-contact-card__title">Contact</div>
+                            <div className="grid-2">
+                              <div className="field">
+                                <span>Téléphone</span>
+                                {isEditing ? (
+                                  <input
+                                    value={draft.telephone}
+                                    onChange={(event) =>
+                                      updateExistingField(reservation, (prev) => ({
+                                        ...prev,
+                                        telephone: event.target.value,
+                                      }))
+                                    }
+                                  />
+                                ) : reservation.telephone && telephoneHref ? (
+                                  <a className="detail-link" href={telephoneHref}>
+                                    {reservation.telephone}
+                                  </a>
+                                ) : (
+                                  <span className="detail-value">—</span>
+                                )}
+                              </div>
+                              <div className="field">
+                                <span>Email</span>
+                                {isEditing ? (
+                                  <input
+                                    type="email"
+                                    value={draft.email}
+                                    onChange={(event) =>
+                                      updateExistingField(reservation, (prev) => ({
+                                        ...prev,
+                                        email: event.target.value,
+                                      }))
+                                    }
+                                  />
+                                ) : reservation.email ? (
+                                  <a className="detail-link" href={`mailto:${reservation.email}`}>
+                                    {reservation.email}
+                                  </a>
+                                ) : (
+                                  <span className="detail-value">—</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`reservations-options-builder ${isDetailsDrawerVisible ? "reservations-options-builder--drawer" : ""}`}>
+                            <div className="reservations-options-builder__head">
+                              <div>
+                                <div className="reservations-options-builder__title-row">
+                                  <strong>Options contrat/devis</strong>
+                                </div>
+                                <div className="field-hint">
+                                  {optionGite ? `Tarifs ${optionGite.nom}` : "Associez un gîte pour utiliser les options."}
+                                </div>
+                              </div>
+                              {optionGite ? (
+                                <div className="reservations-options-builder__total">{formatEuro(optionPreview.total)}</div>
+                              ) : null}
+                            </div>
+                            {optionGite ? (
+                              <>
+                                <ReservationOptionsEditor
+                                  options={optionDraft}
+                                  preview={optionPreview}
+                                  gite={optionGite}
+                                  guestCount={draft.nb_adultes}
+                                  layout={isDetailsDrawerVisible ? "drawer" : "full"}
+                                  onChange={(nextOptions) =>
+                                    updateReservationOptionsSelection(reservation, draft, () => nextOptions)
+                                  }
+                                />
+                                {isDetailsInlineVisible ? (
+                                  <div className="reservations-options-builder__foot">
+                                    <div className="field-hint">
+                                      Libellé généré: {optionPreview.label || "Aucune option sélectionnée"}
+                                    </div>
+                                    <div className="reservations-options-builder__actions">
+                                      <button
+                                        type="button"
+                                        className="table-action table-action--neutral"
+                                        onClick={() => resetOptionsForReservation(reservation, draft)}
+                                      >
+                                        Réinitialiser
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="table-action table-action--primary"
+                                        onClick={() => applyOptionsToReservationFees(reservation, draft).catch((err) => setError((err as Error).message))}
+                                      >
+                                        Sauvegarder
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="field-hint">Libellé généré: {optionPreview.label || "Aucune option sélectionnée"}</div>
+                                )}
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                      const reservationDetailsFooter = optionGite ? (
+                        <div className="reservation-details-drawer__footer-actions">
+                          <button
+                            type="button"
+                            className="table-action table-action--neutral"
+                            onClick={() => resetOptionsForReservation(reservation, draft)}
+                            disabled={isDetailsBusy}
+                          >
+                            Réinitialiser
+                          </button>
+                          <div className="reservation-details-drawer__footer-main">
+                            <button type="button" className="secondary" onClick={() => discardReservationDetails(reservation)} disabled={isDetailsBusy}>
+                              Fermer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyOptionsToReservationFees(reservation, draft).catch((err) => setError((err as Error).message))}
+                              disabled={isDetailsBusy}
+                            >
+                              {rowSaveState === "saving" ? "Enregistrement..." : "Enregistrer"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="reservation-details-drawer__footer-actions reservation-details-drawer__footer-actions--single">
+                          <button type="button" className="secondary" onClick={() => discardReservationDetails(reservation)} disabled={isDetailsBusy}>
+                            Fermer
+                          </button>
+                        </div>
+                      );
 
                       return (
                         <Fragment key={reservation.id}>
@@ -5526,141 +5760,36 @@ const ReservationsPage = () => {
                               </div>
                             </td>
                           </tr>
-                          {(isDetailsExpanded || isDetailsClosing) && (
+                          {isDetailsDrawerVisible ? (
+                            <ReservationDetailsDrawer
+                              open
+                              eyebrow="Options réservation"
+                              title={getEditableHostName(draft.hote_nom)}
+                              summary={[
+                                optionGite?.nom ?? "Gîte non renseigné",
+                                `${formatDate(reservation.date_entree)} - ${formatDate(reservation.date_sortie)}`,
+                                `${formatNightsLabel(draft.nb_nuits)} · ${draft.nb_adultes} adulte${draft.nb_adultes > 1 ? "s" : ""}`,
+                              ]}
+                              headerAside={
+                                optionGite ? (
+                                  <div className="reservation-details-drawer__total-card">
+                                    <span>Total options</span>
+                                    <strong>{formatEuro(optionPreview.total)}</strong>
+                                    <small>{optionPreview.label || "Aucune option sélectionnée"}</small>
+                                  </div>
+                                ) : null
+                              }
+                              footer={reservationDetailsFooter}
+                              busy={isDetailsBusy}
+                              onClose={() => discardReservationDetails(reservation)}
+                            >
+                              {reservationDetailsContent}
+                            </ReservationDetailsDrawer>
+                          ) : null}
+                          {isDetailsInlineVisible && (
                             <tr className={`reservations-row-details ${isDetailsClosing ? "reservations-row-details--closing" : ""}`}>
                               <td colSpan={12}>
-                                <div className="reservations-row-details-content">
-                                  <div className="reservations-details-grid">
-                                    {hasEnergyData ? (
-                                      <div className="reservations-energy-inline">
-                                        Électricité: {formatKwh(reservation.energy_consumption_kwh)} kWh
-                                        {" · "}
-                                        {formatEuro(reservation.energy_cost_eur)}
-                                      </div>
-                                    ) : null}
-                                    {hasLiveEnergyData ? (
-                                      <div className="reservations-energy-inline">
-                                        Électricité en cours: {formatKwh(reservation.energy_live_consumption_kwh ?? 0)} kWh
-                                        {" · "}
-                                        {formatEuro(reservation.energy_live_cost_eur ?? 0)}
-                                      </div>
-                                    ) : null}
-                                    {canStartLiveEnergyTracking ? (
-                                      <div className="reservations-energy-inline">
-                                        <button
-                                          type="button"
-                                          className="table-action table-action--neutral"
-                                          onClick={() => startLiveEnergyTracking(reservation).catch((err) => setError((err as Error).message))}
-                                          disabled={
-                                            isStartingLiveEnergy ||
-                                            rowSaveState === "saving" ||
-                                            deletingId === reservation.id
-                                          }
-                                          title="Initialiser le relevé de départ maintenant"
-                                        >
-                                          {isStartingLiveEnergy ? "Initialisation..." : "Démarrer comptage"}
-                                        </button>
-                                        {" "}
-                                        Relevé de départ manuel pour afficher la consommation en cours.
-                                      </div>
-                                    ) : null}
-                                    <div className="reservations-contact-card">
-                                      <div className="reservations-contact-card__title">Contact</div>
-                                      <div className="grid-2">
-                                        <div className="field">
-                                          <span>Téléphone</span>
-                                          {isEditing ? (
-                                            <input
-                                              value={draft.telephone}
-                                              onChange={(event) =>
-                                                updateExistingField(reservation, (prev) => ({
-                                                  ...prev,
-                                                  telephone: event.target.value,
-                                                }))
-                                              }
-                                            />
-                                          ) : reservation.telephone && telephoneHref ? (
-                                            <a className="detail-link" href={telephoneHref}>
-                                              {reservation.telephone}
-                                            </a>
-                                          ) : (
-                                            <span className="detail-value">—</span>
-                                          )}
-                                        </div>
-                                        <div className="field">
-                                          <span>Email</span>
-                                          {isEditing ? (
-                                            <input
-                                              type="email"
-                                              value={draft.email}
-                                              onChange={(event) =>
-                                                updateExistingField(reservation, (prev) => ({
-                                                  ...prev,
-                                                  email: event.target.value,
-                                                }))
-                                              }
-                                            />
-                                          ) : reservation.email ? (
-                                            <a className="detail-link" href={`mailto:${reservation.email}`}>
-                                              {reservation.email}
-                                            </a>
-                                          ) : (
-                                            <span className="detail-value">—</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="reservations-options-builder">
-                                    <div className="reservations-options-builder__head">
-                                      <div>
-                                        <div className="reservations-options-builder__title-row">
-                                          <strong>Options contrat/devis</strong>
-                                        </div>
-                                        <div className="field-hint">
-                                          {optionGite ? `Tarifs ${optionGite.nom}` : "Associez un gîte pour utiliser les options."}
-                                        </div>
-                                      </div>
-                                      {optionGite && (
-                                        <div className="reservations-options-builder__total">{formatEuro(optionPreview.total)}</div>
-                                      )}
-                                    </div>
-                                    {optionGite && (
-                                      <>
-                                        <ReservationOptionsEditor
-                                          options={optionDraft}
-                                          preview={optionPreview}
-                                          gite={optionGite}
-                                          guestCount={draft.nb_adultes}
-                                          onChange={(nextOptions) =>
-                                            updateReservationOptionsSelection(reservation, draft, () => nextOptions)
-                                          }
-                                        />
-                                        <div className="reservations-options-builder__foot">
-                                          <div className="field-hint">
-                                            Libellé généré: {optionPreview.label || "Aucune option sélectionnée"}
-                                          </div>
-                                          <div className="reservations-options-builder__actions">
-                                            <button
-                                              type="button"
-                                              className="table-action table-action--neutral"
-                                              onClick={() => resetOptionsForReservation(reservation, draft)}
-                                            >
-                                              Réinitialiser
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="table-action table-action--primary"
-                                              onClick={() => applyOptionsToReservationFees(reservation, draft).catch((err) => setError((err as Error).message))}
-                                            >
-                                              Sauvegarder
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
+                                <div className="reservations-row-details-content">{reservationDetailsContent}</div>
                               </td>
                             </tr>
                           )}
