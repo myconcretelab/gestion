@@ -3073,6 +3073,11 @@ body.app-scroll-locked {
   flex: 0 0 auto;
 }
 
+.reservation-editor-page__header-actions .reservation-editor-page__save--header {
+  width: auto;
+  flex: 0 0 auto;
+}
+
 .reservation-editor-page__back {
   display: inline-flex;
   align-items: center;
@@ -10281,6 +10286,10 @@ button.warning {
   .calendar-quick-create-sheet__submit {
     width: 100%;
     text-align: center;
+  }
+
+  .reservation-editor-page__header-actions .reservation-editor-page__save--header {
+    width: auto;
   }
 
   .calendar-quick-create-sheet__summary-main {
