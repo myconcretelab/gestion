@@ -36,6 +36,11 @@ import { dispatchAppNotice } from "../utils/appNotices";
 import { isRecentImportedReservation } from "../utils/recentImportsBadge";
 import { formatDate, formatEuro } from "../utils/format";
 import {
+  DEFAULT_PAYMENT_SOURCE_COLORS,
+  buildPaymentColorMap,
+  getPaymentColorFromMap,
+} from "../utils/paymentColors";
+import {
   formatEuroPerDay,
   getReservationEnergyAverageDailyCost,
 } from "../utils/reservationEnergy";
@@ -100,6 +105,11 @@ type ImportPreview = {
 type ReservationCreateResponse = Reservation & {
   created_reservations?: Reservation[];
   airbnb_calendar_refresh?: AirbnbCalendarRefreshCreateStatus;
+};
+
+type SourceColorSettingsResponse = {
+  colors: Record<string, string>;
+  available_sources: string[];
 };
 
 type ReservationEnergyStartResponse = {
@@ -993,6 +1003,7 @@ const ReservationsPage = () => {
   const [year, setYear] = useState<number>(currentYear);
   const [availableYears, setAvailableYears] = useState<number[]>([currentYear]);
   const [month, setMonth] = useState<number | 0>(0);
+  const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [draggedGiteId, setDraggedGiteId] = useState<string | null>(null);
@@ -1059,6 +1070,7 @@ const ReservationsPage = () => {
   const requestedCreateEntry = locationParams.get("entry");
   const requestedCreateExit = locationParams.get("exit");
   const requestedCreateMode = locationParams.get("create");
+  const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
 
   useEffect(() => {
     reservationsRef.current = reservations;
@@ -1223,7 +1235,15 @@ const ReservationsPage = () => {
     energyParams.set("year", String(year));
     if (month) energyParams.set("month", String(month));
 
-    const [gitesData, placeholdersData, reservationsData, monthlyEnergyData, monthlyEnergyEligibleGitesData, yearsData] = await Promise.all([
+    const [
+      gitesData,
+      placeholdersData,
+      reservationsData,
+      monthlyEnergyData,
+      monthlyEnergyEligibleGitesData,
+      yearsData,
+      sourceColorData,
+    ] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Reservation[]>(`/reservations?${params.toString()}`),
@@ -1232,11 +1252,16 @@ const ReservationsPage = () => {
       ),
       apiFetch<string[]>("/reservations/monthly-energy/eligible-gites"),
       apiFetch<number[]>("/reservations/years"),
+      apiFetch<SourceColorSettingsResponse>("/settings/source-colors").catch(() => ({
+        colors: DEFAULT_PAYMENT_SOURCE_COLORS,
+        available_sources: [],
+      })),
     ]);
 
     setGites(gitesData);
     setPlaceholders(placeholdersData);
     setReservations(reservationsData);
+    setSourceColors(sourceColorData.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
     setMonthlyEnergySummaries(
       monthlyEnergyData
         .map((item) => normalizeReservationMonthlyEnergySummary(item))
@@ -4792,6 +4817,11 @@ const ReservationsPage = () => {
                         isCurrentReservation &&
                         Boolean(reservation.gite_id) &&
                         !hasOpenEnergySession;
+                      const normalizedSourceLabel = normalizeReservationSource(reservation.source_paiement);
+                      const reservationSourceColor = getPaymentColorFromMap(
+                        normalizedSourceLabel,
+                        paymentColorMap,
+                      );
                       const isStartingLiveEnergy = Boolean(startingEnergyById[reservation.id]);
                       const gridRowIndex = inlineInsertIndex !== null && rowIndex >= inlineInsertIndex ? rowIndex + 1 : rowIndex;
                       const isDetailsInlineVisible = isMobileInlineLayout && (isDetailsExpanded || isDetailsClosing);
@@ -5090,6 +5120,7 @@ const ReservationsPage = () => {
                             } ${isCurrentReservation ? "reservations-row--current" : ""} ${
                               linkedFocusReservationId === reservation.id ? "reservations-row--linked-focus" : ""
                             }`}
+                            style={{ "--reservation-source-accent": reservationSourceColor } as CSSProperties}
                           >
                             <td className="reservations-insert-cell">
                               {addAllowed && (
@@ -5680,7 +5711,10 @@ const ReservationsPage = () => {
                                   onClick={() => openInlineField(reservation, "source_paiement")}
                                   title="Modifier la source"
                                 >
-                                  {normalizeReservationSource(reservation.source_paiement)}
+                                  <span className="reservations-source-inline-label">
+                                    <span className="reservations-source-dot" aria-hidden="true" />
+                                    <span>{normalizedSourceLabel}</span>
+                                  </span>
                                 </button>
                               )}
                             </td>

@@ -6671,6 +6671,38 @@ button.warning {
   border-radius: 0;
 }
 
+.reservations-host-cell {
+  position: relative;
+}
+
+.reservations-host-cell::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 4px;
+  height: 50%;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--reservation-source-accent, transparent);
+}
+
+.reservations-source-inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reservations-source-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--reservation-source-accent, #d3d3d3);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--reservation-source-accent, #d3d3d3) 24%, white);
+}
+
 .reservations-host-inline {
   display: inline-flex;
   align-items: center;
