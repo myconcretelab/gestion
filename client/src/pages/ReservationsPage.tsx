@@ -225,6 +225,14 @@ type ReservationsStickyOffsets = {
   tabs: number;
 };
 
+type ReservationEnergyDeviceSummary = {
+  deviceId: string;
+  deviceName: string;
+  hasOpen: boolean;
+  savedKwh: number | null;
+  savedCost: number | null;
+};
+
 const MONTHS = [
   "Janvier",
   "Février",
@@ -408,6 +416,43 @@ const formatKwh = (value: number) =>
     minimumFractionDigits: value >= 10 ? 2 : 3,
     maximumFractionDigits: 3,
   }).format(value);
+
+const summarizeReservationEnergyDevices = (reservation: Reservation): ReservationEnergyDeviceSummary[] => {
+  const entries = reservation.energy_tracking ?? [];
+  const byDeviceId = new Map<string, ReservationEnergyDeviceSummary>();
+
+  for (const entry of entries) {
+    const deviceId = String(entry.device_id ?? "").trim();
+    if (!deviceId) continue;
+    const deviceName = String(entry.device_name ?? "").trim() || deviceId;
+    const previous = byDeviceId.get(deviceId) ?? {
+      deviceId,
+      deviceName,
+      hasOpen: false,
+      savedKwh: null,
+      savedCost: null,
+    };
+
+    if (entry.status === "open") {
+      previous.hasOpen = true;
+    } else {
+      const nextSavedKwh = typeof entry.stay_total_kwh === "number" ? entry.stay_total_kwh : entry.total_kwh;
+      const nextSavedCost =
+        typeof entry.stay_total_cost_eur === "number" ? entry.stay_total_cost_eur : entry.total_cost_eur;
+
+      if (nextSavedKwh != null && Number.isFinite(nextSavedKwh)) {
+        previous.savedKwh = round4((previous.savedKwh ?? 0) + nextSavedKwh);
+      }
+      if (nextSavedCost != null && Number.isFinite(nextSavedCost)) {
+        previous.savedCost = round2((previous.savedCost ?? 0) + nextSavedCost);
+      }
+    }
+
+    byDeviceId.set(deviceId, previous);
+  }
+
+  return [...byDeviceId.values()].sort((left, right) => left.deviceName.localeCompare(right.deviceName, "fr"));
+};
 
 const getMonthlyEnergySummaryKey = (giteId: string, year: number, month: number) =>
   `${giteId}:${year}-${pad2(month)}`;
@@ -4752,6 +4797,88 @@ const ReservationsPage = () => {
                       const isDetailsInlineVisible = isMobileInlineLayout && (isDetailsExpanded || isDetailsClosing);
                       const isDetailsDrawerVisible = !isMobileInlineLayout && isDetailsExpanded;
                       const isDetailsBusy = rowSaveState === "saving" || deletingId === reservation.id;
+                      const energyDeviceSummaries = summarizeReservationEnergyDevices(reservation);
+                      const openEnergyDeviceCount = energyDeviceSummaries.filter((item) => item.hasOpen).length;
+                      const shouldShowEnergyDeviceBreakdown = energyDeviceSummaries.length > 1;
+                      const energyHeaderTitle = hasLiveEnergyData
+                        ? "Électricité en cours"
+                        : hasEnergyData
+                          ? "Électricité relevée"
+                          : hasOpenEnergySession
+                            ? "Électricité en cours"
+                            : canStartLiveEnergyTracking
+                              ? "Électricité"
+                              : null;
+                      const energyHeaderMainValue = hasLiveEnergyData
+                        ? formatEuro(reservation.energy_live_cost_eur ?? 0)
+                        : hasEnergyData
+                          ? formatEuro(reservation.energy_cost_eur)
+                          : hasOpenEnergySession
+                            ? "Suivi actif"
+                          : canStartLiveEnergyTracking
+                            ? "À démarrer"
+                            : null;
+                      const energyHeaderMeta = hasLiveEnergyData
+                        ? `${formatKwh(reservation.energy_live_consumption_kwh ?? 0)} kWh`
+                        : hasEnergyData
+                          ? `${formatKwh(reservation.energy_consumption_kwh)} kWh`
+                          : hasOpenEnergySession
+                            ? `${openEnergyDeviceCount} compteur${openEnergyDeviceCount > 1 ? "s" : ""} en suivi`
+                            : canStartLiveEnergyTracking
+                              ? "Aucun relevé de départ"
+                              : null;
+                      const energyHeaderSubMeta =
+                        hasLiveEnergyData && hasEnergyData
+                          ? `Clôturé: ${formatKwh(reservation.energy_consumption_kwh)} kWh · ${formatEuro(reservation.energy_cost_eur)}`
+                          : reservation.energy_live_recorded_at
+                            ? `Mis à jour ${new Date(reservation.energy_live_recorded_at).toLocaleString("fr-FR", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}`
+                            : null;
+                      const energyHeaderCard =
+                        energyHeaderTitle && energyHeaderMainValue ? (
+                          <div className="reservation-details-drawer__energy-card">
+                            <span>{energyHeaderTitle}</span>
+                            <strong>{energyHeaderMainValue}</strong>
+                            {energyHeaderMeta ? <small>{energyHeaderMeta}</small> : null}
+                            {energyHeaderSubMeta ? (
+                              <small className="reservation-details-drawer__energy-card-submeta">{energyHeaderSubMeta}</small>
+                            ) : null}
+                            {shouldShowEnergyDeviceBreakdown ? (
+                              <div className="reservation-details-drawer__energy-devices">
+                                {energyDeviceSummaries.map((device) => {
+                                  const isSingleLiveDevice = device.hasOpen && openEnergyDeviceCount === 1 && hasLiveEnergyData;
+                                  const liveDetail = isSingleLiveDevice
+                                    ? `${formatKwh(reservation.energy_live_consumption_kwh ?? 0)} kWh · ${formatEuro(
+                                        reservation.energy_live_cost_eur ?? 0,
+                                      )}`
+                                    : null;
+                                  const savedDetail =
+                                    device.savedKwh != null || device.savedCost != null
+                                      ? `${formatKwh(device.savedKwh ?? 0)} kWh · ${formatEuro(device.savedCost ?? 0)}`
+                                      : null;
+                                  const detailLabel = device.hasOpen
+                                    ? liveDetail
+                                      ? `En cours: ${liveDetail}`
+                                      : savedDetail
+                                        ? `${savedDetail} · en cours`
+                                        : "Comptage en cours"
+                                    : savedDetail ?? "Aucun relevé exploitable";
+
+                                  return (
+                                    <div key={device.deviceId} className="reservation-details-drawer__energy-device">
+                                      <span>{device.deviceName}</span>
+                                      <small>{detailLabel}</small>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null;
                       const reservationDetailsContent = (
                         <div className={`reservations-details-grid ${isDetailsDrawerVisible ? "reservations-details-grid--drawer" : ""}`}>
                           {hasEnergyData ? (
@@ -5771,13 +5898,16 @@ const ReservationsPage = () => {
                                 `${formatNightsLabel(draft.nb_nuits)} · ${draft.nb_adultes} adulte${draft.nb_adultes > 1 ? "s" : ""}`,
                               ]}
                               headerAside={
-                                optionGite ? (
-                                  <div className="reservation-details-drawer__total-card">
-                                    <span>Total options</span>
-                                    <strong>{formatEuro(optionPreview.total)}</strong>
-                                    <small>{optionPreview.label || "Aucune option sélectionnée"}</small>
-                                  </div>
-                                ) : null
+                                <div className="reservation-details-drawer__header-cards">
+                                  {optionGite ? (
+                                    <div className="reservation-details-drawer__total-card">
+                                      <span>Total options</span>
+                                      <strong>{formatEuro(optionPreview.total)}</strong>
+                                      <small>{optionPreview.label || "Aucune option sélectionnée"}</small>
+                                    </div>
+                                  ) : null}
+                                  {energyHeaderCard}
+                                </div>
                               }
                               footer={reservationDetailsFooter}
                               busy={isDetailsBusy}
