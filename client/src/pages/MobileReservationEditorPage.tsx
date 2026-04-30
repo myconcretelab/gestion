@@ -621,7 +621,6 @@ const MobileReservationEditorPage = () => {
               <span className="calendar-quick-create-sheet__summary-pill">
                 {quickReservationDateSummary.nights} nuit{quickReservationDateSummary.nights > 1 ? "s" : ""}
               </span>
-              {quickReservationSaved ? <span className="calendar-quick-create-sheet__saved-pill">Réservation enregistrée</span> : null}
             </div>
             <div className="calendar-quick-create-sheet__summary-total">
               <strong>
