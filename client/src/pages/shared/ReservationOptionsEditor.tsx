@@ -18,7 +18,7 @@ type ReservationOptionsEditorProps = {
   gite: Gite | null;
   guestCount: number;
   onChange: (next: ContratOptions) => void;
-  layout?: "full" | "compact";
+  layout?: "full" | "compact" | "drawer";
   showDeclaredToggle?: boolean;
 };
 
@@ -39,6 +39,7 @@ const ReservationOptionsEditor = ({
 }: ReservationOptionsEditorProps) => {
   const normalizedOptions = mergeReservationOptions(options);
   const defaultGuestCount = Math.max(1, toNonNegativeInt(guestCount, 1));
+  const isDrawerLayout = layout === "drawer";
 
   const commit = (updater: (previous: ContratOptions) => ContratOptions) => {
     onChange(mergeReservationOptions(updater(normalizedOptions)));
@@ -208,28 +209,35 @@ const ReservationOptionsEditor = ({
             </div>
           </div>
           <div className="reservations-option-controls">
-            <label className="reservations-option-count">
-              Lits
-              <input
-                type="number"
-                min={0}
-                value={normalizedOptions.draps?.nb_lits ?? 0}
-                disabled={!normalizedOptions.draps?.enabled}
-                onChange={(event) => setCount("draps", Number(event.target.value))}
-              />
-            </label>
-            <label className="reservations-option-count">
-              Prix / lit
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={normalizedOptions.draps?.prix_unitaire ?? gite?.options_draps_par_lit ?? 0}
-                disabled={!normalizedOptions.draps?.enabled}
-                onChange={(event) => setPrice("draps", Number(event.target.value))}
-              />
-            </label>
-            <span className="reservations-option-amount">{formatEuro(preview.byKey.draps)}</span>
+            <div className="reservations-option-fields">
+              <label className="reservations-option-count">
+                Lits
+                <input
+                  type="number"
+                  min={0}
+                  value={normalizedOptions.draps?.nb_lits ?? 0}
+                  disabled={!normalizedOptions.draps?.enabled}
+                  onChange={(event) => setCount("draps", Number(event.target.value))}
+                />
+              </label>
+              <label className="reservations-option-count">
+                Prix / lit
+                <span className="reservations-option-input reservations-option-input--currency">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={normalizedOptions.draps?.prix_unitaire ?? gite?.options_draps_par_lit ?? 0}
+                    disabled={!normalizedOptions.draps?.enabled}
+                    onChange={(event) => setPrice("draps", Number(event.target.value))}
+                  />
+                  <span className="reservations-option-unit">€</span>
+                </span>
+              </label>
+            </div>
+            <div className="reservations-option-footer">
+              <span className="reservations-option-amount">{formatEuro(preview.byKey.draps)}</span>
+            </div>
           </div>
         </div>
 
@@ -278,17 +286,22 @@ const ReservationOptionsEditor = ({
             </div>
           </div>
           <div className="reservations-option-controls">
-            <label className="reservations-option-count">
-              Personnes
-              <input
-                type="number"
-                min={0}
-                value={normalizedOptions.linge_toilette?.nb_personnes ?? 0}
-                disabled={!normalizedOptions.linge_toilette?.enabled}
-                onChange={(event) => setCount("linge_toilette", Number(event.target.value))}
-              />
-            </label>
-            <span className="reservations-option-amount">{formatEuro(preview.byKey.linge_toilette)}</span>
+            <div className="reservations-option-fields">
+              <label className="reservations-option-count">
+                Personnes
+                <input
+                  type="number"
+                  min={0}
+                  value={normalizedOptions.linge_toilette?.nb_personnes ?? 0}
+                  disabled={!normalizedOptions.linge_toilette?.enabled}
+                  onChange={(event) => setCount("linge_toilette", Number(event.target.value))}
+                />
+              </label>
+              {isDrawerLayout ? <div className="reservations-option-field-spacer" aria-hidden="true" /> : null}
+            </div>
+            <div className="reservations-option-footer">
+              <span className="reservations-option-amount">{formatEuro(preview.byKey.linge_toilette)}</span>
+            </div>
           </div>
         </div>
 
@@ -337,7 +350,17 @@ const ReservationOptionsEditor = ({
             </div>
           </div>
           <div className="reservations-option-controls">
-            <span className="reservations-option-amount">{formatEuro(preview.byKey.menage)}</span>
+            <div className="reservations-option-fields">
+              {isDrawerLayout ? (
+                <>
+                  <div className="reservations-option-field-spacer" aria-hidden="true" />
+                  <div className="reservations-option-field-spacer" aria-hidden="true" />
+                </>
+              ) : null}
+            </div>
+            <div className="reservations-option-footer">
+              <span className="reservations-option-amount">{formatEuro(preview.byKey.menage)}</span>
+            </div>
           </div>
         </div>
 
@@ -388,18 +411,26 @@ const ReservationOptionsEditor = ({
             </div>
           </div>
           <div className="reservations-option-controls">
-            <label className="reservations-option-count">
-              Forfait
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={normalizedOptions.depart_tardif?.prix_forfait ?? gite?.options_depart_tardif_forfait ?? 0}
-                disabled={!normalizedOptions.depart_tardif?.enabled}
-                onChange={(event) => setPrice("depart_tardif", Number(event.target.value))}
-              />
-            </label>
-            <span className="reservations-option-amount">{formatEuro(preview.byKey.depart_tardif)}</span>
+            <div className="reservations-option-fields">
+              <label className="reservations-option-count">
+                Forfait
+                <span className="reservations-option-input reservations-option-input--currency">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={normalizedOptions.depart_tardif?.prix_forfait ?? gite?.options_depart_tardif_forfait ?? 0}
+                    disabled={!normalizedOptions.depart_tardif?.enabled}
+                    onChange={(event) => setPrice("depart_tardif", Number(event.target.value))}
+                  />
+                  <span className="reservations-option-unit">€</span>
+                </span>
+              </label>
+              {isDrawerLayout ? <div className="reservations-option-field-spacer" aria-hidden="true" /> : null}
+            </div>
+            <div className="reservations-option-footer">
+              <span className="reservations-option-amount">{formatEuro(preview.byKey.depart_tardif)}</span>
+            </div>
           </div>
         </div>
 
@@ -448,33 +479,40 @@ const ReservationOptionsEditor = ({
             </div>
           </div>
           <div className="reservations-option-controls">
-            <label className="reservations-option-count">
-              Nb chiens
-              <input
-                type="number"
-                min={0}
-                value={normalizedOptions.chiens?.nb ?? 0}
-                disabled={!normalizedOptions.chiens?.enabled}
-                onChange={(event) => setCount("chiens", Number(event.target.value))}
-              />
-            </label>
-            <label className="reservations-option-count">
-              Prix / nuit
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={chiensTarif}
-                disabled={!normalizedOptions.chiens?.enabled}
-                onChange={(event) =>
-                  commit((previous) => ({
-                    ...previous,
-                    chiens: { ...previous.chiens, prix_unitaire: roundMoneyInput(Number(event.target.value)) },
-                  }))
-                }
-              />
-            </label>
-            <span className="reservations-option-amount">{formatEuro(preview.byKey.chiens)}</span>
+            <div className="reservations-option-fields">
+              <label className="reservations-option-count">
+                Nb chiens
+                <input
+                  type="number"
+                  min={0}
+                  value={normalizedOptions.chiens?.nb ?? 0}
+                  disabled={!normalizedOptions.chiens?.enabled}
+                  onChange={(event) => setCount("chiens", Number(event.target.value))}
+                />
+              </label>
+              <label className="reservations-option-count">
+                Prix / nuit
+                <span className="reservations-option-input reservations-option-input--currency">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={chiensTarif}
+                    disabled={!normalizedOptions.chiens?.enabled}
+                    onChange={(event) =>
+                      commit((previous) => ({
+                        ...previous,
+                        chiens: { ...previous.chiens, prix_unitaire: roundMoneyInput(Number(event.target.value)) },
+                      }))
+                    }
+                  />
+                  <span className="reservations-option-unit">€</span>
+                </span>
+              </label>
+            </div>
+            <div className="reservations-option-footer">
+              <span className="reservations-option-amount">{formatEuro(preview.byKey.chiens)}</span>
+            </div>
           </div>
         </div>
       </div>
