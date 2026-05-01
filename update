@@ -144,6 +144,18 @@ restart_server() {
     return
   fi
 
+  local missing_alwaysdata_vars=()
+  [[ -z "${ALWAYSDATA_API_TOKEN:-}" ]] && missing_alwaysdata_vars+=("ALWAYSDATA_API_TOKEN")
+  [[ -z "${ALWAYSDATA_ACCOUNT:-}" ]] && missing_alwaysdata_vars+=("ALWAYSDATA_ACCOUNT")
+  [[ -z "${ALWAYSDATA_SITE_ID:-}" ]] && missing_alwaysdata_vars+=("ALWAYSDATA_SITE_ID")
+
+  if [[ ${#missing_alwaysdata_vars[@]} -lt 3 ]]; then
+    echo "==> No restart configured."
+    echo "==> Missing Alwaysdata restart vars: ${missing_alwaysdata_vars[*]}"
+    echo "==> Set RESTART_CMD, or define ALWAYSDATA_API_TOKEN, ALWAYSDATA_ACCOUNT, and ALWAYSDATA_SITE_ID in env or .env.update."
+    return
+  fi
+
   echo "==> No restart configured (set RESTART_CMD or ALWAYSDATA_API_TOKEN/ALWAYSDATA_ACCOUNT/ALWAYSDATA_SITE_ID in env or .env.update)."
 }
 
