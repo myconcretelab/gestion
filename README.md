@@ -128,11 +128,18 @@ SEED_SKIP_PDF=1 npm run seed
 
 ## Mise a jour AlwaysData
 
-Le script `./update` du repo fait maintenant uniquement:
+Le script `./update` du repo fait par defaut:
 
 - `git pull`
 - reinstall des dependances (`npm ci` par defaut, ou `NPM_INSTALL_MODE=install`)
-- `npm run build`
+- reinstall de Chromium Playwright (sauf `SKIP_PLAYWRIGHT_INSTALL=1`)
+- `npm run prod:generate`
+- `npm run test` (sauf `SKIP_TESTS=1`)
+- `npm run build` (sauf `SKIP_BUILD=1`)
+- `npm run prod:migrate`
+- redemarrage du serveur (sauf `SKIP_RESTART=1`)
+
+Le redemarrage se fait soit via `RESTART_CMD`, soit via l'API Alwaysdata avec `ALWAYSDATA_API_TOKEN`, `ALWAYSDATA_ACCOUNT` et `ALWAYSDATA_SITE_ID`. Ces variables peuvent vivre dans `.env.update`.
 
 Mode leger:
 
@@ -140,7 +147,7 @@ Mode leger:
 ./update --light
 ```
 
-Ce mode fait uniquement `git pull` puis `npm run build`, sans reinstaller les dependances.
+Ce mode fait `git pull`, puis `npm run build`, puis redemarre le serveur, sans reinstaller les dependances, sans relancer Playwright, sans tests ni migrations PostgreSQL.
 
 Le wrapper local `/Users/sebsoaz/bin/update` transmet aussi cette option:
 
@@ -157,6 +164,8 @@ Le wrapper local `/Users/sebsoaz/bin/update` transmet aussi cette option:
 - `CLIENT_DIST_DIR=/home/USER/app/client/dist`
 - `PLAYWRIGHT_HEADLESS=true` par defaut implicite en production (`NODE_ENV=production`) ; vous pouvez l'ajouter explicitement pour rendre le comportement visible
 - (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` au lieu de `npm ci`
+- (optionnel) `RESTART_CMD=...` si vous preferez un redemarrage via commande shell
+- (optionnel) `ALWAYSDATA_API_TOKEN=...`, `ALWAYSDATA_ACCOUNT=...`, `ALWAYSDATA_SITE_ID=...` pour redemarrer via l'API Alwaysdata
 - (optionnel) `BASIC_AUTH_PASSWORD=...` pour initialiser le premier mot de passe serveur hashé au premier démarrage
 - (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
 - (optionnel) `ICAL_SYNC_ENABLED=true`
@@ -167,33 +176,38 @@ Le wrapper local `/Users/sebsoaz/bin/update` transmet aussi cette option:
 Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
 Note: `NPM_INSTALL_MODE=ci` est le comportement par defaut. `NPM_INSTALL_MODE=install` conserve `node_modules`.
 
-2. Mettre a jour le code puis build:
+2. Mettre a jour le code, verifier, build, migrer et redemarrer:
 
 ```bash
-npm ci --include=optional
+./update
 # ou: NPM_INSTALL_MODE=install ./update
-npm run build
 ```
 
-3. Lancer le serveur:
+3. Variante legere:
+
+```bash
+./update --light
+```
+
+4. Lancer le serveur manuellement uniquement si vous ne passez pas par `./update`:
 
 ```bash
 npm run start
 ```
 
-3bis. Configurer l'URL du cron iCal dans Alwaysdata:
+4bis. Configurer l'URL du cron iCal dans Alwaysdata:
 
 ```text
 https://votre-domaine/api/settings/ical/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN
 ```
 
-3ter. Si Pump est en scheduler `external`, configurer aussi:
+4ter. Si Pump est en scheduler `external`, configurer aussi:
 
 ```text
 https://votre-domaine/api/settings/pump/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN
 ```
 
-4. PDFs: les fichiers sont stockes dans `server/data/pdfs/YYYY/MM/` par defaut. Assurez-vous que le dossier `server/data/` (ou la variable `DATA_DIR`) est sur un volume persistant et accessible en ecriture par le processus AlwaysData.
+5. PDFs: les fichiers sont stockes dans `server/data/pdfs/YYYY/MM/` par defaut. Assurez-vous que le dossier `server/data/` (ou la variable `DATA_DIR`) est sur un volume persistant et accessible en ecriture par le processus AlwaysData.
 
 SQLite en production n'est pas recommande si vous avez des acces concurrents. PostgreSQL est le mode prevu pour la prod.
 
