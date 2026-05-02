@@ -526,6 +526,10 @@ type SmartlifeDevice = {
   online: boolean;
   functions: SmartlifeDeviceFunction[];
   status: SmartlifeDeviceStatusEntry[];
+  supports_energy_total?: boolean;
+  energy_total_source_code?: string | null;
+  energy_total_scale?: number | null;
+  energy_total_kwh?: number | null;
   supports_total_ele: boolean;
   total_ele_scale: number | null;
   total_ele_kwh: number | null;
@@ -1905,7 +1909,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     [smartlifeDraft.energy_devices],
   );
   const smartlifeEnergyDevices = useMemo(
-    () => smartlifeDevices.filter((device) => device.supports_total_ele),
+    () =>
+      smartlifeDevices.filter(
+        (device) => device.supports_energy_total || device.supports_total_ele,
+      ),
     [smartlifeDevices],
   );
   const filteredSmartlifeDevices = useMemo(() => {
@@ -6881,13 +6888,14 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                       ).length} appareil(s)
                     </span>
                   </div>
-                  <div className="section-title">Compteurs `total_ele`</div>
+                  <div className="section-title">Compteurs d&apos;énergie cumulée</div>
                   <div className="field-hint">
                     Chaque gîte doit avoir au plus un <strong>compteur de référence</strong>.
                     C&apos;est ce compteur unique qui sert à la fois au suivi de
                     consommation des réservations et au calcul mensuel. Les
                     <strong> sous-compteurs informatifs</strong> restent visibles
-                    mais ne sont pas utilisés pour la facturation.
+                    mais ne sont pas utilisés pour la facturation. Les appareils
+                    compatibles peuvent remonter `total_ele` ou `add_ele`.
                   </div>
                   {loadingSmartlifeDevices ? (
                     <div className="field-hint" style={{ marginTop: 12 }}>
@@ -6916,8 +6924,12 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                 <strong>{device.name}</strong>
                                 <div className="field-hint">
                                   {device.product_name || device.category || device.id}
-                                  {device.total_ele_kwh != null
-                                    ? ` · total_ele ${device.total_ele_kwh.toFixed(2)} kWh`
+                                  {(device.energy_total_kwh ?? device.total_ele_kwh) != null
+                                    ? ` · ${
+                                        device.energy_total_source_code ?? "énergie"
+                                      } ${(
+                                        device.energy_total_kwh ?? device.total_ele_kwh
+                                      )?.toFixed(2)} kWh`
                                     : ""}
                                 </div>
                               </div>
@@ -7009,9 +7021,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                     </div>
                   ) : (
                     <div className="field-hint" style={{ marginTop: 12 }}>
-                      Aucun appareil `total_ele` détecté. Charge d'abord les
-                      appareils Smart Life, puis vérifie que le device remonte
-                      bien ce DP.
+                      Aucun appareil avec énergie cumulée détecté. Charge
+                      d&apos;abord les appareils Smart Life, puis vérifie que le
+                      device remonte bien `total_ele` ou `add_ele`.
                     </div>
                   )}
                   <div className="actions" style={{ marginTop: 16 }}>

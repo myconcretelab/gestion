@@ -25,6 +25,10 @@ export type SmartlifeDevice = {
   online: boolean;
   functions: SmartlifeDeviceFunction[];
   status: SmartlifeDeviceStatusEntry[];
+  supports_energy_total: boolean;
+  energy_total_source_code: string | null;
+  energy_total_scale: number | null;
+  energy_total_kwh: number | null;
   supports_total_ele: boolean;
   total_ele_scale: number | null;
   total_ele_kwh: number | null;
@@ -174,23 +178,35 @@ const decodeScaledStatusValue = (
   return parsed;
 };
 
-const buildTotalEleInfo = (
+const ENERGY_TOTAL_CODES = ["total_ele", "add_ele"] as const;
+
+export const buildEnergyTotalInfo = (
   functions: SmartlifeDeviceFunction[],
   status: SmartlifeDeviceStatusEntry[],
 ) => {
-  const totalEleFunction =
-    functions.find((item) => item.code === "total_ele") ?? null;
-  const totalEleStatus =
-    status.find((item) => item.code === "total_ele") ?? null;
-  const totalEleScale = totalEleFunction?.scale ?? null;
-  const totalEleKwh = totalEleStatus
-    ? decodeScaledStatusValue(totalEleStatus.value, totalEleScale)
+  const energyFunction =
+    ENERGY_TOTAL_CODES.map((code) => functions.find((item) => item.code === code) ?? null).find(
+      (item): item is SmartlifeDeviceFunction => item !== null,
+    ) ?? null;
+  const energyStatus =
+    ENERGY_TOTAL_CODES.map((code) => status.find((item) => item.code === code) ?? null).find(
+      (item): item is SmartlifeDeviceStatusEntry => item !== null,
+    ) ?? null;
+  const energyScale = energyFunction?.scale ?? null;
+  const energyKwh = energyStatus
+    ? decodeScaledStatusValue(energyStatus.value, energyScale)
     : null;
+  const energySourceCode = energyStatus?.code ?? energyFunction?.code ?? null;
+  const supportsEnergyTotal = Boolean(energyFunction || energyStatus);
 
   return {
-    supports_total_ele: Boolean(totalEleFunction || totalEleStatus),
-    total_ele_scale: totalEleScale,
-    total_ele_kwh: totalEleKwh,
+    supports_energy_total: supportsEnergyTotal,
+    energy_total_source_code: energySourceCode,
+    energy_total_scale: energyScale,
+    energy_total_kwh: energyKwh,
+    supports_total_ele: supportsEnergyTotal,
+    total_ele_scale: energyScale,
+    total_ele_kwh: energyKwh,
   };
 };
 
@@ -300,7 +316,7 @@ export const listSmartlifeDevices = async (
           normalizeStatusEntry(item),
         )
         .filter((item): item is SmartlifeDeviceStatusEntry => item !== null);
-      const totalEleInfo = buildTotalEleInfo(functions, normalizedStatus);
+      const totalEleInfo = buildEnergyTotalInfo(functions, normalizedStatus);
 
       return {
         id: device.id,
@@ -318,6 +334,10 @@ export const listSmartlifeDevices = async (
             });
           }),
         status: normalizedStatus,
+        supports_energy_total: totalEleInfo.supports_energy_total,
+        energy_total_source_code: totalEleInfo.energy_total_source_code,
+        energy_total_scale: totalEleInfo.energy_total_scale,
+        energy_total_kwh: totalEleInfo.energy_total_kwh,
         supports_total_ele: totalEleInfo.supports_total_ele,
         total_ele_scale: totalEleInfo.total_ele_scale,
         total_ele_kwh: totalEleInfo.total_ele_kwh,
@@ -427,7 +447,7 @@ export const getSmartlifeDevice = async (
       (item: SmartlifeDeviceStatusEntry | null): item is SmartlifeDeviceStatusEntry =>
         item !== null,
     );
-  const totalEleInfo = buildTotalEleInfo(functions, status);
+  const totalEleInfo = buildEnergyTotalInfo(functions, status);
 
   return {
     id: detailResult.result.id,
@@ -437,6 +457,10 @@ export const getSmartlifeDevice = async (
     online: Boolean(detailResult.result.online),
     functions,
     status,
+    supports_energy_total: totalEleInfo.supports_energy_total,
+    energy_total_source_code: totalEleInfo.energy_total_source_code,
+    energy_total_scale: totalEleInfo.energy_total_scale,
+    energy_total_kwh: totalEleInfo.energy_total_kwh,
     supports_total_ele: totalEleInfo.supports_total_ele,
     total_ele_scale: totalEleInfo.total_ele_scale,
     total_ele_kwh: totalEleInfo.total_ele_kwh,
@@ -448,13 +472,13 @@ export const getSmartlifeDeviceTotalElectricityKwh = async (
   deviceId: string,
 ) => {
   const device = await getSmartlifeDevice(config, deviceId);
-  if (!device.supports_total_ele || device.total_ele_kwh == null) {
+  if (!device.supports_energy_total || device.energy_total_kwh == null) {
     throw new Error(
-      `L'appareil ${device.name} ne remonte pas de valeur total_ele exploitable.`,
+      `L'appareil ${device.name} ne remonte pas de valeur d'énergie cumulée exploitable (total_ele/add_ele).`,
     );
   }
   return {
     device,
-    total_kwh: device.total_ele_kwh,
+    total_kwh: device.energy_total_kwh,
   };
 };

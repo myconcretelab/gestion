@@ -3,6 +3,11 @@ node_modules
 .env.local
 .env.update
 .DS_Store
+data/*.json
+!data/import-log.json
+data/*.lock
+data/pdfs/
+data/pump/
 server/data
 server/prisma/dev.db
 server/prisma/dev.db-journal
