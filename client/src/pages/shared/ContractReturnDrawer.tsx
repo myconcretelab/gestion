@@ -105,6 +105,8 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
   const [arrhesPaid, setArrhesPaid] = useState(false);
   const [arrhesDate, setArrhesDate] = useState("");
   const [arrhesPaymentMode, setArrhesPaymentMode] = useState("");
+  const [adultCount, setAdultCount] = useState(1);
+  const [childrenCount, setChildrenCount] = useState(0);
   const [reservationPaymentSource, setReservationPaymentSource] = useState("");
   const [internalComment, setInternalComment] = useState("");
   const [options, setOptions] = useState<ContratOptions>(mergeReservationOptions());
@@ -160,6 +162,8 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
         (contract.statut_paiement_arrhes === "recu" ? todayInputValue() : "")
     );
     setArrhesPaymentMode(contract.mode_paiement_arrhes ?? "");
+    setAdultCount(Math.max(1, Number(contract.nb_adultes ?? 1)));
+    setChildrenCount(Math.max(0, Number(contract.nb_enfants_2_17 ?? 0)));
     setReservationPaymentSource("");
     setInternalComment(contract.commentaire_interne ?? "");
     setOptions(mergeReservationOptions(contract.options));
@@ -253,6 +257,8 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
       const trackingUpdated = await apiFetch<Contrat>(`/contracts/${contract.id}/return-processing`, {
         method: "PATCH",
         json: {
+          nb_adultes: adultCount,
+          nb_enfants_2_17: childrenCount,
           statut_reception_contrat: contractReceived ? "recu" : "non_recu",
           date_reception_contrat: contractReceived ? receptionDate || null : null,
           statut_paiement_arrhes: arrhesPaid ? "recu" : "non_recu",
@@ -465,6 +471,29 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
               </span>
             </div>
 
+            <div className="contract-return-drawer__grid contract-return-drawer__grid--compact">
+              <label className="field">
+                Adultes
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={adultCount}
+                  onChange={(event) => setAdultCount(Math.max(1, Number(event.target.value) || 1))}
+                />
+              </label>
+              <label className="field">
+                Enfants 2-17 ans
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={childrenCount}
+                  onChange={(event) => setChildrenCount(Math.max(0, Number(event.target.value) || 0))}
+                />
+              </label>
+            </div>
+
             {hasReservation ? (
               <>
                 {loading ? <div className="note">Chargement de la réservation liée...</div> : null}
@@ -494,7 +523,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                   options={options}
                   preview={optionPreview}
                   gite={contract.gite ?? null}
-                  guestCount={reservation?.nb_adultes ?? contract.nb_adultes}
+                  guestCount={adultCount}
                   layout="compact"
                   onChange={setOptions}
                 />
