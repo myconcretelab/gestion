@@ -1840,6 +1840,32 @@ const ReservationsPage = () => {
     return map;
   }, [activeTab, giteOrderById, visibleReservations]);
 
+  const revenueByReservationMonthKey = useMemo(() => {
+    const byKey = new Map<string, number>();
+    if (!statisticsDataset) return byKey;
+
+    Object.values(statisticsDataset.entriesByGite).forEach((entries) => {
+      entries.forEach((entry) => {
+        const entryYear = entry.debutDate.getUTCFullYear();
+        const entryMonth = entry.debutDate.getUTCMonth() + 1;
+        const key = `${entry.reservationId}:${entryYear}:${entryMonth}`;
+        byKey.set(key, round2((byKey.get(key) ?? 0) + Number(entry.revenus ?? 0)));
+      });
+    });
+
+    return byKey;
+  }, [statisticsDataset]);
+
+  const getReservationRevenueForMonth = useCallback(
+    (reservation: Reservation, monthIndex: number) => {
+      const key = `${reservation.id}:${year}:${monthIndex}`;
+      const proratedRevenue = revenueByReservationMonthKey.get(key);
+      if (proratedRevenue !== undefined) return proratedRevenue;
+      return round2(Number(reservation.prix_total ?? 0));
+    },
+    [revenueByReservationMonthKey, year]
+  );
+
   const occupationByMonthByGite = useMemo(() => {
     const byGite = new Map<string, Map<number, number>>();
     gites.forEach((gite) => {
@@ -3584,7 +3610,7 @@ const ReservationsPage = () => {
     URL.revokeObjectURL(url);
   };
 
-  const monthSummary = (list: Reservation[]) => {
+  const monthSummary = (list: Reservation[], monthIndex: number) => {
     let zeroTotalReservationsCount = 0;
 
     list.forEach((item) => {
@@ -3597,7 +3623,7 @@ const ReservationsPage = () => {
       count: list.length,
       nights: list.reduce((acc, item) => acc + item.nb_nuits, 0),
       zeroTotalReservationsCount,
-      revenue: list.reduce((acc, item) => acc + item.prix_total, 0),
+      revenue: round2(list.reduce((acc, item) => acc + getReservationRevenueForMonth(item, monthIndex), 0)),
       fees: list.reduce((acc, item) => acc + (item.frais_optionnels_montant ?? 0), 0),
       adults: list.reduce((acc, item) => acc + item.nb_adultes, 0),
     };
@@ -4500,7 +4526,7 @@ const ReservationsPage = () => {
         {activeTab &&
           monthsToRender.map((monthIndex) => {
             const list = reservationsByMonth.get(monthIndex) ?? [];
-            const summary = monthSummary(list);
+            const summary = monthSummary(list, monthIndex);
             const guestNightSummary = guestNightSummaryByMonthForActiveTab.get(monthIndex) ?? {
               guestNights: 0,
               undeclaredGuestNights: 0,
@@ -4527,7 +4553,7 @@ const ReservationsPage = () => {
                 }
               });
               grouped.forEach((group, key) => {
-                groupedSummaries.set(key, monthSummary(group));
+                groupedSummaries.set(key, monthSummary(group, monthIndex));
               });
             }
             const declaredUrssafForMonth = declaredUrssafByMonthForActiveTab.get(monthIndex);
