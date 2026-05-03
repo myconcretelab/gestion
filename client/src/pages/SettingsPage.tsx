@@ -308,6 +308,32 @@ type PumpSessionCaptureResult = {
   available: boolean;
 };
 
+type PumpSessionRenewalResult = {
+  renewalId: string;
+  status:
+    | "idle"
+    | "starting"
+    | "awaiting_sms_code"
+    | "submitting_sms_code"
+    | "saving"
+    | "saved"
+    | "failed"
+    | "cancelled"
+    | "timed_out";
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  message: string;
+  error: string | null;
+  currentUrl: string | null;
+  storageStateId: string | null;
+  storageStateRelativePath: string | null;
+  maskedDestination: string | null;
+  diagnosticsRelativePath: string | null;
+  active: boolean;
+  available: boolean;
+};
+
 const SETTINGS_SECTIONS = [
   { id: "settings-import-log", label: "Journal des imports" },
   { id: "settings-sms", label: "SMS" },
@@ -1807,6 +1833,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [pumpHealth, setPumpHealth] = useState<PumpHealthResult | null>(null);
   const [pumpSessionCapture, setPumpSessionCapture] =
     useState<PumpSessionCaptureResult | null>(null);
+  const [pumpSessionRenewal, setPumpSessionRenewal] =
+    useState<PumpSessionRenewalResult | null>(null);
+  const [pumpRenewalSmsCode, setPumpRenewalSmsCode] = useState("");
   const [pumpSelections, setPumpSelections] = useState<Record<string, boolean>>(
     {},
   );
@@ -1818,6 +1847,12 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [startingPumpSessionCapture, setStartingPumpSessionCapture] =
     useState(false);
   const [cancellingPumpSessionCapture, setCancellingPumpSessionCapture] =
+    useState(false);
+  const [startingPumpSessionRenewal, setStartingPumpSessionRenewal] =
+    useState(false);
+  const [cancellingPumpSessionRenewal, setCancellingPumpSessionRenewal] =
+    useState(false);
+  const [submittingPumpSessionRenewalCode, setSubmittingPumpSessionRenewalCode] =
     useState(false);
   const [savingPumpConfig, setSavingPumpConfig] = useState(false);
   const [loadingPumpStatus, setLoadingPumpStatus] = useState(false);
@@ -2677,6 +2712,20 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     }
   };
 
+  const loadPumpSessionRenewalStatus = async () => {
+    try {
+      const data = await apiFetch<PumpSessionRenewalResult>(
+        "/settings/pump/session/renewal/status",
+      );
+      setPumpSessionRenewal(data);
+    } catch (error: any) {
+      setPumpError(
+        error.message ??
+          "Impossible de charger l'état du renouvellement assisté Pump.",
+      );
+    }
+  };
+
   const loadPumpConfig = async () => {
     setLoadingPumpConfig(true);
     setPumpError(null);
@@ -2728,6 +2777,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       loadPumpStatus(),
       loadPumpHealth(),
       loadPumpSessionCaptureStatus(),
+      loadPumpSessionRenewalStatus(),
       loadPumpCronState(),
     ])
       .catch((error: any) => {
@@ -2769,6 +2819,17 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     };
   }, [pumpSessionCapture?.active]);
 
+  useEffect(() => {
+    if (!pumpSessionRenewal?.active) return;
+    const intervalId = window.setInterval(() => {
+      void loadPumpSessionRenewalStatus();
+    }, 1500);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [pumpSessionRenewal?.active]);
+
   useEffect(
     () => () => {
       Object.values(smartlifeRuleSaveTimers.current).forEach((timerId) => {
@@ -2787,6 +2848,23 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     }
   }, [pumpSessionCapture]);
+
+  useEffect(() => {
+    if (!pumpSessionRenewal || pumpSessionRenewal.active) return;
+    if (pumpSessionRenewal.status === "saved") {
+      setPumpRenewalSmsCode("");
+      void Promise.all([
+        loadPumpHealth(),
+        loadPumpStatus(),
+        loadPumpSessionCaptureStatus(),
+      ]).catch(() => undefined);
+    }
+  }, [pumpSessionRenewal]);
+
+  useEffect(() => {
+    if (pumpSessionRenewal?.status === "awaiting_sms_code") return;
+    setPumpRenewalSmsCode("");
+  }, [pumpSessionRenewal?.status]);
 
   useEffect(() => {
     if (!pendingSmartlifeScrollRuleId) return;
@@ -4312,6 +4390,86 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     } finally {
       setCancellingPumpSessionCapture(false);
+    }
+  };
+
+  const startPumpSessionRenewal = async () => {
+    setStartingPumpSessionRenewal(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<PumpSessionRenewalResult>(
+        "/settings/pump/session/renewal/start",
+        {
+          method: "POST",
+        },
+      );
+      setPumpSessionRenewal(response);
+      setPumpNotice(
+        "Renouvellement assisté Airbnb lancé. L'app attendra le code SMS si Airbnb le demande.",
+      );
+    } catch (error: any) {
+      setPumpError(
+        error.message ??
+          "Impossible de lancer le renouvellement assisté Pump.",
+      );
+    } finally {
+      setStartingPumpSessionRenewal(false);
+    }
+  };
+
+  const submitPumpSessionRenewalCode = async () => {
+    const code = pumpRenewalSmsCode.trim();
+    if (!code) {
+      setPumpError("Saisissez le code SMS Airbnb.");
+      return;
+    }
+
+    setSubmittingPumpSessionRenewalCode(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<PumpSessionRenewalResult>(
+        "/settings/pump/session/renewal/submit-code",
+        {
+          method: "POST",
+          json: {
+            code,
+          },
+        },
+      );
+      setPumpSessionRenewal(response);
+      setPumpNotice("Code SMS envoyé au renouvellement assisté.");
+    } catch (error: any) {
+      setPumpError(
+        error.message ??
+          "Impossible d'envoyer le code SMS au renouvellement Pump.",
+      );
+    } finally {
+      setSubmittingPumpSessionRenewalCode(false);
+    }
+  };
+
+  const cancelPumpSessionRenewal = async () => {
+    setCancellingPumpSessionRenewal(true);
+    setPumpError(null);
+    setPumpNotice(null);
+    try {
+      const response = await apiFetch<PumpSessionRenewalResult>(
+        "/settings/pump/session/renewal/cancel",
+        {
+          method: "POST",
+        },
+      );
+      setPumpSessionRenewal(response);
+      setPumpNotice("Renouvellement assisté Airbnb annulé.");
+    } catch (error: any) {
+      setPumpError(
+        error.message ??
+          "Impossible d'annuler le renouvellement assisté Pump.",
+      );
+    } finally {
+      setCancellingPumpSessionRenewal(false);
     }
   };
 
@@ -8834,6 +8992,111 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   Import JSON compatible avec l'ancien Pump: configuration{" "}
                   <code>last.json</code> et storage state Playwright.
                 </div>
+                <div className="actions" style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => void startPumpSessionRenewal()}
+                    disabled={
+                      startingPumpSessionRenewal ||
+                      cancellingPumpSessionRenewal ||
+                      submittingPumpSessionRenewalCode ||
+                      Boolean(pumpSessionRenewal?.active) ||
+                      savingPumpConfig ||
+                      importingPumpSession
+                    }
+                  >
+                    {startingPumpSessionRenewal
+                      ? "Démarrage..."
+                      : "Renouveler la session Airbnb"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => void cancelPumpSessionRenewal()}
+                    disabled={
+                      !pumpSessionRenewal?.active ||
+                      cancellingPumpSessionRenewal
+                    }
+                  >
+                    {cancellingPumpSessionRenewal
+                      ? "Annulation..."
+                      : "Annuler le renouvellement"}
+                  </button>
+                </div>
+                {pumpSessionRenewal ? (
+                  <div
+                    className="pump-health-card pump-health-card--neutral"
+                    style={{ marginTop: 12 }}
+                  >
+                    <div className="pump-health-card__headline">
+                      <span
+                        className="pump-health-dot pump-health-dot--neutral"
+                        aria-hidden="true"
+                      />
+                      <strong>
+                        Renouvellement assisté:{" "}
+                        {pumpSessionRenewal.active
+                          ? "en cours"
+                          : pumpSessionRenewal.status}
+                      </strong>
+                    </div>
+                    <div className="field-hint" style={{ marginTop: 6 }}>
+                      {pumpSessionRenewal.message}
+                    </div>
+                    {pumpSessionRenewal.maskedDestination ? (
+                      <div className="field-hint" style={{ marginTop: 6 }}>
+                        Code envoyé vers:{" "}
+                        {pumpSessionRenewal.maskedDestination}
+                      </div>
+                    ) : null}
+                    {pumpSessionRenewal.currentUrl ? (
+                      <div className="field-hint" style={{ marginTop: 6 }}>
+                        URL courante: {pumpSessionRenewal.currentUrl}
+                      </div>
+                    ) : null}
+                    {pumpSessionRenewal.diagnosticsRelativePath ? (
+                      <div className="field-hint" style={{ marginTop: 6 }}>
+                        Diagnostics:{" "}
+                        {pumpSessionRenewal.diagnosticsRelativePath}
+                      </div>
+                    ) : null}
+                    {pumpSessionRenewal.status === "awaiting_sms_code" ? (
+                      <div className="actions" style={{ marginTop: 12 }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          value={pumpRenewalSmsCode}
+                          onChange={(event) =>
+                            setPumpRenewalSmsCode(
+                              event.target.value.replace(/[^\d]/g, ""),
+                            )
+                          }
+                          placeholder="Code SMS"
+                          style={{ maxWidth: 200 }}
+                          disabled={submittingPumpSessionRenewalCode}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void submitPumpSessionRenewalCode()}
+                          disabled={
+                            submittingPumpSessionRenewalCode ||
+                            pumpRenewalSmsCode.trim().length < 4
+                          }
+                        >
+                          {submittingPumpSessionRenewalCode
+                            ? "Validation..."
+                            : "Valider le code"}
+                        </button>
+                      </div>
+                    ) : null}
+                    {pumpSessionRenewal.error ? (
+                      <div className="field-hint" style={{ marginTop: 6 }}>
+                        Erreur: {pumpSessionRenewal.error}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="actions" style={{ marginTop: 12 }}>
                   <button
                     type="button"
