@@ -16,14 +16,17 @@ import {
   readSmartlifeAutomationConfig,
 } from "../services/smartlifeSettings.js";
 import { buildNewReservations } from "../services/dailyReservationEmail.js";
-import { getReservationOriginSystem } from "../utils/reservationOrigin.js";
+import {
+  buildOverviewReservationsWhere,
+  buildRecentAppActivity,
+  createOverviewHandler,
+  parseDateTime,
+  parseOverviewParams,
+} from "./todayOverview.shared.js";
 
 const router = Router();
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RECENT_ACTIVITY_DAY_COUNT = 3;
 const RECENT_ACTIVITY_LIMIT = 36;
-const DEFAULT_NOTIFICATION_DAY_COUNT = 1;
-const MAX_NOTIFICATION_DAY_COUNT = 5;
 
 const icalConflictResolutionSchema = z.object({
   action: z.enum(["keep_reservation", "apply_ical", "delete_reservation"]),
@@ -50,24 +53,6 @@ const conflictReservationSelect = {
   },
 } as const;
 
-const getRecentActivitySince = () => {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  return new Date(today.getTime() - (RECENT_ACTIVITY_DAY_COUNT - 1) * DAY_MS);
-};
-
-const getNotificationSince = (dayCount: number) => {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  return new Date(today.getTime() - (dayCount - 1) * DAY_MS);
-};
-
-const parseDateTime = (value: string | Date | null | undefined) => {
-  if (!value) return null;
-  const parsed = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
 const parseIsoDate = (value: string) => {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
@@ -92,35 +77,6 @@ const buildOverlapConflictPayload = (conflicts: Array<{ id: string; hote_nom: st
     date_sortie: conflict.date_sortie,
     label: `${conflict.hote_nom} (${formatIsoDateFr(conflict.date_entree)} - ${formatIsoDateFr(conflict.date_sortie)})`,
   })),
-});
-
-const parseOverviewParams = (query: Record<string, unknown>) => {
-  const daysRaw = typeof query.days === "string" ? Number.parseInt(query.days, 10) : 14;
-  const days = Number.isFinite(daysRaw) ? Math.min(21, Math.max(7, daysRaw)) : 14;
-  const notificationDaysRaw =
-    typeof query.notification_days === "string"
-      ? Number.parseInt(query.notification_days, 10)
-      : DEFAULT_NOTIFICATION_DAY_COUNT;
-  const notificationDays = Number.isFinite(notificationDaysRaw)
-    ? Math.min(MAX_NOTIFICATION_DAY_COUNT, Math.max(1, notificationDaysRaw))
-    : DEFAULT_NOTIFICATION_DAY_COUNT;
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-
-  return {
-    days,
-    notificationDays,
-    today,
-    endExclusive: new Date(today.getTime() + days * DAY_MS),
-    notificationSince: getNotificationSince(notificationDays),
-    recentActivitySince: getRecentActivitySince(),
-  };
-};
-
-const buildOverviewReservationsWhere = (today: Date, endExclusive: Date) => ({
-  gite_id: { not: null },
-  date_entree: { lt: endExclusive },
-  date_sortie: { gte: today },
 });
 
 const loadOverviewReservations = (today: Date, endExclusive: Date) =>
@@ -174,83 +130,32 @@ const loadOverviewLiveEnergyByReservationId = async (today: Date, endExclusive: 
   return Object.fromEntries(liveEnergyByReservationId.entries());
 };
 
-const buildRecentAppActivity = async (since: Date) => {
-  const rows = await prisma.reservation.findMany({
-    where: {
-      OR: [{ createdAt: { gte: since } }, { updatedAt: { gte: since } }],
-    },
-    select: {
-      id: true,
-      gite_id: true,
-      hote_nom: true,
-      source_paiement: true,
-      commentaire: true,
-      prix_total: true,
-      prix_par_nuit: true,
-      origin_system: true,
-      createdAt: true,
-      updatedAt: true,
-      gite: {
-        select: {
-          nom: true,
+const loadRecentAppActivity = (since: Date) =>
+  buildRecentAppActivity(since, () =>
+    prisma.reservation.findMany({
+      where: {
+        OR: [{ createdAt: { gte: since } }, { updatedAt: { gte: since } }],
+      },
+      select: {
+        id: true,
+        gite_id: true,
+        hote_nom: true,
+        source_paiement: true,
+        commentaire: true,
+        prix_total: true,
+        prix_par_nuit: true,
+        origin_system: true,
+        createdAt: true,
+        updatedAt: true,
+        gite: {
+          select: {
+            nom: true,
+          },
         },
       },
-    },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-  });
-
-  const items = rows.flatMap((reservation) => {
-    if (getReservationOriginSystem(reservation) !== "app") return [];
-
-    const createdAt = parseDateTime(reservation.createdAt);
-    const updatedAt = parseDateTime(reservation.updatedAt);
-    const guestName = String(reservation.hote_nom ?? "").trim() || "Réservation";
-    const giteName = String(reservation.gite?.nom ?? "").trim() || "Sans gîte";
-    const source = String(reservation.source_paiement ?? "").trim() || null;
-    const events: Array<{
-      id: string;
-      at: string;
-      type: "created" | "updated";
-      reservation_id: string;
-      gite_id: string | null;
-      gite_name: string;
-      guest_name: string;
-      source: string | null;
-    }> = [];
-
-    if (createdAt && createdAt.getTime() >= since.getTime()) {
-      events.push({
-        id: `app-created:${reservation.id}`,
-        at: createdAt.toISOString(),
-        type: "created",
-        reservation_id: reservation.id,
-        gite_id: reservation.gite_id ?? null,
-        gite_name: giteName,
-        guest_name: guestName,
-        source,
-      });
-    }
-
-    if (updatedAt && updatedAt.getTime() >= since.getTime() && (!createdAt || updatedAt.getTime() !== createdAt.getTime())) {
-      events.push({
-        id: `app-updated:${reservation.id}:${updatedAt.toISOString()}`,
-        at: updatedAt.toISOString(),
-        type: "updated",
-        reservation_id: reservation.id,
-        gite_id: reservation.gite_id ?? null,
-        gite_name: giteName,
-        guest_name: guestName,
-        source,
-      });
-    }
-
-    return events;
-  });
-
-  return items
-    .sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime())
-    .slice(0, RECENT_ACTIVITY_LIMIT);
-};
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    })
+  );
 
 router.get("/overview/primary", async (req, res, next) => {
   try {
@@ -323,19 +228,16 @@ router.get("/overview/deferred", async (req, res, next) => {
   }
 });
 
-router.get("/overview", async (req, res, next) => {
-  try {
-    const { days, notificationDays, today, endExclusive, recentActivitySince, notificationSince } = parseOverviewParams(
-      req.query as Record<string, unknown>
-    );
-
-    const openIcalConflicts = listOpenIcalConflictRecords();
-    const [gites, reservations, unassignedCount, recentAppActivity, conflictReservations, newReservations] = await Promise.all([
+router.get(
+  "/overview",
+  createOverviewHandler({
+    loadGites: () =>
       prisma.gite.findMany({
         select: { id: true, nom: true, prefixe_contrat: true, ordre: true },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
-      loadOverviewReservations(today, endExclusive),
+    loadReservations: loadOverviewReservations,
+    countUnassignedReservations: (today, endExclusive) =>
       prisma.reservation.count({
         where: {
           gite_id: null,
@@ -343,58 +245,25 @@ router.get("/overview", async (req, res, next) => {
           date_sortie: { gte: today },
         },
       }),
-      buildRecentAppActivity(recentActivitySince),
-      openIcalConflicts.length > 0
-        ? prisma.reservation.findMany({
-            where: { id: { in: openIcalConflicts.map((item) => item.reservation_id) } },
-            select: conflictReservationSelect,
-          })
-        : Promise.resolve([]),
-      buildNewReservations(notificationSince, new Date()),
-    ]);
-
-    const smartlifeConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
-    const liveEnergyByReservationId = hasSmartlifeCredentials(smartlifeConfig)
-      ? await loadLiveReservationEnergySummaries(smartlifeConfig, reservations)
-      : new Map();
-
-    const recentImportLog = readTraceabilityLog()
-      .filter((entry) => {
-        const parsed = parseDateTime(entry.at);
-        return parsed ? parsed.getTime() >= recentActivitySince.getTime() : false;
-      })
-      .slice(0, RECENT_ACTIVITY_LIMIT);
-
-    const conflictReservationById = new Map(conflictReservations.map((reservation) => [reservation.id, reservation]));
-
-    return res.json({
-      today: today.toISOString().slice(0, 10),
-      days,
-      notification_days: notificationDays,
-      gites,
-      reservations: reservations.map((reservation) => ({
-        ...reservation,
-        ...(liveEnergyByReservationId.get(reservation.id) ?? {}),
-      })),
-      source_colors: readSourceColorSettings().colors,
-      unassigned_count: unassignedCount,
-      new_reservations: newReservations,
-      recent_import_log: recentImportLog,
-      recent_app_activity: recentAppActivity,
-      ical_conflicts: openIcalConflicts
-        .filter((conflict) => {
-          const detectedAt = parseDateTime(conflict.detected_at);
-          return detectedAt ? detectedAt.getTime() >= notificationSince.getTime() : false;
-        })
-        .map((conflict) => ({
-          ...conflict,
-          reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
-        })),
-    });
-  } catch (error) {
-    return next(error);
-  }
-});
+    loadRecentAppActivity,
+    listOpenIcalConflicts: listOpenIcalConflictRecords,
+    loadConflictReservations: (reservationIds) =>
+      prisma.reservation.findMany({
+        where: { id: { in: reservationIds } },
+        select: conflictReservationSelect,
+      }),
+    buildNewReservations,
+    loadLiveEnergyByReservationId: async (reservations) => {
+      const smartlifeConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
+      if (!hasSmartlifeCredentials(smartlifeConfig)) {
+        return {};
+      }
+      return Object.fromEntries((await loadLiveReservationEnergySummaries(smartlifeConfig, reservations)).entries());
+    },
+    readTraceabilityLog,
+    readSourceColors: () => readSourceColorSettings().colors,
+  })
+);
 
 router.post("/ical-conflicts/:id/resolve", async (req, res, next) => {
   try {
