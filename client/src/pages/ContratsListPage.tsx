@@ -13,6 +13,7 @@ import {
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import ContractReturnDrawer from "./shared/ContractReturnDrawer";
+import ReservationContractIcon from "./shared/ReservationContractIcon";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const toLocalDateKey = (value: Date) => {
@@ -555,8 +556,21 @@ const ContratsListPage = () => {
                     {contrat.statut_reception_contrat === "recu" ? (
                       <div className="contract-return-status">
                         <div className="contract-return-status__summary">
-                          <span className="contract-return-status__text">Retour reçu</span>
-                          <strong>{formatDate(contrat.date_reception_contrat ?? contrat.date_derniere_modif)}</strong>
+                          <span className="contract-return-status__text">
+                            Retour reçu
+                            {contrat.signed_document_path ? (
+                              <span
+                                className="contract-return-status__file-indicator"
+                                title="Un fichier signé est lié à ce contrat"
+                                aria-label="Fichier signé lié"
+                              >
+                                <ReservationContractIcon />
+                              </span>
+                            ) : null}
+                          </span>
+                          <strong className="contract-return-status__date">
+                            {formatDate(contrat.date_reception_contrat ?? contrat.date_derniere_modif)}
+                          </strong>
                         </div>
                         <div className="contract-return-status__actions">
                           <button

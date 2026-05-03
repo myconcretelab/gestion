@@ -12,6 +12,7 @@ import {
   type DocumentEmailTemplateSettings,
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
+import SignedDocumentLightbox from "./shared/SignedDocumentLightbox";
 import { toDateInputValue } from "./shared/rentalForm";
 
 type EmailComposerState = {
@@ -45,6 +46,7 @@ const ContratDetailPage = () => {
   );
   const [internalCommentDraft, setInternalCommentDraft] = useState("");
   const [internalCommentSaving, setInternalCommentSaving] = useState(false);
+  const [signedDocumentLightboxOpen, setSignedDocumentLightboxOpen] = useState(false);
 
   const normalizeInternalComment = (value: string | null | undefined) =>
     String(value ?? "").trim();
@@ -351,6 +353,14 @@ const ContratDetailPage = () => {
         }
         onSubmit={sendEmail}
       />
+      <SignedDocumentLightbox
+        open={signedDocumentLightboxOpen && Boolean(signedDocumentUrl)}
+        title={`Contrat signe ${contrat.numero_contrat}`}
+        url={signedDocumentUrl ?? ""}
+        filename={contrat.signed_document_filename ?? null}
+        mimeType={contrat.signed_document_mime_type ?? null}
+        onClose={() => setSignedDocumentLightboxOpen(false)}
+      />
       <Link to="/contrats" className="back-link">
         Retour
       </Link>
@@ -472,6 +482,21 @@ const ContratDetailPage = () => {
                   : "Enregistrer"}
               </button>
             </div>
+            <div className="arrhes-balance">
+              {contrat.signed_document_filename ? (
+                <div className="arrhes-meta arrhes-meta--document-name">
+                  {contrat.signed_document_filename}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="secondary arrhes-card__save"
+                disabled={!signedDocumentUrl}
+                onClick={() => setSignedDocumentLightboxOpen(true)}
+              >
+                Voir le contrat retourné
+              </button>
+            </div>
           </div>
 
           <div
@@ -583,24 +608,6 @@ const ContratDetailPage = () => {
               ) : (
                 <span className="detail-value">—</span>
               )}
-            </div>
-            <div className="detail-item">
-              <span className="detail-label">Document signé</span>
-              {signedDocumentUrl ? (
-                <a className="detail-link" href={signedDocumentUrl} target="_blank" rel="noreferrer">
-                  {contrat.signed_document_filename ?? "Consulter"}
-                </a>
-              ) : (
-                <span className="detail-value">—</span>
-              )}
-            </div>
-            <div className="detail-item">
-              <span className="detail-label">Importé le</span>
-              <span className="detail-value">
-                {contrat.signed_document_uploaded_at
-                  ? formatDate(contrat.signed_document_uploaded_at)
-                  : "—"}
-              </span>
             </div>
           </div>
 

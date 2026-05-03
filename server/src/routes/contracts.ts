@@ -145,6 +145,7 @@ const returnProcessingSchema = z.object({
   date_paiement_arrhes: nullableDateString,
   mode_paiement_arrhes: z.preprocess(emptyStringToNull, z.enum(arrhesPaymentModeValues).nullable()).optional(),
   notes: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  commentaire_interne: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   reservation: z
     .object({
       source_paiement: z.preprocess(emptyStringToNull, z.enum(reservationPaymentSourceValues).nullable()).optional(),
@@ -1222,6 +1223,8 @@ router.patch("/:id/return-processing", async (req, res, next) => {
           date_paiement_arrhes: nextArrhesDate,
           mode_paiement_arrhes: nextArrhesPaymentMode,
           notes: data.notes === undefined ? existing.notes : data.notes,
+          commentaire_interne:
+            data.commentaire_interne === undefined ? existing.commentaire_interne : data.commentaire_interne,
         },
         include: { gite: true },
       });

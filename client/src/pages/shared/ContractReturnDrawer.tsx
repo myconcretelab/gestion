@@ -5,6 +5,7 @@ import { formatDate, formatEuro } from "../../utils/format";
 import { computeReservationOptionsPreview, mergeReservationOptions } from "../../utils/reservationOptions";
 import type { Contrat, ContratOptions, Reservation } from "../../utils/types";
 import ReservationOptionsEditor from "./ReservationOptionsEditor";
+import SignedDocumentLightbox from "./SignedDocumentLightbox";
 import { toDateInputValue } from "./rentalForm";
 
 type ContractReturnDrawerProps = {
@@ -98,13 +99,14 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
   const [preparingSignedDocument, setPreparingSignedDocument] = useState(false);
   const [pendingSignedDocument, setPendingSignedDocument] = useState<PendingSignedDocument | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [signedDocumentLightboxOpen, setSignedDocumentLightboxOpen] = useState(false);
   const [contractReceived, setContractReceived] = useState(false);
   const [receptionDate, setReceptionDate] = useState("");
   const [arrhesPaid, setArrhesPaid] = useState(false);
   const [arrhesDate, setArrhesDate] = useState("");
   const [arrhesPaymentMode, setArrhesPaymentMode] = useState("");
   const [reservationPaymentSource, setReservationPaymentSource] = useState("");
-  const [notes, setNotes] = useState("");
+  const [internalComment, setInternalComment] = useState("");
   const [options, setOptions] = useState<ContratOptions>(mergeReservationOptions());
 
   useEffect(() => {
@@ -120,7 +122,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !saving && !preparingSignedDocument) onClose();
+      if (event.key === "Escape" && !saving && !preparingSignedDocument && !signedDocumentLightboxOpen) onClose();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -131,7 +133,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
       document.documentElement.classList.remove(APP_SCROLL_LOCK_CLASS);
       document.body.style.overflow = previousOverflow;
     };
-  }, [onClose, open, preparingSignedDocument, saving]);
+  }, [onClose, open, preparingSignedDocument, saving, signedDocumentLightboxOpen]);
 
   useEffect(() => {
     if (!open || !contract) return;
@@ -145,6 +147,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     setPreparingSignedDocument(false);
     setPendingSignedDocument(null);
     setFileInputKey((current) => current + 1);
+    setSignedDocumentLightboxOpen(false);
     setReservation(null);
     setContractReceived(contract.statut_reception_contrat === "recu");
     setReceptionDate(
@@ -158,7 +161,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     );
     setArrhesPaymentMode(contract.mode_paiement_arrhes ?? "");
     setReservationPaymentSource("");
-    setNotes(contract.notes ?? "");
+    setInternalComment(contract.commentaire_interne ?? "");
     setOptions(mergeReservationOptions(contract.options));
 
     if (!contract.reservation_id) {
@@ -255,7 +258,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
           statut_paiement_arrhes: arrhesPaid ? "recu" : "non_recu",
           date_paiement_arrhes: arrhesPaid ? arrhesDate || null : null,
           mode_paiement_arrhes: arrhesPaid ? arrhesPaymentMode || null : null,
-          notes,
+          commentaire_interne: internalComment,
           reservation: {
             source_paiement: reservationPaymentSource || null,
             options,
@@ -321,18 +324,27 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     : null;
 
   return createPortal(
-    <div
-      className="contract-return-drawer-backdrop"
-      role="presentation"
-      onClick={() => !saving && !preparingSignedDocument && onClose()}
-    >
-      <section
-        className="contract-return-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onClick={(event) => event.stopPropagation()}
+    <>
+      <SignedDocumentLightbox
+        open={signedDocumentLightboxOpen && Boolean(signedDocumentUrl)}
+        title={`Contrat signe ${contract.numero_contrat}`}
+        url={signedDocumentUrl ?? ""}
+        filename={contract.signed_document_filename ?? null}
+        mimeType={contract.signed_document_mime_type ?? null}
+        onClose={() => setSignedDocumentLightboxOpen(false)}
+      />
+      <div
+        className="contract-return-drawer-backdrop"
+        role="presentation"
+        onClick={() => !saving && !preparingSignedDocument && onClose()}
       >
+        <section
+          className="contract-return-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          onClick={(event) => event.stopPropagation()}
+        >
         <div className="contract-return-drawer__header">
           <div>
             <p className="contract-return-drawer__eyebrow">Traitement du retour</p>
@@ -512,9 +524,13 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 <div className="note note--success">
                   Document enregistré :
                   {" "}
-                  <a href={signedDocumentUrl} target="_blank" rel="noreferrer">
+                  <button
+                    type="button"
+                    className="contract-return-drawer__signed-document-link"
+                    onClick={() => setSignedDocumentLightboxOpen(true)}
+                  >
                     {contract.signed_document_filename ?? "Consulter"}
-                  </a>
+                  </button>
                   {contract.signed_document_uploaded_at ? ` (${formatDate(contract.signed_document_uploaded_at)})` : ""}
                   {typeof contract.signed_document_size === "number"
                     ? ` - ${formatFileSize(contract.signed_document_size)}`
@@ -567,8 +583,8 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
               Notes
               <textarea
                 className="contract-return-drawer__textarea"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
+                value={internalComment}
+                onChange={(event) => setInternalComment(event.target.value)}
                 rows={5}
               />
             </label>
@@ -592,8 +608,9 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
             {saving ? "Enregistrement..." : "Enregistrer"}
           </button>
         </div>
-      </section>
-    </div>,
+        </section>
+      </div>
+    </>,
     document.body
   );
 };
