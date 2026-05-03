@@ -20,6 +20,7 @@ import {
   writePumpAutomationConfig,
   type PumpAutomationConfig,
 } from "./pumpAutomationConfig.js";
+import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
 import {
   extractPumpReservationsFromSession,
   type PumpLatestExtraction,
@@ -337,9 +338,10 @@ export const importPersistedPumpSession = (
 export const exportPersistedPumpSession = () => {
   ensurePumpDirectories();
   const currentConfig = getPumpAutomationConfig();
+  const source = getPumpAutomationSourceDefinition(currentConfig.sourceType);
 
   if (!currentConfig.baseUrl.trim() || !currentConfig.username.trim()) {
-    throw new Error("La configuration Pump doit contenir l'URL Airbnb et le compte avant l'export.");
+    throw new Error(`La configuration Pump doit contenir l'URL ${source.label} et le compte avant l'export.`);
   }
 
   const storageStateId = getPumpStorageStateId(currentConfig);

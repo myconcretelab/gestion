@@ -107,6 +107,7 @@ import {
   generateIcalExportToken,
   shouldExportReservationToIcal,
 } from "../utils/reservationOrigin.js";
+import { pumpAutomationSourceTypes } from "../services/pumpSources.js";
 
 const router = Router();
 
@@ -175,6 +176,7 @@ const pumpCronConfigSchema = z.object({
   run_on_start: z.boolean().optional(),
 });
 const pumpAutomationConfigSchema = z.object({
+  sourceType: z.enum(pumpAutomationSourceTypes).default("airbnb"),
   baseUrl: z.string().trim().url("URL Pump invalide."),
   username: z.string().trim().default(""),
   authMode: z

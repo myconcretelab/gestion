@@ -8,6 +8,7 @@ import {
   readPumpAutomationConfig,
 } from "./pumpAutomationConfig.js";
 import { buildDefaultPumpCronConfig, readPumpCronConfig } from "./pumpCronSettings.js";
+import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
 import { resolveDataDir } from "../utils/paths.js";
 
 type StoredSessionRecord = {
@@ -192,6 +193,7 @@ export const getPumpConnectionHealth = async (): Promise<PumpConnectionHealth> =
   ensurePumpRoot();
 
   const { config, storageStateId, absolutePath, relativePath } = getStorageStatePath();
+  const source = getPumpAutomationSourceDefinition(config.sourceType);
   const cronConfig = readPumpCronConfig(buildDefaultPumpCronConfig());
   const staleAfterHours = resolveStaleAfterHours();
   const staleAfterMs = staleAfterHours * 60 * 60 * 1_000;
@@ -253,7 +255,7 @@ export const getPumpConnectionHealth = async (): Promise<PumpConnectionHealth> =
       tone: "neutral",
       label: "Configuration incomplète",
       summary: "Pump n'est pas encore configuré complètement.",
-      recommendedAction: "Renseignez l'URL Airbnb et le sélecteur de scroll dans Paramètres.",
+      recommendedAction: `Renseignez l'URL ${source.label} et le sélecteur de scroll dans Paramètres.`,
       configValid: false,
       persistSessionEnabled: true,
       sessionFileExists,
@@ -278,7 +280,7 @@ export const getPumpConnectionHealth = async (): Promise<PumpConnectionHealth> =
       status: "auth_required",
       tone: "danger",
       label: "Connexion requise",
-      summary: "Aucune session persistée Airbnb n'est disponible sur le serveur.",
+      summary: `Aucune session persistée ${source.label} n'est disponible sur le serveur.`,
       recommendedAction: "Importez une session Playwright valide depuis le local avant le prochain refresh.",
       configValid,
       persistSessionEnabled: true,
@@ -307,10 +309,10 @@ export const getPumpConnectionHealth = async (): Promise<PumpConnectionHealth> =
         tone: "danger",
         label: authRequired ? "Session expirée" : "Refresh en échec",
         summary: authRequired
-          ? "La session persistée ne suffit plus pour accéder à Airbnb."
+          ? `La session persistée ne suffit plus pour accéder à ${source.label}.`
           : "Le dernier refresh Pump a échoué alors qu'une session persistée existe encore.",
         recommendedAction: authRequired
-          ? "Lancez le renouvellement assisté de la session Airbnb dans Paramètres, ou réimportez une session locale si le challenge n'est pas reconnu."
+          ? `Lancez le renouvellement assisté de la session ${source.label} dans Paramètres, ou réimportez une session locale si le challenge n'est pas reconnu.`
           : "Consultez l'erreur du dernier refresh puis relancez un test manuel.",
         configValid,
         persistSessionEnabled: true,

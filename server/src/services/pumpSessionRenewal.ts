@@ -6,6 +6,7 @@ import { readPumpAutomationConfig, buildDefaultPumpAutomationConfig, getPumpStor
 import type { PumpAutomationConfig } from "./pumpAutomationConfig.js";
 import { PumpPlaywrightSession, checkIfLoginRequired } from "./pumpAutomationCapture.js";
 import { syncPumpHealthAlerts } from "./pumpHealth.js";
+import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
 
 type RenewalStatus =
   | "idle"
@@ -58,7 +59,8 @@ let latestRenewal: RenewalRecord | null = null;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const canRunSessionRenewal = () => true;
+const canRunSessionRenewal = (config?: PumpAutomationConfig) =>
+  getPumpAutomationSourceDefinition(config?.sourceType).supportsAssistedRenewal;
 
 const normalizeAirbnbText = (value: string | null | undefined) =>
   String(value ?? "")
@@ -68,6 +70,8 @@ const normalizeAirbnbText = (value: string | null | undefined) =>
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+
+const getCurrentRenewalConfig = () => readPumpAutomationConfig(buildDefaultPumpAutomationConfig());
 
 export const isAirbnbAccountRenewalScreenText = (value: string | null | undefined) => {
   const text = normalizeAirbnbText(value);
@@ -105,6 +109,10 @@ export const extractAirbnbSmsChallengeDestination = (value: string | null | unde
 };
 
 const sanitizeRecord = (renewal: RenewalRecord | null): PumpSessionRenewalStatus => {
+  const config = getCurrentRenewalConfig();
+  const source = getPumpAutomationSourceDefinition(config.sourceType);
+  const available = canRunSessionRenewal(config);
+
   if (!renewal) {
     return {
       renewalId: "",
@@ -112,7 +120,9 @@ const sanitizeRecord = (renewal: RenewalRecord | null): PumpSessionRenewalStatus
       startedAt: "",
       updatedAt: "",
       completedAt: null,
-      message: "Aucun renouvellement assisté en cours.",
+      message: available
+        ? "Aucun renouvellement assisté en cours."
+        : `Le renouvellement assisté n'est pas encore disponible pour ${source.label}.`,
       error: null,
       currentUrl: null,
       storageStateId: null,
@@ -120,7 +130,7 @@ const sanitizeRecord = (renewal: RenewalRecord | null): PumpSessionRenewalStatus
       maskedDestination: null,
       diagnosticsRelativePath: null,
       active: false,
-      available: canRunSessionRenewal(),
+      available,
     };
   }
 
@@ -138,7 +148,7 @@ const sanitizeRecord = (renewal: RenewalRecord | null): PumpSessionRenewalStatus
     maskedDestination: renewal.maskedDestination,
     diagnosticsRelativePath: renewal.diagnosticsRelativePath,
     active: ACTIVE_STATUSES.has(renewal.status),
-    available: canRunSessionRenewal(),
+    available,
   };
 };
 
@@ -231,10 +241,14 @@ const fillFirstVisible = async (page: Page, selectors: string[], value: string, 
 };
 
 const getRenewalContext = () => {
-  const config = readPumpAutomationConfig(buildDefaultPumpAutomationConfig());
+  const config = getCurrentRenewalConfig();
+  const source = getPumpAutomationSourceDefinition(config.sourceType);
   const errors = validatePumpAutomationConfig(config);
   if (errors.length > 0) {
     throw new Error(`Configuration Pump invalide: ${errors.join(" ")}`);
+  }
+  if (!canRunSessionRenewal(config)) {
+    throw new Error(`Le renouvellement assisté n'est pas encore disponible pour ${source.label}.`);
   }
   if (!config.persistSession) {
     throw new Error("Activez d'abord la session persistée pour utiliser le renouvellement assisté.");
@@ -244,7 +258,7 @@ const getRenewalContext = () => {
     config.baseUrl.trim() && config.username.trim() ? getPumpStorageStateId(config) : null;
   const storageStatePath = storageStateId ? path.join(storageStatesRoot, `${storageStateId}.json`) : null;
   if (!storageStatePath || !fs.existsSync(storageStatePath)) {
-    throw new Error("Aucune session persistée Airbnb n'est disponible à renouveler. Importez d'abord une session valide.");
+    throw new Error(`Aucune session persistée ${source.label} n'est disponible à renouveler. Importez d'abord une session valide.`);
   }
 
   return {
@@ -262,7 +276,9 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
 
   const button = await getVisibleLocator(page.locator(config.advancedSelectors.accountChooserContinueButton));
   if (!button) {
-    throw new Error("Airbnb demande de confirmer le compte mais le bouton Continuer est introuvable.");
+    throw new Error(
+      `${getPumpAutomationSourceDefinition(config.sourceType).label} demande de confirmer le compte mais le bouton Continuer est introuvable.`
+    );
   }
 
   await button.click({ timeout: 5_000 });
@@ -349,16 +365,17 @@ const readOtpError = async (page: Page) => {
 };
 
 const saveAuthenticatedSession = async (renewal: RenewalRecord, session: PumpPlaywrightSession) => {
+  const source = getPumpAutomationSourceDefinition(session.config.sourceType);
   session.isAuthenticated = true;
   updateRenewal({
     status: "saving",
-    message: "Connexion validée, sauvegarde de la session persistée...",
+    message: `Connexion ${source.label} validée, sauvegarde de la session persistée...`,
     currentUrl: session.getPage()?.url() ?? null,
   });
   await session.saveStorageState();
   await syncPumpHealthAlerts("pump-session-renewal-saved").catch(() => undefined);
   await finalizeRenewal("saved", {
-    message: "Session persistée renouvelée avec succès.",
+    message: `Session persistée ${source.label} renouvelée avec succès.`,
     currentUrl: session.getPage()?.url() ?? null,
   });
 };
@@ -371,12 +388,13 @@ const runRenewalStart = async () => {
 
   try {
     const { config, storageStateId, storageStatePath } = getRenewalContext();
+    const source = getPumpAutomationSourceDefinition(config.sourceType);
     const session = new PumpPlaywrightSession(config, storageStatesRoot);
 
     updateRenewal({
       session,
       status: "starting",
-      message: "Ouverture de la session Airbnb de renouvellement...",
+      message: `Ouverture de la session ${source.label} de renouvellement...`,
       storageStateId,
       storageStateRelativePath: path.relative(process.cwd(), storageStatePath),
     });
@@ -384,7 +402,7 @@ const runRenewalStart = async () => {
     await session.initialize();
     page = session.getPage();
     if (!page) {
-      throw new Error("La page Playwright Airbnb n'a pas pu être initialisée.");
+      throw new Error(`La page Playwright ${source.label} n'a pas pu être initialisée.`);
     }
 
     await session.navigate(config.baseUrl);
@@ -412,7 +430,7 @@ const runRenewalStart = async () => {
     if (isAirbnbSmsChallengeScreenText(bodyText)) {
       updateRenewal({
         status: "awaiting_sms_code",
-        message: "Code SMS requis pour finaliser le renouvellement de la session Airbnb.",
+        message: `Code SMS requis pour finaliser le renouvellement de la session ${source.label}.`,
         currentUrl: page.url(),
         maskedDestination: extractAirbnbSmsChallengeDestination(bodyText),
         diagnosticsRelativePath: await writeDiagnostics(page, renewal.renewalId, "awaiting-sms-code"),
@@ -421,7 +439,7 @@ const runRenewalStart = async () => {
     }
 
     throw new Error(
-      "Le renouvellement assisté V1 n'a pas reconnu l'écran Airbnb courant. Cette version gère uniquement l'écran de compte reconnu puis le code SMS."
+      `Le renouvellement assisté V1 n'a pas reconnu l'écran ${source.label} courant. Cette version gère uniquement l'écran de compte reconnu puis le code SMS.`
     );
   } catch (error) {
     const message =
@@ -462,9 +480,10 @@ export const startPumpSessionRenewal = () => {
   };
 
   latestRenewal.timeoutTimer = setTimeout(() => {
+    const source = getPumpAutomationSourceDefinition(getCurrentRenewalConfig().sourceType);
     void finalizeRenewal("timed_out", {
       error: "Timeout du renouvellement assisté atteint.",
-      message: "Le renouvellement assisté a expiré avant validation du challenge Airbnb.",
+      message: `Le renouvellement assisté a expiré avant validation du challenge ${source.label}.`,
     });
   }, RENEWAL_TIMEOUT_MS);
   latestRenewal.timeoutTimer.unref?.();
@@ -494,14 +513,20 @@ export const submitPumpSessionRenewalSmsCode = async (code: string) => {
     throw new Error("Le renouvellement assisté n'attend pas de code SMS.");
   }
 
-  const page = renewal.session?.getPage();
-  if (!page || page.isClosed()) {
-    throw new Error("La session de renouvellement Airbnb n'est plus disponible.");
+  const session = renewal.session;
+  const page = session?.getPage();
+  if (!session || !page || page.isClosed()) {
+    throw new Error(
+      `La session de renouvellement ${getPumpAutomationSourceDefinition(
+        session?.config.sourceType
+      ).label} n'est plus disponible.`
+    );
   }
 
+  const source = getPumpAutomationSourceDefinition(session.config.sourceType);
   updateRenewal({
     status: "submitting_sms_code",
-    message: "Validation du code SMS Airbnb en cours...",
+    message: `Validation du ${source.smsCodeLabel.toLowerCase()} ${source.label} en cours...`,
     error: null,
     currentUrl: page.url(),
   });
@@ -513,10 +538,10 @@ export const submitPumpSessionRenewalSmsCode = async (code: string) => {
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
       const bodyText = await getBodyText(page);
-      const loginRequired = await checkIfLoginRequired(page, renewal.session!.config).catch(() => true);
+      const loginRequired = await checkIfLoginRequired(page, session.config).catch(() => true);
 
       if (!loginRequired && !isAirbnbSmsChallengeScreenText(bodyText)) {
-        await saveAuthenticatedSession(renewal, renewal.session!);
+        await saveAuthenticatedSession(renewal, session);
         return sanitizeRecord(latestRenewal);
       }
 
@@ -549,7 +574,7 @@ export const submitPumpSessionRenewalSmsCode = async (code: string) => {
 
     return sanitizeRecord(latestRenewal);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Impossible de valider le code SMS Airbnb.";
+    const message = error instanceof Error ? error.message : `Impossible de valider le ${source.smsCodeLabel.toLowerCase()} ${source.label}.`;
     updateRenewal({
       status: "awaiting_sms_code",
       message,

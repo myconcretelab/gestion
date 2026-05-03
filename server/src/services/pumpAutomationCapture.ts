@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page, type Response as PlaywrightResponse, type Request as PlaywrightRequest } from "playwright";
 import { getPumpStorageStateId, type PumpAutomationConfig, type PumpFilterRule } from "./pumpAutomationConfig.js";
+import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
 
 const DEFAULT_MULTI_STEP_SELECTORS = {
   continueWithEmail: [
@@ -119,7 +120,9 @@ const ensurePasswordAvailable = (password: string | undefined | null, config: Pu
   if (config.persistSession === false) {
     throw new Error("Authentification requise mais mot de passe absent.");
   }
-  throw new Error("Session Airbnb expirée ou indisponible. Fournissez PUMP_SESSION_PASSWORD pour la rafraîchir.");
+  throw new Error(
+    `Session ${getPumpAutomationSourceDefinition(config.sourceType).label} expirée ou indisponible. Fournissez PUMP_SESSION_PASSWORD pour la rafraîchir.`
+  );
 };
 
 const waitForElement = async (page: Page, selector: string, timeout = 10_000, visible = true) => {
@@ -200,7 +203,7 @@ const waitForLoginCompletion = async (page: Page, config: PumpAutomationConfig, 
     }
     await wait(1_000);
   }
-  throw new Error("La connexion Airbnb n'a pas été finalisée à temps.");
+  throw new Error(`La connexion ${getPumpAutomationSourceDefinition(config.sourceType).label} n'a pas été finalisée à temps.`);
 };
 
 const performSimpleLogin = async (page: Page, config: PumpAutomationConfig, password: string) => {
@@ -863,7 +866,7 @@ export class PumpPlaywrightSession {
       return context;
     } catch (error) {
       this.loadedPersistedState = false;
-      logWarn("Failed to load persisted Airbnb session.", error);
+      logWarn("Failed to load persisted Pump session.", error);
       return this.browser.newContext();
     }
   }
@@ -884,7 +887,7 @@ export class PumpPlaywrightSession {
 
     if (this.config.authMode === "persisted-only") {
       throw new Error(
-        "Session Airbnb expirée ou absente. Le mode phase 1 utilise uniquement une session persistée importée depuis le local."
+        `Session ${getPumpAutomationSourceDefinition(this.config.sourceType).label} expirée ou absente. Le mode phase 1 utilise uniquement une session persistée importée depuis le local.`
       );
     }
 
