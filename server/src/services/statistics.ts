@@ -38,6 +38,7 @@ export type StatisticsEntry = {
   adultes: number;
   prixNuit: number;
   revenus: number;
+  fraisOptionnelsTotal: number;
   fraisOptionnelsDeclares: number;
   paiement: string;
   proprietaires: string;
@@ -142,16 +143,24 @@ export const buildStatisticsPayload = (params: {
           ? reservation.prix_total / reservation.nb_nuits
           : 0;
     const prixNuit = round2(effectiveNightPrice);
+    const optionalFeesTotal = round2(reservation.frais_optionnels_montant || 0);
     const declaredOptionalFeesTotal = reservation.frais_optionnels_declares
-      ? round2(reservation.frais_optionnels_montant || 0)
+      ? optionalFeesTotal
       : 0;
     const totalSegmentNights = segments.reduce((sum, segment) => sum + segment.nights, 0);
+    let allocatedOptionalFees = 0;
     let allocatedDeclaredOptionalFees = 0;
 
     for (let idx = 0; idx < segments.length; idx += 1) {
       const segment = segments[idx];
       years.add(segment.start.getUTCFullYear());
       const isLastSegment = idx === segments.length - 1;
+      const proportionalOptionalFees =
+        totalSegmentNights > 0 ? round2((optionalFeesTotal * segment.nights) / totalSegmentNights) : 0;
+      const optionalFeesForSegment = isLastSegment
+        ? round2(optionalFeesTotal - allocatedOptionalFees)
+        : proportionalOptionalFees;
+      allocatedOptionalFees = round2(allocatedOptionalFees + optionalFeesForSegment);
       const proportionalDeclaredOptionalFees =
         totalSegmentNights > 0 ? round2((declaredOptionalFeesTotal * segment.nights) / totalSegmentNights) : 0;
       const declaredOptionalFeesForSegment = isLastSegment
@@ -169,6 +178,7 @@ export const buildStatisticsPayload = (params: {
         adultes: reservation.nb_adultes ?? 0,
         prixNuit,
         revenus: round2(prixNuit * segment.nights),
+        fraisOptionnelsTotal: optionalFeesForSegment,
         fraisOptionnelsDeclares: declaredOptionalFeesForSegment,
         paiement: (reservation.source_paiement ?? "Indéfini").trim() || "Indéfini",
         proprietaires: gite.proprietaires_noms,
