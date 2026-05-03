@@ -139,6 +139,8 @@ const reservationPaymentSourceValues = [
 const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
 
 const returnProcessingSchema = z.object({
+  nb_adultes: z.number().int().min(1).optional(),
+  nb_enfants_2_17: z.number().int().min(0).optional(),
   statut_reception_contrat: z.enum(["non_recu", "recu"]).optional(),
   date_reception_contrat: nullableDateString,
   statut_paiement_arrhes: z.enum(["non_recu", "recu"]).optional(),
@@ -1131,6 +1133,15 @@ router.patch("/:id/return-processing", async (req, res, next) => {
     });
     if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
 
+    const nextAdults = data.nb_adultes ?? existing.nb_adultes;
+    const nextChildren = data.nb_enfants_2_17 ?? existing.nb_enfants_2_17;
+    const occupancyError = validateDocumentOccupancy({
+      gite: existing.gite,
+      nbAdultes: nextAdults,
+      nbEnfants: nextChildren,
+    });
+    if (occupancyError) throw occupancyError;
+
     const nextReceptionStatus = data.statut_reception_contrat ?? existing.statut_reception_contrat;
     const explicitReceptionDate =
       data.date_reception_contrat === undefined
@@ -1171,6 +1182,10 @@ router.patch("/:id/return-processing", async (req, res, next) => {
         }
 
         const reservationUpdate: Record<string, unknown> = {};
+        const nextReservationAdults = data.nb_adultes ?? reservation.nb_adultes;
+        if (data.nb_adultes !== undefined) {
+          reservationUpdate.nb_adultes = nextReservationAdults;
+        }
         if (data.reservation.source_paiement !== undefined) {
           reservationUpdate.source_paiement = data.reservation.source_paiement;
         }
@@ -1186,8 +1201,8 @@ router.patch("/:id/return-processing", async (req, res, next) => {
             dateFin: reservation.date_sortie,
             prixParNuit: toNumber(reservation.prix_par_nuit),
             remiseMontant: toNumber(reservation.remise_montant),
-            nbAdultes: reservation.nb_adultes,
-            nbEnfants: 0,
+            nbAdultes: nextReservationAdults,
+            nbEnfants: nextChildren,
             arrhesMontant: 0,
             options: nextOptions,
             gite: existing.gite,
@@ -1217,6 +1232,8 @@ router.patch("/:id/return-processing", async (req, res, next) => {
       return tx.contrat.update({
         where: { id: existing.id },
         data: {
+          nb_adultes: nextAdults,
+          nb_enfants_2_17: nextChildren,
           statut_reception_contrat: nextReceptionStatus,
           date_reception_contrat: nextReceptionDate,
           statut_paiement_arrhes: nextArrhesStatus,

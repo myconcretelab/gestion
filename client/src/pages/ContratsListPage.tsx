@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiFetch, isAbortError } from "../utils/api";
+import { apiFetch, buildApiUrl, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
 import {
@@ -14,6 +14,7 @@ import {
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import ContractReturnDrawer from "./shared/ContractReturnDrawer";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
+import SignedDocumentLightbox from "./shared/SignedDocumentLightbox";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
 
 const toLocalDateKey = (value: Date) => {
@@ -110,6 +111,53 @@ const CrossIcon = () => (
   </svg>
 );
 
+const CheckIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="m5 12 4.2 4.2L19 6.8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const ClockIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <circle
+      cx="12"
+      cy="12"
+      r="8.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    />
+    <path
+      d="M12 7.8v4.5l3 1.8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const ArrowDownIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      d="M12 5.5v11m0 0-4-4m4 4 4-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const ContratsListPage = () => {
   const [contrats, setContrats] = useState<Contrat[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
@@ -128,6 +176,7 @@ const ContratsListPage = () => {
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [returnDrawerContractId, setReturnDrawerContractId] = useState<string | null>(null);
+  const [signedDocumentContractId, setSignedDocumentContractId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentSaving, setCommentSaving] = useState<Record<string, boolean>>({});
   const commentInputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -216,6 +265,12 @@ const ContratsListPage = () => {
     if (contrats.some((contrat) => contrat.id === returnDrawerContractId)) return;
     setReturnDrawerContractId(null);
   }, [contrats, returnDrawerContractId]);
+
+  useEffect(() => {
+    if (!signedDocumentContractId) return;
+    if (contrats.some((contrat) => contrat.id === signedDocumentContractId)) return;
+    setSignedDocumentContractId(null);
+  }, [contrats, signedDocumentContractId]);
 
   const toggleReception = async (contrat: Contrat) => {
     const nextStatus =
@@ -396,6 +451,20 @@ const ContratsListPage = () => {
 
   const selectedReturnDrawerContract =
     contrats.find((contrat) => contrat.id === returnDrawerContractId) ?? null;
+  const selectedSignedDocumentContract =
+    contrats.find((contrat) => contrat.id === signedDocumentContractId) ?? null;
+  const selectedSignedDocumentUrl =
+    selectedSignedDocumentContract?.signed_document_path
+      ? buildApiUrl(
+          `/contracts/${selectedSignedDocumentContract.id}/signed-document?v=${encodeURIComponent(
+            String(
+              selectedSignedDocumentContract.signed_document_uploaded_at ??
+                selectedSignedDocumentContract.date_derniere_modif ??
+                ""
+            )
+          )}`
+        )
+      : null;
 
   return (
     <div>
@@ -460,6 +529,18 @@ const ContratsListPage = () => {
           setNotice(null);
           setContrats((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         }}
+      />
+      <SignedDocumentLightbox
+        open={Boolean(selectedSignedDocumentContract && selectedSignedDocumentUrl)}
+        title={
+          selectedSignedDocumentContract
+            ? `Contrat signe ${selectedSignedDocumentContract.numero_contrat}`
+            : "Contrat signe"
+        }
+        url={selectedSignedDocumentUrl ?? ""}
+        filename={selectedSignedDocumentContract?.signed_document_filename ?? null}
+        mimeType={selectedSignedDocumentContract?.signed_document_mime_type ?? null}
+        onClose={() => setSignedDocumentContractId(null)}
       />
       <div className="card">
         <div className="section-title">Recherche</div>
@@ -544,10 +625,11 @@ const ContratsListPage = () => {
                 <tr key={contrat.id}>
                   <td>
                     <div className="contracts-date-cell">
-                      <span>
-                        {formatDate(contrat.date_debut)} -{" "}
-                        {formatDate(contrat.date_fin)}
+                      <span>{formatDate(contrat.date_debut)}</span>
+                      <span className="contracts-date-cell__arrow" aria-hidden="true">
+                        <ArrowDownIcon />
                       </span>
+                      <span>{formatDate(contrat.date_fin)}</span>
                     </div>
                   </td>
                   <td>{contrat.gite?.nom ?? ""}</td>
@@ -556,8 +638,8 @@ const ContratsListPage = () => {
                     {contrat.statut_reception_contrat === "recu" ? (
                       <div className="contract-return-status">
                         <div className="contract-return-status__summary">
-                          <span className="contract-return-status__text">
-                            Retour reçu
+                          <div className="contract-return-status-row">
+                            <span className="contract-return-status__text">Retour reçu</span>
                             {contrat.signed_document_path ? (
                               <span
                                 className="contract-return-status__file-indicator"
@@ -567,12 +649,28 @@ const ContratsListPage = () => {
                                 <ReservationContractIcon />
                               </span>
                             ) : null}
-                          </span>
-                          <strong className="contract-return-status__date">
-                            {formatDate(contrat.date_reception_contrat ?? contrat.date_derniere_modif)}
-                          </strong>
+                          </div>
+                          <div className="switch-meta contract-tracking-meta contract-tracking-meta--paid contract-return-status__meta">
+                            <span className="contract-tracking-meta__check" aria-hidden="true">
+                              <CheckIcon />
+                            </span>
+                            <strong className="contract-return-status__date">
+                              {formatDate(contrat.date_reception_contrat ?? contrat.date_derniere_modif)}
+                            </strong>
+                          </div>
                         </div>
                         <div className="contract-return-status__actions">
+                          {contrat.signed_document_path ? (
+                            <button
+                              type="button"
+                              className="table-action table-action--icon table-action--neutral contract-return-status__file-action"
+                              onClick={() => setSignedDocumentContractId(contrat.id)}
+                              aria-label={`Voir le contrat signé ${contrat.numero_contrat}`}
+                              title="Voir le contrat signé"
+                            >
+                              <ReservationContractIcon />
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="table-action table-action--icon table-action--neutral"
@@ -583,7 +681,7 @@ const ContratsListPage = () => {
                           </button>
                           <button
                             type="button"
-                            className="table-action table-action--icon table-action--neutral"
+                            className="table-action table-action--icon table-action--danger contract-return-status__delete-action"
                             onClick={() => void toggleReception(contrat)}
                             disabled={Boolean(receptionUpdating[contrat.id])}
                             aria-label={`Annuler la réception du contrat ${contrat.numero_contrat}`}
@@ -601,25 +699,40 @@ const ContratsListPage = () => {
                         >
                           Traiter le retour
                         </button>
-                        <div className="contract-return-pending__meta">
+                        <div className="contract-return-pending__meta contract-tracking-meta contract-tracking-meta--pending">
+                          <span className="contract-tracking-meta__clock" aria-hidden="true">
+                            <ClockIcon />
+                          </span>
                           {returnBadge ? returnBadge.label : "Contrat en attente de retour"}
                         </div>
                       </div>
                     )}
                   </td>
                   <td>
-                      <div className="switch-cell">
-                        <div className="switch-meta contract-arrhes-status">
-                          {contrat.statut_paiement_arrhes === "recu" ? "Payées" : "En attente"}
+                      <div className="switch-cell contract-arrhes-cell">
+                        <div className="contract-arrhes-status-row">
+                          <div className="switch-meta contract-arrhes-status">
+                            {contrat.statut_paiement_arrhes === "recu" ? (
+                              "Payées"
+                            ) : (
+                              <span className="contract-tracking-meta contract-tracking-meta--pending">
+                                <span className="contract-tracking-meta__clock" aria-hidden="true">
+                                  <ClockIcon />
+                                </span>
+                                <span>En attente</span>
+                              </span>
+                            )}
+                          </div>
+                          {contrat.mode_paiement_arrhes ? (
+                            <span className="contract-payment-badge">{contrat.mode_paiement_arrhes}</span>
+                          ) : null}
                         </div>
                       {contrat.date_paiement_arrhes ? (
-                        <div className="switch-meta contract-tracking-meta">
-                          Payé le {formatDate(contrat.date_paiement_arrhes)}
-                        </div>
-                      ) : null}
-                      {contrat.mode_paiement_arrhes ? (
-                        <div className="switch-meta contract-tracking-meta">
-                          {contrat.mode_paiement_arrhes}
+                        <div className="switch-meta contract-tracking-meta contract-tracking-meta--paid">
+                          <span className="contract-tracking-meta__check" aria-hidden="true">
+                            <CheckIcon />
+                          </span>
+                          <span>{formatDate(contrat.date_paiement_arrhes)}</span>
                         </div>
                       ) : null}
                     </div>
