@@ -1933,39 +1933,6 @@ const ReservationsPage = () => {
     [monthlyAmountsByReservationMonthKey, year]
   );
 
-  const getMonthlyUrssafBreakdown = useCallback(
-    (list: Reservation[], monthIndex: number, declarationStatus: "declared" | "undeclared"): MonthlyUrssafBreakdown => {
-      let baseRevenue = 0;
-      let declaredFees = 0;
-      let undeclaredFeesExcluded = 0;
-
-      list.forEach((reservation) => {
-        const giteId = String(reservation.gite_id ?? "").trim();
-        const managerId = giteId ? giteById.get(giteId)?.gestionnaire?.id ?? null : null;
-        if (!managerId) return;
-
-        const normalizedSourceKey = normalizeTextKey(normalizeReservationSource(reservation.source_paiement));
-        if (!URSSAF_MONTHLY_SOURCE_KEY_SET.has(normalizedSourceKey)) return;
-
-        const declarationKey = buildUrssafDeclarationCheckKey(year, monthIndex, managerId);
-        const isDeclared = Boolean(urssafDeclarationsByKey[declarationKey]);
-        if ((declarationStatus === "declared") !== isDeclared) return;
-
-        const monthlyAmounts = getReservationMonthlyAmounts(reservation, monthIndex);
-        baseRevenue = round2(baseRevenue + monthlyAmounts.baseRevenue);
-        declaredFees = round2(declaredFees + monthlyAmounts.declaredFees);
-        undeclaredFeesExcluded = round2(undeclaredFeesExcluded + monthlyAmounts.undeclaredFees);
-      });
-
-      return {
-        baseRevenue,
-        declaredFees,
-        undeclaredFeesExcluded,
-      };
-    },
-    [getReservationMonthlyAmounts, giteById, urssafDeclarationsByKey, year]
-  );
-
   const occupationByMonthByGite = useMemo(() => {
     const byGite = new Map<string, Map<number, number>>();
     gites.forEach((gite) => {
@@ -2920,6 +2887,39 @@ const ReservationsPage = () => {
     if (!giteId) return null;
     return giteById.get(giteId) ?? null;
   };
+
+  const getMonthlyUrssafBreakdown = useCallback(
+    (list: Reservation[], monthIndex: number, declarationStatus: "declared" | "undeclared"): MonthlyUrssafBreakdown => {
+      let baseRevenue = 0;
+      let declaredFees = 0;
+      let undeclaredFeesExcluded = 0;
+
+      list.forEach((reservation) => {
+        const giteId = String(reservation.gite_id ?? "").trim();
+        const managerId = giteId ? giteById.get(giteId)?.gestionnaire?.id ?? null : null;
+        if (!managerId) return;
+
+        const normalizedSourceKey = normalizeTextKey(normalizeReservationSource(reservation.source_paiement));
+        if (!URSSAF_MONTHLY_SOURCE_KEY_SET.has(normalizedSourceKey)) return;
+
+        const declarationKey = buildUrssafDeclarationCheckKey(year, monthIndex, managerId);
+        const isDeclared = Boolean(urssafDeclarationsByKey[declarationKey]);
+        if ((declarationStatus === "declared") !== isDeclared) return;
+
+        const monthlyAmounts = getReservationMonthlyAmounts(reservation, monthIndex);
+        baseRevenue = round2(baseRevenue + monthlyAmounts.baseRevenue);
+        declaredFees = round2(declaredFees + monthlyAmounts.declaredFees);
+        undeclaredFeesExcluded = round2(undeclaredFeesExcluded + monthlyAmounts.undeclaredFees);
+      });
+
+      return {
+        baseRevenue,
+        declaredFees,
+        undeclaredFeesExcluded,
+      };
+    },
+    [getReservationMonthlyAmounts, giteById, urssafDeclarationsByKey, year]
+  );
 
   const updateReservationOptionsSelection = (
     reservation: Reservation,
