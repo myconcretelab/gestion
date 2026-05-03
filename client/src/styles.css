@@ -7627,17 +7627,38 @@ button.warning {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #1f6b43;
 }
 
 .contract-return-status__text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.76rem;
   font-weight: 700;
+  color: #111827;
 }
 
 .contract-return-status__summary strong {
   font-size: 0.76rem;
   font-weight: 700;
+}
+
+.contract-return-status__date {
+  color: var(--muted);
+}
+
+.contract-return-status__file-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: #6b7280;
+}
+
+.contract-return-status__file-indicator svg {
+  width: 100%;
+  height: 100%;
 }
 
 .contract-return-status__actions {
@@ -8091,6 +8112,113 @@ button.warning {
   word-break: break-word;
 }
 
+.signed-document-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background:
+    radial-gradient(circle at top, rgba(255, 245, 235, 0.16), transparent 30%),
+    rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.signed-document-lightbox {
+  width: min(1320px, calc(100vw - 40px));
+  max-height: min(94vh, 1000px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(255, 253, 248, 0.98) 0%, rgba(255, 255, 255, 0.96) 100%);
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.45);
+  overflow: hidden;
+}
+
+.signed-document-lightbox__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.7);
+}
+
+.signed-document-lightbox__eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9a3412;
+}
+
+.signed-document-lightbox__header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #111827;
+}
+
+.signed-document-lightbox__filename {
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.signed-document-lightbox__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.signed-document-lightbox__body {
+  min-height: 0;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.86) 0%, rgba(241, 245, 249, 0.72) 100%);
+}
+
+.signed-document-lightbox__frame,
+.signed-document-lightbox__image-shell {
+  width: 100%;
+  height: min(78vh, 860px);
+  border: 0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.72);
+}
+
+.signed-document-lightbox__image-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 247, 237, 0.88) 0%, rgba(255, 255, 255, 0.94) 28%),
+    repeating-linear-gradient(
+      45deg,
+      rgba(226, 232, 240, 0.22) 0,
+      rgba(226, 232, 240, 0.22) 10px,
+      rgba(255, 255, 255, 0.3) 10px,
+      rgba(255, 255, 255, 0.3) 20px
+    );
+}
+
+.signed-document-lightbox__image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+}
+
 .contract-return-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -8354,6 +8482,17 @@ button.warning {
   font-weight: 700;
 }
 
+.contract-return-drawer__signed-document-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .contract-return-drawer__signed-document-pending {
   display: flex;
   align-items: center;
@@ -8606,6 +8745,16 @@ button.warning {
   width: fit-content;
 }
 
+.detail-link--button {
+  padding: 0;
+  background: transparent;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.2);
+  cursor: pointer;
+}
+
 .detail-hint {
   font-size: 0.8rem;
   color: var(--muted);
@@ -8686,6 +8835,12 @@ button.warning {
   font-size: 0.85rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.arrhes-meta--document-name {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .arrhes-card__editor {
@@ -10439,6 +10594,42 @@ button.warning {
 
   .email-composer-dialog__footer button {
     width: 100%;
+  }
+
+  .signed-document-lightbox-backdrop {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .signed-document-lightbox {
+    width: 100%;
+    max-height: min(94vh, 100%);
+    border-radius: 24px 24px 18px 18px;
+  }
+
+  .signed-document-lightbox__header,
+  .signed-document-lightbox__body {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .signed-document-lightbox__header {
+    flex-direction: column;
+  }
+
+  .signed-document-lightbox__actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .signed-document-lightbox__actions a,
+  .signed-document-lightbox__actions button {
+    width: 100%;
+  }
+
+  .signed-document-lightbox__frame,
+  .signed-document-lightbox__image-shell {
+    height: min(72vh, 760px);
   }
 
   .contract-return-drawer {
