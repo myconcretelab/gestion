@@ -7,6 +7,7 @@ import {
   readPumpAutomationConfig,
   validatePumpAutomationConfig,
 } from "./pumpAutomationConfig.js";
+import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
 import { PumpPlaywrightSession, checkIfLoginRequired } from "./pumpAutomationCapture.js";
 import { syncPumpHealthAlerts } from "./pumpHealth.js";
 
@@ -122,6 +123,7 @@ const runCapture = async () => {
 
   try {
     const config = readPumpAutomationConfig(buildDefaultPumpAutomationConfig());
+    const source = getPumpAutomationSourceDefinition(config.sourceType);
     const errors = validatePumpAutomationConfig(config);
     if (errors.length > 0) {
       throw new Error(`Configuration Pump invalide: ${errors.join(" ")}`);
@@ -145,7 +147,7 @@ const runCapture = async () => {
     await session.navigate(config.baseUrl);
     updateCapture({
       status: "waiting_for_login",
-      message: "Connectez-vous dans le navigateur ouvert. La session sera sauvegardée automatiquement.",
+      message: `Connectez-vous à ${source.label} dans le navigateur ouvert. La session sera sauvegardée automatiquement.`,
       currentUrl: session.getPage()?.url() ?? null,
     });
 
@@ -182,7 +184,7 @@ const runCapture = async () => {
         });
         await session.saveStorageState();
         await finalizeCapture("saved", {
-          message: "Session persistée sauvegardée. Vous pouvez maintenant l'exporter pour la production.",
+          message: `Session persistée ${source.label} sauvegardée. Vous pouvez maintenant l'exporter pour la production.`,
           currentUrl,
         });
         await syncPumpHealthAlerts("pump-session-capture-saved").catch(() => undefined);

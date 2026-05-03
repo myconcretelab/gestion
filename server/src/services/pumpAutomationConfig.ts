@@ -2,6 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
 import { resolveDataDir } from "../utils/paths.js";
+import {
+  DEFAULT_PUMP_AUTOMATION_SOURCE_TYPE,
+  getPumpAutomationSourceDefinition,
+  type PumpAdvancedSelectors,
+  type PumpAutomationSourceType,
+} from "./pumpSources.js";
 
 export type PumpFilterRule = {
   type: string;
@@ -10,6 +16,7 @@ export type PumpFilterRule = {
 };
 
 export type PumpAutomationConfig = {
+  sourceType: PumpAutomationSourceType;
   baseUrl: string;
   username: string;
   authMode: "persisted-only" | "legacy-auto-login";
@@ -28,20 +35,7 @@ export type PumpAutomationConfig = {
     exclusive: PumpFilterRule[];
   };
   loginStrategy: "simple" | "multi-step";
-  advancedSelectors: {
-    usernameInput: string;
-    passwordInput: string;
-    submitButton: string;
-    emailFirstButton: string;
-    continueAfterUsernameButton: string;
-    finalSubmitButton: string;
-    accountChooserContinueButton: string;
-    calendarSourceCard: string;
-    calendarSourceEditButton: string;
-    calendarSourceRefreshButton: string;
-    calendarSourceUrlField: string;
-    calendarSourceCloseButton: string;
-  };
+  advancedSelectors: PumpAdvancedSelectors;
 };
 
 const sanitizeSegment = (value: string | null | undefined, fallback = "default") => {
@@ -73,30 +67,6 @@ const PUMP_CONFIG_FILE = path.join(resolveDataDir(), "pump-config.json");
 const LEGACY_CONFIG_CANDIDATES = [
   path.join(process.cwd(), "..", "pump", "data", "configs", "last.json"),
 ];
-
-const DEFAULT_ADVANCED_SELECTORS: PumpAutomationConfig["advancedSelectors"] = {
-  usernameInput: 'input[type="email"], input[type="text"][placeholder*="email"], input[name*="email"]',
-  passwordInput: 'input[type="password"]',
-  submitButton: 'button[type="submit"], button:has-text("Login"), button:has-text("Sign in")',
-  emailFirstButton:
-    'button:has-text("Continuer avec un email"), button:has-text("Continuer avec un e-mail"), button:has-text("Continue with email")',
-  continueAfterUsernameButton:
-    'button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Suivant"), button:has-text("Next"), button[type="submit"]',
-  finalSubmitButton:
-    'button:has-text("Connexion"), button:has-text("Se connecter"), button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Sign in"), button:has-text("Log in"), button[type="submit"]',
-  accountChooserContinueButton:
-    'button:has-text("Continuer"), [role="button"]:has-text("Continuer"), button:has-text("Continue"), [role="button"]:has-text("Continue")',
-  calendarSourceCard:
-    'div:has(button:has-text("Actualiser")), div:has(button:has-text("Refresh")), article:has(button:has-text("Actualiser")), article:has(button:has-text("Refresh"))',
-  calendarSourceEditButton:
-    'button:has-text("Modifier"), [role="button"]:has-text("Modifier"), button:has-text("Edit"), [role="button"]:has-text("Edit")',
-  calendarSourceRefreshButton:
-    'button:has-text("Actualiser"), [role="button"]:has-text("Actualiser"), button:has-text("Refresh"), [role="button"]:has-text("Refresh")',
-  calendarSourceUrlField:
-    'input[type="url"], input[readonly], input[value*="ical"], input[value*="/calendar/"], textarea',
-  calendarSourceCloseButton:
-    'button:has-text("Fermer"), [role="button"]:has-text("Fermer"), button:has-text("Close"), [role="button"]:has-text("Close"), [aria-label*="Fermer"], [aria-label*="Close"]',
-};
 
 const ensureDataDir = () => {
   const dataDir = resolveDataDir();
@@ -161,34 +131,45 @@ const normalizeFilterRules = (value: unknown) => {
   };
 };
 
-export const buildDefaultPumpAutomationConfig = (): PumpAutomationConfig => ({
-  baseUrl: env.PUMP_BASE_URL,
-  username: env.PUMP_USERNAME,
-  authMode: env.PUMP_AUTH_MODE as PumpAutomationConfig["authMode"],
-  hasOTP: env.PUMP_HAS_OTP,
-  persistSession: env.PUMP_PERSIST_SESSION,
-  manualScrollMode: env.PUMP_MANUAL_SCROLL_MODE,
-  manualScrollDuration: env.PUMP_MANUAL_SCROLL_DURATION,
-  scrollSelector: env.PUMP_SCROLL_SELECTOR,
-  scrollCount: env.PUMP_SCROLL_COUNT,
-  scrollDistance: env.PUMP_SCROLL_DISTANCE,
-  scrollDelay: env.PUMP_SCROLL_DELAY,
-  waitBeforeScroll: env.PUMP_WAIT_BEFORE_SCROLL,
-  outputFolder: env.PUMP_OUTPUT_FOLDER,
-  filterRules: {
-    inclusive: [],
-    exclusive: [],
-  },
-  loginStrategy: env.PUMP_LOGIN_STRATEGY === "multi-step" ? "multi-step" : "simple",
-  advancedSelectors: { ...DEFAULT_ADVANCED_SELECTORS },
-});
+export const buildDefaultPumpAutomationConfig = (
+  sourceType: PumpAutomationSourceType = DEFAULT_PUMP_AUTOMATION_SOURCE_TYPE
+): PumpAutomationConfig => {
+  const source = getPumpAutomationSourceDefinition(sourceType);
+
+  return {
+    sourceType: source.type,
+    baseUrl: source.baseUrlDefault,
+    username: env.PUMP_USERNAME,
+    authMode: env.PUMP_AUTH_MODE as PumpAutomationConfig["authMode"],
+    hasOTP: env.PUMP_HAS_OTP,
+    persistSession: env.PUMP_PERSIST_SESSION,
+    manualScrollMode: env.PUMP_MANUAL_SCROLL_MODE,
+    manualScrollDuration: env.PUMP_MANUAL_SCROLL_DURATION,
+    scrollSelector: env.PUMP_SCROLL_SELECTOR,
+    scrollCount: env.PUMP_SCROLL_COUNT,
+    scrollDistance: env.PUMP_SCROLL_DISTANCE,
+    scrollDelay: env.PUMP_SCROLL_DELAY,
+    waitBeforeScroll: env.PUMP_WAIT_BEFORE_SCROLL,
+    outputFolder: env.PUMP_OUTPUT_FOLDER,
+    filterRules: {
+      inclusive: [],
+      exclusive: [],
+    },
+    loginStrategy: env.PUMP_LOGIN_STRATEGY === "multi-step" ? "multi-step" : "simple",
+    advancedSelectors: { ...source.advancedSelectors },
+  };
+};
 
 export const normalizePumpAutomationConfig = (
   input: Partial<PumpAutomationConfig> | Record<string, unknown>,
   fallback?: PumpAutomationConfig
 ): PumpAutomationConfig => {
-  const defaults = fallback ?? buildDefaultPumpAutomationConfig();
   const source = input ?? {};
+  const sourceType = getPumpAutomationSourceDefinition(
+    (source as { sourceType?: unknown }).sourceType ?? fallback?.sourceType
+  ).type;
+  const sourceDefaults = buildDefaultPumpAutomationConfig(sourceType);
+  const defaults = fallback?.sourceType === sourceType ? fallback : sourceDefaults;
 
   const advancedSelectors =
     source.advancedSelectors && typeof source.advancedSelectors === "object"
@@ -196,6 +177,7 @@ export const normalizePumpAutomationConfig = (
       : {};
 
   return {
+    sourceType,
     baseUrl: toTrimmedString(source.baseUrl, defaults.baseUrl),
     username: toTrimmedString(source.username, defaults.username),
     authMode:
@@ -265,14 +247,15 @@ export const normalizePumpAutomationConfig = (
 
 export const validatePumpAutomationConfig = (config: PumpAutomationConfig) => {
   const errors: string[] = [];
+  const source = getPumpAutomationSourceDefinition(config.sourceType);
 
   if (!config.baseUrl) {
-    errors.push("baseUrl est requis.");
+    errors.push(`L'URL ${source.label} est requise.`);
   } else {
     try {
       new URL(config.baseUrl);
     } catch {
-      errors.push("baseUrl doit être une URL valide.");
+      errors.push(`L'URL ${source.label} doit être valide.`);
     }
   }
 

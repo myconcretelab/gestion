@@ -779,7 +779,7 @@ const App = () => {
             <Route path="/reservations" element={<ReservationsPage />} />
             <Route path="/calendrier" element={<CalendrierPage />} />
             <Route path="/statistiques" element={<StatisticsPage />} />
-            <Route path="/parametres" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
+            <Route path="/parametres/*" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
           </Routes>
         </Suspense>
       </main>

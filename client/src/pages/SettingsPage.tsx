@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { NavLink, Navigate, useLocation } from "react-router-dom";
 import { apiFetch, buildApiUrl } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -15,6 +16,13 @@ import {
   normalizePaymentHexColor,
   normalizePaymentLabel,
 } from "../utils/paymentColors";
+import {
+  buildDefaultPumpAutomationConfig,
+  getPumpAutomationSourceDefinition,
+  listPumpAutomationSources,
+  type PumpAutomationConfig,
+  type PumpAutomationSourceType,
+} from "../utils/pumpSources";
 import type { Gestionnaire, Gite, IcalSource } from "../utils/types";
 
 type IcalPreviewItem = {
@@ -206,47 +214,6 @@ type PumpCronState = {
   last_error: string | null;
 };
 
-type PumpAutomationFilterRule = {
-  type: string;
-  pattern?: string;
-  negate?: boolean;
-};
-
-type PumpAutomationConfig = {
-  baseUrl: string;
-  username: string;
-  authMode: "persisted-only" | "legacy-auto-login";
-  hasOTP: boolean;
-  persistSession: boolean;
-  manualScrollMode: boolean;
-  manualScrollDuration: number;
-  scrollSelector: string;
-  scrollCount: number;
-  scrollDistance: number;
-  scrollDelay: number;
-  waitBeforeScroll: number;
-  outputFolder: string;
-  filterRules: {
-    inclusive: PumpAutomationFilterRule[];
-    exclusive: PumpAutomationFilterRule[];
-  };
-  loginStrategy: "simple" | "multi-step";
-  advancedSelectors: {
-    usernameInput: string;
-    passwordInput: string;
-    submitButton: string;
-    emailFirstButton: string;
-    continueAfterUsernameButton: string;
-    finalSubmitButton: string;
-    accountChooserContinueButton: string;
-    calendarSourceCard: string;
-    calendarSourceEditButton: string;
-    calendarSourceRefreshButton: string;
-    calendarSourceUrlField: string;
-    calendarSourceCloseButton: string;
-  };
-};
-
 type PumpConfigSaveResult = {
   config: PumpAutomationConfig;
 };
@@ -351,6 +318,43 @@ const SETTINGS_SECTIONS = [
 ] as const;
 
 type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
+
+const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "settings-security";
+
+const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
+  "settings-import-log": "journal-imports",
+  "settings-sms": "sms",
+  "settings-email-texts": "emails",
+  "settings-daily-reservation-email": "email-quotidien",
+  "settings-smartlife": "smartlife",
+  "settings-declaration-nights": "nuitees",
+  "settings-source-colors": "couleurs-sources",
+  "settings-team": "equipe",
+  "settings-ical-sources": "ical-sources",
+  "settings-ical-exports": "ical-exports",
+  "settings-ical-sync": "ical-sync",
+  "settings-imports": "pump",
+  "settings-security": "securite",
+};
+
+const SETTINGS_SECTION_BY_PATH = Object.fromEntries(
+  Object.entries(SETTINGS_SECTION_PATHS).map(([sectionId, path]) => [
+    path,
+    sectionId as SettingsSectionId,
+  ]),
+) as Record<string, SettingsSectionId>;
+
+const resolveSettingsSectionFromPathname = (
+  pathname: string,
+): SettingsSectionId | null => {
+  if (!pathname.startsWith("/parametres")) return null;
+
+  const suffix = pathname.slice("/parametres".length).replace(/^\/+/, "");
+  if (!suffix) return null;
+
+  const [pathSegment] = suffix.split("/");
+  return SETTINGS_SECTION_BY_PATH[pathSegment] ?? null;
+};
 
 type PumpConnectionTestResult = {
   success: boolean;
@@ -1556,6 +1560,11 @@ const importPreviewStatusLabelMap: Record<ImportPreviewItem["status"], string> =
   };
 
 const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
+  const location = useLocation();
+  const activeSettingsSection = useMemo(
+    () => resolveSettingsSectionFromPathname(location.pathname),
+    [location.pathname],
+  );
   const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
   const [sources, setSources] = useState<IcalSource[]>([]);
@@ -1772,51 +1781,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [pumpConfig, setPumpConfig] = useState<PumpAutomationConfig | null>(
     null,
   );
-  const [pumpConfigDraft, setPumpConfigDraft] = useState<PumpAutomationConfig>({
-    baseUrl: "https://www.airbnb.fr/hosting/multicalendar",
-    username: "",
-    authMode: "persisted-only",
-    hasOTP: false,
-    persistSession: true,
-    manualScrollMode: false,
-    manualScrollDuration: 20000,
-    scrollSelector: "",
-    scrollCount: 5,
-    scrollDistance: 500,
-    scrollDelay: 1000,
-    waitBeforeScroll: 2000,
-    outputFolder: "",
-    filterRules: {
-      inclusive: [],
-      exclusive: [],
-    },
-    loginStrategy: "simple",
-    advancedSelectors: {
-      usernameInput:
-        'input[type="email"], input[type="text"][placeholder*="email"], input[name*="email"]',
-      passwordInput: 'input[type="password"]',
-      submitButton:
-        'button[type="submit"], button:has-text("Login"), button:has-text("Sign in")',
-      emailFirstButton:
-        'button:has-text("Continuer avec un email"), button:has-text("Continuer avec un e-mail"), button:has-text("Continue with email")',
-      continueAfterUsernameButton:
-        'button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Suivant"), button:has-text("Next"), button[type="submit"]',
-      finalSubmitButton:
-        'button:has-text("Connexion"), button:has-text("Se connecter"), button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Sign in"), button:has-text("Log in"), button[type="submit"]',
-      accountChooserContinueButton:
-        'button:has-text("Continuer"), [role="button"]:has-text("Continuer"), button:has-text("Continue"), [role="button"]:has-text("Continue")',
-      calendarSourceCard:
-        'div:has(button:has-text("Actualiser")), div:has(button:has-text("Refresh")), article:has(button:has-text("Actualiser")), article:has(button:has-text("Refresh"))',
-      calendarSourceEditButton:
-        'button:has-text("Modifier"), [role="button"]:has-text("Modifier"), button:has-text("Edit"), [role="button"]:has-text("Edit")',
-      calendarSourceRefreshButton:
-        'button:has-text("Actualiser"), [role="button"]:has-text("Actualiser"), button:has-text("Refresh"), [role="button"]:has-text("Refresh")',
-      calendarSourceUrlField:
-        'input[type="url"], input[readonly], input[value*="ical"], input[value*="/calendar/"], textarea',
-      calendarSourceCloseButton:
-        'button:has-text("Fermer"), [role="button"]:has-text("Fermer"), button:has-text("Close"), [role="button"]:has-text("Close"), [aria-label*="Fermer"], [aria-label*="Close"]',
-    },
-  });
+  const [pumpConfigDraft, setPumpConfigDraft] = useState<PumpAutomationConfig>(
+    buildDefaultPumpAutomationConfig(),
+  );
   const [pumpCronState, setPumpCronState] = useState<PumpCronState | null>(
     null,
   );
@@ -1864,9 +1831,6 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [importingPump, setImportingPump] = useState(false);
   const [pumpError, setPumpError] = useState<string | null>(null);
   const [pumpNotice, setPumpNotice] = useState<string | null>(null);
-  const [activeSettingsSection, setActiveSettingsSection] =
-    useState<SettingsSectionId>("settings-security");
-
   const [importLog, setImportLog] = useState<ImportLogEntry[]>([]);
   const [importLogTotal, setImportLogTotal] = useState(0);
   const [importLogVisibleCount, setImportLogVisibleCount] = useState(
@@ -1874,6 +1838,9 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   );
   const [loadingImportLog, setLoadingImportLog] = useState(false);
   const [importLogError, setImportLogError] = useState<string | null>(null);
+  const loadedSettingsSectionsRef = useRef<
+    Partial<Record<SettingsSectionId, boolean>>
+  >({});
 
   const linkedGitesCount = useMemo(
     () =>
@@ -1886,6 +1853,11 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const selectedPumpCount = useMemo(
     () => Object.values(pumpSelections).filter(Boolean).length,
     [pumpSelections],
+  );
+  const pumpSources = useMemo(() => listPumpAutomationSources(), []);
+  const activePumpSource = useMemo(
+    () => getPumpAutomationSourceDefinition(pumpConfigDraft.sourceType),
+    [pumpConfigDraft.sourceType],
   );
   const pumpConfigReady = useMemo(
     () =>
@@ -2751,62 +2723,181 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   };
 
   useEffect(() => {
-    setLoadingManagers(true);
-    setLoadingSources(true);
-    setLoadingIcalExports(true);
-    setLoadingDeclarationNights(true);
-    setLoadingSourceColors(true);
-    setLoadingSmsTexts(true);
-    setLoadingDocumentEmailTexts(true);
-    setLoadingDailyReservationEmail(true);
-    setLoadingSmartlife(true);
-    setLoadingServerSecurity(true);
-    Promise.all([
-      loadManagers(),
-      loadSources(),
-      loadDeclarationNightsSettings(),
-      loadSourceColorSettings(),
-      loadSmsTextSettings(),
-      loadDocumentEmailTextSettings(),
-      loadDailyReservationEmailState(),
-      loadSmartlifeState(),
-      loadServerSecuritySettings(),
-      loadCronState(),
-      loadImportLog(),
-      loadPumpConfig(),
-      loadPumpStatus(),
-      loadPumpHealth(),
-      loadPumpSessionCaptureStatus(),
-      loadPumpSessionRenewalStatus(),
-      loadPumpCronState(),
-    ])
-      .catch((error: any) => {
-        const message =
-          error?.message ?? "Impossible de charger les paramètres.";
-        setManagerError(message);
-        setSourceError(message);
-        setIcalExportsError(message);
-        setDeclarationNightsError(message);
-        setSourceColorError(message);
-        setSmsTextError(message);
-        setDocumentEmailTextError(message);
-        setDailyReservationEmailError(message);
-        setSmartlifeError(message);
-        setServerSecurityError(message);
-      })
-      .finally(() => {
-        setLoadingManagers(false);
-        setLoadingSources(false);
-        setLoadingIcalExports(false);
-        setLoadingDeclarationNights(false);
-        setLoadingSourceColors(false);
-        setLoadingSmsTexts(false);
-        setLoadingDocumentEmailTexts(false);
-        setLoadingDailyReservationEmail(false);
-        setLoadingSmartlife(false);
-        setLoadingServerSecurity(false);
-      });
-  }, []);
+    if (!activeSettingsSection) return;
+    if (loadedSettingsSectionsRef.current[activeSettingsSection]) return;
+
+    const loadActiveSection = async () => {
+      switch (activeSettingsSection) {
+        case "settings-security":
+          setLoadingServerSecurity(true);
+          try {
+            await loadServerSecuritySettings();
+          } catch (error: any) {
+            setServerSecurityError(
+              error?.message ??
+                "Impossible de charger les paramètres de sécurité.",
+            );
+            return;
+          } finally {
+            setLoadingServerSecurity(false);
+          }
+          break;
+        case "settings-import-log":
+          await loadImportLog();
+          break;
+        case "settings-sms":
+          setLoadingSmsTexts(true);
+          try {
+            await loadSmsTextSettings();
+          } catch (error: any) {
+            setSmsTextError(
+              error?.message ?? "Impossible de charger les textes SMS.",
+            );
+            return;
+          } finally {
+            setLoadingSmsTexts(false);
+          }
+          break;
+        case "settings-email-texts":
+          setLoadingDocumentEmailTexts(true);
+          try {
+            await loadDocumentEmailTextSettings();
+          } catch (error: any) {
+            setDocumentEmailTextError(
+              error?.message ??
+                "Impossible de charger les textes d'emails.",
+            );
+            return;
+          } finally {
+            setLoadingDocumentEmailTexts(false);
+          }
+          break;
+        case "settings-daily-reservation-email":
+          setLoadingDailyReservationEmail(true);
+          await loadDailyReservationEmailState();
+          setLoadingDailyReservationEmail(false);
+          break;
+        case "settings-smartlife":
+          setLoadingSources(true);
+          setLoadingSmartlife(true);
+          try {
+            await Promise.all([loadSources(), loadSmartlifeState()]);
+          } catch (error: any) {
+            const message =
+              error?.message ??
+              "Impossible de charger la configuration Smart Life.";
+            setSourceError(message);
+            setSmartlifeError(message);
+            return;
+          } finally {
+            setLoadingSources(false);
+            setLoadingIcalExports(false);
+            setLoadingSmartlife(false);
+          }
+          break;
+        case "settings-declaration-nights":
+          setLoadingDeclarationNights(true);
+          try {
+            await loadDeclarationNightsSettings();
+          } catch (error: any) {
+            setDeclarationNightsError(
+              error?.message ??
+                "Impossible de charger les paramètres de nuitées.",
+            );
+            return;
+          } finally {
+            setLoadingDeclarationNights(false);
+          }
+          break;
+        case "settings-source-colors":
+          setLoadingSourceColors(true);
+          try {
+            await loadSourceColorSettings();
+          } catch (error: any) {
+            setSourceColorError(
+              error?.message ??
+                "Impossible de charger les couleurs des sources.",
+            );
+            return;
+          } finally {
+            setLoadingSourceColors(false);
+          }
+          break;
+        case "settings-team":
+          setLoadingManagers(true);
+          try {
+            await loadManagers();
+          } catch (error: any) {
+            setManagerError(
+              error?.message ?? "Impossible de charger l'équipe.",
+            );
+            return;
+          } finally {
+            setLoadingManagers(false);
+          }
+          break;
+        case "settings-ical-sources":
+        case "settings-ical-exports":
+          setLoadingSources(true);
+          setLoadingIcalExports(true);
+          try {
+            await loadSources();
+          } catch (error: any) {
+            const message =
+              error?.message ?? "Impossible de charger les sources iCal.";
+            setSourceError(message);
+            setIcalExportsError(message);
+            return;
+          } finally {
+            setLoadingSources(false);
+            setLoadingIcalExports(false);
+          }
+          break;
+        case "settings-ical-sync":
+          setLoadingSources(true);
+          setLoadingIcalExports(true);
+          try {
+            await Promise.all([loadSources(), loadCronState()]);
+          } catch (error: any) {
+            const message =
+              error?.message ??
+              "Impossible de charger la synchronisation iCal.";
+            setSourceError(message);
+            setIcalExportsError(message);
+            setIcalError(message);
+            return;
+          } finally {
+            setLoadingSources(false);
+            setLoadingIcalExports(false);
+          }
+          break;
+        case "settings-imports":
+          setLoadingPumpConfig(true);
+          try {
+            await Promise.all([
+              loadPumpConfig(),
+              loadPumpStatus(),
+              loadPumpHealth(),
+              loadPumpSessionCaptureStatus(),
+              loadPumpSessionRenewalStatus(),
+              loadPumpCronState(),
+            ]);
+          } catch (error: any) {
+            setPumpError(
+              error?.message ?? "Impossible de charger les paramètres Pump.",
+            );
+            return;
+          } finally {
+            setLoadingPumpConfig(false);
+          }
+          break;
+      }
+
+      loadedSettingsSectionsRef.current[activeSettingsSection] = true;
+    };
+
+    void loadActiveSection();
+  }, [activeSettingsSection]);
 
   useEffect(() => {
     if (!pumpSessionCapture?.active) return;
@@ -4187,6 +4278,17 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     importPumpSessionInputRef.current?.click();
   };
 
+  const applyPumpSourceType = (sourceType: PumpAutomationSourceType) => {
+    const nextDefaults = buildDefaultPumpAutomationConfig(sourceType);
+    setPumpConfigDraft((previous) => ({
+      ...previous,
+      sourceType,
+      baseUrl: nextDefaults.baseUrl,
+      scrollSelector: nextDefaults.scrollSelector,
+      advancedSelectors: nextDefaults.advancedSelectors,
+    }));
+  };
+
   const exportPumpConfig = async () => {
     setExportingPumpConfig(true);
     setPumpError(null);
@@ -4360,7 +4462,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
       setPumpSessionCapture(response);
       setPumpNotice(
-        "Navigateur de capture Pump lancé. Connectez-vous dans la fenêtre ouverte.",
+        `Navigateur de capture ${activePumpSource.label} lancé. Connectez-vous dans la fenêtre ouverte.`,
       );
     } catch (error: any) {
       setPumpError(
@@ -4406,7 +4508,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
       setPumpSessionRenewal(response);
       setPumpNotice(
-        "Renouvellement assisté Airbnb lancé. L'app attendra le code SMS si Airbnb le demande.",
+        `Renouvellement assisté ${activePumpSource.label} lancé. L'app attendra le ${activePumpSource.smsCodeLabel.toLowerCase()} si ${activePumpSource.label} le demande.`,
       );
     } catch (error: any) {
       setPumpError(
@@ -4421,7 +4523,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const submitPumpSessionRenewalCode = async () => {
     const code = pumpRenewalSmsCode.trim();
     if (!code) {
-      setPumpError("Saisissez le code SMS Airbnb.");
+      setPumpError(`Saisissez le ${activePumpSource.smsCodeLabel.toLowerCase()} ${activePumpSource.label}.`);
       return;
     }
 
@@ -4439,7 +4541,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         },
       );
       setPumpSessionRenewal(response);
-      setPumpNotice("Code SMS envoyé au renouvellement assisté.");
+      setPumpNotice(`${activePumpSource.smsCodeLabel} envoyé au renouvellement assisté.`);
     } catch (error: any) {
       setPumpError(
         error.message ??
@@ -4462,7 +4564,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         },
       );
       setPumpSessionRenewal(response);
-      setPumpNotice("Renouvellement assisté Airbnb annulé.");
+      setPumpNotice(`Renouvellement assisté ${activePumpSource.label} annulé.`);
     } catch (error: any) {
       setPumpError(
         error.message ??
@@ -4693,6 +4795,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     }
   };
 
+  if (!activeSettingsSection) {
+    return (
+      <Navigate
+        to={`/parametres/${SETTINGS_SECTION_PATHS[DEFAULT_SETTINGS_SECTION]}`}
+        replace
+      />
+    );
+  }
+
   return (
     <div className="settings-page">
       <div className="settings-layout">
@@ -4704,34 +4815,30 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
               aria-label="Rubriques des paramètres"
             >
               {SETTINGS_SECTIONS.map((section) => (
-                <button
+                <NavLink
                   key={section.id}
                   id={`nav-${section.id}`}
-                  type="button"
-                  className={`settings-sidebar__link${
-                    activeSettingsSection === section.id
-                      ? " settings-sidebar__link--active"
-                      : ""
-                  }`}
-                  onClick={() => setActiveSettingsSection(section.id)}
-                  aria-current={
-                    activeSettingsSection === section.id ? "page" : undefined
+                  to={`/parametres/${SETTINGS_SECTION_PATHS[section.id]}`}
+                  className={({ isActive }) =>
+                    `settings-sidebar__link${
+                      isActive ? " settings-sidebar__link--active" : ""
+                    }`
                   }
                 >
                   {section.label}
-                </button>
+                </NavLink>
               ))}
             </nav>
           </div>
         </aside>
 
         <div className="settings-content">
-          <section
-            id="settings-security"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-security"}
-            aria-labelledby="nav-settings-security"
-          >
+          {activeSettingsSection === "settings-security" ? (
+            <section
+              id="settings-security"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-security"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Sécurité</div>
@@ -4888,14 +4995,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-import-log"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-import-log"}
-            aria-labelledby="nav-settings-import-log"
-          >
+          {activeSettingsSection === "settings-import-log" ? (
+            <section
+              id="settings-import-log"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-import-log"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Traçabilité</div>
@@ -5108,14 +5216,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-sms"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-sms"}
-            aria-labelledby="nav-settings-sms"
-          >
+          {activeSettingsSection === "settings-sms" ? (
+            <section
+              id="settings-sms"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-sms"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Communication</div>
@@ -5260,14 +5369,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
               </div>
 
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-email-texts"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-email-texts"}
-            aria-labelledby="nav-settings-email-texts"
-          >
+          {activeSettingsSection === "settings-email-texts" ? (
+            <section
+              id="settings-email-texts"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-email-texts"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Communication</div>
@@ -5492,14 +5602,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-daily-reservation-email"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-daily-reservation-email"}
-            aria-labelledby="nav-settings-daily-reservation-email"
-          >
+          {activeSettingsSection === "settings-daily-reservation-email" ? (
+            <section
+              id="settings-daily-reservation-email"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-daily-reservation-email"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Communication</div>
@@ -5953,14 +6064,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-smartlife"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-smartlife"}
-            aria-labelledby="nav-settings-smartlife"
-          >
+          {activeSettingsSection === "settings-smartlife" ? (
+            <section
+              id="settings-smartlife"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-smartlife"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Domotique</div>
@@ -7495,14 +7607,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 </div>
               ) : null}
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-declaration-nights"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-declaration-nights"}
-            aria-labelledby="nav-settings-declaration-nights"
-          >
+          {activeSettingsSection === "settings-declaration-nights" ? (
+            <section
+              id="settings-declaration-nights"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-declaration-nights"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Totaux mensuels</div>
@@ -7626,14 +7739,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 </div>
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-source-colors"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-source-colors"}
-            aria-labelledby="nav-settings-source-colors"
-          >
+          {activeSettingsSection === "settings-source-colors" ? (
+            <section
+              id="settings-source-colors"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-source-colors"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Palette</div>
@@ -7814,14 +7928,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 </div>
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-team"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-team"}
-            aria-labelledby="nav-settings-team"
-          >
+          {activeSettingsSection === "settings-team" ? (
+            <section
+              id="settings-team"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-team"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Équipe</div>
@@ -7931,14 +8046,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-ical-sources"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-ical-sources"}
-            aria-labelledby="nav-settings-ical-sources"
-          >
+          {activeSettingsSection === "settings-ical-sources" ? (
+            <section
+              id="settings-ical-sources"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-ical-sources"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Distribution</div>
@@ -8502,14 +8618,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 </details>
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-ical-exports"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-ical-exports"}
-            aria-labelledby="nav-settings-ical-exports"
-          >
+          {activeSettingsSection === "settings-ical-exports" ? (
+            <section
+              id="settings-ical-exports"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-ical-exports"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Publication OTA</div>
@@ -8627,14 +8744,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-ical-sync"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-ical-sync"}
-            aria-labelledby="nav-settings-ical-sync"
-          >
+          {activeSettingsSection === "settings-ical-sync" ? (
+            <section
+              id="settings-ical-sync"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-ical-sync"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Automatisation</div>
@@ -8865,14 +8983,15 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <section
-            id="settings-imports"
-            className="settings-cluster"
-            hidden={activeSettingsSection !== "settings-imports"}
-            aria-labelledby="nav-settings-imports"
-          >
+          {activeSettingsSection === "settings-imports" ? (
+            <section
+              id="settings-imports"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-imports"
+            >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">
@@ -8971,7 +9090,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   >
                     {importingPumpSession
                       ? "Import session..."
-                      : "Importer session persistée"}
+                      : `Importer session persistée ${activePumpSource.label}`}
                   </button>
                   <button
                     type="button"
@@ -8985,7 +9104,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   >
                     {exportingPumpSession
                       ? "Export..."
-                      : "Exporter session persistée"}
+                      : `Exporter session persistée ${activePumpSource.label}`}
                   </button>
                 </div>
                 <div className="field-hint" style={{ marginTop: 8 }}>
@@ -9000,6 +9119,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                       startingPumpSessionRenewal ||
                       cancellingPumpSessionRenewal ||
                       submittingPumpSessionRenewalCode ||
+                      !activePumpSource.supportsAssistedRenewal ||
                       Boolean(pumpSessionRenewal?.active) ||
                       savingPumpConfig ||
                       importingPumpSession
@@ -9007,7 +9127,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   >
                     {startingPumpSessionRenewal
                       ? "Démarrage..."
-                      : "Renouveler la session Airbnb"}
+                      : `Renouveler la session ${activePumpSource.label}`}
                   </button>
                   <button
                     type="button"
@@ -9023,6 +9143,12 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                       : "Annuler le renouvellement"}
                   </button>
                 </div>
+                {!activePumpSource.supportsAssistedRenewal ? (
+                  <div className="field-hint" style={{ marginTop: 8 }}>
+                    Le renouvellement assisté n'est pas encore disponible pour{" "}
+                    {activePumpSource.label}.
+                  </div>
+                ) : null}
                 {pumpSessionRenewal ? (
                   <div
                     className="pump-health-card pump-health-card--neutral"
@@ -9045,7 +9171,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                     </div>
                     {pumpSessionRenewal.maskedDestination ? (
                       <div className="field-hint" style={{ marginTop: 6 }}>
-                        Code envoyé vers:{" "}
+                        {activePumpSource.smsCodeLabel} envoyé vers:{" "}
                         {pumpSessionRenewal.maskedDestination}
                       </div>
                     ) : null}
@@ -9072,7 +9198,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                               event.target.value.replace(/[^\d]/g, ""),
                             )
                           }
-                          placeholder="Code SMS"
+                          placeholder={activePumpSource.smsCodeLabel}
                           style={{ maxWidth: 200 }}
                           disabled={submittingPumpSessionRenewalCode}
                         />
@@ -9112,7 +9238,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   >
                     {startingPumpSessionCapture
                       ? "Ouverture..."
-                      : "Ouvrir le navigateur de capture"}
+                      : `Ouvrir le navigateur de capture ${activePumpSource.label}`}
                   </button>
                   <button
                     type="button"
@@ -9170,7 +9296,29 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 ) : null}
                 <div className="grid-2" style={{ marginTop: 12 }}>
                   <label className="field">
-                    URL Airbnb
+                    Source Pump
+                    <select
+                      value={pumpConfigDraft.sourceType}
+                      onChange={(event) =>
+                        applyPumpSourceType(
+                          event.target.value as PumpAutomationSourceType,
+                        )
+                      }
+                      disabled={
+                        savingPumpConfig ||
+                        testingPumpConnection ||
+                        testingPumpScrollTarget
+                      }
+                    >
+                      {pumpSources.map((source) => (
+                        <option key={source.type} value={source.type}>
+                          {source.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    URL {activePumpSource.label}
                     <input
                       type="url"
                       value={pumpConfigDraft.baseUrl}
@@ -9185,11 +9333,11 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                         testingPumpConnection ||
                         testingPumpScrollTarget
                       }
-                      placeholder="https://www.airbnb.fr/hosting/multicalendar"
+                      placeholder={activePumpSource.baseUrlPlaceholder}
                     />
                   </label>
                   <label className="field">
-                    Email / username
+                    {activePumpSource.usernameLabel}
                     <input
                       type="text"
                       value={pumpConfigDraft.username}
@@ -9204,7 +9352,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                         testingPumpConnection ||
                         testingPumpScrollTarget
                       }
-                      placeholder="compte@exemple.com"
+                      placeholder={activePumpSource.usernamePlaceholder}
                     />
                   </label>
                   <label className="field">
@@ -9269,7 +9417,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                         testingPumpConnection ||
                         testingPumpScrollTarget
                       }
-                      placeholder=".v2-multi-calendar__grid"
+                      placeholder={activePumpSource.scrollSelectorPlaceholder}
                     />
                   </label>
                   <label className="field">
@@ -9471,7 +9619,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 <div className="field-hint" style={{ marginTop: 8 }}>
                   Le mode recommandé est <code>persisted-only</code>: le serveur
                   réutilise une session Playwright existante et n'essaie plus de
-                  reconstruire la connexion via les boutons Airbnb.
+                  reconstruire la connexion via les boutons de la source.
                 </div>
                 <div className="field-hint" style={{ marginTop: 8 }}>
                   Le mot de passe n'est utilisé que pour le mode legacy. En
@@ -10169,7 +10317,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
-          </section>
+            </section>
+          ) : null}
         </div>
       </div>
     </div>
