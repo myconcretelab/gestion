@@ -6242,6 +6242,77 @@ button.warning {
   line-height: 1.3;
 }
 
+.reservations-summary-explainer {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  outline: none;
+}
+
+.reservations-summary-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 70;
+  width: max-content;
+  min-width: 250px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  pointer-events: none;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+}
+
+.reservations-summary-explainer:hover .reservations-summary-popover,
+.reservations-summary-explainer:focus-within .reservations-summary-popover {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.reservations-summary-popover__title {
+  margin-bottom: 8px;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.reservations-summary-popover__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: #475569;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.reservations-summary-popover__row + .reservations-summary-popover__row {
+  margin-top: 4px;
+}
+
+.reservations-summary-popover__row strong {
+  color: #0f172a;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.reservations-summary-popover__note {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .reservations-summary-pill--revenue {
   border-color: #bfdbfe;
   background: #eff6ff;

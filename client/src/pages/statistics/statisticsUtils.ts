@@ -24,6 +24,7 @@ export type StatisticsEntry = {
   adultes: number;
   prixNuit: number;
   revenus: number;
+  fraisOptionnelsTotal: number;
   fraisOptionnelsDeclares: number;
   paiement: string;
   proprietaires: string;
@@ -89,6 +90,7 @@ export const parseStatisticsPayload = (payload: StatisticsPayload): ParsedStatis
     entriesByGite[giteId] = (entries ?? [])
       .map((entry) => ({
         ...entry,
+        fraisOptionnelsTotal: Number(entry.fraisOptionnelsTotal ?? 0),
         fraisOptionnelsDeclares: Number(entry.fraisOptionnelsDeclares ?? 0),
         debutDate: new Date(`${entry.debut}T00:00:00.000Z`),
       }))

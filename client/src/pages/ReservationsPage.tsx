@@ -243,6 +243,19 @@ type ReservationEnergyDeviceSummary = {
   savedCost: number | null;
 };
 
+type ReservationMonthlyAmounts = {
+  baseRevenue: number;
+  totalFees: number;
+  declaredFees: number;
+  undeclaredFees: number;
+};
+
+type MonthlyUrssafBreakdown = {
+  baseRevenue: number;
+  declaredFees: number;
+  undeclaredFeesExcluded: number;
+};
+
 const MONTHS = [
   "Janvier",
   "Février",
@@ -274,6 +287,7 @@ const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 const UNKNOWN_HOST_NAME = "Hôte inconnu";
 const ALL_GITES_TAB = "all-gites";
 const UNASSIGNED_TAB = "unassigned";
+const URSSAF_MONTHLY_SOURCES = ["Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"] as const;
 const SERVICE_OPTION_KEYS: ReservationServiceOptionKey[] = ["draps", "linge_toilette", "menage", "depart_tardif", "chiens"];
 const INLINE_EDITABLE_FIELDS: InlineEditableField[] = [
   "hote_nom",
@@ -333,6 +347,8 @@ const normalizeReservationSource = (value: string | null | undefined) => {
   if (!trimmed) return DEFAULT_RESERVATION_SOURCE;
   return SOURCE_BY_NORMALIZED_KEY[normalizeTextKey(trimmed)] ?? DEFAULT_RESERVATION_SOURCE;
 };
+
+const URSSAF_MONTHLY_SOURCE_KEY_SET = new Set(URSSAF_MONTHLY_SOURCES.map((source) => normalizeTextKey(source)));
 
 const getEditableHostName = (value: string | null | undefined) => {
   const trimmed = String(value ?? "").trim();
@@ -1806,6 +1822,37 @@ const ReservationsPage = () => {
     );
   };
 
+  const renderSummaryPopoverPill = (options: {
+    pillClassName: string;
+    label: string;
+    title: string;
+    rows: Array<{ label: string; value: string }>;
+    note?: string;
+  }) => (
+    <span
+      className="reservations-summary-explainer"
+      tabIndex={0}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <span className={options.pillClassName}>{options.label}</span>
+      <span className="reservations-summary-popover" role="tooltip" aria-hidden="true">
+        <div className="reservations-summary-popover__title">{options.title}</div>
+        {options.rows.map((row) => (
+          <div className="reservations-summary-popover__row" key={`${options.title}-${row.label}`}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+        ))}
+        {options.note ? <div className="reservations-summary-popover__note">{options.note}</div> : null}
+      </span>
+    </span>
+  );
+
   const reservationsByMonth = useMemo(() => {
     const map = new Map<number, Reservation[]>();
     for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
@@ -1840,8 +1887,8 @@ const ReservationsPage = () => {
     return map;
   }, [activeTab, giteOrderById, visibleReservations]);
 
-  const revenueByReservationMonthKey = useMemo(() => {
-    const byKey = new Map<string, number>();
+  const monthlyAmountsByReservationMonthKey = useMemo(() => {
+    const byKey = new Map<string, ReservationMonthlyAmounts>();
     if (!statisticsDataset) return byKey;
 
     Object.values(statisticsDataset.entriesByGite).forEach((entries) => {
@@ -1849,21 +1896,74 @@ const ReservationsPage = () => {
         const entryYear = entry.debutDate.getUTCFullYear();
         const entryMonth = entry.debutDate.getUTCMonth() + 1;
         const key = `${entry.reservationId}:${entryYear}:${entryMonth}`;
-        byKey.set(key, round2((byKey.get(key) ?? 0) + Number(entry.revenus ?? 0)));
+        const current = byKey.get(key) ?? {
+          baseRevenue: 0,
+          totalFees: 0,
+          declaredFees: 0,
+          undeclaredFees: 0,
+        };
+        const declaredFees = round2(Number(entry.fraisOptionnelsDeclares ?? 0));
+        const totalFees = round2(Number(entry.fraisOptionnelsTotal ?? 0));
+        byKey.set(key, {
+          baseRevenue: round2(current.baseRevenue + Number(entry.revenus ?? 0)),
+          totalFees: round2(current.totalFees + totalFees),
+          declaredFees: round2(current.declaredFees + declaredFees),
+          undeclaredFees: round2(current.undeclaredFees + Math.max(0, totalFees - declaredFees)),
+        });
       });
     });
 
     return byKey;
   }, [statisticsDataset]);
 
-  const getReservationRevenueForMonth = useCallback(
+  const getReservationMonthlyAmounts = useCallback(
     (reservation: Reservation, monthIndex: number) => {
       const key = `${reservation.id}:${year}:${monthIndex}`;
-      const proratedRevenue = revenueByReservationMonthKey.get(key);
-      if (proratedRevenue !== undefined) return proratedRevenue;
-      return round2(Number(reservation.prix_total ?? 0));
+      const monthlyAmounts = monthlyAmountsByReservationMonthKey.get(key);
+      if (monthlyAmounts) return monthlyAmounts;
+      const totalFees = round2(Number(reservation.frais_optionnels_montant ?? 0));
+      const declaredFees = reservation.frais_optionnels_declares ? totalFees : 0;
+      return {
+        baseRevenue: round2(Number(reservation.prix_total ?? 0)),
+        totalFees,
+        declaredFees,
+        undeclaredFees: round2(Math.max(0, totalFees - declaredFees)),
+      };
     },
-    [revenueByReservationMonthKey, year]
+    [monthlyAmountsByReservationMonthKey, year]
+  );
+
+  const getMonthlyUrssafBreakdown = useCallback(
+    (list: Reservation[], monthIndex: number, declarationStatus: "declared" | "undeclared"): MonthlyUrssafBreakdown => {
+      let baseRevenue = 0;
+      let declaredFees = 0;
+      let undeclaredFeesExcluded = 0;
+
+      list.forEach((reservation) => {
+        const giteId = String(reservation.gite_id ?? "").trim();
+        const managerId = giteId ? giteById.get(giteId)?.gestionnaire?.id ?? null : null;
+        if (!managerId) return;
+
+        const normalizedSourceKey = normalizeTextKey(normalizeReservationSource(reservation.source_paiement));
+        if (!URSSAF_MONTHLY_SOURCE_KEY_SET.has(normalizedSourceKey)) return;
+
+        const declarationKey = buildUrssafDeclarationCheckKey(year, monthIndex, managerId);
+        const isDeclared = Boolean(urssafDeclarationsByKey[declarationKey]);
+        if ((declarationStatus === "declared") !== isDeclared) return;
+
+        const monthlyAmounts = getReservationMonthlyAmounts(reservation, monthIndex);
+        baseRevenue = round2(baseRevenue + monthlyAmounts.baseRevenue);
+        declaredFees = round2(declaredFees + monthlyAmounts.declaredFees);
+        undeclaredFeesExcluded = round2(undeclaredFeesExcluded + monthlyAmounts.undeclaredFees);
+      });
+
+      return {
+        baseRevenue,
+        declaredFees,
+        undeclaredFeesExcluded,
+      };
+    },
+    [getReservationMonthlyAmounts, giteById, urssafDeclarationsByKey, year]
   );
 
   const occupationByMonthByGite = useMemo(() => {
@@ -3623,8 +3723,16 @@ const ReservationsPage = () => {
       count: list.length,
       nights: list.reduce((acc, item) => acc + item.nb_nuits, 0),
       zeroTotalReservationsCount,
-      revenue: round2(list.reduce((acc, item) => acc + getReservationRevenueForMonth(item, monthIndex), 0)),
-      fees: list.reduce((acc, item) => acc + (item.frais_optionnels_montant ?? 0), 0),
+      baseRevenue: round2(list.reduce((acc, item) => acc + getReservationMonthlyAmounts(item, monthIndex).baseRevenue, 0)),
+      declaredFees: round2(list.reduce((acc, item) => acc + getReservationMonthlyAmounts(item, monthIndex).declaredFees, 0)),
+      undeclaredFees: round2(list.reduce((acc, item) => acc + getReservationMonthlyAmounts(item, monthIndex).undeclaredFees, 0)),
+      revenue: round2(
+        list.reduce((acc, item) => {
+          const monthlyAmounts = getReservationMonthlyAmounts(item, monthIndex);
+          return acc + monthlyAmounts.baseRevenue + monthlyAmounts.totalFees;
+        }, 0)
+      ),
+      fees: round2(list.reduce((acc, item) => acc + getReservationMonthlyAmounts(item, monthIndex).totalFees, 0)),
       adults: list.reduce((acc, item) => acc + item.nb_adultes, 0),
     };
   };
@@ -4527,6 +4635,8 @@ const ReservationsPage = () => {
           monthsToRender.map((monthIndex) => {
             const list = reservationsByMonth.get(monthIndex) ?? [];
             const summary = monthSummary(list, monthIndex);
+            const declaredUrssafBreakdown = getMonthlyUrssafBreakdown(list, monthIndex, "declared");
+            const undeclaredUrssafBreakdown = getMonthlyUrssafBreakdown(list, monthIndex, "undeclared");
             const guestNightSummary = guestNightSummaryByMonthForActiveTab.get(monthIndex) ?? {
               guestNights: 0,
               undeclaredGuestNights: 0,
@@ -4635,7 +4745,18 @@ const ReservationsPage = () => {
                       <span className="reservations-summary-pill reservations-summary-pill--guest-nights-declared">
                         {formatPluralLabel(guestNightSummary.undeclaredGuestNights, "nuitée", "nuitées")} à déclarer
                       </span>
-                      <span className="reservations-summary-pill reservations-summary-pill--revenue">{formatEuro(summary.revenue)} revenus</span>
+                      {renderSummaryPopoverPill({
+                        pillClassName: "reservations-summary-pill reservations-summary-pill--revenue",
+                        label: `${formatEuro(summary.revenue)} revenus`,
+                        title: `Total du mois ${MONTHS[monthIndex - 1]}`,
+                        rows: [
+                          { label: "Nuitées", value: formatEuro(summary.baseRevenue) },
+                          { label: "Frais déclarés", value: formatEuro(summary.declaredFees) },
+                          { label: "Frais non déclarés", value: formatEuro(summary.undeclaredFees) },
+                          { label: "Total", value: formatEuro(summary.revenue) },
+                        ],
+                        note: "Les séjours à cheval sur deux mois sont proratisés sur le mois affiché.",
+                      })}
                       <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
                       {isAllGitesTab
                         ? monthEnergySummariesForAllGites.map((energySummary) => (
@@ -4671,21 +4792,42 @@ const ReservationsPage = () => {
                         </span>
                       ) : null}
                       {declaredUrssafForMonth ? (
-                        <span
-                          className="reservations-summary-pill reservations-summary-pill--urssaf"
-                          title={`URSSAF déclaré pour ${formatPluralLabel(
+                        renderSummaryPopoverPill({
+                          pillClassName: "reservations-summary-pill reservations-summary-pill--urssaf",
+                          label: `${formatEuro(declaredUrssafForMonth.amount)} URSSAF déclaré`,
+                          title: `Base URSSAF déclarée ${MONTHS[monthIndex - 1]}`,
+                          rows: [
+                            { label: "Nuitées déclarables", value: formatEuro(declaredUrssafBreakdown.baseRevenue) },
+                            { label: "Frais déclarés inclus", value: formatEuro(declaredUrssafBreakdown.declaredFees) },
+                            {
+                              label: "Frais non déclarés exclus",
+                              value: formatEuro(declaredUrssafBreakdown.undeclaredFeesExcluded),
+                            },
+                            { label: "Total déclaré", value: formatEuro(declaredUrssafForMonth.amount) },
+                          ],
+                          note: `Montant déclaré pour ${formatPluralLabel(
                             declaredUrssafForMonth.count,
                             "gestionnaire",
                             "gestionnaires"
-                          )}`}
-                        >
-                          {formatEuro(declaredUrssafForMonth.amount)} URSSAF déclaré
-                        </span>
+                          )}.`,
+                        })
                       ) : null}
                       {undeclaredUrssafForMonth > 0 ? (
-                        <span className="reservations-summary-pill reservations-summary-pill--urssaf-undeclared">
-                          {formatEuro(undeclaredUrssafForMonth)} URSSAF non déclaré
-                        </span>
+                        renderSummaryPopoverPill({
+                          pillClassName: "reservations-summary-pill reservations-summary-pill--urssaf-undeclared",
+                          label: `${formatEuro(undeclaredUrssafForMonth)} URSSAF non déclaré`,
+                          title: `Base URSSAF à déclarer ${MONTHS[monthIndex - 1]}`,
+                          rows: [
+                            { label: "Nuitées déclarables", value: formatEuro(undeclaredUrssafBreakdown.baseRevenue) },
+                            { label: "Frais déclarés inclus", value: formatEuro(undeclaredUrssafBreakdown.declaredFees) },
+                            {
+                              label: "Frais non déclarés exclus",
+                              value: formatEuro(undeclaredUrssafBreakdown.undeclaredFeesExcluded),
+                            },
+                            { label: "Total à déclarer", value: formatEuro(undeclaredUrssafForMonth) },
+                          ],
+                          note: "L'URSSAF retient les nuitées et les seuls frais marqués comme déclarés.",
+                        })
                       ) : null}
                     </div>
                   </div>
