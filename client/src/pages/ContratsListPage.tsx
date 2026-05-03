@@ -210,6 +210,12 @@ const ContratsListPage = () => {
     });
   }, [commentDrafts, contrats]);
 
+  useEffect(() => {
+    if (!returnDrawerContractId) return;
+    if (contrats.some((contrat) => contrat.id === returnDrawerContractId)) return;
+    setReturnDrawerContractId(null);
+  }, [contrats, returnDrawerContractId]);
+
   const toggleReception = async (contrat: Contrat) => {
     const nextStatus =
       contrat.statut_reception_contrat === "recu" ? "non_recu" : "recu";

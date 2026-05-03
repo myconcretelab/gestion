@@ -200,14 +200,6 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     [contract?.gite, contract?.nb_nuits, options, reservation?.nb_nuits]
   );
 
-  const signedDocumentUrl = contract.signed_document_path
-    ? buildApiUrl(
-        `/contracts/${contract.id}/signed-document?v=${encodeURIComponent(
-          String(contract.signed_document_uploaded_at ?? contract.date_derniere_modif ?? "")
-        )}`
-      )
-    : null;
-
   const handleSignedDocumentSelection = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -320,6 +312,13 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
   if (!open || !contract || typeof document === "undefined") return null;
 
   const hasReservation = Boolean(contract.reservation_id);
+  const signedDocumentUrl = contract.signed_document_path
+    ? buildApiUrl(
+        `/contracts/${contract.id}/signed-document?v=${encodeURIComponent(
+          String(contract.signed_document_uploaded_at ?? contract.date_derniere_modif ?? "")
+        )}`
+      )
+    : null;
 
   return createPortal(
     <div
