@@ -52,6 +52,12 @@ import {
   startPumpSessionCapture,
 } from "../services/pumpSessionCapture.js";
 import {
+  cancelPumpSessionRenewal,
+  getPumpSessionRenewalStatus,
+  startPumpSessionRenewal,
+  submitPumpSessionRenewalSmsCode,
+} from "../services/pumpSessionRenewal.js";
+import {
   mergeDeclarationNightsSettings,
   readDeclarationNightsSettings,
   writeDeclarationNightsSettings,
@@ -228,6 +234,12 @@ const pumpAutomationConfigImportSchema = z.object({
 const pumpStorageStateImportSchema = z.object({
   storageState: z.any(),
   filename: z.string().trim().optional(),
+});
+const pumpSessionRenewalSubmitCodeSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{4,10}$/, "Le code SMS doit contenir entre 4 et 10 chiffres."),
 });
 const declarationNightsSettingsSchema = z.object({
   excluded_sources: z.array(z.string().trim().min(1)).default([]),
@@ -1574,6 +1586,35 @@ router.post("/pump/session/capture/start", (_req, res, next) => {
 router.post("/pump/session/capture/cancel", async (_req, res, next) => {
   try {
     res.json(await cancelPumpSessionCapture());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/pump/session/renewal/status", (_req, res) => {
+  res.json(getPumpSessionRenewalStatus());
+});
+
+router.post("/pump/session/renewal/start", (_req, res, next) => {
+  try {
+    res.json(startPumpSessionRenewal());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/session/renewal/submit-code", async (req, res, next) => {
+  try {
+    const payload = pumpSessionRenewalSubmitCodeSchema.parse(req.body ?? {});
+    res.json(await submitPumpSessionRenewalSmsCode(payload.code));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/pump/session/renewal/cancel", async (_req, res, next) => {
+  try {
+    res.json(await cancelPumpSessionRenewal());
   } catch (error) {
     next(error);
   }

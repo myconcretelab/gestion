@@ -310,7 +310,7 @@ export const getPumpConnectionHealth = async (): Promise<PumpConnectionHealth> =
           ? "La session persistée ne suffit plus pour accéder à Airbnb."
           : "Le dernier refresh Pump a échoué alors qu'une session persistée existe encore.",
         recommendedAction: authRequired
-          ? "Renouvelez la session Playwright en local puis réimportez-la en production."
+          ? "Lancez le renouvellement assisté de la session Airbnb dans Paramètres, ou réimportez une session locale si le challenge n'est pas reconnu."
           : "Consultez l'erreur du dernier refresh puis relancez un test manuel.",
         configValid,
         persistSessionEnabled: true,
