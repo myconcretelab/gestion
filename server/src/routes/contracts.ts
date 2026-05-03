@@ -20,7 +20,7 @@ import {
 } from "../services/documentEmail.js";
 import { SmtpConfigurationError, SmtpDeliveryError } from "../services/mailer.js";
 import { getRemainingDueAmount, toNumber, round2 } from "../utils/money.js";
-import { getPdfPaths, getSentPdfPaths } from "../utils/paths.js";
+import { getPdfPaths, getSentPdfPaths, getSignedContractPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import {
   addDays,
@@ -46,6 +46,20 @@ const emptyStringToNull = (value: unknown) => {
 
 const nullableDateString = z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional();
 const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir"] as const;
+const SIGNED_CONTRACT_MAX_BYTES = 12 * 1024 * 1024;
+const SIGNED_CONTRACT_ALLOWED_MIME_TYPES = new Map<string, string>([
+  ["application/pdf", ".pdf"],
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+  ["image/webp", ".webp"],
+]);
+const SIGNED_CONTRACT_ALLOWED_EXTENSIONS = new Map<string, string>([
+  [".pdf", "application/pdf"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".png", "image/png"],
+  [".webp", "image/webp"],
+]);
 
 const contractSchema = z.object({
   gite_id: z.string().min(1),
@@ -104,6 +118,12 @@ const sendEmailSchema = z.object({
   subject: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(200).nullable()).optional(),
   body: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(20_000).nullable()).optional(),
   deliveryMode: z.enum(["attachment", "download_link"]).optional().default("attachment"),
+});
+
+const signedDocumentUploadSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  mimeType: z.preprocess(emptyStringToNull, z.string().trim().min(1).max(120).nullable()).optional(),
+  data: z.string().trim().min(1),
 });
 
 const reservationPaymentSourceValues = [
@@ -240,6 +260,59 @@ const parseOptionalTrackedDate = (value: string | null | undefined, label: strin
   const parsed = parseDate(value);
   ensureValidDate(parsed, label);
   return parsed;
+};
+
+const sanitizeUploadedFilename = (value: string, fallbackExtension = "") => {
+  const basename = path.basename(value).trim();
+  const normalized = basename.replace(/[\u0000-\u001f\u007f]+/g, "").replace(/\s+/g, " ");
+  if (normalized) return normalized;
+  return `contrat-signe${fallbackExtension}`;
+};
+
+const resolveSignedContractMimeType = (filename: string, mimeType?: string | null) => {
+  const normalizedMimeType = String(mimeType ?? "")
+    .trim()
+    .toLowerCase();
+  if (SIGNED_CONTRACT_ALLOWED_MIME_TYPES.has(normalizedMimeType)) {
+    return normalizedMimeType;
+  }
+
+  const extension = path.extname(filename).toLowerCase();
+  return SIGNED_CONTRACT_ALLOWED_EXTENSIONS.get(extension) ?? null;
+};
+
+const resolveSignedContractExtension = (filename: string, mimeType: string) => {
+  const extension = path.extname(filename).toLowerCase();
+  if (SIGNED_CONTRACT_ALLOWED_EXTENSIONS.has(extension)) {
+    return extension === ".jpeg" ? ".jpg" : extension;
+  }
+  return SIGNED_CONTRACT_ALLOWED_MIME_TYPES.get(mimeType) ?? ".bin";
+};
+
+const decodeBase64Payload = (value: string) => {
+  const normalized = value.includes(",") ? value.slice(value.lastIndexOf(",") + 1) : value;
+  const compact = normalized.replace(/\s+/g, "");
+  if (!compact) {
+    throw new Error("Fichier vide.");
+  }
+  if (!/^[A-Za-z0-9+/=]+$/.test(compact)) {
+    throw new Error("Contenu de fichier invalide.");
+  }
+  const buffer = Buffer.from(compact, "base64");
+  if (!buffer.length) {
+    throw new Error("Fichier vide.");
+  }
+  return buffer;
+};
+
+const buildInlineContentDisposition = (filename: string) => {
+  const asciiFallback =
+    filename
+      .normalize("NFKD")
+      .replace(/[^\x20-\x7E]+/g, "")
+      .replace(/["\\]/g, "")
+      .trim() || "contrat-signe";
+  return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 };
 
 const resolveArrhesTracking = (params: {
@@ -1160,6 +1233,65 @@ router.patch("/:id/return-processing", async (req, res, next) => {
   }
 });
 
+router.post("/:id/signed-document", async (req, res, next) => {
+  try {
+    const data = signedDocumentUploadSchema.parse(req.body ?? {});
+    const existing = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      include: { gite: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+
+    const mimeType = resolveSignedContractMimeType(data.filename, data.mimeType ?? null);
+    if (!mimeType) {
+      return res.status(400).json({
+        error: "Format non pris en charge. Utilisez un PDF, JPG, PNG ou WEBP.",
+      });
+    }
+
+    const extension = resolveSignedContractExtension(data.filename, mimeType);
+    const buffer = decodeBase64Payload(data.data);
+    if (buffer.length > SIGNED_CONTRACT_MAX_BYTES) {
+      return res.status(400).json({
+        error: `Le document signé dépasse la taille maximale autorisée (${Math.round(
+          SIGNED_CONTRACT_MAX_BYTES / (1024 * 1024)
+        )} Mo).`,
+      });
+    }
+
+    const filename = sanitizeUploadedFilename(data.filename, extension);
+    const { absolutePath, relativePath } = getSignedContractPaths(
+      existing.numero_contrat,
+      existing.date_debut,
+      extension
+    );
+
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, buffer);
+
+    const updated = await prisma.contrat.update({
+      where: { id: existing.id },
+      data: {
+        signed_document_path: relativePath,
+        signed_document_filename: filename,
+        signed_document_mime_type: mimeType,
+        signed_document_size: buffer.length,
+        signed_document_uploaded_at: new Date(),
+      },
+      include: { gite: true },
+    });
+
+    const previousPath = existing.signed_document_path ? path.join(process.cwd(), existing.signed_document_path) : null;
+    if (previousPath && previousPath !== absolutePath) {
+      await fs.unlink(previousPath).catch(() => undefined);
+    }
+
+    res.json(hydrateContract(updated));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/:id/create-linked-reservation", async (req, res, next) => {
   try {
     const existing = await prisma.contrat.findUnique({
@@ -1297,9 +1429,19 @@ router.delete("/:id", async (req, res, next) => {
     await prisma.contrat.delete({ where: { id: req.params.id } });
     const absolutePath = path.join(process.cwd(), contrat.pdf_path);
     const sentAbsolutePath = contrat.pdf_sent_path ? path.join(process.cwd(), contrat.pdf_sent_path) : null;
+    const signedDocumentAbsolutePath = contrat.signed_document_path
+      ? path.join(process.cwd(), contrat.signed_document_path)
+      : null;
     await fs.unlink(absolutePath).catch(() => undefined);
     if (sentAbsolutePath && sentAbsolutePath !== absolutePath) {
       await fs.unlink(sentAbsolutePath).catch(() => undefined);
+    }
+    if (
+      signedDocumentAbsolutePath &&
+      signedDocumentAbsolutePath !== absolutePath &&
+      signedDocumentAbsolutePath !== sentAbsolutePath
+    ) {
+      await fs.unlink(signedDocumentAbsolutePath).catch(() => undefined);
     }
     res.status(204).end();
   } catch (err) {
@@ -1325,6 +1467,43 @@ router.get("/:id/pdf", async (req, res, next) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
+    res.sendFile(absolutePath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/signed-document", async (req, res, next) => {
+  try {
+    const contrat = await prisma.contrat.findUnique({
+      where: { id: req.params.id },
+      select: {
+        signed_document_path: true,
+        signed_document_filename: true,
+        signed_document_mime_type: true,
+      },
+    });
+    if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
+    if (!contrat.signed_document_path) {
+      return res.status(404).json({ error: "Aucun document signé n'est enregistré pour ce contrat." });
+    }
+
+    const absolutePath = path.join(process.cwd(), contrat.signed_document_path);
+    try {
+      await fs.access(absolutePath);
+    } catch {
+      return res.status(404).json({ error: "Le document signé enregistré est introuvable sur le disque." });
+    }
+
+    const downloadName = sanitizeUploadedFilename(
+      contrat.signed_document_filename ?? path.basename(absolutePath),
+      path.extname(absolutePath)
+    );
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Content-Type", contrat.signed_document_mime_type ?? "application/octet-stream");
+    res.setHeader("Content-Disposition", buildInlineContentDisposition(downloadName));
     res.sendFile(absolutePath);
   } catch (err) {
     next(err);

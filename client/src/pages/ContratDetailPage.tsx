@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiFetch } from "../utils/api";
+import { apiFetch, buildApiUrl } from "../utils/api";
 import type { Contrat } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
 import {
@@ -290,6 +290,13 @@ const ContratDetailPage = () => {
   const pdfVersion =
     contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
   const pdfUrl = `/api/contracts/${id}/pdf?v=${encodeURIComponent(String(pdfVersion))}&t=${pdfNonce}`;
+  const signedDocumentUrl = contrat.signed_document_path
+    ? buildApiUrl(
+        `/contracts/${id}/signed-document?v=${encodeURIComponent(
+          String(contrat.signed_document_uploaded_at ?? contrat.date_derniere_modif ?? "")
+        )}`
+      )
+    : null;
   const internalCommentDirty =
     normalizeInternalComment(internalCommentDraft) !==
     normalizeInternalComment(contrat.commentaire_interne);
@@ -576,6 +583,24 @@ const ContratDetailPage = () => {
               ) : (
                 <span className="detail-value">—</span>
               )}
+            </div>
+            <div className="detail-item">
+              <span className="detail-label">Document signé</span>
+              {signedDocumentUrl ? (
+                <a className="detail-link" href={signedDocumentUrl} target="_blank" rel="noreferrer">
+                  {contrat.signed_document_filename ?? "Consulter"}
+                </a>
+              ) : (
+                <span className="detail-value">—</span>
+              )}
+            </div>
+            <div className="detail-item">
+              <span className="detail-label">Importé le</span>
+              <span className="detail-value">
+                {contrat.signed_document_uploaded_at
+                  ? formatDate(contrat.signed_document_uploaded_at)
+                  : "—"}
+              </span>
             </div>
           </div>
 

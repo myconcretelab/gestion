@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { apiFetch, isApiError } from "../../utils/api";
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { apiFetch, buildApiUrl, isApiError } from "../../utils/api";
 import { formatDate, formatEuro } from "../../utils/format";
 import { computeReservationOptionsPreview, mergeReservationOptions } from "../../utils/reservationOptions";
 import type { Contrat, ContratOptions, Reservation } from "../../utils/types";
@@ -28,8 +28,58 @@ const RESERVATION_PAYMENT_SOURCES = [
 ] as const;
 
 const ARRHES_PAYMENT_MODES = ["Chèque", "Virement", "Espèces", "A définir"] as const;
+const SIGNED_DOCUMENT_MAX_BYTES = 12 * 1024 * 1024;
+const SIGNED_DOCUMENT_ALLOWED_MIME_TYPES = new Map<string, string>([
+  ["application/pdf", ".pdf"],
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+  ["image/webp", ".webp"],
+]);
+const SIGNED_DOCUMENT_ALLOWED_EXTENSIONS = new Map<string, string>([
+  [".pdf", "application/pdf"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".png", "image/png"],
+  [".webp", "image/webp"],
+]);
 
 const todayInputValue = () => new Date().toISOString().slice(0, 10);
+
+const formatFileSize = (size: number) => {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} Ko`;
+  return `${(size / (1024 * 1024)).toFixed(1)} Mo`;
+};
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Lecture du fichier impossible."));
+        return;
+      }
+      resolve(reader.result);
+    };
+    reader.onerror = () => reject(new Error("Lecture du fichier impossible."));
+    reader.readAsDataURL(file);
+  });
+
+const resolveSignedDocumentMimeType = (file: File) => {
+  const fileType = file.type.trim().toLowerCase();
+  if (SIGNED_DOCUMENT_ALLOWED_MIME_TYPES.has(fileType)) {
+    return fileType;
+  }
+  const dotIndex = file.name.lastIndexOf(".");
+  const extension = dotIndex >= 0 ? file.name.slice(dotIndex).toLowerCase() : "";
+  return SIGNED_DOCUMENT_ALLOWED_EXTENSIONS.get(extension) ?? null;
+};
+
+type PendingSignedDocument = {
+  filename: string;
+  mimeType: string;
+  data: string;
+  size: number;
+};
 
 const CloseIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -45,6 +95,9 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
   const [saving, setSaving] = useState(false);
   const [linkingReservation, setLinkingReservation] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preparingSignedDocument, setPreparingSignedDocument] = useState(false);
+  const [pendingSignedDocument, setPendingSignedDocument] = useState<PendingSignedDocument | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [contractReceived, setContractReceived] = useState(false);
   const [receptionDate, setReceptionDate] = useState("");
   const [arrhesPaid, setArrhesPaid] = useState(false);
@@ -67,7 +120,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !saving) onClose();
+      if (event.key === "Escape" && !saving && !preparingSignedDocument) onClose();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -78,7 +131,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
       document.documentElement.classList.remove(APP_SCROLL_LOCK_CLASS);
       document.body.style.overflow = previousOverflow;
     };
-  }, [onClose, open, saving]);
+  }, [onClose, open, preparingSignedDocument, saving]);
 
   useEffect(() => {
     if (!open || !contract) return;
@@ -89,6 +142,9 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     setSaving(false);
     setLinkingReservation(false);
     setError(null);
+    setPreparingSignedDocument(false);
+    setPendingSignedDocument(null);
+    setFileInputKey((current) => current + 1);
     setReservation(null);
     setContractReceived(contract.statut_reception_contrat === "recu");
     setReceptionDate(
@@ -144,11 +200,62 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     [contract?.gite, contract?.nb_nuits, options, reservation?.nb_nuits]
   );
 
+  const signedDocumentUrl = contract.signed_document_path
+    ? buildApiUrl(
+        `/contracts/${contract.id}/signed-document?v=${encodeURIComponent(
+          String(contract.signed_document_uploaded_at ?? contract.date_derniere_modif ?? "")
+        )}`
+      )
+    : null;
+
+  const handleSignedDocumentSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setPendingSignedDocument(null);
+      return;
+    }
+
+    const mimeType = resolveSignedDocumentMimeType(file);
+    if (!mimeType) {
+      setPendingSignedDocument(null);
+      setFileInputKey((current) => current + 1);
+      setError("Format non pris en charge. Utilisez un PDF, JPG, PNG ou WEBP.");
+      return;
+    }
+
+    if (file.size > SIGNED_DOCUMENT_MAX_BYTES) {
+      setPendingSignedDocument(null);
+      setFileInputKey((current) => current + 1);
+      setError(`Le document signé dépasse ${Math.round(SIGNED_DOCUMENT_MAX_BYTES / (1024 * 1024))} Mo.`);
+      return;
+    }
+
+    setPreparingSignedDocument(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const separatorIndex = dataUrl.indexOf(",");
+      const data = separatorIndex >= 0 ? dataUrl.slice(separatorIndex + 1) : dataUrl;
+      setPendingSignedDocument({
+        filename: file.name,
+        mimeType,
+        data,
+        size: file.size,
+      });
+      setError(null);
+    } catch (err) {
+      setPendingSignedDocument(null);
+      setFileInputKey((current) => current + 1);
+      setError(err instanceof Error ? err.message : "Impossible de préparer le document signé.");
+    } finally {
+      setPreparingSignedDocument(false);
+    }
+  };
+
   const submit = async () => {
     if (!contract) return;
     setSaving(true);
     try {
-      const updated = await apiFetch<Contrat>(`/contracts/${contract.id}/return-processing`, {
+      const trackingUpdated = await apiFetch<Contrat>(`/contracts/${contract.id}/return-processing`, {
         method: "PATCH",
         json: {
           statut_reception_contrat: contractReceived ? "recu" : "non_recu",
@@ -163,7 +270,16 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
           },
         },
       });
+      let updated = trackingUpdated;
+      if (pendingSignedDocument) {
+        updated = await apiFetch<Contrat>(`/contracts/${contract.id}/signed-document`, {
+          method: "POST",
+          json: pendingSignedDocument,
+        });
+      }
       setError(null);
+      setPendingSignedDocument(null);
+      setFileInputKey((current) => current + 1);
       onUpdated(updated);
       onClose();
     } catch (err) {
@@ -206,7 +322,11 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
   const hasReservation = Boolean(contract.reservation_id);
 
   return createPortal(
-    <div className="contract-return-drawer-backdrop" role="presentation" onClick={() => !saving && onClose()}>
+    <div
+      className="contract-return-drawer-backdrop"
+      role="presentation"
+      onClick={() => !saving && !preparingSignedDocument && onClose()}
+    >
       <section
         className="contract-return-drawer"
         role="dialog"
@@ -230,7 +350,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
             type="button"
             className="contract-return-drawer__close"
             onClick={onClose}
-            disabled={saving || linkingReservation}
+            disabled={saving || linkingReservation || preparingSignedDocument}
             aria-label="Fermer"
           >
             <CloseIcon />
@@ -385,6 +505,62 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
 
           <section className="contract-return-drawer__section">
             <div className="contract-return-drawer__section-head">
+              <strong>Document signé</strong>
+              <span>PDF ou scan photo conservé avec le contrat.</span>
+            </div>
+            <div className="contract-return-drawer__signed-document">
+              {signedDocumentUrl ? (
+                <div className="note note--success">
+                  Document enregistré :
+                  {" "}
+                  <a href={signedDocumentUrl} target="_blank" rel="noreferrer">
+                    {contract.signed_document_filename ?? "Consulter"}
+                  </a>
+                  {contract.signed_document_uploaded_at ? ` (${formatDate(contract.signed_document_uploaded_at)})` : ""}
+                  {typeof contract.signed_document_size === "number"
+                    ? ` - ${formatFileSize(contract.signed_document_size)}`
+                    : ""}
+                </div>
+              ) : (
+                <div className="note">Aucun document signé enregistré pour le moment.</div>
+              )}
+
+              <label className="field">
+                Ajouter ou remplacer le document signé
+                <input
+                  key={fileInputKey}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                  disabled={saving || preparingSignedDocument}
+                  onChange={(event) => void handleSignedDocumentSelection(event)}
+                />
+              </label>
+
+              {pendingSignedDocument ? (
+                <div className="contract-return-drawer__signed-document-pending">
+                  <span>
+                    Nouveau fichier prêt : {pendingSignedDocument.filename} ({formatFileSize(pendingSignedDocument.size)})
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setPendingSignedDocument(null);
+                      setFileInputKey((current) => current + 1);
+                    }}
+                    disabled={saving || preparingSignedDocument}
+                  >
+                    Retirer
+                  </button>
+                </div>
+              ) : null}
+
+              {preparingSignedDocument ? <div className="note">Préparation du document…</div> : null}
+            </div>
+          </section>
+
+          <section className="contract-return-drawer__section">
+            <div className="contract-return-drawer__section-head">
               <strong>Notes internes</strong>
               <span>Visible seulement en gestion.</span>
             </div>
@@ -401,10 +577,19 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
         </div>
 
         <div className="contract-return-drawer__footer">
-          <button type="button" className="secondary" onClick={onClose} disabled={saving}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onClose}
+            disabled={saving || preparingSignedDocument}
+          >
             Annuler
           </button>
-          <button type="button" onClick={submit} disabled={saving || loading || linkingReservation}>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving || loading || linkingReservation || preparingSignedDocument}
+          >
             {saving ? "Enregistrement..." : "Enregistrer"}
           </button>
         </div>

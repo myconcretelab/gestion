@@ -204,6 +204,11 @@ export type Contrat = {
   clauses: Record<string, unknown>;
   pdf_path: string;
   pdf_sent_path?: string | null;
+  signed_document_path?: string | null;
+  signed_document_filename?: string | null;
+  signed_document_mime_type?: string | null;
+  signed_document_size?: number | null;
+  signed_document_uploaded_at?: string | null;
   date_envoi_email?: string | null;
   statut_reception_contrat: "non_recu" | "recu";
   date_reception_contrat?: string | null;

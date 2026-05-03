@@ -8344,6 +8344,34 @@ button.warning {
   font: inherit;
 }
 
+.contract-return-drawer__signed-document {
+  display: grid;
+  gap: 12px;
+}
+
+.contract-return-drawer__signed-document a {
+  color: inherit;
+  font-weight: 700;
+}
+
+.contract-return-drawer__signed-document-pending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px dashed #cbd5e1;
+  background: #f8fafc;
+}
+
+.contract-return-drawer__signed-document-pending span {
+  color: #334155;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
 .contract-return-drawer__footer {
   display: flex;
   justify-content: flex-end;
