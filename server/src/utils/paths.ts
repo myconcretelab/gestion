@@ -27,3 +27,23 @@ export const getSentPdfPaths = (numeroContrat: string, dateReference: Date | str
   const relativePath = path.relative(process.cwd(), absolutePath);
   return { absolutePath, relativePath };
 };
+
+export const getSignedContractPaths = (
+  numeroContrat: string,
+  dateReference: Date | string,
+  extension: string
+) => {
+  const resolvedDate = normalizeDateReference(dateReference);
+  const year = numeroContrat.split("-")[1] ?? String(resolvedDate.getFullYear());
+  const month = String(resolvedDate.getMonth() + 1).padStart(2, "0");
+  const normalizedExtension = extension.startsWith(".") ? extension : `.${extension}`;
+  const absolutePath = path.join(
+    resolveDataDir(),
+    "signed-contracts",
+    year,
+    month,
+    `${numeroContrat}--signe${normalizedExtension.toLowerCase()}`
+  );
+  const relativePath = path.relative(process.cwd(), absolutePath);
+  return { absolutePath, relativePath };
+};

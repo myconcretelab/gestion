@@ -171,6 +171,11 @@ model Contrat {
   clauses                String
   pdf_path               String
   pdf_sent_path          String?
+  signed_document_path   String?
+  signed_document_filename String?
+  signed_document_mime_type String?
+  signed_document_size   Int?
+  signed_document_uploaded_at DateTime?
   snapshot_json          String?
   date_envoi_email       DateTime?
   statut_reception_contrat String   @default("non_recu")
