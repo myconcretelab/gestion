@@ -73,6 +73,8 @@ const calendarReservationSelect = {
   nb_nuits: true,
   nb_adultes: true,
   prix_total: true,
+  frais_optionnels_montant: true,
+  frais_optionnels_declares: true,
   source_paiement: true,
 } as const;
 
