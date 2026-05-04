@@ -10967,9 +10967,582 @@ button.warning {
   gap: 6px;
 }
 
-.season-rates-page__gite-select {
-  margin-top: 16px;
-  max-width: 420px;
+.season-rates-editor {
+  --season-rate-holiday-start: var(--primary);
+  --season-rate-holiday-end: var(--accent-dark);
+  --season-rate-non-holiday-start: #ffffff;
+  --season-rate-non-holiday-end: #e8edf3;
+  --season-rate-mixed-start: #ffd7d9;
+  --season-rate-mixed-end: #f3c1c5;
+  display: grid;
+  gap: 18px;
+}
+
+.season-rates-editor__toolbar,
+.season-rates-editor__legend,
+.season-rates-editor__popover-actions,
+.season-rates-editor__modal-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.season-rates-editor__range {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1 1 540px;
+  padding: 14px 16px;
+  border: 1px solid var(--field-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, 0.07), rgba(249, 115, 22, 0.08)),
+    #fff;
+}
+
+.season-rates-editor__range-label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.season-rates-editor__range-label strong {
+  font-size: 0.98rem;
+}
+
+.season-rates-editor__range-label span,
+.season-rates-editor__card-head p,
+.season-rates-editor__selection-hint,
+.season-rates-editor__end-hint,
+.season-rates-editor__price-hint,
+.season-rates-editor__prefill-card-head span,
+.season-rates-editor__modal-copy {
+  color: #475569;
+}
+
+.season-rates-editor__toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.season-rates-editor__legend {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.season-rates-editor__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.season-rates-editor__legend-item--warning {
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.season-rates-editor__legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+
+.season-rates-editor__legend-swatch--holiday {
+  background: linear-gradient(135deg, var(--season-rate-holiday-start), var(--season-rate-holiday-end));
+}
+
+.season-rates-editor__legend-swatch--non-holiday {
+  background: linear-gradient(135deg, var(--season-rate-non-holiday-start), var(--season-rate-non-holiday-end));
+}
+
+.season-rates-editor__legend-swatch--mixed {
+  background: linear-gradient(135deg, var(--season-rate-mixed-start), var(--season-rate-mixed-end));
+}
+
+.season-rates-editor__timeline-card {
+  display: grid;
+  gap: 16px;
+}
+
+.season-rates-editor__card-head {
+  display: grid;
+  gap: 4px;
+}
+
+.season-rates-editor__card-head h2 {
+  margin: 0;
+}
+
+.season-rates-editor__card-head p,
+.season-rates-editor__modal-copy {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.season-rates-editor__months {
+  position: relative;
+  height: 28px;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.7);
+}
+
+.season-rates-editor__timeline-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 6px;
+  scrollbar-gutter: stable both-edges;
+}
+
+.season-rates-editor__timeline-canvas {
+  min-width: 100%;
+}
+
+.season-rates-editor__month {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.season-rates-editor__timeline-track {
+  position: relative;
+  min-height: 214px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 249, 0.9)),
+    radial-gradient(circle at top left, rgba(255, 90, 95, 0.08), transparent 38%);
+  overflow: hidden;
+}
+
+.season-rates-editor__month-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-right: 1px dashed rgba(148, 163, 184, 0.35);
+}
+
+.season-rates-editor__segment {
+  position: absolute;
+  top: 22px;
+  bottom: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  padding: 18px 18px 16px;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  min-width: 108px;
+  z-index: 1;
+}
+
+.season-rates-editor__segment:hover,
+.season-rates-editor__segment:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.1);
+  z-index: 5;
+}
+
+.season-rates-editor__segment--holiday {
+  background: linear-gradient(135deg, var(--season-rate-holiday-start), var(--season-rate-holiday-end));
+  color: #fff;
+}
+
+.season-rates-editor__segment--non_holiday {
+  background: linear-gradient(135deg, var(--season-rate-non-holiday-start), var(--season-rate-non-holiday-end));
+  color: #475569;
+  border-color: rgba(148, 163, 184, 0.34);
+}
+
+.season-rates-editor__segment--mixed {
+  background: linear-gradient(135deg, var(--season-rate-mixed-start), var(--season-rate-mixed-end));
+  color: #9f3545;
+}
+
+.season-rates-editor__segment--selected {
+  border-color: rgba(255, 90, 95, 0.7);
+  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.16), 0 18px 30px rgba(15, 23, 42, 0.12);
+  z-index: 4;
+}
+
+.season-rates-editor__segment-copy {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+  pointer-events: none;
+  width: 100%;
+}
+
+.season-rates-editor__segment-copy strong {
+  font-size: 0.92rem;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.season-rates-editor__segment-copy span {
+  font-size: 0.66rem;
+  line-height: 1.2;
+  opacity: 0.95;
+  text-wrap: balance;
+}
+
+.season-rates-editor__segment-price-summary {
+  font-size: 0.68rem;
+  line-height: 1.25;
+  opacity: 0.98;
+}
+
+.season-rates-editor__segment-prices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.season-rates-editor__segment-price-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.season-rates-editor__segment--non_holiday .season-rates-editor__segment-price-pill,
+.season-rates-editor__segment--mixed .season-rates-editor__segment-price-pill {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.season-rates-editor__segment-price-pill--more {
+  justify-content: center;
+  min-width: 38px;
+}
+
+.season-rates-editor__segment-price-pill em {
+  font-style: normal;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.season-rates-editor__segment-price-pill strong {
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.season-rates-editor__segment--tiny {
+  padding-inline: 10px;
+}
+
+.season-rates-editor__handle {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 90, 95, 0.4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+  cursor: ew-resize;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+}
+
+.season-rates-editor__handle::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 999px;
+  background: rgba(255, 90, 95, 0.72);
+}
+
+.season-rates-editor__handle--left {
+  left: 0;
+}
+
+.season-rates-editor__handle--right {
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+.season-rates-editor__timeline-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.season-rates-editor__timeline-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 90, 95, 0.35);
+  border-radius: 999px;
+}
+
+.season-rates-editor__timeline-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 229, 230, 0.85);
+  border-radius: 999px;
+}
+
+.season-rates-editor__status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  font-weight: 700;
+}
+
+.season-rates-editor__status-badge--holiday {
+  background: rgba(255, 90, 95, 0.14);
+  color: var(--accent-dark);
+}
+
+.season-rates-editor__status-badge--non_holiday {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.season-rates-editor__status-badge--mixed {
+  background: rgba(255, 139, 114, 0.14);
+  color: #b54753;
+}
+
+.season-rates-editor__end-hint,
+.season-rates-editor__price-hint {
+  margin-top: 4px;
+  font-size: 0.76rem;
+  line-height: 1.15;
+}
+
+.season-rates-editor__input--warning {
+  border-color: #f59e0b !important;
+  background: #fff7ed;
+}
+
+.season-rates-editor__timeline-hint {
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.season-rates-editor__popover {
+  position: fixed;
+  z-index: 110;
+  width: min(720px, calc(100vw - 24px));
+  max-height: min(82vh, 920px);
+  overflow: auto;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.97)),
+    #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+  display: grid;
+  gap: 16px;
+  animation: calendar-popover-in 140ms ease;
+}
+
+.season-rates-editor__popover-head,
+.season-rates-editor__popover-meta,
+.season-rates-editor__popover-fields,
+.season-rates-editor__popover-footer {
+  display: grid;
+  gap: 12px;
+}
+
+.season-rates-editor__popover-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.season-rates-editor__popover-head h2,
+.season-rates-editor__popover-head h3,
+.season-rates-editor__popover-eyebrow,
+.season-rates-editor__popover-section-head h3,
+.season-rates-editor__popover-section-head p {
+  margin: 0;
+}
+
+.season-rates-editor__popover-eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.season-rates-editor__popover-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.season-rates-editor__popover-section {
+  display: grid;
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.season-rates-editor__popover-section-head {
+  display: grid;
+  gap: 4px;
+}
+
+.season-rates-editor__popover-section-head p,
+.season-rates-editor__popover-note {
+  color: #475569;
+  line-height: 1.45;
+}
+
+.season-rates-editor__popover-fields {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.season-rates-editor__popover-prices {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.season-rates-editor__popover-price-card {
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.season-rates-editor__popover-price-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.season-rates-editor__popover-price-label strong {
+  font-size: 0.9rem;
+}
+
+.season-rates-editor__popover-price-label em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #64748b;
+}
+
+.season-rates-editor__popover-actions {
+  justify-content: flex-start;
+}
+
+.season-rates-editor__popover-footer {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-top: 4px;
+}
+
+.season-rates-editor__popover-note {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.season-rates-editor__delete-button {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.season-rates-editor__modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.44);
+  backdrop-filter: blur(5px);
+}
+
+.season-rates-editor__modal {
+  width: min(1040px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 22px;
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96)),
+    #fff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+  display: grid;
+  gap: 18px;
+}
+
+.season-rates-editor__modal-head,
+.season-rates-editor__prefill-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.season-rates-editor__modal-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.season-rates-editor__modal-head h2,
+.season-rates-editor__modal-eyebrow {
+  margin: 0;
+}
+
+.season-rates-editor__modal-eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.season-rates-editor__prefill-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.season-rates-editor__prefill-card {
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 20px;
+  padding: 16px;
+  background: #fff;
+  display: grid;
+  gap: 12px;
+}
+
+.season-rates-editor__prefill-card-head {
+  display: grid;
+  gap: 2px;
+}
+
+.season-rates-editor__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .badge--pending {
@@ -10990,7 +11563,71 @@ button.warning {
 
 @media (max-width: 980px) {
   .booking-requests-page__layout,
-  .season-rates-page__layout {
+  .season-rates-editor__popover-footer {
     grid-template-columns: 1fr;
+  }
+
+  .season-rates-editor__range,
+  .season-rates-editor__modal-head {
+    grid-template-columns: 1fr;
+  }
+
+  .season-rates-editor__range {
+    display: grid;
+  }
+
+  .season-rates-editor__toolbar {
+    gap: 14px;
+  }
+
+  .season-rates-editor__toolbar-actions {
+    justify-content: flex-start;
+  }
+
+  .season-rates-editor__months {
+    height: 24px;
+  }
+
+  .season-rates-editor__month {
+    font-size: 0.66rem;
+  }
+
+  .season-rates-editor__segment {
+    top: 18px;
+    bottom: 18px;
+    padding: 12px;
+    min-width: 92px;
+  }
+
+  .season-rates-editor__segment-prices {
+    gap: 4px;
+  }
+
+  .season-rates-editor__popover {
+    width: min(680px, calc(100vw - 20px));
+  }
+
+  .season-rates-editor__timeline-scroll {
+    margin-inline: -4px;
+    padding-inline: 4px;
+  }
+}
+
+@media (max-width: 720px) {
+  .season-rates-editor__modal-backdrop {
+    padding: 12px;
+    align-items: stretch;
+  }
+
+  .season-rates-editor__modal {
+    max-height: none;
+    border-radius: 22px;
+  }
+
+  .season-rates-editor__popover {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    padding: 16px;
+    border-radius: 20px;
   }
 }
