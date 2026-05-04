@@ -50,6 +50,20 @@ export type StatisticsPayload = {
   availableYears: number[];
 };
 
+export type StatisticsReservationSegment = {
+  debut: string;
+  fin: string;
+  year: number;
+  month: number;
+  nights: number;
+  adults: number;
+  prixNuit: number;
+  revenus: number;
+  fraisOptionnelsTotal: number;
+  fraisOptionnelsDeclares: number;
+  paiement: string;
+};
+
 type Segment = {
   start: Date;
   endDisplay: Date;
@@ -110,6 +124,60 @@ const splitByMonth = (start: Date, end: Date): Segment[] => {
   return segments;
 };
 
+export const buildStatisticsReservationSegments = (
+  reservation: StatisticsReservation
+): StatisticsReservationSegment[] => {
+  const start = toUtcDateOnly(reservation.date_entree);
+  const end = toUtcDateOnly(reservation.date_sortie);
+  const segments = splitByMonth(start, end);
+  if (segments.length === 0) return [];
+
+  const effectiveNightPrice =
+    reservation.prix_par_nuit > 0
+      ? reservation.prix_par_nuit
+      : reservation.nb_nuits > 0
+        ? reservation.prix_total / reservation.nb_nuits
+        : 0;
+  const prixNuit = round2(effectiveNightPrice);
+  const optionalFeesTotal = round2(reservation.frais_optionnels_montant || 0);
+  const declaredOptionalFeesTotal = reservation.frais_optionnels_declares
+    ? optionalFeesTotal
+    : 0;
+  const totalSegmentNights = segments.reduce((sum, segment) => sum + segment.nights, 0);
+  let allocatedOptionalFees = 0;
+  let allocatedDeclaredOptionalFees = 0;
+
+  return segments.map((segment, idx) => {
+    const isLastSegment = idx === segments.length - 1;
+    const proportionalOptionalFees =
+      totalSegmentNights > 0 ? round2((optionalFeesTotal * segment.nights) / totalSegmentNights) : 0;
+    const optionalFeesForSegment = isLastSegment
+      ? round2(optionalFeesTotal - allocatedOptionalFees)
+      : proportionalOptionalFees;
+    allocatedOptionalFees = round2(allocatedOptionalFees + optionalFeesForSegment);
+    const proportionalDeclaredOptionalFees =
+      totalSegmentNights > 0 ? round2((declaredOptionalFeesTotal * segment.nights) / totalSegmentNights) : 0;
+    const declaredOptionalFeesForSegment = isLastSegment
+      ? round2(declaredOptionalFeesTotal - allocatedDeclaredOptionalFees)
+      : proportionalDeclaredOptionalFees;
+    allocatedDeclaredOptionalFees = round2(allocatedDeclaredOptionalFees + declaredOptionalFeesForSegment);
+
+    return {
+      debut: isoDateOnly(segment.start),
+      fin: isoDateOnly(segment.endDisplay),
+      year: segment.start.getUTCFullYear(),
+      month: segment.start.getUTCMonth() + 1,
+      nights: segment.nights,
+      adults: reservation.nb_adultes ?? 0,
+      prixNuit,
+      revenus: round2(prixNuit * segment.nights),
+      fraisOptionnelsTotal: optionalFeesForSegment,
+      fraisOptionnelsDeclares: declaredOptionalFeesForSegment,
+      paiement: (reservation.source_paiement ?? "Indéfini").trim() || "Indéfini",
+    };
+  });
+};
+
 export const buildStatisticsPayload = (params: {
   gites: StatisticsGite[];
   reservations: StatisticsReservation[];
@@ -131,56 +199,21 @@ export const buildStatisticsPayload = (params: {
     const gite = gitesById.get(reservation.gite_id);
     if (!gite) continue;
 
-    const start = toUtcDateOnly(reservation.date_entree);
-    const end = toUtcDateOnly(reservation.date_sortie);
-    const segments = splitByMonth(start, end);
-    if (segments.length === 0) continue;
-
-    const effectiveNightPrice =
-      reservation.prix_par_nuit > 0
-        ? reservation.prix_par_nuit
-        : reservation.nb_nuits > 0
-          ? reservation.prix_total / reservation.nb_nuits
-          : 0;
-    const prixNuit = round2(effectiveNightPrice);
-    const optionalFeesTotal = round2(reservation.frais_optionnels_montant || 0);
-    const declaredOptionalFeesTotal = reservation.frais_optionnels_declares
-      ? optionalFeesTotal
-      : 0;
-    const totalSegmentNights = segments.reduce((sum, segment) => sum + segment.nights, 0);
-    let allocatedOptionalFees = 0;
-    let allocatedDeclaredOptionalFees = 0;
-
-    for (let idx = 0; idx < segments.length; idx += 1) {
-      const segment = segments[idx];
-      years.add(segment.start.getUTCFullYear());
-      const isLastSegment = idx === segments.length - 1;
-      const proportionalOptionalFees =
-        totalSegmentNights > 0 ? round2((optionalFeesTotal * segment.nights) / totalSegmentNights) : 0;
-      const optionalFeesForSegment = isLastSegment
-        ? round2(optionalFeesTotal - allocatedOptionalFees)
-        : proportionalOptionalFees;
-      allocatedOptionalFees = round2(allocatedOptionalFees + optionalFeesForSegment);
-      const proportionalDeclaredOptionalFees =
-        totalSegmentNights > 0 ? round2((declaredOptionalFeesTotal * segment.nights) / totalSegmentNights) : 0;
-      const declaredOptionalFeesForSegment = isLastSegment
-        ? round2(declaredOptionalFeesTotal - allocatedDeclaredOptionalFees)
-        : proportionalDeclaredOptionalFees;
-      allocatedDeclaredOptionalFees = round2(allocatedDeclaredOptionalFees + declaredOptionalFeesForSegment);
-
+    for (const segment of buildStatisticsReservationSegments(reservation)) {
+      years.add(segment.year);
       entriesByGite[gite.id].push({
         reservationId: reservation.id,
         giteId: gite.id,
-        debut: isoDateOnly(segment.start),
-        fin: isoDateOnly(segment.endDisplay),
-        mois: segment.start.getUTCMonth() + 1,
+        debut: segment.debut,
+        fin: segment.fin,
+        mois: segment.month,
         nuits: segment.nights,
-        adultes: reservation.nb_adultes ?? 0,
-        prixNuit,
-        revenus: round2(prixNuit * segment.nights),
-        fraisOptionnelsTotal: optionalFeesForSegment,
-        fraisOptionnelsDeclares: declaredOptionalFeesForSegment,
-        paiement: (reservation.source_paiement ?? "Indéfini").trim() || "Indéfini",
+        adultes: segment.adults,
+        prixNuit: segment.prixNuit,
+        revenus: segment.revenus,
+        fraisOptionnelsTotal: segment.fraisOptionnelsTotal,
+        fraisOptionnelsDeclares: segment.fraisOptionnelsDeclares,
+        paiement: segment.paiement,
         proprietaires: gite.proprietaires_noms,
       });
     }

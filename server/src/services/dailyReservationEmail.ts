@@ -22,6 +22,10 @@ import {
   type DailyReservationEmailRunSummary,
   type DailyReservationEmailRunStatus,
 } from "./dailyReservationEmailRunState.js";
+import {
+  buildStatisticsReservationSegments,
+  type StatisticsReservation,
+} from "./statistics.js";
 
 export type DailyReservationDigestReservation = {
   id: string;
@@ -151,6 +155,8 @@ const formatMonthLabel = (monthStart: Date) =>
     month: "long",
     year: "numeric",
   });
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
 
 const getIcalConflictTypeLabel = (type: IcalConflictType) =>
   type === "modified" ? "Modification détectée" : "Suppression détectée";
@@ -506,14 +512,20 @@ const getMonthBoundaries = (referenceDate: Date) => {
 const buildTotalsByGite = async (monthStart: Date, monthEnd: Date) => {
   const reservations = await prisma.reservation.findMany({
     where: {
-      date_entree: {
-        gte: monthStart,
-        lt: monthEnd,
-      },
+      date_entree: { lt: monthEnd },
+      date_sortie: { gt: monthStart },
     },
     select: {
       gite_id: true,
+      date_entree: true,
+      date_sortie: true,
+      nb_nuits: true,
+      nb_adultes: true,
+      prix_par_nuit: true,
       prix_total: true,
+      source_paiement: true,
+      frais_optionnels_montant: true,
+      frais_optionnels_declares: true,
       gite: {
         select: {
           id: true,
@@ -535,18 +547,43 @@ const buildTotalsByGite = async (monthStart: Date, monthEnd: Date) => {
     const existing = totalsByKey.get(key);
     const giteNom = reservation.gite?.nom ?? "Sans gîte assigné";
     const ordre = reservation.gite?.ordre ?? Number.MAX_SAFE_INTEGER;
+    const statisticsReservation: StatisticsReservation = {
+      id: `${key}-${reservation.date_entree.toISOString()}-${reservation.date_sortie.toISOString()}`,
+      gite_id: reservation.gite_id ?? null,
+      date_entree: reservation.date_entree,
+      date_sortie: reservation.date_sortie,
+      nb_nuits: Number(reservation.nb_nuits ?? 0),
+      nb_adultes: Number(reservation.nb_adultes ?? 0),
+      prix_par_nuit: Number(reservation.prix_par_nuit ?? 0),
+      prix_total: Number(reservation.prix_total ?? 0),
+      source_paiement: reservation.source_paiement ?? null,
+      frais_optionnels_montant: Number(reservation.frais_optionnels_montant ?? 0),
+      frais_optionnels_declares: Boolean(reservation.frais_optionnels_declares),
+    };
+    const monthlyAmount = round2(
+      buildStatisticsReservationSegments(statisticsReservation)
+        .filter(
+          (segment) =>
+            segment.year === monthStart.getUTCFullYear() &&
+            segment.month === monthStart.getUTCMonth() + 1,
+        )
+        .reduce((sum, segment) => sum + segment.revenus + segment.fraisOptionnelsTotal, 0)
+    );
+    const shouldCountReservation = monthlyAmount > 0;
 
     if (existing) {
-      existing.total_amount += Number(reservation.prix_total ?? 0);
-      existing.reservations_count += 1;
+      existing.total_amount = round2(existing.total_amount + monthlyAmount);
+      if (shouldCountReservation) {
+        existing.reservations_count += 1;
+      }
       continue;
     }
 
     totalsByKey.set(key, {
       gite_id: giteId,
       gite_nom: giteNom,
-      total_amount: Number(reservation.prix_total ?? 0),
-      reservations_count: 1,
+      total_amount: monthlyAmount,
+      reservations_count: shouldCountReservation ? 1 : 0,
       ordre,
     });
   }

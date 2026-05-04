@@ -12,6 +12,7 @@ import {
 } from "../utils/paymentColors";
 import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
+import { getReservationMonthlyAmountsForMonth } from "../utils/reservationMonthlyAmounts";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
 import GiteTabs from "./shared/GiteTabs";
@@ -123,7 +124,17 @@ type CalendarGite = Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre">;
 
 type CalendarReservation = Pick<
   Reservation,
-  "id" | "gite_id" | "hote_nom" | "date_entree" | "date_sortie" | "nb_nuits" | "nb_adultes" | "prix_total" | "source_paiement"
+  | "id"
+  | "gite_id"
+  | "hote_nom"
+  | "date_entree"
+  | "date_sortie"
+  | "nb_nuits"
+  | "nb_adultes"
+  | "prix_total"
+  | "frais_optionnels_montant"
+  | "frais_optionnels_declares"
+  | "source_paiement"
 > &
   Partial<
     Pick<
@@ -223,18 +234,6 @@ const getReservationOverlapNights = (reservation: CalendarReservation, from: Dat
   const overlapStart = Math.max(entry.getTime(), from.getTime());
   const overlapEnd = Math.min(exit.getTime(), to.getTime());
   return overlapEnd > overlapStart ? Math.round((overlapEnd - overlapStart) / DAY_MS) : 0;
-};
-
-const getReservationMonthlyRevenue = (reservation: CalendarReservation, from: Date, to: Date) => {
-  const overlapNights = getReservationOverlapNights(reservation, from, to);
-  const totalNights = Math.max(0, Number(reservation.nb_nuits ?? 0));
-  const totalPrice = Number(reservation.prix_total ?? 0);
-
-  if (overlapNights <= 0 || totalNights <= 0 || totalPrice <= 0) {
-    return 0;
-  }
-
-  return round2((totalPrice * overlapNights) / totalNights);
 };
 
 const getReservationDisplayLabel = (reservation: CalendarReservation) => reservation.hote_nom.trim() || reservation.hote_nom;
@@ -430,7 +429,11 @@ const buildCalendarMonthData = ({
   const occupiedNights = monthReservations.reduce((sum, reservation) => sum + getReservationOverlapNights(reservation, monthStart, monthEnd), 0);
   const occupancyRate = daysInMonth > 0 ? occupiedNights / daysInMonth : 0;
   const revenueTotal = round2(
-    monthReservations.reduce((sum, reservation) => sum + getReservationMonthlyRevenue(reservation, monthStart, monthEnd), 0)
+    monthReservations.reduce(
+      (sum, reservation) =>
+        sum + getReservationMonthlyAmountsForMonth(reservation, year, monthNumber).total,
+      0
+    )
   );
 
   return {
@@ -1688,7 +1691,15 @@ const CalendrierPage = () => {
                                               <span className="calendar-reservation__label-text">{segment.label}</span>
                                             </span>
                                           </strong>
-                                          <span className="calendar-reservation__price">{formatEuro(segment.reservation.prix_total)}</span>
+                                          <span className="calendar-reservation__price">
+                                            {formatEuro(
+                                              getReservationMonthlyAmountsForMonth(
+                                                segment.reservation,
+                                                year,
+                                                monthData.monthNumber
+                                              ).total
+                                            )}
+                                          </span>
                                         </span>
                                       </>
                                     ) : null}
@@ -1755,7 +1766,15 @@ const CalendrierPage = () => {
                     {hoveredReservationDetails.reservation.nb_nuits} nuit
                     {hoveredReservationDetails.reservation.nb_nuits > 1 ? "s" : ""}
                   </span>
-                  <strong>{formatEuro(hoveredReservationDetails.reservation.prix_total)}</strong>
+                  <strong>
+                    {formatEuro(
+                      getReservationMonthlyAmountsForMonth(
+                        hoveredReservationDetails.reservation,
+                        year,
+                        (hoveredReservationDetails.month?.monthNumber ?? activeMonthIndex + 1)
+                      ).total
+                    )}
+                  </strong>
                 </div>
                 <small>{hoveredReservationDetails.reservation.source_paiement || "Source non renseignée"}</small>
                 {hoveredReservationDetails.reservation.commentaire ? (
@@ -1827,7 +1846,15 @@ const CalendrierPage = () => {
               </div>
               <div className="calendar-floating-popover__row">
                 <span>Montant</span>
-                <strong>{formatEuro(hoveredReservationDetails.reservation.prix_total)}</strong>
+                <strong>
+                  {formatEuro(
+                    getReservationMonthlyAmountsForMonth(
+                      hoveredReservationDetails.reservation,
+                      year,
+                      hoveredReservationDetails.month?.monthNumber ?? activeMonthIndex + 1
+                    ).total
+                  )}
+                </strong>
               </div>
               <div className="calendar-floating-popover__row">
                 <span>Source</span>
@@ -1849,11 +1876,18 @@ const CalendrierPage = () => {
           details={[
             { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
             {
-              label: "Total",
-              value: formatEuro(mobileActionReservation.prix_total, {
+              label: "Total du mois",
+              value: formatEuro(
+                getReservationMonthlyAmountsForMonth(
+                  mobileActionReservation,
+                  year,
+                  activeMonthIndex + 1
+                ).total,
+                {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0,
-              }),
+                }
+              ),
             },
             ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
               ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]

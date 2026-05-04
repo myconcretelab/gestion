@@ -44,6 +44,7 @@ import {
   formatEuroPerDay,
   getReservationEnergyAverageDailyCost,
 } from "../utils/reservationEnergy";
+import { getReservationMonthlyAmountsForMonth } from "../utils/reservationMonthlyAmounts";
 import {
   buildSchoolHolidayDateSet,
   computeReservationHolidayNightCount,
@@ -1921,14 +1922,7 @@ const ReservationsPage = () => {
       const key = `${reservation.id}:${year}:${monthIndex}`;
       const monthlyAmounts = monthlyAmountsByReservationMonthKey.get(key);
       if (monthlyAmounts) return monthlyAmounts;
-      const totalFees = round2(Number(reservation.frais_optionnels_montant ?? 0));
-      const declaredFees = reservation.frais_optionnels_declares ? totalFees : 0;
-      return {
-        baseRevenue: round2(Number(reservation.prix_total ?? 0)),
-        totalFees,
-        declaredFees,
-        undeclaredFees: round2(Math.max(0, totalFees - declaredFees)),
-      };
+      return getReservationMonthlyAmountsForMonth(reservation, year, monthIndex);
     },
     [monthlyAmountsByReservationMonthKey, year]
   );
