@@ -7,6 +7,13 @@ import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 import { getGiteIcalExport } from "../services/icalExport.js";
 import { generateIcalExportToken } from "../utils/reservationOrigin.js";
+import {
+  assertNoSeasonRateOverlap,
+  formatBookedDateInput,
+  hydrateSeasonRate,
+  parseBookedDateInput,
+  BookedValidationError,
+} from "../services/booked.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -108,6 +115,15 @@ const giteImportItemSchema = z.object({
 const giteImportSchema = z.object({
   gites: z.array(giteImportItemSchema).min(1),
 });
+const seasonRateSchema = z.object({
+  date_debut: z.string().trim().min(1),
+  date_fin: z.string().trim().min(1),
+  prix_par_nuit: z.coerce.number().min(0),
+  min_nuits: z.coerce.number().int().min(1).default(1),
+});
+const seasonRateReorderSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).min(1),
+});
 type GiteInput = z.infer<typeof giteSchema>;
 type GiteImportInput = z.infer<typeof giteImportItemSchema>;
 
@@ -180,6 +196,20 @@ const hydrateGite = (gite: any) => {
     reservations_count:
       typeof _count?.reservations === "number" ? _count.reservations : gite.reservations_count,
   };
+};
+
+const mapBookedError = (error: unknown) => {
+  if (error instanceof BookedValidationError) {
+    return {
+      status: error.statusCode,
+      body: {
+        error: error.message,
+        code: error.code,
+        details: error.details,
+      },
+    };
+  }
+  return null;
 };
 
 router.get("/", async (_req, res, next) => {
@@ -303,6 +333,141 @@ router.get("/export", async (_req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+});
+
+router.get("/:id/season-rates", async (req, res, next) => {
+  try {
+    const rates = await prisma.giteSeasonRate.findMany({
+      where: { gite_id: req.params.id },
+      orderBy: [{ ordre: "asc" }, { date_debut: "asc" }, { createdAt: "asc" }],
+    });
+    res.json(rates.map(hydrateSeasonRate));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/season-rates", async (req, res, next) => {
+  try {
+    const payload = seasonRateSchema.parse(req.body ?? {});
+    const dateDebut = parseBookedDateInput(payload.date_debut, "date_debut");
+    const dateFin = parseBookedDateInput(payload.date_fin, "date_fin");
+    if (dateFin.getTime() <= dateDebut.getTime()) {
+      return res.status(400).json({ error: "La date de fin doit être postérieure à la date de début." });
+    }
+
+    const aggregate = await prisma.giteSeasonRate.aggregate({
+      where: { gite_id: req.params.id },
+      _max: { ordre: true },
+    });
+    await assertNoSeasonRateOverlap({
+      giteId: req.params.id,
+      dateDebut,
+      dateFin,
+    });
+
+    const created = await prisma.giteSeasonRate.create({
+      data: {
+        gite_id: req.params.id,
+        date_debut: dateDebut,
+        date_fin: dateFin,
+        prix_par_nuit: payload.prix_par_nuit,
+        min_nuits: payload.min_nuits,
+        ordre: (aggregate._max.ordre ?? -1) + 1,
+      },
+    });
+
+    res.status(201).json(hydrateSeasonRate(created as any));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    next(error);
+  }
+});
+
+router.put("/:id/season-rates/:rateId", async (req, res, next) => {
+  try {
+    const payload = seasonRateSchema.parse(req.body ?? {});
+    const dateDebut = parseBookedDateInput(payload.date_debut, "date_debut");
+    const dateFin = parseBookedDateInput(payload.date_fin, "date_fin");
+    if (dateFin.getTime() <= dateDebut.getTime()) {
+      return res.status(400).json({ error: "La date de fin doit être postérieure à la date de début." });
+    }
+
+    await assertNoSeasonRateOverlap({
+      giteId: req.params.id,
+      dateDebut,
+      dateFin,
+      excludeId: req.params.rateId,
+    });
+
+    const updated = await prisma.giteSeasonRate.update({
+      where: { id: req.params.rateId },
+      data: {
+        date_debut: dateDebut,
+        date_fin: dateFin,
+        prix_par_nuit: payload.prix_par_nuit,
+        min_nuits: payload.min_nuits,
+      },
+    });
+
+    res.json(hydrateSeasonRate(updated as any));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    next(error);
+  }
+});
+
+router.post("/:id/season-rates/reorder", async (req, res, next) => {
+  try {
+    const { ids } = seasonRateReorderSchema.parse(req.body ?? {});
+    const existing = await prisma.giteSeasonRate.findMany({
+      where: { gite_id: req.params.id },
+      select: { id: true },
+      orderBy: [{ ordre: "asc" }, { date_debut: "asc" }],
+    });
+    if (existing.length !== ids.length) {
+      return res.status(400).json({ error: "La liste de réorganisation est incomplète." });
+    }
+
+    const existingIds = new Set(existing.map((item) => item.id));
+    if (ids.some((id) => !existingIds.has(id))) {
+      return res.status(400).json({ error: "La liste de réorganisation contient des identifiants inconnus." });
+    }
+
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.giteSeasonRate.update({
+          where: { id },
+          data: { ordre: index },
+        })
+      )
+    );
+
+    const updated = await prisma.giteSeasonRate.findMany({
+      where: { gite_id: req.params.id },
+      orderBy: [{ ordre: "asc" }, { date_debut: "asc" }],
+    });
+    res.json(updated.map(hydrateSeasonRate as any));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:id/season-rates/:rateId", async (req, res, next) => {
+  try {
+    await prisma.giteSeasonRate.delete({
+      where: { id: req.params.rateId },
+    });
+    res.status(204).end();
+  } catch (error) {
+    next(error);
   }
 });
 

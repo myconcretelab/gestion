@@ -16,6 +16,7 @@ type SyncReservationFromDocumentParams = {
   dateFin: Date;
   nbNuits: number;
   nbAdultes: number;
+  nbEnfants: number;
   prixParNuit: number;
   prixTotal: number;
   remiseMontant: number;
@@ -79,6 +80,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
     dateFin,
     nbNuits,
     nbAdultes,
+    nbEnfants,
     prixParNuit,
     prixTotal,
     remiseMontant,
@@ -147,6 +149,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
     date_sortie: dateFin,
     nb_nuits: nbNuits,
     nb_adultes: nbAdultes,
+    nb_enfants_2_17: nbEnfants,
     prix_par_nuit: round2(prixParNuit),
     prix_total: round2(prixTotal),
     remise_montant: round2(normalizedRemiseMontant),

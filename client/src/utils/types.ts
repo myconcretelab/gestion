@@ -108,7 +108,7 @@ export type Reservation = {
   gite_id?: string | null;
   stay_group_id?: string | null;
   placeholder_id?: string | null;
-  origin_system?: "app" | "what-today" | "ical" | "pump" | "har" | "csv" | "legacy" | null;
+  origin_system?: "app" | "what-today" | "ical" | "pump" | "har" | "csv" | "legacy" | "booked" | null;
   origin_reference?: string | null;
   export_to_ical?: boolean;
   airbnb_url?: string | null;
@@ -119,6 +119,7 @@ export type Reservation = {
   date_sortie: string;
   nb_nuits: number;
   nb_adultes: number;
+  nb_enfants_2_17: number;
   prix_par_nuit: number;
   prix_total: number;
   source_paiement?: string | null;
@@ -160,6 +161,70 @@ export type Reservation = {
     Partial<Pick<Gite, "heure_arrivee_defaut" | "heure_depart_defaut">>;
   placeholder?: Pick<ReservationPlaceholder, "id" | "abbreviation" | "label">;
   linked_contract?: ReservationLinkedContract | null;
+};
+
+export type SeasonRate = {
+  id: string;
+  gite_id: string;
+  date_debut: string;
+  date_fin: string;
+  prix_par_nuit: number;
+  min_nuits: number;
+  ordre: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type BookingQuote = {
+  date_entree: string;
+  date_sortie: string;
+  nb_nuits: number;
+  required_min_nights: number;
+  nightly_breakdown: Array<{
+    date: string;
+    prix_par_nuit: number;
+    min_nuits: number;
+    season_rate_id: string;
+  }>;
+  montant_hebergement: number;
+  total_options: number;
+  taxe_sejour: number;
+  total_global: number;
+  arrhes_theoriques: number;
+  options_detail: {
+    draps: number;
+    linge: number;
+    menage: number;
+    depart_tardif: number;
+    chiens: number;
+  };
+};
+
+export type BookingRequestStatus = "pending" | "approved" | "rejected" | "expired";
+
+export type BookingRequest = {
+  id: string;
+  gite_id: string;
+  approved_reservation_id?: string | null;
+  hote_nom: string;
+  telephone?: string | null;
+  email?: string | null;
+  date_entree: string;
+  date_sortie: string;
+  nb_nuits: number;
+  nb_adultes: number;
+  nb_enfants_2_17: number;
+  options: ContratOptions;
+  message_client?: string | null;
+  pricing_snapshot: BookingQuote;
+  status: BookingRequestStatus;
+  hold_expires_at: string;
+  decided_at?: string | null;
+  decision_note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  gite?: Pick<Gite, "id" | "nom" | "email">;
+  approved_reservation?: Pick<Reservation, "id" | "hote_nom" | "date_entree" | "date_sortie"> | null;
 };
 
 export type ContratOptions = {

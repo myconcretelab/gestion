@@ -10,6 +10,8 @@ import managersRouter from "./routes/managers.js";
 import contractsRouter from "./routes/contracts.js";
 import invoicesRouter from "./routes/invoices.js";
 import reservationsRouter from "./routes/reservations.js";
+import bookedRouter from "./routes/booked.js";
+import bookingRequestsRouter from "./routes/bookingRequests.js";
 import statisticsRouter from "./routes/statistics.js";
 import settingsRouter from "./routes/settings.js";
 import guestNightDeclarationsRouter from "./routes/guestNightDeclarations.js";
@@ -104,6 +106,8 @@ export const createApp = () => {
   app.use("/api/contracts", contractsRouter);
   app.use("/api/invoices", invoicesRouter);
   app.use("/api/reservations", reservationsRouter);
+  app.use("/api/booked", bookedRouter);
+  app.use("/api/booking-requests", bookingRequestsRouter);
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/settings", settingsRouter);
   app.use("/api/guest-night-declarations", guestNightDeclarationsRouter);
