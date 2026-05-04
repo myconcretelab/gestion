@@ -14,6 +14,11 @@ import {
   parseBookedDateInput,
   BookedValidationError,
 } from "../services/booked.js";
+import {
+  loadSeasonRateEditorData,
+  saveSeasonRateEditorPayload,
+  type SeasonRateEditorPayload,
+} from "../services/seasonRateEditor.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -123,6 +128,23 @@ const seasonRateSchema = z.object({
 });
 const seasonRateReorderSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1),
+});
+const seasonRateEditorQuerySchema = z.object({
+  from: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  zone: z.string().trim().min(1).max(8).optional().default("B"),
+});
+const seasonRateEditorSegmentSchema = z.object({
+  date_debut: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date_fin: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  min_nuits: z.coerce.number().int().min(1),
+  prices_by_gite: z.record(z.string().trim().min(1), z.coerce.number().min(0)),
+});
+const seasonRateEditorPayloadSchema = z.object({
+  from: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  zone: z.string().trim().min(1).max(8).optional().default("B"),
+  segments: z.array(seasonRateEditorSegmentSchema).min(1),
 });
 type GiteInput = z.infer<typeof giteSchema>;
 type GiteImportInput = z.infer<typeof giteImportItemSchema>;
@@ -344,6 +366,36 @@ router.get("/:id/season-rates", async (req, res, next) => {
     });
     res.json(rates.map(hydrateSeasonRate));
   } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/season-rates/editor", async (req, res, next) => {
+  try {
+    const query = seasonRateEditorQuerySchema.parse({
+      from: req.query.from,
+      to: req.query.to,
+      zone: req.query.zone,
+    });
+    res.json(await loadSeasonRateEditorData(query));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    next(error);
+  }
+});
+
+router.put("/season-rates/editor", async (req, res, next) => {
+  try {
+    const payload = seasonRateEditorPayloadSchema.parse(req.body ?? {}) as SeasonRateEditorPayload;
+    res.json(await saveSeasonRateEditorPayload(payload));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
     next(error);
   }
 });

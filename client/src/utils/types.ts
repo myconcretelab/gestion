@@ -1,3 +1,5 @@
+import type { SchoolHoliday } from "./schoolHolidays";
+
 export type Gestionnaire = {
   id: string;
   prenom: string;
@@ -173,6 +175,29 @@ export type SeasonRate = {
   ordre: number;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type SeasonRateEditorPayloadSegment = {
+  date_debut: string;
+  date_fin: string;
+  min_nuits: number;
+  prices_by_gite: Record<string, number>;
+};
+
+export type SeasonRateEditorPayload = {
+  from: string;
+  to: string;
+  zone?: string;
+  segments: SeasonRateEditorPayloadSegment[];
+};
+
+export type SeasonRateEditorResponse = {
+  from: string;
+  to: string;
+  zone: string;
+  holidays: SchoolHoliday[];
+  gites: Array<Pick<Gite, "id" | "nom" | "ordre" | "prefixe_contrat" | "prix_nuit_liste">>;
+  rates_by_gite: Record<string, SeasonRate[]>;
 };
 
 export type BookingQuote = {
