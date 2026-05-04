@@ -6,6 +6,7 @@ import {
   hydrateSeasonRate,
   parseBookedDateInput,
 } from "./booked.js";
+import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -15,7 +16,7 @@ type GiteLite = {
   nom: string;
   ordre: number;
   prefixe_contrat: string;
-  prix_nuit_liste: string | null;
+  prix_nuit_liste: unknown;
 };
 
 type SeasonRateRow = {
@@ -91,15 +92,11 @@ const parseRange = (from: string, to: string): ParsedRange => {
   return { fromDate, toDate, from: formatBookedDateInput(fromDate), to: formatBookedDateInput(toDate) };
 };
 
-const parseNightlySuggestionList = (raw: string | null) => {
-  try {
-    const parsed = JSON.parse(raw ?? "[]");
-    return Array.isArray(parsed)
-      ? parsed.map((value) => toNumber(value as any)).filter((value) => Number.isFinite(value) && value >= 0)
-      : [];
-  } catch {
-    return [];
-  }
+const parseNightlySuggestionList = (raw: unknown) => {
+  const parsed = fromJsonString<unknown>(raw, []);
+  return Array.isArray(parsed)
+    ? parsed.map((value) => toNumber(value as any)).filter((value) => Number.isFinite(value) && value >= 0)
+    : [];
 };
 
 const normalizeGite = (gite: GiteLite) => ({
