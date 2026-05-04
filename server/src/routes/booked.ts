@@ -83,6 +83,29 @@ const loadPublicGite = async (giteId: string) =>
     },
   });
 
+router.get("/gites", async (_req, res, next) => {
+  try {
+    const gites = await prisma.gite.findMany({
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+      select: {
+        id: true,
+        nom: true,
+        capacite_max: true,
+      },
+    });
+
+    res.json({
+      gites: gites.map((gite) => ({
+        id: gite.id,
+        nom: gite.nom,
+        capacite_max: gite.capacite_max,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/gites/:id/config", async (req, res, next) => {
   try {
     const gite = await loadPublicGite(req.params.id);
