@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { NumericLike } from "./money.js";
 
-export const RESERVATION_ORIGIN_SYSTEMS = ["app", "what-today", "ical", "pump", "har", "csv", "legacy"] as const;
+export const RESERVATION_ORIGIN_SYSTEMS = ["app", "what-today", "ical", "pump", "har", "csv", "legacy", "booked"] as const;
 
 export type ReservationOriginSystem = (typeof RESERVATION_ORIGIN_SYSTEMS)[number];
 
@@ -14,7 +14,7 @@ type ReservationOriginLike = {
   prix_par_nuit?: NumericLike | null;
 };
 
-const EXPORTABLE_ORIGINS = new Set<ReservationOriginSystem>(["app", "what-today"]);
+const EXPORTABLE_ORIGINS = new Set<ReservationOriginSystem>(["app", "what-today", "booked"]);
 const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 const LEGACY_IMPORTED_SOURCES = new Set(["", "airbnb", "a definir", "adefinir", "abritel", "gitesdefrance", "homeexchange"]);
 

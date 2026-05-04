@@ -61,6 +61,8 @@ model Gite {
   reservations                         Reservation[]
   guest_night_declarations             GuestNightDeclaration[]
   monthly_energy_readings              GiteMonthlyEnergyReading[]
+  season_rates                         GiteSeasonRate[]
+  booking_requests                     BookingRequest[]
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
 
@@ -287,6 +289,7 @@ model Reservation {
   date_sortie               DateTime
   nb_nuits                  Int
   nb_adultes                Int
+  nb_enfants_2_17           Int                      @default(0)
   prix_par_nuit             Decimal                  @db.Decimal(10,2)
   prix_total                Decimal                  @db.Decimal(10,2)
   source_paiement           String?
@@ -307,6 +310,7 @@ model Reservation {
 
   gite                      Gite?                    @relation(fields: [gite_id], references: [id])
   placeholder               ReservationPlaceholder?  @relation(fields: [placeholder_id], references: [id])
+  approved_booking_requests BookingRequest[]        @relation("ApprovedBookingRequest")
 
   @@index([gite_id, date_entree])
   @@index([gite_id, date_sortie], map: "reservations_gite_id_date_sortie_idx")
@@ -321,6 +325,55 @@ model Reservation {
   @@index([placeholder_id, date_sortie], map: "reservations_placeholder_id_date_sortie_idx")
   @@index([stay_group_id], map: "reservations_stay_group_id_idx")
   @@map("reservations")
+}
+
+model GiteSeasonRate {
+  id            String    @id @default(cuid())
+  gite_id       String
+  date_debut    DateTime
+  date_fin      DateTime
+  prix_par_nuit Decimal   @db.Decimal(10,2)
+  min_nuits     Int       @default(1)
+  ordre         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  gite          Gite      @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@index([gite_id, ordre], map: "gite_season_rates_gite_id_ordre_idx")
+  @@index([gite_id, date_debut, date_fin], map: "gite_season_rates_gite_dates_idx")
+  @@map("gite_season_rates")
+}
+
+model BookingRequest {
+  id                     String       @id @default(cuid())
+  gite_id                String
+  approved_reservation_id String?
+  hote_nom               String
+  telephone              String?
+  email                  String?
+  date_entree            DateTime
+  date_sortie            DateTime
+  nb_nuits               Int
+  nb_adultes             Int
+  nb_enfants_2_17        Int          @default(0)
+  options                Json         @default("{}")
+  message_client         String?
+  pricing_snapshot       Json
+  status                 String       @default("pending")
+  hold_expires_at        DateTime
+  decided_at             DateTime?
+  decision_note          String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  gite                   Gite         @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  approved_reservation   Reservation? @relation("ApprovedBookingRequest", fields: [approved_reservation_id], references: [id], onDelete: SetNull)
+
+  @@index([gite_id, status, hold_expires_at], map: "booking_requests_gite_status_hold_idx")
+  @@index([gite_id, date_entree, date_sortie], map: "booking_requests_gite_dates_idx")
+  @@index([approved_reservation_id], map: "booking_requests_approved_reservation_idx")
+  @@map("booking_requests")
 }
 
 model GiteMonthlyEnergyReading {

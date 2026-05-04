@@ -13,9 +13,11 @@ const FacturesListPage = lazy(() => import("./pages/FacturesListPage"));
 const FactureFormPage = lazy(() => import("./pages/FactureFormPage"));
 const FactureDetailPage = lazy(() => import("./pages/FactureDetailPage"));
 const ReservationsPage = lazy(() => import("./pages/ReservationsPage"));
+const BookingRequestsPage = lazy(() => import("./pages/BookingRequestsPage"));
 const MobileReservationEditorPage = lazy(() => import("./pages/MobileReservationEditorPage"));
 const CalendrierPage = lazy(() => import("./pages/CalendrierPage"));
 const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
+const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 
@@ -253,6 +255,9 @@ const App = () => {
   const isReservationsSection =
     location.pathname === "/reservations" ||
     location.pathname.startsWith("/reservations/");
+  const isBookingRequestsSection =
+    location.pathname === "/demandes" ||
+    location.pathname.startsWith("/demandes/");
   const isTodaySection =
     location.pathname === "/aujourdhui" ||
     location.pathname.startsWith("/aujourdhui/");
@@ -262,6 +267,9 @@ const App = () => {
   const isStatsSection =
     location.pathname === "/statistiques" ||
     location.pathname.startsWith("/statistiques/");
+  const isSeasonRatesSection =
+    location.pathname === "/tarifs" ||
+    location.pathname.startsWith("/tarifs/");
   const isSettingsSection =
     location.pathname === "/parametres" ||
     location.pathname.startsWith("/parametres/");
@@ -276,6 +284,12 @@ const App = () => {
       to: "/reservations",
       label: "Réservations",
       isActive: isReservationsSection,
+    },
+    {
+      to: "/demandes",
+      label: "Demandes",
+      isActive: isBookingRequestsSection,
+      desktopOverflow: true,
     },
     {
       to: "/calendrier",
@@ -303,6 +317,12 @@ const App = () => {
       to: "/statistiques",
       label: "Statistiques",
       isActive: isStatsSection,
+      desktopOverflow: true,
+    },
+    {
+      to: "/tarifs",
+      label: "Tarifs",
+      isActive: isSeasonRatesSection,
       desktopOverflow: true,
     },
     {
@@ -767,6 +787,7 @@ const App = () => {
             <Route path="/" element={<Navigate to="/aujourdhui" replace />} />
             <Route path="/aujourdhui" element={<TodayPage />} />
             <Route path="/gites" element={<GitesPage />} />
+            <Route path="/demandes" element={<BookingRequestsPage />} />
             <Route path="/contrats" element={<ContratsListPage />} />
             <Route path="/contrats/nouveau" element={<ContratFormPage />} />
             <Route path="/contrats/:id/edition" element={<ContratFormPage />} />
@@ -779,6 +800,7 @@ const App = () => {
             <Route path="/reservations" element={<ReservationsPage />} />
             <Route path="/calendrier" element={<CalendrierPage />} />
             <Route path="/statistiques" element={<StatisticsPage />} />
+            <Route path="/tarifs" element={<SeasonRatesPage />} />
             <Route path="/parametres/*" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
           </Routes>
         </Suspense>
