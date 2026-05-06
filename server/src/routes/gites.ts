@@ -2,9 +2,11 @@ import { Router } from "express";
 import { z } from "zod";
 import path from "path";
 import fs from "fs/promises";
+import crypto from "crypto";
 import prisma from "../db/prisma.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
+import { getGitePhotoPaths } from "../utils/paths.js";
 import { getGiteIcalExport } from "../services/icalExport.js";
 import { generateIcalExportToken } from "../utils/reservationOrigin.js";
 import {
@@ -23,12 +25,28 @@ import {
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 const timeStringSchema = z.string().regex(timePattern, "Format attendu HH:MM");
+const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
+const GITE_PHOTO_ALLOWED_MIME_TYPES = new Map([
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+  ["image/webp", ".webp"],
+  ["image/avif", ".avif"],
+]);
+const GITE_PHOTO_ALLOWED_EXTENSIONS = new Map(
+  [...GITE_PHOTO_ALLOWED_MIME_TYPES.entries()].flatMap(([mimeType, extension]) => {
+    const entries: Array<[string, string]> = [[extension, mimeType]];
+    if (extension === ".jpg") entries.push([".jpeg", mimeType]);
+    return entries;
+  })
+);
 const emptyStringToNull = (value: unknown) => {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return value;
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
 };
+const publicJsonFieldSchema = z.preprocess(emptyStringToNull, z.unknown().nullable()).optional();
 
 const giteSchemaShape = {
   nom: z.string().trim().min(1),
@@ -42,6 +60,23 @@ const giteSchemaShape = {
   proprietaires_noms: z.string().trim().min(1),
   proprietaires_adresse: z.string().trim().min(1),
   site_web: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
+  public_slug: z.preprocess(
+    emptyStringToNull,
+    z.string().trim().toLowerCase().regex(slugPattern, "Slug public invalide.").nullable()
+  ).optional(),
+  public_title: z.preprocess(emptyStringToNull, z.string().trim().max(140).nullable()).optional(),
+  public_summary: z.preprocess(emptyStringToNull, z.string().trim().max(500).nullable()).optional(),
+  public_description: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  public_seo_title: z.preprocess(emptyStringToNull, z.string().trim().max(70).nullable()).optional(),
+  public_seo_description: z.preprocess(emptyStringToNull, z.string().trim().max(180).nullable()).optional(),
+  public_is_published: z.boolean().default(false),
+  public_structured_content: publicJsonFieldSchema,
+  public_equipment: publicJsonFieldSchema,
+  public_rooms: publicJsonFieldSchema,
+  public_practical_info: publicJsonFieldSchema,
+  public_location_info: publicJsonFieldSchema,
+  public_latitude: z.preprocess(emptyStringToNull, z.coerce.number().min(-90).max(90).nullable()).optional(),
+  public_longitude: z.preprocess(emptyStringToNull, z.coerce.number().min(-180).max(180).nullable()).optional(),
   email: z.preprocess(emptyStringToNull, z.string().email().nullable()).optional(),
   caracteristiques: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
   airbnb_listing_id: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
@@ -78,8 +113,15 @@ const resolveChildrenMax = (value: {
   return Number.isFinite(normalized) ? Math.max(0, normalized) : fallback;
 };
 
-const validateOccupancyLimits = (
-  value: { nb_adultes_max: number; nb_adultes_habituel: number; capacite_max: number; nb_enfants_max?: number | null },
+const validateGiteInput = (
+  value: {
+    nb_adultes_max: number;
+    nb_adultes_habituel: number;
+    capacite_max: number;
+    nb_enfants_max?: number | null;
+    public_is_published?: boolean;
+    public_slug?: string | null;
+  },
   ctx: z.RefinementCtx
 ) => {
   if (value.nb_adultes_max > value.capacite_max) {
@@ -97,9 +139,17 @@ const validateOccupancyLimits = (
       message: "Le nombre d'adultes habituel ne peut pas dépasser le nombre d'adultes max.",
     });
   }
+
+  if (value.public_is_published && !value.public_slug) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["public_slug"],
+      message: "Un slug public est requis pour publier un gîte.",
+    });
+  }
 };
 
-const giteSchema = z.object(giteSchemaShape).superRefine(validateOccupancyLimits);
+const giteSchema = z.object(giteSchemaShape).superRefine(validateGiteInput);
 const giteReorderSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1),
 });
@@ -109,7 +159,7 @@ const giteImportItemSchema = z.object({
   id: z.string().trim().min(1).optional(),
   ordre: z.coerce.number().int().min(0).optional(),
 }).superRefine((value, ctx) =>
-  validateOccupancyLimits(
+  validateGiteInput(
     {
       ...value,
       nb_adultes_max: value.nb_adultes_max ?? value.capacite_max,
@@ -146,6 +196,27 @@ const seasonRateEditorPayloadSchema = z.object({
   zone: z.string().trim().min(1).max(8).optional().default("B"),
   segments: z.array(seasonRateEditorSegmentSchema).min(1),
 });
+const gitePhotoSchema = z.object({
+  url: z.string().trim().min(1),
+  title: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  alt: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  credit: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  is_primary: z.boolean().default(false),
+  is_public: z.boolean().default(true),
+});
+const gitePhotoUploadSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().optional(),
+  data: z.string().trim().min(1),
+  title: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  alt: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  credit: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
+  is_primary: z.boolean().default(false),
+  is_public: z.boolean().default(true),
+});
+const gitePhotoReorderSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).min(1),
+});
 type GiteInput = z.infer<typeof giteSchema>;
 type GiteImportInput = z.infer<typeof giteImportItemSchema>;
 
@@ -155,6 +226,11 @@ const toGitePersistenceData = (payload: GiteInput) => ({
   prefixe_contrat: payload.prefixe_contrat.trim().toUpperCase(),
   telephones: encodeJsonField(payload.telephones),
   prix_nuit_liste: encodeJsonField(payload.prix_nuit_liste),
+  public_structured_content: encodeJsonField(payload.public_structured_content ?? null),
+  public_equipment: encodeJsonField(payload.public_equipment ?? null),
+  public_rooms: encodeJsonField(payload.public_rooms ?? null),
+  public_practical_info: encodeJsonField(payload.public_practical_info ?? null),
+  public_location_info: encodeJsonField(payload.public_location_info ?? null),
 });
 
 const toGiteInput = (payload: GiteImportInput): GiteInput => {
@@ -190,6 +266,13 @@ const hydrateGite = (gite: any) => {
   const { _count, ...rest } = gite ?? {};
   const telephonesRaw = fromJsonString<unknown>(gite.telephones, []);
   const prixNuitListeRaw = fromJsonString<unknown>(gite.prix_nuit_liste, []);
+  const photos = Array.isArray(gite.photos)
+    ? gite.photos.map((photo: any) => ({
+        ...photo,
+        is_primary: Boolean(photo.is_primary),
+        is_public: Boolean(photo.is_public),
+      }))
+    : [];
   const telephones = Array.isArray(telephonesRaw)
     ? telephonesRaw.map((value) => String(value).trim()).filter(Boolean)
     : [];
@@ -213,6 +296,14 @@ const hydrateGite = (gite: any) => {
     arrhes_taux_defaut: toNumber(rest.arrhes_taux_defaut),
     electricity_price_per_kwh: toNumber(rest.electricity_price_per_kwh),
     prix_nuit_liste,
+    public_structured_content: fromJsonString<unknown>(rest.public_structured_content, null),
+    public_equipment: fromJsonString<unknown>(rest.public_equipment, null),
+    public_rooms: fromJsonString<unknown>(rest.public_rooms, null),
+    public_practical_info: fromJsonString<unknown>(rest.public_practical_info, null),
+    public_location_info: fromJsonString<unknown>(rest.public_location_info, null),
+    public_latitude: rest.public_latitude === null || rest.public_latitude === undefined ? null : toNumber(rest.public_latitude),
+    public_longitude: rest.public_longitude === null || rest.public_longitude === undefined ? null : toNumber(rest.public_longitude),
+    photos,
     contrats_count: typeof _count?.contrats === "number" ? _count.contrats : gite.contrats_count,
     factures_count: typeof _count?.factures === "number" ? _count.factures : gite.factures_count,
     reservations_count:
@@ -234,12 +325,58 @@ const mapBookedError = (error: unknown) => {
   return null;
 };
 
+const resolveGitePhotoMimeType = (filename: string, mimeType?: string | null) => {
+  const normalizedMimeType = String(mimeType ?? "").trim().toLowerCase();
+  if (GITE_PHOTO_ALLOWED_MIME_TYPES.has(normalizedMimeType)) return normalizedMimeType;
+  const extension = path.extname(filename).toLowerCase();
+  return GITE_PHOTO_ALLOWED_EXTENSIONS.get(extension) ?? null;
+};
+
+const resolveGitePhotoExtension = (filename: string, mimeType: string) => {
+  const extension = path.extname(filename).toLowerCase();
+  if (GITE_PHOTO_ALLOWED_EXTENSIONS.has(extension)) return extension === ".jpeg" ? ".jpg" : extension;
+  return GITE_PHOTO_ALLOWED_MIME_TYPES.get(mimeType) ?? ".bin";
+};
+
+const decodeBase64Payload = (value: string) => {
+  const normalized = value.includes(",") ? value.slice(value.lastIndexOf(",") + 1) : value;
+  const compact = normalized.replace(/\s+/g, "");
+  if (!compact || !/^[A-Za-z0-9+/=]+$/.test(compact)) {
+    throw new Error("Contenu de fichier invalide.");
+  }
+  const buffer = Buffer.from(compact, "base64");
+  if (!buffer.length) throw new Error("Fichier vide.");
+  return buffer;
+};
+
+const resolvePhotoContentType = (url: string) => {
+  const extension = path.extname(url).toLowerCase();
+  return GITE_PHOTO_ALLOWED_EXTENSIONS.get(extension) ?? "application/octet-stream";
+};
+
+const sendPhotoFile = async (photo: { url: string }, res: any) => {
+  if (!photo.url.startsWith("/api/")) {
+    return res.redirect(photo.url);
+  }
+  const marker = "/file/";
+  const markerIndex = photo.url.indexOf(marker);
+  if (markerIndex < 0) {
+    return res.status(404).json({ error: "Fichier photo introuvable" });
+  }
+  const relativePath = decodeURIComponent(photo.url.slice(markerIndex + marker.length));
+  const absolutePath = path.join(process.cwd(), relativePath);
+  res.setHeader("Content-Type", resolvePhotoContentType(relativePath));
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  return res.sendFile(absolutePath);
+};
+
 router.get("/", async (_req, res, next) => {
   try {
     const gites = await prisma.gite.findMany({
       orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       include: {
         gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
         _count: { select: { contrats: true, factures: true, reservations: true } },
       },
     });
@@ -279,6 +416,7 @@ router.post("/reorder", async (req, res, next) => {
       orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       include: {
         gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
         _count: { select: { contrats: true, factures: true, reservations: true } },
       },
     });
@@ -303,6 +441,7 @@ router.post("/", async (req, res, next) => {
       },
       include: {
         gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
       },
     });
     res.status(201).json(hydrateGite(gite));
@@ -322,6 +461,7 @@ router.put("/:id", async (req, res, next) => {
       data: toGitePersistenceData(parsed),
       include: {
         gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
       },
     });
     res.json(hydrateGite(gite));
@@ -334,7 +474,10 @@ router.get("/export", async (_req, res, next) => {
   try {
     const gites = await prisma.gite.findMany({
       orderBy: [{ ordre: "asc" }, { nom: "asc" }],
-      include: { _count: { select: { contrats: true, factures: true, reservations: true } } },
+      include: {
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
+        _count: { select: { contrats: true, factures: true, reservations: true } },
+      },
     });
 
     const exportRows = gites.map((gite) => {
@@ -641,6 +784,7 @@ router.post("/import", async (req, res, next) => {
       orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       include: {
         gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
         _count: { select: { contrats: true, factures: true, reservations: true } },
       },
     });
@@ -655,11 +799,205 @@ router.post("/import", async (req, res, next) => {
   }
 });
 
+router.post("/:id/photos", async (req, res, next) => {
+  try {
+    const payload = gitePhotoSchema.parse(req.body ?? {});
+    const gite = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!gite) return res.status(404).json({ error: "Gite introuvable" });
+
+    const aggregate = await prisma.gitePhoto.aggregate({
+      where: { gite_id: req.params.id },
+      _max: { ordre: true },
+    });
+    const ordre = (aggregate._max.ordre ?? -1) + 1;
+    const created = await prisma.$transaction(async (tx) => {
+      if (payload.is_primary) {
+        await tx.gitePhoto.updateMany({
+          where: { gite_id: req.params.id },
+          data: { is_primary: false },
+        });
+      }
+      return tx.gitePhoto.create({
+        data: {
+          ...payload,
+          gite_id: req.params.id,
+          ordre,
+        },
+      });
+    });
+
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/photos/upload", async (req, res, next) => {
+  try {
+    const payload = gitePhotoUploadSchema.parse(req.body ?? {});
+    const gite = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!gite) return res.status(404).json({ error: "Gite introuvable" });
+
+    const mimeType = resolveGitePhotoMimeType(payload.filename, payload.mimeType ?? null);
+    if (!mimeType) {
+      return res.status(400).json({ error: "Format non pris en charge. Utilisez JPG, PNG, WEBP ou AVIF." });
+    }
+
+    const buffer = decodeBase64Payload(payload.data);
+    if (buffer.length > GITE_PHOTO_MAX_BYTES) {
+      return res.status(400).json({
+        error: `La photo dépasse la taille maximale autorisée (${Math.round(GITE_PHOTO_MAX_BYTES / (1024 * 1024))} Mo).`,
+      });
+    }
+
+    const id = `photo_${crypto.randomUUID().replace(/-/g, "")}`;
+    const extension = resolveGitePhotoExtension(payload.filename, mimeType);
+    const { absolutePath, relativePath } = getGitePhotoPaths(req.params.id, id, extension);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, buffer);
+
+    const aggregate = await prisma.gitePhoto.aggregate({
+      where: { gite_id: req.params.id },
+      _max: { ordre: true },
+    });
+    const ordre = (aggregate._max.ordre ?? -1) + 1;
+    const localUrl = `/api/gites/${req.params.id}/photos/${id}/file/${encodeURIComponent(relativePath)}`;
+
+    const created = await prisma.$transaction(async (tx) => {
+      if (payload.is_primary) {
+        await tx.gitePhoto.updateMany({
+          where: { gite_id: req.params.id },
+          data: { is_primary: false },
+        });
+      }
+      return tx.gitePhoto.create({
+        data: {
+          id,
+          gite_id: req.params.id,
+          url: localUrl,
+          title: payload.title,
+          alt: payload.alt,
+          credit: payload.credit,
+          is_primary: payload.is_primary,
+          is_public: payload.is_public,
+          ordre,
+        },
+      });
+    });
+
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/:id/photos/:photoId", async (req, res, next) => {
+  try {
+    const payload = gitePhotoSchema.parse(req.body ?? {});
+    const existing = await prisma.gitePhoto.findFirst({
+      where: { id: req.params.photoId, gite_id: req.params.id },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Photo introuvable" });
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (payload.is_primary) {
+        await tx.gitePhoto.updateMany({
+          where: { gite_id: req.params.id, id: { not: req.params.photoId } },
+          data: { is_primary: false },
+        });
+      }
+      return tx.gitePhoto.update({
+        where: { id: req.params.photoId },
+        data: payload,
+      });
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/photos/reorder", async (req, res, next) => {
+  try {
+    const { ids } = gitePhotoReorderSchema.parse(req.body ?? {});
+    const existing = await prisma.gitePhoto.findMany({
+      where: { gite_id: req.params.id },
+      select: { id: true },
+      orderBy: [{ ordre: "asc" }, { createdAt: "asc" }],
+    });
+    if (existing.length !== ids.length) {
+      return res.status(400).json({ error: "La liste de réorganisation est incomplète." });
+    }
+
+    const existingIds = new Set(existing.map((item) => item.id));
+    if (ids.some((id) => !existingIds.has(id))) {
+      return res.status(400).json({ error: "La liste de réorganisation contient des identifiants inconnus." });
+    }
+
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.gitePhoto.update({
+          where: { id },
+          data: { ordre: index },
+        })
+      )
+    );
+
+    const updated = await prisma.gitePhoto.findMany({
+      where: { gite_id: req.params.id },
+      orderBy: [{ ordre: "asc" }, { createdAt: "asc" }],
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/:id/photos/:photoId", async (req, res, next) => {
+  try {
+    const existing = await prisma.gitePhoto.findFirst({
+      where: { id: req.params.photoId, gite_id: req.params.id },
+      select: { id: true, url: true },
+    });
+    if (!existing) return res.status(404).json({ error: "Photo introuvable" });
+    await prisma.gitePhoto.delete({ where: { id: req.params.photoId } });
+    if (existing.url.startsWith("/api/")) {
+      const marker = "/file/";
+      const markerIndex = existing.url.indexOf(marker);
+      if (markerIndex >= 0) {
+        const relativePath = decodeURIComponent(existing.url.slice(markerIndex + marker.length));
+        await fs.unlink(path.join(process.cwd(), relativePath)).catch(() => undefined);
+      }
+    }
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/photos/:photoId/file/:encodedPath", async (req, res, next) => {
+  try {
+    const photo = await prisma.gitePhoto.findFirst({
+      where: { id: req.params.photoId, gite_id: req.params.id },
+      select: { url: true },
+    });
+    if (!photo) return res.status(404).json({ error: "Photo introuvable" });
+    return sendPhotoFile(photo, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const gite = await prisma.gite.findUnique({
       where: { id: req.params.id },
-      include: { gestionnaire: { select: { id: true, prenom: true, nom: true } } },
+      include: {
+        gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
+      },
     });
     if (!gite) return res.status(404).json({ error: "Gite introuvable" });
     res.json(hydrateGite(gite));
@@ -701,6 +1039,20 @@ router.post("/:id/duplicate", async (req, res, next) => {
         proprietaires_noms: existing.proprietaires_noms,
         proprietaires_adresse: existing.proprietaires_adresse,
         site_web: existing.site_web,
+        public_slug: null,
+        public_title: existing.public_title,
+        public_summary: existing.public_summary,
+        public_description: existing.public_description,
+        public_seo_title: existing.public_seo_title,
+        public_seo_description: existing.public_seo_description,
+        public_is_published: false,
+        public_structured_content: existing.public_structured_content,
+        public_equipment: existing.public_equipment,
+        public_rooms: existing.public_rooms,
+        public_practical_info: existing.public_practical_info,
+        public_location_info: existing.public_location_info,
+        public_latitude: existing.public_latitude,
+        public_longitude: existing.public_longitude,
         email: existing.email,
         caracteristiques: existing.caracteristiques,
         airbnb_listing_id: existing.airbnb_listing_id,
@@ -726,7 +1078,10 @@ router.post("/:id/duplicate", async (req, res, next) => {
         prix_nuit_liste: encodeJsonField(fromJsonString<number[]>(existing.prix_nuit_liste, [])),
         gestionnaire_id: existing.gestionnaire_id,
       },
-      include: { gestionnaire: { select: { id: true, prenom: true, nom: true } } },
+      include: {
+        gestionnaire: { select: { id: true, prenom: true, nom: true } },
+        photos: { orderBy: [{ ordre: "asc" }, { createdAt: "asc" }] },
+      },
     });
 
     res.status(201).json(hydrateGite(duplicated));

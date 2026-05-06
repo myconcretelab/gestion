@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent } from "react";
 import { apiFetch, isApiError } from "../utils/api";
-import type { Gestionnaire, Gite, ReservationPlaceholder } from "../utils/types";
+import type { Gestionnaire, Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
 
 const emptyForm = {
@@ -15,6 +15,20 @@ const emptyForm = {
   proprietaires_noms: "",
   proprietaires_adresse: "",
   site_web: "",
+  public_slug: "",
+  public_title: "",
+  public_summary: "",
+  public_description: "",
+  public_seo_title: "",
+  public_seo_description: "",
+  public_is_published: false,
+  public_structured_content: "",
+  public_equipment: "",
+  public_rooms: "",
+  public_practical_info: "",
+  public_location_info: "",
+  public_latitude: "",
+  public_longitude: "",
   email: "",
   caracteristiques: "",
   airbnb_listing_id: "",
@@ -51,7 +65,44 @@ type GitesImportResult = {
   created_count: number;
   updated_count: number;
 };
+type PhotoDraft = {
+  title: string;
+  alt: string;
+  credit: string;
+};
 const PLACEHOLDER_FADE_OUT_MS = 320;
+const GITE_PHOTO_ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
+const GITE_EDITOR_SECTIONS = [
+  { id: "base-fiche", label: "Fiche gîte" },
+  { id: "web-presentation", label: "Présentation" },
+  { id: "web-donnees", label: "Données & SEO" },
+  { id: "web-photos", label: "Photos" },
+  { id: "gestion-finance", label: "Fiscalité & banque" },
+  { id: "gestion-contact", label: "Propriétaires & contact" },
+  { id: "sejour-services", label: "Services & horaires" },
+  { id: "sejour-tarifs", label: "Tarifs & garanties" },
+  { id: "sejour-regles", label: "Règles & descriptif" },
+] as const;
+const GITE_EDITOR_SECTION_GROUPS = [
+  {
+    title: "Base",
+    items: ["base-fiche"],
+  },
+  {
+    title: "Web",
+    items: ["web-presentation", "web-donnees", "web-photos"],
+  },
+  {
+    title: "Gestion",
+    items: ["gestion-finance", "gestion-contact"],
+  },
+  {
+    title: "Séjour",
+    items: ["sejour-services", "sejour-tarifs", "sejour-regles"],
+  },
+] as const;
+const GITE_EDITOR_SECTION_BY_ID = new Map(GITE_EDITOR_SECTIONS.map((section) => [section.id, section]));
 
 const formatManagerLabel = (gite: Gite) =>
   gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "Gestion directe";
@@ -59,12 +110,727 @@ const formatManagerLabel = (gite: Gite) =>
 const formatAddressLabel = (gite: Gite) =>
   [gite.adresse_ligne1, gite.adresse_ligne2].map((part) => part?.trim()).filter(Boolean).join(", ");
 
-const getGiteHighlights = (gite: Gite) =>
-  (gite.caracteristiques ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 2);
+const formatJsonField = (value: unknown) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+};
+
+const parseJsonTextarea = (label: string, value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    throw new Error(`${label}: le JSON n'est pas valide.`);
+  }
+};
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Lecture du fichier impossible."));
+    reader.readAsDataURL(file);
+  });
+
+const parseStoredJson = (value: string): unknown => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return trimmed;
+  }
+};
+
+const toDisplayText = (value: unknown) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+};
+
+const serializeStructuredValue = (value: unknown) => JSON.stringify(value, null, 2);
+
+type EquipmentData = Record<string, string[]>;
+type RoomData = Array<{ nom: string; couchages: string[]; notes?: string }>;
+type InfoData = Array<{ titre: string; contenu: string }>;
+type LocationData = { points: Array<{ lieu: string; distance: string }>; notes: string[] };
+type StructuredContentGroup = { id: string; titre: string; items: string[]; note?: string };
+type StructuredContentSection = { id: string; titre: string; groupes: StructuredContentGroup[] };
+type StructuredContentData = StructuredContentSection[];
+
+const createStructuredId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const buildStructuredContentDefaults = (): StructuredContentData => [
+  { id: "equipements", titre: "Équipements", groupes: [{ id: "equipements-general", titre: "Général", items: [] }] },
+  { id: "pieces-couchages", titre: "Pièces et couchages", groupes: [{ id: "pieces-chambre-1", titre: "Chambre 1", items: [], note: "" }] },
+  { id: "infos-pratiques", titre: "Infos pratiques", groupes: [{ id: "infos-general", titre: "Général", items: [] }] },
+  { id: "localisation", titre: "Localisation", groupes: [{ id: "localisation-general", titre: "Général", items: [] }] },
+];
+
+const normalizeEquipmentData = (value: string): EquipmentData => {
+  const parsed = parseStoredJson(value);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).map(([category, items]) => [
+        category,
+        Array.isArray(items)
+          ? items.map(toDisplayText)
+          : toDisplayText(items)
+              .split(/[,;\n]+/)
+              .map((item) => item.trim())
+              .filter(Boolean),
+      ])
+    );
+  }
+  if (Array.isArray(parsed)) return { Équipements: parsed.map(toDisplayText) };
+  const text = toDisplayText(parsed);
+  return text ? { Équipements: [text] } : {};
+};
+
+const normalizeRoomsData = (value: string): RoomData => {
+  const parsed = parseStoredJson(value);
+  if (Array.isArray(parsed)) {
+    return parsed.map((item) => {
+      if (item && typeof item === "object") {
+        const row = item as Record<string, unknown>;
+        const couchagesRaw = row.couchages ?? row.lits ?? row.beds ?? [];
+        return {
+          nom: toDisplayText(row.nom ?? row.name ?? row.titre ?? row.title),
+          couchages: Array.isArray(couchagesRaw)
+            ? couchagesRaw.map(toDisplayText)
+            : toDisplayText(couchagesRaw)
+                .split(/[,;\n]+/)
+                .map((entry) => entry.trim())
+                .filter(Boolean),
+          notes: toDisplayText(row.notes ?? row.description),
+        };
+      }
+      return { nom: toDisplayText(item), couchages: [], notes: "" };
+    });
+  }
+  if (parsed && typeof parsed === "object") {
+    return Object.entries(parsed as Record<string, unknown>).map(([nom, couchages]) => ({
+      nom,
+      couchages: Array.isArray(couchages)
+        ? couchages.map(toDisplayText)
+        : toDisplayText(couchages)
+            .split(/[,;\n]+/)
+            .map((entry) => entry.trim())
+            .filter(Boolean),
+      notes: "",
+    }));
+  }
+  const text = toDisplayText(parsed);
+  return text ? [{ nom: text, couchages: [], notes: "" }] : [];
+};
+
+const normalizeInfoData = (value: string): InfoData => {
+  const parsed = parseStoredJson(value);
+  if (Array.isArray(parsed)) {
+    return parsed.map((item) => {
+      if (item && typeof item === "object") {
+        const row = item as Record<string, unknown>;
+        return {
+          titre: toDisplayText(row.titre ?? row.title ?? row.label ?? row.nom),
+          contenu: toDisplayText(row.contenu ?? row.content ?? row.value ?? row.description),
+        };
+      }
+      return { titre: "Info", contenu: toDisplayText(item) };
+    });
+  }
+  if (parsed && typeof parsed === "object") {
+    return Object.entries(parsed as Record<string, unknown>).map(([titre, contenu]) => ({
+      titre,
+      contenu: Array.isArray(contenu) ? contenu.map(toDisplayText).filter(Boolean).join(", ") : toDisplayText(contenu),
+    }));
+  }
+  const text = toDisplayText(parsed);
+  return text ? [{ titre: "Info", contenu: text }] : [];
+};
+
+const normalizeLocationData = (value: string): LocationData => {
+  const parsed = parseStoredJson(value);
+  const empty: LocationData = { points: [], notes: [] };
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const row = parsed as Record<string, unknown>;
+    const rawPoints = row.points ?? row.distances ?? row.nearby ?? [];
+    const points = Array.isArray(rawPoints)
+      ? rawPoints.map((item) => {
+          if (item && typeof item === "object") {
+            const point = item as Record<string, unknown>;
+            return {
+              lieu: toDisplayText(point.lieu ?? point.nom ?? point.label ?? point.place),
+              distance: toDisplayText(point.distance ?? point.value ?? point.temps),
+            };
+          }
+          return { lieu: toDisplayText(item), distance: "" };
+        })
+      : [];
+    const notesRaw = row.notes ?? row.description ?? row.info;
+    const notes = Array.isArray(notesRaw) ? notesRaw.map(toDisplayText).filter(Boolean) : toDisplayText(notesRaw) ? [toDisplayText(notesRaw)] : [];
+    return { points, notes };
+  }
+  if (Array.isArray(parsed)) return { points: parsed.map((item) => ({ lieu: toDisplayText(item), distance: "" })), notes: [] };
+  const text = toDisplayText(parsed);
+  return text ? { ...empty, notes: [text] } : empty;
+};
+
+const normalizeStructuredContentData = (value: string): StructuredContentData => {
+  const parsed = parseStoredJson(value);
+  if (!Array.isArray(parsed)) return buildStructuredContentDefaults();
+
+  const sections = parsed
+    .map((section, sectionIndex): StructuredContentSection | null => {
+      if (!section || typeof section !== "object") return null;
+      const row = section as Record<string, unknown>;
+      const rawGroups = row.groupes ?? row.groups ?? row.items ?? [];
+      const groupes = Array.isArray(rawGroups)
+        ? rawGroups
+            .map((group, groupIndex): StructuredContentGroup | null => {
+              if (group && typeof group === "object") {
+                const groupRow = group as Record<string, unknown>;
+                const rawItems = groupRow.items ?? groupRow.lignes ?? groupRow.values ?? [];
+                return {
+                  id: toDisplayText(groupRow.id) || `section-${sectionIndex}-group-${groupIndex}`,
+                  titre: toDisplayText(groupRow.titre ?? groupRow.title ?? groupRow.nom) || `Groupe ${groupIndex + 1}`,
+                  items: Array.isArray(rawItems) ? rawItems.map(toDisplayText) : toDisplayText(rawItems) ? [toDisplayText(rawItems)] : [],
+                  note: toDisplayText(groupRow.note ?? groupRow.notes),
+                };
+              }
+              return {
+                id: `section-${sectionIndex}-group-${groupIndex}`,
+                titre: `Groupe ${groupIndex + 1}`,
+                items: [toDisplayText(group)],
+                note: "",
+              };
+            })
+            .filter((group): group is StructuredContentGroup => Boolean(group))
+        : [];
+
+      return {
+        id: toDisplayText(row.id) || `section-${sectionIndex}`,
+        titre: toDisplayText(row.titre ?? row.title ?? row.nom) || `Section ${sectionIndex + 1}`,
+        groupes,
+      };
+    })
+    .filter((section): section is StructuredContentSection => Boolean(section));
+
+  return sections.length > 0 ? sections : buildStructuredContentDefaults();
+};
+
+const hasStructuredContent = (value: unknown) => {
+  const parsed = typeof value === "string" ? parseStoredJson(value) : value;
+  return Array.isArray(parsed) && parsed.length > 0;
+};
+
+const buildStructuredContentFromLegacy = (gite: Gite): StructuredContentData => {
+  if (hasStructuredContent(gite.public_structured_content)) {
+    return normalizeStructuredContentData(formatJsonField(gite.public_structured_content));
+  }
+
+  const equipment = normalizeEquipmentData(formatJsonField(gite.public_equipment));
+  const rooms = normalizeRoomsData(formatJsonField(gite.public_rooms));
+  const practicalInfo = normalizeInfoData(formatJsonField(gite.public_practical_info));
+  const location = normalizeLocationData(formatJsonField(gite.public_location_info));
+  const sections = buildStructuredContentDefaults();
+
+  sections[0] = {
+    ...sections[0],
+    groupes: Object.entries(equipment).map(([titre, items], index) => ({
+      id: `equipements-${index}`,
+      titre,
+      items,
+    })),
+  };
+  sections[1] = {
+    ...sections[1],
+    groupes: rooms.map((room, index) => ({
+      id: `piece-${index}`,
+      titre: room.nom || `Pièce ${index + 1}`,
+      items: room.couchages,
+      note: room.notes ?? "",
+    })),
+  };
+  sections[2] = {
+    ...sections[2],
+    groupes: practicalInfo.map((info, index) => ({
+      id: `info-${index}`,
+      titre: info.titre || `Info ${index + 1}`,
+      items: info.contenu ? [info.contenu] : [],
+    })),
+  };
+  sections[3] = {
+    ...sections[3],
+    groupes: [
+      ...(location.points.length > 0
+        ? [
+            {
+              id: "localisation-points",
+              titre: "Lieux proches",
+              items: location.points.map((point) => [point.lieu, point.distance].filter(Boolean).join(" - ")),
+            },
+          ]
+        : []),
+      ...(location.notes.length > 0
+        ? [{ id: "localisation-notes", titre: "Notes", items: location.notes }]
+        : []),
+    ],
+  };
+
+  return sections.map((section) => (section.groupes.length > 0 ? section : { ...section, groupes: [] }));
+};
+
+type StructuredEditorProps = {
+  value: string;
+  onChange: (value: string) => void;
+};
+
+const StructuredContentEditor = ({ value, onChange }: StructuredEditorProps) => {
+  const sections = normalizeStructuredContentData(value);
+  const commit = (next: StructuredContentData) => onChange(serializeStructuredValue(next));
+  const updateSection = (sectionIndex: number, updater: (section: StructuredContentSection) => StructuredContentSection) => {
+    const next = [...sections];
+    next[sectionIndex] = updater(next[sectionIndex]);
+    commit(next);
+  };
+  const updateGroup = (
+    sectionIndex: number,
+    groupIndex: number,
+    updater: (group: StructuredContentGroup) => StructuredContentGroup
+  ) => {
+    updateSection(sectionIndex, (section) => {
+      const groupes = [...section.groupes];
+      groupes[groupIndex] = updater(groupes[groupIndex]);
+      return { ...section, groupes };
+    });
+  };
+
+  return (
+    <div className="structured-editor structured-editor--content">
+      <div className="structured-editor__toolbar">
+        <button
+          type="button"
+          className="table-action table-action--primary"
+          onClick={() =>
+            commit([
+              ...sections,
+              {
+                id: createStructuredId("section"),
+                titre: "Nouvelle section",
+                groupes: [{ id: createStructuredId("groupe"), titre: "Général", items: [] }],
+              },
+            ])
+          }
+        >
+          Ajouter une section
+        </button>
+      </div>
+      <div className="structured-grid structured-grid--sections">
+        {sections.map((section, sectionIndex) => (
+          <article key={section.id} className="structured-card structured-card--section">
+            <div className="structured-card__header">
+              <input
+                className="structured-card__title-input"
+                value={section.titre}
+                onChange={(event) => updateSection(sectionIndex, (current) => ({ ...current, titre: event.target.value }))}
+              />
+              <button
+                type="button"
+                className="table-action table-action--neutral"
+                onClick={() => commit(sections.filter((_, index) => index !== sectionIndex))}
+              >
+                Retirer
+              </button>
+            </div>
+            <div className="structured-card__actions">
+              <button
+                type="button"
+                className="table-action table-action--neutral"
+                onClick={() => {
+                  const next = [...sections];
+                  const [moved] = next.splice(sectionIndex, 1);
+                  next.splice(Math.max(0, sectionIndex - 1), 0, moved);
+                  commit(next);
+                }}
+                disabled={sectionIndex === 0}
+              >
+                Monter
+              </button>
+              <button
+                type="button"
+                className="table-action table-action--neutral"
+                onClick={() => {
+                  const next = [...sections];
+                  const [moved] = next.splice(sectionIndex, 1);
+                  next.splice(Math.min(next.length, sectionIndex + 1), 0, moved);
+                  commit(next);
+                }}
+                disabled={sectionIndex === sections.length - 1}
+              >
+                Descendre
+              </button>
+              <button
+                type="button"
+                className="table-action table-action--neutral"
+                onClick={() =>
+                  updateSection(sectionIndex, (current) => ({
+                    ...current,
+                    groupes: [...current.groupes, { id: createStructuredId("groupe"), titre: "Nouveau groupe", items: [] }],
+                  }))
+                }
+              >
+                Ajouter un groupe
+              </button>
+            </div>
+            {section.groupes.length === 0 ? <div className="structured-empty">Aucun groupe dans cette section.</div> : null}
+            <div className="structured-group-list">
+              {section.groupes.map((group, groupIndex) => (
+                <div key={group.id} className="structured-group">
+                  <div className="structured-card__header">
+                    <input
+                      className="structured-card__title-input"
+                      value={group.titre}
+                      onChange={(event) => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, titre: event.target.value }))}
+                    />
+                    <button
+                      type="button"
+                      className="table-action table-action--neutral"
+                      onClick={() =>
+                        updateSection(sectionIndex, (current) => ({
+                          ...current,
+                          groupes: current.groupes.filter((_, index) => index !== groupIndex),
+                        }))
+                      }
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                  <div className="structured-chips">
+                    {group.items.map((item, itemIndex) => (
+                      <span key={`${group.id}-${itemIndex}`} className="structured-chip">
+                        <input
+                          value={item}
+                          size={Math.min(Math.max(item.length || 14, 14), 34)}
+                          onChange={(event) =>
+                            updateGroup(sectionIndex, groupIndex, (current) => {
+                              const items = [...current.items];
+                              items[itemIndex] = event.target.value;
+                              return { ...current, items };
+                            })
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateGroup(sectionIndex, groupIndex, (current) => ({
+                              ...current,
+                              items: current.items.filter((_, index) => index !== itemIndex),
+                            }))
+                          }
+                          aria-label={`Supprimer ${item || "cette ligne"}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="table-action table-action--neutral"
+                    onClick={() => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, items: [...current.items, ""] }))}
+                  >
+                    Ajouter une ligne
+                  </button>
+                  <label className="field">
+                    Note
+                    <input
+                      value={group.note ?? ""}
+                      onChange={(event) => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, note: event.target.value }))}
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const EquipmentStructuredEditor = ({ value, onChange }: StructuredEditorProps) => {
+  const data = normalizeEquipmentData(value);
+  const entries = Object.entries(data);
+  const commit = (next: EquipmentData) => onChange(serializeStructuredValue(next));
+  const addCategory = () => {
+    const base = "Nouvelle catégorie";
+    let name = base;
+    let index = 2;
+    while (Object.prototype.hasOwnProperty.call(data, name)) {
+      name = `${base} ${index}`;
+      index += 1;
+    }
+    commit({ ...data, [name]: [] });
+  };
+
+  return (
+    <div className="structured-editor">
+      <div className="structured-editor__toolbar">
+        <button type="button" className="table-action table-action--primary" onClick={addCategory}>
+          Ajouter une catégorie
+        </button>
+      </div>
+      {entries.length === 0 ? <div className="structured-empty">Aucune catégorie d'équipement.</div> : null}
+      <div className="structured-grid">
+        {entries.map(([category, items], categoryIndex) => (
+          <article key={categoryIndex} className="structured-card">
+            <div className="structured-card__header">
+              <input
+                className="structured-card__title-input"
+                value={category}
+                onChange={(event) => {
+                  const next = { ...data };
+                  delete next[category];
+                  next[event.target.value || "Sans titre"] = items;
+                  commit(next);
+                }}
+              />
+              <button
+                type="button"
+                className="table-action table-action--neutral"
+                onClick={() => {
+                  const next = { ...data };
+                  delete next[category];
+                  commit(next);
+                }}
+              >
+                Retirer
+              </button>
+            </div>
+            <div className="structured-chips">
+              {items.map((item, itemIndex) => (
+                <span key={`${category}-${itemIndex}`} className="structured-chip">
+                  <input
+                    value={item}
+                    size={Math.min(Math.max(item.length || 14, 14), 34)}
+                    onChange={(event) => {
+                      const nextItems = [...items];
+                      nextItems[itemIndex] = event.target.value;
+                      commit({ ...data, [category]: nextItems });
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => commit({ ...data, [category]: items.filter((_, index) => index !== itemIndex) })}
+                    aria-label={`Supprimer ${item || "cet équipement"}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <button type="button" className="table-action table-action--neutral" onClick={() => commit({ ...data, [category]: [...items, ""] })}>
+              Ajouter un équipement
+            </button>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const RoomsStructuredEditor = ({ value, onChange }: StructuredEditorProps) => {
+  const rooms = normalizeRoomsData(value);
+  const commit = (next: RoomData) => onChange(serializeStructuredValue(next));
+  return (
+    <div className="structured-editor">
+      <div className="structured-editor__toolbar">
+        <button type="button" className="table-action table-action--primary" onClick={() => commit([...rooms, { nom: "", couchages: [""], notes: "" }])}>
+          Ajouter une pièce
+        </button>
+      </div>
+      {rooms.length === 0 ? <div className="structured-empty">Aucune pièce ou couchage renseigné.</div> : null}
+      <div className="structured-grid">
+        {rooms.map((room, index) => (
+          <article key={index} className="structured-card">
+            <div className="structured-card__header">
+              <input
+                className="structured-card__title-input"
+                value={room.nom}
+                placeholder="Chambre 1"
+                onChange={(event) => {
+                  const next = [...rooms];
+                  next[index] = { ...room, nom: event.target.value };
+                  commit(next);
+                }}
+              />
+              <button type="button" className="table-action table-action--neutral" onClick={() => commit(rooms.filter((_, roomIndex) => roomIndex !== index))}>
+                Retirer
+              </button>
+            </div>
+            <div className="structured-chips">
+              {room.couchages.map((bed, bedIndex) => (
+                <span key={`${index}-${bedIndex}`} className="structured-chip">
+                  <input
+                    value={bed}
+                    placeholder="Lit 160"
+                    size={Math.min(Math.max(bed.length || 14, 14), 34)}
+                    onChange={(event) => {
+                      const next = [...rooms];
+                      const couchages = [...room.couchages];
+                      couchages[bedIndex] = event.target.value;
+                      next[index] = { ...room, couchages };
+                      commit(next);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = [...rooms];
+                      next[index] = { ...room, couchages: room.couchages.filter((_, itemIndex) => itemIndex !== bedIndex) };
+                      commit(next);
+                    }}
+                    aria-label="Supprimer ce couchage"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="table-action table-action--neutral"
+              onClick={() => {
+                const next = [...rooms];
+                next[index] = { ...room, couchages: [...room.couchages, ""] };
+                commit(next);
+              }}
+            >
+              Ajouter un couchage
+            </button>
+            <label className="field">
+              Note
+              <input
+                value={room.notes ?? ""}
+                onChange={(event) => {
+                  const next = [...rooms];
+                  next[index] = { ...room, notes: event.target.value };
+                  commit(next);
+                }}
+              />
+            </label>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const InfoStructuredEditor = ({ value, onChange }: StructuredEditorProps) => {
+  const rows = normalizeInfoData(value);
+  const commit = (next: InfoData) => onChange(serializeStructuredValue(next));
+  return (
+    <div className="structured-editor">
+      <div className="structured-editor__toolbar">
+        <button type="button" className="table-action table-action--primary" onClick={() => commit([...rows, { titre: "", contenu: "" }])}>
+          Ajouter une info
+        </button>
+      </div>
+      {rows.length === 0 ? <div className="structured-empty">Aucune information pratique.</div> : null}
+      <div className="structured-list">
+        {rows.map((row, index) => (
+          <div key={index} className="structured-row">
+            <input
+              value={row.titre}
+              placeholder="Arrivée"
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, titre: event.target.value };
+                commit(next);
+              }}
+            />
+            <input
+              value={row.contenu}
+              placeholder="Boîte à clés, parking..."
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, contenu: event.target.value };
+                commit(next);
+              }}
+            />
+            <button type="button" className="table-action table-action--neutral" onClick={() => commit(rows.filter((_, rowIndex) => rowIndex !== index))}>
+              Retirer
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const LocationStructuredEditor = ({ value, onChange }: StructuredEditorProps) => {
+  const data = normalizeLocationData(value);
+  const commit = (next: LocationData) => onChange(serializeStructuredValue(next));
+  return (
+    <div className="structured-editor">
+      <div className="structured-editor__toolbar">
+        <button type="button" className="table-action table-action--primary" onClick={() => commit({ ...data, points: [...data.points, { lieu: "", distance: "" }] })}>
+          Ajouter un lieu proche
+        </button>
+        <button type="button" className="table-action table-action--neutral" onClick={() => commit({ ...data, notes: [...data.notes, ""] })}>
+          Ajouter une note
+        </button>
+      </div>
+      <div className="structured-list">
+        {data.points.map((point, index) => (
+          <div key={`point-${index}`} className="structured-row structured-row--location">
+            <input
+              value={point.lieu}
+              placeholder="Forêt de Brocéliande"
+              onChange={(event) => {
+                const points = [...data.points];
+                points[index] = { ...point, lieu: event.target.value };
+                commit({ ...data, points });
+              }}
+            />
+            <input
+              value={point.distance}
+              placeholder="5 min / 3 km"
+              onChange={(event) => {
+                const points = [...data.points];
+                points[index] = { ...point, distance: event.target.value };
+                commit({ ...data, points });
+              }}
+            />
+            <button type="button" className="table-action table-action--neutral" onClick={() => commit({ ...data, points: data.points.filter((_, rowIndex) => rowIndex !== index) })}>
+              Retirer
+            </button>
+          </div>
+        ))}
+        {data.notes.map((note, index) => (
+          <div key={`note-${index}`} className="structured-row">
+            <input
+              value={note}
+              placeholder="À deux pas du bourg..."
+              onChange={(event) => {
+                const notes = [...data.notes];
+                notes[index] = event.target.value;
+                commit({ ...data, notes });
+              }}
+            />
+            <button type="button" className="table-action table-action--neutral" onClick={() => commit({ ...data, notes: data.notes.filter((_, rowIndex) => rowIndex !== index) })}>
+              Retirer
+            </button>
+          </div>
+        ))}
+      </div>
+      {data.points.length === 0 && data.notes.length === 0 ? <div className="structured-empty">Aucune information de localisation.</div> : null}
+    </div>
+  );
+};
 
 const GitesPage = () => {
   const [gites, setGites] = useState<Gite[]>([]);
@@ -81,12 +847,18 @@ const GitesPage = () => {
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
   const [placeholderTargets, setPlaceholderTargets] = useState<Record<string, string>>({});
+  const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft>>({});
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [savingPhotoId, setSavingPhotoId] = useState<string | null>(null);
+  const [activeEditorSection, setActiveEditorSection] = useState<(typeof GITE_EDITOR_SECTIONS)[number]["id"]>("base-fiche");
   const [attachingPlaceholderId, setAttachingPlaceholderId] = useState<string | null>(null);
   const [fadingPlaceholderIds, setFadingPlaceholderIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const formCardRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => gites.find((g) => g.id === selectedId) ?? null, [gites, selectedId]);
+  const activeEditorSectionLabel = GITE_EDITOR_SECTION_BY_ID.get(activeEditorSection)?.label ?? "Section";
 
   const load = async () => {
     const [gitesData, placeholdersData, gestionnairesData] = await Promise.all([
@@ -115,6 +887,7 @@ const GitesPage = () => {
   useEffect(() => {
     if (!selected) {
       setForm(emptyForm);
+      setPhotoDrafts({});
       return;
     }
     setForm({
@@ -129,6 +902,20 @@ const GitesPage = () => {
       proprietaires_noms: selected.proprietaires_noms,
       proprietaires_adresse: selected.proprietaires_adresse,
       site_web: selected.site_web ?? "",
+      public_slug: selected.public_slug ?? "",
+      public_title: selected.public_title ?? "",
+      public_summary: selected.public_summary ?? "",
+      public_description: selected.public_description ?? "",
+      public_seo_title: selected.public_seo_title ?? "",
+      public_seo_description: selected.public_seo_description ?? "",
+      public_is_published: selected.public_is_published ?? false,
+      public_structured_content: serializeStructuredValue(buildStructuredContentFromLegacy(selected)),
+      public_equipment: formatJsonField(selected.public_equipment),
+      public_rooms: formatJsonField(selected.public_rooms),
+      public_practical_info: formatJsonField(selected.public_practical_info),
+      public_location_info: formatJsonField(selected.public_location_info),
+      public_latitude: selected.public_latitude ?? "",
+      public_longitude: selected.public_longitude ?? "",
       email: selected.email ?? "",
       caracteristiques: selected.caracteristiques ?? "",
       airbnb_listing_id: selected.airbnb_listing_id ?? "",
@@ -154,10 +941,26 @@ const GitesPage = () => {
       prix_nuit_liste: Array.isArray(selected.prix_nuit_liste) ? selected.prix_nuit_liste.join(", ") : "",
       gestionnaire_id: selected.gestionnaire_id ?? "",
     });
+    setPhotoDrafts(
+      Object.fromEntries(
+        (selected.photos ?? []).map((photo) => [
+          photo.id,
+          {
+            title: photo.title ?? "",
+            alt: photo.alt ?? "",
+            credit: photo.credit ?? "",
+          },
+        ])
+      )
+    );
   }, [selected]);
 
   const handleChange = (key: keyof FormState, value: string | number | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const jumpToEditorSection = (sectionId: (typeof GITE_EDITOR_SECTIONS)[number]["id"]) => {
+    setActiveEditorSection(sectionId);
   };
 
   const handleDragStart = (event: DragEvent<HTMLButtonElement>, id: string) => {
@@ -215,7 +1018,9 @@ const GitesPage = () => {
     setDragOverId(null);
   };
 
-  const save = async () => {
+  const save = async (options: { keepOpen?: boolean } = {}) => {
+    const keepOpen = options.keepOpen ?? false;
+    const savedSelectedId = selectedId;
     setLoading(true);
     setError(null);
     setNotice(null);
@@ -228,6 +1033,22 @@ const GitesPage = () => {
         .filter((value) => Number.isFinite(value) && value >= 0);
       const payload = {
         ...form,
+        public_slug: form.public_slug || null,
+        public_title: form.public_title || null,
+        public_summary: form.public_summary || null,
+        public_description: form.public_description || null,
+        public_seo_title: form.public_seo_title || null,
+        public_seo_description: form.public_seo_description || null,
+        public_structured_content: parseJsonTextarea(
+          "Données structurées site",
+          form.public_structured_content || serializeStructuredValue(buildStructuredContentDefaults())
+        ),
+        public_equipment: null,
+        public_rooms: null,
+        public_practical_info: null,
+        public_location_info: null,
+        public_latitude: form.public_latitude === "" ? null : Number(form.public_latitude),
+        public_longitude: form.public_longitude === "" ? null : Number(form.public_longitude),
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
         gestionnaire_id: form.gestionnaire_id || null,
@@ -238,8 +1059,8 @@ const GitesPage = () => {
           .filter(Boolean),
       };
       let created: Gite | null = null;
-      if (selectedId) {
-        await apiFetch(`/gites/${selectedId}`, { method: "PUT", json: payload });
+      if (savedSelectedId) {
+        await apiFetch(`/gites/${savedSelectedId}`, { method: "PUT", json: payload });
       } else {
         created = await apiFetch<Gite>(`/gites`, { method: "POST", json: payload });
       }
@@ -261,6 +1082,9 @@ const GitesPage = () => {
           });
           await load();
         }
+      } else if (keepOpen && savedSelectedId) {
+        setSelectedId(savedSelectedId);
+        setNotice(`${activeEditorSectionLabel} enregistrée.`);
       } else {
         setSelectedId(null);
         setForm(emptyForm);
@@ -349,6 +1173,10 @@ const GitesPage = () => {
     importInputRef.current?.click();
   };
 
+  const triggerPhotoUpload = () => {
+    photoInputRef.current?.click();
+  };
+
   const startCreate = () => {
     setSelectedId(null);
     setForm(emptyForm);
@@ -427,6 +1255,121 @@ const GitesPage = () => {
     }
   };
 
+  const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file || !selected) return;
+
+    setUploadingPhoto(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (!GITE_PHOTO_ALLOWED_MIME_TYPES.has(file.type)) {
+        throw new Error("Format non pris en charge. Utilisez JPG, PNG, WEBP ou AVIF.");
+      }
+      if (file.size > GITE_PHOTO_MAX_BYTES) {
+        throw new Error(`La photo dépasse ${Math.round(GITE_PHOTO_MAX_BYTES / (1024 * 1024))} Mo.`);
+      }
+      const data = await readFileAsDataUrl(file);
+      await apiFetch<GitePhoto>(`/gites/${selected.id}/photos/upload`, {
+        method: "POST",
+        json: {
+          filename: file.name,
+          mimeType: file.type,
+          data,
+          title: file.name.replace(/\.[^.]+$/, ""),
+          alt: selected.public_title || selected.nom,
+          is_primary: (selected.photos ?? []).length === 0,
+          is_public: true,
+        },
+      });
+      await load();
+      setNotice("Photo ajoutée.");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      input.value = "";
+      setUploadingPhoto(false);
+    }
+  };
+
+  const updatePhotoDraft = (photoId: string, key: keyof PhotoDraft, value: string) => {
+    setPhotoDrafts((prev) => ({
+      ...prev,
+      [photoId]: {
+        title: prev[photoId]?.title ?? "",
+        alt: prev[photoId]?.alt ?? "",
+        credit: prev[photoId]?.credit ?? "",
+        [key]: value,
+      },
+    }));
+  };
+
+  const savePhoto = async (photo: GitePhoto, patch: Partial<Pick<GitePhoto, "is_primary" | "is_public">> = {}) => {
+    if (!selected) return;
+    setSavingPhotoId(photo.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const draft = photoDrafts[photo.id] ?? { title: photo.title ?? "", alt: photo.alt ?? "", credit: photo.credit ?? "" };
+      await apiFetch<GitePhoto>(`/gites/${selected.id}/photos/${photo.id}`, {
+        method: "PUT",
+        json: {
+          url: photo.url,
+          title: draft.title || null,
+          alt: draft.alt || null,
+          credit: draft.credit || null,
+          is_primary: patch.is_primary ?? photo.is_primary,
+          is_public: patch.is_public ?? photo.is_public,
+        },
+      });
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingPhotoId(null);
+    }
+  };
+
+  const deletePhoto = async (photo: GitePhoto) => {
+    if (!selected || !confirm("Supprimer cette photo ?")) return;
+    setSavingPhotoId(photo.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiFetch(`/gites/${selected.id}/photos/${photo.id}`, { method: "DELETE" });
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingPhotoId(null);
+    }
+  };
+
+  const movePhoto = async (photoId: string, direction: -1 | 1) => {
+    if (!selected) return;
+    const photos = [...(selected.photos ?? [])];
+    const index = photos.findIndex((photo) => photo.id === photoId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= photos.length) return;
+    const [moved] = photos.splice(index, 1);
+    photos.splice(targetIndex, 0, moved);
+    setSavingPhotoId(photoId);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiFetch<GitePhoto[]>(`/gites/${selected.id}/photos/reorder`, {
+        method: "POST",
+        json: { ids: photos.map((photo) => photo.id) },
+      });
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingPhotoId(null);
+    }
+  };
+
   return (
     <div>
       <div className="gites-listing-shell">
@@ -470,14 +1413,12 @@ const GitesPage = () => {
               const accentStyle = { "--gite-card-accent": accent } as CSSProperties;
               const managerLabel = formatManagerLabel(gite);
               const addressLabel = formatAddressLabel(gite);
-              const highlights = getGiteHighlights(gite);
+              const primaryPhoto =
+                (gite.photos ?? []).find((photo) => photo.is_primary) ?? (gite.photos ?? [])[0] ?? null;
               const tags = [
                 `${gite.capacite_max} voyageurs`,
                 `${gite.nb_adultes_max} adultes max`,
-                `${gite.nb_adultes_habituel} adultes habituels`,
-                `${gite.nb_enfants_max} enfants max`,
-                gite.regle_animaux_acceptes ? "Animaux ok" : null,
-                gite.regle_bois_premiere_flambee ? "Bois inclus" : null,
+                gite.public_is_published ? "Publié site" : null,
               ].filter((tag): tag is string => Boolean(tag));
 
               return (
@@ -485,6 +1426,7 @@ const GitesPage = () => {
                   key={gite.id}
                   className={[
                     "gite-listing-card",
+                    primaryPhoto ? "gite-listing-card--with-photo" : "",
                     selectedId === gite.id ? "gite-listing-card--selected" : "",
                     draggedId === gite.id ? "gite-listing-card--dragging" : "",
                     dragOverId === gite.id && draggedId !== gite.id ? "gite-listing-card--drag-over" : "",
@@ -496,6 +1438,13 @@ const GitesPage = () => {
                   onDrop={(event) => void handleDrop(event, gite.id)}
                 >
                   <div className="gite-listing-card__visual">
+                    {primaryPhoto ? (
+                      <img
+                        className="gite-listing-card__photo"
+                        src={primaryPhoto.url}
+                        alt={primaryPhoto.alt || primaryPhoto.title || gite.nom}
+                      />
+                    ) : null}
                     <div className="gite-listing-card__visual-top">
                       <span className="gite-listing-card__pill">{gite.prefixe_contrat}</span>
                       <button
@@ -512,7 +1461,6 @@ const GitesPage = () => {
                       </button>
                     </div>
                     <div className="gite-listing-card__visual-content">
-                      <div className="gite-listing-card__visual-label">Gîte</div>
                       <div className="gite-listing-card__visual-title">{gite.nom}</div>
                       <div className="gite-listing-card__visual-meta">{managerLabel}</div>
                     </div>
@@ -534,7 +1482,7 @@ const GitesPage = () => {
                     <div className="gite-listing-card__stats">
                       <div>
                         <strong>{gite.reservations_count ?? 0}</strong>
-                        <span>Réservations</span>
+                        <span>Rés.</span>
                       </div>
                       <div>
                         <strong>{gite.contrats_count ?? 0}</strong>
@@ -544,20 +1492,6 @@ const GitesPage = () => {
                         <strong>{gite.factures_count ?? 0}</strong>
                         <span>Factures</span>
                       </div>
-                    </div>
-
-                    <div className="gite-listing-card__highlights">
-                      {highlights.length > 0 ? (
-                        highlights.map((item) => (
-                          <div key={item} className="gite-listing-card__highlight">
-                            {item}
-                          </div>
-                        ))
-                      ) : (
-                        <div className="gite-listing-card__highlight gite-listing-card__highlight--muted">
-                          Ajoutez des caractéristiques pour enrichir la fiche PDF.
-                        </div>
-                      )}
                     </div>
 
                     <div className="gite-listing-card__actions">
@@ -668,16 +1602,76 @@ const GitesPage = () => {
         </div>
       )}
 
-      <div ref={formCardRef} className="card gites-editor-card">
-        <div className="gites-editor-header">
-          <div>
-            <div className="gites-editor-header__eyebrow">{selected ? "Édition en cours" : "Nouveau gîte"}</div>
-            <div className="section-title">{selected ? "Éditer" : "Créer"} un gîte</div>
+      <div ref={formCardRef} className="gites-editor-layout">
+        <aside className="gites-editor-sidebar">
+          <div className="gites-editor-sidebar__panel">
+            <div className="gites-editor-sidebar__title">{selected ? selected.nom : "Nouveau gîte"}</div>
+            <nav className="gites-editor-sidebar__nav" aria-label="Rubriques du formulaire gîte">
+              {GITE_EDITOR_SECTION_GROUPS.map((group) => (
+                <div key={group.title} className="gites-editor-sidebar__group">
+                  <div className="gites-editor-sidebar__group-title">{group.title}</div>
+                  <div className="gites-editor-sidebar__group-links">
+                    {group.items.map((sectionId) => {
+                      const section = GITE_EDITOR_SECTION_BY_ID.get(sectionId);
+                      if (!section) return null;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          className={`gites-editor-sidebar__link${
+                            activeEditorSection === section.id ? " gites-editor-sidebar__link--active" : ""
+                          }`}
+                          onClick={() => jumpToEditorSection(section.id)}
+                        >
+                          {section.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
           </div>
-          {selected && <div className="gites-editor-header__badge">{selected.prefixe_contrat}</div>}
-        </div>
-        <div className="form-section">
-          <div className="section-subtitle">Identité du gîte</div>
+        </aside>
+
+        <div className="gites-editor-content">
+          <div className="card gites-editor-card">
+            <div className="gites-editor-header">
+              <div>
+                <div className="gites-editor-header__eyebrow">{selected ? "Édition en cours" : "Nouveau gîte"}</div>
+                <div className="section-title">{selected ? `Edition de ${selected.nom}` : "Créer un gîte"}</div>
+              </div>
+              {gites.length > 0 ? (
+                <div className="gites-editor-tabs" role="tablist" aria-label="Changer de gîte">
+                  {gites.map((gite) => (
+                    <button
+                      key={gite.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedId === gite.id}
+                      className={`gites-editor-tabs__item${selectedId === gite.id ? " gites-editor-tabs__item--active" : ""}`}
+                      onClick={() => setSelectedId(gite.id)}
+                    >
+                      {gite.nom}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="gites-editor-header__actions">
+                <button
+                  type="button"
+                  className="table-action table-action--primary"
+                  onClick={() => void save({ keepOpen: true })}
+                  disabled={loading}
+                >
+                  {loading ? "Enregistrement..." : "Enregistrer cette section"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+        <div id="gite-editor-identite" className="form-section gites-editor-section" hidden={activeEditorSection !== "base-fiche"}>
+          <div className="section-subtitle">Identité</div>
           <div className="grid-2">
             <label className="field">
               Nom
@@ -690,6 +1684,34 @@ const GitesPage = () => {
                 onChange={(e) => handleChange("prefixe_contrat", e.target.value.toUpperCase())}
               />
             </label>
+            <label className="field">
+              Gestionnaire
+              <select
+                value={form.gestionnaire_id}
+                onChange={(e) => handleChange("gestionnaire_id", e.target.value)}
+              >
+                <option value="">Aucun</option>
+                {gestionnaires.map((gestionnaire) => (
+                  <option key={gestionnaire.id} value={gestionnaire.id}>
+                    {gestionnaire.prenom} {gestionnaire.nom}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              ID Airbnb
+              <input
+                value={form.airbnb_listing_id}
+                onChange={(e) => handleChange("airbnb_listing_id", e.target.value)}
+                placeholder="48504640"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-capacite" className="form-section gites-editor-section" hidden={activeEditorSection !== "base-fiche"}>
+          <div className="section-subtitle">Capacité</div>
+          <div className="grid-2">
             <label className="field">
               Capacité max
               <input
@@ -723,33 +1745,11 @@ const GitesPage = () => {
                 onChange={(e) => handleChange("nb_enfants_max", Number(e.target.value))}
               />
             </label>
-            <label className="field">
-              Gestionnaire
-              <select
-                value={form.gestionnaire_id}
-                onChange={(e) => handleChange("gestionnaire_id", e.target.value)}
-              >
-                <option value="">Aucun</option>
-                {gestionnaires.map((gestionnaire) => (
-                  <option key={gestionnaire.id} value={gestionnaire.id}>
-                    {gestionnaire.prenom} {gestionnaire.nom}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              ID Airbnb
-              <input
-                value={form.airbnb_listing_id}
-                onChange={(e) => handleChange("airbnb_listing_id", e.target.value)}
-                placeholder="48504640"
-              />
-            </label>
           </div>
         </div>
 
-        <div className="form-section">
-          <div className="section-subtitle">Adresse du gîte</div>
+        <div id="gite-editor-adresse" className="form-section gites-editor-section" hidden={activeEditorSection !== "base-fiche"}>
+          <div className="section-subtitle">Adresse</div>
           <div className="grid-2">
             <label className="field">
               Adresse ligne 1
@@ -768,8 +1768,241 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="form-section">
-          <div className="section-subtitle">Propriétaires & contact</div>
+        <div id="gite-editor-site-identite" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-presentation"}>
+          <div className="section-subtitle">Identité & publication</div>
+          <div className="grid-2">
+            <label className="field">
+              Slug public
+              <input
+                value={form.public_slug}
+                onChange={(e) => handleChange("public_slug", e.target.value.toLowerCase())}
+                placeholder="gite-le-liberte"
+              />
+            </label>
+            <label className="field">
+              Titre public
+              <input value={form.public_title} onChange={(e) => handleChange("public_title", e.target.value)} />
+            </label>
+          </div>
+          <div className="rules-grid" style={{ marginTop: 12 }}>
+            <div className="rule-card">
+              <div>
+                <div className="rule-title">Publication site</div>
+                <div className="rule-sub">Rendre ce gîte disponible dans l'API publique.</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={form.public_is_published}
+                  onChange={(e) => handleChange("public_is_published", e.target.checked)}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div id="gite-editor-site-textes" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-presentation"}>
+          <div className="section-subtitle">Textes</div>
+          <div className="grid-2">
+            <label className="field" style={{ gridColumn: "1 / -1" }}>
+              Accroche courte
+              <textarea
+                value={form.public_summary}
+                onChange={(e) => handleChange("public_summary", e.target.value)}
+                rows={2}
+              />
+            </label>
+            <label className="field" style={{ gridColumn: "1 / -1" }}>
+              Description longue
+              <textarea
+                value={form.public_description}
+                onChange={(e) => handleChange("public_description", e.target.value)}
+                rows={6}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-site-structure" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-donnees"}>
+          <div className="section-subtitle">Données structurées</div>
+          <div className="grid-2">
+            <label className="field">
+              Latitude
+              <input
+                type="number"
+                step="0.000001"
+                value={form.public_latitude}
+                onChange={(e) => handleChange("public_latitude", e.target.value)}
+              />
+            </label>
+            <label className="field">
+              Longitude
+              <input
+                type="number"
+                step="0.000001"
+                value={form.public_longitude}
+                onChange={(e) => handleChange("public_longitude", e.target.value)}
+              />
+            </label>
+            <div className="structured-panel">
+              <div className="structured-panel__title">Sections de contenu</div>
+              <StructuredContentEditor
+                value={form.public_structured_content}
+                onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div id="gite-editor-site-seo" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-donnees"}>
+          <div className="section-subtitle">SEO</div>
+          <div className="grid-2">
+            <label className="field">
+              Titre SEO
+              <input value={form.public_seo_title} onChange={(e) => handleChange("public_seo_title", e.target.value)} />
+            </label>
+            <label className="field">
+              Description SEO
+              <input
+                value={form.public_seo_description}
+                onChange={(e) => handleChange("public_seo_description", e.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-photos" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-photos"}>
+          <div className="section-subtitle">Photos</div>
+          {!selected ? (
+            <div className="field-hint">Enregistrez le gîte avant d'ajouter des photos.</div>
+          ) : (
+            <>
+              <div className="gite-photo-toolbar">
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif"
+                  onChange={(event) => void uploadPhoto(event)}
+                  style={{ display: "none" }}
+                />
+                <button
+                  type="button"
+                  className="table-action table-action--primary"
+                  onClick={triggerPhotoUpload}
+                  disabled={uploadingPhoto}
+                >
+                  {uploadingPhoto ? "Upload..." : "Ajouter une photo"}
+                </button>
+                <span className="field-hint">JPG, PNG, WEBP ou AVIF. 12 Mo max.</span>
+              </div>
+              {(selected.photos ?? []).length > 0 ? (
+                <div className="gite-photo-grid">
+                  {(selected.photos ?? []).map((photo, index, photos) => {
+                    const draft = photoDrafts[photo.id] ?? {
+                      title: photo.title ?? "",
+                      alt: photo.alt ?? "",
+                      credit: photo.credit ?? "",
+                    };
+                    const busy = savingPhotoId === photo.id;
+                    return (
+                      <article key={photo.id} className="gite-photo-card">
+                        <div className="gite-photo-card__image-wrap">
+                          <img className="gite-photo-card__image" src={photo.url} alt={draft.alt || photo.alt || selected.nom} />
+                          <div className="gite-photo-card__badges">
+                            {photo.is_primary ? <span>Principale</span> : null}
+                            {photo.is_public ? <span>Publique</span> : <span>Masquée</span>}
+                          </div>
+                        </div>
+                        <div className="gite-photo-card__fields">
+                          <label className="field">
+                            Titre
+                            <input
+                              value={draft.title}
+                              onChange={(event) => updatePhotoDraft(photo.id, "title", event.target.value)}
+                            />
+                          </label>
+                          <label className="field">
+                            Texte alternatif
+                            <input
+                              value={draft.alt}
+                              onChange={(event) => updatePhotoDraft(photo.id, "alt", event.target.value)}
+                            />
+                          </label>
+                          <label className="field">
+                            Crédit
+                            <input
+                              value={draft.credit}
+                              onChange={(event) => updatePhotoDraft(photo.id, "credit", event.target.value)}
+                            />
+                          </label>
+                        </div>
+                        <div className="gite-photo-card__actions">
+                          <button
+                            type="button"
+                            className="table-action table-action--neutral"
+                            onClick={() => void movePhoto(photo.id, -1)}
+                            disabled={busy || index === 0}
+                          >
+                            Monter
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action table-action--neutral"
+                            onClick={() => void movePhoto(photo.id, 1)}
+                            disabled={busy || index === photos.length - 1}
+                          >
+                            Descendre
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action table-action--neutral"
+                            onClick={() => void savePhoto(photo, { is_primary: true })}
+                            disabled={busy || photo.is_primary}
+                          >
+                            Principale
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action table-action--neutral"
+                            onClick={() => void savePhoto(photo, { is_public: !photo.is_public })}
+                            disabled={busy}
+                          >
+                            {photo.is_public ? "Masquer" : "Publier"}
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action table-action--primary"
+                            onClick={() => void savePhoto(photo)}
+                            disabled={busy}
+                          >
+                            Enregistrer
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action table-action--neutral"
+                            onClick={() => void deletePhoto(photo)}
+                            disabled={busy}
+                          >
+                            Supprimer
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="gites-empty-state gites-empty-state--compact">
+                  <div className="gites-empty-state__title">Aucune photo</div>
+                  <div className="field-hint">Ajoutez la première image pour alimenter la galerie du site.</div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div id="gite-editor-proprietaires" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-contact"}>
+          <div className="section-subtitle">Propriétaires</div>
           <div className="grid-2">
             <label className="field">
               Propriétaires
@@ -785,6 +2018,12 @@ const GitesPage = () => {
                 onChange={(e) => handleChange("proprietaires_adresse", e.target.value)}
               />
             </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-contact" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-contact"}>
+          <div className="section-subtitle">Contact</div>
+          <div className="grid-2">
             <label className="field">
               Site web
               <input value={form.site_web} onChange={(e) => handleChange("site_web", e.target.value)} />
@@ -800,8 +2039,8 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="form-section">
-          <div className="section-subtitle">Fiscalité & paiement</div>
+        <div id="gite-editor-fiscalite" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-finance"}>
+          <div className="section-subtitle">Fiscalité</div>
           <div className="grid-2">
             <label className="field">
               Taxe de séjour / personne / nuit
@@ -824,6 +2063,12 @@ const GitesPage = () => {
                 }
               />
             </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-banque" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-finance"}>
+          <div className="section-subtitle">Banque</div>
+          <div className="grid-2">
             <label className="field">
               IBAN
               <input value={form.iban} onChange={(e) => handleChange("iban", e.target.value)} />
@@ -839,8 +2084,8 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="form-section">
-          <div className="section-subtitle">Options & services (tarifs par défaut)</div>
+        <div id="gite-editor-services" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-services"}>
+          <div className="section-subtitle">Services</div>
           <div className="grid-2">
             <label className="field">
               Draps / lit (par séjour)
@@ -887,6 +2132,12 @@ const GitesPage = () => {
                 onChange={(e) => handleChange("options_chiens_forfait", Number(e.target.value))}
               />
             </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-horaires" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-services"}>
+          <div className="section-subtitle">Horaires</div>
+          <div className="grid-2">
             <label className="field">
               Heure d'arrivée par défaut
               <input
@@ -906,7 +2157,7 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="form-section">
+        <div id="gite-editor-garanties" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-tarifs"}>
           <div className="section-subtitle">Garanties & arrhes</div>
           <div className="grid-2">
             <label className="field">
@@ -939,7 +2190,7 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="form-section">
+        <div id="gite-editor-caracteristiques" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-regles"}>
           <div className="section-subtitle">Caractéristiques</div>
           <div className="grid-2">
             <label className="field" style={{ gridColumn: "1 / -1" }}>
@@ -953,7 +2204,7 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="form-section">
+        <div id="gite-editor-tarifs" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-tarifs"}>
           <div className="section-subtitle">Tarifs de nuit</div>
           <div className="grid-2">
             <label className="field">
@@ -967,7 +2218,7 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="form-section">
+        <div id="gite-editor-regles" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-regles"}>
           <div className="section-subtitle">Règles du gîte</div>
           <div className="rules-grid">
             <div className="rule-card">
@@ -1025,6 +2276,7 @@ const GitesPage = () => {
             </button>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
