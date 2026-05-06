@@ -5068,10 +5068,44 @@ body {
   gap: 14px;
 }
 
+.structured-card--drag-over {
+  border-color: #ff5a5f;
+  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.14);
+}
+
 .structured-card__header {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.structured-drag-handle {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #6b7280;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.12em;
+  cursor: grab;
+  box-shadow: none;
+}
+
+.structured-drag-handle:hover {
+  transform: none;
+  border-color: #fecdd3;
+  color: #be123c;
+  box-shadow: none;
+}
+
+.structured-drag-handle:active {
+  cursor: grabbing;
 }
 
 .structured-card__actions,
