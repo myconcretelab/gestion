@@ -390,6 +390,8 @@ type StructuredEditorProps = {
 
 const StructuredContentEditor = ({ value, onChange }: StructuredEditorProps) => {
   const sections = normalizeStructuredContentData(value);
+  const [draggedSectionIndex, setDraggedSectionIndex] = useState<number | null>(null);
+  const [dragOverSectionIndex, setDragOverSectionIndex] = useState<number | null>(null);
   const commit = (next: StructuredContentData) => onChange(serializeStructuredValue(next));
   const updateSection = (sectionIndex: number, updater: (section: StructuredContentSection) => StructuredContentSection) => {
     const next = [...sections];
@@ -430,8 +432,50 @@ const StructuredContentEditor = ({ value, onChange }: StructuredEditorProps) => 
       </div>
       <div className="structured-grid structured-grid--sections">
         {sections.map((section, sectionIndex) => (
-          <article key={section.id} className="structured-card structured-card--section">
+          <article
+            key={section.id}
+            className={`structured-card structured-card--section${
+              dragOverSectionIndex === sectionIndex ? " structured-card--drag-over" : ""
+            }`}
+            onDragOver={(event) => {
+              if (draggedSectionIndex === null || draggedSectionIndex === sectionIndex) return;
+              event.preventDefault();
+              setDragOverSectionIndex(sectionIndex);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (draggedSectionIndex === null || draggedSectionIndex === sectionIndex) {
+                setDraggedSectionIndex(null);
+                setDragOverSectionIndex(null);
+                return;
+              }
+              const next = [...sections];
+              const [moved] = next.splice(draggedSectionIndex, 1);
+              next.splice(sectionIndex, 0, moved);
+              commit(next);
+              setDraggedSectionIndex(null);
+              setDragOverSectionIndex(null);
+            }}
+          >
             <div className="structured-card__header">
+              <button
+                type="button"
+                className="structured-drag-handle"
+                draggable
+                aria-label={`Déplacer ${section.titre || "cette section"}`}
+                onDragStart={(event) => {
+                  setDraggedSectionIndex(sectionIndex);
+                  setDragOverSectionIndex(sectionIndex);
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", String(sectionIndex));
+                }}
+                onDragEnd={() => {
+                  setDraggedSectionIndex(null);
+                  setDragOverSectionIndex(null);
+                }}
+              >
+                ⋮⋮
+              </button>
               <input
                 className="structured-card__title-input"
                 value={section.titre}
@@ -446,32 +490,6 @@ const StructuredContentEditor = ({ value, onChange }: StructuredEditorProps) => 
               </button>
             </div>
             <div className="structured-card__actions">
-              <button
-                type="button"
-                className="table-action table-action--neutral"
-                onClick={() => {
-                  const next = [...sections];
-                  const [moved] = next.splice(sectionIndex, 1);
-                  next.splice(Math.max(0, sectionIndex - 1), 0, moved);
-                  commit(next);
-                }}
-                disabled={sectionIndex === 0}
-              >
-                Monter
-              </button>
-              <button
-                type="button"
-                className="table-action table-action--neutral"
-                onClick={() => {
-                  const next = [...sections];
-                  const [moved] = next.splice(sectionIndex, 1);
-                  next.splice(Math.min(next.length, sectionIndex + 1), 0, moved);
-                  commit(next);
-                }}
-                disabled={sectionIndex === sections.length - 1}
-              >
-                Descendre
-              </button>
               <button
                 type="button"
                 className="table-action table-action--neutral"
@@ -1047,8 +1065,8 @@ const GitesPage = () => {
         public_rooms: null,
         public_practical_info: null,
         public_location_info: null,
-        public_latitude: form.public_latitude === "" ? null : Number(form.public_latitude),
-        public_longitude: form.public_longitude === "" ? null : Number(form.public_longitude),
+        public_latitude: null,
+        public_longitude: null,
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
         gestionnaire_id: form.gestionnaire_id || null,
@@ -1827,24 +1845,6 @@ const GitesPage = () => {
         <div id="gite-editor-site-structure" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-donnees"}>
           <div className="section-subtitle">Données structurées</div>
           <div className="grid-2">
-            <label className="field">
-              Latitude
-              <input
-                type="number"
-                step="0.000001"
-                value={form.public_latitude}
-                onChange={(e) => handleChange("public_latitude", e.target.value)}
-              />
-            </label>
-            <label className="field">
-              Longitude
-              <input
-                type="number"
-                step="0.000001"
-                value={form.public_longitude}
-                onChange={(e) => handleChange("public_longitude", e.target.value)}
-              />
-            </label>
             <div className="structured-panel">
               <div className="structured-panel__title">Sections de contenu</div>
               <StructuredContentEditor
