@@ -16,6 +16,20 @@ export type Gite = {
   prefixe_contrat: string;
   adresse_ligne1: string;
   adresse_ligne2?: string | null;
+  public_slug?: string | null;
+  public_title?: string | null;
+  public_summary?: string | null;
+  public_description?: string | null;
+  public_seo_title?: string | null;
+  public_seo_description?: string | null;
+  public_is_published?: boolean;
+  public_structured_content?: unknown;
+  public_equipment?: unknown;
+  public_rooms?: unknown;
+  public_practical_info?: unknown;
+  public_location_info?: unknown;
+  public_latitude?: number | null;
+  public_longitude?: number | null;
   capacite_max: number;
   nb_adultes_max: number;
   nb_adultes_habituel: number;
@@ -48,9 +62,24 @@ export type Gite = {
   caracteristiques?: string | null;
   gestionnaire_id?: string | null;
   gestionnaire?: Pick<Gestionnaire, "id" | "prenom" | "nom"> | null;
+  photos?: GitePhoto[];
   contrats_count?: number;
   factures_count?: number;
   reservations_count?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type GitePhoto = {
+  id: string;
+  gite_id: string;
+  url: string;
+  title?: string | null;
+  alt?: string | null;
+  credit?: string | null;
+  is_primary: boolean;
+  is_public: boolean;
+  ordre: number;
   createdAt?: string;
   updatedAt?: string;
 };

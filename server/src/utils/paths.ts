@@ -47,3 +47,10 @@ export const getSignedContractPaths = (
   const relativePath = path.relative(process.cwd(), absolutePath);
   return { absolutePath, relativePath };
 };
+
+export const getGitePhotoPaths = (giteId: string, photoId: string, extension: string) => {
+  const normalizedExtension = extension.startsWith(".") ? extension : `.${extension}`;
+  const absolutePath = path.join(resolveDataDir(), "gites", giteId, "photos", `${photoId}${normalizedExtension.toLowerCase()}`);
+  const relativePath = path.relative(process.cwd(), absolutePath);
+  return { absolutePath, relativePath };
+};

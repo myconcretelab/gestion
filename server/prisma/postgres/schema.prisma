@@ -26,6 +26,20 @@ model Gite {
   proprietaires_noms                   String
   proprietaires_adresse                String
   site_web                             String?
+  public_slug                          String?
+  public_title                         String?
+  public_summary                       String?
+  public_description                   String?
+  public_seo_title                     String?
+  public_seo_description               String?
+  public_is_published                  Boolean  @default(false)
+  public_structured_content            Json?
+  public_equipment                     Json?
+  public_rooms                         Json?
+  public_practical_info                Json?
+  public_location_info                 Json?
+  public_latitude                      Decimal? @db.Decimal(9,6)
+  public_longitude                     Decimal? @db.Decimal(9,6)
   email                                String?
   telephones                           Json
   taxe_sejour_par_personne_par_nuit    Decimal  @db.Decimal(10,2)
@@ -63,13 +77,36 @@ model Gite {
   monthly_energy_readings              GiteMonthlyEnergyReading[]
   season_rates                         GiteSeasonRate[]
   booking_requests                     BookingRequest[]
+  photos                               GitePhoto[]
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
 
+  @@unique([public_slug], map: "gites_public_slug_key")
   @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
   @@index([ical_export_token], map: "gites_ical_export_token_idx")
   @@index([ordre], map: "gites_ordre_idx")
+  @@index([public_is_published, ordre], map: "gites_public_published_ordre_idx")
   @@map("gites")
+}
+
+model GitePhoto {
+  id          String   @id @default(cuid())
+  gite_id     String
+  url         String
+  title       String?
+  alt         String?
+  credit      String?
+  is_primary  Boolean  @default(false)
+  is_public   Boolean  @default(true)
+  ordre       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  gite        Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@index([gite_id, ordre], map: "gite_photos_gite_ordre_idx")
+  @@index([gite_id, is_public, ordre], map: "gite_photos_public_ordre_idx")
+  @@map("gite_photos")
 }
 
 model Gestionnaire {
