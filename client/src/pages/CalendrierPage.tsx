@@ -957,7 +957,11 @@ const CalendrierPage = () => {
       const selectableDates = selectableDateSetsByMonth.get(monthIndex);
       if (!selectableDates?.size) return false;
 
-      for (let cursor = parseIsoDate(startIso); cursor.getTime() <= parseIsoDate(endIso).getTime(); cursor = addUtcDays(cursor, 1)) {
+      const startDate = parseIsoDate(startIso);
+      const endDate = parseIsoDate(endIso);
+      if (endDate.getTime() < startDate.getTime()) return false;
+
+      for (let cursor = startDate; cursor.getTime() < endDate.getTime(); cursor = addUtcDays(cursor, 1)) {
         if (!selectableDates.has(toIsoDate(cursor))) return false;
       }
 
@@ -969,10 +973,11 @@ const CalendrierPage = () => {
   const toggleDateSelection = useCallback(
     (monthIndex: number, isoDate: string) => {
       const selectableDates = selectableDateSetsByMonth.get(monthIndex);
-      if (!selectableDates?.has(isoDate)) return;
+      const canStartSelection = Boolean(selectableDates?.has(isoDate));
 
       setSelectedDateRange((current) => {
         if (!current || current.monthIndex !== monthIndex) {
+          if (!canStartSelection) return current;
           return { monthIndex, startIso: isoDate, endIso: isoDate };
         }
 
@@ -981,6 +986,7 @@ const CalendrierPage = () => {
         }
 
         if (isoDate >= current.startIso && isoDate <= current.endIso) {
+          if (!canStartSelection) return current;
           return { monthIndex, startIso: isoDate, endIso: isoDate };
         }
 
@@ -988,6 +994,7 @@ const CalendrierPage = () => {
         const nextEndIso = isoDate > current.endIso ? isoDate : current.endIso;
 
         if (!isSelectableDateRange(monthIndex, nextStartIso, nextEndIso)) {
+          if (!canStartSelection) return current;
           return { monthIndex, startIso: isoDate, endIso: isoDate };
         }
 
@@ -1538,7 +1545,14 @@ const CalendrierPage = () => {
                         >
                           <div className="calendar-week__days">
                             {week.days.map((day) => {
-                              const isSelectable = day.isCurrentMonth && !day.isOccupied && !day.isPast;
+                              const canStartSelection = selectableDateSetsByMonth.get(monthData.index)?.has(day.isoDate) ?? false;
+                              const canEndSelection =
+                                selectedRangeForMonth !== null &&
+                                day.isCurrentMonth &&
+                                !day.isPast &&
+                                day.isoDate > selectedRangeForMonth.startIso &&
+                                isSelectableDateRange(monthData.index, selectedRangeForMonth.startIso, day.isoDate);
+                              const isSelectable = canStartSelection || canEndSelection;
                               const isSelected =
                                 selectedRangeForMonth !== null &&
                                 day.isoDate >= selectedRangeForMonth.startIso &&
@@ -1741,7 +1755,25 @@ const CalendrierPage = () => {
           <section className="card calendar-sidebar__card">
             <div className="section-title">Séjours du mois</div>
             <p className="calendar-sidebar__month-label">{visibleMonth?.title}</p>
-            {hoveredReservationDetails?.month?.index === activeMonthIndex ? (
+            {selectedDateRange && selectedRangeNights > 0 ? (
+              <article className="calendar-stay calendar-stay--selection calendar-stay--focused">
+                <div className="calendar-stay__head">
+                  <strong className="calendar-stay__title">Dates sélectionnées</strong>
+                  <span>{selectedGite?.nom ?? "Gîte"}</span>
+                </div>
+                <p>{selectedRangeSummary}</p>
+                <div className="calendar-stay__meta">
+                  <span>
+                    {selectedRangeNights} nuit
+                    {selectedRangeNights > 1 ? "s" : ""}
+                  </span>
+                  <strong>
+                    {formatShortDate(selectedDateRange.startIso)} → {formatShortDate(selectedRangeExitIso)}
+                  </strong>
+                </div>
+                <small>Disponible pour une nouvelle réservation</small>
+              </article>
+            ) : hoveredReservationDetails?.month?.index === activeMonthIndex ? (
               <article className="calendar-stay calendar-stay--highlighted calendar-stay--focused">
                 <div className="calendar-stay__head">
                   <strong className="calendar-stay__title">

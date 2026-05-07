@@ -66,6 +66,13 @@ type GitesImportResult = {
   created_count: number;
   updated_count: number;
 };
+type GiteEquipmentInfoExportPayload = {
+  version: number;
+  type: "gite-equipment-info";
+  exported_at: string;
+  gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat"> | null;
+  sections: StructuredContentData;
+};
 type PhotoDraft = {
   title: string;
   alt: string;
@@ -208,6 +215,7 @@ const buildStructuredContentDefaults = (): StructuredContentData => [
   { id: "infos-pratiques", titre: "Infos pratiques", groupes: [{ id: "infos-general", titre: "Général", items: [] }] },
   { id: "localisation", titre: "Localisation", groupes: [{ id: "localisation-general", titre: "Général", items: [] }] },
 ];
+const BED_SECTION_ID = "pieces-couchages";
 const REQUIRED_STRUCTURED_SECTIONS = buildStructuredContentDefaults();
 const ensureStructuredSections = (sections: StructuredContentData, sectionIds?: string[]) => {
   if (!sectionIds || sectionIds.length === 0) return sections;
@@ -366,6 +374,48 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
     .filter((section): section is StructuredContentSection => Boolean(section));
 
   return sections.length > 0 ? sections : buildStructuredContentDefaults();
+};
+
+const getEquipmentInfoSections = (value: string) =>
+  normalizeStructuredContentData(value).filter((section) => section.id !== BED_SECTION_ID);
+
+const mergeEquipmentInfoSections = (currentValue: string, importedSections: StructuredContentData) => {
+  const currentSections = normalizeStructuredContentData(currentValue);
+  const bedSections = currentSections.filter((section) => section.id === BED_SECTION_ID);
+  const visibleSections = importedSections.filter((section) => section.id !== BED_SECTION_ID);
+  return serializeStructuredValue([...visibleSections, ...bedSections]);
+};
+
+const normalizeImportedEquipmentInfoSections = (value: unknown): StructuredContentData => {
+  if (Array.isArray(value)) return getEquipmentInfoSections(serializeStructuredValue(value));
+  if (!value || typeof value !== "object") {
+    throw new Error("Format invalide: utilisez un export Équipement et infos.");
+  }
+
+  const payload = value as {
+    sections?: unknown;
+    public_structured_content?: unknown;
+    equipment_info?: { sections?: unknown };
+  };
+  if (Array.isArray(payload.sections)) return getEquipmentInfoSections(serializeStructuredValue(payload.sections));
+  if (Array.isArray(payload.equipment_info?.sections)) {
+    return getEquipmentInfoSections(serializeStructuredValue(payload.equipment_info.sections));
+  }
+  if (payload.public_structured_content !== undefined) {
+    return getEquipmentInfoSections(formatJsonField(payload.public_structured_content));
+  }
+
+  throw new Error("Format invalide: utilisez un export Équipement et infos.");
+};
+
+const buildExportFilenamePart = (value: string) => {
+  const slug = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "gite";
 };
 
 const hasStructuredContent = (value: unknown) => {
@@ -1047,6 +1097,7 @@ const GitesPage = () => {
   const [loading, setLoading] = useState(false);
   const [importingGites, setImportingGites] = useState(false);
   const [exportingGites, setExportingGites] = useState(false);
+  const [importingEquipmentInfo, setImportingEquipmentInfo] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
@@ -1063,6 +1114,7 @@ const GitesPage = () => {
   const [attachingPlaceholderId, setAttachingPlaceholderId] = useState<string | null>(null);
   const [fadingPlaceholderIds, setFadingPlaceholderIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const equipmentInfoImportInputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const formCardRef = useRef<HTMLDivElement | null>(null);
 
@@ -1406,6 +1458,10 @@ const GitesPage = () => {
     importInputRef.current?.click();
   };
 
+  const triggerEquipmentInfoImport = () => {
+    equipmentInfoImportInputRef.current?.click();
+  };
+
   const triggerPhotoUpload = () => {
     photoInputRef.current?.click();
   };
@@ -1485,6 +1541,72 @@ const GitesPage = () => {
     } finally {
       input.value = "";
       setImportingGites(false);
+    }
+  };
+
+  const exportEquipmentInfo = () => {
+    setError(null);
+    setNotice(null);
+    try {
+      const payload: GiteEquipmentInfoExportPayload = {
+        version: 1,
+        type: "gite-equipment-info",
+        exported_at: new Date().toISOString(),
+        gite: selected
+          ? {
+              id: selected.id,
+              nom: selected.nom,
+              prefixe_contrat: selected.prefixe_contrat,
+            }
+          : null,
+        sections: getEquipmentInfoSections(form.public_structured_content),
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const namePart = buildExportFilenamePart(selected?.nom ?? form.nom);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${namePart}-equipement-infos-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice("Équipement et infos exportés.");
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const importEquipmentInfoFromFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setImportingEquipmentInfo(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+      const importedSections = normalizeImportedEquipmentInfoSections(parsed);
+      if (importedSections.length === 0) {
+        throw new Error("Aucune section Équipement et infos détectée dans ce fichier.");
+      }
+      setForm((current) => ({
+        ...current,
+        public_structured_content: mergeEquipmentInfoSections(current.public_structured_content, importedSections),
+      }));
+      setNotice("Équipement et infos importés. Enregistrez cette section pour appliquer les changements.");
+    } catch (err: any) {
+      if (err instanceof SyntaxError) {
+        setError("Le fichier n'est pas un JSON valide.");
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      input.value = "";
+      setImportingEquipmentInfo(false);
     }
   };
 
@@ -2078,11 +2200,38 @@ const GitesPage = () => {
           <div className="section-subtitle">Équipement et infos</div>
           <div className="grid-2">
             <div className="structured-panel">
-              <div className="structured-panel__title">Contenu du site</div>
+              <div className="structured-panel__header">
+                <div className="structured-panel__title">Contenu du site</div>
+                <div className="structured-panel__actions">
+                  <input
+                    ref={equipmentInfoImportInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={(event) => void importEquipmentInfoFromFile(event)}
+                    style={{ display: "none" }}
+                  />
+                  <button
+                    type="button"
+                    className="table-action table-action--neutral"
+                    onClick={exportEquipmentInfo}
+                    disabled={importingEquipmentInfo}
+                  >
+                    Exporter
+                  </button>
+                  <button
+                    type="button"
+                    className="table-action table-action--neutral"
+                    onClick={triggerEquipmentInfoImport}
+                    disabled={importingEquipmentInfo}
+                  >
+                    {importingEquipmentInfo ? "Import..." : "Importer"}
+                  </button>
+                </div>
+              </div>
               <StructuredContentEditor
                 value={form.public_structured_content}
                 onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
-                excludeSectionIds={["pieces-couchages"]}
+                excludeSectionIds={[BED_SECTION_ID]}
               />
             </div>
           </div>
@@ -2094,7 +2243,7 @@ const GitesPage = () => {
               <StructuredContentEditor
                 value={form.public_structured_content}
                 onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
-                sectionIds={["pieces-couchages"]}
+                sectionIds={[BED_SECTION_ID]}
                 showToolbar={false}
               />
             </div>

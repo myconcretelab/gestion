@@ -2061,6 +2061,13 @@ body.app-scroll-locked {
   box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
 }
 
+.calendar-stay--selection {
+  border-color: color-mix(in srgb, var(--calendar-accent) 42%, #dbe3ea 58%);
+  background:
+    linear-gradient(180deg, #ffffff 0%, color-mix(in srgb, var(--calendar-accent-soft) 48%, #ffffff 52%) 100%),
+    linear-gradient(135deg, var(--calendar-accent-soft), transparent 58%);
+}
+
 .calendar-stay__head {
   display: flex;
   align-items: baseline;
@@ -5031,6 +5038,22 @@ body {
   color: #111827;
   font-size: 1rem;
   font-weight: 800;
+}
+
+.structured-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.structured-panel__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .structured-panel--bare {
