@@ -61,12 +61,12 @@ test("normalizeBookedGiteContentSections utilise les champs legacy en fallback",
     public_rooms: JSON.stringify([{ nom: "Chambre 1", couchages: ["Lit 160"], notes: "Rez-de-chaussée" }]),
   });
 
-  assert.equal(sections.length, 2);
+  assert.equal(sections.length, 1);
   assert.equal(sections[0].id, "equipements");
   assert.deepEqual(sections[0].groupes[0].items, ["Four", "Lave-vaisselle"]);
-  assert.equal(sections[1].id, "pieces-couchages");
-  assert.equal(sections[1].groupes[0].titre, "Chambre 1");
-  assert.equal(sections[1].groupes[0].note, "Rez-de-chaussée");
+  assert.equal(sections[0].groupes[1].type, "chambre");
+  assert.equal(sections[0].groupes[1].titre, "Chambre 1");
+  assert.equal(sections[0].groupes[1].note, "Rez-de-chaussée");
 });
 
 test("normalizeBookedGiteContentSections retourne une liste vide sans contenu", () => {

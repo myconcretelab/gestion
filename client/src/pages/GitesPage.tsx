@@ -84,8 +84,8 @@ const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
 const GITE_EDITOR_SECTIONS = [
   { id: "base-fiche", label: "Fiche gîte" },
   { id: "web-presentation", label: "Présentation" },
-  { id: "web-donnees", label: "Équipement et infos" },
-  { id: "web-chambres", label: "Chambres et couchages" },
+  { id: "web-donnees", label: "Pièces et équipement" },
+  { id: "web-chambres", label: "Infos complémentaires" },
   { id: "web-photos", label: "Photos" },
   { id: "gestion-finance", label: "Fiscalité & banque" },
   { id: "gestion-contact", label: "Propriétaires & contact" },
@@ -183,16 +183,33 @@ const BED_TYPE_OPTIONS = [
 type BedType = (typeof BED_TYPE_OPTIONS)[number]["type"];
 type BedItem = { kind: "bed"; type: BedType; count: number };
 type StructuredContentItem = string | BedItem;
-type StructuredContentGroup = { id: string; titre: string; items: StructuredContentItem[]; note?: string };
+type StructuredContentGroupType = "rubrique" | "chambre";
+type StructuredContentGroup = { id: string; titre: string; type?: StructuredContentGroupType; items: StructuredContentItem[]; note?: string };
 type StructuredContentSection = { id: string; titre: string; groupes: StructuredContentGroup[] };
 type StructuredContentData = StructuredContentSection[];
 
 const createStructuredId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_BED_ITEM: BedItem = { kind: "bed", type: "queen", count: 1 };
 const BED_TYPE_BY_ID = new Map(BED_TYPE_OPTIONS.map((option) => [option.type, option]));
+const GROUP_TYPE_OPTIONS: Array<{ value: StructuredContentGroupType; label: string }> = [
+  { value: "rubrique", label: "Rubrique" },
+  { value: "chambre", label: "Chambre" },
+];
 const isBedType = (value: unknown): value is BedType => typeof value === "string" && BED_TYPE_BY_ID.has(value as BedType);
 const isBedItem = (value: StructuredContentItem): value is BedItem =>
   Boolean(value && typeof value === "object" && !Array.isArray(value) && value.kind === "bed");
+const containsBedItems = (items: unknown) =>
+  Array.isArray(items) && items.some((item) => Boolean(item && typeof item === "object" && !Array.isArray(item) && (item as Record<string, unknown>).kind === "bed"));
+const isGroupType = (value: unknown): value is StructuredContentGroupType =>
+  value === "rubrique" || value === "chambre";
+const getGroupType = (group: StructuredContentGroup, sectionId: string): StructuredContentGroupType =>
+  group.type ?? "rubrique";
+const getEditorGroupType = (
+  group: StructuredContentGroup,
+  sectionId: string,
+  defaultGroupType: StructuredContentGroupType,
+  showGroupTypeSelect: boolean
+) => (showGroupTypeSelect ? getGroupType(group, sectionId) : defaultGroupType);
 const normalizeBedItem = (value: unknown): BedItem => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return DEFAULT_BED_ITEM;
   const row = value as Record<string, unknown>;
@@ -203,17 +220,25 @@ const normalizeBedItem = (value: unknown): BedItem => {
     count,
   };
 };
-const normalizeStructuredItems = (items: unknown, sectionId: string): StructuredContentItem[] => {
+const toStructuredContentItemText = (value: unknown) => {
+  if (isBedItem(value as StructuredContentItem)) {
+    const option = BED_TYPE_BY_ID.get((value as BedItem).type);
+    const label = option?.label ?? "Couchage";
+    return (value as BedItem).count > 1 ? `${(value as BedItem).count} x ${label}` : label;
+  }
+  return toDisplayText(value);
+};
+const normalizeStructuredItems = (items: unknown, groupType: StructuredContentGroupType): StructuredContentItem[] => {
   if (!Array.isArray(items)) return [];
-  if (sectionId === "pieces-couchages") return items.map(normalizeBedItem);
-  return items.map(toDisplayText);
+  if (groupType === "chambre") return items.map(normalizeBedItem);
+  return items.map(toStructuredContentItemText);
 };
 
 const buildStructuredContentDefaults = (): StructuredContentData => [
-  { id: "equipements", titre: "Équipements", groupes: [{ id: "equipements-general", titre: "Général", items: [] }] },
-  { id: "pieces-couchages", titre: "Chambres et couchages", groupes: [{ id: "pieces-chambre-1", titre: "Chambre 1", items: [], note: "" }] },
-  { id: "infos-pratiques", titre: "Infos pratiques", groupes: [{ id: "infos-general", titre: "Général", items: [] }] },
-  { id: "localisation", titre: "Localisation", groupes: [{ id: "localisation-general", titre: "Général", items: [] }] },
+  { id: "equipements", titre: "Pièces et équipement", groupes: [{ id: "equipements-general", titre: "Général", type: "rubrique", items: [] }] },
+  { id: "pieces-couchages", titre: "Infos complémentaires", groupes: [{ id: "pieces-info-1", titre: "Général", type: "rubrique", items: [], note: "" }] },
+  { id: "infos-pratiques", titre: "Infos pratiques", groupes: [{ id: "infos-general", titre: "Général", type: "rubrique", items: [] }] },
+  { id: "localisation", titre: "Localisation", groupes: [{ id: "localisation-general", titre: "Général", type: "rubrique", items: [] }] },
 ];
 const BED_SECTION_ID = "pieces-couchages";
 const REQUIRED_STRUCTURED_SECTIONS = buildStructuredContentDefaults();
@@ -348,17 +373,20 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
               if (group && typeof group === "object") {
                 const groupRow = group as Record<string, unknown>;
                 const rawItems = groupRow.items ?? groupRow.lignes ?? groupRow.values ?? [];
+                const type = isGroupType(groupRow.type) ? groupRow.type : containsBedItems(rawItems) ? "chambre" : "rubrique";
                 return {
                   id: toDisplayText(groupRow.id) || `section-${sectionIndex}-group-${groupIndex}`,
                   titre: toDisplayText(groupRow.titre ?? groupRow.title ?? groupRow.nom) || `Groupe ${groupIndex + 1}`,
-                  items: normalizeStructuredItems(rawItems, sectionId),
+                  type,
+                  items: normalizeStructuredItems(rawItems, type),
                   note: toDisplayText(groupRow.note ?? groupRow.notes),
                 };
               }
               return {
                 id: `section-${sectionIndex}-group-${groupIndex}`,
                 titre: `Groupe ${groupIndex + 1}`,
-                items: sectionId === "pieces-couchages" ? [DEFAULT_BED_ITEM] : [toDisplayText(group)],
+                type: "rubrique",
+                items: [toDisplayText(group)],
                 note: "",
               };
             })
@@ -367,7 +395,7 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
 
       return {
         id: sectionId,
-        titre: toDisplayText(row.titre ?? row.title ?? row.nom) || `Section ${sectionIndex + 1}`,
+        titre: sectionId === BED_SECTION_ID ? "Infos complémentaires" : toDisplayText(row.titre ?? row.title ?? row.nom) || `Section ${sectionIndex + 1}`,
         groupes,
       };
     })
@@ -376,20 +404,23 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
   return sections.length > 0 ? sections : buildStructuredContentDefaults();
 };
 
+const isSectionInFamily = (section: StructuredContentSection, familyId: string) =>
+  section.id === familyId || section.id.startsWith(`${familyId}-`);
+
 const getEquipmentInfoSections = (value: string) =>
-  normalizeStructuredContentData(value).filter((section) => section.id !== BED_SECTION_ID);
+  normalizeStructuredContentData(value).filter((section) => !isSectionInFamily(section, BED_SECTION_ID));
 
 const mergeEquipmentInfoSections = (currentValue: string, importedSections: StructuredContentData) => {
   const currentSections = normalizeStructuredContentData(currentValue);
-  const bedSections = currentSections.filter((section) => section.id === BED_SECTION_ID);
-  const visibleSections = importedSections.filter((section) => section.id !== BED_SECTION_ID);
+  const bedSections = currentSections.filter((section) => isSectionInFamily(section, BED_SECTION_ID));
+  const visibleSections = importedSections.filter((section) => !isSectionInFamily(section, BED_SECTION_ID));
   return serializeStructuredValue([...visibleSections, ...bedSections]);
 };
 
 const normalizeImportedEquipmentInfoSections = (value: unknown): StructuredContentData => {
   if (Array.isArray(value)) return getEquipmentInfoSections(serializeStructuredValue(value));
   if (!value || typeof value !== "object") {
-    throw new Error("Format invalide: utilisez un export Équipement et infos.");
+    throw new Error("Format invalide: utilisez un export Pièces et équipement.");
   }
 
   const payload = value as {
@@ -405,7 +436,7 @@ const normalizeImportedEquipmentInfoSections = (value: unknown): StructuredConte
     return getEquipmentInfoSections(formatJsonField(payload.public_structured_content));
   }
 
-  throw new Error("Format invalide: utilisez un export Équipement et infos.");
+  throw new Error("Format invalide: utilisez un export Pièces et équipement.");
 };
 
 const buildExportFilenamePart = (value: string) => {
@@ -436,26 +467,32 @@ const buildStructuredContentFromLegacy = (gite: Gite): StructuredContentData => 
 
   sections[0] = {
     ...sections[0],
-    groupes: Object.entries(equipment).map(([titre, items], index) => ({
-      id: `equipements-${index}`,
-      titre,
-      items,
-    })),
+    groupes: [
+      ...Object.entries(equipment).map(([titre, items], index) => ({
+        id: `equipements-${index}`,
+        titre,
+        type: "rubrique" as const,
+        items,
+      })),
+      ...rooms.map((room, index) => ({
+        id: `piece-${index}`,
+        titre: room.nom || `Pièce ${index + 1}`,
+        type: "chambre" as const,
+        items: room.couchages.length > 0 ? room.couchages.map(() => DEFAULT_BED_ITEM) : [],
+        note: room.notes ?? "",
+      })),
+    ],
   };
   sections[1] = {
     ...sections[1],
-    groupes: rooms.map((room, index) => ({
-      id: `piece-${index}`,
-      titre: room.nom || `Pièce ${index + 1}`,
-      items: room.couchages.length > 0 ? room.couchages.map(() => DEFAULT_BED_ITEM) : [],
-      note: room.notes ?? "",
-    })),
+    groupes: [],
   };
   sections[2] = {
     ...sections[2],
     groupes: practicalInfo.map((info, index) => ({
       id: `info-${index}`,
       titre: info.titre || `Info ${index + 1}`,
+      type: "rubrique",
       items: info.contenu ? [info.contenu] : [],
     })),
   };
@@ -467,12 +504,13 @@ const buildStructuredContentFromLegacy = (gite: Gite): StructuredContentData => 
             {
               id: "localisation-points",
               titre: "Lieux proches",
+              type: "rubrique" as const,
               items: location.points.map((point) => [point.lieu, point.distance].filter(Boolean).join(" - ")),
             },
           ]
         : []),
       ...(location.notes.length > 0
-        ? [{ id: "localisation-notes", titre: "Notes", items: location.notes }]
+        ? [{ id: "localisation-notes", titre: "Notes", type: "rubrique" as const, items: location.notes }]
         : []),
     ],
   };
@@ -484,7 +522,12 @@ type StructuredEditorProps = {
   value: string;
   onChange: (value: string) => void;
   sectionIds?: string[];
+  sectionFamilyId?: string;
   excludeSectionIds?: string[];
+  excludeSectionFamilyIds?: string[];
+  allowedGroupTypes?: StructuredContentGroupType[];
+  defaultGroupType?: StructuredContentGroupType;
+  showGroupTypeSelect?: boolean;
   showToolbar?: boolean;
 };
 
@@ -504,10 +547,22 @@ const BedPictogram = ({ type }: { type: BedType }) => {
   );
 };
 
-const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionIds, showToolbar = true }: StructuredEditorProps) => {
+const StructuredContentEditor = ({
+  value,
+  onChange,
+  sectionIds,
+  sectionFamilyId,
+  excludeSectionIds,
+  excludeSectionFamilyIds,
+  allowedGroupTypes = ["rubrique", "chambre"],
+  defaultGroupType = "rubrique",
+  showGroupTypeSelect = true,
+  showToolbar = true,
+}: StructuredEditorProps) => {
   const sections = ensureStructuredSections(normalizeStructuredContentData(value), sectionIds);
   const visibleSectionIds = sectionIds ? new Set(sectionIds) : null;
   const excludedSectionIds = excludeSectionIds ? new Set(excludeSectionIds) : null;
+  const excludedSectionFamilyIds = excludeSectionFamilyIds ?? [];
   const locksVisibleSections = Boolean(visibleSectionIds);
   const [draggedSectionIndex, setDraggedSectionIndex] = useState<number | null>(null);
   const [dragOverSectionIndex, setDragOverSectionIndex] = useState<number | null>(null);
@@ -532,6 +587,13 @@ const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionId
   const toggleSection = (sectionId: string) => {
     setCollapsedSections((current) => ({ ...current, [sectionId]: !current[sectionId] }));
   };
+  const isSectionVisible = (section: StructuredContentSection) => {
+    if (visibleSectionIds && !visibleSectionIds.has(section.id)) return false;
+    if (sectionFamilyId && section.id !== sectionFamilyId && !section.id.startsWith(`${sectionFamilyId}-`)) return false;
+    if (excludedSectionIds && excludedSectionIds.has(section.id)) return false;
+    if (excludedSectionFamilyIds.some((familyId) => section.id === familyId || section.id.startsWith(`${familyId}-`))) return false;
+    return true;
+  };
 
   return (
     <div className="structured-editor structured-editor--content">
@@ -544,9 +606,9 @@ const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionId
             commit([
               ...sections,
               {
-                id: createStructuredId("section"),
+                id: createStructuredId(sectionFamilyId ?? "section"),
                 titre: "Nouvelle section",
-                groupes: [{ id: createStructuredId("groupe"), titre: "Général", items: [] }],
+                groupes: [{ id: createStructuredId("groupe"), titre: "Général", type: defaultGroupType, items: [] }],
               },
             ])
           }
@@ -557,10 +619,8 @@ const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionId
       ) : null}
       <div className="structured-grid structured-grid--sections">
         {sections.map((section, sectionIndex) => {
-          if (visibleSectionIds && !visibleSectionIds.has(section.id)) return null;
-          if (excludedSectionIds && excludedSectionIds.has(section.id)) return null;
+          if (!isSectionVisible(section)) return null;
           const isCollapsed = collapsedSections[section.id] ?? false;
-          const isBedsSection = section.id === "pieces-couchages";
           return (
             <article
               key={section.id}
@@ -640,7 +700,30 @@ const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionId
                   <div className="structured-group-list">
                     {section.groupes.map((group, groupIndex) => (
                       <div key={group.id} className="structured-group">
-                        <div className="structured-group__header">
+                        <div className={`structured-group__header${showGroupTypeSelect ? "" : " structured-group__header--without-type"}`}>
+                          {showGroupTypeSelect ? (
+                            <select
+                              className="structured-group__type"
+                              value={getGroupType(group, section.id)}
+                              onChange={(event) =>
+                                updateGroup(sectionIndex, groupIndex, (current) => {
+                                  const type = event.target.value as StructuredContentGroupType;
+                                  return {
+                                    ...current,
+                                    type,
+                                    items: type === "chambre" ? current.items.map(normalizeBedItem) : current.items.map(toStructuredContentItemText),
+                                  };
+                                })
+                              }
+                              aria-label="Type de rubrique"
+                            >
+                              {GROUP_TYPE_OPTIONS.filter((option) => allowedGroupTypes.includes(option.value)).map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
                           <input
                             className="structured-card__title-input structured-card__title-input--group"
                             value={group.titre}
@@ -664,7 +747,7 @@ const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionId
                             ×
                           </button>
                         </div>
-                        {isBedsSection ? (
+                        {getEditorGroupType(group, section.id, defaultGroupType, showGroupTypeSelect) === "chambre" ? (
                           <div className="bed-list">
                             {group.items.map((item, itemIndex) => {
                               const bed = isBedItem(item) ? item : DEFAULT_BED_ITEM;
@@ -738,7 +821,7 @@ const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionId
                         ) : (
                           <div className="structured-chips">
                             {group.items.map((item, itemIndex) => {
-                              const textItem = toDisplayText(item);
+                              const textItem = toStructuredContentItemText(item);
                               return (
                                 <span key={`${group.id}-${itemIndex}`} className="structured-chip">
                                   <input
@@ -797,14 +880,15 @@ const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionId
                           ...current.groupes,
                           {
                             id: createStructuredId("groupe"),
-                            titre: isBedsSection ? `Chambre ${current.groupes.length + 1}` : "Nouvelle rubrique",
-                            items: isBedsSection ? [DEFAULT_BED_ITEM] : [],
+                            titre: defaultGroupType === "chambre" ? `Chambre ${current.groupes.length + 1}` : "Nouvelle rubrique",
+                            type: defaultGroupType,
+                            items: defaultGroupType === "chambre" ? [DEFAULT_BED_ITEM] : [],
                           },
                         ],
                       }))
                     }
                   >
-                    {isBedsSection ? "+ Ajouter une chambre" : "+ Ajouter une rubrique"}
+                    {defaultGroupType === "chambre" ? "+ Ajouter une chambre" : "+ Ajouter une rubrique"}
                   </button>
                 </div>
               ) : null}
@@ -1572,7 +1656,7 @@ const GitesPage = () => {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setNotice("Équipement et infos exportés.");
+      setNotice("Pièces et équipement exportés.");
     } catch (err: any) {
       setError(err.message);
     }
@@ -1591,13 +1675,13 @@ const GitesPage = () => {
       const parsed = JSON.parse(text) as unknown;
       const importedSections = normalizeImportedEquipmentInfoSections(parsed);
       if (importedSections.length === 0) {
-        throw new Error("Aucune section Équipement et infos détectée dans ce fichier.");
+        throw new Error("Aucune section Pièces et équipement détectée dans ce fichier.");
       }
       setForm((current) => ({
         ...current,
         public_structured_content: mergeEquipmentInfoSections(current.public_structured_content, importedSections),
       }));
-      setNotice("Équipement et infos importés. Enregistrez cette section pour appliquer les changements.");
+      setNotice("Pièces et équipement importés. Enregistrez cette section pour appliquer les changements.");
     } catch (err: any) {
       if (err instanceof SyntaxError) {
         setError("Le fichier n'est pas un JSON valide.");
@@ -2197,7 +2281,7 @@ const GitesPage = () => {
         </div>
 
         <div id="gite-editor-site-structure" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-donnees"}>
-          <div className="section-subtitle">Équipement et infos</div>
+          <div className="section-subtitle">Pièces et équipement</div>
           <div className="grid-2">
             <div className="structured-panel">
               <div className="structured-panel__header">
@@ -2231,7 +2315,7 @@ const GitesPage = () => {
               <StructuredContentEditor
                 value={form.public_structured_content}
                 onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
-                excludeSectionIds={[BED_SECTION_ID]}
+                excludeSectionFamilyIds={[BED_SECTION_ID]}
               />
             </div>
           </div>
@@ -2243,8 +2327,10 @@ const GitesPage = () => {
               <StructuredContentEditor
                 value={form.public_structured_content}
                 onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
-                sectionIds={[BED_SECTION_ID]}
-                showToolbar={false}
+                sectionFamilyId={BED_SECTION_ID}
+                allowedGroupTypes={["rubrique"]}
+                defaultGroupType="rubrique"
+                showGroupTypeSelect={false}
               />
             </div>
           </div>

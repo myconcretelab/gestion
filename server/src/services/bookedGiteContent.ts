@@ -7,6 +7,7 @@ export type BookedGiteContentItem = string | { kind: "bed"; type: BedType; count
 export type BookedGiteContentGroup = {
   id: string;
   titre: string;
+  type?: "rubrique" | "chambre";
   items: BookedGiteContentItem[];
   note?: string;
 };
@@ -46,11 +47,14 @@ const normalizeBedItem = (value: unknown): BookedGiteContentItem | null => {
   return { kind: "bed", type, count };
 };
 
-const normalizeItems = (items: unknown, sectionId: string): BookedGiteContentItem[] => {
+const containsBedItems = (items: unknown) =>
+  Array.isArray(items) && items.some((item) => Boolean(item && typeof item === "object" && !Array.isArray(item) && (item as Record<string, unknown>).kind === "bed"));
+
+const normalizeItems = (items: unknown, groupType: "rubrique" | "chambre"): BookedGiteContentItem[] => {
   if (!Array.isArray(items)) return [];
   return items
     .map((item) => {
-      if (sectionId === BED_SECTION_ID) {
+      if (groupType === "chambre") {
         const bed = normalizeBedItem(item);
         if (bed) return bed;
       }
@@ -75,11 +79,15 @@ const normalizeStructuredContent = (value: unknown): BookedGiteContentSection[] 
             .map((group, groupIndex): BookedGiteContentGroup | null => {
               if (!group || typeof group !== "object" || Array.isArray(group)) return null;
               const groupRow = group as Record<string, unknown>;
-              const items = normalizeItems(groupRow.items ?? groupRow.lignes ?? groupRow.values ?? [], sectionId);
+              const rawType = textValue(groupRow.type);
+              const rawItems = groupRow.items ?? groupRow.lignes ?? groupRow.values ?? [];
+              const type = rawType === "chambre" || (!rawType && containsBedItems(rawItems)) ? "chambre" : "rubrique";
+              const items = normalizeItems(rawItems, type);
               const note = textValue(groupRow.note ?? groupRow.notes);
               return {
                 id: textValue(groupRow.id) || `${sectionId}-group-${groupIndex + 1}`,
                 titre: textValue(groupRow.titre ?? groupRow.title ?? groupRow.nom) || `Rubrique ${groupIndex + 1}`,
+                type,
                 items,
                 ...(note ? { note } : {}),
               };
@@ -101,16 +109,16 @@ const normalizeEquipmentLegacy = (value: unknown): BookedGiteContentSection | nu
       const items = Array.isArray(rawItems)
         ? rawItems.map(textValue).filter(Boolean)
         : textValue(rawItems).split(/[,;\n]+/).map((item) => item.trim()).filter(Boolean);
-      groups.push({ id: `equipements-${index + 1}`, titre: title || `Équipements ${index + 1}`, items });
+      groups.push({ id: `equipements-${index + 1}`, titre: title || `Équipements ${index + 1}`, type: "rubrique", items });
     });
   } else if (Array.isArray(parsed)) {
-    groups.push({ id: "equipements-1", titre: "Général", items: parsed.map(textValue).filter(Boolean) });
+    groups.push({ id: "equipements-1", titre: "Général", type: "rubrique", items: parsed.map(textValue).filter(Boolean) });
   } else {
     const text = textValue(parsed);
-    if (text) groups.push({ id: "equipements-1", titre: "Général", items: [text] });
+    if (text) groups.push({ id: "equipements-1", titre: "Général", type: "rubrique", items: [text] });
   }
 
-  return groups.length > 0 ? { id: "equipements", titre: "Équipements", groupes: groups } : null;
+  return groups.length > 0 ? { id: "equipements", titre: "Pièces et équipement", groupes: groups } : null;
 };
 
 const normalizeRoomsLegacy = (value: unknown): BookedGiteContentSection | null => {
@@ -129,12 +137,13 @@ const normalizeRoomsLegacy = (value: unknown): BookedGiteContentSection | null =
         groups.push({
           id: `pieces-${index + 1}`,
           titre: textValue(row.nom ?? row.name ?? row.titre ?? row.title) || `Pièce ${index + 1}`,
+          type: "chambre",
           items,
           ...(note ? { note } : {}),
         });
       } else {
         const title = textValue(room);
-        if (title) groups.push({ id: `pieces-${index + 1}`, titre: title, items: [] });
+        if (title) groups.push({ id: `pieces-${index + 1}`, titre: title, type: "chambre", items: [] });
       }
     });
   } else if (parsed && typeof parsed === "object") {
@@ -142,18 +151,22 @@ const normalizeRoomsLegacy = (value: unknown): BookedGiteContentSection | null =
       const items = Array.isArray(rawBeds)
         ? rawBeds.map(textValue).filter(Boolean)
         : textValue(rawBeds).split(/[,;\n]+/).map((item) => item.trim()).filter(Boolean);
-      groups.push({ id: `pieces-${index + 1}`, titre: title || `Pièce ${index + 1}`, items });
+      groups.push({ id: `pieces-${index + 1}`, titre: title || `Pièce ${index + 1}`, type: "chambre", items });
     });
   }
 
-  return groups.length > 0 ? { id: BED_SECTION_ID, titre: "Chambres et couchages", groupes: groups } : null;
+  return groups.length > 0 ? { id: BED_SECTION_ID, titre: "Infos complémentaires", groupes: groups } : null;
 };
 
 export const normalizeBookedGiteContentSections = (source: BookedGiteContentSource): BookedGiteContentSection[] => {
   const structured = normalizeStructuredContent(source.public_structured_content);
   if (structured.length > 0) return structured;
 
-  return [normalizeEquipmentLegacy(source.public_equipment), normalizeRoomsLegacy(source.public_rooms)].filter(
-    (section): section is BookedGiteContentSection => Boolean(section)
-  );
+  const equipmentSection = normalizeEquipmentLegacy(source.public_equipment);
+  const roomSection = normalizeRoomsLegacy(source.public_rooms);
+  if (equipmentSection && roomSection) {
+    return [{ ...equipmentSection, groupes: [...equipmentSection.groupes, ...roomSection.groupes] }];
+  }
+  if (roomSection) return [{ id: "equipements", titre: "Pièces et équipement", groupes: roomSection.groupes }];
+  return equipmentSection ? [equipmentSection] : [];
 };
