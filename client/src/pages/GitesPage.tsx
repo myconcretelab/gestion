@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import type { Gestionnaire, Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
@@ -76,7 +77,8 @@ const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
 const GITE_EDITOR_SECTIONS = [
   { id: "base-fiche", label: "Fiche gîte" },
   { id: "web-presentation", label: "Présentation" },
-  { id: "web-donnees", label: "Données & SEO" },
+  { id: "web-donnees", label: "Équipement et infos" },
+  { id: "web-chambres", label: "Chambres et couchages" },
   { id: "web-photos", label: "Photos" },
   { id: "gestion-finance", label: "Fiscalité & banque" },
   { id: "gestion-contact", label: "Propriétaires & contact" },
@@ -91,7 +93,7 @@ const GITE_EDITOR_SECTION_GROUPS = [
   },
   {
     title: "Web",
-    items: ["web-presentation", "web-donnees", "web-photos"],
+    items: ["web-presentation", "web-donnees", "web-chambres", "web-photos"],
   },
   {
     title: "Gestion",
@@ -103,6 +105,10 @@ const GITE_EDITOR_SECTION_GROUPS = [
   },
 ] as const;
 const GITE_EDITOR_SECTION_BY_ID = new Map(GITE_EDITOR_SECTIONS.map((section) => [section.id, section]));
+type GiteEditorSectionId = (typeof GITE_EDITOR_SECTIONS)[number]["id"];
+
+const isGiteEditorSectionId = (value: string | null): value is GiteEditorSectionId =>
+  Boolean(value && GITE_EDITOR_SECTION_BY_ID.has(value as GiteEditorSectionId));
 
 const formatManagerLabel = (gite: Gite) =>
   gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "Gestion directe";
@@ -157,18 +163,58 @@ type EquipmentData = Record<string, string[]>;
 type RoomData = Array<{ nom: string; couchages: string[]; notes?: string }>;
 type InfoData = Array<{ titre: string; contenu: string }>;
 type LocationData = { points: Array<{ lieu: string; distance: string }>; notes: string[] };
-type StructuredContentGroup = { id: string; titre: string; items: string[]; note?: string };
+const BED_TYPE_OPTIONS = [
+  { type: "single", label: "Lit 90", size: "90 x 190", icon: "single" },
+  { type: "double", label: "Lit 140", size: "140 x 190", icon: "double" },
+  { type: "queen", label: "Lit 160", size: "160 x 200", icon: "queen" },
+  { type: "king", label: "Lit 180", size: "180 x 200", icon: "king" },
+  { type: "bunk", label: "Lits superposés", size: "2 couchages", icon: "bunk" },
+  { type: "sofa_bed", label: "Canapé-lit", size: "Convertible", icon: "sofa" },
+  { type: "baby", label: "Lit bébé", size: "Bébé", icon: "baby" },
+] as const;
+
+type BedType = (typeof BED_TYPE_OPTIONS)[number]["type"];
+type BedItem = { kind: "bed"; type: BedType; count: number };
+type StructuredContentItem = string | BedItem;
+type StructuredContentGroup = { id: string; titre: string; items: StructuredContentItem[]; note?: string };
 type StructuredContentSection = { id: string; titre: string; groupes: StructuredContentGroup[] };
 type StructuredContentData = StructuredContentSection[];
 
 const createStructuredId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const DEFAULT_BED_ITEM: BedItem = { kind: "bed", type: "queen", count: 1 };
+const BED_TYPE_BY_ID = new Map(BED_TYPE_OPTIONS.map((option) => [option.type, option]));
+const isBedType = (value: unknown): value is BedType => typeof value === "string" && BED_TYPE_BY_ID.has(value as BedType);
+const isBedItem = (value: StructuredContentItem): value is BedItem =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value) && value.kind === "bed");
+const normalizeBedItem = (value: unknown): BedItem => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return DEFAULT_BED_ITEM;
+  const row = value as Record<string, unknown>;
+  const count = typeof row.count === "number" && Number.isFinite(row.count) ? Math.max(1, Math.round(row.count)) : 1;
+  return {
+    kind: "bed",
+    type: isBedType(row.type) ? row.type : DEFAULT_BED_ITEM.type,
+    count,
+  };
+};
+const normalizeStructuredItems = (items: unknown, sectionId: string): StructuredContentItem[] => {
+  if (!Array.isArray(items)) return [];
+  if (sectionId === "pieces-couchages") return items.map(normalizeBedItem);
+  return items.map(toDisplayText);
+};
 
 const buildStructuredContentDefaults = (): StructuredContentData => [
   { id: "equipements", titre: "Équipements", groupes: [{ id: "equipements-general", titre: "Général", items: [] }] },
-  { id: "pieces-couchages", titre: "Pièces et couchages", groupes: [{ id: "pieces-chambre-1", titre: "Chambre 1", items: [], note: "" }] },
+  { id: "pieces-couchages", titre: "Chambres et couchages", groupes: [{ id: "pieces-chambre-1", titre: "Chambre 1", items: [], note: "" }] },
   { id: "infos-pratiques", titre: "Infos pratiques", groupes: [{ id: "infos-general", titre: "Général", items: [] }] },
   { id: "localisation", titre: "Localisation", groupes: [{ id: "localisation-general", titre: "Général", items: [] }] },
 ];
+const REQUIRED_STRUCTURED_SECTIONS = buildStructuredContentDefaults();
+const ensureStructuredSections = (sections: StructuredContentData, sectionIds?: string[]) => {
+  if (!sectionIds || sectionIds.length === 0) return sections;
+  const existingIds = new Set(sections.map((section) => section.id));
+  const missingSections = REQUIRED_STRUCTURED_SECTIONS.filter((section) => sectionIds.includes(section.id) && !existingIds.has(section.id));
+  return missingSections.length > 0 ? [...sections, ...missingSections] : sections;
+};
 
 const normalizeEquipmentData = (value: string): EquipmentData => {
   const parsed = parseStoredJson(value);
@@ -287,6 +333,7 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
       if (!section || typeof section !== "object") return null;
       const row = section as Record<string, unknown>;
       const rawGroups = row.groupes ?? row.groups ?? row.items ?? [];
+      const sectionId = toDisplayText(row.id) || `section-${sectionIndex}`;
       const groupes = Array.isArray(rawGroups)
         ? rawGroups
             .map((group, groupIndex): StructuredContentGroup | null => {
@@ -296,14 +343,14 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
                 return {
                   id: toDisplayText(groupRow.id) || `section-${sectionIndex}-group-${groupIndex}`,
                   titre: toDisplayText(groupRow.titre ?? groupRow.title ?? groupRow.nom) || `Groupe ${groupIndex + 1}`,
-                  items: Array.isArray(rawItems) ? rawItems.map(toDisplayText) : toDisplayText(rawItems) ? [toDisplayText(rawItems)] : [],
+                  items: normalizeStructuredItems(rawItems, sectionId),
                   note: toDisplayText(groupRow.note ?? groupRow.notes),
                 };
               }
               return {
                 id: `section-${sectionIndex}-group-${groupIndex}`,
                 titre: `Groupe ${groupIndex + 1}`,
-                items: [toDisplayText(group)],
+                items: sectionId === "pieces-couchages" ? [DEFAULT_BED_ITEM] : [toDisplayText(group)],
                 note: "",
               };
             })
@@ -311,7 +358,7 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
         : [];
 
       return {
-        id: toDisplayText(row.id) || `section-${sectionIndex}`,
+        id: sectionId,
         titre: toDisplayText(row.titre ?? row.title ?? row.nom) || `Section ${sectionIndex + 1}`,
         groupes,
       };
@@ -350,7 +397,7 @@ const buildStructuredContentFromLegacy = (gite: Gite): StructuredContentData => 
     groupes: rooms.map((room, index) => ({
       id: `piece-${index}`,
       titre: room.nom || `Pièce ${index + 1}`,
-      items: room.couchages,
+      items: room.couchages.length > 0 ? room.couchages.map(() => DEFAULT_BED_ITEM) : [],
       note: room.notes ?? "",
     })),
   };
@@ -386,12 +433,35 @@ const buildStructuredContentFromLegacy = (gite: Gite): StructuredContentData => 
 type StructuredEditorProps = {
   value: string;
   onChange: (value: string) => void;
+  sectionIds?: string[];
+  excludeSectionIds?: string[];
+  showToolbar?: boolean;
 };
 
-const StructuredContentEditor = ({ value, onChange }: StructuredEditorProps) => {
-  const sections = normalizeStructuredContentData(value);
+const BedPictogram = ({ type }: { type: BedType }) => {
+  const option = BED_TYPE_BY_ID.get(type) ?? BED_TYPE_BY_ID.get(DEFAULT_BED_ITEM.type);
+  return (
+    <span className={`bed-picto bed-picto--${option?.icon ?? "queen"}`} aria-hidden="true">
+      <svg viewBox="0 0 48 32" focusable="false">
+        <rect className="bed-picto__frame" x="5" y="13" width="38" height="12" rx="3" />
+        <rect className="bed-picto__pillow" x="8" y="9" width="11" height="8" rx="2" />
+        <path className="bed-picto__base" d="M5 25h38M9 25v4M39 25v4" />
+        {type === "bunk" ? <path className="bed-picto__detail" d="M8 7h32M8 7v19M40 7v19M8 16h32" /> : null}
+        {type === "sofa_bed" ? <path className="bed-picto__detail" d="M10 12v-2h28v2M12 22h24" /> : null}
+        {type === "baby" ? <path className="bed-picto__detail" d="M12 9h24M12 9v16M36 9v16M18 9v16M24 9v16M30 9v16" /> : null}
+      </svg>
+    </span>
+  );
+};
+
+const StructuredContentEditor = ({ value, onChange, sectionIds, excludeSectionIds, showToolbar = true }: StructuredEditorProps) => {
+  const sections = ensureStructuredSections(normalizeStructuredContentData(value), sectionIds);
+  const visibleSectionIds = sectionIds ? new Set(sectionIds) : null;
+  const excludedSectionIds = excludeSectionIds ? new Set(excludeSectionIds) : null;
+  const locksVisibleSections = Boolean(visibleSectionIds);
   const [draggedSectionIndex, setDraggedSectionIndex] = useState<number | null>(null);
   const [dragOverSectionIndex, setDragOverSectionIndex] = useState<number | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const commit = (next: StructuredContentData) => onChange(serializeStructuredValue(next));
   const updateSection = (sectionIndex: number, updater: (section: StructuredContentSection) => StructuredContentSection) => {
     const next = [...sections];
@@ -409,10 +479,14 @@ const StructuredContentEditor = ({ value, onChange }: StructuredEditorProps) => 
       return { ...section, groupes };
     });
   };
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSections((current) => ({ ...current, [sectionId]: !current[sectionId] }));
+  };
 
   return (
     <div className="structured-editor structured-editor--content">
-      <div className="structured-editor__toolbar">
+      {showToolbar ? (
+        <div className="structured-editor__toolbar">
         <button
           type="button"
           className="table-action table-action--primary"
@@ -427,153 +501,266 @@ const StructuredContentEditor = ({ value, onChange }: StructuredEditorProps) => 
             ])
           }
         >
-          Ajouter une section
+          Ajouter un bloc
         </button>
-      </div>
+        </div>
+      ) : null}
       <div className="structured-grid structured-grid--sections">
-        {sections.map((section, sectionIndex) => (
-          <article
-            key={section.id}
-            className={`structured-card structured-card--section${
-              dragOverSectionIndex === sectionIndex ? " structured-card--drag-over" : ""
-            }`}
-            onDragOver={(event) => {
-              if (draggedSectionIndex === null || draggedSectionIndex === sectionIndex) return;
-              event.preventDefault();
-              setDragOverSectionIndex(sectionIndex);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              if (draggedSectionIndex === null || draggedSectionIndex === sectionIndex) {
-                setDraggedSectionIndex(null);
-                setDragOverSectionIndex(null);
-                return;
-              }
-              const next = [...sections];
-              const [moved] = next.splice(draggedSectionIndex, 1);
-              next.splice(sectionIndex, 0, moved);
-              commit(next);
-              setDraggedSectionIndex(null);
-              setDragOverSectionIndex(null);
-            }}
-          >
-            <div className="structured-card__header">
-              <button
-                type="button"
-                className="structured-drag-handle"
-                draggable
-                aria-label={`Déplacer ${section.titre || "cette section"}`}
-                onDragStart={(event) => {
-                  setDraggedSectionIndex(sectionIndex);
-                  setDragOverSectionIndex(sectionIndex);
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", String(sectionIndex));
-                }}
-                onDragEnd={() => {
+        {sections.map((section, sectionIndex) => {
+          if (visibleSectionIds && !visibleSectionIds.has(section.id)) return null;
+          if (excludedSectionIds && excludedSectionIds.has(section.id)) return null;
+          const isCollapsed = collapsedSections[section.id] ?? false;
+          const isBedsSection = section.id === "pieces-couchages";
+          return (
+            <article
+              key={section.id}
+              className={`structured-card structured-card--section${locksVisibleSections ? " structured-card--locked-root" : ""}${
+                dragOverSectionIndex === sectionIndex ? " structured-card--drag-over" : ""
+              }`}
+              onDragOver={(event) => {
+                if (draggedSectionIndex === null || draggedSectionIndex === sectionIndex) return;
+                event.preventDefault();
+                setDragOverSectionIndex(sectionIndex);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (draggedSectionIndex === null || draggedSectionIndex === sectionIndex) {
                   setDraggedSectionIndex(null);
                   setDragOverSectionIndex(null);
-                }}
-              >
-                ⋮⋮
-              </button>
-              <input
-                className="structured-card__title-input"
-                value={section.titre}
-                onChange={(event) => updateSection(sectionIndex, (current) => ({ ...current, titre: event.target.value }))}
-              />
-              <button
-                type="button"
-                className="table-action table-action--neutral"
-                onClick={() => commit(sections.filter((_, index) => index !== sectionIndex))}
-              >
-                Retirer
-              </button>
-            </div>
-            <div className="structured-card__actions">
-              <button
-                type="button"
-                className="table-action table-action--neutral"
-                onClick={() =>
-                  updateSection(sectionIndex, (current) => ({
-                    ...current,
-                    groupes: [...current.groupes, { id: createStructuredId("groupe"), titre: "Nouveau groupe", items: [] }],
-                  }))
+                  return;
                 }
-              >
-                Ajouter un groupe
-              </button>
-            </div>
-            {section.groupes.length === 0 ? <div className="structured-empty">Aucun groupe dans cette section.</div> : null}
-            <div className="structured-group-list">
-              {section.groupes.map((group, groupIndex) => (
-                <div key={group.id} className="structured-group">
-                  <div className="structured-card__header">
-                    <input
-                      className="structured-card__title-input"
-                      value={group.titre}
-                      onChange={(event) => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, titre: event.target.value }))}
-                    />
-                    <button
-                      type="button"
-                      className="table-action table-action--neutral"
-                      onClick={() =>
-                        updateSection(sectionIndex, (current) => ({
-                          ...current,
-                          groupes: current.groupes.filter((_, index) => index !== groupIndex),
-                        }))
-                      }
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                  <div className="structured-chips">
-                    {group.items.map((item, itemIndex) => (
-                      <span key={`${group.id}-${itemIndex}`} className="structured-chip">
-                        <input
-                          value={item}
-                          size={Math.min(Math.max(item.length || 14, 14), 34)}
-                          onChange={(event) =>
-                            updateGroup(sectionIndex, groupIndex, (current) => {
-                              const items = [...current.items];
-                              items[itemIndex] = event.target.value;
-                              return { ...current, items };
-                            })
-                          }
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateGroup(sectionIndex, groupIndex, (current) => ({
-                              ...current,
-                              items: current.items.filter((_, index) => index !== itemIndex),
-                            }))
-                          }
-                          aria-label={`Supprimer ${item || "cette ligne"}`}
-                        >
-                          ×
-                        </button>
-                      </span>
+                const next = [...sections];
+                const [moved] = next.splice(draggedSectionIndex, 1);
+                next.splice(sectionIndex, 0, moved);
+                commit(next);
+                setDraggedSectionIndex(null);
+                setDragOverSectionIndex(null);
+              }}
+            >
+              <div className={`structured-section-header${locksVisibleSections ? " structured-section-header--locked" : ""}`}>
+                <button
+                  type="button"
+                  className="structured-toggle"
+                  aria-label={isCollapsed ? `Ouvrir ${section.titre}` : `Fermer ${section.titre}`}
+                  onClick={() => toggleSection(section.id)}
+                >
+                  {isCollapsed ? "›" : "⌄"}
+                </button>
+                {!locksVisibleSections ? (
+                  <button
+                    type="button"
+                    className="structured-drag-handle"
+                    draggable
+                    aria-label={`Déplacer ${section.titre || "ce bloc"}`}
+                    onDragStart={(event) => {
+                      setDraggedSectionIndex(sectionIndex);
+                      setDragOverSectionIndex(sectionIndex);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", String(sectionIndex));
+                    }}
+                    onDragEnd={() => {
+                      setDraggedSectionIndex(null);
+                      setDragOverSectionIndex(null);
+                    }}
+                  >
+                    ⋮⋮
+                  </button>
+                ) : null}
+                <input
+                  className="structured-card__title-input structured-card__title-input--section"
+                  value={section.titre}
+                  onChange={(event) => updateSection(sectionIndex, (current) => ({ ...current, titre: event.target.value }))}
+                  aria-label="Titre du bloc"
+                />
+                {!locksVisibleSections ? (
+                  <button
+                    type="button"
+                    className="structured-icon-button structured-icon-button--danger"
+                    onClick={() => commit(sections.filter((_, index) => index !== sectionIndex))}
+                    aria-label={`Supprimer ${section.titre || "ce bloc"}`}
+                    title="Supprimer le bloc"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+              {!isCollapsed ? (
+                <div className={`structured-section-body${locksVisibleSections ? " structured-section-body--locked" : ""}`}>
+                  {section.groupes.length === 0 ? <div className="structured-empty">Aucune rubrique dans ce bloc.</div> : null}
+                  <div className="structured-group-list">
+                    {section.groupes.map((group, groupIndex) => (
+                      <div key={group.id} className="structured-group">
+                        <div className="structured-group__header">
+                          <input
+                            className="structured-card__title-input structured-card__title-input--group"
+                            value={group.titre}
+                            onChange={(event) =>
+                              updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, titre: event.target.value }))
+                            }
+                            aria-label="Titre de la rubrique"
+                          />
+                          <button
+                            type="button"
+                            className="structured-icon-button"
+                            onClick={() =>
+                              updateSection(sectionIndex, (current) => ({
+                                ...current,
+                                groupes: current.groupes.filter((_, index) => index !== groupIndex),
+                              }))
+                            }
+                            aria-label={`Supprimer ${group.titre || "cette rubrique"}`}
+                            title="Supprimer la rubrique"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        {isBedsSection ? (
+                          <div className="bed-list">
+                            {group.items.map((item, itemIndex) => {
+                              const bed = isBedItem(item) ? item : DEFAULT_BED_ITEM;
+                              const bedOption = BED_TYPE_BY_ID.get(bed.type) ?? BED_TYPE_BY_ID.get(DEFAULT_BED_ITEM.type);
+                              return (
+                                <div key={`${group.id}-${itemIndex}`} className="bed-row">
+                                  <BedPictogram type={bed.type} />
+                                  <label className="bed-row__type">
+                                    <span>Type</span>
+                                    <select
+                                      value={bed.type}
+                                      onChange={(event) =>
+                                        updateGroup(sectionIndex, groupIndex, (current) => {
+                                          const items = [...current.items];
+                                          items[itemIndex] = { ...bed, type: event.target.value as BedType };
+                                          return { ...current, items };
+                                        })
+                                      }
+                                    >
+                                      {BED_TYPE_OPTIONS.map((option) => (
+                                        <option key={option.type} value={option.type}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <div className="bed-row__meta">{bedOption?.size}</div>
+                                  <label className="bed-row__count">
+                                    <span>Qté</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={bed.count}
+                                      onChange={(event) =>
+                                        updateGroup(sectionIndex, groupIndex, (current) => {
+                                          const items = [...current.items];
+                                          const count = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+                                          items[itemIndex] = { ...bed, count };
+                                          return { ...current, items };
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="structured-icon-button"
+                                    onClick={() =>
+                                      updateGroup(sectionIndex, groupIndex, (current) => ({
+                                        ...current,
+                                        items: current.items.filter((_, index) => index !== itemIndex),
+                                      }))
+                                    }
+                                    aria-label={`Supprimer ${bedOption?.label ?? "ce couchage"}`}
+                                    title="Supprimer le couchage"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              className="structured-add-chip structured-add-chip--bed"
+                              onClick={() =>
+                                updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, items: [...current.items, DEFAULT_BED_ITEM] }))
+                              }
+                            >
+                              + Ajouter un couchage
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="structured-chips">
+                            {group.items.map((item, itemIndex) => {
+                              const textItem = toDisplayText(item);
+                              return (
+                                <span key={`${group.id}-${itemIndex}`} className="structured-chip">
+                                  <input
+                                    value={textItem}
+                                    placeholder="Nouvel élément"
+                                    size={Math.min(Math.max(textItem.length || 14, 14), 34)}
+                                    onChange={(event) =>
+                                      updateGroup(sectionIndex, groupIndex, (current) => {
+                                        const items = [...current.items];
+                                        items[itemIndex] = event.target.value;
+                                        return { ...current, items };
+                                      })
+                                    }
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateGroup(sectionIndex, groupIndex, (current) => ({
+                                        ...current,
+                                        items: current.items.filter((_, index) => index !== itemIndex),
+                                      }))
+                                    }
+                                    aria-label={`Supprimer ${textItem || "cet élément"}`}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              className="structured-add-chip"
+                              onClick={() => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, items: [...current.items, ""] }))}
+                            >
+                              + Ajouter
+                            </button>
+                          </div>
+                        )}
+                        <label className="field structured-note-field">
+                          Note
+                          <input
+                            value={group.note ?? ""}
+                            onChange={(event) => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, note: event.target.value }))}
+                          />
+                        </label>
+                      </div>
                     ))}
                   </div>
                   <button
                     type="button"
-                    className="table-action table-action--neutral"
-                    onClick={() => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, items: [...current.items, ""] }))}
+                    className="structured-add-rubric"
+                    onClick={() =>
+                      updateSection(sectionIndex, (current) => ({
+                        ...current,
+                        groupes: [
+                          ...current.groupes,
+                          {
+                            id: createStructuredId("groupe"),
+                            titre: isBedsSection ? `Chambre ${current.groupes.length + 1}` : "Nouvelle rubrique",
+                            items: isBedsSection ? [DEFAULT_BED_ITEM] : [],
+                          },
+                        ],
+                      }))
+                    }
                   >
-                    Ajouter une ligne
+                    {isBedsSection ? "+ Ajouter une chambre" : "+ Ajouter une rubrique"}
                   </button>
-                  <label className="field">
-                    Note
-                    <input
-                      value={group.note ?? ""}
-                      onChange={(event) => updateGroup(sectionIndex, groupIndex, (current) => ({ ...current, note: event.target.value }))}
-                    />
-                  </label>
                 </div>
-              ))}
-            </div>
-          </article>
-        ))}
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     </div>
   );
@@ -851,8 +1038,9 @@ const LocationStructuredEditor = ({ value, onChange }: StructuredEditorProps) =>
 };
 
 const GitesPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [gites, setGites] = useState<Gite[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get("gite") || null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -868,7 +1056,10 @@ const GitesPage = () => {
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [savingPhotoId, setSavingPhotoId] = useState<string | null>(null);
-  const [activeEditorSection, setActiveEditorSection] = useState<(typeof GITE_EDITOR_SECTIONS)[number]["id"]>("base-fiche");
+  const [activeEditorSection, setActiveEditorSection] = useState<GiteEditorSectionId>(() => {
+    const section = searchParams.get("section");
+    return isGiteEditorSectionId(section) ? section : "base-fiche";
+  });
   const [attachingPlaceholderId, setAttachingPlaceholderId] = useState<string | null>(null);
   const [fadingPlaceholderIds, setFadingPlaceholderIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -877,6 +1068,30 @@ const GitesPage = () => {
 
   const selected = useMemo(() => gites.find((g) => g.id === selectedId) ?? null, [gites, selectedId]);
   const activeEditorSectionLabel = GITE_EDITOR_SECTION_BY_ID.get(activeEditorSection)?.label ?? "Section";
+
+  useEffect(() => {
+    const queryGiteId = searchParams.get("gite") || null;
+    const querySection = searchParams.get("section");
+    const nextSection = isGiteEditorSectionId(querySection) ? querySection : "base-fiche";
+
+    setSelectedId((current) => (current === queryGiteId ? current : queryGiteId));
+    setActiveEditorSection((current) => (current === nextSection ? current : nextSection));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+
+    if (selectedId) {
+      next.set("gite", selectedId);
+    } else {
+      next.delete("gite");
+    }
+    next.set("section", activeEditorSection);
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [activeEditorSection, searchParams, selectedId, setSearchParams]);
 
   const load = async () => {
     const [gitesData, placeholdersData, gestionnairesData] = await Promise.all([
@@ -1058,7 +1273,7 @@ const GitesPage = () => {
         public_seo_title: form.public_seo_title || null,
         public_seo_description: form.public_seo_description || null,
         public_structured_content: parseJsonTextarea(
-          "Données structurées site",
+          "Contenu structuré site",
           form.public_structured_content || serializeStructuredValue(buildStructuredContentDefaults())
         ),
         public_equipment: null,
@@ -1842,20 +2057,7 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div id="gite-editor-site-structure" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-donnees"}>
-          <div className="section-subtitle">Données structurées</div>
-          <div className="grid-2">
-            <div className="structured-panel">
-              <div className="structured-panel__title">Sections de contenu</div>
-              <StructuredContentEditor
-                value={form.public_structured_content}
-                onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div id="gite-editor-site-seo" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-donnees"}>
+        <div id="gite-editor-site-seo" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-presentation"}>
           <div className="section-subtitle">SEO</div>
           <div className="grid-2">
             <label className="field">
@@ -1869,6 +2071,33 @@ const GitesPage = () => {
                 onChange={(e) => handleChange("public_seo_description", e.target.value)}
               />
             </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-site-structure" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-donnees"}>
+          <div className="section-subtitle">Équipement et infos</div>
+          <div className="grid-2">
+            <div className="structured-panel">
+              <div className="structured-panel__title">Contenu du site</div>
+              <StructuredContentEditor
+                value={form.public_structured_content}
+                onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
+                excludeSectionIds={["pieces-couchages"]}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div id="gite-editor-site-chambres" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-chambres"}>
+          <div className="grid-2">
+            <div className="structured-panel structured-panel--bare">
+              <StructuredContentEditor
+                value={form.public_structured_content}
+                onChange={(nextValue) => handleChange("public_structured_content", nextValue)}
+                sectionIds={["pieces-couchages"]}
+                showToolbar={false}
+              />
+            </div>
           </div>
         </div>
 

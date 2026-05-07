@@ -23,6 +23,7 @@ server/generated
 # Playwright
 playwright-report
 .playwright
+.playwright-mcp/
 
 # Logs
 npm-debug.log*
