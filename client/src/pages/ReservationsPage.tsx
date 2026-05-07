@@ -1076,6 +1076,19 @@ const ReservationsPage = () => {
   const requestedCreateExit = locationParams.get("exit");
   const requestedCreateMode = locationParams.get("create");
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
+  const currentTime = new Date(currentTimeMs);
+  const currentPeriod = useMemo(() => {
+    const now = new Date(currentTimeMs);
+    return {
+      year: now.getUTCFullYear(),
+      month: now.getUTCMonth() + 1,
+    };
+  }, [currentTimeMs]);
+  const giteById = useMemo(() => {
+    const map = new Map<string, Gite>();
+    gites.forEach((gite) => map.set(gite.id, gite));
+    return map;
+  }, [gites]);
 
   useEffect(() => {
     reservationsRef.current = reservations;
@@ -2899,13 +2912,6 @@ const ReservationsPage = () => {
     setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: rowIndex + 1 }));
   };
 
-  const currentTime = new Date(currentTimeMs);
-  const giteById = useMemo(() => {
-    const map = new Map<string, Gite>();
-    gites.forEach((gite) => map.set(gite.id, gite));
-    return map;
-  }, [gites]);
-
   const getOptionsDraft = (reservation: Reservation, draft: ReservationDraft) =>
     mergeOptions(reservationOptions[reservation.id] ?? buildDefaultReservationOptions(draft));
 
@@ -3093,13 +3099,6 @@ const ReservationsPage = () => {
 
   const isAllGitesTab = activeTab === ALL_GITES_TAB;
   const showUnassignedTab = reservations.some((reservation) => !reservation.gite_id);
-  const currentPeriod = useMemo(() => {
-    const now = new Date(currentTimeMs);
-    return {
-      year: now.getUTCFullYear(),
-      month: now.getUTCMonth() + 1,
-    };
-  }, [currentTimeMs]);
 
   useEffect(() => {
     let cancelled = false;
