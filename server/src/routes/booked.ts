@@ -18,6 +18,7 @@ import {
   type BookedValidationError,
 } from "../services/booked.js";
 import { sendBookingRequestCreatedEmails } from "../services/bookingRequestEmail.js";
+import { normalizeBookedGiteContentSections } from "../services/bookedGiteContent.js";
 
 const router = Router();
 
@@ -136,6 +137,34 @@ router.get("/gites/:id/config", async (req, res, next) => {
       },
       taxe_sejour_par_personne_par_nuit: Number(gite.taxe_sejour_par_personne_par_nuit) || 0,
       arrhes_taux_defaut: Number(gite.arrhes_taux_defaut) || 0,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/gites/:id/content", async (req, res, next) => {
+  try {
+    const gite = await prisma.gite.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        nom: true,
+        public_title: true,
+        public_structured_content: true,
+        public_equipment: true,
+        public_rooms: true,
+      },
+    });
+    if (!gite) {
+      return res.status(404).json({ error: "Gîte introuvable." });
+    }
+
+    res.json({
+      id: gite.id,
+      nom: gite.nom,
+      public_title: gite.public_title,
+      sections: normalizeBookedGiteContentSections(gite),
     });
   } catch (error) {
     next(error);
