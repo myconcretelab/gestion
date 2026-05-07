@@ -158,6 +158,35 @@ const formatMonthLabel = (monthStart: Date) =>
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+const normalizePaymentLabel = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+const isHomeExchangePayment = (value: string) =>
+  normalizePaymentLabel(value) === "homeexchange";
+
+export const getDailyReservationEmailMonthlyAmount = (
+  reservation: StatisticsReservation,
+  monthStart: Date,
+) =>
+  round2(
+    buildStatisticsReservationSegments(reservation)
+      .filter(
+        (segment) =>
+          segment.year === monthStart.getUTCFullYear() &&
+          segment.month === monthStart.getUTCMonth() + 1 &&
+          !isHomeExchangePayment(segment.paiement),
+      )
+      .reduce(
+        (sum, segment) => sum + segment.revenus + segment.fraisOptionnelsTotal,
+        0,
+      ),
+  );
+
 const getIcalConflictTypeLabel = (type: IcalConflictType) =>
   type === "modified" ? "Modification détectée" : "Suppression détectée";
 
@@ -498,13 +527,17 @@ const applyCronConfig = (config: DailyReservationEmailConfig) => {
   }
 };
 
-const getMonthBoundaries = (referenceDate: Date) => {
-  const monthStart = new Date(referenceDate);
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-
-  const monthEnd = new Date(monthStart);
-  monthEnd.setMonth(monthEnd.getMonth() + 1);
+export const getDailyReservationEmailMonthBoundaries = (referenceDate: Date) => {
+  const monthStart = new Date(Date.UTC(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    1,
+  ));
+  const monthEnd = new Date(Date.UTC(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth() + 1,
+    1,
+  ));
 
   return { monthStart, monthEnd };
 };
@@ -560,14 +593,9 @@ const buildTotalsByGite = async (monthStart: Date, monthEnd: Date) => {
       frais_optionnels_montant: Number(reservation.frais_optionnels_montant ?? 0),
       frais_optionnels_declares: Boolean(reservation.frais_optionnels_declares),
     };
-    const monthlyAmount = round2(
-      buildStatisticsReservationSegments(statisticsReservation)
-        .filter(
-          (segment) =>
-            segment.year === monthStart.getUTCFullYear() &&
-            segment.month === monthStart.getUTCMonth() + 1,
-        )
-        .reduce((sum, segment) => sum + segment.revenus + segment.fraisOptionnelsTotal, 0)
+    const monthlyAmount = getDailyReservationEmailMonthlyAmount(
+      statisticsReservation,
+      monthStart,
     );
     const shouldCountReservation = monthlyAmount > 0;
 
@@ -772,7 +800,8 @@ export const runDailyReservationEmail = async (options?: {
     });
 
     try {
-      const { monthStart, monthEnd } = getMonthBoundaries(now);
+      const { monthStart, monthEnd } =
+        getDailyReservationEmailMonthBoundaries(now);
       const [reservations, totalsByGite, icalConflicts] = await Promise.all([
         buildNewReservations(windowStart, windowEnd),
         buildTotalsByGite(monthStart, monthEnd),

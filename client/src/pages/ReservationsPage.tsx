@@ -46,9 +46,12 @@ import {
 } from "../utils/reservationEnergy";
 import { getReservationMonthlyAmountsForMonth } from "../utils/reservationMonthlyAmounts";
 import {
+  computeSeasonalReservationPrice,
+  getGiteNightlyPriceSuggestions,
+} from "../utils/seasonalReservationPricing";
+import {
   buildSchoolHolidayDateSet,
   computeReservationHolidayNightCount,
-  getReservationDateRange,
   getSchoolHolidaySegmentsForMonth,
   type SchoolHoliday,
 } from "../utils/schoolHolidays";
@@ -663,21 +666,6 @@ const addDaysToInputDate = (value: string, days: number) => {
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
-
-const getGiteNightlyPriceSuggestions = (gite: Gite | null) => {
-  const seen = new Set<number>();
-  const suggestions: number[] = [];
-  const rawList = Array.isArray(gite?.prix_nuit_liste) ? gite.prix_nuit_liste : [];
-
-  rawList.forEach((item) => {
-    const value = round2(Math.max(0, Number(item)));
-    if (!Number.isFinite(value) || seen.has(value)) return;
-    seen.add(value);
-    suggestions.push(value);
-  });
-
-  return suggestions;
-};
 
 const toNonNegativeInt = (value: unknown, fallback = 0) => {
   const numeric = Number(value);
@@ -1543,9 +1531,8 @@ const ReservationsPage = () => {
     return counts;
   }, [currentTimeMs, reservations]);
 
-  const schoolHolidayRange = useMemo(() => getReservationDateRange(reservations), [reservations]);
-  const schoolHolidayRangeFrom = schoolHolidayRange?.from ?? "";
-  const schoolHolidayRangeTo = schoolHolidayRange?.to ?? "";
+  const schoolHolidayRangeFrom = `${year}-01-01`;
+  const schoolHolidayRangeTo = `${year + 1}-01-07`;
 
   useEffect(() => {
     if (!schoolHolidayRangeFrom || !schoolHolidayRangeTo) {
@@ -2753,22 +2740,68 @@ const ReservationsPage = () => {
   const getNewRowBaseGite = () =>
     activeTab && activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB ? activeGite : null;
 
+  const applySeasonalPricingToDraft = (draft: ReservationDraft, gite: Gite | null): ReservationDraft => {
+    const seasonalPrice = computeSeasonalReservationPrice({
+      gite,
+      date_entree: draft.date_entree,
+      date_sortie: draft.date_sortie,
+      schoolHolidayDates,
+    });
+    if (!seasonalPrice) return draft;
+    return {
+      ...draft,
+      prix_par_nuit: seasonalPrice.prix_par_nuit,
+      prix_total: seasonalPrice.prix_total,
+      price_driver: seasonalPrice.is_mixed ? "total" : "nightly",
+    };
+  };
+
+  useEffect(() => {
+    if (schoolHolidayDates.size === 0) return;
+    setNewRows((previous) => {
+      let changed = false;
+      const nextRows = Object.fromEntries(
+        Object.entries(previous).map(([monthIndex, draft]) => {
+          const gite = draft.gite_id ? giteById.get(draft.gite_id) ?? null : activeGite;
+          const currentPrice = round2(Math.max(0, Number(draft.prix_par_nuit) || 0));
+          const suggestions = getGiteNightlyPriceSuggestions(gite);
+          const canApplySeasonalPrice =
+            currentPrice === 0 || suggestions.some((suggestion) => round2(suggestion) === currentPrice);
+          if (!canApplySeasonalPrice) return [monthIndex, draft];
+
+          const nextDraft = applySeasonalPricingToDraft(draft, gite);
+          if (
+            nextDraft.prix_par_nuit !== draft.prix_par_nuit ||
+            nextDraft.prix_total !== draft.prix_total ||
+            nextDraft.price_driver !== draft.price_driver
+          ) {
+            changed = true;
+          }
+          return [monthIndex, nextDraft];
+        })
+      );
+      return changed ? nextRows : previous;
+    });
+  }, [activeGite, giteById, schoolHolidayDates]);
+
   const buildSuggestedNewRowDraft = (monthIndex: number, previousReservation: Reservation | null = null) => {
-    const baseDraft = buildEmptyDraft(year, monthIndex, getNewRowBaseGite());
+    const baseGite = getNewRowBaseGite();
+    const baseDraft = buildEmptyDraft(year, monthIndex, baseGite);
     const suggestedEntry = previousReservation ? addDaysToInputDate(toInputDate(previousReservation.date_sortie), 1) : "";
     const nextEntry = suggestedEntry || baseDraft.date_entree;
     const nextExit = addDaysToInputDate(nextEntry, 1) || baseDraft.date_sortie;
-    return recalcDraft({
+    return applySeasonalPricingToDraft(recalcDraft({
       ...baseDraft,
       date_entree: nextEntry,
       date_sortie: nextExit,
-    });
+    }), baseGite);
   };
 
   const applySuggestedExitFromEntry = (draft: ReservationDraft, nextEntry: string) => {
+    const gite = draft.gite_id ? giteById.get(draft.gite_id) ?? null : getNewRowBaseGite();
     const suggestedExit = addDaysToInputDate(nextEntry, 1);
     if (!suggestedExit) {
-      return recalcDraft({ ...draft, date_entree: nextEntry });
+      return applySeasonalPricingToDraft(recalcDraft({ ...draft, date_entree: nextEntry }), gite);
     }
 
     const previousSuggestedExit = addDaysToInputDate(draft.date_entree, 1);
@@ -2777,11 +2810,11 @@ const ReservationsPage = () => {
       computeNights(nextEntry, draft.date_sortie) > 0 &&
       draft.date_sortie !== previousSuggestedExit;
 
-    return recalcDraft({
+    return applySeasonalPricingToDraft(recalcDraft({
       ...draft,
       date_entree: nextEntry,
       date_sortie: hasCustomValidExit ? draft.date_sortie : suggestedExit,
-    });
+    }), gite);
   };
 
   const ensureNewRow = (monthIndex: number, previousReservation: Reservation | null = null): ReservationDraft => {
@@ -2839,7 +2872,7 @@ const ReservationsPage = () => {
       if (activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB) {
         setNewRows((previous) => ({
           ...previous,
-          [monthIndex]: buildEmptyDraft(year, monthIndex, activeGite),
+          [monthIndex]: applySeasonalPricingToDraft(buildEmptyDraft(year, monthIndex, activeGite), activeGite),
         }));
       }
       setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: null }));
@@ -3993,7 +4026,12 @@ const ReservationsPage = () => {
             }}
             onChange={(event) => {
               const nextValue = event.target.value;
-              updateNewRow(monthIndex, (prev) => recalcDraft({ ...prev, date_sortie: nextValue }));
+              updateNewRow(monthIndex, (prev) =>
+                applySeasonalPricingToDraft(
+                  recalcDraft({ ...prev, date_sortie: nextValue }),
+                  prev.gite_id ? giteById.get(prev.gite_id) ?? null : getNewRowBaseGite()
+                )
+              );
               if (nextValue) {
                 focusGridCell(monthIndex, newRowIndex, 5);
               }

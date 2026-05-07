@@ -10,6 +10,11 @@ import { dispatchAppNotice } from "../utils/appNotices";
 import { apiFetch, isApiError } from "../utils/api";
 import { formatEuro } from "../utils/format";
 import { getGiteColor } from "../utils/giteColors";
+import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
+import {
+  computeSeasonalReservationPrice,
+  getGiteNightlyPriceSuggestions,
+} from "../utils/seasonalReservationPricing";
 import type { Gite, Reservation } from "../utils/types";
 import {
   DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS,
@@ -115,6 +120,7 @@ const MobileReservationEditorPage = () => {
     DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS
   );
   const [quickReservationSmsSelection, setQuickReservationSmsSelection] = useState<string[]>([]);
+  const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [quickReservationSaveState, setQuickReservationSaveState] = useState<QuickReservationSaveState>("idle");
   const [quickReservationDeleting, setQuickReservationDeleting] = useState(false);
   const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
@@ -206,7 +212,7 @@ const MobileReservationEditorPage = () => {
               startIso: params.entry,
               exitIso: params.exit,
               defaultAdults: Math.max(1, nextSelectedGite?.nb_adultes_habituel ?? 2),
-              nightlySuggestion: round2(Math.max(0, Number(nextSelectedGite?.prix_nuit_liste?.[0] ?? 0))),
+              nightlySuggestion: getGiteNightlyPriceSuggestions(nextSelectedGite)[0] ?? 0,
               gite: nextSelectedGite,
             })
           );
@@ -263,20 +269,20 @@ const MobileReservationEditorPage = () => {
     [quickReservationAdultsMax]
   );
   const quickReservationOptionCountMax = useMemo(() => getQuickReservationOptionCountMax(selectedGite), [selectedGite]);
-  const quickReservationNightlySuggestions = useMemo(() => {
-    const seen = new Set<number>();
-    const suggestions: number[] = [];
-    const rawList = Array.isArray(selectedGite?.prix_nuit_liste) ? selectedGite.prix_nuit_liste : [];
-
-    rawList.forEach((item) => {
-      const nextValue = round2(Math.max(0, Number(item)));
-      if (!Number.isFinite(nextValue) || seen.has(nextValue)) return;
-      seen.add(nextValue);
-      suggestions.push(nextValue);
-    });
-
-    return suggestions;
-  }, [selectedGite]);
+  const quickReservationNightlySuggestions = useMemo(() => getGiteNightlyPriceSuggestions(selectedGite), [selectedGite]);
+  const schoolHolidayDates = useMemo(() => buildSchoolHolidayDateSet(schoolHolidays), [schoolHolidays]);
+  const quickReservationSeasonalPrice = useMemo(
+    () =>
+      quickReservationDraft
+        ? computeSeasonalReservationPrice({
+            gite: selectedGite,
+            date_entree: quickReservationDraft.date_entree,
+            date_sortie: quickReservationDraft.date_sortie,
+            schoolHolidayDates,
+          })
+        : null,
+    [quickReservationDraft, schoolHolidayDates, selectedGite]
+  );
   const quickReservationDerived = useMemo(
     () =>
       computeQuickReservationDerivedState({
@@ -319,6 +325,43 @@ const MobileReservationEditorPage = () => {
       }) as CSSProperties,
     [accentColor]
   );
+
+  useEffect(() => {
+    const from = quickReservationDraft?.date_entree;
+    const to = quickReservationDraft?.date_sortie;
+    if (!from || !to) {
+      setSchoolHolidays([]);
+      return;
+    }
+
+    let cancelled = false;
+    apiFetch<SchoolHoliday[]>(`/school-holidays?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&zone=B`)
+      .then((rows) => {
+        if (!cancelled) setSchoolHolidays(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSchoolHolidays([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [quickReservationDraft?.date_entree, quickReservationDraft?.date_sortie]);
+
+  useEffect(() => {
+    if (editorMode !== "create" || !quickReservationSeasonalPrice) return;
+    setQuickReservationDraft((current) => {
+      if (!current) return current;
+      const currentPrice = round2(Math.max(0, Number(current.prix_par_nuit) || 0));
+      const isCurrentSuggestion = quickReservationNightlySuggestions.some((price) => round2(price) === currentPrice);
+      if (current.prix_par_nuit !== "" && !isCurrentSuggestion) return current;
+      if (String(current.prix_par_nuit) === String(quickReservationSeasonalPrice.prix_par_nuit)) return current;
+      return {
+        ...current,
+        prix_par_nuit: String(quickReservationSeasonalPrice.prix_par_nuit),
+      };
+    });
+  }, [editorMode, quickReservationNightlySuggestions, quickReservationSeasonalPrice]);
 
   const startAirbnbCalendarRefreshPolling = useCallback(
     (refresh: AirbnbCalendarRefreshCreateStatus | undefined) => {
@@ -435,6 +478,13 @@ const MobileReservationEditorPage = () => {
           json: {
             gite_id: selectedGiteId,
             ...savePayload.payload,
+            ...(quickReservationSeasonalPrice?.is_mixed
+              ? {
+                  prix_par_nuit: quickReservationSeasonalPrice.prix_par_nuit,
+                  prix_total: quickReservationSeasonalPrice.prix_total,
+                  price_driver: "total" as const,
+                }
+              : {}),
           },
         });
 
@@ -482,6 +532,7 @@ const MobileReservationEditorPage = () => {
     navigate,
     origin,
     quickReservationDraft,
+    quickReservationSeasonalPrice,
     quickReservationSaving,
     scheduleQuickReservationSavedReset,
     selectedGite,

@@ -60,6 +60,8 @@ model Gite {
   cheque_menage_montant_defaut         Float  @default(0)
   arrhes_taux_defaut                   Float  @default(0.2)
   electricity_price_per_kwh            Float  @default(0)
+  prix_nuit_basse_saison               Float  @default(0)
+  prix_nuit_haute_saison               Float  @default(0)
   prix_nuit_liste                      String?
   caracteristiques                     String?
   airbnb_listing_id                    String?

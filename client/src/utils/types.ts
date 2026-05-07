@@ -58,6 +58,8 @@ export type Gite = {
   cheque_menage_montant_defaut: number;
   arrhes_taux_defaut: number;
   electricity_price_per_kwh: number;
+  prix_nuit_basse_saison?: number;
+  prix_nuit_haute_saison?: number;
   prix_nuit_liste?: number[];
   caracteristiques?: string | null;
   gestionnaire_id?: string | null;

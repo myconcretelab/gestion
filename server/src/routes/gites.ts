@@ -99,6 +99,8 @@ const giteSchemaShape = {
   cheque_menage_montant_defaut: z.coerce.number().min(0).default(0),
   arrhes_taux_defaut: z.coerce.number().min(0).max(1).default(0.2),
   electricity_price_per_kwh: z.coerce.number().min(0).default(0),
+  prix_nuit_basse_saison: z.coerce.number().min(0).default(0),
+  prix_nuit_haute_saison: z.coerce.number().min(0).default(0),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
   gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
 };
@@ -295,6 +297,8 @@ const hydrateGite = (gite: any) => {
     cheque_menage_montant_defaut: toNumber(rest.cheque_menage_montant_defaut),
     arrhes_taux_defaut: toNumber(rest.arrhes_taux_defaut),
     electricity_price_per_kwh: toNumber(rest.electricity_price_per_kwh),
+    prix_nuit_basse_saison: toNumber(rest.prix_nuit_basse_saison),
+    prix_nuit_haute_saison: toNumber(rest.prix_nuit_haute_saison),
     prix_nuit_liste,
     public_structured_content: fromJsonString<unknown>(rest.public_structured_content, null),
     public_equipment: fromJsonString<unknown>(rest.public_equipment, null),

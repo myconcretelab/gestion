@@ -74,6 +74,9 @@ const normalizeLabel = (value: string) =>
 
 const isHomeExchange = (entry: ParsedStatisticsEntry) => normalizeLabel(entry.paiement) === "homeexchange";
 
+export const getEntryGrossCA = (entry: StatisticsEntry) =>
+  (Number(entry.revenus) || 0) + (Number(entry.fraisOptionnelsTotal) || 0);
+
 const entryMatch = (entry: ParsedStatisticsEntry, year: PeriodYear, month: PeriodMonth) => {
   const entryYear = entry.debutDate.getUTCFullYear();
   const entryMonth = entry.debutDate.getUTCMonth() + 1;
@@ -117,7 +120,7 @@ export const computeGlobalStats = (
     const filtered = filterByPeriod(entries, year, month);
     totalReservations += filtered.length;
     totalNights += filtered.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
-    totalCA += filtered.reduce((sum, entry) => sum + (entry.revenus || 0), 0);
+    totalCA += filtered.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
   }
 
   return { totalReservations, totalNights, totalCA };
@@ -127,14 +130,14 @@ export const computeGiteStats = (entries: ParsedStatisticsEntry[], year: PeriodY
   const filtered = filterByPeriod(entries, year, month);
   const reservations = filtered.length;
   const totalNights = filtered.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
-  const totalCA = filtered.reduce((sum, entry) => sum + (entry.revenus || 0), 0);
+  const totalCA = filtered.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
   const meanStay = reservations ? totalNights / reservations : 0;
   const meanPrice = totalNights ? totalCA / totalNights : 0;
   const payments: Record<string, number> = {};
 
   for (const entry of filtered) {
     const payment = entry.paiement?.trim() || "Indéfini";
-    payments[payment] = (payments[payment] ?? 0) + (entry.revenus || 0);
+    payments[payment] = (payments[payment] ?? 0) + getEntryGrossCA(entry);
   }
 
   return {
@@ -148,10 +151,10 @@ export const computeGiteStats = (entries: ParsedStatisticsEntry[], year: PeriodY
 };
 
 const computeValue = (entries: ParsedStatisticsEntry[], metric: "CA" | "reservations" | "nights" | "price") => {
-  if (metric === "CA") return entries.reduce((sum, entry) => sum + (entry.revenus || 0), 0);
+  if (metric === "CA") return entries.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
   if (metric === "reservations") return entries.length;
   if (metric === "nights") return entries.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
-  const totalCA = entries.reduce((sum, entry) => sum + (entry.revenus || 0), 0);
+  const totalCA = entries.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
   const totalNights = entries.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
   return totalNights > 0 ? totalCA / totalNights : 0;
 };
@@ -264,8 +267,9 @@ export const getMonthlyCAByYear = (entriesByGite: Record<string, ParsedStatistic
       const year = entry.debutDate.getUTCFullYear();
       const monthIdx = entry.debutDate.getUTCMonth();
       if (!result[year]) result[year] = { months: Array.from({ length: 12 }, (_, idx) => ({ month: idx + 1, ca: 0 })), total: 0 };
-      result[year].months[monthIdx].ca += entry.revenus || 0;
-      result[year].total += entry.revenus || 0;
+      const grossCA = getEntryGrossCA(entry);
+      result[year].months[monthIdx].ca += grossCA;
+      result[year].total += grossCA;
     }
   }
 
@@ -287,8 +291,9 @@ export const getMonthlyCAByGiteForYear = (
       if (isHomeExchange(entry)) continue;
       if (entry.debutDate.getUTCFullYear() !== year) continue;
       const monthIdx = entry.debutDate.getUTCMonth();
-      months[monthIdx].ca += entry.revenus || 0;
-      total += entry.revenus || 0;
+      const grossCA = getEntryGrossCA(entry);
+      months[monthIdx].ca += grossCA;
+      total += grossCA;
     }
 
     result[gite.id] = { months, total };
