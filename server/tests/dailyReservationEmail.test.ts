@@ -1,6 +1,75 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildDailyReservationEmailMessage } from "../src/services/dailyReservationEmail.ts";
+import {
+  buildDailyReservationEmailMessage,
+  getDailyReservationEmailMonthlyAmount,
+  getDailyReservationEmailMonthBoundaries,
+} from "../src/services/dailyReservationEmail.ts";
+
+test("getDailyReservationEmailMonthBoundaries garde le mois local pour les totaux", () => {
+  const previousTimeZone = process.env.TZ;
+  process.env.TZ = "Europe/Paris";
+
+  try {
+    const { monthStart, monthEnd } = getDailyReservationEmailMonthBoundaries(
+      new Date("2026-05-07T18:00:00+02:00"),
+    );
+
+    assert.equal(monthStart.toISOString(), "2026-05-01T00:00:00.000Z");
+    assert.equal(monthEnd.toISOString(), "2026-06-01T00:00:00.000Z");
+    assert.equal(monthStart.getUTCMonth() + 1, 5);
+  } finally {
+    if (previousTimeZone === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = previousTimeZone;
+    }
+  }
+});
+
+test("getDailyReservationEmailMonthlyAmount suit le CA brut des stats avec options", () => {
+  const monthStart = new Date("2026-05-01T00:00:00.000Z");
+
+  assert.equal(
+    getDailyReservationEmailMonthlyAmount(
+      {
+        id: "res-with-options",
+        gite_id: "g1",
+        date_entree: new Date("2026-05-10T00:00:00.000Z"),
+        date_sortie: new Date("2026-05-12T00:00:00.000Z"),
+        nb_nuits: 2,
+        nb_adultes: 2,
+        prix_par_nuit: 100,
+        prix_total: 250,
+        source_paiement: "Airbnb",
+        frais_optionnels_montant: 50,
+        frais_optionnels_declares: true,
+      },
+      monthStart,
+    ),
+    250,
+  );
+
+  assert.equal(
+    getDailyReservationEmailMonthlyAmount(
+      {
+        id: "homeexchange",
+        gite_id: "g1",
+        date_entree: new Date("2026-05-10T00:00:00.000Z"),
+        date_sortie: new Date("2026-05-12T00:00:00.000Z"),
+        nb_nuits: 2,
+        nb_adultes: 2,
+        prix_par_nuit: 100,
+        prix_total: 200,
+        source_paiement: "HomeExchange",
+        frais_optionnels_montant: 0,
+        frais_optionnels_declares: false,
+      },
+      monthStart,
+    ),
+    0,
+  );
+});
 
 test("buildDailyReservationEmailMessage construit un digest avec reservations", () => {
   const message = buildDailyReservationEmailMessage({

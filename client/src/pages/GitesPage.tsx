@@ -52,6 +52,8 @@ const emptyForm = {
   cheque_menage_montant_defaut: 0,
   arrhes_taux_defaut: 0.2,
   electricity_price_per_kwh: 0,
+  prix_nuit_basse_saison: 0,
+  prix_nuit_haute_saison: 0,
   prix_nuit_liste: "",
   gestionnaire_id: "",
 };
@@ -1307,6 +1309,8 @@ const GitesPage = () => {
       cheque_menage_montant_defaut: selected.cheque_menage_montant_defaut ?? 0,
       arrhes_taux_defaut: selected.arrhes_taux_defaut ?? 0.2,
       electricity_price_per_kwh: selected.electricity_price_per_kwh ?? 0,
+      prix_nuit_basse_saison: selected.prix_nuit_basse_saison ?? 0,
+      prix_nuit_haute_saison: selected.prix_nuit_haute_saison ?? 0,
       prix_nuit_liste: Array.isArray(selected.prix_nuit_liste) ? selected.prix_nuit_liste.join(", ") : "",
       gestionnaire_id: selected.gestionnaire_id ?? "",
     });
@@ -1421,6 +1425,8 @@ const GitesPage = () => {
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
         gestionnaire_id: form.gestionnaire_id || null,
+        prix_nuit_basse_saison: Number(form.prix_nuit_basse_saison) || 0,
+        prix_nuit_haute_saison: Number(form.prix_nuit_haute_saison) || 0,
         prix_nuit_liste: prixNuitListe,
         telephones: form.telephones
           .split(",")
@@ -2672,7 +2678,27 @@ const GitesPage = () => {
           <div className="section-subtitle">Tarifs de nuit</div>
           <div className="grid-2">
             <label className="field">
-              Prix/nuit (liste séparée par virgules ou retours ligne)
+              Prix/nuit basse saison
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={form.prix_nuit_basse_saison}
+                onChange={(e) => handleChange("prix_nuit_basse_saison", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Prix/nuit haute saison (vacances scolaires)
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={form.prix_nuit_haute_saison}
+                onChange={(e) => handleChange("prix_nuit_haute_saison", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Autres prix/nuit proposés (liste séparée par virgules ou retours ligne)
               <textarea
                 value={form.prix_nuit_liste}
                 onChange={(e) => handleChange("prix_nuit_liste", e.target.value)}
