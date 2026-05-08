@@ -5010,8 +5010,7 @@ const ReservationsPage = () => {
                             : null;
                       const hasDisplayedEnergyInline =
                         displayedEnergyCost !== null &&
-                        displayedEnergyKwh !== null &&
-                        displayedEnergyDailyCost !== null;
+                        displayedEnergyKwh !== null;
                       const canStartLiveEnergyTracking =
                         isCurrentReservation &&
                         Boolean(reservation.gite_id) &&
@@ -5841,9 +5840,17 @@ const ReservationsPage = () => {
                                         {formatEuro(displayedEnergyCost)}
                                       </span>
                                       <span className="reservations-energy-inline__dot">·</span>
-                                      <span className="reservations-energy-inline__item" title="Coût moyen électricité par jour">
-                                        {formatEuroPerDay(displayedEnergyDailyCost)}
+                                      <span className="reservations-energy-inline__item" title="Consommation électricité">
+                                        {formatKwh(displayedEnergyKwh)} kWh
                                       </span>
+                                      {displayedEnergyDailyCost !== null ? (
+                                        <>
+                                          <span className="reservations-energy-inline__dot">·</span>
+                                          <span className="reservations-energy-inline__item" title="Coût moyen électricité par jour">
+                                            {formatEuroPerDay(displayedEnergyDailyCost)}
+                                          </span>
+                                        </>
+                                      ) : null}
                                     </span>
                                   ) : null}
                                 </span>
