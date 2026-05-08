@@ -192,11 +192,11 @@ export const buildEnergyTotalInfo = (
     ENERGY_TOTAL_CODES.map((code) => status.find((item) => item.code === code) ?? null).find(
       (item): item is SmartlifeDeviceStatusEntry => item !== null,
     ) ?? null;
+  const energySourceCode = energyStatus?.code ?? energyFunction?.code ?? null;
   const energyScale = energyFunction?.scale ?? null;
-  const energyKwh = energyStatus
+  const energyKwh = energyStatus && energySourceCode === "total_ele"
     ? decodeScaledStatusValue(energyStatus.value, energyScale)
     : null;
-  const energySourceCode = energyStatus?.code ?? energyFunction?.code ?? null;
   const supportsEnergyTotal = Boolean(energyFunction || energyStatus);
 
   return {
@@ -207,6 +207,90 @@ export const buildEnergyTotalInfo = (
     supports_total_ele: supportsEnergyTotal,
     total_ele_scale: energyScale,
     total_ele_kwh: energyKwh,
+  };
+};
+
+type TuyaReportLog = {
+  code?: string;
+  value?: string | number | boolean | null;
+  event_time?: number;
+};
+
+type TuyaReportLogsResult = {
+  last_row_key?: string;
+  has_more?: boolean;
+  logs?: TuyaReportLog[];
+};
+
+export const getSmartlifeDeviceAddElectricityKwh = async (
+  config: SmartlifeAutomationConfig,
+  input: {
+    device_id: string;
+    start: Date;
+    end: Date;
+  },
+) => {
+  const context = getContext(config);
+  const device = await getSmartlifeDevice(config, input.device_id);
+  const addEleFunction =
+    device.functions.find((item) => item.code === "add_ele") ?? null;
+  if (!addEleFunction) {
+    throw new Error(
+      `L'appareil ${device.name} ne remonte pas add_ele dans sa spécification.`,
+    );
+  }
+
+  const startTime = input.start.getTime();
+  const endTime = input.end.getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
+    throw new Error("Période add_ele invalide.");
+  }
+
+  let lastRowKey: string | undefined;
+  let totalKwh = 0;
+  let logCount = 0;
+
+  while (true) {
+    const response = await context.request<TuyaReportLogsResult>({
+      path: `/v2.0/cloud/thing/${input.device_id}/report-logs`,
+      method: "GET",
+      query: {
+        codes: "add_ele",
+        start_time: startTime,
+        end_time: endTime,
+        size: 100,
+        ...(lastRowKey ? { last_row_key: lastRowKey } : {}),
+      },
+    });
+    if (!response.success) {
+      throw new Error(
+        response.msg ||
+          `Impossible de lire les logs add_ele Tuya de ${device.name}.`,
+      );
+    }
+
+    const logs = Array.isArray(response.result?.logs)
+      ? response.result.logs
+      : [];
+    for (const log of logs) {
+      if (log.code !== "add_ele") continue;
+      const valueKwh = decodeScaledStatusValue(log.value ?? null, addEleFunction.scale);
+      if (valueKwh == null || !Number.isFinite(valueKwh)) continue;
+      totalKwh += Math.max(0, valueKwh);
+      logCount += 1;
+    }
+
+    if (!response.result?.has_more || !response.result.last_row_key) {
+      break;
+    }
+    lastRowKey = response.result.last_row_key;
+  }
+
+  return {
+    device,
+    total_kwh: totalKwh,
+    log_count: logCount,
+    source_code: "add_ele" as const,
   };
 };
 
@@ -474,7 +558,7 @@ export const getSmartlifeDeviceTotalElectricityKwh = async (
   const device = await getSmartlifeDevice(config, deviceId);
   if (!device.supports_energy_total || device.energy_total_kwh == null) {
     throw new Error(
-      `L'appareil ${device.name} ne remonte pas de valeur d'énergie cumulée exploitable (total_ele/add_ele).`,
+      `L'appareil ${device.name} ne remonte pas de valeur d'énergie cumulée exploitable (total_ele).`,
     );
   }
   return {

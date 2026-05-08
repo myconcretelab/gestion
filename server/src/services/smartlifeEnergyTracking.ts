@@ -9,7 +9,11 @@ import type {
   SmartlifeEnergyDeviceAssignment,
 } from "./smartlifeSettings.js";
 import { getEnabledSmartlifePrimaryEnergyDeviceForGite } from "./smartlifeSettings.js";
-import { getSmartlifeDeviceTotalElectricityKwh } from "./smartlifeClient.js";
+import {
+  getSmartlifeDevice,
+  getSmartlifeDeviceAddElectricityKwh,
+  getSmartlifeDeviceTotalElectricityKwh,
+} from "./smartlifeClient.js";
 
 export type ReservationEnergyTrackingEntry = {
   session_id: string;
@@ -166,6 +170,9 @@ export const summarizeLiveReservationEnergyTracking = (
     deviceTotalsById:
       | Map<string, number>
       | Record<string, number | null | undefined>;
+    consumptionBySessionId?:
+      | Map<string, number>
+      | Record<string, number | null | undefined>;
     electricity_price_per_kwh: NumericLike;
     recorded_at?: Date | string;
   },
@@ -179,9 +186,23 @@ export const summarizeLiveReservationEnergyTracking = (
     }
     return options.deviceTotalsById[deviceId];
   };
+  const getSessionConsumptionKwh = (sessionId: string) => {
+    if (!options.consumptionBySessionId) return undefined;
+    if (options.consumptionBySessionId instanceof Map) {
+      return options.consumptionBySessionId.get(sessionId);
+    }
+    return options.consumptionBySessionId[sessionId];
+  };
 
   const totalKwh = round4(
     openEntries.reduce((sum, entry) => {
+      const sessionConsumptionKwh = getSessionConsumptionKwh(entry.session_id);
+      if (
+        sessionConsumptionKwh != null &&
+        Number.isFinite(sessionConsumptionKwh)
+      ) {
+        return sum + Math.max(0, sessionConsumptionKwh);
+      }
       const currentTotalKwh = getCurrentTotalKwh(entry.device_id);
       if (currentTotalKwh == null || !Number.isFinite(currentTotalKwh)) {
         return sum;
@@ -191,6 +212,13 @@ export const summarizeLiveReservationEnergyTracking = (
   );
 
   const hasMatchedDevice = openEntries.some((entry) => {
+    const sessionConsumptionKwh = getSessionConsumptionKwh(entry.session_id);
+    if (
+      sessionConsumptionKwh != null &&
+      Number.isFinite(sessionConsumptionKwh)
+    ) {
+      return true;
+    }
     const currentTotalKwh = getCurrentTotalKwh(entry.device_id);
     return currentTotalKwh != null && Number.isFinite(currentTotalKwh);
   });
@@ -344,10 +372,11 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
     return null;
   }
 
-  const reading = await getSmartlifeDeviceTotalElectricityKwh(
-    config,
-    assignment.device_id,
-  );
+  const device = await getSmartlifeDevice(config, assignment.device_id);
+  const isAddEleDevice = device.energy_total_source_code === "add_ele";
+  const reading = isAddEleDevice
+    ? null
+    : await getSmartlifeDeviceTotalElectricityKwh(config, assignment.device_id);
   const reservations = await loadStayReservations(event.reservation_id);
   const entriesByReservationId = new Map(
     reservations.map((reservation) => [
@@ -365,13 +394,15 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
       return `Compteur ${assignment.device_name || assignment.device_id}: session déjà ouverte.`;
     }
 
-    const openEntry = buildOpenEntry(assignment, event, reading.total_kwh);
+    const openEntry = buildOpenEntry(assignment, event, reading?.total_kwh ?? 0);
     reservations.forEach((reservation) => {
       const entries = entriesByReservationId.get(reservation.id) ?? [];
       entriesByReservationId.set(reservation.id, [...entries, openEntry]);
     });
     await updateStayReservationTracking(reservations, entriesByReservationId);
-    return `Compteur ${assignment.device_name || assignment.device_id}: départ relevé à ${reading.total_kwh.toFixed(2)} kWh.`;
+    return isAddEleDevice
+      ? `Compteur ${assignment.device_name || assignment.device_id}: session add_ele ouverte.`
+      : `Compteur ${assignment.device_name || assignment.device_id}: départ relevé à ${reading?.total_kwh.toFixed(2)} kWh.`;
   }
 
   const openEntry = [...referenceEntries]
@@ -383,9 +414,18 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
     return `Compteur ${assignment.device_name || assignment.device_id}: aucune session ouverte à clôturer.`;
   }
 
-  const stayTotalKwh = round4(
-    Math.max(0, reading.total_kwh - openEntry.started_total_kwh),
-  );
+  const endedAt = new Date().toISOString();
+  const stayTotalKwh = isAddEleDevice
+    ? round4(
+        (
+          await getSmartlifeDeviceAddElectricityKwh(config, {
+            device_id: assignment.device_id,
+            start: new Date(openEntry.started_at),
+            end: new Date(endedAt),
+          })
+        ).total_kwh,
+      )
+    : round4(Math.max(0, (reading?.total_kwh ?? 0) - openEntry.started_total_kwh));
   const electricityPricePerKwh = round4(
     Math.max(0, toNumber(reservations[0]?.gite?.electricity_price_per_kwh ?? 0)),
   );
@@ -396,7 +436,6 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
   const allocatedKwh = allocateByWeight(stayTotalKwh, weights, 4);
   const allocatedCost = allocateByWeight(stayTotalCostEur, weights, 2);
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
-  const endedAt = new Date().toISOString();
 
   reservations.forEach((reservation, index) => {
     const entries = entriesByReservationId.get(reservation.id) ?? [];
@@ -407,7 +446,9 @@ export const trackSmartlifeEnergyForAutomationEvent = async (
       ...openEntry,
       status: "closed",
       ended_at: endedAt,
-      ended_total_kwh: round4(reading.total_kwh),
+      ended_total_kwh: isAddEleDevice
+        ? round4(openEntry.started_total_kwh + stayTotalKwh)
+        : round4(reading?.total_kwh ?? 0),
       total_kwh: allocatedKwh[index] ?? 0,
       total_cost_eur: allocatedCost[index] ?? 0,
       stay_total_kwh: stayTotalKwh,
@@ -451,9 +492,32 @@ export const loadLiveReservationEnergySummaries = async (
   }
 
   const deviceTotalsById = new Map<string, number>();
+  const addEleConsumptionBySessionId = new Map<string, number>();
   await Promise.all(
     deviceIds.map(async (deviceId) => {
       try {
+        const device = await getSmartlifeDevice(config, deviceId);
+        if (device.energy_total_source_code === "add_ele") {
+          const openEntries = [...entriesByReservationId.values()]
+            .flat()
+            .filter(
+              (entry) => entry.status === "open" && entry.device_id === deviceId,
+            );
+          await Promise.all(
+            openEntries.map(async (entry) => {
+              const reading = await getSmartlifeDeviceAddElectricityKwh(config, {
+                device_id: deviceId,
+                start: new Date(entry.started_at),
+                end: new Date(),
+              });
+              addEleConsumptionBySessionId.set(
+                entry.session_id,
+                round4(reading.total_kwh),
+              );
+            }),
+          );
+          return;
+        }
         const reading = await getSmartlifeDeviceTotalElectricityKwh(config, deviceId);
         deviceTotalsById.set(deviceId, round4(reading.total_kwh));
       } catch {
@@ -467,6 +531,7 @@ export const loadLiveReservationEnergySummaries = async (
     const entries = entriesByReservationId.get(reservation.id) ?? [];
     const summary = summarizeLiveReservationEnergyTracking(entries, {
       deviceTotalsById,
+      consumptionBySessionId: addEleConsumptionBySessionId,
       electricity_price_per_kwh:
         reservation.gite?.electricity_price_per_kwh ?? 0,
       recorded_at: recordedAt,
