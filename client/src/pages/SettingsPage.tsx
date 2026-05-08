@@ -7166,6 +7166,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                     <strong> sous-compteurs informatifs</strong> restent visibles
                     mais ne sont pas utilisés pour la facturation. Les appareils
                     compatibles peuvent remonter `total_ele` ou `add_ele`.
+                    `add_ele` est additionné depuis les logs Tuya récents, pas
+                    lu comme un total instantané.
                   </div>
                   {loadingSmartlifeDevices ? (
                     <div className="field-hint" style={{ marginTop: 12 }}>

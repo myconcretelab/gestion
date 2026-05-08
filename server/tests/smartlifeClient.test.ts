@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildEnergyTotalInfo } from "../src/services/smartlifeClient.ts";
 
-test("buildEnergyTotalInfo detecte total_ele en priorite", () => {
+test("buildEnergyTotalInfo utilise total_ele pour l'energie cumulee", () => {
   const info = buildEnergyTotalInfo(
     [
       {
@@ -40,7 +40,7 @@ test("buildEnergyTotalInfo detecte total_ele en priorite", () => {
   assert.equal(info.total_ele_kwh, 67.89);
 });
 
-test("buildEnergyTotalInfo utilise add_ele quand total_ele est absent", () => {
+test("buildEnergyTotalInfo detecte add_ele sans le traiter comme total instantane", () => {
   const info = buildEnergyTotalInfo(
     [
       {
@@ -60,6 +60,6 @@ test("buildEnergyTotalInfo utilise add_ele quand total_ele est absent", () => {
   assert.equal(info.supports_energy_total, true);
   assert.equal(info.energy_total_source_code, "add_ele");
   assert.equal(info.energy_total_scale, 3);
-  assert.equal(info.energy_total_kwh, 12.345);
-  assert.equal(info.total_ele_kwh, 12.345);
+  assert.equal(info.energy_total_kwh, null);
+  assert.equal(info.total_ele_kwh, null);
 });
