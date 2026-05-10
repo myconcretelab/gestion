@@ -19,6 +19,7 @@ import {
 } from "../services/booked.js";
 import { sendBookingRequestCreatedEmails } from "../services/bookingRequestEmail.js";
 import { normalizeBookedGiteContentSections } from "../services/bookedGiteContent.js";
+import { toNumber } from "../utils/money.js";
 
 const router = Router();
 
@@ -84,6 +85,27 @@ const loadPublicGite = async (giteId: string) =>
     },
   });
 
+const formatEuro = (value: unknown, suffix = "") => {
+  const amount = toNumber(value as any);
+  const formatted = new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    minimumFractionDigits: 0,
+  }).format(amount);
+
+  return `${formatted} €${suffix}`;
+};
+
+const formatTime = (value: string | null | undefined) => {
+  const trimmed = String(value ?? "").trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return trimmed;
+
+  return `${Number(match[1])}h${match[2]}`;
+};
+
+const formatAddress = (gite: { adresse_ligne1: string; adresse_ligne2?: string | null }) =>
+  [gite.adresse_ligne1, gite.adresse_ligne2].map((part) => part?.trim()).filter(Boolean).join(", ");
+
 router.get("/gites", async (_req, res, next) => {
   try {
     const gites = await prisma.gite.findMany({
@@ -91,6 +113,7 @@ router.get("/gites", async (_req, res, next) => {
       select: {
         id: true,
         nom: true,
+        prefixe_contrat: true,
         capacite_max: true,
       },
     });
@@ -99,6 +122,7 @@ router.get("/gites", async (_req, res, next) => {
       gites: gites.map((gite) => ({
         id: gite.id,
         nom: gite.nom,
+        prefixe_contrat: gite.prefixe_contrat,
         capacite_max: gite.capacite_max,
       })),
     });
@@ -150,10 +174,24 @@ router.get("/gites/:id/content", async (req, res, next) => {
       select: {
         id: true,
         nom: true,
+        prefixe_contrat: true,
+        adresse_ligne1: true,
+        adresse_ligne2: true,
         public_title: true,
+        public_summary: true,
+        public_description: true,
         public_structured_content: true,
         public_equipment: true,
         public_rooms: true,
+        options_draps_par_lit: true,
+        options_linge_toilette_par_personne: true,
+        options_menage_forfait: true,
+        options_depart_tardif_forfait: true,
+        options_chiens_forfait: true,
+        heure_arrivee_defaut: true,
+        heure_depart_defaut: true,
+        prix_nuit_basse_saison: true,
+        prix_nuit_haute_saison: true,
       },
     });
     if (!gite) {
@@ -163,7 +201,23 @@ router.get("/gites/:id/content", async (req, res, next) => {
     res.json({
       id: gite.id,
       nom: gite.nom,
+      prefixe_contrat: gite.prefixe_contrat,
       public_title: gite.public_title,
+      public_summary: gite.public_summary,
+      public_description: gite.public_description,
+      adresse_complete: formatAddress(gite),
+      variables: {
+        prix_nuit_basse_saison: formatEuro(gite.prix_nuit_basse_saison),
+        prix_nuit_haute_saison: formatEuro(gite.prix_nuit_haute_saison),
+        adresse_complete: formatAddress(gite),
+        service_draps_par_lit: formatEuro(gite.options_draps_par_lit, " / lit"),
+        service_linge_toilette_par_personne: formatEuro(gite.options_linge_toilette_par_personne, " / personne"),
+        service_menage_forfait: formatEuro(gite.options_menage_forfait),
+        service_depart_tardif_forfait: formatEuro(gite.options_depart_tardif_forfait),
+        service_chiens_par_nuit: formatEuro(gite.options_chiens_forfait, " / nuit"),
+        horaire_arrivee: formatTime(gite.heure_arrivee_defaut),
+        horaire_depart: formatTime(gite.heure_depart_defaut),
+      },
       sections: normalizeBookedGiteContentSections(gite),
     });
   } catch (error) {

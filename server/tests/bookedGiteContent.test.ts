@@ -92,3 +92,58 @@ test("GET /gites/:id/content retourne 404 pour un gîte introuvable", async () =
     prisma.gite.findUnique = originalFindUnique;
   }
 });
+
+test("GET /gites/:id/content expose les variables publiques du gîte", async () => {
+  const originalFindUnique = prisma.gite.findUnique;
+  try {
+    prisma.gite.findUnique = async () =>
+      ({
+        id: "g1",
+        nom: "Le Grand Gîte",
+        prefixe_contrat: "grand",
+        adresse_ligne1: "1 rue des Pins",
+        adresse_ligne2: "29100 Douarnenez",
+        public_title: "Grand gîte",
+        public_summary: "Résumé",
+        public_description: "Description",
+        public_structured_content: null,
+        public_equipment: null,
+        public_rooms: null,
+        options_draps_par_lit: 15,
+        options_linge_toilette_par_personne: 5,
+        options_menage_forfait: 45,
+        options_depart_tardif_forfait: 0,
+        options_chiens_forfait: 15,
+        heure_arrivee_defaut: "17:00",
+        heure_depart_defaut: "12:00",
+        prix_nuit_basse_saison: 70,
+        prix_nuit_haute_saison: 75,
+      }) as any;
+
+    const handler = getRouteHandler(bookedRouter, "get", "/gites/:id/content");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await handler({ params: { id: "g1" } }, response, (error) => {
+      nextError = error ?? null;
+    });
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal((response.body as any).adresse_complete, "1 rue des Pins, 29100 Douarnenez");
+    assert.deepEqual((response.body as any).variables, {
+      prix_nuit_basse_saison: "70 €",
+      prix_nuit_haute_saison: "75 €",
+      adresse_complete: "1 rue des Pins, 29100 Douarnenez",
+      service_draps_par_lit: "15 € / lit",
+      service_linge_toilette_par_personne: "5 € / personne",
+      service_menage_forfait: "45 €",
+      service_depart_tardif_forfait: "0 €",
+      service_chiens_par_nuit: "15 € / nuit",
+      horaire_arrivee: "17h00",
+      horaire_depart: "12h00",
+    });
+  } finally {
+    prisma.gite.findUnique = originalFindUnique;
+  }
+});
