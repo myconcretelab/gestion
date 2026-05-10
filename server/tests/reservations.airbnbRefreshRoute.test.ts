@@ -312,7 +312,7 @@ test("POST /reservations retourne skipped si le gite n'a pas d'ID Airbnb", async
   }
 });
 
-test("POST /reservations retourne queued meme sans token iCal si l'execution echoue ensuite", async () => {
+test("POST /reservations sauvegarde la reservation meme si Pump est debranche", async () => {
   const originals = {
     giteFindUnique: prisma.gite.findUnique,
     reservationFindMany: prisma.reservation.findMany,
@@ -320,9 +320,10 @@ test("POST /reservations retourne queued meme sans token iCal si l'execution ech
     transaction: prisma.$transaction,
   };
   let giteLookupCount = 0;
+  let createdCount = 0;
 
   setAirbnbCalendarRefreshExecutorForTests(async () => {
-    throw new Error("background failure");
+    throw new Error("Pump debranche");
   });
 
   try {
@@ -332,12 +333,15 @@ test("POST /reservations retourne queued meme sans token iCal si l'execution ech
       return { id: "gite-1", airbnb_listing_id: "48504640" };
     };
     prisma.reservation.findMany = async () => [];
-    prisma.reservation.create = async ({ data }: any) => ({
-      id: "reservation-1",
-      ...data,
-      gite: { id: "gite-1", nom: "Gite test", prefixe_contrat: "GT", ordre: 0 },
-      placeholder: null,
-    });
+    prisma.reservation.create = async ({ data }: any) => {
+      createdCount += 1;
+      return {
+        id: "reservation-1",
+        ...data,
+        gite: { id: "gite-1", nom: "Gite test", prefixe_contrat: "GT", ordre: 0 },
+        placeholder: null,
+      };
+    };
     prisma.$transaction = async (operations: Promise<unknown>[]) => Promise.all(operations);
 
     const reservationsRouterModule = await import("../src/routes/reservations.ts");
@@ -360,6 +364,8 @@ test("POST /reservations retourne queued meme sans token iCal si l'execution ech
 
     assert.equal(nextError, null);
     assert.equal(response.statusCode, 201);
+    assert.equal(createdCount, 1);
+    assert.equal((response.body as any).id, "reservation-1");
     assert.equal((response.body as any).airbnb_calendar_refresh.status, "queued");
     assert.ok(typeof (response.body as any).airbnb_calendar_refresh.job_id === "string");
   } finally {
