@@ -61,6 +61,9 @@ export type Gite = {
   electricity_price_per_kwh: number;
   prix_nuit_basse_saison?: number;
   prix_nuit_haute_saison?: number;
+  min_nuits_toute_annee?: number;
+  min_nuits_vacances_scolaires?: number;
+  min_nuits_juillet_aout?: number;
   prix_nuit_liste?: number[];
   caracteristiques?: string | null;
   gestionnaire_id?: string | null;

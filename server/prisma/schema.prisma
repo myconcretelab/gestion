@@ -63,6 +63,9 @@ model Gite {
   electricity_price_per_kwh            Float  @default(0)
   prix_nuit_basse_saison               Float  @default(0)
   prix_nuit_haute_saison               Float  @default(0)
+  min_nuits_toute_annee                Int    @default(1)
+  min_nuits_vacances_scolaires         Int    @default(1)
+  min_nuits_juillet_aout               Int    @default(1)
   prix_nuit_liste                      String?
   caracteristiques                     String?
   airbnb_listing_id                    String?

@@ -102,6 +102,9 @@ const giteSchemaShape = {
   electricity_price_per_kwh: z.coerce.number().min(0).default(0),
   prix_nuit_basse_saison: z.coerce.number().min(0).default(0),
   prix_nuit_haute_saison: z.coerce.number().min(0).default(0),
+  min_nuits_toute_annee: z.coerce.number().int().min(1).default(1),
+  min_nuits_vacances_scolaires: z.coerce.number().int().min(1).default(1),
+  min_nuits_juillet_aout: z.coerce.number().int().min(1).default(1),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
   gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
 };
@@ -114,6 +117,11 @@ const resolveChildrenMax = (value: {
   const fallback = Math.max(0, value.capacite_max - value.nb_adultes_max);
   const normalized = Math.trunc(Number(value.nb_enfants_max ?? fallback));
   return Number.isFinite(normalized) ? Math.max(0, normalized) : fallback;
+};
+
+const normalizeMinNights = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? Math.max(1, Math.trunc(numericValue)) : 1;
 };
 
 const validateGiteInput = (
@@ -300,6 +308,9 @@ const hydrateGite = (gite: any) => {
     electricity_price_per_kwh: toNumber(rest.electricity_price_per_kwh),
     prix_nuit_basse_saison: toNumber(rest.prix_nuit_basse_saison),
     prix_nuit_haute_saison: toNumber(rest.prix_nuit_haute_saison),
+    min_nuits_toute_annee: normalizeMinNights(rest.min_nuits_toute_annee),
+    min_nuits_vacances_scolaires: normalizeMinNights(rest.min_nuits_vacances_scolaires),
+    min_nuits_juillet_aout: normalizeMinNights(rest.min_nuits_juillet_aout),
     prix_nuit_liste,
     public_structured_content: fromJsonString<unknown>(rest.public_structured_content, null),
     public_equipment: fromJsonString<unknown>(rest.public_equipment, null),
