@@ -20,6 +20,7 @@ const emptyForm = {
   public_title: "",
   public_summary: "",
   public_description: "",
+  public_technical_description: "",
   public_seo_title: "",
   public_seo_description: "",
   public_is_published: false,
@@ -1309,6 +1310,7 @@ const GitesPage = () => {
       public_title: selected.public_title ?? "",
       public_summary: selected.public_summary ?? "",
       public_description: selected.public_description ?? "",
+      public_technical_description: selected.public_technical_description ?? "",
       public_seo_title: selected.public_seo_title ?? "",
       public_seo_description: selected.public_seo_description ?? "",
       public_is_published: selected.public_is_published ?? false,
@@ -1442,6 +1444,7 @@ const GitesPage = () => {
         public_title: form.public_title || null,
         public_summary: form.public_summary || null,
         public_description: form.public_description || null,
+        public_technical_description: form.public_technical_description || null,
         public_seo_title: form.public_seo_title || null,
         public_seo_description: form.public_seo_description || null,
         public_structured_content: parseJsonTextarea(
@@ -2296,6 +2299,14 @@ const GitesPage = () => {
                 value={form.public_description}
                 onChange={(e) => handleChange("public_description", e.target.value)}
                 rows={6}
+              />
+            </label>
+            <label className="field" style={{ gridColumn: "1 / -1" }}>
+              Description technique
+              <textarea
+                value={form.public_technical_description}
+                onChange={(e) => handleChange("public_technical_description", e.target.value)}
+                rows={4}
               />
             </label>
           </div>

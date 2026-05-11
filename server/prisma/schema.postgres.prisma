@@ -30,6 +30,7 @@ model Gite {
   public_title                         String?
   public_summary                       String?
   public_description                   String?
+  public_technical_description         String?
   public_seo_title                     String?
   public_seo_description               String?
   public_is_published                  Boolean  @default(false)
