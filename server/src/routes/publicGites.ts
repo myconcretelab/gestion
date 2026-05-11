@@ -43,6 +43,7 @@ const mapPublicGite = (gite: any) => ({
   prefix: gite.prefixe_contrat,
   summary: gite.public_summary,
   description: gite.public_description,
+  technical_description: gite.public_technical_description,
   seo: {
     title: gite.public_seo_title,
     description: gite.public_seo_description,

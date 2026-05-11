@@ -20,6 +20,7 @@ export type Gite = {
   public_title?: string | null;
   public_summary?: string | null;
   public_description?: string | null;
+  public_technical_description?: string | null;
   public_seo_title?: string | null;
   public_seo_description?: string | null;
   public_is_published?: boolean;
