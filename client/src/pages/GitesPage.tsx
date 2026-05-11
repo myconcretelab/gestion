@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import type { Gestionnaire, Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
@@ -230,6 +230,13 @@ const toStructuredContentItemText = (value: unknown) => {
   }
   return toDisplayText(value);
 };
+const splitPastedStructuredItems = (value: string) =>
+  value
+    .replace(/\r\n?/g, "\n")
+    .replace(/[•●◦▪▫‣⁃]\s*/g, "\n")
+    .split(/\n+/)
+    .map((item) => item.replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+)/, "").trim())
+    .filter(Boolean);
 const normalizeStructuredItems = (items: unknown, groupType: StructuredContentGroupType): StructuredContentItem[] => {
   if (!Array.isArray(items)) return [];
   if (groupType === "chambre") return items.map(normalizeBedItem);
@@ -837,6 +844,31 @@ const StructuredContentEditor = ({
                                         return { ...current, items };
                                       })
                                     }
+                                    onPaste={(event: ClipboardEvent<HTMLInputElement>) => {
+                                      const pastedText = event.clipboardData.getData("text");
+                                      const input = event.currentTarget;
+                                      const selectionStart = input.selectionStart ?? textItem.length;
+                                      const selectionEnd = input.selectionEnd ?? selectionStart;
+                                      const mergedText = `${textItem.slice(0, selectionStart)}${pastedText}${textItem.slice(selectionEnd)}`;
+                                      const pastedItems = splitPastedStructuredItems(mergedText);
+                                      if (pastedItems.length < 2) {
+                                        if (pastedItems.length === 1 && pastedItems[0] !== mergedText.trim()) {
+                                          event.preventDefault();
+                                          updateGroup(sectionIndex, groupIndex, (current) => {
+                                            const items = [...current.items];
+                                            items[itemIndex] = pastedItems[0];
+                                            return { ...current, items };
+                                          });
+                                        }
+                                        return;
+                                      }
+                                      event.preventDefault();
+                                      updateGroup(sectionIndex, groupIndex, (current) => {
+                                        const items = [...current.items];
+                                        items.splice(itemIndex, 1, ...pastedItems);
+                                        return { ...current, items };
+                                      });
+                                    }}
                                   />
                                   <button
                                     type="button"
