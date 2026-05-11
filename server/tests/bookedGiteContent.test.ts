@@ -118,6 +118,9 @@ test("GET /gites/:id/content expose les variables publiques du gîte", async () 
         heure_depart_defaut: "12:00",
         prix_nuit_basse_saison: 70,
         prix_nuit_haute_saison: 75,
+        min_nuits_toute_annee: 2,
+        min_nuits_vacances_scolaires: 3,
+        min_nuits_juillet_aout: 7,
       }) as any;
 
     const handler = getRouteHandler(bookedRouter, "get", "/gites/:id/content");
@@ -134,6 +137,9 @@ test("GET /gites/:id/content expose les variables publiques du gîte", async () 
     assert.deepEqual((response.body as any).variables, {
       prix_nuit_basse_saison: "70 €",
       prix_nuit_haute_saison: "75 €",
+      min_nuits_toute_annee: "2",
+      min_nuits_vacances_scolaires: "3",
+      min_nuits_juillet_aout: "7",
       adresse_complete: "1 rue des Pins, 29100 Douarnenez",
       service_draps_par_lit: "15 € / lit",
       service_linge_toilette_par_personne: "5 € / personne",
