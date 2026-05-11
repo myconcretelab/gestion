@@ -193,6 +193,9 @@ router.get("/gites/:id/content", async (req, res, next) => {
         heure_depart_defaut: true,
         prix_nuit_basse_saison: true,
         prix_nuit_haute_saison: true,
+        min_nuits_toute_annee: true,
+        min_nuits_vacances_scolaires: true,
+        min_nuits_juillet_aout: true,
       },
     });
     if (!gite) {
@@ -211,6 +214,9 @@ router.get("/gites/:id/content", async (req, res, next) => {
       variables: {
         prix_nuit_basse_saison: formatEuro(gite.prix_nuit_basse_saison),
         prix_nuit_haute_saison: formatEuro(gite.prix_nuit_haute_saison),
+        min_nuits_toute_annee: String(gite.min_nuits_toute_annee ?? 1),
+        min_nuits_vacances_scolaires: String(gite.min_nuits_vacances_scolaires ?? 1),
+        min_nuits_juillet_aout: String(gite.min_nuits_juillet_aout ?? 1),
         adresse_complete: formatAddress(gite),
         service_draps_par_lit: formatEuro(gite.options_draps_par_lit, " / lit"),
         service_linge_toilette_par_personne: formatEuro(gite.options_linge_toilette_par_personne, " / personne"),

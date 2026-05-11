@@ -63,6 +63,9 @@ model Gite {
   electricity_price_per_kwh            Decimal  @default(0) @db.Decimal(10,4)
   prix_nuit_basse_saison               Decimal  @default(0) @db.Decimal(10,2)
   prix_nuit_haute_saison               Decimal  @default(0) @db.Decimal(10,2)
+  min_nuits_toute_annee                Int      @default(1)
+  min_nuits_vacances_scolaires         Int      @default(1)
+  min_nuits_juillet_aout               Int      @default(1)
   prix_nuit_liste                      Json?
   caracteristiques                     String?
   airbnb_listing_id                    String?

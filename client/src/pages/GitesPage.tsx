@@ -55,6 +55,9 @@ const emptyForm = {
   electricity_price_per_kwh: 0,
   prix_nuit_basse_saison: 0,
   prix_nuit_haute_saison: 0,
+  min_nuits_toute_annee: 1,
+  min_nuits_vacances_scolaires: 1,
+  min_nuits_juillet_aout: 1,
   prix_nuit_liste: "",
   gestionnaire_id: "",
 };
@@ -1345,6 +1348,9 @@ const GitesPage = () => {
       electricity_price_per_kwh: selected.electricity_price_per_kwh ?? 0,
       prix_nuit_basse_saison: selected.prix_nuit_basse_saison ?? 0,
       prix_nuit_haute_saison: selected.prix_nuit_haute_saison ?? 0,
+      min_nuits_toute_annee: selected.min_nuits_toute_annee ?? 1,
+      min_nuits_vacances_scolaires: selected.min_nuits_vacances_scolaires ?? 1,
+      min_nuits_juillet_aout: selected.min_nuits_juillet_aout ?? 1,
       prix_nuit_liste: Array.isArray(selected.prix_nuit_liste) ? selected.prix_nuit_liste.join(", ") : "",
       gestionnaire_id: selected.gestionnaire_id ?? "",
     });
@@ -1462,6 +1468,9 @@ const GitesPage = () => {
         gestionnaire_id: form.gestionnaire_id || null,
         prix_nuit_basse_saison: Number(form.prix_nuit_basse_saison) || 0,
         prix_nuit_haute_saison: Number(form.prix_nuit_haute_saison) || 0,
+        min_nuits_toute_annee: Math.max(1, Math.trunc(Number(form.min_nuits_toute_annee) || 1)),
+        min_nuits_vacances_scolaires: Math.max(1, Math.trunc(Number(form.min_nuits_vacances_scolaires) || 1)),
+        min_nuits_juillet_aout: Math.max(1, Math.trunc(Number(form.min_nuits_juillet_aout) || 1)),
         prix_nuit_liste: prixNuitListe,
         telephones: form.telephones
           .split(",")
@@ -2746,6 +2755,39 @@ const GitesPage = () => {
                 value={form.prix_nuit_liste}
                 onChange={(e) => handleChange("prix_nuit_liste", e.target.value)}
                 rows={3}
+              />
+            </label>
+          </div>
+          <div className="section-subtitle">Nombre de nuits minimum</div>
+          <div className="grid-2">
+            <label className="field">
+              Toute l'année
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={form.min_nuits_toute_annee}
+                onChange={(e) => handleChange("min_nuits_toute_annee", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Vacances scolaires
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={form.min_nuits_vacances_scolaires}
+                onChange={(e) => handleChange("min_nuits_vacances_scolaires", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Juillet / août
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={form.min_nuits_juillet_aout}
+                onChange={(e) => handleChange("min_nuits_juillet_aout", Number(e.target.value))}
               />
             </label>
           </div>
