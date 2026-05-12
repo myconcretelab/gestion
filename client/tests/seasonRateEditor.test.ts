@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildAutomaticSeasonRateSegments,
+  buildFrenchBridgeIntervals,
   buildHolidayIntervals,
   buildPrefilledSeasonRateSegments,
   buildSeasonRateEditorSegments,
@@ -142,4 +144,57 @@ test("buildSeasonRatePrefillDraft demande confirmation quand les suggestions son
     g2: { low: "90", high: "90" },
     g3: { low: "", high: "" },
   });
+});
+
+test("buildFrenchBridgeIntervals détecte les longs week-ends des fériés", () => {
+  const bridges = buildFrenchBridgeIntervals("2026-05-01", "2026-06-01");
+
+  assert.deepEqual(
+    bridges.map((bridge) => ({ start: bridge.start, end: bridge.end, names: bridge.names })),
+    [
+      { start: "2026-05-01", end: "2026-05-04", names: ["Pont Fête du Travail"] },
+      { start: "2026-05-08", end: "2026-05-11", names: ["Pont Victoire 1945"] },
+      { start: "2026-05-14", end: "2026-05-17", names: ["Pont Ascension"] },
+      { start: "2026-05-22", end: "2026-05-25", names: ["Pont Lundi de Pentecôte"] },
+    ]
+  );
+});
+
+test("buildAutomaticSeasonRateSegments applique les règles simples par gîte", () => {
+  const segments = buildAutomaticSeasonRateSegments({
+    from: "2026-06-28",
+    to: "2026-09-03",
+    holidays: [],
+    gites: [
+      {
+        id: "g1",
+        prix_nuit_liste: [],
+        prix_nuit_basse_saison: 70,
+        prix_nuit_haute_saison: 90,
+        min_nuits_toute_annee: 2,
+        min_nuits_vacances_scolaires: 2,
+        min_nuits_juillet_aout: 4,
+      },
+      {
+        id: "g2",
+        prix_nuit_liste: [],
+        prix_nuit_basse_saison: 80,
+        prix_nuit_haute_saison: 110,
+        min_nuits_toute_annee: 2,
+        min_nuits_vacances_scolaires: 2,
+        min_nuits_juillet_aout: 5,
+      },
+    ],
+  });
+  const summer = segments.find((segment) => segment.rule === "july_august");
+
+  assert.ok(summer);
+  assert.equal(summer.date_debut, "2026-07-01");
+  assert.equal(summer.date_fin, "2026-09-01");
+  assert.equal(summer.prices_by_gite.g1, 90);
+  assert.equal(summer.prices_by_gite.g2, 110);
+  assert.equal(summer.min_nuits_by_gite.g1, 4);
+  assert.equal(summer.min_nuits_by_gite.g2, 5);
+  assert.equal(summer.min_nuits, null);
+  assert.equal(summer.has_mixed_min_nights, true);
 });

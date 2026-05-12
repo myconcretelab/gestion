@@ -216,6 +216,7 @@ export type SeasonRateEditorPayloadSegment = {
   date_debut: string;
   date_fin: string;
   min_nuits: number;
+  min_nuits_by_gite?: Record<string, number>;
   prices_by_gite: Record<string, number>;
 };
 
@@ -231,7 +232,21 @@ export type SeasonRateEditorResponse = {
   to: string;
   zone: string;
   holidays: SchoolHoliday[];
-  gites: Array<Pick<Gite, "id" | "nom" | "ordre" | "prefixe_contrat" | "prix_nuit_liste">>;
+  gites: Array<
+    Pick<
+      Gite,
+      | "id"
+      | "nom"
+      | "ordre"
+      | "prefixe_contrat"
+      | "prix_nuit_liste"
+      | "prix_nuit_basse_saison"
+      | "prix_nuit_haute_saison"
+      | "min_nuits_toute_annee"
+      | "min_nuits_vacances_scolaires"
+      | "min_nuits_juillet_aout"
+    >
+  >;
   rates_by_gite: Record<string, SeasonRate[]>;
 };
 

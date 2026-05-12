@@ -17,6 +17,11 @@ type GiteLite = {
   ordre: number;
   prefixe_contrat: string;
   prix_nuit_liste: unknown;
+  prix_nuit_basse_saison: unknown;
+  prix_nuit_haute_saison: unknown;
+  min_nuits_toute_annee: number;
+  min_nuits_vacances_scolaires: number;
+  min_nuits_juillet_aout: number;
 };
 
 type SeasonRateRow = {
@@ -34,6 +39,7 @@ export type SeasonRateEditorSegment = {
   date_debut: string;
   date_fin: string;
   min_nuits: number;
+  min_nuits_by_gite?: Record<string, number>;
   prices_by_gite: Record<string, number>;
 };
 
@@ -55,6 +61,11 @@ export type SeasonRateEditorResponse = {
     ordre: number;
     prefixe_contrat: string;
     prix_nuit_liste: number[];
+    prix_nuit_basse_saison: number;
+    prix_nuit_haute_saison: number;
+    min_nuits_toute_annee: number;
+    min_nuits_vacances_scolaires: number;
+    min_nuits_juillet_aout: number;
   }>;
   rates_by_gite: Record<string, ReturnType<typeof hydrateSeasonRate>[]>;
 };
@@ -105,6 +116,11 @@ const normalizeGite = (gite: GiteLite) => ({
   ordre: gite.ordre,
   prefixe_contrat: gite.prefixe_contrat,
   prix_nuit_liste: parseNightlySuggestionList(gite.prix_nuit_liste),
+  prix_nuit_basse_saison: toNumber(gite.prix_nuit_basse_saison as any),
+  prix_nuit_haute_saison: toNumber(gite.prix_nuit_haute_saison as any),
+  min_nuits_toute_annee: Math.max(1, Number(gite.min_nuits_toute_annee) || 1),
+  min_nuits_vacances_scolaires: Math.max(1, Number(gite.min_nuits_vacances_scolaires) || 1),
+  min_nuits_juillet_aout: Math.max(1, Number(gite.min_nuits_juillet_aout) || 1),
 });
 
 const buildMissingPriceError = (giteId: string) =>
@@ -150,6 +166,16 @@ export const validateSeasonRateEditorPayload = (payload: SeasonRateEditorPayload
       });
     }
 
+    const minNightEntries = Object.entries(segment.min_nuits_by_gite ?? {});
+    if (minNightEntries.some(([giteId]) => !allowedGiteIds.has(giteId))) {
+      throw new BookedValidationError({
+        code: "unknown_gite",
+        message: "Le payload contient un identifiant de gîte inconnu.",
+        statusCode: 400,
+        details: { index },
+      });
+    }
+
     if (start.getTime() !== cursor.getTime()) {
       throw new BookedValidationError({
         code: "segments_not_contiguous",
@@ -174,6 +200,16 @@ export const validateSeasonRateEditorPayload = (payload: SeasonRateEditorPayload
     }
 
     giteIds.forEach((giteId) => {
+      const minNuitsForGite = segment.min_nuits_by_gite?.[giteId] ?? segment.min_nuits;
+      if (!Number.isInteger(minNuitsForGite) || minNuitsForGite < 1) {
+        throw new BookedValidationError({
+          code: "invalid_min_nights",
+          message: `Le minimum de nuits du gîte ${giteId} est invalide.`,
+          statusCode: 400,
+          details: { index, gite_id: giteId },
+        });
+      }
+
       if (!(giteId in (segment.prices_by_gite ?? {}))) {
         throw buildMissingPriceError(giteId);
       }
@@ -248,7 +284,7 @@ export const buildSeasonRateWritePlan = (params: {
       date_debut: parseBookedDateInput(segment.date_debut, "segment.date_debut"),
       date_fin: parseBookedDateInput(segment.date_fin, "segment.date_fin"),
       prix_par_nuit: Number(segment.prices_by_gite[params.giteId]),
-      min_nuits: Math.max(1, Number(segment.min_nuits) || 1),
+      min_nuits: Math.max(1, Number(segment.min_nuits_by_gite?.[params.giteId] ?? segment.min_nuits) || 1),
     });
   });
 
@@ -278,6 +314,11 @@ export const loadSeasonRateEditorData = async (params: {
       ordre: true,
       prefixe_contrat: true,
       prix_nuit_liste: true,
+      prix_nuit_basse_saison: true,
+      prix_nuit_haute_saison: true,
+      min_nuits_toute_annee: true,
+      min_nuits_vacances_scolaires: true,
+      min_nuits_juillet_aout: true,
     },
   });
 
