@@ -151,3 +151,24 @@ test("buildSeasonRateWritePlan préserve les morceaux hors plage et remplace la 
     ]
   );
 });
+
+test("buildSeasonRateWritePlan applique les nuits mini par gîte quand elles sont fournies", () => {
+  const plan = buildSeasonRateWritePlan({
+    giteId: "g2",
+    from: "2026-07-01",
+    to: "2026-09-01",
+    segments: [
+      {
+        date_debut: "2026-07-01",
+        date_fin: "2026-09-01",
+        min_nuits: 5,
+        min_nuits_by_gite: { g1: 4, g2: 5, g3: 4, g4: 5 },
+        prices_by_gite: { g1: 90, g2: 110, g3: 120, g4: 140 },
+      },
+    ],
+    existingRates: [],
+  });
+
+  assert.equal(plan.create_rows[0]?.prix_par_nuit, 110);
+  assert.equal(plan.create_rows[0]?.min_nuits, 5);
+});

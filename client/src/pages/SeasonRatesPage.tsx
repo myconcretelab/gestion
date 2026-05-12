@@ -1,54 +1,31 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch, isAbortError } from "../utils/api";
 import { formatEuro } from "../utils/format";
-import type {
-  SeasonRateEditorPayload,
-  SeasonRateEditorResponse,
-} from "../utils/types";
+import type { Gite, SeasonRateEditorPayload, SeasonRateEditorResponse } from "../utils/types";
 import {
   addDaysToIso,
+  buildAutomaticSeasonRateSegments,
   buildDefaultSeasonRateEditorRange,
-  buildPrefilledSeasonRateSegments,
   buildSeasonRateEditorPayload,
   buildSeasonRateEditorSegments,
-  buildSeasonRatePrefillDraft,
   getExclusiveEndDisplayLabel,
-  insertSeasonRateSegment,
-  recalculateSeasonRateEditorSegments,
-  removeSeasonRateSegment,
-  shiftSeasonRateBoundary,
+  type SeasonRateEditorRule,
   type SeasonRateEditorSegment,
 } from "../utils/seasonRateEditor";
 import { formatUtcDateKey, parseIsoDateUtc } from "../utils/schoolHolidays";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const MONTH_LABEL = new Intl.DateTimeFormat("fr-FR", { month: "short", year: "numeric", timeZone: "UTC" });
 const DATE_LABEL = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 
-type PrefillDialogState = {
-  minNuits: string;
-  pricesByGite: Record<
-    string,
-    {
-      low: string;
-      high: string;
-    }
-  >;
-};
+type EditorGite = SeasonRateEditorResponse["gites"][number];
 
-type AddPeriodDraftState = {
-  dateDebut: string;
-  dateFin: string;
-  minNuits: string;
-  pricesByGite: Record<string, string>;
-};
-
-const diffUtcDays = (from: string, to: string) => {
-  const fromDate = parseIsoDateUtc(from);
-  const toDate = parseIsoDateUtc(to);
-  if (!fromDate || !toDate) return 0;
-  return Math.max(0, Math.round((toDate.getTime() - fromDate.getTime()) / DAY_MS));
-};
+const cloneSegments = (segments: SeasonRateEditorSegment[]) =>
+  segments.map((segment) => ({
+    ...segment,
+    min_nuits_by_gite: { ...segment.min_nuits_by_gite },
+    prices_by_gite: { ...segment.prices_by_gite },
+    holiday_names: [...segment.holiday_names],
+    rule_names: [...segment.rule_names],
+  }));
 
 const shiftIsoRangeByMonths = (range: { from: string; to: string }, months: number) => {
   const fromDate = parseIsoDateUtc(range.from);
@@ -68,107 +45,72 @@ const formatDateLabel = (value: string) => {
 
 const formatRangeLabel = (from: string, to: string) => `${formatDateLabel(from)} au ${formatDateLabel(getExclusiveEndDisplayLabel(to))}`;
 
-const getHolidayNameLabel = (segment: Pick<SeasonRateEditorSegment, "holiday_names">) => {
-  if (segment.holiday_names.length === 0) return null;
-  return segment.holiday_names.join(" · ");
-};
-
-const getCompactHolidayNameLabel = (segment: Pick<SeasonRateEditorSegment, "holiday_names">) => {
-  const primaryName = segment.holiday_names[0]?.trim();
-  if (!primaryName) return null;
-  return primaryName
-    .replace(/^Vacances\s+(de\s+|d['’])?/i, "")
-    .replace(/^Vacances\s+/i, "")
-    .trim();
-};
-
-const getHolidayStatusLabel = (segment: Pick<SeasonRateEditorSegment, "holiday_status" | "holiday_names">) => {
-  const holidayName = getHolidayNameLabel(segment);
-  if (segment.holiday_status === "holiday") return holidayName || "Vacances";
-  if (segment.holiday_status === "mixed") return holidayName ? `Mixte · ${holidayName}` : "Mixte";
-  return "Hors vacances";
-};
-
-const getCompactHolidayStatusLabel = (segment: Pick<SeasonRateEditorSegment, "holiday_status" | "holiday_names">) => {
-  const compactHolidayName = getCompactHolidayNameLabel(segment);
-  if (segment.holiday_status === "holiday") return compactHolidayName || "Vacances";
-  if (segment.holiday_status === "mixed") return compactHolidayName ? `Mixte · ${compactHolidayName}` : "Mixte";
-  return "Hors vac.";
-};
-
-const buildMonthMarkers = (from: string, to: string) => {
-  const fromDate = parseIsoDateUtc(from);
-  const toDate = parseIsoDateUtc(to);
-  const totalDays = diffUtcDays(from, to);
-  if (!fromDate || !toDate || totalDays <= 0) return [];
-
-  const markers: Array<{ key: string; label: string; left: number; width: number }> = [];
-  for (
-    let cursor = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), 1));
-    cursor.getTime() < toDate.getTime();
-    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
-  ) {
-    const monthStart = cursor.getTime() < fromDate.getTime() ? fromDate : cursor;
-    const monthEnd = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
-    const clampedMonthEnd = monthEnd.getTime() > toDate.getTime() ? toDate : monthEnd;
-    const left = (diffUtcDays(from, formatUtcDateKey(monthStart)) / totalDays) * 100;
-    const width = (diffUtcDays(formatUtcDateKey(monthStart), formatUtcDateKey(clampedMonthEnd)) / totalDays) * 100;
-    if (width <= 0) continue;
-
-    markers.push({
-      key: `${cursor.getUTCFullYear()}-${cursor.getUTCMonth() + 1}`,
-      label: MONTH_LABEL.format(cursor),
-      left,
-      width,
-    });
-  }
-
-  return markers;
-};
-
-const normalizeEditorSegments = (
-  segments: SeasonRateEditorSegment[],
-  response: Pick<SeasonRateEditorResponse, "holidays" | "from" | "to">
-) => recalculateSeasonRateEditorSegments(segments, response.holidays, response.from, response.to);
-
-const cloneSegments = (segments: SeasonRateEditorSegment[]) =>
-  segments.map((segment) => ({
-    ...segment,
-    prices_by_gite: { ...segment.prices_by_gite },
-  }));
-
-const buildAddPeriodDraft = (
-  segment: SeasonRateEditorSegment | null,
-  gites: Array<SeasonRateEditorResponse["gites"][number]>
-): AddPeriodDraftState | null => {
-  if (!segment) return null;
-
-  const segmentLength = diffUtcDays(segment.date_debut, segment.date_fin);
-  let dateDebut = segment.date_debut;
-  let dateFin = segment.date_fin;
-
-  if (segmentLength > 2) {
-    dateDebut = addDaysToIso(segment.date_debut, 1);
-    dateFin = addDaysToIso(segment.date_fin, -1);
-  } else if (segmentLength === 2) {
-    dateFin = addDaysToIso(segment.date_debut, 1);
-  }
-
-  return {
-    dateDebut,
-    dateFin,
-    minNuits: String(segment.min_nuits ?? 1),
-    pricesByGite: gites.reduce<Record<string, string>>((accumulator, gite) => {
-      accumulator[gite.id] = segment.prices_by_gite[gite.id] == null ? "" : String(segment.prices_by_gite[gite.id]);
-      return accumulator;
-    }, {}),
-  };
-};
-
-const getGiteShortLabel = (gite: SeasonRateEditorResponse["gites"][number]) =>
+const getGiteShortLabel = (gite: Pick<Gite, "prefixe_contrat" | "nom">) =>
   String(gite.prefixe_contrat || gite.nom)
     .trim()
     .toUpperCase();
+
+const getRuleLabel = (segment: Pick<SeasonRateEditorSegment, "rule" | "rule_names" | "holiday_names">) => {
+  if (segment.rule === "july_august") return "Juillet / août";
+  if (segment.rule === "bridge") return segment.rule_names[0] ?? "Pont";
+  if (segment.rule === "school_holiday") return segment.holiday_names.join(" · ") || "Vacances zone B";
+  if (segment.rule === "manual") return "Tarif enregistré";
+  return "Normal";
+};
+
+const getRuleClass = (rule: SeasonRateEditorRule) => {
+  if (rule === "school_holiday") return "holiday";
+  if (rule === "bridge") return "bridge";
+  if (rule === "july_august") return "summer";
+  if (rule === "manual") return "manual";
+  return "normal";
+};
+
+const summarizeMinNights = (segment: SeasonRateEditorSegment, gites: EditorGite[]) => {
+  const values = gites.map((gite) => segment.min_nuits_by_gite[gite.id] ?? segment.min_nuits).filter((value): value is number => value != null);
+  const uniqueValues = [...new Set(values)].sort((left, right) => left - right);
+  if (uniqueValues.length === 0) return "à saisir";
+  if (uniqueValues.length === 1) return `${uniqueValues[0]} nuit${uniqueValues[0] > 1 ? "s" : ""}`;
+  return `${uniqueValues[0]} à ${uniqueValues[uniqueValues.length - 1]} nuits`;
+};
+
+const getDefaultPrice = (gite: EditorGite, mode: "normal" | "high") => {
+  const low = Number(gite.prix_nuit_basse_saison ?? 0);
+  const high = Number(gite.prix_nuit_haute_saison ?? 0);
+  if (mode === "high") return high > 0 ? high : low;
+  return low > 0 ? low : high;
+};
+
+const getDefaultMinNights = (gite: EditorGite, rule: SeasonRateEditorRule) => {
+  if (rule === "july_august") return Math.max(1, Number(gite.min_nuits_juillet_aout ?? 1) || 1);
+  if (rule === "school_holiday") return Math.max(1, Number(gite.min_nuits_vacances_scolaires ?? 1) || 1);
+  if (rule === "bridge") return 3;
+  return Math.max(1, Number(gite.min_nuits_toute_annee ?? 1) || 1);
+};
+
+const applyRuleMetadata = (segments: SeasonRateEditorSegment[], automaticSegments: SeasonRateEditorSegment[]) =>
+  segments.map((segment) => {
+    const matchingRule = automaticSegments.find(
+      (candidate) => candidate.date_debut <= segment.date_debut && candidate.date_fin >= segment.date_fin
+    );
+    if (!matchingRule) return segment;
+    return {
+      ...segment,
+      rule: matchingRule.rule,
+      rule_names: [...matchingRule.rule_names],
+      holiday_status: matchingRule.holiday_status,
+      holiday_names: [...matchingRule.holiday_names],
+    };
+  });
+
+const recomputeMinSummary = (minNightsByGite: Record<string, number | null>) => {
+  const values = Object.values(minNightsByGite).filter((value): value is number => value != null);
+  const uniqueValues = [...new Set(values)];
+  return {
+    min_nuits: uniqueValues.length === 0 ? null : uniqueValues.length === 1 ? uniqueValues[0] : null,
+    has_mixed_min_nights: uniqueValues.length > 1,
+  };
+};
 
 const SeasonRatesPage = () => {
   const [range, setRange] = useState(() => buildDefaultSeasonRateEditorRange());
@@ -176,61 +118,36 @@ const SeasonRatesPage = () => {
   const [segments, setSegments] = useState<SeasonRateEditorSegment[]>([]);
   const [initialSegments, setInitialSegments] = useState<SeasonRateEditorSegment[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [addPeriodDraft, setAddPeriodDraft] = useState<AddPeriodDraftState | null>(null);
-  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
-  const [popoverPlacement, setPopoverPlacement] = useState<"top" | "bottom">("bottom");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [prefillOpen, setPrefillOpen] = useState(false);
-  const [prefillState, setPrefillState] = useState<PrefillDialogState>({
-    minNuits: "2",
-    pricesByGite: {},
-  });
-
-  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
-  const timelineTrackRef = useRef<HTMLDivElement | null>(null);
-  const segmentRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const popoverRef = useRef<HTMLDivElement | null>(null);
-  const segmentsRef = useRef<SeasonRateEditorSegment[]>([]);
-  const dragStateRef = useRef<{
-    segmentIndex: number;
-    side: "start" | "end";
-    pointerStartX: number;
-    originalBoundary: string;
-    trackWidth: number;
-  } | null>(null);
-
-  useEffect(() => {
-    segmentsRef.current = segments;
-  }, [segments]);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     setNotice(null);
-    setResponse(null);
-    setSegments([]);
-    setInitialSegments([]);
     setSelectedIndex(null);
-    setAddPeriodDraft(null);
-    setPopoverStyle(null);
 
     apiFetch<SeasonRateEditorResponse>(
       `/gites/season-rates/editor?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}&zone=B`,
       { signal: controller.signal }
     )
       .then((data) => {
-        const nextSegments = buildSeasonRateEditorSegments(data);
+        const automaticSegments = buildAutomaticSeasonRateSegments({
+          from: data.from,
+          to: data.to,
+          holidays: data.holidays,
+          gites: data.gites,
+        });
         setResponse(data);
-        setInitialSegments(cloneSegments(nextSegments));
-        setSegments(nextSegments);
+        setSegments(automaticSegments);
+        setInitialSegments(cloneSegments(automaticSegments));
       })
       .catch((fetchError) => {
         if (!isAbortError(fetchError)) {
-          setError(fetchError instanceof Error ? fetchError.message : "Impossible de charger l'éditeur tarifaire.");
+          setError(fetchError instanceof Error ? fetchError.message : "Impossible de charger les tarifs.");
         }
       })
       .finally(() => {
@@ -240,264 +157,97 @@ const SeasonRatesPage = () => {
     return () => controller.abort();
   }, [range.from, range.to]);
 
-  useEffect(() => {
-    const dragMove = (event: PointerEvent) => {
-      const dragState = dragStateRef.current;
-      const currentResponse = response;
-      if (!dragState || !currentResponse || dragState.trackWidth <= 0) return;
-
-      const totalDays = diffUtcDays(currentResponse.from, currentResponse.to);
-      if (totalDays <= 0) return;
-
-      const dayDelta = Math.round(((event.clientX - dragState.pointerStartX) / dragState.trackWidth) * totalDays);
-      const nextBoundary = addDaysToIso(dragState.originalBoundary, dayDelta);
-      const shifted = shiftSeasonRateBoundary(segmentsRef.current, dragState.segmentIndex, dragState.side, nextBoundary);
-      if (!shifted) return;
-
-      setSegments(normalizeEditorSegments(shifted, currentResponse));
-    };
-
-    const dragEnd = () => {
-      dragStateRef.current = null;
-    };
-
-    window.addEventListener("pointermove", dragMove);
-    window.addEventListener("pointerup", dragEnd);
-    return () => {
-      window.removeEventListener("pointermove", dragMove);
-      window.removeEventListener("pointerup", dragEnd);
-    };
-  }, [response]);
-
   const gites = response?.gites ?? [];
-  const months = useMemo(() => buildMonthMarkers(range.from, range.to), [range.from, range.to]);
-  const totalDays = useMemo(() => diffUtcDays(range.from, range.to), [range.from, range.to]);
-  const timelineCanvasWidth = useMemo(() => Math.max(1680, months.length * 220, segments.length * 160), [months.length, segments.length]);
   const selectedSegment = selectedIndex == null ? null : segments[selectedIndex] ?? null;
-
-  useEffect(() => {
-    setAddPeriodDraft(buildAddPeriodDraft(selectedSegment, gites));
-  }, [gites, selectedSegment]);
-
-  useEffect(() => {
-    if (selectedIndex == null) {
-      setPopoverStyle(null);
-      return;
-    }
-
-    const updatePopoverPosition = () => {
-      const anchor = segmentRefs.current[selectedIndex];
-      const popover = popoverRef.current;
-      if (!anchor || !popover) return;
-
-      const anchorRect = anchor.getBoundingClientRect();
-      const popoverRect = popover.getBoundingClientRect();
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      const gap = 14;
-
-      let left = anchorRect.left + anchorRect.width / 2 - popoverRect.width / 2;
-      left = Math.min(Math.max(12, left), viewportWidth - popoverRect.width - 12);
-
-      let top = anchorRect.bottom + gap;
-      let placement: "top" | "bottom" = "bottom";
-      if (top + popoverRect.height > viewportHeight - 12) {
-        top = Math.max(12, anchorRect.top - popoverRect.height - gap);
-        placement = "top";
-      }
-
-      setPopoverPlacement(placement);
-      setPopoverStyle({
-        top: `${Math.round(top)}px`,
-        left: `${Math.round(left)}px`,
-      });
-    };
-
-    const frame = window.requestAnimationFrame(updatePopoverPosition);
-    const handleScroll = () => updatePopoverPosition();
-    const scrollContainer = timelineScrollRef.current;
-    window.addEventListener("resize", handleScroll);
-    window.addEventListener("scroll", handleScroll, true);
-    scrollContainer?.addEventListener("scroll", handleScroll);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", handleScroll);
-      window.removeEventListener("scroll", handleScroll, true);
-      scrollContainer?.removeEventListener("scroll", handleScroll);
-    };
-  }, [selectedIndex, segments]);
-
-  useEffect(() => {
-    if (selectedIndex == null) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (popoverRef.current?.contains(target) || segmentRefs.current[selectedIndex]?.contains(target)) return;
-      setSelectedIndex(null);
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setSelectedIndex(null);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleEscape);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleEscape);
-    };
-  }, [selectedIndex]);
-
-  const summary = useMemo(() => {
-    const incompleteSegments = segments.filter((segment) =>
-      segment.min_nuits == null || segment.has_mixed_min_nights || Object.values(segment.prices_by_gite).some((price) => price == null)
-    ).length;
-    const holidaySegments = segments.filter((segment) => segment.holiday_status === "holiday").length;
-    const mixedSegments = segments.filter((segment) => segment.holiday_status === "mixed" || segment.has_mixed_min_nights).length;
-
-    return {
-      total: segments.length,
-      incompleteSegments,
-      holidaySegments,
-      mixedSegments,
-    };
-  }, [segments]);
-
-  const isDirty = useMemo(
-    () => JSON.stringify(segments) !== JSON.stringify(initialSegments),
-    [initialSegments, segments]
+  const automaticSegments = useMemo(
+    () =>
+      response
+        ? buildAutomaticSeasonRateSegments({
+            from: response.from,
+            to: response.to,
+            holidays: response.holidays,
+            gites,
+          })
+        : [],
+    [gites, response]
+  );
+  const isDirty = useMemo(() => JSON.stringify(segments) !== JSON.stringify(initialSegments), [initialSegments, segments]);
+  const importantSegments = useMemo(() => segments.filter((segment) => segment.rule !== "normal"), [segments]);
+  const summary = useMemo(
+    () => ({
+      normal: segments.filter((segment) => segment.rule === "normal").length,
+      schoolHoliday: segments.filter((segment) => segment.rule === "school_holiday").length,
+      bridge: segments.filter((segment) => segment.rule === "bridge").length,
+      julyAugust: segments.filter((segment) => segment.rule === "july_august").length,
+      incomplete: segments.filter((segment) =>
+        gites.some((gite) => segment.prices_by_gite[gite.id] == null || segment.min_nuits_by_gite[gite.id] == null)
+      ).length,
+    }),
+    [gites, segments]
   );
 
-  const applyNextSegments = (nextSegments: SeasonRateEditorSegment[], nextSelectedIndex: number | null = selectedIndex) => {
+  const setNextSegments = (updater: (current: SeasonRateEditorSegment[]) => SeasonRateEditorSegment[]) => {
+    setSegments((current) => updater(cloneSegments(current)));
+  };
+
+  const regenerateAutomatic = () => {
     if (!response) return;
-    const normalized = normalizeEditorSegments(nextSegments, response);
-    setSegments(normalized);
-    if (normalized.length === 0 || nextSelectedIndex == null) {
-      setSelectedIndex(null);
-      return;
-    }
-    setSelectedIndex(Math.max(0, Math.min(nextSelectedIndex, normalized.length - 1)));
-  };
-
-  const handleBoundaryDateChange = (segmentIndex: number, side: "start" | "end", value: string) => {
-    if (!response || !value) return;
-    const shifted = shiftSeasonRateBoundary(segments, segmentIndex, side, value);
-    if (!shifted) {
-      setError("La borne choisie crée un segment vide ou chevauche son voisin.");
-      return;
-    }
-    setError(null);
-    applyNextSegments(shifted, segmentIndex);
-  };
-
-  const handleSegmentValueChange = (
-    segmentIndex: number,
-    updater: (segment: SeasonRateEditorSegment) => SeasonRateEditorSegment
-  ) => {
-    const nextSegments = cloneSegments(segments);
-    nextSegments[segmentIndex] = updater(nextSegments[segmentIndex]);
+    const nextSegments = cloneSegments(automaticSegments);
     setSegments(nextSegments);
-  };
-
-  const handleAddPeriod = () => {
-    if (selectedIndex == null || !selectedSegment || !addPeriodDraft) return;
-
-    const minNuits = Number(addPeriodDraft.minNuits);
-    if (!Number.isInteger(minNuits) || minNuits < 1) {
-      setError("Le minimum de nuits de la nouvelle période doit être un entier supérieur ou égal à 1.");
-      return;
-    }
-
-    let pricesByGite: Record<string, number | null>;
-    try {
-      pricesByGite = gites.reduce<Record<string, number | null>>((accumulator, gite) => {
-        const rawValue = addPeriodDraft.pricesByGite[gite.id];
-        const price = rawValue === "" ? null : Number(rawValue);
-        if (price == null || !Number.isFinite(price) || price < 0) {
-          throw new Error(`Le prix de la nouvelle période est invalide pour le gîte ${gite.nom}.`);
-        }
-        accumulator[gite.id] = price;
-        return accumulator;
-      }, {});
-    } catch (priceError) {
-      setError(priceError instanceof Error ? priceError.message : "Prix invalide pour la nouvelle période.");
-      return;
-    }
-
-    const inserted = insertSeasonRateSegment(segments, selectedIndex, {
-      date_debut: addPeriodDraft.dateDebut,
-      date_fin: addPeriodDraft.dateFin,
-      min_nuits: minNuits,
-      prices_by_gite: pricesByGite,
-    });
-
-    if (!inserted) {
-      setError("La nouvelle période doit rester incluse dans le segment ouvert et modifier réellement son découpage.");
-      return;
-    }
-
-    const nextSelectedIndex = selectedIndex + (selectedSegment.date_debut < addPeriodDraft.dateDebut ? 1 : 0);
+    setSelectedIndex(null);
     setError(null);
-    applyNextSegments(inserted, nextSelectedIndex);
+    setNotice("Préremplissage automatique appliqué: zone B, ponts et juillet/août.");
   };
 
-  const handleDeleteSelectedSegment = () => {
+  const updateSelectedSegment = (updater: (segment: SeasonRateEditorSegment) => SeasonRateEditorSegment) => {
     if (selectedIndex == null) return;
-    const removed = removeSeasonRateSegment(segments, selectedIndex);
-    if (!removed) {
-      setError("Impossible de supprimer l'unique période de la frise.");
-      return;
-    }
-    setError(null);
-    applyNextSegments(removed, selectedIndex === 0 ? 0 : selectedIndex - 1);
+    setNextSegments((current) => {
+      const target = current[selectedIndex];
+      if (!target) return current;
+      current[selectedIndex] = updater(target);
+      return current;
+    });
   };
 
-  const openPrefillDialog = () => {
-    const { draft } = buildSeasonRatePrefillDraft(gites);
-    setPrefillState({
-      minNuits: "2",
-      pricesByGite: draft,
+  const setCommonMinNights = (value: number) => {
+    updateSelectedSegment((segment) => {
+      const minNightsByGite = Object.fromEntries(gites.map((gite) => [gite.id, value]));
+      return {
+        ...segment,
+        min_nuits: value,
+        min_nuits_by_gite: minNightsByGite,
+        has_mixed_min_nights: false,
+      };
     });
-    setPrefillOpen(true);
   };
 
-  const applyPrefill = () => {
-    if (!response) return;
+  const applyDefaultModeToSelected = (mode: "normal" | "high") => {
+    updateSelectedSegment((segment) => ({
+      ...segment,
+      prices_by_gite: Object.fromEntries(gites.map((gite) => [gite.id, getDefaultPrice(gite, mode)])),
+    }));
+  };
 
-    const minNuits = Number(prefillState.minNuits);
-    if (!Number.isInteger(minNuits) || minNuits < 1) {
-      setError("Le minimum de nuits de préremplissage doit être un entier supérieur ou égal à 1.");
-      return;
-    }
+  const resetSelectedToRule = () => {
+    if (!selectedSegment) return;
+    updateSelectedSegment((segment) => {
+      const automaticMatch = automaticSegments.find(
+        (candidate) => candidate.date_debut === segment.date_debut && candidate.date_fin === segment.date_fin
+      );
+      if (automaticMatch) return cloneSegments([automaticMatch])[0];
 
-    const pricesByGite = gites.reduce<Record<string, { low: number; high: number }>>((accumulator, gite) => {
-      const row = prefillState.pricesByGite[gite.id];
-      const low = Number(row?.low ?? "");
-      const high = Number(row?.high ?? "");
-      if (!Number.isFinite(low) || low < 0 || !Number.isFinite(high) || high < 0) {
-        throw new Error(`Complète les tarifs haut/bas du gîte ${gite.nom}.`);
-      }
-      accumulator[gite.id] = { low, high };
-      return accumulator;
-    }, {});
-
-    const nextSegments = buildPrefilledSeasonRateSegments({
-      from: response.from,
-      to: response.to,
-      holidays: response.holidays,
-      gites,
-      pricesByGite,
-      minNuits,
+      const minNightsByGite = Object.fromEntries(gites.map((gite) => [gite.id, getDefaultMinNights(gite, segment.rule)]));
+      const minSummary = recomputeMinSummary(minNightsByGite);
+      return {
+        ...segment,
+        min_nuits: minSummary.min_nuits,
+        min_nuits_by_gite: minNightsByGite,
+        has_mixed_min_nights: minSummary.has_mixed_min_nights,
+        prices_by_gite: Object.fromEntries(
+          gites.map((gite) => [gite.id, getDefaultPrice(gite, segment.rule === "school_holiday" || segment.rule === "july_august" ? "high" : "normal")])
+        ),
+      };
     });
-
-    setError(null);
-    setNotice("Préremplissage appliqué. Ajuste ensuite les bornes ou les prix si besoin.");
-    setPrefillOpen(false);
-    applyNextSegments(nextSegments, null);
   };
 
   const handleSave = async () => {
@@ -524,16 +274,18 @@ const SeasonRatesPage = () => {
         method: "PUT",
         json: payload,
       });
-      const savedSegments = buildSeasonRateEditorSegments(saved);
+      const savedAutomaticSegments = buildAutomaticSeasonRateSegments({
+        from: saved.from,
+        to: saved.to,
+        holidays: saved.holidays,
+        gites: saved.gites,
+      });
+      const savedSegments = applyRuleMetadata(buildSeasonRateEditorSegments(saved), savedAutomaticSegments);
       setResponse(saved);
-      setInitialSegments(cloneSegments(savedSegments));
       setSegments(savedSegments);
-      if (selectedIndex == null || savedSegments.length === 0) {
-        setSelectedIndex(null);
-      } else {
-        setSelectedIndex(Math.max(0, Math.min(selectedIndex, savedSegments.length - 1)));
-      }
-      setNotice("Tarifs saisonniers enregistrés.");
+      setInitialSegments(cloneSegments(savedSegments));
+      setSelectedIndex(null);
+      setNotice("Tarifs enregistrés pour les 4 gîtes.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Enregistrement impossible.");
     } finally {
@@ -541,573 +293,194 @@ const SeasonRatesPage = () => {
     }
   };
 
-  const startBoundaryDrag = (event: ReactPointerEvent<HTMLButtonElement>, segmentIndex: number, side: "start" | "end") => {
-    if (!response || !timelineTrackRef.current) return;
-
-    dragStateRef.current = {
-      segmentIndex,
-      side,
-      pointerStartX: event.clientX,
-      originalBoundary: side === "start" ? segments[segmentIndex].date_debut : segments[segmentIndex].date_fin,
-      trackWidth: timelineTrackRef.current.getBoundingClientRect().width,
-    };
-    event.preventDefault();
-  };
-
   return (
     <main className="page-shell season-rates-page">
-      <section className="card season-rates-editor">
+      <section className="card season-rates-simple">
         <div className="section-title-row">
           <div>
-            <h1>Tarifs saisonniers</h1>
-            <p className="section-subtitle">Éditeur visuel zone B pour les 12 mois glissants du plugin `booked`.</p>
+            <h1>Tarifs automatiques</h1>
+            <p className="section-subtitle">Zone B, ponts français et juillet/août pour les 4 gîtes.</p>
           </div>
         </div>
 
-        <div className="season-rates-editor__toolbar">
-          <div className="season-rates-editor__range">
-            <button type="button" className="button-secondary" onClick={() => setRange((current) => shiftIsoRangeByMonths(current, -12))}>
-              -12 mois
-            </button>
-            <div className="season-rates-editor__range-label">
-              <strong>{formatRangeLabel(range.from, range.to)}</strong>
-              <span>Vacances scolaires zone B en surcouche</span>
-            </div>
-            <button type="button" className="button-secondary" onClick={() => setRange((current) => shiftIsoRangeByMonths(current, 12))}>
-              +12 mois
-            </button>
-          </div>
-
-          <div className="season-rates-editor__toolbar-actions">
-            <button type="button" className="button-secondary" onClick={openPrefillDialog} disabled={loading || saving || gites.length === 0}>
-              Préremplir vacances / hors vacances
-            </button>
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={() => {
-                setSegments(cloneSegments(initialSegments));
-                setSelectedIndex(null);
-                setNotice("Brouillon réinitialisé.");
-                setError(null);
-              }}
-              disabled={loading || saving || !isDirty}
-            >
-              Réinitialiser
-            </button>
-            <button type="button" onClick={() => void handleSave()} disabled={loading || saving || !response}>
-              {saving ? "Enregistrement…" : "Enregistrer"}
-            </button>
-          </div>
+        <div className="season-rates-simple__toolbar">
+          <button type="button" className="button-secondary" onClick={() => setRange((current) => shiftIsoRangeByMonths(current, -12))}>
+            -12 mois
+          </button>
+          <strong>
+            {formatDateLabel(range.from)} au {formatDateLabel(addDaysToIso(range.to, -1))}
+          </strong>
+          <button type="button" className="button-secondary" onClick={() => setRange((current) => shiftIsoRangeByMonths(current, 12))}>
+            +12 mois
+          </button>
+          <span className="season-rates-simple__toolbar-spacer" />
+          <button type="button" className="button-secondary" onClick={regenerateAutomatic} disabled={loading || !response}>
+            Régénérer automatiquement
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => {
+              setSegments(cloneSegments(initialSegments));
+              setSelectedIndex(null);
+              setError(null);
+              setNotice("Brouillon réinitialisé.");
+            }}
+            disabled={loading || saving || !isDirty}
+          >
+            Réinitialiser
+          </button>
+          <button type="button" onClick={() => void handleSave()} disabled={loading || saving || !response}>
+            {saving ? "Enregistrement..." : "Enregistrer"}
+          </button>
         </div>
 
-        <div className="season-rates-editor__legend">
-          <span className="season-rates-editor__legend-item">
-            <span className="season-rates-editor__legend-swatch season-rates-editor__legend-swatch--holiday" />
-            Vacances
-          </span>
-          <span className="season-rates-editor__legend-item">
-            <span className="season-rates-editor__legend-swatch season-rates-editor__legend-swatch--non-holiday" />
-            Hors vacances
-          </span>
-          <span className="season-rates-editor__legend-item">
-            <span className="season-rates-editor__legend-swatch season-rates-editor__legend-swatch--mixed" />
-            Mixte
-          </span>
-          <span className="season-rates-editor__legend-item">
-            {summary.total} segment(s) · {summary.holidaySegments} vacances · {summary.mixedSegments} mixte(s)
-          </span>
-          <span className={`season-rates-editor__legend-item ${summary.incompleteSegments > 0 ? "season-rates-editor__legend-item--warning" : ""}`}>
-            {summary.incompleteSegments > 0
-              ? `${summary.incompleteSegments} segment(s) à normaliser avant sauvegarde`
-              : "Tous les segments sont complets"}
+        <div className="season-rates-simple__summary">
+          <span>Normal · {summary.normal}</span>
+          <span>Vacances zone B · {summary.schoolHoliday}</span>
+          <span>Ponts · {summary.bridge}</span>
+          <span>Juillet/août · {summary.julyAugust}</span>
+          <span className={summary.incomplete > 0 ? "season-rates-simple__warning" : ""}>
+            {summary.incomplete > 0 ? `${summary.incomplete} période(s) incomplète(s)` : "Tout est complet"}
           </span>
         </div>
 
         {notice ? <div className="note">{notice}</div> : null}
         {error ? <div className="note note--danger">{error}</div> : null}
-        {loading ? <div className="note">Chargement de la frise tarifaire…</div> : null}
+        {loading ? <div className="note">Chargement des règles...</div> : null}
 
         {!loading && response ? (
-          <div className="card season-rates-editor__timeline-card">
-            <div className="season-rates-editor__card-head">
-              <h2>Frise annuelle</h2>
-              <p>{totalDays} nuits couvertes. Clique une période pour modifier ses bornes, ses prix et ajouter une nouvelle période.</p>
-            </div>
+          <div className="season-rates-simple__layout">
+            <div className="season-rates-simple__list">
+              <div className="season-rates-simple__list-head">
+                <h2>Périodes détectées</h2>
+                <p>{importantSegments.length} période(s) à vérifier rapidement. Les périodes normales restent enregistrées aussi.</p>
+              </div>
 
-            <div ref={timelineScrollRef} className="season-rates-editor__timeline-scroll">
-              <div className="season-rates-editor__timeline-canvas" style={{ width: `${timelineCanvasWidth}px` }}>
-                <div className="season-rates-editor__months">
-                  {months.map((month) => (
-                    <div
-                      key={month.key}
-                      className="season-rates-editor__month"
-                      style={{ left: `${month.left}%`, width: `${month.width}%` }}
+              {importantSegments.length === 0 ? <div className="note">Aucune vacances, pont ou période juillet/août sur cette plage.</div> : null}
+
+              <div className="season-rates-simple__rows">
+                {segments.map((segment, index) => {
+                  if (segment.rule === "normal") return null;
+                  const isSelected = selectedIndex === index;
+                  return (
+                    <button
+                      key={`${segment.date_debut}:${segment.date_fin}:${index}`}
+                      type="button"
+                      className={`season-rates-simple__row season-rates-simple__row--${getRuleClass(segment.rule)} ${
+                        isSelected ? "season-rates-simple__row--selected" : ""
+                      }`}
+                      onClick={() => setSelectedIndex(index)}
                     >
-                      {month.label}
-                    </div>
-                  ))}
-                </div>
-
-                <div ref={timelineTrackRef} className="season-rates-editor__timeline-track">
-                  {months.map((month) => (
-                    <div
-                      key={`${month.key}-grid`}
-                      className="season-rates-editor__month-grid"
-                      style={{ left: `${month.left}%`, width: `${month.width}%` }}
-                    />
-                  ))}
-
-                  {segments.map((segment, index) => {
-                    const left = totalDays > 0 ? (diffUtcDays(response.from, segment.date_debut) / totalDays) * 100 : 0;
-                    const width = totalDays > 0 ? (diffUtcDays(segment.date_debut, segment.date_fin) / totalDays) * 100 : 0;
-                    const segmentPixelWidth = totalDays > 0 ? (diffUtcDays(segment.date_debut, segment.date_fin) / totalDays) * timelineCanvasWidth : 0;
-                    const isSelected = index === selectedIndex;
-                    const segmentLabel = getHolidayStatusLabel(segment);
-                    const compactSegmentLabel = getCompactHolidayStatusLabel(segment);
-                    const showSubtitle = segmentPixelWidth >= 154;
-                    const useCompactLabel = segmentPixelWidth < 148;
-                    const segmentDensityClass =
-                      segmentPixelWidth < 90
-                        ? "season-rates-editor__segment--tiny"
-                        : segmentPixelWidth < 150
-                          ? "season-rates-editor__segment--compact"
-                          : "";
-                    const segmentPriceValues = gites
-                      .map((gite) => segment.prices_by_gite[gite.id])
-                      .filter((price): price is number => price != null);
-                    const segmentPriceRows = gites
-                      .map((gite) => {
-                        const price = segment.prices_by_gite[gite.id];
-                        if (price == null) return null;
-                        return {
-                          id: gite.id,
-                          label: getGiteShortLabel(gite),
-                          priceLabel: formatEuro(price, { maximumFractionDigits: 0 }),
-                        };
-                      })
-                      .filter((row): row is { id: string; label: string; priceLabel: string } => row != null);
-                    const minPrice = segmentPriceValues.length > 0 ? Math.min(...segmentPriceValues) : null;
-                    const maxPrice = segmentPriceValues.length > 0 ? Math.max(...segmentPriceValues) : null;
-                    const compactPriceSummary =
-                      segmentPriceRows.length === 0
-                        ? "Prix à saisir"
-                        : segmentPriceRows.length === 1
-                          ? `${segmentPriceRows[0].label} · ${segmentPriceRows[0].priceLabel}`
-                          : minPrice == null || maxPrice == null
-                            ? `${segmentPriceRows.length} gîtes`
-                            : `${segmentPriceRows.length} gîtes · ${formatEuro(minPrice, { maximumFractionDigits: 0 })} à ${formatEuro(maxPrice, { maximumFractionDigits: 0 })}`;
-                    const visiblePriceRows = segmentPriceRows.slice(0, 3);
-                    const remainingPriceCount = Math.max(0, segmentPriceRows.length - visiblePriceRows.length);
-
-                    return (
-                      <div
-                        key={`${segment.date_debut}:${segment.date_fin}:${index}`}
-                        ref={(node) => {
-                          segmentRefs.current[index] = node;
-                        }}
-                        className={`season-rates-editor__segment season-rates-editor__segment--${segment.holiday_status} ${
-                          isSelected ? "season-rates-editor__segment--selected" : ""
-                        } ${segmentDensityClass}`}
-                        style={{ left: `${left}%`, width: `${width}%` }}
-                        role="button"
-                        tabIndex={0}
-                        title={`${segmentLabel} · ${formatRangeLabel(segment.date_debut, segment.date_fin)}`}
-                        onClick={() => setSelectedIndex(index)}
-                        onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setSelectedIndex(index);
-                          }
-                        }}
-                      >
-                        {index > 0 ? (
-                          <button
-                            type="button"
-                            className="season-rates-editor__handle season-rates-editor__handle--left"
-                            onPointerDown={(event) => startBoundaryDrag(event, index, "start")}
-                            aria-label={`Déplacer la borne avant le segment ${index + 1}`}
-                            onClick={(event) => event.stopPropagation()}
-                          />
-                        ) : null}
-                        <span className="season-rates-editor__segment-copy">
-                          <strong>{useCompactLabel ? compactSegmentLabel : segmentLabel}</strong>
-                          {showSubtitle ? <span>{formatRangeLabel(segment.date_debut, segment.date_fin)}</span> : null}
-                          <span className="season-rates-editor__segment-price-summary">{compactPriceSummary}</span>
-                          {segmentPixelWidth >= 320 && visiblePriceRows.length > 0 ? (
-                            <span className="season-rates-editor__segment-prices">
-                              {visiblePriceRows.map((row) => (
-                                <span key={row.id} className="season-rates-editor__segment-price-pill">
-                                  <em>{row.label}</em>
-                                  <strong>{row.priceLabel}</strong>
-                                </span>
-                              ))}
-                              {remainingPriceCount > 0 ? (
-                                <span className="season-rates-editor__segment-price-pill season-rates-editor__segment-price-pill--more">
-                                  <strong>+{remainingPriceCount}</strong>
-                                </span>
-                              ) : null}
-                            </span>
-                          ) : null}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      <span>
+                        <strong>{getRuleLabel(segment)}</strong>
+                        <em>{formatRangeLabel(segment.date_debut, segment.date_fin)}</em>
+                      </span>
+                      <span>{summarizeMinNights(segment, gites)}</span>
+                      <span>
+                        {gites
+                          .map((gite) => {
+                            const price = segment.prices_by_gite[gite.id];
+                            return `${getGiteShortLabel(gite)} ${price == null ? "?" : formatEuro(price, { maximumFractionDigits: 0 })}`;
+                          })
+                          .join(" · ")}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="season-rates-editor__timeline-hint">
-              {selectedSegment
-                ? `${getHolidayStatusLabel(selectedSegment)} · ${formatRangeLabel(selectedSegment.date_debut, selectedSegment.date_fin)}`
-                : "Aucun popover ouvert. Clique une période pour éditer ses prix et ses dates."}
-            </div>
+            <aside className="season-rates-simple__editor">
+              {selectedSegment ? (
+                <>
+                  <div className="season-rates-simple__editor-head">
+                    <span className={`badge season-rates-simple__badge--${getRuleClass(selectedSegment.rule)}`}>
+                      {getRuleLabel(selectedSegment)}
+                    </span>
+                    <h2>{formatRangeLabel(selectedSegment.date_debut, selectedSegment.date_fin)}</h2>
+                  </div>
+
+                  <div className="season-rates-simple__quick-actions">
+                    <label className="field field--small">
+                      Min nuits 4 gîtes
+                      <input
+                        type="number"
+                        min={1}
+                        value={selectedSegment.has_mixed_min_nights ? "" : selectedSegment.min_nuits ?? ""}
+                        placeholder={selectedSegment.has_mixed_min_nights ? "Mixte" : "2"}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isInteger(value) && value >= 1) setCommonMinNights(value);
+                        }}
+                      />
+                    </label>
+                    <button type="button" className="button-secondary" onClick={() => applyDefaultModeToSelected("normal")}>
+                      Tarif normal
+                    </button>
+                    <button type="button" className="button-secondary" onClick={() => applyDefaultModeToSelected("high")}>
+                      Tarif vacances
+                    </button>
+                    <button type="button" className="button-secondary" onClick={resetSelectedToRule}>
+                      Valeurs auto
+                    </button>
+                  </div>
+
+                  <div className="season-rates-simple__gite-grid">
+                    {gites.map((gite) => (
+                      <div key={gite.id} className="season-rates-simple__gite-row">
+                        <strong>{gite.nom}</strong>
+                        <label className="field field--small">
+                          Nuits
+                          <input
+                            type="number"
+                            min={1}
+                            value={selectedSegment.min_nuits_by_gite[gite.id] ?? ""}
+                            onChange={(event) => {
+                              const value = event.target.value === "" ? null : Math.max(1, Math.trunc(Number(event.target.value) || 1));
+                              updateSelectedSegment((segment) => {
+                                const minNightsByGite = { ...segment.min_nuits_by_gite, [gite.id]: value };
+                                const minSummary = recomputeMinSummary(minNightsByGite);
+                                return {
+                                  ...segment,
+                                  min_nuits: minSummary.min_nuits,
+                                  min_nuits_by_gite: minNightsByGite,
+                                  has_mixed_min_nights: minSummary.has_mixed_min_nights,
+                                };
+                              });
+                            }}
+                          />
+                        </label>
+                        <label className="field field--small">
+                          Prix/nuit
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={selectedSegment.prices_by_gite[gite.id] ?? ""}
+                            onChange={(event) => {
+                              const value = event.target.value === "" ? null : Math.max(0, Number(event.target.value) || 0);
+                              updateSelectedSegment((segment) => ({
+                                ...segment,
+                                prices_by_gite: { ...segment.prices_by_gite, [gite.id]: value },
+                              }));
+                            }}
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="season-rates-simple__empty-editor">
+                  <h2>Exception</h2>
+                  <p>Sélectionne une période détectée pour ajuster les 4 gîtes ou un seul gîte.</p>
+                </div>
+              )}
+            </aside>
           </div>
         ) : null}
       </section>
-
-      {selectedSegment ? (
-        <div
-          ref={popoverRef}
-          className={`season-rates-editor__popover season-rates-editor__popover--${popoverPlacement}`}
-          role="dialog"
-          aria-modal="false"
-          aria-labelledby="season-rates-popover-title"
-          style={popoverStyle ?? { top: "0px", left: "0px", visibility: "hidden", pointerEvents: "none" }}
-        >
-          <div className="season-rates-editor__popover-head">
-            <div>
-              <p className="season-rates-editor__popover-eyebrow">Période {selectedIndex == null ? "" : selectedIndex + 1}</p>
-              <h2 id="season-rates-popover-title">{formatRangeLabel(selectedSegment.date_debut, selectedSegment.date_fin)}</h2>
-            </div>
-            <button type="button" className="button-secondary" onClick={() => setSelectedIndex(null)}>
-              Fermer
-            </button>
-          </div>
-
-          <div className="season-rates-editor__popover-meta">
-            <span className={`badge season-rates-editor__status-badge season-rates-editor__status-badge--${selectedSegment.holiday_status}`}>
-              {getHolidayStatusLabel(selectedSegment)}
-            </span>
-            <span className="season-rates-editor__selection-hint">
-              Fin affichée: jusqu’au {formatDateLabel(getExclusiveEndDisplayLabel(selectedSegment.date_fin))}
-            </span>
-          </div>
-
-          <section className="season-rates-editor__popover-section">
-            <div className="season-rates-editor__popover-section-head">
-              <h3>Modifier la période</h3>
-              <p>Ajuste directement les bornes, le minimum de nuits et les tarifs par gîte.</p>
-            </div>
-
-            <div className="season-rates-editor__popover-fields">
-              <label className="field field--small">
-                Début
-                <input
-                  type="date"
-                  value={selectedSegment.date_debut}
-                  onChange={(event) => {
-                    if (selectedIndex != null) {
-                      handleBoundaryDateChange(selectedIndex, "start", event.target.value);
-                    }
-                  }}
-                  disabled={selectedIndex === 0}
-                />
-              </label>
-
-              <label className="field field--small">
-                Fin
-                <input
-                  type="date"
-                  value={selectedSegment.date_fin}
-                  onChange={(event) => {
-                    if (selectedIndex != null) {
-                      handleBoundaryDateChange(selectedIndex, "end", event.target.value);
-                    }
-                  }}
-                  disabled={selectedIndex === segments.length - 1}
-                />
-              </label>
-
-              <label className="field field--small">
-                Min nuits
-                <input
-                  type="number"
-                  min="1"
-                  value={selectedSegment.min_nuits ?? ""}
-                  placeholder={selectedSegment.has_mixed_min_nights ? "Mixte" : "1"}
-                  className={selectedSegment.has_mixed_min_nights ? "season-rates-editor__input--warning" : ""}
-                  onChange={(event) => {
-                    if (selectedIndex != null) {
-                      handleSegmentValueChange(selectedIndex, (current) => ({
-                        ...current,
-                        min_nuits: event.target.value ? Number(event.target.value) : null,
-                        has_mixed_min_nights: false,
-                      }));
-                    }
-                  }}
-                />
-              </label>
-            </div>
-
-            <div className="season-rates-editor__popover-prices">
-              {gites.map((gite) => (
-                <label key={`${selectedSegment.date_debut}:${selectedSegment.date_fin}:${gite.id}`} className="field field--small season-rates-editor__popover-price-card">
-                  <span className="season-rates-editor__popover-price-label">
-                    <strong>{gite.nom}</strong>
-                    <em>{getGiteShortLabel(gite)}</em>
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={selectedSegment.prices_by_gite[gite.id] ?? ""}
-                    placeholder="Prix"
-                    className={selectedSegment.prices_by_gite[gite.id] == null ? "season-rates-editor__input--warning" : ""}
-                    onChange={(event) => {
-                      if (selectedIndex != null) {
-                        handleSegmentValueChange(selectedIndex, (current) => ({
-                          ...current,
-                          prices_by_gite: {
-                            ...current.prices_by_gite,
-                            [gite.id]: event.target.value === "" ? null : Number(event.target.value),
-                          },
-                        }));
-                      }
-                    }}
-                  />
-                  <span className="season-rates-editor__price-hint">
-                    {selectedSegment.prices_by_gite[gite.id] == null ? "Prix requis" : formatEuro(selectedSegment.prices_by_gite[gite.id] ?? 0)}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </section>
-
-          <section className="season-rates-editor__popover-section">
-            <div className="season-rates-editor__popover-section-head">
-              <h3>Ajouter une période</h3>
-              <p>Insère une nouvelle période à l’intérieur de celle-ci. Le reste du segment est conservé automatiquement avant et/ou après.</p>
-            </div>
-
-            {addPeriodDraft && diffUtcDays(selectedSegment.date_debut, selectedSegment.date_fin) > 1 ? (
-              <>
-                <div className="season-rates-editor__popover-fields">
-                  <label className="field field--small">
-                    Début
-                    <input
-                      type="date"
-                      value={addPeriodDraft.dateDebut}
-                      onChange={(event) =>
-                        setAddPeriodDraft((current) => (current ? { ...current, dateDebut: event.target.value } : current))
-                      }
-                    />
-                  </label>
-
-                  <label className="field field--small">
-                    Fin
-                    <input
-                      type="date"
-                      value={addPeriodDraft.dateFin}
-                      onChange={(event) =>
-                        setAddPeriodDraft((current) => (current ? { ...current, dateFin: event.target.value } : current))
-                      }
-                    />
-                  </label>
-
-                  <label className="field field--small">
-                    Min nuits
-                    <input
-                      type="number"
-                      min="1"
-                      value={addPeriodDraft.minNuits}
-                      onChange={(event) =>
-                        setAddPeriodDraft((current) => (current ? { ...current, minNuits: event.target.value } : current))
-                      }
-                    />
-                  </label>
-                </div>
-
-                <div className="season-rates-editor__popover-prices">
-                  {gites.map((gite) => (
-                    <label key={`new-period:${gite.id}`} className="field field--small season-rates-editor__popover-price-card">
-                      <span className="season-rates-editor__popover-price-label">
-                        <strong>{gite.nom}</strong>
-                        <em>{getGiteShortLabel(gite)}</em>
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={addPeriodDraft.pricesByGite[gite.id] ?? ""}
-                        placeholder="Prix"
-                        onChange={(event) =>
-                          setAddPeriodDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  pricesByGite: {
-                                    ...current.pricesByGite,
-                                    [gite.id]: event.target.value,
-                                  },
-                                }
-                              : current
-                          )
-                        }
-                      />
-                    </label>
-                  ))}
-                </div>
-
-                <div className="season-rates-editor__popover-actions">
-                  <button type="button" className="button-secondary" onClick={() => void handleAddPeriod()}>
-                    Ajouter la période
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="season-rates-editor__popover-note">
-                La période est trop courte pour en insérer une nouvelle sans recouvrement. Ajuste d’abord ses bornes si nécessaire.
-              </p>
-            )}
-          </section>
-
-          <div className="season-rates-editor__popover-footer">
-            <p className="season-rates-editor__popover-note">
-              La suppression retire cette période et laisse le segment voisin reprendre automatiquement sa plage.
-            </p>
-            <button
-              type="button"
-              className="button-secondary season-rates-editor__delete-button"
-              onClick={() => void handleDeleteSelectedSegment()}
-              disabled={segments.length <= 1}
-            >
-              Supprimer la période
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {prefillOpen ? (
-        <div className="season-rates-editor__modal-backdrop" role="presentation" onClick={() => setPrefillOpen(false)}>
-          <div
-            className="season-rates-editor__modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="season-rates-prefill-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="season-rates-editor__modal-head">
-              <div>
-                <p className="season-rates-editor__modal-eyebrow">Préremplissage</p>
-                <h2 id="season-rates-prefill-title">Vacances / hors vacances</h2>
-              </div>
-              <button type="button" className="button-secondary" onClick={() => setPrefillOpen(false)}>
-                Fermer
-              </button>
-            </div>
-
-            <p className="season-rates-editor__modal-copy">
-              Les périodes de vacances reçoivent le tarif haut, les autres le tarif bas. Ajuste les valeurs manquantes avant génération.
-            </p>
-
-            <label className="field">
-              Minimum de nuits commun
-              <input
-                type="number"
-                min="1"
-                value={prefillState.minNuits}
-                onChange={(event) =>
-                  setPrefillState((current) => ({
-                    ...current,
-                    minNuits: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <div className="season-rates-editor__prefill-grid">
-              {gites.map((gite) => (
-                <div key={gite.id} className="season-rates-editor__prefill-card">
-                  <div className="season-rates-editor__prefill-card-head">
-                    <strong>{gite.nom}</strong>
-                    <span>
-                      Suggestions:{" "}
-                      {Array.isArray(gite.prix_nuit_liste) && gite.prix_nuit_liste.length > 0
-                        ? gite.prix_nuit_liste.map((price) => formatEuro(price)).join(" · ")
-                        : "aucune"}
-                    </span>
-                  </div>
-
-                  <div className="season-rates-editor__prefill-fields">
-                    <label className="field field--small">
-                      Tarif bas
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={prefillState.pricesByGite[gite.id]?.low ?? ""}
-                        onChange={(event) =>
-                          setPrefillState((current) => ({
-                            ...current,
-                            pricesByGite: {
-                              ...current.pricesByGite,
-                              [gite.id]: {
-                                ...(current.pricesByGite[gite.id] ?? { low: "", high: "" }),
-                                low: event.target.value,
-                              },
-                            },
-                          }))
-                        }
-                      />
-                    </label>
-
-                    <label className="field field--small">
-                      Tarif haut
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={prefillState.pricesByGite[gite.id]?.high ?? ""}
-                        onChange={(event) =>
-                          setPrefillState((current) => ({
-                            ...current,
-                            pricesByGite: {
-                              ...current.pricesByGite,
-                              [gite.id]: {
-                                ...(current.pricesByGite[gite.id] ?? { low: "", high: "" }),
-                                high: event.target.value,
-                              },
-                            },
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="season-rates-editor__modal-actions">
-              <button type="button" className="button-secondary" onClick={() => setPrefillOpen(false)}>
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  try {
-                    applyPrefill();
-                  } catch (prefillError) {
-                    setError(prefillError instanceof Error ? prefillError.message : "Préremplissage impossible.");
-                  }
-                }}
-              >
-                Générer les segments
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 };

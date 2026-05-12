@@ -11803,6 +11803,215 @@ button.warning {
   gap: 6px;
 }
 
+.season-rates-simple {
+  display: grid;
+  gap: 18px;
+}
+
+.season-rates-simple__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.season-rates-simple__toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.season-rates-simple__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.season-rates-simple__summary span {
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.season-rates-simple__summary .season-rates-simple__warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.season-rates-simple__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 18px;
+  align-items: start;
+}
+
+.season-rates-simple__list,
+.season-rates-simple__editor {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.season-rates-simple__list {
+  overflow: hidden;
+}
+
+.season-rates-simple__list-head,
+.season-rates-simple__editor,
+.season-rates-simple__empty-editor {
+  padding: 16px;
+}
+
+.season-rates-simple__list-head {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.season-rates-simple__list-head h2,
+.season-rates-simple__editor-head h2,
+.season-rates-simple__empty-editor h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.season-rates-simple__list-head p,
+.season-rates-simple__empty-editor p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.season-rates-simple__rows {
+  display: grid;
+}
+
+.season-rates-simple__row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.25fr) minmax(90px, 0.45fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 12px 14px;
+  background: #ffffff;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+}
+
+.season-rates-simple__row:hover,
+.season-rates-simple__row--selected {
+  background: #f8fafc;
+}
+
+.season-rates-simple__row--selected {
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.season-rates-simple__row span {
+  min-width: 0;
+}
+
+.season-rates-simple__row strong,
+.season-rates-simple__row em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.season-rates-simple__row em {
+  margin-top: 3px;
+  color: #64748b;
+  font-style: normal;
+  font-size: 0.86rem;
+}
+
+.season-rates-simple__row--holiday {
+  border-left: 4px solid #22c55e;
+}
+
+.season-rates-simple__row--bridge {
+  border-left: 4px solid #f97316;
+}
+
+.season-rates-simple__row--summer {
+  border-left: 4px solid #0ea5e9;
+}
+
+.season-rates-simple__row--manual {
+  border-left: 4px solid #64748b;
+}
+
+.season-rates-simple__editor {
+  position: sticky;
+  top: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.season-rates-simple__editor-head {
+  display: grid;
+  gap: 8px;
+}
+
+.season-rates-simple__badge--holiday {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.season-rates-simple__badge--bridge {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.season-rates-simple__badge--summer {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.season-rates-simple__badge--manual {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.season-rates-simple__quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: end;
+}
+
+.season-rates-simple__quick-actions .field {
+  grid-column: 1 / -1;
+}
+
+.season-rates-simple__gite-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.season-rates-simple__gite-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px 112px;
+  gap: 8px;
+  align-items: end;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.season-rates-simple__gite-row strong {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .booking-requests-page__item--active {
   border-color: #0f766e;
   box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
@@ -12420,6 +12629,18 @@ button.warning {
 }
 
 @media (max-width: 980px) {
+  .season-rates-simple__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .season-rates-simple__editor {
+    position: static;
+  }
+
+  .season-rates-simple__row {
+    grid-template-columns: 1fr;
+  }
+
   .booking-requests-page__layout,
   .season-rates-editor__popover-footer {
     grid-template-columns: 1fr;
@@ -12472,6 +12693,16 @@ button.warning {
 }
 
 @media (max-width: 720px) {
+  .season-rates-simple__toolbar > button,
+  .season-rates-simple__toolbar > strong {
+    width: 100%;
+  }
+
+  .season-rates-simple__quick-actions,
+  .season-rates-simple__gite-row {
+    grid-template-columns: 1fr;
+  }
+
   .season-rates-editor__modal-backdrop {
     padding: 12px;
     align-items: stretch;

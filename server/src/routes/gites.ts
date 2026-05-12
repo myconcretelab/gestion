@@ -199,6 +199,7 @@ const seasonRateEditorSegmentSchema = z.object({
   date_debut: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   date_fin: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   min_nuits: z.coerce.number().int().min(1),
+  min_nuits_by_gite: z.record(z.string().trim().min(1), z.coerce.number().int().min(1)).optional(),
   prices_by_gite: z.record(z.string().trim().min(1), z.coerce.number().min(0)),
 });
 const seasonRateEditorPayloadSchema = z.object({
