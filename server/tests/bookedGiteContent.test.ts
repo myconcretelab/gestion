@@ -4,7 +4,7 @@ import prisma from "../src/db/prisma.ts";
 import bookedRouter from "../src/routes/booked.ts";
 import { normalizeBookedGiteContentSections } from "../src/services/bookedGiteContent.ts";
 
-const getRouteHandler = (router: any, method: "get", routePath: string) => {
+const getRouteHandler = (router: any, method: "get" | "post", routePath: string) => {
   const layer = router.stack.find(
     (item: any) => item.route?.path === routePath && item.route?.methods?.[method]
   );
@@ -105,6 +105,9 @@ test("GET /gites/:id/config expose les minima de nuits publics du gîte", async 
         nb_enfants_max: 4,
         email: "contact@example.com",
         arrhes_taux_defaut: 30,
+        prix_nuit_liste: JSON.stringify([80, 100]),
+        prix_nuit_basse_saison: 70,
+        prix_nuit_haute_saison: 95,
         min_nuits_toute_annee: 2,
         min_nuits_vacances_scolaires: 3,
         min_nuits_juillet_aout: 7,
@@ -129,11 +132,100 @@ test("GET /gites/:id/config expose les minima de nuits publics du gîte", async 
 
     assert.equal(nextError, null);
     assert.equal(response.statusCode, 200);
+    assert.equal((response.body as any).prix_nuit_basse_saison, 70);
+    assert.equal((response.body as any).prix_nuit_haute_saison, 95);
+    assert.deepEqual((response.body as any).prix_nuit_liste, [80, 100]);
     assert.equal((response.body as any).min_nuits_toute_annee, 2);
     assert.equal((response.body as any).min_nuits_vacances_scolaires, 3);
     assert.equal((response.body as any).min_nuits_juillet_aout, 7);
   } finally {
     prisma.gite.findUnique = originalFindUnique;
+  }
+});
+
+test("POST /gites/:id/quote utilise les tarifs publics du gîte sans tarif saisonnier explicite", async () => {
+  const originals = {
+    giteFindUnique: prisma.gite.findUnique,
+    bookingRequestUpdateMany: prisma.bookingRequest.updateMany,
+    bookingRequestFindMany: prisma.bookingRequest.findMany,
+    reservationFindMany: prisma.reservation.findMany,
+    giteSeasonRateFindMany: prisma.giteSeasonRate.findMany,
+    fetch: globalThis.fetch,
+  };
+
+  try {
+    prisma.gite.findUnique = async () =>
+      ({
+        id: "g1",
+        nom: "Le Grand Gîte",
+        capacite_max: 8,
+        nb_adultes_max: 6,
+        nb_enfants_max: 4,
+        email: "contact@example.com",
+        arrhes_taux_defaut: 0.3,
+        prix_nuit_liste: JSON.stringify([80, 100]),
+        prix_nuit_basse_saison: 70,
+        prix_nuit_haute_saison: 95,
+        min_nuits_toute_annee: 2,
+        min_nuits_vacances_scolaires: 3,
+        min_nuits_juillet_aout: 7,
+        taxe_sejour_par_personne_par_nuit: 1.2,
+        options_draps_par_lit: 15,
+        options_linge_toilette_par_personne: 5,
+        options_menage_forfait: 45,
+        options_depart_tardif_forfait: 10,
+        options_chiens_forfait: 12,
+        regle_animaux_acceptes: true,
+        regle_bois_premiere_flambee: false,
+        regle_tiers_personnes_info: false,
+      }) as any;
+    prisma.bookingRequest.updateMany = async () => ({ count: 0 } as any);
+    prisma.bookingRequest.findMany = async () => [];
+    prisma.reservation.findMany = async () => [];
+    prisma.giteSeasonRate.findMany = async () => [];
+    globalThis.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({ results: [] }),
+      }) as Response) as typeof fetch;
+
+    const handler = getRouteHandler(bookedRouter, "post", "/gites/:id/quote");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await handler(
+      {
+        params: { id: "g1" },
+        body: {
+          date_entree: "2026-03-10",
+          date_sortie: "2026-03-12",
+          nb_adultes: 2,
+          nb_enfants_2_17: 0,
+          options: {},
+        },
+      },
+      response,
+      (error) => {
+        nextError = error ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal((response.body as any).nb_nuits, 2);
+    assert.equal((response.body as any).required_min_nights, 2);
+    assert.equal((response.body as any).montant_hebergement, 140);
+    assert.deepEqual(
+      (response.body as any).nightly_breakdown.map((item: any) => item.prix_par_nuit),
+      [70, 70]
+    );
+  } finally {
+    prisma.gite.findUnique = originals.giteFindUnique;
+    prisma.bookingRequest.updateMany = originals.bookingRequestUpdateMany;
+    prisma.bookingRequest.findMany = originals.bookingRequestFindMany;
+    prisma.reservation.findMany = originals.reservationFindMany;
+    prisma.giteSeasonRate.findMany = originals.giteSeasonRateFindMany;
+    globalThis.fetch = originals.fetch;
   }
 });
 
