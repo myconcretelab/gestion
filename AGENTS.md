@@ -22,6 +22,9 @@ This repository is a Node.js + React monorepo (workspaces) for generating and ar
 - `server/templates/` HTML/CSS templates for PDF
 - `server/data/pdfs/YYYY/MM/` generated PDFs
 
+## Frontend conventions
+- Use the app primary color tokens (`--primary`, `--primary-soft`, `--primary-strong`) for selected states and highlight effects instead of ad hoc highlight colors.
+
 ## Notes
 - Production can use PostgreSQL; see `README.md` for the example and `server/prisma/schema.postgres.prisma`.
 - If Playwright is not installed, `SEED_SKIP_PDF=1 npm run seed` skips PDF generation.

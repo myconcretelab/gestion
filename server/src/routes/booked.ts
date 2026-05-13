@@ -17,6 +17,7 @@ import {
   parseBookedDateInput,
   type BookedValidationError,
 } from "../services/booked.js";
+import { getBookedCalendarPeriodsForRange } from "../services/bookedCalendarPeriods.js";
 import { sendBookingRequestCreatedEmails } from "../services/bookingRequestEmail.js";
 import { normalizeBookedGiteContentSections } from "../services/bookedGiteContent.js";
 import { toNumber } from "../utils/money.js";
@@ -246,7 +247,7 @@ router.get("/gites/:id/availability", async (req, res, next) => {
     const to = req.query.to ? parseBookedDateInput(String(req.query.to), "to") : new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000);
 
     await expireStaleBookingRequests();
-    const [reservationBlocks, bookingRequestBlocks, seasonRates] = await Promise.all([
+    const [reservationBlocks, bookingRequestBlocks, seasonRates, calendarPeriods] = await Promise.all([
       prisma.reservation.findMany({
         where: {
           gite_id: gite.id,
@@ -279,6 +280,14 @@ router.get("/gites/:id/availability", async (req, res, next) => {
         },
       }),
       loadSeasonRatesForGite(gite.id),
+      getBookedCalendarPeriodsForRange({
+        from: formatBookedDateInput(from),
+        to: formatBookedDateInput(to),
+        zone: "B",
+      }).catch((calendarPeriodError) => {
+        console.error("[booked] calendar periods failed:", calendarPeriodError);
+        return [];
+      }),
     ]);
 
     res.json({
@@ -302,6 +311,7 @@ router.get("/gites/:id/availability", async (req, res, next) => {
         })),
       ],
       season_ranges: seasonRates.map(hydrateSeasonRate),
+      calendar_periods: calendarPeriods,
     });
   } catch (error) {
     const mapped = mapBookedError(error);

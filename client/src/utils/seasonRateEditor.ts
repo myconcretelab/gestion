@@ -56,7 +56,7 @@ const diffUtcDays = (startIso: string, endIso: string) => {
 
 export const buildDefaultSeasonRateEditorRange = (base = new Date()) => {
   const from = new Date(Date.UTC(base.getFullYear(), base.getMonth(), 1));
-  const to = new Date(Date.UTC(base.getFullYear(), base.getMonth() + 12, 1));
+  const to = new Date(Date.UTC(base.getFullYear() + 2, 0, 1));
   return {
     from: formatUtcDateKey(from),
     to: formatUtcDateKey(to),
@@ -202,8 +202,11 @@ const clampIsoRange = (value: string, min: string, max: string) => {
   return value;
 };
 
+const isSchoolBridgeHoliday = (holiday: Pick<SchoolHoliday, "description">) => /^pont\b/i.test(String(holiday.description ?? "").trim());
+
 export const buildHolidayIntervals = (holidays: SchoolHoliday[], from: string, to: string): DateInterval[] => {
   const intervals = holidays
+    .filter((holiday) => !isSchoolBridgeHoliday(holiday))
     .map((holiday) => ({
       start: clampIsoRange(holiday.start, from, to),
       end: clampIsoRange(addDaysToIso(holiday.end, 1), from, to),
@@ -377,9 +380,9 @@ export const buildAutomaticSeasonRateSegments = (params: {
     if (start >= end) continue;
 
     const isJulyAugust = hasFullIntervalCoverage(julyAugustIntervals, start, end);
-    const isBridge = hasFullIntervalCoverage(bridgeIntervals, start, end);
     const holidayStatus = getHolidayStatusForRange(holidayIntervals, start, end);
     const isSchoolHoliday = holidayStatus === "holiday";
+    const isBridge = !isSchoolHoliday && hasFullIntervalCoverage(bridgeIntervals, start, end);
     const rule: SeasonRateEditorRule = isJulyAugust
       ? "july_august"
       : isBridge
