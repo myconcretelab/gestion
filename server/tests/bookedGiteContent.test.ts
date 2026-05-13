@@ -93,6 +93,50 @@ test("GET /gites/:id/content retourne 404 pour un gîte introuvable", async () =
   }
 });
 
+test("GET /gites/:id/config expose les minima de nuits publics du gîte", async () => {
+  const originalFindUnique = prisma.gite.findUnique;
+  try {
+    prisma.gite.findUnique = async () =>
+      ({
+        id: "g1",
+        nom: "Le Grand Gîte",
+        capacite_max: 8,
+        nb_adultes_max: 6,
+        nb_enfants_max: 4,
+        email: "contact@example.com",
+        arrhes_taux_defaut: 30,
+        min_nuits_toute_annee: 2,
+        min_nuits_vacances_scolaires: 3,
+        min_nuits_juillet_aout: 7,
+        taxe_sejour_par_personne_par_nuit: 1.2,
+        options_draps_par_lit: 15,
+        options_linge_toilette_par_personne: 5,
+        options_menage_forfait: 45,
+        options_depart_tardif_forfait: 10,
+        options_chiens_forfait: 12,
+        regle_animaux_acceptes: true,
+        regle_bois_premiere_flambee: false,
+        regle_tiers_personnes_info: "Info tiers",
+      }) as any;
+
+    const handler = getRouteHandler(bookedRouter, "get", "/gites/:id/config");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await handler({ params: { id: "g1" } }, response, (error) => {
+      nextError = error ?? null;
+    });
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal((response.body as any).min_nuits_toute_annee, 2);
+    assert.equal((response.body as any).min_nuits_vacances_scolaires, 3);
+    assert.equal((response.body as any).min_nuits_juillet_aout, 7);
+  } finally {
+    prisma.gite.findUnique = originalFindUnique;
+  }
+});
+
 test("GET /gites/:id/content expose les variables publiques du gîte", async () => {
   const originalFindUnique = prisma.gite.findUnique;
   try {
