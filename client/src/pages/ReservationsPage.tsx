@@ -132,6 +132,17 @@ type MonthlyEnergyStartResponse = {
   errors: string[];
 };
 
+type ReservationLiveEnergyById = Record<
+  string,
+  Pick<
+    Reservation,
+    | "energy_live_consumption_kwh"
+    | "energy_live_cost_eur"
+    | "energy_live_price_per_kwh"
+    | "energy_live_recorded_at"
+  >
+>;
+
 type ImportColumnField =
   | "hote_nom"
   | "telephone"
@@ -1058,6 +1069,7 @@ const ReservationsPage = () => {
   const saveTimers = useRef<Record<string, number>>({});
   const detailsCloseTimers = useRef<Record<string, number>>({});
   const savedRowFadeTimers = useRef<Record<string, number>>({});
+  const liveEnergyLoadKeyRef = useRef("");
   const pendingViewSnapshotRef = useRef<ReservationsViewSnapshot | null>(null);
   const restoreViewRafRef = useRef<number | null>(null);
   const linkedFocusTimerRef = useRef<number | null>(null);
@@ -1252,6 +1264,8 @@ const ReservationsPage = () => {
     const energyParams = new URLSearchParams();
     energyParams.set("year", String(year));
     if (month) energyParams.set("month", String(month));
+    const liveEnergyLoadKey = energyParams.toString();
+    liveEnergyLoadKeyRef.current = liveEnergyLoadKey;
 
     const [
       gitesData,
@@ -1313,6 +1327,24 @@ const ReservationsPage = () => {
 
       return current;
     });
+
+    void apiFetch<ReservationLiveEnergyById>(`/reservations/live-energy?${energyParams.toString()}`)
+      .then((liveEnergyById) => {
+        if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
+        setReservations((previous) =>
+          previous.map((reservation) =>
+            liveEnergyById[reservation.id]
+              ? {
+                  ...reservation,
+                  ...liveEnergyById[reservation.id],
+                }
+              : reservation,
+          ),
+        );
+      })
+      .catch(() => {
+        if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
+      });
   };
 
   const toggleLinkedContractBalanceStatus = async (reservation: Reservation) => {

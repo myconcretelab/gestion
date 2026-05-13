@@ -274,6 +274,31 @@ const makeUtcDate = (year: number, month: number, day: number) => {
   return date;
 };
 
+const buildReservationListWhere = (query: Record<string, unknown>) => {
+  const giteId = typeof query.giteId === "string" ? query.giteId : undefined;
+  const yearRaw = typeof query.year === "string" ? Number(query.year) : undefined;
+  const monthRaw = typeof query.month === "string" ? Number(query.month) : undefined;
+
+  const where: any = {};
+
+  if (giteId) {
+    where.gite_id = giteId;
+  }
+
+  if (Number.isFinite(yearRaw)) {
+    const year = Number(yearRaw);
+    const month = Number.isFinite(monthRaw) && monthRaw && monthRaw >= 1 && monthRaw <= 12 ? Number(monthRaw) : null;
+    const from = month ? makeUtcDate(year, month, 1) : makeUtcDate(year, 1, 1);
+    const to = month ? makeUtcDate(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1, 1) : makeUtcDate(year + 1, 1, 1);
+    where.date_entree = {
+      gte: from,
+      lt: to,
+    };
+  }
+
+  return where;
+};
+
 const parseDateInput = (value: string, label: string) => {
   const raw = value.trim();
   if (!raw) throw new Error(`Date manquante: ${label}`);
@@ -1386,26 +1411,8 @@ router.get("/airbnb-calendar-refresh/:jobId", async (req, res, next) => {
 router.get("/", async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
-    const giteId = typeof req.query.giteId === "string" ? req.query.giteId : undefined;
-    const yearRaw = typeof req.query.year === "string" ? Number(req.query.year) : undefined;
-    const monthRaw = typeof req.query.month === "string" ? Number(req.query.month) : undefined;
-
-    const where: any = {};
-
-    if (giteId) {
-      where.gite_id = giteId;
-    }
-
-    if (Number.isFinite(yearRaw)) {
-      const year = Number(yearRaw);
-      const month = Number.isFinite(monthRaw) && monthRaw && monthRaw >= 1 && monthRaw <= 12 ? Number(monthRaw) : null;
-      const from = month ? makeUtcDate(year, month, 1) : makeUtcDate(year, 1, 1);
-      const to = month ? makeUtcDate(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1, 1) : makeUtcDate(year + 1, 1, 1);
-      where.date_entree = {
-        gte: from,
-        lt: to,
-      };
-    }
+    const includeLiveEnergy = req.query.includeLiveEnergy === "1" || req.query.includeLiveEnergy === "true";
+    const where = buildReservationListWhere(req.query as Record<string, unknown>);
 
     const reservations = await prisma.reservation.findMany({
       where,
@@ -1439,15 +1446,18 @@ router.get("/", async (req, res, next) => {
     const hydratedReservations = await attachLinkedContractsToReservations(
       filtered.map(hydrateReservation),
     );
-    const smartlifeConfig = readSmartlifeAutomationConfig(
-      buildDefaultSmartlifeAutomationConfig(),
-    );
-    const liveEnergyByReservationId = hasSmartlifeCredentials(smartlifeConfig)
-      ? await loadLiveReservationEnergySummaries(
-          smartlifeConfig,
-          hydratedReservations,
+    const smartlifeConfig = includeLiveEnergy
+      ? readSmartlifeAutomationConfig(
+          buildDefaultSmartlifeAutomationConfig(),
         )
-      : new Map();
+      : null;
+    const liveEnergyByReservationId =
+      smartlifeConfig && hasSmartlifeCredentials(smartlifeConfig)
+        ? await loadLiveReservationEnergySummaries(
+            smartlifeConfig,
+            hydratedReservations,
+          )
+        : new Map();
 
     res.json(
       hydratedReservations.map((reservation) => ({
@@ -1455,6 +1465,38 @@ router.get("/", async (req, res, next) => {
         ...(liveEnergyByReservationId.get(reservation.id) ?? {}),
       })),
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/live-energy", async (req, res, next) => {
+  try {
+    const smartlifeConfig = readSmartlifeAutomationConfig(
+      buildDefaultSmartlifeAutomationConfig(),
+    );
+    if (!hasSmartlifeCredentials(smartlifeConfig)) {
+      return res.json({});
+    }
+
+    const reservations = await prisma.reservation.findMany({
+      where: buildReservationListWhere(req.query as Record<string, unknown>),
+      select: {
+        id: true,
+        energy_tracking: true,
+        gite: {
+          select: {
+            electricity_price_per_kwh: true,
+          },
+        },
+      },
+    });
+    const liveEnergyByReservationId = await loadLiveReservationEnergySummaries(
+      smartlifeConfig,
+      reservations,
+    );
+
+    return res.json(Object.fromEntries(liveEnergyByReservationId.entries()));
   } catch (err) {
     next(err);
   }
