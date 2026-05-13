@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildAutomaticSeasonRateSegments,
+  buildDefaultSeasonRateEditorRange,
   buildFrenchBridgeIntervals,
   buildHolidayIntervals,
   buildPrefilledSeasonRateSegments,
@@ -20,10 +21,37 @@ const holidays = [
   },
 ];
 
+test("buildDefaultSeasonRateEditorRange couvre toute l'année suivante", () => {
+  assert.deepEqual(buildDefaultSeasonRateEditorRange(new Date("2026-05-13T12:00:00.000Z")), {
+    from: "2026-05-01",
+    to: "2028-01-01",
+  });
+});
+
 test("buildHolidayIntervals convertit la fin inclusive en borne exclusive", () => {
   assert.deepEqual(buildHolidayIntervals(holidays, "2026-02-01", "2026-03-01"), [
     { start: "2026-02-07", end: "2026-02-22", names: ["Vacances d'hiver"] },
   ]);
+});
+
+test("buildHolidayIntervals ignore les ponts remontés comme vacances scolaires", () => {
+  assert.deepEqual(
+    buildHolidayIntervals(
+      [
+        {
+          zone: "B",
+          start: "2026-05-13",
+          end: "2026-05-17",
+          description: "Pont de l'Ascension",
+          anneeScolaire: "2025-2026",
+          population: "",
+        },
+      ],
+      "2026-05-01",
+      "2026-06-01"
+    ),
+    []
+  );
 });
 
 test("buildSeasonRateEditorSegments segmente sur les bornes vacances et remonte les min nuits mixtes", () => {
@@ -157,6 +185,88 @@ test("buildFrenchBridgeIntervals détecte les longs week-ends des fériés", () 
       { start: "2026-05-14", end: "2026-05-17", names: ["Pont Ascension"] },
       { start: "2026-05-22", end: "2026-05-25", names: ["Pont Lundi de Pentecôte"] },
     ]
+  );
+});
+
+test("buildAutomaticSeasonRateSegments ne découpe pas le pont de l'Ascension scolaire autour du pont férié", () => {
+  const segments = buildAutomaticSeasonRateSegments({
+    from: "2026-05-13",
+    to: "2026-05-18",
+    holidays: [
+      {
+        zone: "B",
+        start: "2026-05-13",
+        end: "2026-05-17",
+        description: "Pont de l'Ascension",
+        anneeScolaire: "2025-2026",
+        population: "",
+      },
+    ],
+    gites: [
+      {
+        id: "g1",
+        prix_nuit_liste: [],
+        prix_nuit_basse_saison: 70,
+        prix_nuit_haute_saison: 90,
+        min_nuits_toute_annee: 2,
+        min_nuits_vacances_scolaires: 2,
+        min_nuits_juillet_aout: 4,
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    segments.map((segment) => ({
+      start: segment.date_debut,
+      end: segment.date_fin,
+      rule: segment.rule,
+      names: segment.rule_names,
+      min: segment.min_nuits,
+    })),
+    [
+      { start: "2026-05-13", end: "2026-05-14", rule: "normal", names: [], min: 2 },
+      { start: "2026-05-14", end: "2026-05-17", rule: "bridge", names: ["Pont Ascension"], min: 3 },
+      { start: "2026-05-17", end: "2026-05-18", rule: "normal", names: [], min: 2 },
+    ]
+  );
+});
+
+test("buildAutomaticSeasonRateSegments classe un pont couvert par des vacances en vacances scolaires", () => {
+  const segments = buildAutomaticSeasonRateSegments({
+    from: "2026-12-24",
+    to: "2026-12-31",
+    holidays: [
+      {
+        zone: "B",
+        start: "2026-12-19",
+        end: "2027-01-04",
+        description: "Vacances de Noël",
+        anneeScolaire: "2026-2027",
+        population: "",
+      },
+    ],
+    gites: [
+      {
+        id: "g1",
+        prix_nuit_liste: [],
+        prix_nuit_basse_saison: 70,
+        prix_nuit_haute_saison: 90,
+        min_nuits_toute_annee: 2,
+        min_nuits_vacances_scolaires: 4,
+        min_nuits_juillet_aout: 5,
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    segments.map((segment) => ({
+      start: segment.date_debut,
+      end: segment.date_fin,
+      rule: segment.rule,
+      names: segment.rule_names,
+      min: segment.min_nuits,
+    })),
+    [{ start: "2026-12-24", end: "2026-12-31", rule: "school_holiday", names: ["Vacances de Noël"], min: 4 }]
   );
 });
 

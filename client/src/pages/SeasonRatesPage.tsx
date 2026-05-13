@@ -12,9 +12,9 @@ import {
   type SeasonRateEditorRule,
   type SeasonRateEditorSegment,
 } from "../utils/seasonRateEditor";
-import { formatUtcDateKey, parseIsoDateUtc } from "../utils/schoolHolidays";
+import { parseIsoDateUtc } from "../utils/schoolHolidays";
 
-const DATE_LABEL = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+const DATE_LABEL = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 
 type EditorGite = SeasonRateEditorResponse["gites"][number];
 
@@ -27,23 +27,15 @@ const cloneSegments = (segments: SeasonRateEditorSegment[]) =>
     rule_names: [...segment.rule_names],
   }));
 
-const shiftIsoRangeByMonths = (range: { from: string; to: string }, months: number) => {
-  const fromDate = parseIsoDateUtc(range.from);
-  const toDate = parseIsoDateUtc(range.to);
-  if (!fromDate || !toDate) return range;
-
-  return {
-    from: formatUtcDateKey(new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth() + months, 1))),
-    to: formatUtcDateKey(new Date(Date.UTC(toDate.getUTCFullYear(), toDate.getUTCMonth() + months, 1))),
-  };
-};
-
 const formatDateLabel = (value: string) => {
   const date = parseIsoDateUtc(value);
   return date ? DATE_LABEL.format(date) : value;
 };
 
-const formatRangeLabel = (from: string, to: string) => `${formatDateLabel(from)} au ${formatDateLabel(getExclusiveEndDisplayLabel(to))}`;
+const formatSegmentRangeLabel = (segment: Pick<SeasonRateEditorSegment, "date_debut" | "date_fin" | "rule">) => {
+  const endLabel = segment.rule === "bridge" ? segment.date_fin : getExclusiveEndDisplayLabel(segment.date_fin);
+  return `${formatDateLabel(segment.date_debut)} au ${formatDateLabel(endLabel)}`;
+};
 
 const getGiteShortLabel = (gite: Pick<Gite, "prefixe_contrat" | "nom">) =>
   String(gite.prefixe_contrat || gite.nom)
@@ -66,6 +58,13 @@ const getRuleClass = (rule: SeasonRateEditorRule) => {
   return "normal";
 };
 
+const RULE_LEGEND_ITEMS: Array<{ rule: SeasonRateEditorRule; label: string }> = [
+  { rule: "school_holiday", label: "Vacances zone B" },
+  { rule: "bridge", label: "Pont / férié" },
+  { rule: "july_august", label: "Juillet / août" },
+  { rule: "manual", label: "Exception enregistrée" },
+];
+
 const summarizeMinNights = (segment: SeasonRateEditorSegment, gites: EditorGite[]) => {
   const values = gites.map((gite) => segment.min_nuits_by_gite[gite.id] ?? segment.min_nuits).filter((value): value is number => value != null);
   const uniqueValues = [...new Set(values)].sort((left, right) => left - right);
@@ -87,6 +86,31 @@ const getDefaultMinNights = (gite: EditorGite, rule: SeasonRateEditorRule) => {
   if (rule === "bridge") return 3;
   return Math.max(1, Number(gite.min_nuits_toute_annee ?? 1) || 1);
 };
+
+const getMinNightOptions = (gites: EditorGite[], currentValues: Array<number | null | undefined> = []) => {
+  const configuredMax = Math.max(
+    1,
+    ...gites.flatMap((gite) => [
+      getDefaultMinNights(gite, "normal"),
+      getDefaultMinNights(gite, "school_holiday"),
+      getDefaultMinNights(gite, "july_august"),
+      getDefaultMinNights(gite, "bridge"),
+    ]),
+    ...currentValues.filter((value): value is number => Number.isInteger(value) && value > 0)
+  );
+  return Array.from({ length: configuredMax }, (_, index) => index + 1);
+};
+
+const getPriceOptions = (gite: EditorGite, currentValue: number | null | undefined) =>
+  [
+    ...(Array.isArray(gite.prix_nuit_liste) ? gite.prix_nuit_liste : []),
+    Number(gite.prix_nuit_basse_saison ?? 0),
+    Number(gite.prix_nuit_haute_saison ?? 0),
+    currentValue,
+  ]
+    .filter((value): value is number => Number.isFinite(value) && value >= 0)
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .sort((left, right) => left - right);
 
 const applyRuleMetadata = (segments: SeasonRateEditorSegment[], automaticSegments: SeasonRateEditorSegment[]) =>
   segments.map((segment) => {
@@ -159,6 +183,10 @@ const SeasonRatesPage = () => {
 
   const gites = response?.gites ?? [];
   const selectedSegment = selectedIndex == null ? null : segments[selectedIndex] ?? null;
+  const minNightOptions = useMemo(
+    () => getMinNightOptions(gites, selectedSegment ? [selectedSegment.min_nuits, ...Object.values(selectedSegment.min_nuits_by_gite)] : []),
+    [gites, selectedSegment]
+  );
   const automaticSegments = useMemo(
     () =>
       response
@@ -173,19 +201,6 @@ const SeasonRatesPage = () => {
   );
   const isDirty = useMemo(() => JSON.stringify(segments) !== JSON.stringify(initialSegments), [initialSegments, segments]);
   const importantSegments = useMemo(() => segments.filter((segment) => segment.rule !== "normal"), [segments]);
-  const summary = useMemo(
-    () => ({
-      normal: segments.filter((segment) => segment.rule === "normal").length,
-      schoolHoliday: segments.filter((segment) => segment.rule === "school_holiday").length,
-      bridge: segments.filter((segment) => segment.rule === "bridge").length,
-      julyAugust: segments.filter((segment) => segment.rule === "july_august").length,
-      incomplete: segments.filter((segment) =>
-        gites.some((gite) => segment.prices_by_gite[gite.id] == null || segment.min_nuits_by_gite[gite.id] == null)
-      ).length,
-    }),
-    [gites, segments]
-  );
-
   const setNextSegments = (updater: (current: SeasonRateEditorSegment[]) => SeasonRateEditorSegment[]) => {
     setSegments((current) => updater(cloneSegments(current)));
   };
@@ -298,21 +313,15 @@ const SeasonRatesPage = () => {
       <section className="card season-rates-simple">
         <div className="section-title-row">
           <div>
-            <h1>Tarifs automatiques</h1>
-            <p className="section-subtitle">Zone B, ponts français et juillet/août pour les 4 gîtes.</p>
+            <h1>Tarifs et durées</h1>
           </div>
+          <p className="section-subtitle">Zone B, ponts français et juillet/août pour les 4 gîtes.</p>
         </div>
 
         <div className="season-rates-simple__toolbar">
-          <button type="button" className="button-secondary" onClick={() => setRange((current) => shiftIsoRangeByMonths(current, -12))}>
-            -12 mois
-          </button>
           <strong>
             {formatDateLabel(range.from)} au {formatDateLabel(addDaysToIso(range.to, -1))}
           </strong>
-          <button type="button" className="button-secondary" onClick={() => setRange((current) => shiftIsoRangeByMonths(current, 12))}>
-            +12 mois
-          </button>
           <span className="season-rates-simple__toolbar-spacer" />
           <button type="button" className="button-secondary" onClick={regenerateAutomatic} disabled={loading || !response}>
             Régénérer automatiquement
@@ -335,16 +344,6 @@ const SeasonRatesPage = () => {
           </button>
         </div>
 
-        <div className="season-rates-simple__summary">
-          <span>Normal · {summary.normal}</span>
-          <span>Vacances zone B · {summary.schoolHoliday}</span>
-          <span>Ponts · {summary.bridge}</span>
-          <span>Juillet/août · {summary.julyAugust}</span>
-          <span className={summary.incomplete > 0 ? "season-rates-simple__warning" : ""}>
-            {summary.incomplete > 0 ? `${summary.incomplete} période(s) incomplète(s)` : "Tout est complet"}
-          </span>
-        </div>
-
         {notice ? <div className="note">{notice}</div> : null}
         {error ? <div className="note note--danger">{error}</div> : null}
         {loading ? <div className="note">Chargement des règles...</div> : null}
@@ -354,7 +353,14 @@ const SeasonRatesPage = () => {
             <div className="season-rates-simple__list">
               <div className="season-rates-simple__list-head">
                 <h2>Périodes détectées</h2>
-                <p>{importantSegments.length} période(s) à vérifier rapidement. Les périodes normales restent enregistrées aussi.</p>
+                <div className="season-rates-simple__legend" aria-label="Légende des couleurs">
+                  {RULE_LEGEND_ITEMS.map((item) => (
+                    <span key={item.rule} className="season-rates-simple__legend-item">
+                      <span className={`season-rates-simple__color-bar season-rates-simple__color-bar--${getRuleClass(item.rule)}`} />
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {importantSegments.length === 0 ? <div className="note">Aucune vacances, pont ou période juillet/août sur cette plage.</div> : null}
@@ -372,9 +378,13 @@ const SeasonRatesPage = () => {
                       }`}
                       onClick={() => setSelectedIndex(index)}
                     >
+                      <span
+                        className={`season-rates-simple__color-bar season-rates-simple__color-bar--${getRuleClass(segment.rule)}`}
+                        aria-hidden="true"
+                      />
                       <span>
                         <strong>{getRuleLabel(segment)}</strong>
-                        <em>{formatRangeLabel(segment.date_debut, segment.date_fin)}</em>
+                        <em>{formatSegmentRangeLabel(segment)}</em>
                       </span>
                       <span>{summarizeMinNights(segment, gites)}</span>
                       <span>
@@ -395,25 +405,27 @@ const SeasonRatesPage = () => {
               {selectedSegment ? (
                 <>
                   <div className="season-rates-simple__editor-head">
-                    <span className={`badge season-rates-simple__badge--${getRuleClass(selectedSegment.rule)}`}>
-                      {getRuleLabel(selectedSegment)}
-                    </span>
-                    <h2>{formatRangeLabel(selectedSegment.date_debut, selectedSegment.date_fin)}</h2>
+                    <h2>{getRuleLabel(selectedSegment)}</h2>
+                    <p>{formatSegmentRangeLabel(selectedSegment)}</p>
                   </div>
 
                   <div className="season-rates-simple__quick-actions">
                     <label className="field field--small">
                       Min nuits 4 gîtes
-                      <input
-                        type="number"
-                        min={1}
+                      <select
                         value={selectedSegment.has_mixed_min_nights ? "" : selectedSegment.min_nuits ?? ""}
-                        placeholder={selectedSegment.has_mixed_min_nights ? "Mixte" : "2"}
                         onChange={(event) => {
                           const value = Number(event.target.value);
                           if (Number.isInteger(value) && value >= 1) setCommonMinNights(value);
                         }}
-                      />
+                      >
+                        {selectedSegment.has_mixed_min_nights ? <option value="">Mixte</option> : null}
+                        {minNightOptions.map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <button type="button" className="button-secondary" onClick={() => applyDefaultModeToSelected("normal")}>
                       Tarif normal
@@ -432,12 +444,10 @@ const SeasonRatesPage = () => {
                         <strong>{gite.nom}</strong>
                         <label className="field field--small">
                           Nuits
-                          <input
-                            type="number"
-                            min={1}
+                          <select
                             value={selectedSegment.min_nuits_by_gite[gite.id] ?? ""}
                             onChange={(event) => {
-                              const value = event.target.value === "" ? null : Math.max(1, Math.trunc(Number(event.target.value) || 1));
+                              const value = event.target.value === "" ? null : Number(event.target.value);
                               updateSelectedSegment((segment) => {
                                 const minNightsByGite = { ...segment.min_nuits_by_gite, [gite.id]: value };
                                 const minSummary = recomputeMinSummary(minNightsByGite);
@@ -449,23 +459,34 @@ const SeasonRatesPage = () => {
                                 };
                               });
                             }}
-                          />
+                          >
+                            {selectedSegment.min_nuits_by_gite[gite.id] == null ? <option value="">-</option> : null}
+                            {minNightOptions.map((value) => (
+                              <option key={value} value={value}>
+                                {value}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                         <label className="field field--small">
                           Prix/nuit
-                          <input
-                            type="number"
-                            min={0}
-                            step={1}
+                          <select
                             value={selectedSegment.prices_by_gite[gite.id] ?? ""}
                             onChange={(event) => {
-                              const value = event.target.value === "" ? null : Math.max(0, Number(event.target.value) || 0);
+                              const value = event.target.value === "" ? null : Number(event.target.value);
                               updateSelectedSegment((segment) => ({
                                 ...segment,
                                 prices_by_gite: { ...segment.prices_by_gite, [gite.id]: value },
                               }));
                             }}
-                          />
+                          >
+                            {selectedSegment.prices_by_gite[gite.id] == null ? <option value="">À choisir</option> : null}
+                            {getPriceOptions(gite, selectedSegment.prices_by_gite[gite.id]).map((price) => (
+                              <option key={price} value={price}>
+                                {formatEuro(price, { maximumFractionDigits: 0 })}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                       </div>
                     ))}
