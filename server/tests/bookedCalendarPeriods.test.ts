@@ -43,3 +43,24 @@ test("buildBookedCalendarPeriods donne priorité aux vacances sur les ponts", ()
     { start: "2026-12-24", end: "2026-12-31", type: "school_holiday", label: "Vacances de Noël" },
   ]);
 });
+
+test("buildBookedCalendarPeriods donne priorité à juillet août sur les vacances scolaires", () => {
+  const periods = buildBookedCalendarPeriods({
+    from: "2026-07-01",
+    to: "2026-08-01",
+    holidays: [
+      {
+        zone: "B",
+        start: "2026-07-04",
+        end: "2026-08-31",
+        description: "Vacances d'été",
+        anneeScolaire: "2025-2026",
+        population: "",
+      },
+    ],
+  });
+
+  assert.deepEqual(periods, [
+    { start: "2026-07-01", end: "2026-08-01", type: "july_august", label: "Juillet / août" },
+  ]);
+});

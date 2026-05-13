@@ -205,12 +205,12 @@ export const buildBookedCalendarPeriods = (params: {
     const end = boundaries[index + 1];
     if (start >= end) continue;
 
-    const schoolHoliday = getCoveringInterval(schoolHolidayIntervals, start, end);
-    const bridge = !schoolHoliday ? getCoveringInterval(bridgeIntervals, start, end) : null;
-    const julyAugust = !schoolHoliday && !bridge && isFullyCovered(julyAugustIntervals, start, end)
+    const julyAugust = isFullyCovered(julyAugustIntervals, start, end)
       ? getCoveringInterval(julyAugustIntervals, start, end)
       : null;
-    const period = schoolHoliday ?? bridge ?? julyAugust;
+    const schoolHoliday = !julyAugust ? getCoveringInterval(schoolHolidayIntervals, start, end) : null;
+    const bridge = !julyAugust && !schoolHoliday ? getCoveringInterval(bridgeIntervals, start, end) : null;
+    const period = julyAugust ?? schoolHoliday ?? bridge;
     if (period) {
       periods.push({ start, end, type: period.type, labels: [...period.labels] });
     }
