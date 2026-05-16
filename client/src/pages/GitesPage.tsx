@@ -1229,6 +1229,10 @@ const GitesPage = () => {
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [savingPhotoId, setSavingPhotoId] = useState<string | null>(null);
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [photoDropActive, setPhotoDropActive] = useState(false);
+  const [draggedPhotoId, setDraggedPhotoId] = useState<string | null>(null);
+  const [dragOverPhotoId, setDragOverPhotoId] = useState<string | null>(null);
   const [activeEditorSection, setActiveEditorSection] = useState<GiteEditorSectionId>(() => {
     const section = searchParams.get("section");
     return isGiteEditorSectionId(section) ? section : "base-fiche";
@@ -1239,8 +1243,13 @@ const GitesPage = () => {
   const equipmentInfoImportInputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const formCardRef = useRef<HTMLDivElement | null>(null);
+  const suppressPhotoClickRef = useRef(false);
 
   const selected = useMemo(() => gites.find((g) => g.id === selectedId) ?? null, [gites, selectedId]);
+  const selectedPhoto = useMemo(
+    () => (selected?.photos ?? []).find((photo) => photo.id === selectedPhotoId) ?? null,
+    [selected?.photos, selectedPhotoId]
+  );
   const activeEditorSectionLabel = GITE_EDITOR_SECTION_BY_ID.get(activeEditorSection)?.label ?? "Section";
 
   useEffect(() => {
@@ -1295,6 +1304,7 @@ const GitesPage = () => {
     if (!selected) {
       setForm(emptyForm);
       setPhotoDrafts({});
+      setSelectedPhotoId(null);
       return;
     }
     setForm({
@@ -1367,6 +1377,13 @@ const GitesPage = () => {
       )
     );
   }, [selected]);
+
+  useEffect(() => {
+    if (!selectedPhotoId) return;
+    if (!(selected?.photos ?? []).some((photo) => photo.id === selectedPhotoId)) {
+      setSelectedPhotoId(null);
+    }
+  }, [selected?.photos, selectedPhotoId]);
 
   const handleChange = (key: keyof FormState, value: string | number | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -1600,6 +1617,13 @@ const GitesPage = () => {
     photoInputRef.current?.click();
   };
 
+  const setSelectedPhotos = (photos: GitePhoto[]) => {
+    if (!selected) return;
+    setGites((current) =>
+      current.map((gite) => (gite.id === selected.id ? { ...gite, photos } : gite))
+    );
+  };
+
   const startCreate = () => {
     setSelectedId(null);
     setForm(emptyForm);
@@ -1744,42 +1768,75 @@ const GitesPage = () => {
     }
   };
 
-  const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file || !selected) return;
+  const uploadPhotoFiles = async (files: FileList | File[]) => {
+    if (!selected) return;
+    const photoFiles = Array.from(files);
+    if (photoFiles.length === 0) return;
 
     setUploadingPhoto(true);
     setError(null);
     setNotice(null);
     try {
-      if (!GITE_PHOTO_ALLOWED_MIME_TYPES.has(file.type)) {
-        throw new Error("Format non pris en charge. Utilisez JPG, PNG, WEBP ou AVIF.");
+      for (const file of photoFiles) {
+        if (!GITE_PHOTO_ALLOWED_MIME_TYPES.has(file.type)) {
+          throw new Error(`${file.name}: format non pris en charge. Utilisez JPG, PNG, WEBP ou AVIF.`);
+        }
+        if (file.size > GITE_PHOTO_MAX_BYTES) {
+          throw new Error(`${file.name}: la photo dépasse ${Math.round(GITE_PHOTO_MAX_BYTES / (1024 * 1024))} Mo.`);
+        }
       }
-      if (file.size > GITE_PHOTO_MAX_BYTES) {
-        throw new Error(`La photo dépasse ${Math.round(GITE_PHOTO_MAX_BYTES / (1024 * 1024))} Mo.`);
+      const existingCount = selected.photos?.length ?? 0;
+      for (const [index, file] of photoFiles.entries()) {
+        const data = await readFileAsDataUrl(file);
+        await apiFetch<GitePhoto>(`/gites/${selected.id}/photos/upload`, {
+          method: "POST",
+          json: {
+            filename: file.name,
+            mimeType: file.type,
+            data,
+            title: file.name.replace(/\.[^.]+$/, ""),
+            alt: selected.public_title || selected.nom,
+            is_primary: existingCount === 0 && index === 0,
+            is_public: true,
+          },
+        });
       }
-      const data = await readFileAsDataUrl(file);
-      await apiFetch<GitePhoto>(`/gites/${selected.id}/photos/upload`, {
-        method: "POST",
-        json: {
-          filename: file.name,
-          mimeType: file.type,
-          data,
-          title: file.name.replace(/\.[^.]+$/, ""),
-          alt: selected.public_title || selected.nom,
-          is_primary: (selected.photos ?? []).length === 0,
-          is_public: true,
-        },
-      });
       await load();
-      setNotice("Photo ajoutée.");
+      setNotice(`${photoFiles.length} photo${photoFiles.length > 1 ? "s" : ""} ajoutée${photoFiles.length > 1 ? "s" : ""}.`);
     } catch (err: any) {
       setError(err.message);
     } finally {
-      input.value = "";
       setUploadingPhoto(false);
+      setPhotoDropActive(false);
     }
+  };
+
+  const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    if (input.files) {
+      await uploadPhotoFiles(input.files);
+    }
+    input.value = "";
+  };
+
+  const hasDraggedFiles = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes("Files");
+
+  const handlePhotoDropzoneDrag = (event: DragEvent<HTMLElement>) => {
+    if (!selected || uploadingPhoto || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setPhotoDropActive(true);
+  };
+
+  const handlePhotoDropzoneLeave = (event: DragEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setPhotoDropActive(false);
+  };
+
+  const handlePhotoDropzoneDrop = (event: DragEvent<HTMLElement>) => {
+    if (!selected || uploadingPhoto || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    void uploadPhotoFiles(event.dataTransfer.files);
   };
 
   const updatePhotoDraft = (photoId: string, key: keyof PhotoDraft, value: string) => {
@@ -1835,6 +1892,26 @@ const GitesPage = () => {
     }
   };
 
+  const persistPhotoOrder = async (photos: GitePhoto[], movedPhotoId: string) => {
+    if (!selected) return;
+    setSelectedPhotos(photos.map((photo, index) => ({ ...photo, ordre: index })));
+    setSavingPhotoId(movedPhotoId);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await apiFetch<GitePhoto[]>(`/gites/${selected.id}/photos/reorder`, {
+        method: "POST",
+        json: { ids: photos.map((photo) => photo.id) },
+      });
+      setSelectedPhotos(updated);
+    } catch (err: any) {
+      setError(err.message);
+      await load();
+    } finally {
+      setSavingPhotoId(null);
+    }
+  };
+
   const movePhoto = async (photoId: string, direction: -1 | 1) => {
     if (!selected) return;
     const photos = [...(selected.photos ?? [])];
@@ -1843,20 +1920,56 @@ const GitesPage = () => {
     if (index < 0 || targetIndex < 0 || targetIndex >= photos.length) return;
     const [moved] = photos.splice(index, 1);
     photos.splice(targetIndex, 0, moved);
-    setSavingPhotoId(photoId);
-    setError(null);
-    setNotice(null);
-    try {
-      await apiFetch<GitePhoto[]>(`/gites/${selected.id}/photos/reorder`, {
-        method: "POST",
-        json: { ids: photos.map((photo) => photo.id) },
-      });
-      await load();
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setSavingPhotoId(null);
-    }
+    await persistPhotoOrder(photos, photoId);
+  };
+
+  const handlePhotoDragStart = (event: DragEvent<HTMLElement>, photoId: string) => {
+    if (savingPhotoId || uploadingPhoto) return;
+    suppressPhotoClickRef.current = true;
+    setDraggedPhotoId(photoId);
+    setDragOverPhotoId(photoId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-gite-photo-id", photoId);
+    event.dataTransfer.setData("text/plain", photoId);
+  };
+
+  const handlePhotoDragOver = (event: DragEvent<HTMLElement>, targetId: string) => {
+    if (savingPhotoId || uploadingPhoto || hasDraggedFiles(event)) return;
+    const sourceId = draggedPhotoId ?? event.dataTransfer.getData("application/x-gite-photo-id");
+    if (!sourceId || sourceId === targetId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dragOverPhotoId !== targetId) setDragOverPhotoId(targetId);
+  };
+
+  const handlePhotoDrop = async (event: DragEvent<HTMLElement>, targetId: string) => {
+    if (savingPhotoId || uploadingPhoto || hasDraggedFiles(event)) return;
+    event.preventDefault();
+    const sourceId =
+      draggedPhotoId || event.dataTransfer.getData("application/x-gite-photo-id") || event.dataTransfer.getData("text/plain");
+    setDraggedPhotoId(null);
+    setDragOverPhotoId(null);
+    if (!selected || !sourceId || sourceId === targetId) return;
+    const photos = [...(selected.photos ?? [])];
+    const fromIndex = photos.findIndex((photo) => photo.id === sourceId);
+    const targetIndex = photos.findIndex((photo) => photo.id === targetId);
+    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return;
+    const [moved] = photos.splice(fromIndex, 1);
+    photos.splice(targetIndex, 0, moved);
+    await persistPhotoOrder(photos, sourceId);
+  };
+
+  const handlePhotoDragEnd = () => {
+    setDraggedPhotoId(null);
+    setDragOverPhotoId(null);
+    window.setTimeout(() => {
+      suppressPhotoClickRef.current = false;
+    }, 0);
+  };
+
+  const openPhotoDrawer = (photoId: string) => {
+    if (suppressPhotoClickRef.current) return;
+    setSelectedPhotoId(photoId);
   };
 
   return (
@@ -2400,23 +2513,35 @@ const GitesPage = () => {
             <div className="field-hint">Enregistrez le gîte avant d'ajouter des photos.</div>
           ) : (
             <>
-              <div className="gite-photo-toolbar">
+              <div
+                className={`gite-photo-dropzone${photoDropActive ? " gite-photo-dropzone--active" : ""}`}
+                onDragEnter={handlePhotoDropzoneDrag}
+                onDragOver={handlePhotoDropzoneDrag}
+                onDragLeave={handlePhotoDropzoneLeave}
+                onDrop={handlePhotoDropzoneDrop}
+              >
                 <input
                   ref={photoInputRef}
                   type="file"
+                  multiple
                   accept="image/jpeg,image/png,image/webp,image/avif"
                   onChange={(event) => void uploadPhoto(event)}
                   style={{ display: "none" }}
                 />
-                <button
-                  type="button"
-                  className="table-action table-action--primary"
-                  onClick={triggerPhotoUpload}
-                  disabled={uploadingPhoto}
-                >
-                  {uploadingPhoto ? "Upload..." : "Ajouter une photo"}
-                </button>
-                <span className="field-hint">JPG, PNG, WEBP ou AVIF. 12 Mo max.</span>
+                <div className="gite-photo-dropzone__copy">
+                  <strong>{uploadingPhoto ? "Ajout en cours..." : "Ajouter des photos"}</strong>
+                  <span>JPG, PNG, WEBP ou AVIF. 12 Mo max par fichier.</span>
+                </div>
+                <div className="gite-photo-toolbar">
+                  <button
+                    type="button"
+                    className="table-action table-action--primary"
+                    onClick={triggerPhotoUpload}
+                    disabled={uploadingPhoto}
+                  >
+                    {uploadingPhoto ? "Upload..." : "Choisir des fichiers"}
+                  </button>
+                </div>
               </div>
               {(selected.photos ?? []).length > 0 ? (
                 <div className="gite-photo-grid">
@@ -2428,36 +2553,33 @@ const GitesPage = () => {
                     };
                     const busy = savingPhotoId === photo.id;
                     return (
-                      <article key={photo.id} className="gite-photo-card">
-                        <div className="gite-photo-card__image-wrap">
+                      <article
+                        key={photo.id}
+                        className={`gite-photo-card${dragOverPhotoId === photo.id ? " gite-photo-card--drop-target" : ""}${
+                          draggedPhotoId === photo.id ? " gite-photo-card--dragging" : ""
+                        }`}
+                        draggable={!savingPhotoId && !uploadingPhoto}
+                        onDragStart={(event) => handlePhotoDragStart(event, photo.id)}
+                        onDragOver={(event) => handlePhotoDragOver(event, photo.id)}
+                        onDrop={(event) => void handlePhotoDrop(event, photo.id)}
+                        onDragEnd={handlePhotoDragEnd}
+                      >
+                        <button
+                          type="button"
+                          className="gite-photo-card__image-button"
+                          onClick={() => openPhotoDrawer(photo.id)}
+                          disabled={busy}
+                        >
+                          <span className="gite-photo-card__position">{index + 1}</span>
                           <img className="gite-photo-card__image" src={photo.url} alt={draft.alt || photo.alt || selected.nom} />
                           <div className="gite-photo-card__badges">
                             {photo.is_primary ? <span>Principale</span> : null}
                             {photo.is_public ? <span>Publique</span> : <span>Masquée</span>}
                           </div>
-                        </div>
-                        <div className="gite-photo-card__fields">
-                          <label className="field">
-                            Titre
-                            <input
-                              value={draft.title}
-                              onChange={(event) => updatePhotoDraft(photo.id, "title", event.target.value)}
-                            />
-                          </label>
-                          <label className="field">
-                            Texte alternatif
-                            <input
-                              value={draft.alt}
-                              onChange={(event) => updatePhotoDraft(photo.id, "alt", event.target.value)}
-                            />
-                          </label>
-                          <label className="field">
-                            Crédit
-                            <input
-                              value={draft.credit}
-                              onChange={(event) => updatePhotoDraft(photo.id, "credit", event.target.value)}
-                            />
-                          </label>
+                        </button>
+                        <div className="gite-photo-card__meta">
+                          <strong>{draft.title || photo.title || `Photo ${index + 1}`}</strong>
+                          {draft.credit || photo.credit ? <span>{draft.credit || photo.credit}</span> : null}
                         </div>
                         <div className="gite-photo-card__actions">
                           <button
@@ -2494,14 +2616,6 @@ const GitesPage = () => {
                           </button>
                           <button
                             type="button"
-                            className="table-action table-action--primary"
-                            onClick={() => void savePhoto(photo)}
-                            disabled={busy}
-                          >
-                            Enregistrer
-                          </button>
-                          <button
-                            type="button"
                             className="table-action table-action--neutral"
                             onClick={() => void deletePhoto(photo)}
                             disabled={busy}
@@ -2522,6 +2636,110 @@ const GitesPage = () => {
             </>
           )}
         </div>
+
+        {selected && selectedPhoto ? (
+          <div className="gite-photo-drawer-backdrop" onMouseDown={() => setSelectedPhotoId(null)}>
+            <aside
+              className="gite-photo-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="gite-photo-drawer-title"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="gite-photo-drawer__header">
+                <div>
+                  <div className="gite-photo-drawer__eyebrow">Photo du gîte</div>
+                  <h2 id="gite-photo-drawer-title">{photoDrafts[selectedPhoto.id]?.title || selectedPhoto.title || "Modifier la photo"}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="contract-return-drawer__close"
+                  onClick={() => setSelectedPhotoId(null)}
+                  aria-label="Fermer"
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+              <div className="gite-photo-drawer__body">
+                <div className="gite-photo-drawer__preview">
+                  <img
+                    src={selectedPhoto.url}
+                    alt={photoDrafts[selectedPhoto.id]?.alt || selectedPhoto.alt || selected.nom}
+                  />
+                  <div className="gite-photo-card__badges">
+                    {selectedPhoto.is_primary ? <span>Principale</span> : null}
+                    {selectedPhoto.is_public ? <span>Publique</span> : <span>Masquée</span>}
+                  </div>
+                </div>
+                <div className="gite-photo-drawer__fields">
+                  <label className="field">
+                    Titre
+                    <input
+                      value={photoDrafts[selectedPhoto.id]?.title ?? selectedPhoto.title ?? ""}
+                      onChange={(event) => updatePhotoDraft(selectedPhoto.id, "title", event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    Texte alternatif
+                    <input
+                      value={photoDrafts[selectedPhoto.id]?.alt ?? selectedPhoto.alt ?? ""}
+                      onChange={(event) => updatePhotoDraft(selectedPhoto.id, "alt", event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    Crédit
+                    <input
+                      value={photoDrafts[selectedPhoto.id]?.credit ?? selectedPhoto.credit ?? ""}
+                      onChange={(event) => updatePhotoDraft(selectedPhoto.id, "credit", event.target.value)}
+                    />
+                  </label>
+                  <div className="gite-photo-drawer__switches">
+                    <label className="switch-group">
+                      <span className="switch">
+                        <input
+                          type="checkbox"
+                          checked={selectedPhoto.is_public}
+                          onChange={() => void savePhoto(selectedPhoto, { is_public: !selectedPhoto.is_public })}
+                          disabled={savingPhotoId === selectedPhoto.id}
+                        />
+                        <span className="slider" />
+                      </span>
+                      Publique
+                    </label>
+                    <button
+                      type="button"
+                      className="table-action table-action--neutral"
+                      onClick={() => void savePhoto(selectedPhoto, { is_primary: true })}
+                      disabled={savingPhotoId === selectedPhoto.id || selectedPhoto.is_primary}
+                    >
+                      Définir principale
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="gite-photo-drawer__footer">
+                <button
+                  type="button"
+                  className="table-action table-action--neutral"
+                  onClick={() => void deletePhoto(selectedPhoto)}
+                  disabled={savingPhotoId === selectedPhoto.id}
+                >
+                  Supprimer
+                </button>
+                <button
+                  type="button"
+                  className="table-action table-action--primary"
+                  onClick={() => void savePhoto(selectedPhoto)}
+                  disabled={savingPhotoId === selectedPhoto.id}
+                >
+                  {savingPhotoId === selectedPhoto.id ? "Enregistrement..." : "Enregistrer"}
+                </button>
+              </div>
+            </aside>
+          </div>
+        ) : null}
 
         <div id="gite-editor-proprietaires" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-contact"}>
           <div className="section-subtitle">Propriétaires</div>
