@@ -84,6 +84,16 @@ type PhotoDraft = {
   alt: string;
   credit: string;
 };
+type WordPressPhotoSyncStatus = {
+  enabled: boolean;
+  state: "disabled" | "queued" | "sending" | "succeeded" | "failed";
+  message: string;
+  debounce_ms: number;
+  completed_at?: string;
+  response_status?: number;
+  response_body?: unknown;
+  error?: string;
+};
 const PLACEHOLDER_FADE_OUT_MS = 320;
 const GITE_PHOTO_ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
@@ -153,6 +163,8 @@ const readFileAsDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const wait = (durationMs: number) => new Promise((resolve) => window.setTimeout(resolve, durationMs));
+
 const parseStoredJson = (value: string): unknown => {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -168,6 +180,27 @@ const toDisplayText = (value: unknown) => {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
+};
+
+const getWordPressPhotoSyncDetail = (status: WordPressPhotoSyncStatus | null) => {
+  const body = status?.response_body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+  const result = (body as { result?: unknown }).result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return "";
+  const row = result as Record<string, unknown>;
+  const parts = [
+    ["créée(s)", row.created],
+    ["mise(s) à jour", row.updated],
+    ["remplacée(s)", row.replaced],
+    ["masquée(s)", row.orphaned],
+    ["échouée(s)", row.failed],
+  ]
+    .map(([label, value]) => {
+      const count = Number(value);
+      return Number.isFinite(count) && count > 0 ? `${count} ${label}` : "";
+    })
+    .filter(Boolean);
+  return parts.join(", ");
 };
 
 const serializeStructuredValue = (value: unknown) => JSON.stringify(value, null, 2);
@@ -1233,6 +1266,7 @@ const GitesPage = () => {
   const [photoDropActive, setPhotoDropActive] = useState(false);
   const [draggedPhotoId, setDraggedPhotoId] = useState<string | null>(null);
   const [dragOverPhotoId, setDragOverPhotoId] = useState<string | null>(null);
+  const [wordpressPhotoSyncStatus, setWordpressPhotoSyncStatus] = useState<WordPressPhotoSyncStatus | null>(null);
   const [activeEditorSection, setActiveEditorSection] = useState<GiteEditorSectionId>(() => {
     const section = searchParams.get("section");
     return isGiteEditorSectionId(section) ? section : "base-fiche";
@@ -1244,6 +1278,7 @@ const GitesPage = () => {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const formCardRef = useRef<HTMLDivElement | null>(null);
   const suppressPhotoClickRef = useRef(false);
+  const wordpressPhotoSyncWatchRef = useRef(0);
 
   const selected = useMemo(() => gites.find((g) => g.id === selectedId) ?? null, [gites, selectedId]);
   const selectedPhoto = useMemo(
@@ -1305,6 +1340,7 @@ const GitesPage = () => {
       setForm(emptyForm);
       setPhotoDrafts({});
       setSelectedPhotoId(null);
+      setWordpressPhotoSyncStatus(null);
       return;
     }
     setForm({
@@ -1376,6 +1412,9 @@ const GitesPage = () => {
         ])
       )
     );
+    void fetchWordPressPhotoSyncStatus(selected.id)
+      .then(setWordpressPhotoSyncStatus)
+      .catch(() => setWordpressPhotoSyncStatus(null));
   }, [selected]);
 
   useEffect(() => {
@@ -1624,6 +1663,40 @@ const GitesPage = () => {
     );
   };
 
+  const fetchWordPressPhotoSyncStatus = async (giteId: string) =>
+    apiFetch<WordPressPhotoSyncStatus>(`/gites/${giteId}/photos/wordpress-sync`);
+
+  const watchWordPressPhotoSync = async (giteId: string) => {
+    const watchId = wordpressPhotoSyncWatchRef.current + 1;
+    wordpressPhotoSyncWatchRef.current = watchId;
+    setWordpressPhotoSyncStatus({
+      enabled: true,
+      state: "queued",
+      message: "Mise à jour WordPress programmée.",
+      debounce_ms: 0,
+    });
+
+    for (let attempt = 0; attempt < 35; attempt += 1) {
+      await wait(attempt === 0 ? 900 : 1500);
+      if (wordpressPhotoSyncWatchRef.current !== watchId) return;
+      try {
+        const status = await fetchWordPressPhotoSyncStatus(giteId);
+        if (wordpressPhotoSyncWatchRef.current !== watchId) return;
+        setWordpressPhotoSyncStatus(status);
+        if (status.state !== "queued" && status.state !== "sending") return;
+      } catch (err: any) {
+        if (wordpressPhotoSyncWatchRef.current !== watchId) return;
+        setWordpressPhotoSyncStatus({
+          enabled: true,
+          state: "failed",
+          message: err.message || "Statut WordPress indisponible.",
+          debounce_ms: 0,
+        });
+        return;
+      }
+    }
+  };
+
   const startCreate = () => {
     setSelectedId(null);
     setForm(emptyForm);
@@ -1803,6 +1876,7 @@ const GitesPage = () => {
       }
       await load();
       setNotice(`${photoFiles.length} photo${photoFiles.length > 1 ? "s" : ""} ajoutée${photoFiles.length > 1 ? "s" : ""}.`);
+      void watchWordPressPhotoSync(selected.id);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1870,6 +1944,7 @@ const GitesPage = () => {
         },
       });
       await load();
+      void watchWordPressPhotoSync(selected.id);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1885,6 +1960,7 @@ const GitesPage = () => {
     try {
       await apiFetch(`/gites/${selected.id}/photos/${photo.id}`, { method: "DELETE" });
       await load();
+      void watchWordPressPhotoSync(selected.id);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1904,6 +1980,7 @@ const GitesPage = () => {
         json: { ids: photos.map((photo) => photo.id) },
       });
       setSelectedPhotos(updated);
+      void watchWordPressPhotoSync(selected.id);
     } catch (err: any) {
       setError(err.message);
       await load();
@@ -2543,6 +2620,21 @@ const GitesPage = () => {
                   </button>
                 </div>
               </div>
+              {wordpressPhotoSyncStatus ? (
+                <div className={`gite-photo-wordpress-status gite-photo-wordpress-status--${wordpressPhotoSyncStatus.state}`}>
+                  <div>
+                    <strong>WordPress</strong>
+                    <span>{wordpressPhotoSyncStatus.message}</span>
+                    {getWordPressPhotoSyncDetail(wordpressPhotoSyncStatus) ? (
+                      <small>{getWordPressPhotoSyncDetail(wordpressPhotoSyncStatus)}</small>
+                    ) : null}
+                    {wordpressPhotoSyncStatus.error ? <small>{wordpressPhotoSyncStatus.error}</small> : null}
+                  </div>
+                  {wordpressPhotoSyncStatus.state === "queued" || wordpressPhotoSyncStatus.state === "sending" ? (
+                    <span className="gite-photo-wordpress-status__pulse" aria-hidden="true" />
+                  ) : null}
+                </div>
+              ) : null}
               {(selected.photos ?? []).length > 0 ? (
                 <div className="gite-photo-grid">
                   {(selected.photos ?? []).map((photo, index, photos) => {
