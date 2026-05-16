@@ -4958,31 +4958,115 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-bottom: 14px;
+}
+
+.gite-photo-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.gite-photo-dropzone--active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 3px var(--primary-strong);
+}
+
+.gite-photo-dropzone__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gite-photo-dropzone__copy strong {
+  color: #111827;
+  font-size: 0.98rem;
+}
+
+.gite-photo-dropzone__copy span {
+  color: #6b7280;
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .gite-photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 14px;
 }
 
 .gite-photo-card {
   display: grid;
-  gap: 12px;
-  padding: 12px;
+  grid-template-rows: auto minmax(48px, auto) auto;
+  gap: 10px;
+  padding: 10px;
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.16s ease;
 }
 
-.gite-photo-card__image-wrap {
+.gite-photo-card--dragging {
+  opacity: 0.58;
+}
+
+.gite-photo-card--drop-target {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-strong);
+}
+
+.gite-photo-card__image-button {
   position: relative;
+  width: 100%;
+  padding: 0;
+  border: 0;
   overflow: hidden;
   aspect-ratio: 4 / 3;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #f3f4f6;
+  cursor: pointer;
+}
+
+.gite-photo-card__image-button:focus-visible {
+  outline: 3px solid var(--primary-strong);
+  outline-offset: 3px;
+}
+
+.gite-photo-card__image-button:disabled {
+  cursor: wait;
+}
+
+.gite-photo-card__position {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .gite-photo-card__image {
@@ -5013,15 +5097,130 @@ body {
   font-weight: 800;
 }
 
-.gite-photo-card__fields {
+.gite-photo-card__meta {
   display: grid;
-  gap: 8px;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gite-photo-card__meta strong,
+.gite-photo-card__meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gite-photo-card__meta strong {
+  color: #111827;
+  font-size: 0.9rem;
+}
+
+.gite-photo-card__meta span {
+  color: #6b7280;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .gite-photo-card__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.gite-photo-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1260;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.34);
+  backdrop-filter: blur(4px);
+  animation: reservation-details-drawer-backdrop-in 180ms ease-out;
+}
+
+.gite-photo-drawer {
+  width: min(560px, 100%);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-left: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: -20px 0 40px rgba(15, 23, 42, 0.16);
+  animation: reservation-details-drawer-slide-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gite-photo-drawer__header,
+.gite-photo-drawer__footer {
+  padding: 22px 24px;
+}
+
+.gite-photo-drawer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.gite-photo-drawer__eyebrow {
+  margin: 0 0 6px;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gite-photo-drawer__header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.gite-photo-drawer__body {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 24px;
+  overflow: auto;
+}
+
+.gite-photo-drawer__preview {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  background: #f3f4f6;
+}
+
+.gite-photo-drawer__preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gite-photo-drawer__fields {
+  display: grid;
+  gap: 14px;
+}
+
+.gite-photo-drawer__switches {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.gite-photo-drawer__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .structured-panel {
@@ -6239,6 +6438,24 @@ body {
   .gites-editor-header__actions .table-action {
     width: 100%;
     justify-content: center;
+  }
+
+  .gite-photo-dropzone {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .gite-photo-toolbar,
+  .gite-photo-toolbar .table-action {
+    width: 100%;
+  }
+
+  .gite-photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  .gite-photo-card__actions .table-action {
+    flex: 1 1 calc(50% - 8px);
   }
 
   .settings-layout {
