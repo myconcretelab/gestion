@@ -34,6 +34,52 @@ const getDisabledStatus = (giteId: string): GitePhotosWordPressWebhookStatus => 
   debounce_ms: env.BOOKED_WORDPRESS_WEBHOOK_DEBOUNCE_MS,
 });
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const asNonEmptyString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+const limitText = (value: string, maxLength = 260): string =>
+  value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+
+const formatWordPressPhotoSyncIssue = (issue: unknown, index: number): string => {
+  const row = asRecord(issue);
+  if (!row) {
+    return limitText(String(issue || `Erreur ${index + 1}`));
+  }
+
+  const photoId = asNonEmptyString(row.photo_id);
+  const title = asNonEmptyString(row.title);
+  const label = [title, photoId].filter(Boolean).join(" / ") || `Photo ${index + 1}`;
+  const message = asNonEmptyString(row.error_message) || asNonEmptyString(row.error) || "Erreur WordPress sans message.";
+  const code = asNonEmptyString(row.error_code);
+  const url = asNonEmptyString(row.url);
+  const details = asRecord(row.details);
+  const originalCode = details ? asNonEmptyString(details.original_code) : "";
+  const status = details && typeof details.status === "number" ? `HTTP ${details.status}` : "";
+  const suffix = [code || originalCode, status, url].filter(Boolean).join(" · ");
+
+  return limitText(`${label}: ${message}${suffix ? ` (${suffix})` : ""}`);
+};
+
+const getWordPressPhotoSyncErrorSummary = (responseBody: unknown): string => {
+  const body = asRecord(responseBody);
+  if (!body) return "";
+
+  const result = asRecord(body.result);
+  const resultError = result ? asNonEmptyString(result.error) : "";
+  const bodyError = asNonEmptyString(body.error);
+  const errors = result && Array.isArray(result.errors) ? result.errors : [];
+
+  if (errors.length > 0) {
+    const visibleErrors = errors.slice(0, 4).map(formatWordPressPhotoSyncIssue);
+    const remaining = errors.length - visibleErrors.length;
+    return `${visibleErrors.join(" | ")}${remaining > 0 ? ` | +${remaining} autre(s) erreur(s)` : ""}`;
+  }
+
+  return resultError || bodyError;
+};
+
 export const getGitePhotosWordPressWebhookStatus = (giteId: string): GitePhotosWordPressWebhookStatus => {
   const normalizedGiteId = String(giteId || "").trim();
   if (!normalizedGiteId) return getDisabledStatus("");
@@ -97,6 +143,7 @@ const sendGitePhotosWebhook = async (giteId: string) => {
     const completedAt = new Date().toISOString();
 
     if (!response.ok) {
+      const errorSummary = getWordPressPhotoSyncErrorSummary(responseBody);
       photoWebhookStatuses.set(giteId, {
         enabled: true,
         state: "failed",
@@ -108,6 +155,7 @@ const sendGitePhotosWebhook = async (giteId: string) => {
         completed_at: completedAt,
         response_status: response.status,
         response_body: responseBody,
+        error: errorSummary || undefined,
       });
       console.warn(`Booked WordPress webhook failed for gite ${giteId}: ${response.status} ${rawPayload}`);
       return;
@@ -123,6 +171,7 @@ const sendGitePhotosWebhook = async (giteId: string) => {
       Number(result?.failed ?? 0);
     const failedCount = Number(result?.failed ?? 0);
     const queued = Boolean(bodyObject?.queued);
+    const errorSummary = getWordPressPhotoSyncErrorSummary(responseBody);
     photoWebhookStatuses.set(giteId, {
       enabled: true,
       state: failedCount > 0 ? "failed" : "succeeded",
@@ -138,6 +187,7 @@ const sendGitePhotosWebhook = async (giteId: string) => {
       completed_at: completedAt,
       response_status: response.status,
       response_body: responseBody,
+      error: errorSummary || undefined,
     });
   } catch (error) {
     photoWebhookStatuses.set(giteId, {

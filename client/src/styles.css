@@ -5028,6 +5028,21 @@ body {
   font-weight: 600;
 }
 
+.gite-photo-wordpress-status__errors {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gite-photo-wordpress-status__errors li {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .gite-photo-wordpress-status--succeeded {
   border-color: #bbf7d0;
   background: #f0fdf4;
@@ -5046,8 +5061,10 @@ body {
 
 .gite-photo-wordpress-status--failed span,
 .gite-photo-wordpress-status--failed small,
+.gite-photo-wordpress-status--failed .gite-photo-wordpress-status__errors li,
 .gite-photo-wordpress-status--disabled span,
-.gite-photo-wordpress-status--disabled small {
+.gite-photo-wordpress-status--disabled small,
+.gite-photo-wordpress-status--disabled .gite-photo-wordpress-status__errors li {
   color: #b91c1c;
 }
 

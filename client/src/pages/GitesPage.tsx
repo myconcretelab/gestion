@@ -203,6 +203,43 @@ const getWordPressPhotoSyncDetail = (status: WordPressPhotoSyncStatus | null) =>
   return parts.join(", ");
 };
 
+const formatWordPressPhotoSyncIssue = (issue: unknown, index: number) => {
+  if (!issue || typeof issue !== "object" || Array.isArray(issue)) {
+    return String(issue || `Erreur ${index + 1}`);
+  }
+
+  const row = issue as Record<string, unknown>;
+  const title = toDisplayText(row.title).trim();
+  const photoId = toDisplayText(row.photo_id).trim();
+  const label = [title, photoId].filter(Boolean).join(" / ") || `Photo ${index + 1}`;
+  const message = toDisplayText(row.error_message).trim() || toDisplayText(row.error).trim() || "Erreur WordPress sans message.";
+  const code = toDisplayText(row.error_code).trim();
+  const url = toDisplayText(row.url).trim();
+  const suffix = [code, url].filter(Boolean).join(" · ");
+
+  return `${label}: ${message}${suffix ? ` (${suffix})` : ""}`;
+};
+
+const getWordPressPhotoSyncErrors = (status: WordPressPhotoSyncStatus | null) => {
+  if (!status) return [];
+  const body = status.response_body;
+  const result =
+    body && typeof body === "object" && !Array.isArray(body)
+      ? (body as { result?: unknown }).result
+      : null;
+  const errors =
+    result && typeof result === "object" && !Array.isArray(result) && Array.isArray((result as { errors?: unknown }).errors)
+      ? ((result as { errors: unknown[] }).errors ?? [])
+      : [];
+  const details = errors.map(formatWordPressPhotoSyncIssue).filter(Boolean);
+
+  if (details.length > 0) {
+    return details;
+  }
+
+  return status.error ? [status.error] : [];
+};
+
 const serializeStructuredValue = (value: unknown) => JSON.stringify(value, null, 2);
 
 type EquipmentData = Record<string, string[]>;
@@ -2628,7 +2665,16 @@ const GitesPage = () => {
                     {getWordPressPhotoSyncDetail(wordpressPhotoSyncStatus) ? (
                       <small>{getWordPressPhotoSyncDetail(wordpressPhotoSyncStatus)}</small>
                     ) : null}
-                    {wordpressPhotoSyncStatus.error ? <small>{wordpressPhotoSyncStatus.error}</small> : null}
+                    {(() => {
+                      const errors = getWordPressPhotoSyncErrors(wordpressPhotoSyncStatus);
+                      return errors.length > 0 ? (
+                        <ul className="gite-photo-wordpress-status__errors">
+                          {errors.map((error, index) => (
+                            <li key={`${index}-${error}`}>{error}</li>
+                          ))}
+                        </ul>
+                      ) : null;
+                    })()}
                   </div>
                   {wordpressPhotoSyncStatus.state === "queued" || wordpressPhotoSyncStatus.state === "sending" ? (
                     <span className="gite-photo-wordpress-status__pulse" aria-hidden="true" />
