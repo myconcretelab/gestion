@@ -62,6 +62,14 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV ?? "development",
   BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD ?? "",
   INTEGRATION_API_TOKEN: process.env.INTEGRATION_API_TOKEN ?? "",
+  BOOKED_WORDPRESS_WEBHOOK_URL: process.env.BOOKED_WORDPRESS_WEBHOOK_URL ?? "",
+  BOOKED_WORDPRESS_WEBHOOK_SECRET: process.env.BOOKED_WORDPRESS_WEBHOOK_SECRET ?? "",
+  BOOKED_WORDPRESS_WEBHOOK_DEBOUNCE_MS: parseIntegerEnv(
+    process.env.BOOKED_WORDPRESS_WEBHOOK_DEBOUNCE_MS,
+    5000,
+    0,
+    600_000
+  ),
   CRON_TRIGGER_TOKEN: process.env.CRON_TRIGGER_TOKEN ?? "",
   PUMP_API_BASE_URL: process.env.PUMP_API_BASE_URL ?? "http://localhost:3000/api/reservations",
   PUMP_API_KEY: process.env.PUMP_API_KEY ?? "",
