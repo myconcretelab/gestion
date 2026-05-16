@@ -4999,6 +4999,78 @@ body {
   font-weight: 600;
 }
 
+.gite-photo-wordpress-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.gite-photo-wordpress-status > div {
+  display: grid;
+  gap: 3px;
+}
+
+.gite-photo-wordpress-status strong {
+  color: #111827;
+  font-size: 0.86rem;
+}
+
+.gite-photo-wordpress-status span,
+.gite-photo-wordpress-status small {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.gite-photo-wordpress-status--succeeded {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.gite-photo-wordpress-status--succeeded span,
+.gite-photo-wordpress-status--succeeded small {
+  color: #166534;
+}
+
+.gite-photo-wordpress-status--failed,
+.gite-photo-wordpress-status--disabled {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.gite-photo-wordpress-status--failed span,
+.gite-photo-wordpress-status--failed small,
+.gite-photo-wordpress-status--disabled span,
+.gite-photo-wordpress-status--disabled small {
+  color: #b91c1c;
+}
+
+.gite-photo-wordpress-status__pulse {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 0 var(--primary-strong);
+  animation: gite-photo-wordpress-pulse 1.2s ease-out infinite;
+}
+
+@keyframes gite-photo-wordpress-pulse {
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 90, 95, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 90, 95, 0);
+  }
+}
+
 .gite-photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

@@ -21,7 +21,10 @@ import {
   saveSeasonRateEditorPayload,
   type SeasonRateEditorPayload,
 } from "../services/seasonRateEditor.js";
-import { scheduleGitePhotosWordPressWebhook } from "../services/bookedWordPressWebhook.js";
+import {
+  getGitePhotosWordPressWebhookStatus,
+  scheduleGitePhotosWordPressWebhook,
+} from "../services/bookedWordPressWebhook.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -846,6 +849,16 @@ router.post("/:id/photos", async (req, res, next) => {
 
     scheduleGitePhotosWordPressWebhook(req.params.id);
     res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/photos/wordpress-sync", async (req, res, next) => {
+  try {
+    const gite = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!gite) return res.status(404).json({ error: "Gite introuvable" });
+    res.json(getGitePhotosWordPressWebhookStatus(req.params.id));
   } catch (err) {
     next(err);
   }
