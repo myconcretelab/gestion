@@ -21,6 +21,7 @@ import {
   saveSeasonRateEditorPayload,
   type SeasonRateEditorPayload,
 } from "../services/seasonRateEditor.js";
+import { scheduleGitePhotosWordPressWebhook } from "../services/bookedWordPressWebhook.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -843,6 +844,7 @@ router.post("/:id/photos", async (req, res, next) => {
       });
     });
 
+    scheduleGitePhotosWordPressWebhook(req.params.id);
     res.status(201).json(created);
   } catch (err) {
     next(err);
@@ -902,6 +904,7 @@ router.post("/:id/photos/upload", async (req, res, next) => {
       });
     });
 
+    scheduleGitePhotosWordPressWebhook(req.params.id);
     res.status(201).json(created);
   } catch (err) {
     next(err);
@@ -930,6 +933,7 @@ router.put("/:id/photos/:photoId", async (req, res, next) => {
       });
     });
 
+    scheduleGitePhotosWordPressWebhook(req.params.id);
     res.json(updated);
   } catch (err) {
     next(err);
@@ -966,6 +970,7 @@ router.post("/:id/photos/reorder", async (req, res, next) => {
       where: { gite_id: req.params.id },
       orderBy: [{ ordre: "asc" }, { createdAt: "asc" }],
     });
+    scheduleGitePhotosWordPressWebhook(req.params.id);
     res.json(updated);
   } catch (err) {
     next(err);
@@ -988,6 +993,7 @@ router.delete("/:id/photos/:photoId", async (req, res, next) => {
         await fs.unlink(path.join(process.cwd(), relativePath)).catch(() => undefined);
       }
     }
+    scheduleGitePhotosWordPressWebhook(req.params.id);
     res.status(204).end();
   } catch (err) {
     next(err);

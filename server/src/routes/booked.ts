@@ -26,6 +26,9 @@ import { toNumber } from "../utils/money.js";
 const router = Router();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+const mapBookedPhotoUrl = (photo: { id: string; url: string }) =>
+  photo.url.startsWith("/api/") ? `/api/public/gites/photos/${photo.id}` : photo.url;
+
 const emptyStringToNull = (value: unknown) => {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return value;
@@ -289,6 +292,20 @@ router.get("/gites/:id/content", async (req, res, next) => {
         min_nuits_toute_annee: true,
         min_nuits_vacances_scolaires: true,
         min_nuits_juillet_aout: true,
+        photos: {
+          where: { is_public: true },
+          orderBy: [{ ordre: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            url: true,
+            title: true,
+            alt: true,
+            credit: true,
+            is_primary: true,
+            ordre: true,
+            updatedAt: true,
+          },
+        },
       },
     });
     if (!gite) {
@@ -320,6 +337,18 @@ router.get("/gites/:id/content", async (req, res, next) => {
         horaire_depart: formatTime(gite.heure_depart_defaut),
       },
       sections: normalizeBookedGiteContentSections(gite),
+      photos: Array.isArray(gite.photos)
+        ? gite.photos.map((photo) => ({
+            id: photo.id,
+            url: mapBookedPhotoUrl(photo),
+            title: photo.title,
+            alt: photo.alt,
+            credit: photo.credit,
+            is_primary: photo.is_primary,
+            ordre: photo.ordre,
+            updated_at: photo.updatedAt,
+          }))
+        : [],
     });
   } catch (error) {
     next(error);
