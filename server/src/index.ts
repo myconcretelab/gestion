@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { startDailyReservationEmailCron } from "./services/dailyReservationEmail.js";
 import { startPumpCron } from "./services/pumpCron.js";
 import { startSmartlifeAutomationCron } from "./services/smartlifeAutomation.js";
+import { startGitePhotosWordPressWebhookQueue } from "./services/bookedWordPressWebhook.js";
 
 const app = createApp();
 
@@ -10,6 +11,7 @@ if (env.NODE_ENV !== "test") {
   startPumpCron();
   startDailyReservationEmailCron();
   startSmartlifeAutomationCron();
+  startGitePhotosWordPressWebhookQueue();
 }
 
 app.listen(env.PORT, () => {

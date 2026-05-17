@@ -1932,21 +1932,26 @@ const GitesPage = () => {
 
   const hasDraggedFiles = (event: DragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes("Files");
 
-  const handlePhotoDropzoneDrag = (event: DragEvent<HTMLElement>) => {
-    if (!selected || uploadingPhoto || !hasDraggedFiles(event)) return;
+  const handlePhotoPageDrag = (event: DragEvent<HTMLElement>) => {
+    if (!hasDraggedFiles(event)) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
+    event.dataTransfer.dropEffect = selected && !uploadingPhoto ? "copy" : "none";
+    if (!selected || uploadingPhoto) return;
     setPhotoDropActive(true);
   };
 
-  const handlePhotoDropzoneLeave = (event: DragEvent<HTMLElement>) => {
+  const handlePhotoPageLeave = (event: DragEvent<HTMLElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
     setPhotoDropActive(false);
   };
 
-  const handlePhotoDropzoneDrop = (event: DragEvent<HTMLElement>) => {
-    if (!selected || uploadingPhoto || !hasDraggedFiles(event)) return;
+  const handlePhotoPageDrop = (event: DragEvent<HTMLElement>) => {
+    if (!hasDraggedFiles(event)) return;
     event.preventDefault();
+    if (!selected || uploadingPhoto) {
+      setPhotoDropActive(false);
+      return;
+    }
     void uploadPhotoFiles(event.dataTransfer.files);
   };
 
@@ -2621,19 +2626,23 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div id="gite-editor-photos" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-photos"}>
+        <div
+          id="gite-editor-photos"
+          className={`form-section gites-editor-section gite-photo-page-dropzone${
+            photoDropActive ? " gite-photo-page-dropzone--active" : ""
+          }`}
+          hidden={activeEditorSection !== "web-photos"}
+          onDragEnter={handlePhotoPageDrag}
+          onDragOver={handlePhotoPageDrag}
+          onDragLeave={handlePhotoPageLeave}
+          onDrop={handlePhotoPageDrop}
+        >
           <div className="section-subtitle">Photos</div>
           {!selected ? (
             <div className="field-hint">Enregistrez le gîte avant d'ajouter des photos.</div>
           ) : (
             <>
-              <div
-                className={`gite-photo-dropzone${photoDropActive ? " gite-photo-dropzone--active" : ""}`}
-                onDragEnter={handlePhotoDropzoneDrag}
-                onDragOver={handlePhotoDropzoneDrag}
-                onDragLeave={handlePhotoDropzoneLeave}
-                onDrop={handlePhotoDropzoneDrop}
-              >
+              <div className={`gite-photo-dropzone${photoDropActive ? " gite-photo-dropzone--active" : ""}`}>
                 <input
                   ref={photoInputRef}
                   type="file"

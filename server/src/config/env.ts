@@ -70,6 +70,30 @@ export const env = {
     0,
     600_000
   ),
+  BOOKED_WORDPRESS_WEBHOOK_MAX_ATTEMPTS: parseIntegerEnv(
+    process.env.BOOKED_WORDPRESS_WEBHOOK_MAX_ATTEMPTS,
+    3,
+    1,
+    20
+  ),
+  BOOKED_WORDPRESS_WEBHOOK_RETRY_BASE_MS: parseIntegerEnv(
+    process.env.BOOKED_WORDPRESS_WEBHOOK_RETRY_BASE_MS,
+    30_000,
+    1_000,
+    3_600_000
+  ),
+  BOOKED_WORDPRESS_WEBHOOK_CONCURRENCY: parseIntegerEnv(
+    process.env.BOOKED_WORDPRESS_WEBHOOK_CONCURRENCY,
+    1,
+    1,
+    10
+  ),
+  BOOKED_WORDPRESS_WEBHOOK_TIMEOUT_MS: parseIntegerEnv(
+    process.env.BOOKED_WORDPRESS_WEBHOOK_TIMEOUT_MS,
+    60_000,
+    1_000,
+    600_000
+  ),
   CRON_TRIGGER_TOKEN: process.env.CRON_TRIGGER_TOKEN ?? "",
   PUMP_API_BASE_URL: process.env.PUMP_API_BASE_URL ?? "http://localhost:3000/api/reservations",
   PUMP_API_KEY: process.env.PUMP_API_KEY ?? "",

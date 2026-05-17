@@ -84,6 +84,7 @@ model Gite {
   season_rates                         GiteSeasonRate[]
   booking_requests                     BookingRequest[]
   photos                               GitePhoto[]
+  wordpress_photo_sync_job             WordPressWebhookJob?
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
 
@@ -113,6 +114,30 @@ model GitePhoto {
   @@index([gite_id, ordre], map: "gite_photos_gite_ordre_idx")
   @@index([gite_id, is_public, ordre], map: "gite_photos_public_ordre_idx")
   @@map("gite_photos")
+}
+
+model WordPressWebhookJob {
+  id              String    @id @default(cuid())
+  gite_id         String    @unique
+  event           String    @default("gite.photos.saved")
+  state           String    @default("queued")
+  generation      Int       @default(0)
+  attempts        Int       @default(0)
+  max_attempts    Int       @default(3)
+  run_after       DateTime
+  queued_at       DateTime  @default(now())
+  sent_at         DateTime?
+  completed_at    DateTime?
+  response_status Int?
+  response_body   String?
+  last_error      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  gite            Gite      @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@index([state, run_after], map: "wordpress_webhook_jobs_state_run_after_idx")
+  @@map("wordpress_webhook_jobs")
 }
 
 model Gestionnaire {
