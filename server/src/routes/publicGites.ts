@@ -3,6 +3,7 @@ import path from "path";
 import prisma from "../db/prisma.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
+import { resolveStoredDataFilePath } from "../utils/paths.js";
 
 const router = Router();
 
@@ -28,7 +29,10 @@ const sendPhotoFile = async (photo: { url: string }, res: any) => {
     return res.status(404).json({ error: "Fichier photo introuvable" });
   }
   const relativePath = decodeURIComponent(photo.url.slice(markerIndex + marker.length));
-  const absolutePath = path.join(process.cwd(), relativePath);
+  const absolutePath = resolveStoredDataFilePath(relativePath);
+  if (!absolutePath) {
+    return res.status(404).json({ error: "Fichier photo introuvable" });
+  }
   res.setHeader("Content-Type", resolvePhotoContentType(relativePath));
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   return res.sendFile(absolutePath);
@@ -106,7 +110,6 @@ router.get("/photos/:photoId", async (req, res, next) => {
       where: {
         id: req.params.photoId,
         is_public: true,
-        gite: { public_is_published: true },
       },
       select: { url: true },
     });

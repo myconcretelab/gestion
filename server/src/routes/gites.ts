@@ -6,7 +6,7 @@ import crypto from "crypto";
 import prisma from "../db/prisma.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
-import { getGitePhotoPaths } from "../utils/paths.js";
+import { getGitePhotoPaths, resolveStoredDataFilePath } from "../utils/paths.js";
 import { getGiteIcalExport } from "../services/icalExport.js";
 import { generateIcalExportToken } from "../utils/reservationOrigin.js";
 import {
@@ -385,7 +385,10 @@ const sendPhotoFile = async (photo: { url: string }, res: any) => {
     return res.status(404).json({ error: "Fichier photo introuvable" });
   }
   const relativePath = decodeURIComponent(photo.url.slice(markerIndex + marker.length));
-  const absolutePath = path.join(process.cwd(), relativePath);
+  const absolutePath = resolveStoredDataFilePath(relativePath);
+  if (!absolutePath) {
+    return res.status(404).json({ error: "Fichier photo introuvable" });
+  }
   res.setHeader("Content-Type", resolvePhotoContentType(relativePath));
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   return res.sendFile(absolutePath);
