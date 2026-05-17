@@ -4861,6 +4861,21 @@ body {
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
 }
 
+.gite-photo-page-dropzone {
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.gite-photo-page-dropzone--active {
+  border-color: var(--primary);
+  background: linear-gradient(180deg, var(--primary-soft), #ffffff 220px);
+  box-shadow:
+    0 0 0 3px var(--primary-strong),
+    0 10px 22px rgba(15, 23, 42, 0.05);
+}
+
 .gites-editor-section .section-subtitle {
   margin-bottom: 12px;
 }

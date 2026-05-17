@@ -850,7 +850,9 @@ router.post("/:id/photos", async (req, res, next) => {
       });
     });
 
-    scheduleGitePhotosWordPressWebhook(req.params.id);
+    void scheduleGitePhotosWordPressWebhook(req.params.id).catch((error) => {
+      console.warn(`WordPress photo sync scheduling failed for gite ${req.params.id}:`, error);
+    });
     res.status(201).json(created);
   } catch (err) {
     next(err);
@@ -861,7 +863,7 @@ router.get("/:id/photos/wordpress-sync", async (req, res, next) => {
   try {
     const gite = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!gite) return res.status(404).json({ error: "Gite introuvable" });
-    res.json(getGitePhotosWordPressWebhookStatus(req.params.id));
+    res.json(await getGitePhotosWordPressWebhookStatus(req.params.id));
   } catch (err) {
     next(err);
   }
@@ -920,7 +922,9 @@ router.post("/:id/photos/upload", async (req, res, next) => {
       });
     });
 
-    scheduleGitePhotosWordPressWebhook(req.params.id);
+    void scheduleGitePhotosWordPressWebhook(req.params.id).catch((error) => {
+      console.warn(`WordPress photo sync scheduling failed for gite ${req.params.id}:`, error);
+    });
     res.status(201).json(created);
   } catch (err) {
     next(err);
@@ -949,7 +953,9 @@ router.put("/:id/photos/:photoId", async (req, res, next) => {
       });
     });
 
-    scheduleGitePhotosWordPressWebhook(req.params.id);
+    void scheduleGitePhotosWordPressWebhook(req.params.id).catch((error) => {
+      console.warn(`WordPress photo sync scheduling failed for gite ${req.params.id}:`, error);
+    });
     res.json(updated);
   } catch (err) {
     next(err);
@@ -986,7 +992,9 @@ router.post("/:id/photos/reorder", async (req, res, next) => {
       where: { gite_id: req.params.id },
       orderBy: [{ ordre: "asc" }, { createdAt: "asc" }],
     });
-    scheduleGitePhotosWordPressWebhook(req.params.id);
+    void scheduleGitePhotosWordPressWebhook(req.params.id).catch((error) => {
+      console.warn(`WordPress photo sync scheduling failed for gite ${req.params.id}:`, error);
+    });
     res.json(updated);
   } catch (err) {
     next(err);
@@ -1009,7 +1017,9 @@ router.delete("/:id/photos/:photoId", async (req, res, next) => {
         await fs.unlink(path.join(process.cwd(), relativePath)).catch(() => undefined);
       }
     }
-    scheduleGitePhotosWordPressWebhook(req.params.id);
+    void scheduleGitePhotosWordPressWebhook(req.params.id).catch((error) => {
+      console.warn(`WordPress photo sync scheduling failed for gite ${req.params.id}:`, error);
+    });
     res.status(204).end();
   } catch (err) {
     next(err);
