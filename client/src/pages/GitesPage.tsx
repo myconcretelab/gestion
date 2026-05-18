@@ -62,7 +62,12 @@ const emptyForm = {
   gestionnaire_id: "",
 };
 
-type FormState = typeof emptyForm;
+type BaseFormState = typeof emptyForm;
+type NumberInputValue = number | "";
+type NumberInputKey = {
+  [Key in keyof BaseFormState]: BaseFormState[Key] extends number ? Key : never;
+}[keyof BaseFormState];
+type FormState = Omit<BaseFormState, NumberInputKey> & Record<NumberInputKey, NumberInputValue>;
 type GitesExportPayload = {
   version?: number;
   exported_at?: string;
@@ -180,6 +185,13 @@ const toDisplayText = (value: unknown) => {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
+};
+
+const readNumberInput = (value: string): NumberInputValue => (value === "" ? "" : Number(value));
+
+const toNumberOrDefault = (value: NumberInputValue, fallback = 0) => {
+  if (value === "") return fallback;
+  return Number.isFinite(value) ? value : fallback;
 };
 
 const getWordPressPhotoSyncDetail = (status: WordPressPhotoSyncStatus | null) => {
@@ -1559,11 +1571,25 @@ const GitesPage = () => {
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
         gestionnaire_id: form.gestionnaire_id || null,
-        prix_nuit_basse_saison: Number(form.prix_nuit_basse_saison) || 0,
-        prix_nuit_haute_saison: Number(form.prix_nuit_haute_saison) || 0,
-        min_nuits_toute_annee: Math.max(1, Math.trunc(Number(form.min_nuits_toute_annee) || 1)),
-        min_nuits_vacances_scolaires: Math.max(1, Math.trunc(Number(form.min_nuits_vacances_scolaires) || 1)),
-        min_nuits_juillet_aout: Math.max(1, Math.trunc(Number(form.min_nuits_juillet_aout) || 1)),
+        capacite_max: Math.max(1, Math.trunc(toNumberOrDefault(form.capacite_max, 1))),
+        nb_adultes_max: Math.max(1, Math.trunc(toNumberOrDefault(form.nb_adultes_max, 1))),
+        nb_adultes_habituel: Math.max(1, Math.trunc(toNumberOrDefault(form.nb_adultes_habituel, 1))),
+        nb_enfants_max: Math.max(0, Math.trunc(toNumberOrDefault(form.nb_enfants_max, 0))),
+        taxe_sejour_par_personne_par_nuit: toNumberOrDefault(form.taxe_sejour_par_personne_par_nuit),
+        options_draps_par_lit: toNumberOrDefault(form.options_draps_par_lit),
+        options_linge_toilette_par_personne: toNumberOrDefault(form.options_linge_toilette_par_personne),
+        options_menage_forfait: toNumberOrDefault(form.options_menage_forfait),
+        options_depart_tardif_forfait: toNumberOrDefault(form.options_depart_tardif_forfait),
+        options_chiens_forfait: toNumberOrDefault(form.options_chiens_forfait),
+        caution_montant_defaut: toNumberOrDefault(form.caution_montant_defaut),
+        cheque_menage_montant_defaut: toNumberOrDefault(form.cheque_menage_montant_defaut),
+        arrhes_taux_defaut: toNumberOrDefault(form.arrhes_taux_defaut, 0.2),
+        electricity_price_per_kwh: toNumberOrDefault(form.electricity_price_per_kwh),
+        prix_nuit_basse_saison: toNumberOrDefault(form.prix_nuit_basse_saison),
+        prix_nuit_haute_saison: toNumberOrDefault(form.prix_nuit_haute_saison),
+        min_nuits_toute_annee: Math.max(1, Math.trunc(toNumberOrDefault(form.min_nuits_toute_annee, 1))),
+        min_nuits_vacances_scolaires: Math.max(1, Math.trunc(toNumberOrDefault(form.min_nuits_vacances_scolaires, 1))),
+        min_nuits_juillet_aout: Math.max(1, Math.trunc(toNumberOrDefault(form.min_nuits_juillet_aout, 1))),
         prix_nuit_liste: prixNuitListe,
         telephones: form.telephones
           .split(",")
@@ -2438,7 +2464,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 value={form.capacite_max}
-                onChange={(e) => handleChange("capacite_max", Number(e.target.value))}
+                onChange={(e) => handleChange("capacite_max", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -2446,7 +2472,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 value={form.nb_adultes_max}
-                onChange={(e) => handleChange("nb_adultes_max", Number(e.target.value))}
+                onChange={(e) => handleChange("nb_adultes_max", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -2454,7 +2480,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 value={form.nb_adultes_habituel}
-                onChange={(e) => handleChange("nb_adultes_habituel", Number(e.target.value))}
+                onChange={(e) => handleChange("nb_adultes_habituel", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -2463,7 +2489,7 @@ const GitesPage = () => {
                 type="number"
                 min={0}
                 value={form.nb_enfants_max}
-                onChange={(e) => handleChange("nb_enfants_max", Number(e.target.value))}
+                onChange={(e) => handleChange("nb_enfants_max", readNumberInput(e.target.value))}
               />
             </label>
           </div>
@@ -2935,7 +2961,7 @@ const GitesPage = () => {
                 type="number"
                 step="0.01"
                 value={form.taxe_sejour_par_personne_par_nuit}
-                onChange={(e) => handleChange("taxe_sejour_par_personne_par_nuit", Number(e.target.value))}
+                onChange={(e) => handleChange("taxe_sejour_par_personne_par_nuit", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -2946,7 +2972,7 @@ const GitesPage = () => {
                 min={0}
                 value={form.electricity_price_per_kwh}
                 onChange={(e) =>
-                  handleChange("electricity_price_per_kwh", Number(e.target.value))
+                  handleChange("electricity_price_per_kwh", readNumberInput(e.target.value))
                 }
               />
             </label>
@@ -2980,7 +3006,7 @@ const GitesPage = () => {
                 type="number"
                 step={1}
                 value={form.options_draps_par_lit}
-                onChange={(e) => handleChange("options_draps_par_lit", Number(e.target.value))}
+                onChange={(e) => handleChange("options_draps_par_lit", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -2989,7 +3015,7 @@ const GitesPage = () => {
                 type="number"
                 step={1}
                 value={form.options_linge_toilette_par_personne}
-                onChange={(e) => handleChange("options_linge_toilette_par_personne", Number(e.target.value))}
+                onChange={(e) => handleChange("options_linge_toilette_par_personne", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -2998,7 +3024,7 @@ const GitesPage = () => {
                 type="number"
                 step={1}
                 value={form.options_menage_forfait}
-                onChange={(e) => handleChange("options_menage_forfait", Number(e.target.value))}
+                onChange={(e) => handleChange("options_menage_forfait", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3007,7 +3033,7 @@ const GitesPage = () => {
                 type="number"
                 step={1}
                 value={form.options_depart_tardif_forfait}
-                onChange={(e) => handleChange("options_depart_tardif_forfait", Number(e.target.value))}
+                onChange={(e) => handleChange("options_depart_tardif_forfait", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3016,7 +3042,7 @@ const GitesPage = () => {
                 type="number"
                 step={1}
                 value={form.options_chiens_forfait}
-                onChange={(e) => handleChange("options_chiens_forfait", Number(e.target.value))}
+                onChange={(e) => handleChange("options_chiens_forfait", readNumberInput(e.target.value))}
               />
             </label>
           </div>
@@ -3053,7 +3079,7 @@ const GitesPage = () => {
                 type="number"
                 step={1}
                 value={form.caution_montant_defaut}
-                onChange={(e) => handleChange("caution_montant_defaut", Number(e.target.value))}
+                onChange={(e) => handleChange("caution_montant_defaut", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3062,7 +3088,7 @@ const GitesPage = () => {
                 type="number"
                 step={1}
                 value={form.cheque_menage_montant_defaut}
-                onChange={(e) => handleChange("cheque_menage_montant_defaut", Number(e.target.value))}
+                onChange={(e) => handleChange("cheque_menage_montant_defaut", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3070,8 +3096,10 @@ const GitesPage = () => {
               <input
                 type="number"
                 step="0.1"
-                value={Math.round((form.arrhes_taux_defaut ?? 0) * 1000) / 10}
-                onChange={(e) => handleChange("arrhes_taux_defaut", Number(e.target.value) / 100)}
+                value={form.arrhes_taux_defaut === "" ? "" : Math.round((form.arrhes_taux_defaut ?? 0) * 1000) / 10}
+                onChange={(e) =>
+                  handleChange("arrhes_taux_defaut", e.target.value === "" ? "" : Number(e.target.value) / 100)
+                }
               />
             </label>
           </div>
@@ -3101,7 +3129,7 @@ const GitesPage = () => {
                 min={0}
                 step={1}
                 value={form.prix_nuit_basse_saison}
-                onChange={(e) => handleChange("prix_nuit_basse_saison", Number(e.target.value))}
+                onChange={(e) => handleChange("prix_nuit_basse_saison", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3111,7 +3139,7 @@ const GitesPage = () => {
                 min={0}
                 step={1}
                 value={form.prix_nuit_haute_saison}
-                onChange={(e) => handleChange("prix_nuit_haute_saison", Number(e.target.value))}
+                onChange={(e) => handleChange("prix_nuit_haute_saison", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3132,7 +3160,7 @@ const GitesPage = () => {
                 min={1}
                 step={1}
                 value={form.min_nuits_toute_annee}
-                onChange={(e) => handleChange("min_nuits_toute_annee", Number(e.target.value))}
+                onChange={(e) => handleChange("min_nuits_toute_annee", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3142,7 +3170,7 @@ const GitesPage = () => {
                 min={1}
                 step={1}
                 value={form.min_nuits_vacances_scolaires}
-                onChange={(e) => handleChange("min_nuits_vacances_scolaires", Number(e.target.value))}
+                onChange={(e) => handleChange("min_nuits_vacances_scolaires", readNumberInput(e.target.value))}
               />
             </label>
             <label className="field">
@@ -3152,7 +3180,7 @@ const GitesPage = () => {
                 min={1}
                 step={1}
                 value={form.min_nuits_juillet_aout}
-                onChange={(e) => handleChange("min_nuits_juillet_aout", Number(e.target.value))}
+                onChange={(e) => handleChange("min_nuits_juillet_aout", readNumberInput(e.target.value))}
               />
             </label>
           </div>
