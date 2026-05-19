@@ -5111,8 +5111,8 @@ body {
 
 .gite-photo-card {
   display: grid;
-  grid-template-rows: auto minmax(48px, auto) auto;
-  gap: 10px;
+  grid-template-rows: auto auto;
+  gap: 14px;
   padding: 10px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -5262,6 +5262,45 @@ body {
   stroke-width: 2;
 }
 
+.gite-photo-card__delete-overlay {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--primary);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  cursor: pointer;
+}
+
+.gite-photo-card__delete-overlay:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.gite-photo-card__delete-overlay:focus-visible {
+  outline: 3px solid var(--primary-strong);
+  outline-offset: 2px;
+}
+
+.gite-photo-card__delete-overlay:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.gite-photo-card__delete-overlay svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
 .gite-photo-card__badges {
   position: absolute;
   left: 10px;
@@ -5302,8 +5341,10 @@ body {
   min-width: 0;
   padding: 0;
   border: 0;
+  border-radius: 0;
   color: #111827;
   background: transparent;
+  box-shadow: none;
   font-size: 0.9rem;
   font-weight: 800;
   line-height: 1.25;
@@ -5348,18 +5389,6 @@ body {
   color: #6b7280;
   font-size: 0.78rem;
   font-weight: 600;
-}
-
-.gite-photo-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.gite-photo-card__actions .gite-photo-card__delete {
-  margin-left: 0;
-  background: var(--primary);
 }
 
 .gite-photo-drawer-backdrop {
@@ -5409,6 +5438,35 @@ body {
 .gite-photo-drawer__header h2 {
   margin: 0;
   font-size: 1.2rem;
+}
+
+.gite-photo-drawer__title-input {
+  width: min(360px, 100%);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #111827;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.gite-photo-drawer__title-input:focus {
+  outline: none;
+}
+
+.gite-photo-drawer__title-input:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--primary-strong);
+  outline-offset: 3px;
+}
+
+.gite-photo-drawer__title-input::placeholder {
+  color: #6b7280;
 }
 
 .gite-photo-drawer__body {
