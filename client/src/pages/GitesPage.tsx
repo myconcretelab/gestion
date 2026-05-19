@@ -99,6 +99,22 @@ type WordPressPhotoSyncStatus = {
   response_body?: unknown;
   error?: string;
 };
+const StarIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M12 3.5l2.7 5.47 6.03.88-4.36 4.25 1.03 6-5.4-2.84-5.4 2.84 1.03-6-4.36-4.25 6.03-.88L12 3.5z" />
+  </svg>
+);
+const EyeOffIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M3.28 2.22 2.22 3.28l18.5 18.5 1.06-1.06-4.06-4.06c1.66-1.08 3.05-2.66 4.1-4.66-2.3-4.35-5.6-6.52-9.82-6.52-1.58 0-3.04.3-4.38.9L3.28 2.22zM12 7.1c3.24 0 5.84 1.62 7.83 4.9-.88 1.44-1.95 2.56-3.2 3.36l-2.08-2.08c.3-.56.45-1.19.45-1.86A3.42 3.42 0 0 0 11.58 8c-.67 0-1.3.15-1.86.45L8.84 7.57c.98-.31 2.03-.47 3.16-.47z" />
+    <path d="M2.18 12C3.44 9.62 5 7.88 6.87 6.78l1.1 1.1c-1.45.76-2.72 2.14-3.8 4.12 1.98 3.28 4.59 4.92 7.83 4.92.74 0 1.45-.08 2.12-.24l1.22 1.22c-1.04.36-2.15.54-3.34.54-4.22 0-7.52-2.15-9.82-6.44z" />
+  </svg>
+);
+const TrashIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-.8 11.2A2 2 0 0 1 15.2 22H8.8a2 2 0 0 1-2-1.8L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z" />
+  </svg>
+);
 const PLACEHOLDER_FADE_OUT_MS = 320;
 const GITE_PHOTO_ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
@@ -1312,6 +1328,7 @@ const GitesPage = () => {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [savingPhotoId, setSavingPhotoId] = useState<string | null>(null);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [editingPhotoTitleId, setEditingPhotoTitleId] = useState<string | null>(null);
   const [photoDropActive, setPhotoDropActive] = useState(false);
   const [draggedPhotoId, setDraggedPhotoId] = useState<string | null>(null);
   const [dragOverPhotoId, setDragOverPhotoId] = useState<string | null>(null);
@@ -1993,13 +2010,20 @@ const GitesPage = () => {
     }));
   };
 
-  const savePhoto = async (photo: GitePhoto, patch: Partial<Pick<GitePhoto, "is_primary" | "is_public">> = {}) => {
+  const savePhoto = async (
+    photo: GitePhoto,
+    patch: Partial<Pick<GitePhoto, "is_primary" | "is_public">> = {},
+    draftOverride: Partial<PhotoDraft> = {}
+  ) => {
     if (!selected) return;
     setSavingPhotoId(photo.id);
     setError(null);
     setNotice(null);
     try {
-      const draft = photoDrafts[photo.id] ?? { title: photo.title ?? "", alt: photo.alt ?? "", credit: photo.credit ?? "" };
+      const draft = {
+        ...(photoDrafts[photo.id] ?? { title: photo.title ?? "", alt: photo.alt ?? "", credit: photo.credit ?? "" }),
+        ...draftOverride,
+      };
       await apiFetch<GitePhoto>(`/gites/${selected.id}/photos/${photo.id}`, {
         method: "PUT",
         json: {
@@ -2018,6 +2042,20 @@ const GitesPage = () => {
     } finally {
       setSavingPhotoId(null);
     }
+  };
+
+  const savePhotoTitle = async (photo: GitePhoto) => {
+    const title = (photoDrafts[photo.id]?.title ?? photo.title ?? "").trim();
+    const currentTitle = (photo.title ?? "").trim();
+    setEditingPhotoTitleId(null);
+
+    if (title === currentTitle) {
+      updatePhotoDraft(photo.id, "title", photo.title ?? "");
+      return;
+    }
+
+    updatePhotoDraft(photo.id, "title", title);
+    await savePhoto(photo, {}, { title });
   };
 
   const deletePhoto = async (photo: GitePhoto) => {
@@ -2718,7 +2756,7 @@ const GitesPage = () => {
               ) : null}
               {(selected.photos ?? []).length > 0 ? (
                 <div className="gite-photo-grid">
-                  {(selected.photos ?? []).map((photo, index, photos) => {
+                  {(selected.photos ?? []).map((photo, index) => {
                     const draft = photoDrafts[photo.id] ?? {
                       title: photo.title ?? "",
                       alt: photo.alt ?? "",
@@ -2737,63 +2775,97 @@ const GitesPage = () => {
                         onDrop={(event) => void handlePhotoDrop(event, photo.id)}
                         onDragEnd={handlePhotoDragEnd}
                       >
-                        <button
-                          type="button"
-                          className="gite-photo-card__image-button"
-                          onClick={() => openPhotoDrawer(photo.id)}
-                          disabled={busy}
-                        >
-                          <span className="gite-photo-card__position">{index + 1}</span>
-                          <img className="gite-photo-card__image" src={photo.url} alt={draft.alt || photo.alt || selected.nom} />
-                          <div className="gite-photo-card__badges">
-                            {photo.is_primary ? <span>Principale</span> : null}
-                            {photo.is_public ? <span>Publique</span> : <span>Masquée</span>}
+                        <div className={`gite-photo-card__image-shell${photo.is_public ? "" : " gite-photo-card__image-shell--hidden"}`}>
+                          <button
+                            type="button"
+                            className="gite-photo-card__image-button"
+                            onClick={() => openPhotoDrawer(photo.id)}
+                            disabled={busy}
+                            draggable={!savingPhotoId && !uploadingPhoto}
+                            title="Cliquer pour modifier, glisser pour réorganiser"
+                          >
+                            <span className="gite-photo-card__position">{index + 1}</span>
+                            <img
+                              className="gite-photo-card__image"
+                              src={photo.url}
+                              alt={draft.alt || photo.alt || selected.nom}
+                              draggable={false}
+                            />
+                          </button>
+                          <div className="gite-photo-card__image-actions">
+                            <button
+                              type="button"
+                              className={`gite-photo-card__overlay-action gite-photo-card__overlay-action--star${
+                                photo.is_primary ? " gite-photo-card__overlay-action--active" : ""
+                              }`}
+                              onClick={() => void savePhoto(photo, { is_primary: true })}
+                              disabled={busy || photo.is_primary}
+                              aria-pressed={photo.is_primary}
+                              aria-label={photo.is_primary ? "Photo principale" : "Définir comme photo principale"}
+                              title={photo.is_primary ? "Photo principale" : "Définir comme principale"}
+                              draggable={false}
+                              onDragStart={(event) => event.preventDefault()}
+                            >
+                              <StarIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className={`gite-photo-card__overlay-action${photo.is_public ? "" : " gite-photo-card__overlay-action--active"}`}
+                              onClick={() => void savePhoto(photo, { is_public: !photo.is_public })}
+                              disabled={busy}
+                              aria-pressed={!photo.is_public}
+                              aria-label={photo.is_public ? "Masquer la photo" : "Publier la photo"}
+                              title={photo.is_public ? "Masquer" : "Publier"}
+                              draggable={false}
+                              onDragStart={(event) => event.preventDefault()}
+                            >
+                              <EyeOffIcon />
+                            </button>
                           </div>
-                        </button>
+                        </div>
                         <div className="gite-photo-card__meta">
-                          <strong>{draft.title || photo.title || `Photo ${index + 1}`}</strong>
+                          {editingPhotoTitleId === photo.id ? (
+                            <input
+                              className="gite-photo-card__title-input"
+                              value={draft.title}
+                              aria-label="Titre de la photo"
+                              autoFocus
+                              disabled={busy}
+                              onFocus={(event) => event.currentTarget.select()}
+                              onChange={(event) => updatePhotoDraft(photo.id, "title", event.target.value)}
+                              onBlur={() => void savePhotoTitle(photo)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  event.currentTarget.blur();
+                                }
+                              }}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className="gite-photo-card__title-button"
+                              onClick={() => setEditingPhotoTitleId(photo.id)}
+                              disabled={busy}
+                              title="Modifier le titre"
+                            >
+                              {draft.title || photo.title || `Photo ${index + 1}`}
+                            </button>
+                          )}
                           {draft.credit || photo.credit ? <span>{draft.credit || photo.credit}</span> : null}
                         </div>
                         <div className="gite-photo-card__actions">
                           <button
                             type="button"
-                            className="table-action table-action--neutral"
-                            onClick={() => void movePhoto(photo.id, -1)}
-                            disabled={busy || index === 0}
-                          >
-                            Monter
-                          </button>
-                          <button
-                            type="button"
-                            className="table-action table-action--neutral"
-                            onClick={() => void movePhoto(photo.id, 1)}
-                            disabled={busy || index === photos.length - 1}
-                          >
-                            Descendre
-                          </button>
-                          <button
-                            type="button"
-                            className="table-action table-action--neutral"
-                            onClick={() => void savePhoto(photo, { is_primary: true })}
-                            disabled={busy || photo.is_primary}
-                          >
-                            Principale
-                          </button>
-                          <button
-                            type="button"
-                            className="table-action table-action--neutral"
-                            onClick={() => void savePhoto(photo, { is_public: !photo.is_public })}
-                            disabled={busy}
-                          >
-                            {photo.is_public ? "Masquer" : "Publier"}
-                          </button>
-                          <button
-                            type="button"
-                            className="table-action table-action--neutral"
+                            className="table-action table-action--primary table-action--icon gite-photo-card__delete"
                             onClick={() => void deletePhoto(photo)}
                             disabled={busy}
+                            aria-label="Supprimer la photo"
+                            title="Supprimer"
+                            draggable={false}
+                            onDragStart={(event) => event.preventDefault()}
                           >
-                            Supprimer
+                            <TrashIcon />
                           </button>
                         </div>
                       </article>
