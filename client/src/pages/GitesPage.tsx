@@ -2822,6 +2822,18 @@ const GitesPage = () => {
                               <EyeOffIcon />
                             </button>
                           </div>
+                          <button
+                            type="button"
+                            className="gite-photo-card__delete-overlay"
+                            onClick={() => void deletePhoto(photo)}
+                            disabled={busy}
+                            aria-label="Supprimer la photo"
+                            title="Supprimer"
+                            draggable={false}
+                            onDragStart={(event) => event.preventDefault()}
+                          >
+                            <TrashIcon />
+                          </button>
                         </div>
                         <div className="gite-photo-card__meta">
                           {editingPhotoTitleId === photo.id ? (
@@ -2854,20 +2866,6 @@ const GitesPage = () => {
                           )}
                           {draft.credit || photo.credit ? <span>{draft.credit || photo.credit}</span> : null}
                         </div>
-                        <div className="gite-photo-card__actions">
-                          <button
-                            type="button"
-                            className="table-action table-action--primary table-action--icon gite-photo-card__delete"
-                            onClick={() => void deletePhoto(photo)}
-                            disabled={busy}
-                            aria-label="Supprimer la photo"
-                            title="Supprimer"
-                            draggable={false}
-                            onDragStart={(event) => event.preventDefault()}
-                          >
-                            <TrashIcon />
-                          </button>
-                        </div>
                       </article>
                     );
                   })}
@@ -2894,7 +2892,23 @@ const GitesPage = () => {
               <div className="gite-photo-drawer__header">
                 <div>
                   <div className="gite-photo-drawer__eyebrow">Photo du gîte</div>
-                  <h2 id="gite-photo-drawer-title">{photoDrafts[selectedPhoto.id]?.title || selectedPhoto.title || "Modifier la photo"}</h2>
+                  <h2 id="gite-photo-drawer-title">
+                    <input
+                      className="gite-photo-drawer__title-input"
+                      value={photoDrafts[selectedPhoto.id]?.title ?? selectedPhoto.title ?? ""}
+                      aria-label="Titre de la photo"
+                      placeholder="Modifier la photo"
+                      disabled={savingPhotoId === selectedPhoto.id}
+                      onChange={(event) => updatePhotoDraft(selectedPhoto.id, "title", event.target.value)}
+                      onBlur={() => void savePhotoTitle(selectedPhoto)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </h2>
                 </div>
                 <button
                   type="button"
@@ -2919,13 +2933,6 @@ const GitesPage = () => {
                   </div>
                 </div>
                 <div className="gite-photo-drawer__fields">
-                  <label className="field">
-                    Titre
-                    <input
-                      value={photoDrafts[selectedPhoto.id]?.title ?? selectedPhoto.title ?? ""}
-                      onChange={(event) => updatePhotoDraft(selectedPhoto.id, "title", event.target.value)}
-                    />
-                  </label>
                   <label className="field">
                     Texte alternatif
                     <input
