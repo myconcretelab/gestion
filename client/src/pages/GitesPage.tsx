@@ -144,6 +144,9 @@ type ExpenseManagementData = {
   categories: ExpenseCategory[];
   expenses: ExpenseLine[];
 };
+type ExpenseCategorySettings = {
+  categories: ExpenseCategory[];
+};
 type ExpenseAmountField = "monthly_amount" | "annual_amount";
 const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { id: "energie", name: "Énergie", color: "#2d8cff" },
@@ -285,10 +288,17 @@ const cloneDefaultExpenseManagement = (): ExpenseManagementData => ({
   expenses: [],
 });
 
-const normalizeExpenseManagement = (value: unknown): ExpenseManagementData => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return cloneDefaultExpenseManagement();
+const normalizeExpenseManagement = (value: unknown, sharedCategories?: ExpenseCategory[]): ExpenseManagementData => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      ...cloneDefaultExpenseManagement(),
+      categories: sharedCategories?.length ? sharedCategories.map((category) => ({ ...category })) : cloneDefaultExpenseManagement().categories,
+    };
+  }
   const row = value as Partial<ExpenseManagementData>;
-  const categories = Array.isArray(row.categories)
+  const categories = sharedCategories?.length
+    ? sharedCategories.map((category) => ({ ...category }))
+    : Array.isArray(row.categories)
     ? row.categories
         .map((category, index): ExpenseCategory | null => {
           if (!category || typeof category !== "object" || Array.isArray(category)) return null;
@@ -1516,6 +1526,7 @@ const GitesPage = () => {
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(DEFAULT_EXPENSE_CATEGORIES);
   const [placeholderTargets, setPlaceholderTargets] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -1571,16 +1582,18 @@ const GitesPage = () => {
   }, [activeEditorSection, searchParams, selectedId, setSearchParams]);
 
   const load = async () => {
-    const [gitesData, placeholdersData, gestionnairesData, statisticsData] = await Promise.all([
+    const [gitesData, placeholdersData, gestionnairesData, statisticsData, expenseCategoryData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Gestionnaire[]>("/managers"),
       apiFetch<StatisticsPayload>("/statistics"),
+      apiFetch<ExpenseCategorySettings>("/gites/expense-categories"),
     ]);
     setGites(gitesData);
     setPlaceholders(placeholdersData);
     setGestionnaires(gestionnairesData);
     setStatisticsDataset(parseStatisticsPayload(statisticsData));
+    setExpenseCategories(normalizeExpenseManagement({ categories: expenseCategoryData.categories, expenses: [] }).categories);
     setPlaceholderTargets((prev) => {
       const next = { ...prev };
       for (const placeholder of placeholdersData) {
@@ -1690,7 +1703,10 @@ const GitesPage = () => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const expenseManagement = useMemo(() => normalizeExpenseManagement(form.frais_gestion), [form.frais_gestion]);
+  const expenseManagement = useMemo(
+    () => normalizeExpenseManagement(form.frais_gestion, expenseCategories),
+    [expenseCategories, form.frais_gestion]
+  );
   const expenseTotals = useMemo(() => getExpenseTotals(expenseManagement), [expenseManagement]);
   const netAverageMonthlyRevenue = useMemo(
     () => getNetAverageMonthlyRevenue(statisticsDataset, selectedId, expenseTotals.monthly),
@@ -1713,28 +1729,24 @@ const GitesPage = () => {
   const updateExpenseManagement = (updater: (current: ExpenseManagementData) => ExpenseManagementData) => {
     setForm((current) => ({
       ...current,
-      frais_gestion: updater(normalizeExpenseManagement(current.frais_gestion)),
+      frais_gestion: updater(normalizeExpenseManagement(current.frais_gestion, expenseCategories)),
     }));
   };
 
   const addExpenseCategory = () => {
-    updateExpenseManagement((current) => ({
+    setExpenseCategories((current) => [
       ...current,
-      categories: [
-        ...current.categories,
-        {
-          id: createLocalId("cat"),
-          name: "Nouvelle catégorie",
-          color: EXPENSE_CATEGORY_COLORS[current.categories.length % EXPENSE_CATEGORY_COLORS.length],
-        },
-      ],
-    }));
+      {
+        id: createLocalId("cat"),
+        name: "Nouvelle catégorie",
+        color: EXPENSE_CATEGORY_COLORS[current.length % EXPENSE_CATEGORY_COLORS.length],
+      },
+    ]);
   };
 
   const updateExpenseCategory = (categoryId: string, patch: Partial<ExpenseCategory>) => {
-    updateExpenseManagement((current) => ({
-      ...current,
-      categories: current.categories.map((category) =>
+    setExpenseCategories((current) =>
+      current.map((category) =>
         category.id === categoryId
           ? {
               ...category,
@@ -1743,22 +1755,29 @@ const GitesPage = () => {
               color: patch.color && isHexColor(patch.color) ? patch.color : category.color,
             }
           : category
-      ),
-    }));
+      )
+    );
   };
 
   const deleteExpenseCategory = (categoryId: string) => {
-    updateExpenseManagement((current) => {
-      if (current.categories.length <= 1) return current;
-      const categories = current.categories.filter((category) => category.id !== categoryId);
+    setExpenseCategories((current) => {
+      if (current.length <= 1) return current;
+      const categories = current.filter((category) => category.id !== categoryId);
       const fallbackCategoryId = categories[0]?.id ?? "";
-      return {
-        ...current,
-        categories,
-        expenses: current.expenses.map((expense) =>
-          expense.category_id === categoryId ? { ...expense, category_id: fallbackCategoryId } : expense
-        ),
-      };
+      setForm((formState) => ({
+        ...formState,
+        frais_gestion: (() => {
+          const normalized = normalizeExpenseManagement(formState.frais_gestion, current);
+          return {
+            ...normalized,
+          categories,
+            expenses: normalized.expenses.map((expense) =>
+              expense.category_id === categoryId ? { ...expense, category_id: fallbackCategoryId } : expense
+            ),
+          };
+        })(),
+      }));
+      return categories;
     });
   };
 
@@ -1911,7 +1930,7 @@ const GitesPage = () => {
         cheque_menage_montant_defaut: toNumberOrDefault(form.cheque_menage_montant_defaut),
         arrhes_taux_defaut: toNumberOrDefault(form.arrhes_taux_defaut, 0.2),
         electricity_price_per_kwh: toNumberOrDefault(form.electricity_price_per_kwh),
-        frais_gestion: normalizeExpenseManagement(form.frais_gestion),
+        frais_gestion: normalizeExpenseManagement(form.frais_gestion, expenseCategories),
         prix_nuit_basse_saison: toNumberOrDefault(form.prix_nuit_basse_saison),
         prix_nuit_haute_saison: toNumberOrDefault(form.prix_nuit_haute_saison),
         min_nuits_toute_annee: Math.max(1, Math.trunc(toNumberOrDefault(form.min_nuits_toute_annee, 1))),
@@ -1923,6 +1942,13 @@ const GitesPage = () => {
           .map((t) => t.trim())
           .filter(Boolean),
       };
+      const savedExpenseCategorySettings = await apiFetch<ExpenseCategorySettings>("/gites/expense-categories", {
+        method: "PUT",
+        json: { categories: expenseCategories },
+      });
+      setExpenseCategories(
+        normalizeExpenseManagement({ categories: savedExpenseCategorySettings.categories, expenses: [] }).categories
+      );
       let created: Gite | null = null;
       if (savedSelectedId) {
         await apiFetch(`/gites/${savedSelectedId}`, { method: "PUT", json: payload });
