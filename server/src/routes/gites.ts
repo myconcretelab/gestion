@@ -25,6 +25,12 @@ import {
   getGitePhotosWordPressWebhookStatus,
   scheduleGitePhotosWordPressWebhook,
 } from "../services/bookedWordPressWebhook.js";
+import {
+  hasGiteExpenseCategorySettings,
+  normalizeGiteExpenseCategories,
+  readGiteExpenseCategorySettings,
+  writeGiteExpenseCategorySettings,
+} from "../services/giteExpenseCategorySettings.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -72,6 +78,9 @@ const expenseManagementSchema = z
     expenses: z.array(expenseLineSchema).default([]),
   })
   .default({ version: 1, categories: [], expenses: [] });
+const expenseCategorySettingsSchema = z.object({
+  categories: z.array(expenseCategorySchema).min(1),
+});
 
 const giteSchemaShape = {
   nom: z.string().trim().min(1),
@@ -157,10 +166,9 @@ const normalizeMoney = (value: unknown) => {
 
 const normalizeExpenseManagement = (value: unknown) => {
   const parsed = expenseManagementSchema.parse(value ?? { version: 1, categories: [], expenses: [] });
-  const categories = parsed.categories.map((category) => ({
-    ...category,
-    name: category.name.trim(),
-  }));
+  const categories = readGiteExpenseCategorySettings({
+    categories: normalizeGiteExpenseCategories(parsed.categories),
+  }).categories;
   const categoryIds = new Set(categories.map((category) => category.id));
   const fallbackCategoryId = categories[0]?.id ?? "";
   const expenses = parsed.expenses
@@ -456,6 +464,51 @@ const sendPhotoFile = async (photo: { url: string }, res: any) => {
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   return res.sendFile(absolutePath);
 };
+
+const buildInitialExpenseCategorySettings = async () => {
+  if (hasGiteExpenseCategorySettings()) return readGiteExpenseCategorySettings();
+
+  const gites = await prisma.gite.findMany({
+    orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+    select: { frais_gestion: true },
+  });
+  const categories: unknown[] = [];
+  const seenIds = new Set<string>();
+
+  for (const gite of gites) {
+    const value = fromJsonString<any>(gite.frais_gestion, null);
+    const rows = Array.isArray(value?.categories) ? value.categories : [];
+    for (const row of rows) {
+      const id = String(row?.id ?? "").trim();
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
+      categories.push(row);
+    }
+  }
+
+  const settings = { categories: normalizeGiteExpenseCategories(categories) };
+  writeGiteExpenseCategorySettings(settings);
+  return settings;
+};
+
+router.get("/expense-categories", async (_req, res, next) => {
+  try {
+    res.json(await buildInitialExpenseCategorySettings());
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/expense-categories", async (req, res, next) => {
+  try {
+    const payload = expenseCategorySettingsSchema.parse(req.body ?? {});
+    const settings = { categories: normalizeGiteExpenseCategories(payload.categories) };
+    writeGiteExpenseCategorySettings(settings);
+    res.json(settings);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/", async (_req, res, next) => {
   try {
