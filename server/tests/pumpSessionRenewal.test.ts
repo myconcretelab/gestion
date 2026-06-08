@@ -4,6 +4,7 @@ import {
   extractAirbnbSmsChallengeDestination,
   isAirbnbAccountRenewalScreenText,
   isAirbnbSmsChallengeScreenText,
+  isAirbnbStandardLoginScreenText,
 } from "../src/services/pumpSessionRenewal.ts";
 import { isAirbnbAccountChooserActionLabel as isSharedAirbnbAccountChooserActionLabel } from "../src/services/airbnbAccountChooser.ts";
 
@@ -25,6 +26,19 @@ test("isAirbnbSmsChallengeScreenText detecte l'ecran de code SMS", () => {
     true
   );
   assert.equal(isAirbnbSmsChallengeScreenText("Bienvenue sur Airbnb"), false);
+});
+
+test("isAirbnbStandardLoginScreenText detecte le login Airbnb standard", () => {
+  assert.equal(
+    isAirbnbStandardLoginScreenText(
+      "Connexion ou inscription\nContinuer avec un e-mail\nContinuer avec Google"
+    ),
+    true
+  );
+  assert.equal(
+    isAirbnbStandardLoginScreenText("Confirmez qu'il s'agit bien de vous\nNous avons envoyé un code"),
+    false
+  );
 });
 
 test("extractAirbnbSmsChallengeDestination retourne la destination masquee", () => {
