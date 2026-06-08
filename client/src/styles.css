@@ -300,6 +300,61 @@ body.app-scroll-locked {
   font-size: 0.72rem;
 }
 
+.today-revenue-mini {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.today-revenue-mini__item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.today-revenue-mini__item span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: #6b7280;
+  font-size: 0.64rem;
+  font-weight: 850;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.today-revenue-mini__item span i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #eef2f7;
+  color: #475569;
+  font-style: normal;
+  font-size: 0.56rem;
+  line-height: 1;
+}
+
+.today-revenue-mini__item strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .today-utility-strip__slider-head {
   display: flex;
   align-items: baseline;

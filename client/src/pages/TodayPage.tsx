@@ -32,6 +32,16 @@ type TodayPrimaryOverviewPayload = {
   gites: Gite[];
   reservations: Reservation[];
   source_colors: Record<string, string>;
+  revenue_averages?: TodayRevenueAverageMetric[];
+};
+
+type TodayRevenueAverageMetric = {
+  id: "current_month" | "previous_month" | "last_24_months";
+  label: string;
+  month_count: number;
+  gross_revenue: number;
+  expenses: number;
+  net_average_monthly_revenue: number;
 };
 
 type TodayDeferredReservationEnergy = Pick<
@@ -562,6 +572,12 @@ const getEventIcon = (type: TodayEventType) => {
   return <ArrowSwapIcon />;
 };
 
+const getRevenueAverageIcon = (id: TodayRevenueAverageMetric["id"]) => {
+  if (id === "current_month") return "●";
+  if (id === "previous_month") return "◐";
+  return "↔";
+};
+
 const TodayPage = () => {
   const navigate = useNavigate();
   const [primaryOverview, setPrimaryOverview] = useState<TodayPrimaryOverviewPayload | null>(null);
@@ -675,6 +691,7 @@ const TodayPage = () => {
   const lastVisibleIso = useMemo(() => toIsoDate(lastVisibleDate), [lastVisibleDate]);
 
   const gites = primaryOverview?.gites ?? [];
+  const revenueAverages = primaryOverview?.revenue_averages ?? [];
   const reservations = useMemo(
     () =>
       (primaryOverview?.reservations ?? []).map((reservation) => ({
@@ -1154,6 +1171,17 @@ const TodayPage = () => {
                 {filledGiteCount}/{gites.length || 0} gîte{gites.length > 1 ? "s" : ""}
               </span>
             </div>
+          </div>
+          <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
+            {revenueAverages.map((metric) => (
+              <div key={metric.id} className="today-revenue-mini__item" title={`${formatEuro(metric.gross_revenue)} revenus - ${formatEuro(metric.expenses)} frais`}>
+                <span>
+                  <i aria-hidden="true">{getRevenueAverageIcon(metric.id)}</i>
+                  {metric.label}
+                </span>
+                <strong>{formatEuro(metric.net_average_monthly_revenue)}</strong>
+              </div>
+            ))}
           </div>
         </div>
 

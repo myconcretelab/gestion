@@ -10,12 +10,15 @@ import {
 } from "../services/icalConflicts.js";
 import { readSourceColorSettings } from "../services/sourceColorSettings.js";
 import { loadLiveReservationEnergySummaries } from "../services/smartlifeEnergyTracking.js";
+import { buildStatisticsReservationSegments } from "../services/statistics.js";
 import {
   buildDefaultSmartlifeAutomationConfig,
   hasSmartlifeCredentials,
   readSmartlifeAutomationConfig,
 } from "../services/smartlifeSettings.js";
 import { buildNewReservations } from "../services/dailyReservationEmail.js";
+import { fromJsonString } from "../utils/jsonFields.js";
+import { toNumber } from "../utils/money.js";
 import {
   buildOverviewReservationsWhere,
   buildRecentAppActivity,
@@ -27,6 +30,15 @@ import {
 const router = Router();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_ACTIVITY_LIMIT = 36;
+
+type TodayRevenueAverageMetric = {
+  id: "current_month" | "previous_month" | "last_24_months";
+  label: string;
+  month_count: number;
+  gross_revenue: number;
+  expenses: number;
+  net_average_monthly_revenue: number;
+};
 
 const icalConflictResolutionSchema = z.object({
   action: z.enum(["keep_reservation", "apply_ical", "delete_reservation"]),
@@ -78,6 +90,121 @@ const buildOverlapConflictPayload = (conflicts: Array<{ id: string; hote_nom: st
     label: `${conflict.hote_nom} (${formatIsoDateFr(conflict.date_entree)} - ${formatIsoDateFr(conflict.date_sortie)})`,
   })),
 });
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const normalizeRevenueLabel = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+const getMonthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}`;
+
+const getUtcMonthStart = (date: Date, offsetMonths = 0) =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + offsetMonths, 1));
+
+const formatMonthName = (date: Date) =>
+  date.toLocaleDateString("fr-FR", { month: "long", timeZone: "UTC" }).replace(/^./, (char) => char.toUpperCase());
+
+const listMonthKeys = (startInclusive: Date, monthCount: number) =>
+  Array.from({ length: monthCount }, (_, index) => {
+    const date = getUtcMonthStart(startInclusive, index);
+    return getMonthKey(date.getUTCFullYear(), date.getUTCMonth() + 1);
+  });
+
+const getGiteMonthlyExpenses = (value: unknown) => {
+  const parsed = fromJsonString<any>(value, null);
+  const expenses = Array.isArray(parsed?.expenses) ? parsed.expenses : [];
+  return round2(
+    expenses.reduce((sum: number, expense: any) => {
+      const monthly = toNumber(expense?.monthly_amount);
+      const annual = toNumber(expense?.annual_amount);
+      const amount = monthly > 0 ? monthly : annual > 0 ? annual / 12 : 0;
+      return sum + Math.max(0, amount);
+    }, 0)
+  );
+};
+
+const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenueAverageMetric[]> => {
+  const currentMonthStart = getUtcMonthStart(today);
+  const previousMonthStart = getUtcMonthStart(today, -1);
+  const nextMonthStart = getUtcMonthStart(today, 1);
+  const last24MonthsStart = getUtcMonthStart(today, -23);
+  const periods = [
+    {
+      id: "current_month" as const,
+      label: formatMonthName(currentMonthStart),
+      month_count: 1,
+      monthKeys: new Set(listMonthKeys(currentMonthStart, 1)),
+    },
+    {
+      id: "previous_month" as const,
+      label: formatMonthName(previousMonthStart),
+      month_count: 1,
+      monthKeys: new Set(listMonthKeys(previousMonthStart, 1)),
+    },
+    {
+      id: "last_24_months" as const,
+      label: "2 ans",
+      month_count: 24,
+      monthKeys: new Set(listMonthKeys(last24MonthsStart, 24)),
+    },
+  ];
+  const [gites, reservations] = await Promise.all([
+    prisma.gite.findMany({ select: { id: true, frais_gestion: true } }),
+    prisma.reservation.findMany({
+      where: {
+        gite_id: { not: null },
+        date_entree: { lt: nextMonthStart },
+        date_sortie: { gte: last24MonthsStart },
+      },
+      select: {
+        id: true,
+        gite_id: true,
+        date_entree: true,
+        date_sortie: true,
+        nb_nuits: true,
+        nb_adultes: true,
+        prix_par_nuit: true,
+        prix_total: true,
+        source_paiement: true,
+        frais_optionnels_montant: true,
+        frais_optionnels_declares: true,
+      },
+    }),
+  ]);
+  const totalMonthlyExpenses = gites.reduce((sum, gite) => sum + getGiteMonthlyExpenses(gite.frais_gestion), 0);
+  const grossRevenueByMonth = new Map<string, number>();
+
+  for (const reservation of reservations) {
+    if (normalizeRevenueLabel(reservation.source_paiement ?? "") === "homeexchange") continue;
+    for (const segment of buildStatisticsReservationSegments({
+      ...reservation,
+      prix_par_nuit: toNumber(reservation.prix_par_nuit),
+      prix_total: toNumber(reservation.prix_total),
+      frais_optionnels_montant: toNumber(reservation.frais_optionnels_montant),
+    })) {
+      const key = getMonthKey(segment.year, segment.month);
+      grossRevenueByMonth.set(key, round2((grossRevenueByMonth.get(key) ?? 0) + segment.revenus + segment.fraisOptionnelsTotal));
+    }
+  }
+
+  return periods.map((period) => {
+    const grossRevenue = round2([...period.monthKeys].reduce((sum, key) => sum + (grossRevenueByMonth.get(key) ?? 0), 0));
+    const expenses = round2(totalMonthlyExpenses * period.month_count);
+    return {
+      id: period.id,
+      label: period.label,
+      month_count: period.month_count,
+      gross_revenue: grossRevenue,
+      expenses,
+      net_average_monthly_revenue: period.month_count > 0 ? round2((grossRevenue - expenses) / period.month_count) : 0,
+    };
+  });
+};
 
 const loadOverviewReservations = (today: Date, endExclusive: Date) =>
   prisma.reservation.findMany({
@@ -160,12 +287,13 @@ const loadRecentAppActivity = (since: Date) =>
 router.get("/overview/primary", async (req, res, next) => {
   try {
     const { days, notificationDays, today, endExclusive } = parseOverviewParams(req.query as Record<string, unknown>);
-    const [gites, reservations] = await Promise.all([
+    const [gites, reservations, revenueAverages] = await Promise.all([
       prisma.gite.findMany({
         select: { id: true, nom: true, prefixe_contrat: true, ordre: true },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
       loadOverviewReservations(today, endExclusive),
+      buildTodayRevenueAverageMetrics(today),
     ]);
 
     return res.json({
@@ -175,6 +303,7 @@ router.get("/overview/primary", async (req, res, next) => {
       gites,
       reservations,
       source_colors: readSourceColorSettings().colors,
+      revenue_averages: revenueAverages,
     });
   } catch (error) {
     return next(error);
