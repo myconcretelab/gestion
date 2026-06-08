@@ -69,7 +69,7 @@ const DEFAULT_AIRBNB_ADVANCED_SELECTORS: PumpAutomationAdvancedSelectors = {
   finalSubmitButton:
     'button:has-text("Connexion"), button:has-text("Se connecter"), button:has-text("Continuer"), button:has-text("Continue"), button:has-text("Sign in"), button:has-text("Log in"), button[type="submit"]',
   accountChooserContinueButton:
-    'button:has-text("Continuer"), [role="button"]:has-text("Continuer"), button:has-text("Continue"), [role="button"]:has-text("Continue")',
+    'button:has-text("Continuer"), [role="button"]:has-text("Continuer"), button:has-text("Continue"), [role="button"]:has-text("Continue"), button:has-text("Se connecter"), [role="button"]:has-text("Se connecter"), button:has-text("Connexion"), [role="button"]:has-text("Connexion"), button:has-text("Sign in"), [role="button"]:has-text("Sign in"), button:has-text("Log in"), [role="button"]:has-text("Log in")',
   calendarSourceCard:
     'div:has(button:has-text("Actualiser")), div:has(button:has-text("Refresh")), article:has(button:has-text("Actualiser")), article:has(button:has-text("Refresh"))',
   calendarSourceEditButton:
