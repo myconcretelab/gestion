@@ -5,6 +5,7 @@ import { resolveDataDir } from "../utils/paths.js";
 import { readPumpAutomationConfig, buildDefaultPumpAutomationConfig, getPumpStorageStateId, validatePumpAutomationConfig } from "./pumpAutomationConfig.js";
 import type { PumpAutomationConfig } from "./pumpAutomationConfig.js";
 import { PumpPlaywrightSession, checkIfLoginRequired } from "./pumpAutomationCapture.js";
+import { resolveAirbnbAccountChooserContinueButton } from "./airbnbAccountChooser.js";
 import { syncPumpHealthAlerts } from "./pumpHealth.js";
 import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
 
@@ -274,10 +275,13 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   const bodyText = await getBodyText(page);
   if (!isAirbnbAccountRenewalScreenText(bodyText)) return false;
 
-  const button = await getVisibleLocator(page.locator(config.advancedSelectors.accountChooserContinueButton));
+  const button = await resolveAirbnbAccountChooserContinueButton(
+    page,
+    config.advancedSelectors.accountChooserContinueButton
+  );
   if (!button) {
     throw new Error(
-      `${getPumpAutomationSourceDefinition(config.sourceType).label} demande de confirmer le compte mais le bouton Continuer est introuvable.`
+      `${getPumpAutomationSourceDefinition(config.sourceType).label} demande de confirmer le compte mais le bouton de confirmation du compte est introuvable.`
     );
   }
 

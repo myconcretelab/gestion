@@ -5,6 +5,7 @@ import {
   isAirbnbAccountRenewalScreenText,
   isAirbnbSmsChallengeScreenText,
 } from "../src/services/pumpSessionRenewal.ts";
+import { isAirbnbAccountChooserActionLabel as isSharedAirbnbAccountChooserActionLabel } from "../src/services/airbnbAccountChooser.ts";
 
 test("isAirbnbAccountRenewalScreenText detecte l'ecran de compte reconnu", () => {
   assert.equal(
@@ -39,4 +40,10 @@ test("extractAirbnbSmsChallengeDestination retourne la destination masquee", () 
     ),
     "s***r@hotmail.fr"
   );
+});
+
+test("isAirbnbAccountChooserActionLabel accepte le libelle Se connecter", () => {
+  assert.equal(isSharedAirbnbAccountChooserActionLabel("Se connecter"), true);
+  assert.equal(isSharedAirbnbAccountChooserActionLabel("Continuer"), true);
+  assert.equal(isSharedAirbnbAccountChooserActionLabel("Ce n'est pas vous ?"), false);
 });

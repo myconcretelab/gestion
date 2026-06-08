@@ -6,6 +6,7 @@ import { env } from "../config/env.js";
 import { resolveDataDir } from "../utils/paths.js";
 import { getPumpAutomationConfig } from "./pumpAutomation.js";
 import { PumpPlaywrightSession } from "./pumpAutomationCapture.js";
+import { resolveAirbnbAccountChooserContinueButton } from "./airbnbAccountChooser.js";
 import type { PumpAutomationConfig } from "./pumpAutomationConfig.js";
 
 export type AirbnbCalendarRefreshQueueResult = {
@@ -167,7 +168,12 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   const bodyText = await page.locator("body").innerText().catch(() => "");
   const currentUrl = page.url().toLowerCase();
   const accountChooserDetected = isAirbnbAccountChooserScreenText(bodyText);
-  const button = await getVisibleLocator(page.locator(config.advancedSelectors.accountChooserContinueButton));
+  const button = accountChooserDetected
+    ? await resolveAirbnbAccountChooserContinueButton(
+        page,
+        config.advancedSelectors.accountChooserContinueButton
+      )
+    : await getVisibleLocator(page.locator(config.advancedSelectors.accountChooserContinueButton));
   if (!accountChooserDetected && !currentUrl.includes("/login")) {
     return false;
   }
@@ -179,7 +185,7 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   if (!button) {
     throw new AirbnbCalendarRefreshError(
       "account_chooser_unhandled",
-      "Airbnb demande de confirmer le compte mais le bouton Continuer est introuvable."
+      "Airbnb demande de confirmer le compte mais le bouton de confirmation du compte est introuvable."
     );
   }
 
