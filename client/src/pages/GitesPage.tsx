@@ -3,6 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import type { Gestionnaire, Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
+import {
+  getEntryGrossCA,
+  parseStatisticsPayload,
+  type ParsedStatisticsPayload,
+  type StatisticsPayload,
+} from "./statistics/statisticsUtils";
 
 const emptyForm = {
   nom: "",
@@ -287,8 +293,8 @@ const normalizeExpenseManagement = (value: unknown): ExpenseManagementData => {
         .map((category, index): ExpenseCategory | null => {
           if (!category || typeof category !== "object" || Array.isArray(category)) return null;
           const categoryRow = category as Partial<ExpenseCategory>;
-          const name = String(categoryRow.name ?? "").trim();
-          if (!name) return null;
+          const name = String(categoryRow.name ?? "");
+          if (!name.trim()) return null;
           return {
             id: String(categoryRow.id || createLocalId("cat")).trim() || createLocalId("cat"),
             name,
@@ -305,8 +311,8 @@ const normalizeExpenseManagement = (value: unknown): ExpenseManagementData => {
         .map((expense): ExpenseLine | null => {
           if (!expense || typeof expense !== "object" || Array.isArray(expense)) return null;
           const expenseRow = expense as Partial<ExpenseLine>;
-          const label = String(expenseRow.label ?? "").trim();
-          const notes = String(expenseRow.notes ?? "").trim();
+          const label = String(expenseRow.label ?? "");
+          const notes = String(expenseRow.notes ?? "");
           const categoryId = String(expenseRow.category_id ?? "");
           const rawMonthlyAmount = normalizeMoney(expenseRow.monthly_amount);
           const rawAnnualAmount = normalizeMoney(expenseRow.annual_amount);
@@ -333,12 +339,66 @@ const normalizeExpenseManagement = (value: unknown): ExpenseManagementData => {
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(value);
 
+const normalizeExpenseRevenueLabel = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
 const getExpenseTotals = (data: ExpenseManagementData) => {
   const monthly = data.expenses.reduce((sum, expense) => sum + normalizeMoney(expense.monthly_amount), 0);
   const annual = data.expenses.reduce((sum, expense) => sum + normalizeMoney(expense.annual_amount), 0);
   return {
     monthly,
     annual,
+  };
+};
+
+const getRevenueAveragePeriod = (now = new Date()) => {
+  const currentYear = now.getFullYear();
+  const previousYear = currentYear - 1;
+  const currentMonth = now.getMonth() + 1;
+  const completedCurrentYearMonths = Math.max(0, currentMonth - 1);
+  return {
+    previousYear,
+    currentYear,
+    completedCurrentYearMonths,
+    monthCount: 12 + completedCurrentYearMonths,
+  };
+};
+
+const getNetAverageMonthlyRevenue = (
+  dataset: ParsedStatisticsPayload | null,
+  giteId: string | null,
+  monthlyExpenses: number
+) => {
+  const period = getRevenueAveragePeriod();
+  if (!dataset || !giteId || period.monthCount <= 0) {
+    return {
+      ...period,
+      grossRevenue: 0,
+      expenses: 0,
+      netAverage: 0,
+    };
+  }
+
+  const grossRevenue = (dataset.entriesByGite[giteId] ?? [])
+    .filter((entry) => {
+      const year = entry.debutDate.getUTCFullYear();
+      const month = entry.debutDate.getUTCMonth() + 1;
+      if (normalizeExpenseRevenueLabel(entry.paiement) === "homeexchange") return false;
+      return year === period.previousYear || (year === period.currentYear && month <= period.completedCurrentYearMonths);
+    })
+    .reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
+  const expenses = normalizeMoney(monthlyExpenses * period.monthCount);
+
+  return {
+    ...period,
+    grossRevenue,
+    expenses,
+    netAverage: period.monthCount > 0 ? (grossRevenue - expenses) / period.monthCount : 0,
   };
 };
 
@@ -1455,6 +1515,7 @@ const GitesPage = () => {
   const [reordering, setReordering] = useState(false);
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
+  const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [placeholderTargets, setPlaceholderTargets] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -1510,14 +1571,16 @@ const GitesPage = () => {
   }, [activeEditorSection, searchParams, selectedId, setSearchParams]);
 
   const load = async () => {
-    const [gitesData, placeholdersData, gestionnairesData] = await Promise.all([
+    const [gitesData, placeholdersData, gestionnairesData, statisticsData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Gestionnaire[]>("/managers"),
+      apiFetch<StatisticsPayload>("/statistics"),
     ]);
     setGites(gitesData);
     setPlaceholders(placeholdersData);
     setGestionnaires(gestionnairesData);
+    setStatisticsDataset(parseStatisticsPayload(statisticsData));
     setPlaceholderTargets((prev) => {
       const next = { ...prev };
       for (const placeholder of placeholdersData) {
@@ -1629,6 +1692,10 @@ const GitesPage = () => {
 
   const expenseManagement = useMemo(() => normalizeExpenseManagement(form.frais_gestion), [form.frais_gestion]);
   const expenseTotals = useMemo(() => getExpenseTotals(expenseManagement), [expenseManagement]);
+  const netAverageMonthlyRevenue = useMemo(
+    () => getNetAverageMonthlyRevenue(statisticsDataset, selectedId, expenseTotals.monthly),
+    [expenseTotals.monthly, selectedId, statisticsDataset]
+  );
   const expenseTotalsByCategory = useMemo(() => {
     const totals = new Map<string, { monthly: number; annual: number }>();
     for (const category of expenseManagement.categories) {
@@ -3331,8 +3398,12 @@ const GitesPage = () => {
               <strong>{formatCurrency(expenseTotals.annual)}</strong>
             </div>
             <div className="expense-summary__item">
-              <span>Lignes recensées</span>
-              <strong>{expenseManagement.expenses.length}</strong>
+              <span>Revenu moyen mensuel</span>
+              <strong>{formatCurrency(netAverageMonthlyRevenue.netAverage)}</strong>
+              <small>
+                {formatCurrency(netAverageMonthlyRevenue.grossRevenue)} revenus - {formatCurrency(netAverageMonthlyRevenue.expenses)} frais sur{" "}
+                {netAverageMonthlyRevenue.monthCount} mois
+              </small>
             </div>
           </div>
 
@@ -3363,24 +3434,26 @@ const GitesPage = () => {
                       />
                       <span aria-hidden="true" />
                     </label>
-                    <label className="field expense-category-card__name">
-                      Nom
+                    <label className="expense-category-card__name">
                       <input
+                        aria-label="Nom de la catégorie"
                         value={category.name}
                         onChange={(event) => updateExpenseCategory(category.id, { name: event.target.value })}
                       />
                     </label>
                     <div className="expense-category-card__total">
                       <span>{formatCurrency(totals.monthly)} / mois</span>
-                      <strong>{formatCurrency(totals.annual)} / an</strong>
+                      <span>{formatCurrency(totals.annual)} / an</span>
                     </div>
                     <button
                       type="button"
-                      className="table-action table-action--neutral"
+                      className="expense-icon-button"
                       onClick={() => deleteExpenseCategory(category.id)}
                       disabled={expenseManagement.categories.length <= 1}
+                      aria-label={`Supprimer la catégorie ${category.name}`}
+                      title="Supprimer"
                     >
-                      Supprimer
+                      <TrashIcon />
                     </button>
                   </div>
                 );
@@ -3394,9 +3467,6 @@ const GitesPage = () => {
                 <div className="expense-panel__title">Frais</div>
                 <div className="field-hint">Saisissez un montant mensuel ou annuel, l'autre valeur est calculée.</div>
               </div>
-              <button type="button" className="table-action table-action--primary" onClick={addExpenseLine}>
-                Ajouter un frais
-              </button>
             </div>
 
             {expenseManagement.expenses.length > 0 ? (
@@ -3417,17 +3487,17 @@ const GitesPage = () => {
                       className="expense-line"
                       style={{ "--expense-color": category?.color ?? "var(--primary)" } as CSSProperties}
                     >
-                      <label className="field">
-                        Libellé
+                      <div className="expense-line__field">
                         <input
+                          aria-label="Libellé"
                           value={expense.label}
                           onChange={(event) => updateExpenseLine(expense.id, { label: event.target.value })}
                           placeholder="Assurance, taxe foncière..."
                         />
-                      </label>
-                      <label className="field">
-                        Catégorie
+                      </div>
+                      <div className="expense-line__field">
                         <select
+                          aria-label="Catégorie"
                           value={expense.category_id}
                           onChange={(event) => updateExpenseLine(expense.id, { category_id: event.target.value })}
                         >
@@ -3437,40 +3507,42 @@ const GitesPage = () => {
                             </option>
                           ))}
                         </select>
-                      </label>
-                      <label className="field">
-                        €/mois
+                      </div>
+                      <div className="expense-line__field">
                         <input
+                          aria-label="€/mois"
                           type="number"
                           min={0}
                           step="0.01"
                           value={expense.monthly_amount}
                           onChange={(event) => updateExpenseAmount(expense.id, "monthly_amount", event.target.value)}
                         />
-                      </label>
-                      <label className="field">
-                        €/an
+                      </div>
+                      <div className="expense-line__field">
                         <input
+                          aria-label="€/an"
                           type="number"
                           min={0}
                           step="0.01"
                           value={expense.annual_amount}
                           onChange={(event) => updateExpenseAmount(expense.id, "annual_amount", event.target.value)}
                         />
-                      </label>
-                      <label className="field">
-                        Notes
+                      </div>
+                      <div className="expense-line__field">
                         <input
+                          aria-label="Notes"
                           value={expense.notes}
                           onChange={(event) => updateExpenseLine(expense.id, { notes: event.target.value })}
                         />
-                      </label>
+                      </div>
                       <button
                         type="button"
-                        className="expense-line__delete table-action table-action--neutral"
+                        className="expense-line__delete expense-icon-button"
                         onClick={() => deleteExpenseLine(expense.id)}
+                        aria-label={`Supprimer le frais ${expense.label || "sans libellé"}`}
+                        title="Supprimer"
                       >
-                        Supprimer
+                        <TrashIcon />
                       </button>
                     </div>
                   );
@@ -3482,6 +3554,11 @@ const GitesPage = () => {
                 <div className="field-hint">Ajoutez une ligne pour suivre les charges mensuelles et annuelles du gîte.</div>
               </div>
             )}
+            <div className="expense-lines__footer">
+              <button type="button" className="table-action table-action--primary" onClick={addExpenseLine}>
+                Ajouter un frais
+              </button>
+            </div>
           </div>
         </div>
 

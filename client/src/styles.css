@@ -4923,6 +4923,13 @@ body {
   line-height: 1.15;
 }
 
+.expense-summary__item small {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
 .expense-panel {
   display: grid;
   gap: 12px;
@@ -4944,16 +4951,16 @@ body {
 
 .expense-category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
 }
 
 .expense-category-card {
   --expense-color: var(--primary);
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(110px, 1fr) auto 32px;
   gap: 10px;
-  align-items: end;
+  align-items: center;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--expense-color) 24%, #e5e7eb);
   border-left: 4px solid var(--expense-color);
@@ -4990,25 +4997,66 @@ body {
 
 .expense-category-card__name {
   margin: 0;
+  min-width: 0;
 }
 
-.expense-category-card__total {
-  display: grid;
-  gap: 2px;
-  grid-column: 1 / -1;
-  color: #64748b;
-  font-size: 0.82rem;
+.expense-category-card__name input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: #111827;
+  font: inherit;
   font-weight: 700;
 }
 
-.expense-category-card__total strong {
-  color: #111827;
-  font-size: 0.95rem;
+.expense-category-card__total {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: flex-end;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.expense-category-card .table-action {
-  grid-column: 1 / -1;
-  justify-self: start;
+.expense-category-card__total span:last-child {
+  color: #111827;
+}
+
+.expense-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #d7dde7;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.expense-icon-button:hover:not(:disabled) {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #e11d48;
+  transform: none;
+  box-shadow: none;
+}
+
+.expense-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.expense-icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
 
 .expense-lines {
@@ -5019,9 +5067,9 @@ body {
 .expense-lines__head,
 .expense-line {
   display: grid;
-  grid-template-columns: minmax(170px, 1.2fr) minmax(150px, 0.9fr) minmax(100px, 0.55fr) minmax(100px, 0.55fr) minmax(130px, 1fr) auto;
+  grid-template-columns: minmax(170px, 1.2fr) minmax(150px, 0.9fr) minmax(100px, 0.55fr) minmax(100px, 0.55fr) minmax(130px, 1fr) 32px;
   gap: 10px;
-  align-items: end;
+  align-items: center;
 }
 
 .expense-lines__head {
@@ -5041,8 +5089,20 @@ body {
   background: #ffffff;
 }
 
-.expense-line .field {
-  margin: 0;
+.expense-line__field {
+  min-width: 0;
+}
+
+.expense-line__field input,
+.expense-line__field select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: #111827;
+  font: inherit;
+  background: #ffffff;
 }
 
 .expense-line select {
@@ -5050,8 +5110,13 @@ body {
 }
 
 .expense-line__delete {
-  align-self: end;
-  white-space: nowrap;
+  justify-self: end;
+}
+
+.expense-lines__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 .gites-editor-header {
@@ -6934,6 +6999,11 @@ body {
   }
 
   .expense-line__delete {
+    width: 32px;
+    justify-self: end;
+  }
+
+  .expense-lines__footer .table-action {
     width: 100%;
     justify-content: center;
   }
