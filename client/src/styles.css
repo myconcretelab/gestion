@@ -4893,6 +4893,167 @@ body {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.09);
 }
 
+.expense-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.expense-summary__item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.expense-summary__item span {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.expense-summary__item strong {
+  color: #111827;
+  font-size: 1.2rem;
+  font-weight: 850;
+  line-height: 1.15;
+}
+
+.expense-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.expense-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.expense-panel__title {
+  color: #1f2937;
+  font-size: 0.98rem;
+  font-weight: 850;
+}
+
+.expense-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.expense-category-card {
+  --expense-color: var(--primary);
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--expense-color) 24%, #e5e7eb);
+  border-left: 4px solid var(--expense-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--expense-color) 7%, #ffffff);
+}
+
+.expense-color-input {
+  position: relative;
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+}
+
+.expense-color-input input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.expense-color-input span {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 50%;
+  background: var(--expense-color);
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.72);
+}
+
+.expense-category-card__name {
+  margin: 0;
+}
+
+.expense-category-card__total {
+  display: grid;
+  gap: 2px;
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.expense-category-card__total strong {
+  color: #111827;
+  font-size: 0.95rem;
+}
+
+.expense-category-card .table-action {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.expense-lines {
+  display: grid;
+  gap: 8px;
+}
+
+.expense-lines__head,
+.expense-line {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) minmax(150px, 0.9fr) minmax(100px, 0.55fr) minmax(100px, 0.55fr) minmax(130px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.expense-lines__head {
+  padding: 0 10px;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.expense-line {
+  --expense-color: var(--primary);
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid var(--expense-color);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.expense-line .field {
+  margin: 0;
+}
+
+.expense-line select {
+  border-color: color-mix(in srgb, var(--expense-color) 30%, #d1d5db);
+}
+
+.expense-line__delete {
+  align-self: end;
+  white-space: nowrap;
+}
+
 .gites-editor-header {
   display: grid;
   grid-template-columns: minmax(190px, 0.9fr) minmax(220px, 1.4fr) auto;
@@ -6748,6 +6909,33 @@ body {
 
   .gite-photo-card__actions .table-action {
     flex: 1 1 calc(50% - 8px);
+  }
+
+  .expense-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .expense-panel__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .expense-panel__header .table-action {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .expense-lines__head {
+    display: none;
+  }
+
+  .expense-line {
+    grid-template-columns: 1fr;
+  }
+
+  .expense-line__delete {
+    width: 100%;
+    justify-content: center;
   }
 
   .settings-layout {

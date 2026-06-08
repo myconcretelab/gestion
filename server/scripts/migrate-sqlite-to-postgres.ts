@@ -194,11 +194,12 @@ const main = async () => {
     }
 
     for (const gite of gites) {
-      const { id, telephones, prix_nuit_liste, ...rest } = gite;
+      const { id, telephones, prix_nuit_liste, frais_gestion, ...rest } = gite;
       const data = {
         id,
         telephones: parseJson(telephones, [] as string[]),
         prix_nuit_liste: parseJson(prix_nuit_liste, null as number[] | null),
+        frais_gestion: parseJson(frais_gestion, null as unknown),
         ...rest,
       };
 

@@ -53,6 +53,27 @@ const emptyForm = {
   cheque_menage_montant_defaut: 0,
   arrhes_taux_defaut: 0.2,
   electricity_price_per_kwh: 0,
+  frais_gestion: {
+    version: 1,
+    categories: [
+      { id: "energie", name: "Énergie", color: "#2d8cff" },
+      { id: "entretien", name: "Entretien", color: "#43b77d" },
+      { id: "taxes", name: "Taxes", color: "#f5a623" },
+      { id: "assurance", name: "Assurance", color: "#7e5bef" },
+    ],
+    expenses: [],
+  } as {
+    version: number;
+    categories: Array<{ id: string; name: string; color: string }>;
+    expenses: Array<{
+      id: string;
+      label: string;
+      category_id: string;
+      monthly_amount: number;
+      annual_amount: number;
+      notes: string;
+    }>;
+  },
   prix_nuit_basse_saison: 0,
   prix_nuit_haute_saison: 0,
   min_nuits_toute_annee: 1,
@@ -99,6 +120,37 @@ type WordPressPhotoSyncStatus = {
   response_body?: unknown;
   error?: string;
 };
+type ExpenseCategory = {
+  id: string;
+  name: string;
+  color: string;
+};
+type ExpenseLine = {
+  id: string;
+  label: string;
+  category_id: string;
+  monthly_amount: number;
+  annual_amount: number;
+  notes: string;
+};
+type ExpenseManagementData = {
+  version: 1;
+  categories: ExpenseCategory[];
+  expenses: ExpenseLine[];
+};
+type ExpenseAmountField = "monthly_amount" | "annual_amount";
+const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  { id: "energie", name: "Énergie", color: "#2d8cff" },
+  { id: "entretien", name: "Entretien", color: "#43b77d" },
+  { id: "taxes", name: "Taxes", color: "#f5a623" },
+  { id: "assurance", name: "Assurance", color: "#7e5bef" },
+];
+const DEFAULT_EXPENSE_MANAGEMENT: ExpenseManagementData = {
+  version: 1,
+  categories: DEFAULT_EXPENSE_CATEGORIES,
+  expenses: [],
+};
+const EXPENSE_CATEGORY_COLORS = ["#2d8cff", "#43b77d", "#f5a623", "#7e5bef", "#fe5c73", "#14b8a6", "#ef4444", "#64748b"];
 const StarIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     <path d="M12 3.5l2.7 5.47 6.03.88-4.36 4.25 1.03 6-5.4-2.84-5.4 2.84 1.03-6-4.36-4.25 6.03-.88L12 3.5z" />
@@ -125,6 +177,7 @@ const GITE_EDITOR_SECTIONS = [
   { id: "web-chambres", label: "Infos complémentaires" },
   { id: "web-photos", label: "Photos" },
   { id: "gestion-finance", label: "Fiscalité & banque" },
+  { id: "gestion-frais", label: "Gestion des frais" },
   { id: "gestion-contact", label: "Propriétaires & contact" },
   { id: "sejour-services", label: "Services & horaires" },
   { id: "sejour-tarifs", label: "Tarifs & garanties" },
@@ -141,7 +194,7 @@ const GITE_EDITOR_SECTION_GROUPS = [
   },
   {
     title: "Gestion",
-    items: ["gestion-finance", "gestion-contact"],
+    items: ["gestion-finance", "gestion-frais", "gestion-contact"],
   },
   {
     title: "Séjour",
@@ -208,6 +261,85 @@ const readNumberInput = (value: string): NumberInputValue => (value === "" ? "" 
 const toNumberOrDefault = (value: NumberInputValue, fallback = 0) => {
   if (value === "") return fallback;
   return Number.isFinite(value) ? value : fallback;
+};
+
+const createLocalId = (prefix: string) =>
+  `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeMoney = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? Math.round(numericValue * 100) / 100 : 0;
+};
+
+const isHexColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value);
+
+const cloneDefaultExpenseManagement = (): ExpenseManagementData => ({
+  version: 1,
+  categories: DEFAULT_EXPENSE_MANAGEMENT.categories.map((category) => ({ ...category })),
+  expenses: [],
+});
+
+const normalizeExpenseManagement = (value: unknown): ExpenseManagementData => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return cloneDefaultExpenseManagement();
+  const row = value as Partial<ExpenseManagementData>;
+  const categories = Array.isArray(row.categories)
+    ? row.categories
+        .map((category, index): ExpenseCategory | null => {
+          if (!category || typeof category !== "object" || Array.isArray(category)) return null;
+          const categoryRow = category as Partial<ExpenseCategory>;
+          const name = String(categoryRow.name ?? "").trim();
+          if (!name) return null;
+          return {
+            id: String(categoryRow.id || createLocalId("cat")).trim() || createLocalId("cat"),
+            name,
+            color: isHexColor(String(categoryRow.color ?? "")) ? String(categoryRow.color) : EXPENSE_CATEGORY_COLORS[index % EXPENSE_CATEGORY_COLORS.length],
+          };
+        })
+        .filter((category): category is ExpenseCategory => Boolean(category))
+    : [];
+  const normalizedCategories = categories.length > 0 ? categories : cloneDefaultExpenseManagement().categories;
+  const categoryIds = new Set(normalizedCategories.map((category) => category.id));
+  const fallbackCategoryId = normalizedCategories[0]?.id ?? "";
+  const expenses = Array.isArray(row.expenses)
+    ? row.expenses
+        .map((expense): ExpenseLine | null => {
+          if (!expense || typeof expense !== "object" || Array.isArray(expense)) return null;
+          const expenseRow = expense as Partial<ExpenseLine>;
+          const label = String(expenseRow.label ?? "").trim();
+          const notes = String(expenseRow.notes ?? "").trim();
+          const categoryId = String(expenseRow.category_id ?? "");
+          const rawMonthlyAmount = normalizeMoney(expenseRow.monthly_amount);
+          const rawAnnualAmount = normalizeMoney(expenseRow.annual_amount);
+          const monthlyAmount = rawMonthlyAmount > 0 ? rawMonthlyAmount : normalizeMoney(rawAnnualAmount / 12);
+          const annualAmount = rawAnnualAmount > 0 ? rawAnnualAmount : normalizeMoney(monthlyAmount * 12);
+          return {
+            id: String(expenseRow.id || createLocalId("fee")).trim() || createLocalId("fee"),
+            label,
+            category_id: categoryIds.has(categoryId) ? categoryId : fallbackCategoryId,
+            monthly_amount: monthlyAmount,
+            annual_amount: annualAmount,
+            notes,
+          };
+        })
+        .filter((expense): expense is ExpenseLine => Boolean(expense))
+    : [];
+  return {
+    version: 1,
+    categories: normalizedCategories,
+    expenses,
+  };
+};
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(value);
+
+const getExpenseTotals = (data: ExpenseManagementData) => {
+  const monthly = data.expenses.reduce((sum, expense) => sum + normalizeMoney(expense.monthly_amount), 0);
+  const annual = data.expenses.reduce((sum, expense) => sum + normalizeMoney(expense.annual_amount), 0);
+  return {
+    monthly,
+    annual,
+  };
 };
 
 const getWordPressPhotoSyncDetail = (status: WordPressPhotoSyncStatus | null) => {
@@ -1458,6 +1590,7 @@ const GitesPage = () => {
       cheque_menage_montant_defaut: selected.cheque_menage_montant_defaut ?? 0,
       arrhes_taux_defaut: selected.arrhes_taux_defaut ?? 0.2,
       electricity_price_per_kwh: selected.electricity_price_per_kwh ?? 0,
+      frais_gestion: normalizeExpenseManagement(selected.frais_gestion),
       prix_nuit_basse_saison: selected.prix_nuit_basse_saison ?? 0,
       prix_nuit_haute_saison: selected.prix_nuit_haute_saison ?? 0,
       min_nuits_toute_annee: selected.min_nuits_toute_annee ?? 1,
@@ -1492,6 +1625,115 @@ const GitesPage = () => {
 
   const handleChange = (key: keyof FormState, value: string | number | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const expenseManagement = useMemo(() => normalizeExpenseManagement(form.frais_gestion), [form.frais_gestion]);
+  const expenseTotals = useMemo(() => getExpenseTotals(expenseManagement), [expenseManagement]);
+  const expenseTotalsByCategory = useMemo(() => {
+    const totals = new Map<string, { monthly: number; annual: number }>();
+    for (const category of expenseManagement.categories) {
+      totals.set(category.id, { monthly: 0, annual: 0 });
+    }
+    for (const expense of expenseManagement.expenses) {
+      const current = totals.get(expense.category_id) ?? { monthly: 0, annual: 0 };
+      current.monthly += normalizeMoney(expense.monthly_amount);
+      current.annual += normalizeMoney(expense.annual_amount);
+      totals.set(expense.category_id, current);
+    }
+    return totals;
+  }, [expenseManagement]);
+
+  const updateExpenseManagement = (updater: (current: ExpenseManagementData) => ExpenseManagementData) => {
+    setForm((current) => ({
+      ...current,
+      frais_gestion: updater(normalizeExpenseManagement(current.frais_gestion)),
+    }));
+  };
+
+  const addExpenseCategory = () => {
+    updateExpenseManagement((current) => ({
+      ...current,
+      categories: [
+        ...current.categories,
+        {
+          id: createLocalId("cat"),
+          name: "Nouvelle catégorie",
+          color: EXPENSE_CATEGORY_COLORS[current.categories.length % EXPENSE_CATEGORY_COLORS.length],
+        },
+      ],
+    }));
+  };
+
+  const updateExpenseCategory = (categoryId: string, patch: Partial<ExpenseCategory>) => {
+    updateExpenseManagement((current) => ({
+      ...current,
+      categories: current.categories.map((category) =>
+        category.id === categoryId
+          ? {
+              ...category,
+              ...patch,
+              name: patch.name !== undefined ? patch.name : category.name,
+              color: patch.color && isHexColor(patch.color) ? patch.color : category.color,
+            }
+          : category
+      ),
+    }));
+  };
+
+  const deleteExpenseCategory = (categoryId: string) => {
+    updateExpenseManagement((current) => {
+      if (current.categories.length <= 1) return current;
+      const categories = current.categories.filter((category) => category.id !== categoryId);
+      const fallbackCategoryId = categories[0]?.id ?? "";
+      return {
+        ...current,
+        categories,
+        expenses: current.expenses.map((expense) =>
+          expense.category_id === categoryId ? { ...expense, category_id: fallbackCategoryId } : expense
+        ),
+      };
+    });
+  };
+
+  const addExpenseLine = () => {
+    updateExpenseManagement((current) => ({
+      ...current,
+      expenses: [
+        ...current.expenses,
+        {
+          id: createLocalId("fee"),
+          label: "",
+          category_id: current.categories[0]?.id ?? "",
+          monthly_amount: 0,
+          annual_amount: 0,
+          notes: "",
+        },
+      ],
+    }));
+  };
+
+  const updateExpenseLine = (expenseId: string, patch: Partial<ExpenseLine>) => {
+    updateExpenseManagement((current) => ({
+      ...current,
+      expenses: current.expenses.map((expense) => (expense.id === expenseId ? { ...expense, ...patch } : expense)),
+    }));
+  };
+
+  const updateExpenseAmount = (expenseId: string, field: ExpenseAmountField, rawValue: string) => {
+    const amount = rawValue === "" ? 0 : normalizeMoney(rawValue);
+    updateExpenseLine(
+      expenseId,
+      field === "monthly_amount"
+        ? { monthly_amount: amount, annual_amount: normalizeMoney(amount * 12) }
+        : { annual_amount: amount, monthly_amount: normalizeMoney(amount / 12) }
+    );
+  };
+
+  const deleteExpenseLine = (expenseId: string) => {
+    updateExpenseManagement((current) => ({
+      ...current,
+      expenses: current.expenses.filter((expense) => expense.id !== expenseId),
+    }));
   };
 
   const jumpToEditorSection = (sectionId: (typeof GITE_EDITOR_SECTIONS)[number]["id"]) => {
@@ -1602,6 +1844,7 @@ const GitesPage = () => {
         cheque_menage_montant_defaut: toNumberOrDefault(form.cheque_menage_montant_defaut),
         arrhes_taux_defaut: toNumberOrDefault(form.arrhes_taux_defaut, 0.2),
         electricity_price_per_kwh: toNumberOrDefault(form.electricity_price_per_kwh),
+        frais_gestion: normalizeExpenseManagement(form.frais_gestion),
         prix_nuit_basse_saison: toNumberOrDefault(form.prix_nuit_basse_saison),
         prix_nuit_haute_saison: toNumberOrDefault(form.prix_nuit_haute_saison),
         min_nuits_toute_annee: Math.max(1, Math.trunc(toNumberOrDefault(form.min_nuits_toute_annee, 1))),
@@ -3073,6 +3316,172 @@ const GitesPage = () => {
               Titulaire
               <input value={form.titulaire} onChange={(e) => handleChange("titulaire", e.target.value)} />
             </label>
+          </div>
+        </div>
+
+        <div id="gite-editor-frais" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-frais"}>
+          <div className="section-subtitle">Gestion des frais</div>
+          <div className="expense-summary">
+            <div className="expense-summary__item">
+              <span>Total mensuel</span>
+              <strong>{formatCurrency(expenseTotals.monthly)}</strong>
+            </div>
+            <div className="expense-summary__item">
+              <span>Total annuel</span>
+              <strong>{formatCurrency(expenseTotals.annual)}</strong>
+            </div>
+            <div className="expense-summary__item">
+              <span>Lignes recensées</span>
+              <strong>{expenseManagement.expenses.length}</strong>
+            </div>
+          </div>
+
+          <div className="expense-panel">
+            <div className="expense-panel__header">
+              <div>
+                <div className="expense-panel__title">Catégories</div>
+                <div className="field-hint">Les couleurs servent à regrouper les frais dans les totaux.</div>
+              </div>
+              <button type="button" className="table-action table-action--neutral" onClick={addExpenseCategory}>
+                Ajouter
+              </button>
+            </div>
+            <div className="expense-category-grid">
+              {expenseManagement.categories.map((category) => {
+                const totals = expenseTotalsByCategory.get(category.id) ?? { monthly: 0, annual: 0 };
+                return (
+                  <div
+                    key={category.id}
+                    className="expense-category-card"
+                    style={{ "--expense-color": category.color } as CSSProperties}
+                  >
+                    <label className="expense-color-input" title="Couleur de catégorie">
+                      <input
+                        type="color"
+                        value={category.color}
+                        onChange={(event) => updateExpenseCategory(category.id, { color: event.target.value })}
+                      />
+                      <span aria-hidden="true" />
+                    </label>
+                    <label className="field expense-category-card__name">
+                      Nom
+                      <input
+                        value={category.name}
+                        onChange={(event) => updateExpenseCategory(category.id, { name: event.target.value })}
+                      />
+                    </label>
+                    <div className="expense-category-card__total">
+                      <span>{formatCurrency(totals.monthly)} / mois</span>
+                      <strong>{formatCurrency(totals.annual)} / an</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="table-action table-action--neutral"
+                      onClick={() => deleteExpenseCategory(category.id)}
+                      disabled={expenseManagement.categories.length <= 1}
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="expense-panel">
+            <div className="expense-panel__header">
+              <div>
+                <div className="expense-panel__title">Frais</div>
+                <div className="field-hint">Saisissez un montant mensuel ou annuel, l'autre valeur est calculée.</div>
+              </div>
+              <button type="button" className="table-action table-action--primary" onClick={addExpenseLine}>
+                Ajouter un frais
+              </button>
+            </div>
+
+            {expenseManagement.expenses.length > 0 ? (
+              <div className="expense-lines">
+                <div className="expense-lines__head" aria-hidden="true">
+                  <span>Libellé</span>
+                  <span>Catégorie</span>
+                  <span>€/mois</span>
+                  <span>€/an</span>
+                  <span>Notes</span>
+                  <span />
+                </div>
+                {expenseManagement.expenses.map((expense) => {
+                  const category = expenseManagement.categories.find((item) => item.id === expense.category_id);
+                  return (
+                    <div
+                      key={expense.id}
+                      className="expense-line"
+                      style={{ "--expense-color": category?.color ?? "var(--primary)" } as CSSProperties}
+                    >
+                      <label className="field">
+                        Libellé
+                        <input
+                          value={expense.label}
+                          onChange={(event) => updateExpenseLine(expense.id, { label: event.target.value })}
+                          placeholder="Assurance, taxe foncière..."
+                        />
+                      </label>
+                      <label className="field">
+                        Catégorie
+                        <select
+                          value={expense.category_id}
+                          onChange={(event) => updateExpenseLine(expense.id, { category_id: event.target.value })}
+                        >
+                          {expenseManagement.categories.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        €/mois
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={expense.monthly_amount}
+                          onChange={(event) => updateExpenseAmount(expense.id, "monthly_amount", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        €/an
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={expense.annual_amount}
+                          onChange={(event) => updateExpenseAmount(expense.id, "annual_amount", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        Notes
+                        <input
+                          value={expense.notes}
+                          onChange={(event) => updateExpenseLine(expense.id, { notes: event.target.value })}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="expense-line__delete table-action table-action--neutral"
+                        onClick={() => deleteExpenseLine(expense.id)}
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="gites-empty-state gites-empty-state--compact">
+                <div className="gites-empty-state__title">Aucun frais recensé</div>
+                <div className="field-hint">Ajoutez une ligne pour suivre les charges mensuelles et annuelles du gîte.</div>
+              </div>
+            )}
           </div>
         </div>
 

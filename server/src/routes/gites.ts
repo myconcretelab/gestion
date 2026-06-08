@@ -30,6 +30,7 @@ const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 const timeStringSchema = z.string().regex(timePattern, "Format attendu HH:MM");
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const colorPattern = /^#[0-9a-f]{6}$/i;
 const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
 const GITE_PHOTO_ALLOWED_MIME_TYPES = new Map([
   ["image/jpeg", ".jpg"],
@@ -51,6 +52,26 @@ const emptyStringToNull = (value: unknown) => {
   return trimmed.length === 0 ? null : trimmed;
 };
 const publicJsonFieldSchema = z.preprocess(emptyStringToNull, z.unknown().nullable()).optional();
+const expenseCategorySchema = z.object({
+  id: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  color: z.string().trim().regex(colorPattern),
+});
+const expenseLineSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().default(""),
+  category_id: z.string().trim().default(""),
+  monthly_amount: z.coerce.number().min(0).default(0),
+  annual_amount: z.coerce.number().min(0).default(0),
+  notes: z.string().trim().default(""),
+});
+const expenseManagementSchema = z
+  .object({
+    version: z.coerce.number().int().min(1).default(1),
+    categories: z.array(expenseCategorySchema).default([]),
+    expenses: z.array(expenseLineSchema).default([]),
+  })
+  .default({ version: 1, categories: [], expenses: [] });
 
 const giteSchemaShape = {
   nom: z.string().trim().min(1),
@@ -104,6 +125,7 @@ const giteSchemaShape = {
   cheque_menage_montant_defaut: z.coerce.number().min(0).default(0),
   arrhes_taux_defaut: z.coerce.number().min(0).max(1).default(0.2),
   electricity_price_per_kwh: z.coerce.number().min(0).default(0),
+  frais_gestion: expenseManagementSchema.optional().default({ version: 1, categories: [], expenses: [] }),
   prix_nuit_basse_saison: z.coerce.number().min(0).default(0),
   prix_nuit_haute_saison: z.coerce.number().min(0).default(0),
   min_nuits_toute_annee: z.coerce.number().int().min(1).default(1),
@@ -126,6 +148,45 @@ const resolveChildrenMax = (value: {
 const normalizeMinNights = (value: unknown) => {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? Math.max(1, Math.trunc(numericValue)) : 1;
+};
+
+const normalizeMoney = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? Math.round(numericValue * 100) / 100 : 0;
+};
+
+const normalizeExpenseManagement = (value: unknown) => {
+  const parsed = expenseManagementSchema.parse(value ?? { version: 1, categories: [], expenses: [] });
+  const categories = parsed.categories.map((category) => ({
+    ...category,
+    name: category.name.trim(),
+  }));
+  const categoryIds = new Set(categories.map((category) => category.id));
+  const fallbackCategoryId = categories[0]?.id ?? "";
+  const expenses = parsed.expenses
+    .map((expense) => {
+      const rawMonthlyAmount = normalizeMoney(expense.monthly_amount);
+      const rawAnnualAmount = normalizeMoney(expense.annual_amount);
+      const monthlyAmount = rawMonthlyAmount > 0 ? rawMonthlyAmount : normalizeMoney(rawAnnualAmount / 12);
+      const annualAmount = rawAnnualAmount > 0 ? rawAnnualAmount : normalizeMoney(monthlyAmount * 12);
+      return {
+        ...expense,
+        label: expense.label.trim(),
+        category_id: categoryIds.has(expense.category_id) ? expense.category_id : fallbackCategoryId,
+        monthly_amount: monthlyAmount,
+        annual_amount: annualAmount,
+        notes: expense.notes.trim(),
+      };
+    })
+    .filter(
+      (expense) =>
+        expense.label.length > 0 || expense.notes.length > 0 || expense.monthly_amount > 0 || expense.annual_amount > 0
+    );
+  return {
+    version: 1,
+    categories,
+    expenses,
+  };
 };
 
 const validateGiteInput = (
@@ -247,6 +308,7 @@ const toGitePersistenceData = (payload: GiteInput) => ({
   public_rooms: encodeJsonField(payload.public_rooms ?? null),
   public_practical_info: encodeJsonField(payload.public_practical_info ?? null),
   public_location_info: encodeJsonField(payload.public_location_info ?? null),
+  frais_gestion: encodeJsonField(normalizeExpenseManagement(payload.frais_gestion)),
 });
 
 const toGiteInput = (payload: GiteImportInput): GiteInput => {
@@ -322,6 +384,7 @@ const hydrateGite = (gite: any) => {
     public_rooms: fromJsonString<unknown>(rest.public_rooms, null),
     public_practical_info: fromJsonString<unknown>(rest.public_practical_info, null),
     public_location_info: fromJsonString<unknown>(rest.public_location_info, null),
+    frais_gestion: normalizeExpenseManagement(fromJsonString<unknown>(rest.frais_gestion, null)),
     public_latitude: rest.public_latitude === null || rest.public_latitude === undefined ? null : toNumber(rest.public_latitude),
     public_longitude: rest.public_longitude === null || rest.public_longitude === undefined ? null : toNumber(rest.public_longitude),
     photos,
@@ -1125,6 +1188,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         cheque_menage_montant_defaut: existing.cheque_menage_montant_defaut,
         arrhes_taux_defaut: existing.arrhes_taux_defaut,
         electricity_price_per_kwh: existing.electricity_price_per_kwh,
+        frais_gestion: encodeJsonField(fromJsonString<unknown>(existing.frais_gestion, { version: 1, categories: [], expenses: [] })),
         prix_nuit_liste: encodeJsonField(fromJsonString<number[]>(existing.prix_nuit_liste, [])),
         gestionnaire_id: existing.gestionnaire_id,
       },
