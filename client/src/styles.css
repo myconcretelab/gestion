@@ -4951,7 +4951,7 @@ body {
 
 .expense-category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -6864,6 +6864,12 @@ body {
   }
 }
 
+@media (max-width: 1100px) {
+  .expense-category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 760px) {
   .gites-editor-layout {
     grid-template-columns: 1fr;
@@ -6984,6 +6990,10 @@ body {
   }
 
   .expense-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .expense-category-grid {
     grid-template-columns: 1fr;
   }
 
