@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Locator, Page } from "playwright";
+import { env } from "../config/env.js";
 import { resolveDataDir } from "../utils/paths.js";
 import { readPumpAutomationConfig, buildDefaultPumpAutomationConfig, getPumpStorageStateId, validatePumpAutomationConfig } from "./pumpAutomationConfig.js";
 import type { PumpAutomationConfig } from "./pumpAutomationConfig.js";
@@ -94,6 +95,20 @@ export const isAirbnbSmsChallengeScreenText = (value: string | null | undefined)
       text.includes("we sent a code") ||
       text.includes("envoyer un nouveau code") ||
       text.includes("send a new code"))
+  );
+};
+
+export const isAirbnbStandardLoginScreenText = (value: string | null | undefined) => {
+  const text = normalizeAirbnbText(value);
+  return (
+    text.includes("connexion ou inscription") ||
+    text.includes("connectez-vous ou inscrivez-vous") ||
+    text.includes("log in or sign up") ||
+    text.includes("continue with email") ||
+    text.includes("continuer avec un email") ||
+    text.includes("continuer avec un e-mail") ||
+    (text.includes("mot de passe") && text.includes("se connecter")) ||
+    (text.includes("password") && (text.includes("sign in") || text.includes("log in")))
   );
 };
 
@@ -203,6 +218,13 @@ const writeDiagnostics = async (page: Page | null, renewalId: string, suffix: st
 
   if (page && !page.isClosed()) {
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
+    const currentUrl = page.url();
+    const bodyText = await page.locator("body").innerText().catch(() => "");
+    fs.writeFileSync(
+      path.join(diagnosticsDir, `${suffix}.json`),
+      JSON.stringify({ url: currentUrl, bodyText }, null, 2),
+      "utf-8"
+    );
     const html = await page.content().catch(() => "");
     if (html) {
       fs.writeFileSync(htmlPath, html, "utf-8");
@@ -239,6 +261,23 @@ const fillFirstVisible = async (page: Page, selectors: string[], value: string, 
     return true;
   }
   return false;
+};
+
+const waitForRenewalScreen = async (page: Page, config: PumpAutomationConfig, timeout = 20_000) => {
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    const bodyText = await getBodyText(page);
+    if (isAirbnbSmsChallengeScreenText(bodyText)) return "sms_challenge" as const;
+    if (isAirbnbAccountRenewalScreenText(bodyText)) return "account_renewal" as const;
+
+    const loginRequired = await checkIfLoginRequired(page, config).catch(() => true);
+    if (!loginRequired) return "authenticated" as const;
+
+    await wait(1_000);
+  }
+
+  return "unknown" as const;
 };
 
 const getRenewalContext = () => {
@@ -288,6 +327,118 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   await button.click({ timeout: 5_000 });
   await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
   await wait(1_000);
+  return true;
+};
+
+const maybeHandleStandardLogin = async (
+  page: Page,
+  config: PumpAutomationConfig,
+  renewal: RenewalRecord
+) => {
+  const bodyText = await getBodyText(page);
+  const currentUrl = page.url().toLowerCase();
+  if (isAirbnbSmsChallengeScreenText(bodyText) || isAirbnbAccountRenewalScreenText(bodyText)) return false;
+  if (!currentUrl.includes("/login") && !isAirbnbStandardLoginScreenText(bodyText)) return false;
+
+  const source = getPumpAutomationSourceDefinition(config.sourceType);
+  const username = config.username.trim();
+  const password = env.PUMP_SESSION_PASSWORD;
+  if (!username) {
+    throw new Error(`Airbnb affiche l'écran de connexion standard mais aucun username Pump n'est configuré.`);
+  }
+  if (!password) {
+    throw new Error(
+      `Airbnb affiche l'écran de connexion standard. Configurez PUMP_SESSION_PASSWORD en production pour déclencher le challenge SMS.`
+    );
+  }
+
+  updateRenewal({
+    message: `Écran de connexion ${source.label} standard détecté, déclenchement du challenge SMS...`,
+    currentUrl: page.url(),
+  });
+
+  const usernameVisibleBeforeEmailChoice = await getVisibleLocator(
+    page.locator(config.advancedSelectors.usernameInput)
+  );
+  if (!usernameVisibleBeforeEmailChoice) {
+    await clickFirstVisible(
+      page,
+      [
+        config.advancedSelectors.emailFirstButton,
+        'button:has-text("Continuer avec un email")',
+        'button:has-text("Continuer avec un e-mail")',
+        '[role="button"]:has-text("Continuer avec un email")',
+        '[role="button"]:has-text("Continuer avec un e-mail")',
+        'button:has-text("Continue with email")',
+        '[role="button"]:has-text("Continue with email")',
+      ],
+      10_000
+    );
+    await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
+    await wait(1_000);
+  }
+
+  const usernameFilled = await fillFirstVisible(page, [config.advancedSelectors.usernameInput], username, 10_000);
+  if (!usernameFilled) {
+    throw new Error("Airbnb affiche l'écran de connexion standard mais le champ email est introuvable.");
+  }
+
+  let passwordVisible = await getVisibleLocator(page.locator(config.advancedSelectors.passwordInput));
+  if (!passwordVisible) {
+    const continued = await clickFirstVisible(
+      page,
+      [
+        config.advancedSelectors.continueAfterUsernameButton,
+        config.advancedSelectors.submitButton,
+        'button:has-text("Continuer")',
+        'button:has-text("Continue")',
+        'button:has-text("Suivant")',
+        'button:has-text("Next")',
+        'button[type="submit"]',
+      ],
+      10_000
+    );
+    if (!continued) {
+      throw new Error("Airbnb affiche l'écran de connexion standard mais le bouton après email est introuvable.");
+    }
+    await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
+    await wait(1_000);
+
+    const state = await waitForRenewalScreen(page, config, 5_000);
+    if (state === "sms_challenge" || state === "authenticated" || state === "account_renewal") return true;
+    passwordVisible = await getVisibleLocator(page.locator(config.advancedSelectors.passwordInput));
+  }
+
+  if (!passwordVisible) {
+    throw new Error("Airbnb affiche l'écran de connexion standard mais le champ mot de passe est introuvable.");
+  }
+
+  await passwordVisible.fill(password, { timeout: 5_000 });
+  const submitted = await clickFirstVisible(
+    page,
+    [
+      config.advancedSelectors.finalSubmitButton,
+      config.advancedSelectors.submitButton,
+      'button:has-text("Connexion")',
+      'button:has-text("Se connecter")',
+      'button:has-text("Continuer")',
+      'button:has-text("Continue")',
+      'button:has-text("Sign in")',
+      'button:has-text("Log in")',
+      'button[type="submit"]',
+    ],
+    10_000
+  );
+  if (!submitted) {
+    throw new Error("Airbnb affiche l'écran de connexion standard mais le bouton de validation est introuvable.");
+  }
+
+  await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
+  await waitForRenewalScreen(page, config, 15_000);
+  updateRenewal({
+    currentUrl: page.url(),
+    diagnosticsRelativePath: await writeDiagnostics(page, renewal.renewalId, "standard-login-submitted"),
+  });
   return true;
 };
 
@@ -421,6 +572,8 @@ const runRenewalStart = async () => {
       return;
     }
 
+    await maybeHandleAccountChooser(page, config);
+    await maybeHandleStandardLogin(page, config, renewal);
     await maybeHandleAccountChooser(page, config);
     updateRenewal({ currentUrl: page.url() });
 
