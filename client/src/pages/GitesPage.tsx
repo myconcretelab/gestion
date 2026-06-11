@@ -706,9 +706,10 @@ const normalizeStructuredContentData = (value: string): StructuredContentData =>
             .filter((group): group is StructuredContentGroup => Boolean(group))
         : [];
 
+      const title = toDisplayText(row.titre ?? row.title ?? row.nom);
       return {
         id: sectionId,
-        titre: sectionId === BED_SECTION_ID ? "Infos complémentaires" : toDisplayText(row.titre ?? row.title ?? row.nom) || `Section ${sectionIndex + 1}`,
+        titre: title || (sectionId === BED_SECTION_ID ? "Infos complémentaires" : `Section ${sectionIndex + 1}`),
         groupes,
       };
     })
