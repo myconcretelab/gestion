@@ -129,6 +129,24 @@ const getWordPressPhotoSyncErrorSummary = (responseBody: unknown): string => {
   return resultError || bodyError;
 };
 
+const isExpectedWordPressPhotoSyncResponse = (responseBody: unknown): boolean => {
+  const body = asRecord(responseBody);
+  if (!body) return false;
+
+  if (body.queued === true) return true;
+  if (body.ok !== true) return false;
+
+  return Boolean(asRecord(body.result));
+};
+
+const getUnexpectedWordPressResponseError = (responseBody: unknown): string => {
+  if (typeof responseBody === "string" && /<html[\s>]/i.test(responseBody)) {
+    return "Réponse WordPress inattendue: le webhook a retourné une page HTML au lieu du JSON Booked attendu.";
+  }
+
+  return "Réponse WordPress inattendue: le webhook n'a pas retourné le JSON Booked attendu.";
+};
+
 const getRetryDelayMs = (attempts: number) => {
   const exponent = Math.max(0, attempts - 1);
   const backoff = env.BOOKED_WORDPRESS_WEBHOOK_RETRY_BASE_MS * 2 ** exponent;
@@ -199,6 +217,14 @@ const toStatus = (giteId: string, job: WordPressWebhookJobRow | null): GitePhoto
     Number(result?.failed ?? 0);
   const queued = Boolean(bodyObject?.queued);
 
+  if (!isExpectedWordPressPhotoSyncResponse(responseBody)) {
+    return {
+      ...base,
+      state: "failed",
+      message: getUnexpectedWordPressResponseError(responseBody),
+    };
+  }
+
   return {
     ...base,
     state: "succeeded",
@@ -265,6 +291,16 @@ const sendGitePhotosWebhook = async (giteId: string): Promise<WebhookSendResult>
     const result = asRecord(bodyObject?.result);
     const failedCount = Number(result?.failed ?? 0);
     const errorSummary = getWordPressPhotoSyncErrorSummary(responseBody);
+
+    if (!isExpectedWordPressPhotoSyncResponse(responseBody)) {
+      return {
+        ok: false,
+        retryable: false,
+        response_status: response.status,
+        response_body: responseBody,
+        error: errorSummary || getUnexpectedWordPressResponseError(responseBody),
+      };
+    }
 
     if (failedCount > 0) {
       return {
@@ -479,4 +515,9 @@ export const scheduleGitePhotosWordPressWebhook = async (giteId: string): Promis
 
   nudgeQueue(0);
   return toStatus(normalizedGiteId, job);
+};
+
+export const __bookedWordPressWebhookTestUtils = {
+  getUnexpectedWordPressResponseError,
+  isExpectedWordPressPhotoSyncResponse,
 };
