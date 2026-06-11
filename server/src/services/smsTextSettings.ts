@@ -39,12 +39,12 @@ export const buildDefaultSmsTextSettings = (): SmsTextSettings => ({
     {
       id: "bedding-cleaning",
       title: "Draps/ménage",
-      text: "Comme indiqué, je vous laisse prendre vos draps, serviettes et faire le ménage avant de partir.",
+      text: "Comme convenu, les draps et serviettes ne sont pas fournis ; merci de prévoir votre linge et de faire le ménage avant votre départ.",
     },
     {
       id: "bedding-option",
       title: "Option Draps/Serviettes",
-      text: "Vous pourrez prendre l'option draps à 15€ par lit si vous ne souhaitez pas emporter votre linge.",
+      text: "Si besoin, l'option draps est possible à 15€ par lit.",
     },
   ],
 });

@@ -46,12 +46,12 @@ export const DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS: QuickReservationSmsSnippet[
   {
     id: "bedding-cleaning",
     title: "Draps/ménage",
-    text: "Comme indiqué, je vous laisse prendre vos draps, serviettes et faire le ménage avant de partir.",
+    text: "Comme convenu, les draps et serviettes ne sont pas fournis ; merci de prévoir votre linge et de faire le ménage avant votre départ.",
   },
   {
     id: "bedding-option",
     title: "Option Draps/Serviettes",
-    text: "Vous pourrez prendre l'option draps à 15€ par lit si vous ne souhaitez pas emporter votre linge.",
+    text: "Si besoin, l'option draps est possible à 15€ par lit.",
   },
 ];
 
@@ -235,6 +235,12 @@ const formatQuickReservationSmsAmount = (value: number) => {
   return Number.isInteger(value) ? String(value) : round2(value).toFixed(2).replace(".", ",");
 };
 
+const formatQuickReservationQuantity = (count: number, singular: string, plural: string) =>
+  `${count} ${count > 1 ? plural : singular}`;
+
+const formatQuickReservationOptionSmsItem = (label: string, amount: number, freeLabel: string) =>
+  amount > 0 ? `${label} (${formatQuickReservationSmsAmount(amount)}€)` : `${label} (${freeLabel})`;
+
 const formatQuickReservationOptionSmsSummary = (params: {
   options: ReturnType<typeof buildQuickReservationOptions>;
   optionsPreview: ReturnType<typeof computeReservationOptionsPreview>;
@@ -243,45 +249,47 @@ const formatQuickReservationOptionSmsSummary = (params: {
   const items: string[] = [];
 
   if (options.menage.enabled) {
-    items.push(optionsPreview.byKey.menage > 0 ? `ménage ${formatQuickReservationSmsAmount(optionsPreview.byKey.menage)}€` : "ménage offert");
+    items.push(formatQuickReservationOptionSmsItem("ménage", optionsPreview.byKey.menage, "offert"));
   }
 
   if (options.draps.enabled) {
     const count = toNonNegativeInt(options.draps.nb_lits, 0);
     items.push(
-      optionsPreview.byKey.draps > 0
-        ? `draps x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.draps)}€`
-        : `draps x${count} offerts`
+      formatQuickReservationOptionSmsItem(
+        `draps pour ${formatQuickReservationQuantity(count, "lit", "lits")}`,
+        optionsPreview.byKey.draps,
+        "offerts"
+      )
     );
   }
 
   if (options.linge_toilette.enabled) {
     const count = toNonNegativeInt(options.linge_toilette.nb_personnes, 0);
     items.push(
-      optionsPreview.byKey.linge_toilette > 0
-        ? `serviettes x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.linge_toilette)}€`
-        : `serviettes x${count} offertes`
+      formatQuickReservationOptionSmsItem(
+        `serviettes pour ${formatQuickReservationQuantity(count, "personne", "personnes")}`,
+        optionsPreview.byKey.linge_toilette,
+        "offertes"
+      )
     );
   }
 
   if (options.depart_tardif.enabled) {
-    items.push(
-      optionsPreview.byKey.depart_tardif > 0
-        ? `départ tardif ${formatQuickReservationSmsAmount(optionsPreview.byKey.depart_tardif)}€`
-        : "départ tardif offert"
-    );
+    items.push(formatQuickReservationOptionSmsItem("départ tardif", optionsPreview.byKey.depart_tardif, "offert"));
   }
 
   if (options.chiens.enabled) {
     const count = toNonNegativeInt(options.chiens.nb, 0);
     items.push(
-      optionsPreview.byKey.chiens > 0
-        ? `chiens x${count} ${formatQuickReservationSmsAmount(optionsPreview.byKey.chiens)}€`
-        : `chiens x${count} offerts`
+      formatQuickReservationOptionSmsItem(
+        formatQuickReservationQuantity(count, "chien", "chiens"),
+        optionsPreview.byKey.chiens,
+        count > 1 ? "offerts" : "offert"
+      )
     );
   }
 
-  return items.join(" · ");
+  return items.join(", ");
 };
 
 export const computeQuickReservationDerivedState = (params: {
@@ -315,6 +323,15 @@ export const computeQuickReservationDerivedState = (params: {
         optionsPreview,
       })
     : "";
+  const activeOptionSmsCount = options
+    ? [
+        options.menage.enabled,
+        options.draps.enabled,
+        options.linge_toilette.enabled,
+        options.depart_tardif.enabled,
+        options.chiens.enabled,
+      ].filter(Boolean).length
+    : 0;
 
   let smsText = "";
   if (gite && draft && isIsoDateString(dateSummary.startIso) && isIsoDateString(dateSummary.exitIso) && dateSummary.nights > 0) {
@@ -350,7 +367,7 @@ export const computeQuickReservationDerivedState = (params: {
     }
 
     if (optionSummary) {
-      baseLines.push(`Options retenues : ${optionSummary}.`);
+      baseLines.push(`${activeOptionSmsCount > 1 ? "Options choisies" : "Option choisie"} : ${optionSummary}.`);
     }
 
     if (computedTotal !== null && (optionsPreview.total > 0 || optionSummary)) {
@@ -364,7 +381,7 @@ export const computeQuickReservationDerivedState = (params: {
       .map((snippet) => interpolateQuickReservationSmsSnippet(snippet.text, snippetValues))
       .filter((snippet) => snippet.trim().length > 0);
 
-    smsText = [...baseLines, ...selectedSnippets, "Merci Beaucoup,", "Soazig Molinier"].join("\n");
+    smsText = [...baseLines, ...selectedSnippets, "Merci beaucoup,", "Soazig Molinier"].join("\n");
   }
 
   const smsHref = buildSmsHref(draft ? getQuickReservationSmsPhoneDigits(draft.telephone) : "", smsText);
