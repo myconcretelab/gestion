@@ -305,6 +305,7 @@ const SETTINGS_SECTIONS = [
   { id: "settings-import-log", label: "Journal des imports" },
   { id: "settings-sms", label: "SMS" },
   { id: "settings-email-texts", label: "Emails" },
+  { id: "settings-telegram", label: "Telegram" },
   { id: "settings-daily-reservation-email", label: "Email quotidien" },
   { id: "settings-smartlife", label: "Smart Life" },
   { id: "settings-declaration-nights", label: "Nuitées à déclarer" },
@@ -325,6 +326,7 @@ const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
   "settings-import-log": "journal-imports",
   "settings-sms": "sms",
   "settings-email-texts": "emails",
+  "settings-telegram": "telegram",
   "settings-daily-reservation-email": "email-quotidien",
   "settings-smartlife": "smartlife",
   "settings-declaration-nights": "nuitees",
@@ -470,6 +472,28 @@ type DocumentEmailTextSettings = {
     destinationUrl: string;
   };
   facture: DocumentEmailTextTemplate;
+};
+
+type TelegramNotificationConfig = {
+  enabled: boolean;
+  bot_token: string;
+  chat_ids: string[];
+  notify_booking_request_created: boolean;
+};
+
+type TelegramNotificationState = {
+  config: TelegramNotificationConfig;
+  bot_configured: boolean;
+};
+
+type TelegramNotificationTestResponse = {
+  ok: boolean;
+  sent_count: number;
+  skipped_reason:
+    | "disabled"
+    | "missing_bot_token"
+    | "missing_chat_ids"
+    | null;
 };
 
 type DailyReservationEmailConfig = {
@@ -844,6 +868,18 @@ const DEFAULT_DAILY_RESERVATION_EMAIL_CONFIG: DailyReservationEmailConfig = {
   recipients: [],
   hour: 7,
   minute: 0,
+};
+
+const DEFAULT_TELEGRAM_NOTIFICATION_CONFIG: TelegramNotificationConfig = {
+  enabled: false,
+  bot_token: "",
+  chat_ids: [],
+  notify_booking_request_created: true,
+};
+
+const DEFAULT_TELEGRAM_NOTIFICATION_STATE: TelegramNotificationState = {
+  config: DEFAULT_TELEGRAM_NOTIFICATION_CONFIG,
+  bot_configured: false,
 };
 
 const DEFAULT_DAILY_RESERVATION_EMAIL_STATE: DailyReservationEmailState = {
@@ -1661,6 +1697,24 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [documentEmailTextNotice, setDocumentEmailTextNotice] = useState<
     string | null
   >(null);
+  const [telegramNotificationState, setTelegramNotificationState] =
+    useState<TelegramNotificationState>(DEFAULT_TELEGRAM_NOTIFICATION_STATE);
+  const [telegramNotificationDraft, setTelegramNotificationDraft] =
+    useState<TelegramNotificationConfig>(
+      DEFAULT_TELEGRAM_NOTIFICATION_CONFIG,
+    );
+  const [loadingTelegramNotification, setLoadingTelegramNotification] =
+    useState(true);
+  const [savingTelegramNotification, setSavingTelegramNotification] =
+    useState(false);
+  const [testingTelegramNotification, setTestingTelegramNotification] =
+    useState(false);
+  const [telegramNotificationError, setTelegramNotificationError] = useState<
+    string | null
+  >(null);
+  const [telegramNotificationNotice, setTelegramNotificationNotice] = useState<
+    string | null
+  >(null);
   const [dailyReservationEmailState, setDailyReservationEmailState] =
     useState<DailyReservationEmailState>(
       DEFAULT_DAILY_RESERVATION_EMAIL_STATE,
@@ -2276,6 +2330,30 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     setDocumentEmailTextDraft(nextSettings);
   };
 
+  const applyTelegramNotificationState = (
+    data: TelegramNotificationState,
+  ) => {
+    const chatIds = Array.isArray(data?.config?.chat_ids)
+      ? data.config.chat_ids
+          .map((item) => String(item ?? "").trim())
+          .filter(Boolean)
+      : [];
+
+    const nextState: TelegramNotificationState = {
+      config: {
+        enabled: Boolean(data?.config?.enabled),
+        bot_token: "",
+        chat_ids: chatIds,
+        notify_booking_request_created:
+          data?.config?.notify_booking_request_created !== false,
+      },
+      bot_configured: Boolean(data?.bot_configured),
+    };
+
+    setTelegramNotificationState(nextState);
+    setTelegramNotificationDraft(nextState.config);
+  };
+
   const applyDailyReservationEmailState = (data: DailyReservationEmailState) => {
     const recipients = Array.isArray(data?.config?.recipients)
       ? data.config.recipients
@@ -2563,6 +2641,13 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
     applyDocumentEmailTextSettings(data);
   };
 
+  const loadTelegramNotificationState = async () => {
+    const data = await apiFetch<TelegramNotificationState>(
+      "/settings/telegram",
+    );
+    applyTelegramNotificationState(data);
+  };
+
   const loadDailyReservationEmailState = async () => {
     try {
       const data = await apiFetch<DailyReservationEmailState>(
@@ -2770,6 +2855,20 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
             return;
           } finally {
             setLoadingDocumentEmailTexts(false);
+          }
+          break;
+        case "settings-telegram":
+          setLoadingTelegramNotification(true);
+          try {
+            await loadTelegramNotificationState();
+          } catch (error: any) {
+            setTelegramNotificationError(
+              error?.message ??
+                "Impossible de charger la configuration Telegram.",
+            );
+            return;
+          } finally {
+            setLoadingTelegramNotification(false);
           }
           break;
         case "settings-daily-reservation-email":
@@ -3180,6 +3279,95 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     } finally {
       setSavingDocumentEmailTexts(false);
+    }
+  };
+
+  const saveTelegramNotificationSettings = async () => {
+    setSavingTelegramNotification(true);
+    setTelegramNotificationError(null);
+    setTelegramNotificationNotice(null);
+
+    try {
+      const chatIds = telegramNotificationDraft.chat_ids
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean);
+      const deduplicatedChatIds = [...new Set(chatIds)];
+
+      if (telegramNotificationDraft.enabled) {
+        const hasBotToken =
+          telegramNotificationState.bot_configured ||
+          Boolean(telegramNotificationDraft.bot_token.trim());
+        if (!hasBotToken) {
+          setTelegramNotificationError("Renseignez le token du bot Telegram.");
+          return;
+        }
+        if (deduplicatedChatIds.length === 0) {
+          setTelegramNotificationError(
+            "Ajoutez au moins un chat ID Telegram.",
+          );
+          return;
+        }
+      }
+
+      const response = await apiFetch<TelegramNotificationState>(
+        "/settings/telegram",
+        {
+          method: "PUT",
+          json: {
+            enabled: telegramNotificationDraft.enabled,
+            bot_token: telegramNotificationDraft.bot_token.trim(),
+            chat_ids: deduplicatedChatIds,
+            notify_booking_request_created:
+              telegramNotificationDraft.notify_booking_request_created,
+          },
+        },
+      );
+      applyTelegramNotificationState(response);
+      setTelegramNotificationNotice("Configuration Telegram enregistrée.");
+    } catch (error: any) {
+      setTelegramNotificationError(
+        error.message ?? "Impossible d'enregistrer Telegram.",
+      );
+    } finally {
+      setSavingTelegramNotification(false);
+    }
+  };
+
+  const testTelegramNotification = async () => {
+    setTestingTelegramNotification(true);
+    setTelegramNotificationError(null);
+    setTelegramNotificationNotice(null);
+
+    try {
+      const response = await apiFetch<TelegramNotificationTestResponse>(
+        "/settings/telegram/test",
+        {
+          method: "POST",
+          json: {
+            message: "Message de test Telegram depuis Contrats.",
+          },
+        },
+      );
+
+      if (response.ok) {
+        setTelegramNotificationNotice(
+          `Message Telegram envoyé à ${response.sent_count} destinataire${response.sent_count > 1 ? "s" : ""}.`,
+        );
+      } else if (response.skipped_reason === "disabled") {
+        setTelegramNotificationNotice("Telegram est désactivé.");
+      } else if (response.skipped_reason === "missing_bot_token") {
+        setTelegramNotificationError("Token du bot Telegram manquant.");
+      } else if (response.skipped_reason === "missing_chat_ids") {
+        setTelegramNotificationError("Aucun chat ID Telegram configuré.");
+      } else {
+        setTelegramNotificationError("Aucun message Telegram envoyé.");
+      }
+    } catch (error: any) {
+      setTelegramNotificationError(
+        error.message ?? "Impossible d'envoyer le message de test Telegram.",
+      );
+    } finally {
+      setTestingTelegramNotification(false);
     }
   };
 
@@ -5602,6 +5790,211 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 )}
               </div>
             </div>
+            </section>
+          ) : null}
+
+          {activeSettingsSection === "settings-telegram" ? (
+            <section
+              id="settings-telegram"
+              className="settings-cluster"
+              aria-labelledby="nav-settings-telegram"
+            >
+              <div className="settings-cluster__header">
+                <div>
+                  <div className="settings-cluster__eyebrow">Communication</div>
+                  <h2 className="settings-cluster__title">Telegram</h2>
+                </div>
+                <p className="settings-cluster__text">
+                  Configurez l'envoi de notifications via un bot Telegram.
+                </p>
+              </div>
+              <div className="settings-cluster__grid">
+                <div className="card settings-card settings-card--span-12">
+                  <div className="settings-card__topline">
+                    <span className="settings-card__tag">Notifications</span>
+                  </div>
+                  <div className="section-title">Bot Telegram</div>
+                  <div className="field-hint">
+                    Le premier événement disponible envoie un message quand un
+                    client crée une demande de réservation depuis Booked.
+                  </div>
+                  {loadingTelegramNotification ? (
+                    <div className="field-hint" style={{ marginTop: 12 }}>
+                      Chargement...
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid-2" style={{ marginTop: 16 }}>
+                        <label className="field">
+                          Activation
+                          <select
+                            value={telegramNotificationDraft.enabled ? "1" : "0"}
+                            onChange={(event) => {
+                              setTelegramNotificationError(null);
+                              setTelegramNotificationNotice(null);
+                              setTelegramNotificationDraft((previous) => ({
+                                ...previous,
+                                enabled: event.target.value === "1",
+                              }));
+                            }}
+                            disabled={
+                              savingTelegramNotification ||
+                              testingTelegramNotification
+                            }
+                          >
+                            <option value="0">Désactivé</option>
+                            <option value="1">Activé</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          Demandes Booked
+                          <select
+                            value={
+                              telegramNotificationDraft.notify_booking_request_created
+                                ? "1"
+                                : "0"
+                            }
+                            onChange={(event) => {
+                              setTelegramNotificationError(null);
+                              setTelegramNotificationNotice(null);
+                              setTelegramNotificationDraft((previous) => ({
+                                ...previous,
+                                notify_booking_request_created:
+                                  event.target.value === "1",
+                              }));
+                            }}
+                            disabled={
+                              savingTelegramNotification ||
+                              testingTelegramNotification
+                            }
+                          >
+                            <option value="1">Notifier</option>
+                            <option value="0">Ignorer</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="grid-2" style={{ marginTop: 16 }}>
+                        <label className="field">
+                          Token du bot
+                          <input
+                            type="password"
+                            value={telegramNotificationDraft.bot_token}
+                            onChange={(event) => {
+                              setTelegramNotificationError(null);
+                              setTelegramNotificationNotice(null);
+                              setTelegramNotificationDraft((previous) => ({
+                                ...previous,
+                                bot_token: event.target.value,
+                              }));
+                            }}
+                            disabled={
+                              savingTelegramNotification ||
+                              testingTelegramNotification
+                            }
+                            placeholder={
+                              telegramNotificationState.bot_configured
+                                ? "Token déjà enregistré"
+                                : "123456:ABC..."
+                            }
+                            autoComplete="off"
+                          />
+                        </label>
+                        <label className="field">
+                          Chat IDs
+                          <textarea
+                            rows={4}
+                            value={telegramNotificationDraft.chat_ids.join("\n")}
+                            onChange={(event) => {
+                              setTelegramNotificationError(null);
+                              setTelegramNotificationNotice(null);
+                              setTelegramNotificationDraft((previous) => ({
+                                ...previous,
+                                chat_ids: event.target.value
+                                  .split(/[\n,;]+/)
+                                  .map((item) => item.trim())
+                                  .filter(Boolean),
+                              }));
+                            }}
+                            disabled={
+                              savingTelegramNotification ||
+                              testingTelegramNotification
+                            }
+                            placeholder="Un chat ID par ligne"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="field-hint" style={{ marginTop: 8 }}>
+                        Bot:{" "}
+                        <strong>
+                          {telegramNotificationState.bot_configured
+                            ? "configuré"
+                            : "non configuré"}
+                        </strong>
+                        {" · "}Destinataires:{" "}
+                        <strong>
+                          {telegramNotificationDraft.chat_ids.length}
+                        </strong>
+                      </div>
+
+                      <div className="actions" style={{ marginTop: 16 }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => void loadTelegramNotificationState()}
+                          disabled={
+                            loadingTelegramNotification ||
+                            savingTelegramNotification ||
+                            testingTelegramNotification
+                          }
+                        >
+                          {loadingTelegramNotification
+                            ? "Chargement..."
+                            : "Recharger"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => void testTelegramNotification()}
+                          disabled={
+                            savingTelegramNotification ||
+                            testingTelegramNotification
+                          }
+                        >
+                          {testingTelegramNotification
+                            ? "Envoi..."
+                            : "Envoyer un test"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void saveTelegramNotificationSettings()
+                          }
+                          disabled={
+                            savingTelegramNotification ||
+                            testingTelegramNotification
+                          }
+                        >
+                          {savingTelegramNotification
+                            ? "Enregistrement..."
+                            : "Enregistrer"}
+                        </button>
+                      </div>
+                      {telegramNotificationNotice ? (
+                        <div className="note note--success">
+                          {telegramNotificationNotice}
+                        </div>
+                      ) : null}
+                      {telegramNotificationError ? (
+                        <div className="note">
+                          {telegramNotificationError}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </div>
             </section>
           ) : null}
 

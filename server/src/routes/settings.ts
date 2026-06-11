@@ -80,6 +80,15 @@ import {
   writeDocumentEmailTemplateSettings,
 } from "../services/documentEmailTemplateSettings.js";
 import {
+  buildDefaultTelegramNotificationConfig,
+  buildTelegramNotificationState,
+  mergeTelegramNotificationConfig,
+  readTelegramNotificationConfig,
+  sendTelegramMessage,
+  writeTelegramNotificationConfig,
+  type TelegramNotificationConfig,
+} from "../services/telegramNotifications.js";
+import {
   getDailyReservationEmailState,
   runDailyReservationEmail,
   updateDailyReservationEmailConfig,
@@ -296,8 +305,25 @@ const dailyReservationEmailSettingsSchema = z.object({
   hour: z.number().int().min(0).max(23),
   minute: z.number().int().min(0).max(59),
 });
+const telegramNotificationSettingsSchema = z.object({
+  enabled: z.boolean(),
+  bot_token: z.string().trim().optional().default(""),
+  chat_ids: z
+    .array(z.string().trim().min(1))
+    .default([]),
+  notify_booking_request_created: z.boolean().default(true),
+});
 const dailyReservationEmailRunSchema = z.object({
   force: z.boolean().optional().default(false),
+});
+const telegramNotificationTestSchema = z.object({
+  message: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4000)
+    .optional()
+    .default("Message de test Telegram depuis Contrats."),
 });
 const smartlifeAutomationRuleSchema = z.object({
   id: z.string().trim().min(1).optional(),
@@ -1308,6 +1334,14 @@ router.get("/daily-reservation-email", (_req, res, next) => {
   }
 });
 
+router.get("/telegram", (_req, res, next) => {
+  try {
+    res.json(buildTelegramNotificationState());
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put("/declaration-nights", async (req, res, next) => {
   try {
     const payload = declarationNightsSettingsSchema.parse(req.body);
@@ -1369,6 +1403,32 @@ router.put("/daily-reservation-email", async (req, res, next) => {
     ) as DailyReservationEmailConfig;
     await updateDailyReservationEmailConfig(payload);
     res.json(getDailyReservationEmailState());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/telegram", (req, res, next) => {
+  try {
+    const payload = telegramNotificationSettingsSchema.parse(
+      req.body ?? {},
+    ) as Partial<TelegramNotificationConfig>;
+    const current = readTelegramNotificationConfig(
+      buildDefaultTelegramNotificationConfig(),
+    );
+    const merged = mergeTelegramNotificationConfig(current, payload);
+    writeTelegramNotificationConfig(merged);
+    res.json(buildTelegramNotificationState(merged));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/telegram/test", async (req, res, next) => {
+  try {
+    const payload = telegramNotificationTestSchema.parse(req.body ?? {});
+    const result = await sendTelegramMessage(payload.message);
+    res.json({ ok: result.skipped_reason === null, ...result });
   } catch (error) {
     next(error);
   }
