@@ -20,6 +20,7 @@ import {
 import { getBookedCalendarPeriodsForRange } from "../services/bookedCalendarPeriods.js";
 import { sendBookingRequestCreatedEmails } from "../services/bookingRequestEmail.js";
 import { normalizeBookedGiteContentSections } from "../services/bookedGiteContent.js";
+import { notifyBookingRequestCreatedOnTelegram } from "../services/telegramNotifications.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 
@@ -566,6 +567,15 @@ router.post("/requests", async (req, res, next) => {
       });
     } catch (emailError) {
       console.error("[booked] booking request email failed:", emailError);
+    }
+
+    try {
+      await notifyBookingRequestCreatedOnTelegram({
+        ...hydrateBookingRequest(created),
+        gite: created.gite,
+      });
+    } catch (telegramError) {
+      console.error("[booked] booking request Telegram notification failed:", telegramError);
     }
 
     return res.status(201).json(hydrateBookingRequest(created));
