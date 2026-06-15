@@ -290,6 +290,11 @@ const documentEmailTextSettingsSchema = z.object({
     destinationUrl: z.string().trim().max(2_000).default(""),
   }),
   facture: documentEmailTextTemplateSchema,
+  bookingRequestApproved: documentEmailTextTemplateSchema.extend({
+    activitiesList: z.string().max(20_000).default(""),
+    guideUrl: z.string().trim().max(2_000).default(""),
+    destinationUrl: z.string().trim().max(2_000).default(""),
+  }),
 });
 const dailyReservationEmailSettingsSchema = z.object({
   enabled: z.boolean(),

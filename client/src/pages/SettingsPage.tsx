@@ -472,6 +472,11 @@ type DocumentEmailTextSettings = {
     destinationUrl: string;
   };
   facture: DocumentEmailTextTemplate;
+  bookingRequestApproved: DocumentEmailTextTemplate & {
+    activitiesList: string;
+    guideUrl: string;
+    destinationUrl: string;
+  };
 };
 
 type TelegramNotificationConfig = {
@@ -860,6 +865,46 @@ const DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS: DocumentEmailTextSettings = {
       "Sébastien et Soazig",
       "Les Gites de Brocéliande",
     ].join("\n"),
+  },
+  bookingRequestApproved: {
+    subject: "Votre réservation est acceptée · {{giteName}}",
+    body: [
+      "{{greeting}}",
+      "",
+      "Merci pour votre demande de réservation {{giteReference}}. Nous avons le plaisir de vous confirmer que votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.",
+      "",
+      "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.",
+      "",
+      "{{beddingReminder}}",
+      "",
+      "Si vous voulez des idées d'activités pour votre escapade mauronnaise, voici ce que je peux vous conseiller :",
+      "",
+      "{{activitiesList}}",
+      "",
+      "Vous trouverez de bonnes indications sur ces sites :",
+      "{{guideUrl}}",
+      "{{destinationUrl}}",
+      "",
+      "N'hésitez pas à revenir vers nous si vous avez des questions pour l'organisation de votre séjour.",
+      "",
+      "Je vous souhaite une bonne journée.",
+      "",
+      "Bien à vous,",
+      "Soazig",
+      "",
+      "www.gites-broceliande.com",
+      "Soazig et Sébastien Jacqmin",
+      "T : (0033) 6 98 99 37 35",
+    ].join("\n"),
+    activitiesList: [
+      "Les calèches de Brocéliande. Ils proposent des balades en forêt.\nhttps://broceliande.guide/Les-Caleches-de-Barenton",
+      "Les balades contées avec les guides conteurs de Brocéliande.\nhttps://guidesdebroceliande.com/",
+      "Le Château de Comper, avec le Centre de l'Imaginaire Arthurien.",
+      "La Porte des Secrets à Paimpont.",
+      "En balades : la fontaine de Barenton, le Val sans Retour, le lac au Duc et l'étang de Trémelin.",
+    ].join("\n\n"),
+    guideUrl: "https://broceliande.guide/Secrets-de-Broceliande",
+    destinationUrl: "https://destination-broceliande.com/",
   },
 };
 
@@ -2325,6 +2370,31 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
             .replace(/\r\n/g, "\n")
             .trim() || DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.facture.body,
       },
+      bookingRequestApproved: {
+        subject:
+          String(data?.bookingRequestApproved?.subject ?? "").trim() ||
+          DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.bookingRequestApproved.subject,
+        body:
+          String(data?.bookingRequestApproved?.body ?? "")
+            .replace(/\r\n/g, "\n")
+            .trim() ||
+          DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.bookingRequestApproved.body,
+        activitiesList:
+          String(data?.bookingRequestApproved?.activitiesList ?? "")
+            .replace(/\r\n/g, "\n")
+            .trim() ||
+          DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.bookingRequestApproved
+            .activitiesList,
+        guideUrl:
+          String(data?.bookingRequestApproved?.guideUrl ?? "").trim() ||
+          DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.bookingRequestApproved.guideUrl,
+        destinationUrl:
+          String(
+            data?.bookingRequestApproved?.destinationUrl ?? "",
+          ).trim() ||
+          DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.bookingRequestApproved
+            .destinationUrl,
+      },
     };
 
     setDocumentEmailTextDraft(nextSettings);
@@ -3267,6 +3337,17 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
             facture: {
               subject: documentEmailTextDraft.facture.subject.trim(),
               body: documentEmailTextDraft.facture.body.trim(),
+            },
+            bookingRequestApproved: {
+              subject:
+                documentEmailTextDraft.bookingRequestApproved.subject.trim(),
+              body: documentEmailTextDraft.bookingRequestApproved.body.trim(),
+              activitiesList:
+                documentEmailTextDraft.bookingRequestApproved.activitiesList,
+              guideUrl:
+                documentEmailTextDraft.bookingRequestApproved.guideUrl.trim(),
+              destinationUrl:
+                documentEmailTextDraft.bookingRequestApproved.destinationUrl.trim(),
             },
           },
         },
@@ -5591,7 +5672,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   {"{{dateFinLong}}"}, {"{{heureDepart}}"},{" "}
                   {"{{arrhesMontant}}"}, {"{{arrhesDateLimiteLong}}"},{" "}
                   {"{{arrhesInstruction}}"}, {"{{soldeMontant}}"},{" "}
-                  {"{{activitiesList}}"}, {"{{guideUrl}}"}, {"{{destinationUrl}}"}
+                  {"{{activitiesList}}"}, {"{{guideUrl}}"}, {"{{destinationUrl}}"},{" "}
+                  {"{{clientName}}"}, {"{{dateEntreeLong}}"},{" "}
+                  {"{{dateSortieLong}}"}, {"{{travellersSummary}}"},{" "}
+                  {"{{totalGlobal}}"}, {"{{beddingReminder}}"}
                 </div>
                 {loadingDocumentEmailTexts ? (
                   <div className="field-hint" style={{ marginTop: 12 }}>
@@ -5752,6 +5836,123 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                             disabled={savingDocumentEmailTexts}
                           />
                         </label>
+                      </div>
+
+                      <div className="settings-sms-text-row">
+                        <div className="settings-sms-text-row__header">
+                          <strong>Acceptation Booked</strong>
+                        </div>
+                        <label className="field">
+                          Sujet
+                          <input
+                            type="text"
+                            value={
+                              documentEmailTextDraft.bookingRequestApproved
+                                .subject
+                            }
+                            onChange={(event) => {
+                              setDocumentEmailTextError(null);
+                              setDocumentEmailTextNotice(null);
+                              setDocumentEmailTextDraft((previous) => ({
+                                ...previous,
+                                bookingRequestApproved: {
+                                  ...previous.bookingRequestApproved,
+                                  subject: event.target.value,
+                                },
+                              }));
+                            }}
+                            disabled={savingDocumentEmailTexts}
+                          />
+                        </label>
+                        <label className="field">
+                          Corps
+                          <textarea
+                            rows={14}
+                            value={
+                              documentEmailTextDraft.bookingRequestApproved.body
+                            }
+                            onChange={(event) => {
+                              setDocumentEmailTextError(null);
+                              setDocumentEmailTextNotice(null);
+                              setDocumentEmailTextDraft((previous) => ({
+                                ...previous,
+                                bookingRequestApproved: {
+                                  ...previous.bookingRequestApproved,
+                                  body: event.target.value,
+                                },
+                              }));
+                            }}
+                            disabled={savingDocumentEmailTexts}
+                          />
+                        </label>
+                        <label className="field">
+                          Activités suggérées
+                          <textarea
+                            rows={8}
+                            value={
+                              documentEmailTextDraft.bookingRequestApproved
+                                .activitiesList
+                            }
+                            onChange={(event) => {
+                              setDocumentEmailTextError(null);
+                              setDocumentEmailTextNotice(null);
+                              setDocumentEmailTextDraft((previous) => ({
+                                ...previous,
+                                bookingRequestApproved: {
+                                  ...previous.bookingRequestApproved,
+                                  activitiesList: event.target.value,
+                                },
+                              }));
+                            }}
+                            disabled={savingDocumentEmailTexts}
+                          />
+                        </label>
+                        <div className="grid-2">
+                          <label className="field">
+                            URL guide
+                            <input
+                              type="text"
+                              value={
+                                documentEmailTextDraft.bookingRequestApproved
+                                  .guideUrl
+                              }
+                              onChange={(event) => {
+                                setDocumentEmailTextError(null);
+                                setDocumentEmailTextNotice(null);
+                                setDocumentEmailTextDraft((previous) => ({
+                                  ...previous,
+                                  bookingRequestApproved: {
+                                    ...previous.bookingRequestApproved,
+                                    guideUrl: event.target.value,
+                                  },
+                                }));
+                              }}
+                              disabled={savingDocumentEmailTexts}
+                            />
+                          </label>
+                          <label className="field">
+                            URL destination
+                            <input
+                              type="text"
+                              value={
+                                documentEmailTextDraft.bookingRequestApproved
+                                  .destinationUrl
+                              }
+                              onChange={(event) => {
+                                setDocumentEmailTextError(null);
+                                setDocumentEmailTextNotice(null);
+                                setDocumentEmailTextDraft((previous) => ({
+                                  ...previous,
+                                  bookingRequestApproved: {
+                                    ...previous.bookingRequestApproved,
+                                    destinationUrl: event.target.value,
+                                  },
+                                }));
+                              }}
+                              disabled={savingDocumentEmailTexts}
+                            />
+                          </label>
+                        </div>
                       </div>
                     </div>
 
