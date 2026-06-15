@@ -1,4 +1,5 @@
 import templates from "../content/documentEmailTemplates.json";
+import type { BookingRequest, ContratOptions } from "./types";
 
 type BuildMailtoHrefParams = {
   recipient?: string | null;
@@ -56,8 +57,12 @@ export type DocumentEmailTemplate = {
   destinationUrl?: string;
 };
 
+export type DocumentEmailTemplateType =
+  | BuildDocumentMailtoHrefParams["documentType"]
+  | "bookingRequestApproved";
+
 export type DocumentEmailTemplateSettings = Record<
-  BuildDocumentMailtoHrefParams["documentType"],
+  DocumentEmailTemplateType,
   DocumentEmailTemplate
 >;
 
@@ -145,6 +150,7 @@ export type InvoiceDocumentEmailTextTemplate = {
 export type DocumentEmailTextSettings = {
   contrat: ContractDocumentEmailTextTemplate;
   facture: InvoiceDocumentEmailTextTemplate;
+  bookingRequestApproved: ContractDocumentEmailTextTemplate;
 };
 
 const documentTemplates = templates as DocumentEmailTemplateSettings;
@@ -196,6 +202,22 @@ const formatEuroText = (value: number | string) => {
 
 const formatStayDuration = (value: number) =>
   `${value} ${value > 1 ? "nuits" : "nuit"}`;
+
+const buildTravellersSummary = (params: {
+  nbAdultes: number;
+  nbEnfants: number;
+}) => {
+  const parts = [`${params.nbAdultes} adulte(s)`];
+  if (params.nbEnfants > 0) parts.push(`${params.nbEnfants} enfant(s)`);
+  return parts.join(", ");
+};
+
+const buildBeddingReminder = (options?: ContratOptions | null) => {
+  if (options?.draps?.enabled) {
+    return "L'option draps est bien notée pour votre séjour.";
+  }
+  return "Petit rappel : les draps ne sont pas inclus, pensez donc à les prévoir si besoin.";
+};
 
 const formatArrhesPaymentMethod = (value: string) => {
   const trimmedValue = String(value ?? "").trim();
@@ -380,6 +402,52 @@ export const buildDocumentEmailDraft = (
   };
 };
 
+export const buildBookingRequestApprovedEmailDraft = (
+  request: BookingRequest,
+  templateSettings?: Partial<DocumentEmailTemplateSettings>,
+): DocumentEmailDraft => {
+  const template = {
+    ...documentTemplates.bookingRequestApproved,
+    ...(templateSettings?.bookingRequestApproved ?? {}),
+  };
+  const giteName = String(request.gite?.nom ?? "").trim();
+  const templateValues: Record<string, string> = {
+    greeting: request.hote_nom.trim()
+      ? `Bonjour ${request.hote_nom.trim()},`
+      : "Bonjour,",
+    clientName: request.hote_nom.trim(),
+    giteName,
+    giteReference: giteName ? `au ${giteName}` : "dans notre gîte",
+    stayDuration: formatStayDuration(request.nb_nuits),
+    dateEntree: String(request.date_entree ?? "").slice(0, 10),
+    dateSortie: String(request.date_sortie ?? "").slice(0, 10),
+    dateEntreeLong: formatLongDate(String(request.date_entree ?? "")),
+    dateSortieLong: formatLongDate(String(request.date_sortie ?? "")),
+    travellersSummary: buildTravellersSummary({
+      nbAdultes: request.nb_adultes,
+      nbEnfants: request.nb_enfants_2_17,
+    }),
+    nbAdultes: String(request.nb_adultes),
+    nbEnfants: String(request.nb_enfants_2_17),
+    montantHebergement: formatEuroText(
+      request.pricing_snapshot.montant_hebergement,
+    ),
+    totalOptions: formatEuroText(request.pricing_snapshot.total_options),
+    taxeSejour: formatEuroText(request.pricing_snapshot.taxe_sejour),
+    totalGlobal: formatEuroText(request.pricing_snapshot.total_global),
+    beddingReminder: buildBeddingReminder(request.options),
+    activitiesList: (template.activities ?? []).join("\n\n"),
+    guideUrl: template.guideUrl ?? "",
+    destinationUrl: template.destinationUrl ?? "",
+  };
+
+  return {
+    recipient: request.email ?? "",
+    subject: renderSubjectTemplate(template, templateValues),
+    body: renderBodyLines(template.bodyLines, templateValues),
+  };
+};
+
 export const buildDocumentEmailTemplateSettings = (
   textSettings: DocumentEmailTextSettings,
 ): DocumentEmailTemplateSettings => ({
@@ -399,5 +467,19 @@ export const buildDocumentEmailTemplateSettings = (
     ...documentTemplates.facture,
     subject: textSettings.facture.subject,
     bodyLines: textSettings.facture.body.replace(/\r\n/g, "\n").split("\n"),
+  },
+  bookingRequestApproved: {
+    ...documentTemplates.bookingRequestApproved,
+    subject: textSettings.bookingRequestApproved.subject,
+    bodyLines: textSettings.bookingRequestApproved.body
+      .replace(/\r\n/g, "\n")
+      .split("\n"),
+    activities: textSettings.bookingRequestApproved.activitiesList
+      .replace(/\r\n/g, "\n")
+      .split(/\n\s*\n/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    guideUrl: textSettings.bookingRequestApproved.guideUrl,
+    destinationUrl: textSettings.bookingRequestApproved.destinationUrl,
   },
 });

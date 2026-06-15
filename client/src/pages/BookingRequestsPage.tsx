@@ -3,6 +3,19 @@ import { Link } from "react-router-dom";
 import { apiFetch, isAbortError, isApiError } from "../utils/api";
 import type { BookingRequest, Gite } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
+import {
+  buildBookingRequestApprovedEmailDraft,
+  buildDocumentEmailTemplateSettings,
+  type DocumentEmailTextSettings,
+} from "../utils/documentEmail";
+import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
+
+type ApprovalEmailComposerState = {
+  requestId: string;
+  recipient: string;
+  subject: string;
+  body: string;
+};
 
 const BookingRequestsPage = () => {
   const [requests, setRequests] = useState<BookingRequest[]>([]);
@@ -15,7 +28,9 @@ const BookingRequestsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [submittingAction, setSubmittingAction] = useState<"approve" | "reject" | null>(null);
+  const [submittingAction, setSubmittingAction] = useState<"approve" | "approve-email" | "reject" | null>(null);
+  const [emailComposer, setEmailComposer] =
+    useState<ApprovalEmailComposerState | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -55,18 +70,29 @@ const BookingRequestsPage = () => {
     setDecisionNote(selectedRequest.decision_note ?? "");
   }, [selectedRequest?.id]);
 
-  const handleDecision = async (action: "approve" | "reject") => {
+  const applyUpdatedRequest = (updated: BookingRequest) => {
+    setRequests((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+  };
+
+  const approveRequest = async (
+    email?: { recipient: string; subject: string; body: string },
+  ) => {
     if (!selectedRequest) return;
-    setSubmittingAction(action);
+    setSubmittingAction(email ? "approve-email" : "approve");
     setError(null);
     setNotice(null);
     try {
-      const updated = await apiFetch<BookingRequest>(`/booking-requests/${selectedRequest.id}/${action}`, {
+      const updated = await apiFetch<BookingRequest>(`/booking-requests/${selectedRequest.id}/approve`, {
         method: "POST",
-        json: { decision_note: decisionNote },
+        json: { decision_note: decisionNote, ...(email ? { email } : {}) },
       });
-      setRequests((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice(action === "approve" ? "Demande approuvée." : "Demande rejetée.");
+      applyUpdatedRequest(updated);
+      setEmailComposer(null);
+      setNotice(
+        email || selectedRequest.email
+          ? "Demande approuvée et email envoyé."
+          : "Demande approuvée.",
+      );
     } catch (actionError) {
       if (isApiError(actionError)) {
         setError(actionError.message);
@@ -76,6 +102,68 @@ const BookingRequestsPage = () => {
     } finally {
       setSubmittingAction(null);
     }
+  };
+
+  const rejectRequest = async () => {
+    if (!selectedRequest) return;
+    setSubmittingAction("reject");
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await apiFetch<BookingRequest>(`/booking-requests/${selectedRequest.id}/reject`, {
+        method: "POST",
+        json: { decision_note: decisionNote },
+      });
+      applyUpdatedRequest(updated);
+      setNotice("Demande rejetée.");
+    } catch (actionError) {
+      if (isApiError(actionError)) {
+        setError(actionError.message);
+      } else {
+        setError(actionError instanceof Error ? actionError.message : "Action impossible.");
+      }
+    } finally {
+      setSubmittingAction(null);
+    }
+  };
+
+  const openApprovalEmailComposer = async () => {
+    if (!selectedRequest) return;
+    setSubmittingAction("approve-email");
+    setError(null);
+    setNotice(null);
+    try {
+      const emailTextSettings = await apiFetch<DocumentEmailTextSettings>(
+        "/settings/document-email-texts",
+      );
+      const draft = buildBookingRequestApprovedEmailDraft(
+        selectedRequest,
+        buildDocumentEmailTemplateSettings(emailTextSettings),
+      );
+      setEmailComposer({
+        requestId: selectedRequest.id,
+        recipient: draft.recipient ?? selectedRequest.email ?? "",
+        subject: draft.subject,
+        body: draft.body,
+      });
+    } catch (composerError) {
+      setError(
+        composerError instanceof Error
+          ? composerError.message
+          : "Impossible de préparer l'email.",
+      );
+    } finally {
+      setSubmittingAction(null);
+    }
+  };
+
+  const sendComposedApproval = async () => {
+    if (!emailComposer || !selectedRequest || emailComposer.requestId !== selectedRequest.id) return;
+    await approveRequest({
+      recipient: emailComposer.recipient,
+      subject: emailComposer.subject,
+      body: emailComposer.body,
+    });
   };
 
   return (
@@ -191,15 +279,27 @@ const BookingRequestsPage = () => {
                 <div className="actions" style={{ marginTop: 16 }}>
                   <button
                     type="button"
-                    onClick={() => void handleDecision("approve")}
+                    onClick={() => void openApprovalEmailComposer()}
                     disabled={selectedRequest.status !== "pending" || Boolean(submittingAction)}
                   >
-                    {submittingAction === "approve" ? "Approbation…" : "Approuver"}
+                    {submittingAction === "approve-email" ? "Préparation…" : "Prévisualiser puis approuver"}
                   </button>
                   <button
                     type="button"
                     className="button-secondary"
-                    onClick={() => void handleDecision("reject")}
+                    onClick={() => void approveRequest()}
+                    disabled={selectedRequest.status !== "pending" || Boolean(submittingAction)}
+                  >
+                    {submittingAction === "approve"
+                      ? "Envoi…"
+                      : selectedRequest.email
+                        ? "Approuver sans relecture"
+                        : "Approuver sans email"}
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void rejectRequest()}
                     disabled={selectedRequest.status !== "pending" || Boolean(submittingAction)}
                   >
                     {submittingAction === "reject" ? "Refus…" : "Rejeter"}
@@ -215,6 +315,35 @@ const BookingRequestsPage = () => {
           </div>
         </div>
       </section>
+
+      <DocumentEmailComposerDialog
+        open={Boolean(emailComposer)}
+        title="Email d'acceptation Booked"
+        recipient={emailComposer?.recipient ?? ""}
+        subject={emailComposer?.subject ?? ""}
+        body={emailComposer?.body ?? ""}
+        deliveryMode="download_link"
+        showDeliveryMode={false}
+        sending={submittingAction === "approve-email"}
+        onClose={() => setEmailComposer(null)}
+        onRecipientChange={(value) =>
+          setEmailComposer((previous) =>
+            previous ? { ...previous, recipient: value } : previous,
+          )
+        }
+        onSubjectChange={(value) =>
+          setEmailComposer((previous) =>
+            previous ? { ...previous, subject: value } : previous,
+          )
+        }
+        onBodyChange={(value) =>
+          setEmailComposer((previous) =>
+            previous ? { ...previous, body: value } : previous,
+          )
+        }
+        onDeliveryModeChange={() => undefined}
+        onSubmit={() => void sendComposedApproval()}
+      />
     </main>
   );
 };

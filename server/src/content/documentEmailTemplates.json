@@ -58,5 +58,45 @@
       "Sébastien et Soazig",
       "Les Gites de Brocéliande"
     ]
+  },
+  "bookingRequestApproved": {
+    "subject": "Votre réservation est acceptée · {{giteName}}",
+    "bodyLines": [
+      "{{greeting}}",
+      "",
+      "Merci pour votre demande de réservation {{giteReference}}. Nous avons le plaisir de vous confirmer que votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.",
+      "",
+      "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.",
+      "",
+      "{{beddingReminder}}",
+      "",
+      "Si vous voulez des idées d'activités pour votre escapade mauronnaise, voici ce que je peux vous conseiller :",
+      "",
+      "{{activitiesList}}",
+      "",
+      "Vous trouverez de bonnes indications sur ces sites :",
+      "{{guideUrl}}",
+      "{{destinationUrl}}",
+      "",
+      "N'hésitez pas à revenir vers nous si vous avez des questions pour l'organisation de votre séjour.",
+      "",
+      "Je vous souhaite une bonne journée.",
+      "",
+      "Bien à vous,",
+      "Soazig",
+      "",
+      "www.gites-broceliande.com",
+      "Soazig et Sébastien Jacqmin",
+      "T : (0033) 6 98 99 37 35"
+    ],
+    "activities": [
+      "Les calèches de Brocéliande. Ils proposent des balades en forêt.\nhttps://broceliande.guide/Les-Caleches-de-Barenton",
+      "Les balades contées avec les guides conteurs de Brocéliande.\nhttps://guidesdebroceliande.com/",
+      "Le Château de Comper, avec le Centre de l'Imaginaire Arthurien.",
+      "La Porte des Secrets à Paimpont.",
+      "En balades : la fontaine de Barenton, le Val sans Retour, le lac au Duc et l'étang de Trémelin."
+    ],
+    "guideUrl": "https://broceliande.guide/Secrets-de-Broceliande",
+    "destinationUrl": "https://destination-broceliande.com/"
   }
 }

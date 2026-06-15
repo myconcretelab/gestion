@@ -3,7 +3,10 @@ import path from "node:path";
 import defaults from "../content/documentEmailTemplates.json" with { type: "json" };
 import { env } from "../config/env.js";
 
-export type DocumentEmailTemplateType = "contrat" | "facture";
+export type DocumentEmailTemplateType =
+  | "contrat"
+  | "facture"
+  | "bookingRequestApproved";
 
 export type DocumentEmailTemplate = {
   subject: string;
@@ -34,6 +37,7 @@ export type InvoiceDocumentEmailTextTemplate = DocumentEmailTextTemplate;
 export type DocumentEmailTextSettings = {
   contrat: ContractDocumentEmailTextTemplate;
   facture: InvoiceDocumentEmailTextTemplate;
+  bookingRequestApproved: ContractDocumentEmailTextTemplate;
 };
 
 const SETTINGS_FILE = path.join(
@@ -115,6 +119,10 @@ const normalizeSettings = (
 ): DocumentEmailTemplateSettings => {
   const contrat = normalizeTemplate(input?.contrat, DEFAULT_TEMPLATES.contrat);
   const facture = normalizeTemplate(input?.facture, DEFAULT_TEMPLATES.facture);
+  const bookingRequestApproved = normalizeTemplate(
+    input?.bookingRequestApproved,
+    DEFAULT_TEMPLATES.bookingRequestApproved,
+  );
   return {
     contrat: {
       ...contrat,
@@ -124,6 +132,7 @@ const normalizeSettings = (
       ...facture,
       bodyLines: normalizeInvoiceBodyLines(facture.bodyLines),
     },
+    bookingRequestApproved,
   };
 };
 
@@ -183,6 +192,22 @@ export const mergeDocumentEmailTemplateSettings = (
           bodyLines: patch.facture.body.replace(/\r\n/g, "\n").split("\n"),
         }
       : current.facture,
+    bookingRequestApproved: patch.bookingRequestApproved
+      ? {
+          ...current.bookingRequestApproved,
+          subject: patch.bookingRequestApproved.subject,
+          bodyLines: patch.bookingRequestApproved.body
+            .replace(/\r\n/g, "\n")
+            .split("\n"),
+          activities: patch.bookingRequestApproved.activitiesList
+            .replace(/\r\n/g, "\n")
+            .split(/\n\s*\n/)
+            .map((item) => item.trim())
+            .filter(Boolean),
+          guideUrl: patch.bookingRequestApproved.guideUrl.trim(),
+          destinationUrl: patch.bookingRequestApproved.destinationUrl.trim(),
+        }
+      : current.bookingRequestApproved,
   });
 
 export const buildDocumentEmailTextSettingsResponse = (
@@ -198,5 +223,14 @@ export const buildDocumentEmailTextSettingsResponse = (
   facture: {
     subject: settings.facture.subject,
     body: settings.facture.bodyLines.join("\n"),
+  },
+  bookingRequestApproved: {
+    subject: settings.bookingRequestApproved.subject,
+    body: settings.bookingRequestApproved.bodyLines.join("\n"),
+    activitiesList: (settings.bookingRequestApproved.activities ?? []).join(
+      "\n\n",
+    ),
+    guideUrl: settings.bookingRequestApproved.guideUrl ?? "",
+    destinationUrl: settings.bookingRequestApproved.destinationUrl ?? "",
   },
 });

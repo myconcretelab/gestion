@@ -10,6 +10,7 @@ type DocumentEmailComposerDialogProps = {
   subject: string;
   body: string;
   deliveryMode: DocumentEmailDeliveryMode;
+  showDeliveryMode?: boolean;
   sending: boolean;
   onClose: () => void;
   onRecipientChange: (value: string) => void;
@@ -28,6 +29,7 @@ const DocumentEmailComposerDialog = ({
   subject,
   body,
   deliveryMode,
+  showDeliveryMode = true,
   sending,
   onClose,
   onRecipientChange,
@@ -117,33 +119,35 @@ const DocumentEmailComposerDialog = ({
               Destinataire
               <input type="email" value={recipient} onChange={(event) => onRecipientChange(event.target.value)} />
             </label>
-            <div className="email-composer-dialog__delivery">
-              <div>
-                <div className="email-composer-dialog__delivery-label">PDF envoyé</div>
-                <div className="email-composer-dialog__delivery-hint">
-                  {deliveryMode === "attachment"
-                    ? "Le PDF sera joint au message."
-                    : "Le PDF restera accessible via un lien de téléchargement."}
+            {showDeliveryMode ? (
+              <div className="email-composer-dialog__delivery">
+                <div>
+                  <div className="email-composer-dialog__delivery-label">PDF envoyé</div>
+                  <div className="email-composer-dialog__delivery-hint">
+                    {deliveryMode === "attachment"
+                      ? "Le PDF sera joint au message."
+                      : "Le PDF restera accessible via un lien de téléchargement."}
+                  </div>
+                </div>
+                <div className="switch-group">
+                  <span>Lien</span>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={deliveryMode === "attachment"}
+                      disabled={sending}
+                      onChange={(event) =>
+                        onDeliveryModeChange(
+                          event.target.checked ? "attachment" : "download_link",
+                        )
+                      }
+                    />
+                    <span className="slider" />
+                  </label>
+                  <span>Pièce jointe</span>
                 </div>
               </div>
-              <div className="switch-group">
-                <span>Lien</span>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={deliveryMode === "attachment"}
-                    disabled={sending}
-                    onChange={(event) =>
-                      onDeliveryModeChange(
-                        event.target.checked ? "attachment" : "download_link",
-                      )
-                    }
-                  />
-                  <span className="slider" />
-                </label>
-                <span>Pièce jointe</span>
-              </div>
-            </div>
+            ) : null}
             <label className="field">
               Sujet
               <input ref={subjectRef} type="text" value={subject} onChange={(event) => onSubjectChange(event.target.value)} />

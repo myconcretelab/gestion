@@ -21,6 +21,13 @@ const router = Router();
 
 const decisionSchema = z.object({
   decision_note: z.string().trim().optional().default(""),
+  email: z
+    .object({
+      recipient: z.string().trim().email().optional(),
+      subject: z.string().trim().min(1).max(200).optional(),
+      body: z.string().trim().min(1).max(20_000).optional(),
+    })
+    .optional(),
 });
 
 const buildOptionalFeesLabel = (options: OptionsInput) => {
@@ -144,7 +151,7 @@ router.get("/:id", async (req, res, next) => {
 router.post("/:id/approve", async (req, res, next) => {
   try {
     await expireStaleBookingRequests();
-    const { decision_note } = decisionSchema.parse(req.body ?? {});
+    const { decision_note, email } = decisionSchema.parse(req.body ?? {});
     const bookingRequest = await loadBookingRequest(req.params.id);
     if (!bookingRequest) {
       return res.status(404).json({ error: "Demande introuvable." });
@@ -230,7 +237,7 @@ router.post("/:id/approve", async (req, res, next) => {
     });
 
     try {
-      await sendBookingRequestApprovedEmail(toBookingRequestPayload(updated));
+      await sendBookingRequestApprovedEmail(toBookingRequestPayload(updated), email);
     } catch (emailError) {
       console.error("[booked] booking request approval email failed:", emailError);
     }
