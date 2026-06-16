@@ -184,6 +184,11 @@ type InlineCell = {
   field: InlineEditableField;
 };
 
+type CommentDialogState = {
+  reservationId: string;
+  value: string;
+};
+
 type ReservationServiceOptionKey = "draps" | "linge_toilette" | "menage" | "depart_tardif" | "chiens";
 
 type ReservationOptionsPreview = {
@@ -312,7 +317,6 @@ const INLINE_EDITABLE_FIELDS: InlineEditableField[] = [
   "prix_par_nuit",
   "prix_total",
   "source_paiement",
-  "commentaire",
 ];
 const INLINE_PICKER_FIELDS: InlineEditableField[] = ["date_entree", "date_sortie", "source_paiement"];
 const DETAILS_CLOSE_ANIMATION_MS = 280;
@@ -1033,6 +1037,8 @@ const ReservationsPage = () => {
   const [closingDetails, setClosingDetails] = useState<Record<string, boolean>>({});
   const [savedRowFade, setSavedRowFade] = useState<Record<string, boolean>>({});
   const [inlineCell, setInlineCell] = useState<InlineCell | null>(null);
+  const [commentDialog, setCommentDialog] = useState<CommentDialogState | null>(null);
+  const [commentDialogSaving, setCommentDialogSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [splittingId, setSplittingId] = useState<string | null>(null);
   const [balanceStatusUpdatingByContractId, setBalanceStatusUpdatingByContractId] = useState<Record<string, boolean>>({});
@@ -1074,6 +1080,7 @@ const ReservationsPage = () => {
   const restoreViewRafRef = useRef<number | null>(null);
   const linkedFocusTimerRef = useRef<number | null>(null);
   const airbnbCalendarRefreshControllersRef = useRef<AbortController[]>([]);
+  const commentDialogTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const handledLinkedFocusRef = useRef<string | null>(null);
   const handledCalendarInsertRef = useRef<string | null>(null);
   const appliedLocationYearMonthKeyRef = useRef<string | null>(null);
@@ -1229,6 +1236,22 @@ const ReservationsPage = () => {
       setInlineCell(null);
     }
   }, [inlineCell, reservations]);
+
+  useEffect(() => {
+    if (commentDialog && !reservations.some((reservation) => reservation.id === commentDialog.reservationId)) {
+      setCommentDialog(null);
+      setCommentDialogSaving(false);
+    }
+  }, [commentDialog, reservations]);
+
+  useEffect(() => {
+    if (!commentDialog) return;
+    const textarea = commentDialogTextareaRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    resizeCommentTextarea(textarea);
+  }, [commentDialog?.reservationId]);
 
   useEffect(() => {
     const reservationIds = new Set(reservations.map((reservation) => reservation.id));
@@ -2680,6 +2703,55 @@ const ReservationsPage = () => {
   const handleInlineBlur = (reservation: Reservation, field: InlineEditableField) => {
     if (!isInlineFieldActive(reservation.id, field)) return;
     saveInlineField(reservation, field).catch((err) => setError((err as Error).message));
+  };
+
+  const openCommentDialog = (reservation: Reservation) => {
+    if (editingRows[reservation.id]) return;
+    setInlineCell(null);
+    clearRowFeedback(reservation.id);
+    setCommentDialog({
+      reservationId: reservation.id,
+      value: stripIcalToVerifyMarker(draftsRef.current[reservation.id]?.commentaire ?? reservation.commentaire),
+    });
+  };
+
+  const closeCommentDialog = () => {
+    if (commentDialogSaving) return;
+    setCommentDialog(null);
+  };
+
+  const saveCommentDialog = async () => {
+    if (!commentDialog || commentDialogSaving) return;
+    const reservation = reservationsRef.current.find((item) => item.id === commentDialog.reservationId);
+    if (!reservation) {
+      setCommentDialog(null);
+      return;
+    }
+
+    const rowId = reservation.id;
+    const nextDraft: ReservationDraft = {
+      ...(draftsRef.current[rowId] ?? toDraft(reservation)),
+      commentaire: commentDialog.value,
+    };
+
+    setCommentDialogSaving(true);
+    setDrafts((previous) => ({
+      ...previous,
+      [rowId]: nextDraft,
+    }));
+
+    try {
+      const saved = await persistExistingRow(rowId, nextDraft, {
+        optionsOverride: reservationOptionsRef.current[rowId],
+        keepIcalToVerifyMarker: hasIcalToVerifyMarker(reservation.commentaire),
+      });
+      if (!saved) return;
+      clearDraft(rowId);
+      setCommentDialog(null);
+      startSavedRowFade(rowId);
+    } finally {
+      setCommentDialogSaving(false);
+    }
   };
 
   const removeReservation = async (reservation: Reservation) => {
@@ -4315,6 +4387,13 @@ const ReservationsPage = () => {
       variant: "all",
     },
   ];
+  const commentDialogReservation = commentDialog
+    ? reservations.find((reservation) => reservation.id === commentDialog.reservationId) ?? null
+    : null;
+  const commentDialogOriginal = commentDialogReservation
+    ? stripIcalToVerifyMarker(commentDialogReservation.commentaire)
+    : "";
+  const commentDialogHasChanges = Boolean(commentDialog && commentDialog.value !== commentDialogOriginal);
 
   return (
     <div style={pageStyle}>
@@ -6014,17 +6093,19 @@ const ReservationsPage = () => {
                                 <div className="reservations-comment-field">
                                   <button
                                     type="button"
-                                    className="reservations-source-inline-trigger reservations-comment-trigger"
-                                    onClick={() => openInlineField(reservation, "commentaire")}
+                                    className={`reservations-source-inline-trigger reservations-comment-trigger${
+                                      visibleComment ? "" : " reservations-comment-trigger--empty"
+                                    }`}
+                                    onClick={() => openCommentDialog(reservation)}
                                     title={visibleComment || "Modifier le commentaire"}
+                                    aria-label={
+                                      visibleComment
+                                        ? `Modifier le commentaire de ${getEditableHostName(reservation.hote_nom)}`
+                                        : `Ajouter un commentaire pour ${getEditableHostName(reservation.hote_nom)}`
+                                    }
                                   >
-                                    {visibleComment}
+                                    {visibleComment || "Ajouter un commentaire"}
                                   </button>
-                                  {visibleComment && !isDetailsExpanded && !isDetailsClosing ? (
-                                    <div className="reservations-comment-popover" aria-hidden="true">
-                                      <div className="reservations-comment-popover__body">{visibleComment}</div>
-                                    </div>
-                                  ) : null}
                                 </div>
                               )}
                             </td>
@@ -6207,6 +6288,96 @@ const ReservationsPage = () => {
             );
           })}
       </div>
+      {commentDialog && commentDialogReservation ? (
+        <div
+          className="reservations-comment-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeCommentDialog();
+          }}
+        >
+          <section
+            className="reservations-comment-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reservations-comment-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="reservations-comment-dialog__header">
+              <div>
+                <div className="reservations-comment-dialog__eyebrow">Commentaire réservation</div>
+                <h2 id="reservations-comment-dialog-title">
+                  {getEditableHostName(commentDialogReservation.hote_nom)}
+                </h2>
+                <p>
+                  {commentDialogReservation.gite?.nom ?? "Gîte non renseigné"} ·{" "}
+                  {formatDate(commentDialogReservation.date_entree)} - {formatDate(commentDialogReservation.date_sortie)}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="reservations-comment-dialog__close"
+                onClick={closeCommentDialog}
+                disabled={commentDialogSaving}
+                aria-label="Fermer la fenêtre de commentaire"
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="reservations-comment-dialog__body">
+              <textarea
+                ref={commentDialogTextareaRef}
+                value={commentDialog.value}
+                placeholder="Ajouter un commentaire utile pour le suivi de cette réservation."
+                className="reservations-comment-dialog__textarea"
+                rows={8}
+                onChange={(event) => {
+                  resizeCommentTextarea(event.currentTarget);
+                  setCommentDialog((current) =>
+                    current ? { ...current, value: event.target.value } : current
+                  );
+                }}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                    event.preventDefault();
+                    void saveCommentDialog();
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeCommentDialog();
+                  }
+                }}
+              />
+            </div>
+
+            <footer className="reservations-comment-dialog__footer">
+              <div className="reservations-comment-dialog__meta">
+                {commentDialog.value.trim().length} caractère{commentDialog.value.trim().length > 1 ? "s" : ""}
+              </div>
+              <div className="reservations-comment-dialog__actions">
+                <button
+                  type="button"
+                  className="table-action table-action--neutral"
+                  onClick={closeCommentDialog}
+                  disabled={commentDialogSaving}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  className="table-action table-action--primary"
+                  onClick={() => void saveCommentDialog()}
+                  disabled={commentDialogSaving || !commentDialogHasChanges}
+                >
+                  {commentDialogSaving ? "Enregistrement..." : "Enregistrer"}
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 };

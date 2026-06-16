@@ -8603,6 +8603,14 @@ button.warning {
 
 .reservations-comment-trigger {
   position: relative;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #0f172a;
+  cursor: text;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -8611,11 +8619,22 @@ button.warning {
   white-space: normal;
   word-break: break-word;
   line-height: 1.25;
-  max-height: calc(1.25em * 2);
+  max-height: calc(1.25em * 2 + 18px);
+  text-align: left;
 }
 
-.reservations-comment-trigger:empty::before {
-  content: " ";
+.reservations-comment-trigger:hover,
+.reservations-comment-trigger:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  outline: none;
+}
+
+.reservations-comment-trigger--empty {
+  color: #64748b;
+  font-style: normal;
+  border-color: #e2e8f0;
+  background: #f8fafc;
 }
 
 .reservations-comment-popover {
@@ -8676,6 +8695,133 @@ button.warning {
 .reservations-comment-popover--editing .reservations-comment-editor {
   display: block;
   box-sizing: border-box;
+}
+
+.reservations-comment-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(8px);
+  animation: reservation-details-drawer-backdrop-in 160ms ease-out;
+}
+
+.reservations-comment-dialog {
+  width: min(720px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+  animation: calendar-popover-in 150ms ease-out;
+}
+
+.reservations-comment-dialog__header,
+.reservations-comment-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  background: #ffffff;
+}
+
+.reservations-comment-dialog__header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.reservations-comment-dialog__eyebrow {
+  color: var(--primary-strong);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reservations-comment-dialog__header h2 {
+  margin: 4px 0 0;
+  color: #0f172a;
+  font-size: 1.25rem;
+  line-height: 1.15;
+}
+
+.reservations-comment-dialog__header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.reservations-comment-dialog__close {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.reservations-comment-dialog__close:hover,
+.reservations-comment-dialog__close:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  outline: none;
+}
+
+.reservations-comment-dialog__body {
+  min-height: 0;
+  padding: 18px 20px;
+  background: #f8fafc;
+  overflow: auto;
+}
+
+.reservations-comment-dialog__textarea {
+  width: 100%;
+  min-height: 260px;
+  max-height: min(52vh, 520px);
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.55;
+  resize: vertical;
+  overflow: auto;
+}
+
+.reservations-comment-dialog__textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  outline: none;
+}
+
+.reservations-comment-dialog__footer {
+  border-top: 1px solid #e2e8f0;
+}
+
+.reservations-comment-dialog__meta {
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.reservations-comment-dialog__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .reservations-row--editing td {
@@ -11478,6 +11624,45 @@ button.warning {
 @media (max-width: 980px) {
   .stats-gites-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .reservations-comment-dialog-backdrop {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .reservations-comment-dialog {
+    max-height: calc(100vh - 20px);
+    width: 100%;
+  }
+
+  .reservations-comment-dialog__header,
+  .reservations-comment-dialog__footer {
+    padding: 14px;
+  }
+
+  .reservations-comment-dialog__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reservations-comment-dialog__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .reservations-comment-dialog__actions .table-action {
+    width: 100%;
+  }
+
+  .reservations-comment-dialog__body {
+    padding: 14px;
+  }
+
+  .reservations-comment-dialog__textarea {
+    min-height: 240px;
   }
 }
 
