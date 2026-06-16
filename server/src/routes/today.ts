@@ -342,15 +342,10 @@ router.get("/overview/deferred", async (req, res, next) => {
       unassigned_count: unassignedCount,
       new_reservations: newReservations,
       live_energy_by_reservation_id: liveEnergyByReservationId,
-      ical_conflicts: openIcalConflicts
-        .filter((conflict) => {
-          const detectedAt = parseDateTime(conflict.detected_at);
-          return detectedAt ? detectedAt.getTime() >= notificationSince.getTime() : false;
-        })
-        .map((conflict) => ({
-          ...conflict,
-          reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
-        })),
+      ical_conflicts: openIcalConflicts.map((conflict) => ({
+        ...conflict,
+        reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
+      })),
     });
   } catch (error) {
     return next(error);

@@ -4,7 +4,7 @@ import prisma from "../db/prisma.js";
 import { optionsSchema } from "./shared/rentalDocument.js";
 import {
   assertBookedAvailability,
-  computeSeasonQuote,
+  computeBookedQuote,
   encodeBookingRequestOptions,
   encodeBookingRequestPricingSnapshot,
   expireStaleBookingRequests,
@@ -25,8 +25,6 @@ import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 
 const router = Router();
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const mapBookedPhotoUrl = (photo: { id: string; url: string }) =>
   photo.url.startsWith("/api/") ? `/api/public/gites/photos/${photo.id}` : photo.url;
 
@@ -124,77 +122,6 @@ const parseNightlySuggestionList = (raw: unknown) => {
   return Array.isArray(parsed)
     ? parsed.map((value) => toNumber(value as any)).filter((value) => Number.isFinite(value) && value >= 0)
     : [];
-};
-
-const getDefaultNightlyPrice = (
-  gite: {
-    prix_nuit_liste?: unknown;
-    prix_nuit_basse_saison?: unknown;
-    prix_nuit_haute_saison?: unknown;
-  },
-  mode: "low" | "high"
-) => {
-  const low = toNumber(gite.prix_nuit_basse_saison as any);
-  const high = toNumber(gite.prix_nuit_haute_saison as any);
-  const suggestions = parseNightlySuggestionList(gite.prix_nuit_liste);
-
-  if (mode === "high") {
-    if (high > 0) return high;
-    if (suggestions.length > 0) return suggestions[suggestions.length - 1];
-    return low;
-  }
-
-  if (low > 0) return low;
-  if (suggestions.length > 0) return suggestions[0];
-  return high;
-};
-
-const getDefaultMinNights = (
-  gite: {
-    min_nuits_toute_annee?: number | null;
-    min_nuits_vacances_scolaires?: number | null;
-    min_nuits_juillet_aout?: number | null;
-  },
-  type?: string
-) => {
-  if (type === "july_august") return Math.max(1, Number(gite.min_nuits_juillet_aout) || 1);
-  if (type === "school_holiday") return Math.max(1, Number(gite.min_nuits_vacances_scolaires) || 1);
-  return Math.max(1, Number(gite.min_nuits_toute_annee) || 1);
-};
-
-const addUtcDays = (date: Date, days: number) => new Date(date.getTime() + days * DAY_MS);
-
-const buildQuoteSeasonRates = (params: {
-  gite: NonNullable<Awaited<ReturnType<typeof loadPublicGite>>>;
-  dateEntree: Date;
-  dateSortie: Date;
-  seasonRates: Awaited<ReturnType<typeof loadSeasonRatesForGite>>;
-  calendarPeriods: Awaited<ReturnType<typeof getBookedCalendarPeriodsForRange>>;
-}) => {
-  const rows = [...params.seasonRates];
-
-  for (let cursor = params.dateEntree; cursor.getTime() < params.dateSortie.getTime(); cursor = addUtcDays(cursor, 1)) {
-    const hasExplicitRate = params.seasonRates.some(
-      (rate) => rate.date_debut.getTime() <= cursor.getTime() && rate.date_fin.getTime() > cursor.getTime()
-    );
-    if (hasExplicitRate) continue;
-
-    const date = formatBookedDateInput(cursor);
-    const period = params.calendarPeriods.find((item) => item.start <= date && item.end > date);
-    const isHighSeason = period?.type === "school_holiday" || period?.type === "july_august";
-
-    rows.push({
-      id: `default:${date}`,
-      gite_id: params.gite.id,
-      date_debut: cursor,
-      date_fin: addUtcDays(cursor, 1),
-      prix_par_nuit: getDefaultNightlyPrice(params.gite, isHighSeason ? "high" : "low"),
-      min_nuits: getDefaultMinNights(params.gite, period?.type),
-      ordre: Number.MAX_SAFE_INTEGER,
-    });
-  }
-
-  return rows;
 };
 
 router.get("/gites", async (_req, res, next) => {
@@ -461,29 +388,13 @@ router.post("/gites/:id/quote", async (req, res, next) => {
       dateSortie,
     });
 
-    const [seasonRates, calendarPeriods] = await Promise.all([
-      loadSeasonRatesForGite(gite.id),
-      getBookedCalendarPeriodsForRange({
-        from: formatBookedDateInput(dateEntree),
-        to: formatBookedDateInput(dateSortie),
-        zone: "B",
-      }),
-    ]);
-
-    const quote = await computeSeasonQuote({
+    const quote = await computeBookedQuote({
       gite,
       dateEntree,
       dateSortie,
       nbAdultes: payload.nb_adultes,
       nbEnfants: payload.nb_enfants_2_17,
       options: payload.options,
-      seasonRates: buildQuoteSeasonRates({
-        gite,
-        dateEntree,
-        dateSortie,
-        seasonRates,
-        calendarPeriods,
-      }),
     });
 
     res.json(quote);
@@ -513,29 +424,13 @@ router.post("/requests", async (req, res, next) => {
       dateSortie,
     });
 
-    const [seasonRates, calendarPeriods] = await Promise.all([
-      loadSeasonRatesForGite(gite.id),
-      getBookedCalendarPeriodsForRange({
-        from: formatBookedDateInput(dateEntree),
-        to: formatBookedDateInput(dateSortie),
-        zone: "B",
-      }),
-    ]);
-
-    const pricingSnapshot = await computeSeasonQuote({
+    const pricingSnapshot = await computeBookedQuote({
       gite,
       dateEntree,
       dateSortie,
       nbAdultes: payload.nb_adultes,
       nbEnfants: payload.nb_enfants_2_17,
       options: payload.options,
-      seasonRates: buildQuoteSeasonRates({
-        gite,
-        dateEntree,
-        dateSortie,
-        seasonRates,
-        calendarPeriods,
-      }),
     });
 
     const created = await prisma.bookingRequest.create({

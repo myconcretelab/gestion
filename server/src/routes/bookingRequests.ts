@@ -5,10 +5,12 @@ import prisma from "../db/prisma.js";
 import {
   BookedValidationError,
   assertBookedAvailability,
+  computeBookedQuote,
+  encodeBookingRequestPricingSnapshot,
   ensureBookingRequestPending,
   expireStaleBookingRequests,
-  formatBookedDateInput,
   hydrateBookingRequest,
+  parseBookedDateInput,
   type BookingQuote,
 } from "../services/booked.js";
 import { sendBookingRequestApprovedEmail, sendBookingRequestRejectedEmail } from "../services/bookingRequestEmail.js";
@@ -29,6 +31,34 @@ const decisionSchema = z.object({
     })
     .optional(),
 });
+
+const dateUpdateSchema = z.object({
+  date_entree: z.string().trim().min(1),
+  date_sortie: z.string().trim().min(1),
+});
+
+const quoteGiteSelect = {
+  id: true,
+  capacite_max: true,
+  nb_adultes_max: true,
+  nb_enfants_max: true,
+  prix_nuit_liste: true,
+  prix_nuit_basse_saison: true,
+  prix_nuit_haute_saison: true,
+  min_nuits_toute_annee: true,
+  min_nuits_vacances_scolaires: true,
+  min_nuits_juillet_aout: true,
+  taxe_sejour_par_personne_par_nuit: true,
+  options_draps_par_lit: true,
+  options_linge_toilette_par_personne: true,
+  options_menage_forfait: true,
+  options_depart_tardif_forfait: true,
+  options_chiens_forfait: true,
+  arrhes_taux_defaut: true,
+  regle_animaux_acceptes: true,
+  regle_bois_premiere_flambee: true,
+  regle_tiers_personnes_info: true,
+} as const;
 
 const buildOptionalFeesLabel = (options: OptionsInput) => {
   const labels: string[] = [];
@@ -144,6 +174,82 @@ router.get("/:id", async (req, res, next) => {
     }
     res.json(toBookingRequestPayload(bookingRequest));
   } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/dates", async (req, res, next) => {
+  try {
+    await expireStaleBookingRequests();
+    const payload = dateUpdateSchema.parse(req.body ?? {});
+    const bookingRequest = await loadBookingRequest(req.params.id);
+    if (!bookingRequest) {
+      return res.status(404).json({ error: "Demande introuvable." });
+    }
+
+    ensureBookingRequestPending(bookingRequest);
+
+    const dateEntree = parseBookedDateInput(payload.date_entree, "date d'entrée");
+    const dateSortie = parseBookedDateInput(payload.date_sortie, "date de sortie");
+
+    await assertBookedAvailability({
+      giteId: bookingRequest.gite_id,
+      dateEntree,
+      dateSortie,
+      excludeBookingRequestId: bookingRequest.id,
+    });
+
+    const gite = await prisma.gite.findUnique({
+      where: { id: bookingRequest.gite_id },
+      select: quoteGiteSelect,
+    });
+    if (!gite) {
+      return res.status(404).json({ error: "Gîte introuvable." });
+    }
+
+    const options = fromJsonString<OptionsInput>(bookingRequest.options, {});
+    const pricingSnapshot = await computeBookedQuote({
+      gite,
+      dateEntree,
+      dateSortie,
+      nbAdultes: bookingRequest.nb_adultes,
+      nbEnfants: bookingRequest.nb_enfants_2_17,
+      options,
+    });
+
+    const updated = await prisma.bookingRequest.update({
+      where: { id: bookingRequest.id },
+      data: {
+        date_entree: dateEntree,
+        date_sortie: dateSortie,
+        nb_nuits: pricingSnapshot.nb_nuits,
+        pricing_snapshot: encodeBookingRequestPricingSnapshot(pricingSnapshot),
+      },
+      include: {
+        gite: {
+          select: {
+            id: true,
+            nom: true,
+            email: true,
+          },
+        },
+        approved_reservation: {
+          select: {
+            id: true,
+            hote_nom: true,
+            date_entree: true,
+            date_sortie: true,
+          },
+        },
+      },
+    });
+
+    return res.json(toBookingRequestPayload(updated));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
     next(error);
   }
 });

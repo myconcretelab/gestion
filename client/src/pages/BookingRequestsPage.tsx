@@ -17,6 +17,8 @@ type ApprovalEmailComposerState = {
   body: string;
 };
 
+const toDateInputValue = (value: string) => value.slice(0, 10);
+
 const BookingRequestsPage = () => {
   const [requests, setRequests] = useState<BookingRequest[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
@@ -29,6 +31,8 @@ const BookingRequestsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submittingAction, setSubmittingAction] = useState<"approve" | "approve-email" | "reject" | null>(null);
+  const [dateEditor, setDateEditor] = useState<{ requestId: string; date_entree: string; date_sortie: string } | null>(null);
+  const [savingDates, setSavingDates] = useState(false);
   const [emailComposer, setEmailComposer] =
     useState<ApprovalEmailComposerState | null>(null);
 
@@ -68,6 +72,7 @@ const BookingRequestsPage = () => {
   useEffect(() => {
     if (!selectedRequest) return;
     setDecisionNote(selectedRequest.decision_note ?? "");
+    setDateEditor(null);
   }, [selectedRequest?.id]);
 
   const applyUpdatedRequest = (updated: BookingRequest) => {
@@ -124,6 +129,44 @@ const BookingRequestsPage = () => {
       }
     } finally {
       setSubmittingAction(null);
+    }
+  };
+
+  const openDateEditor = () => {
+    if (!selectedRequest || selectedRequest.status !== "pending") return;
+    setDateEditor({
+      requestId: selectedRequest.id,
+      date_entree: toDateInputValue(selectedRequest.date_entree),
+      date_sortie: toDateInputValue(selectedRequest.date_sortie),
+    });
+    setError(null);
+    setNotice(null);
+  };
+
+  const saveDateEditor = async () => {
+    if (!selectedRequest || !dateEditor || dateEditor.requestId !== selectedRequest.id) return;
+    setSavingDates(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await apiFetch<BookingRequest>(`/booking-requests/${selectedRequest.id}/dates`, {
+        method: "POST",
+        json: {
+          date_entree: dateEditor.date_entree,
+          date_sortie: dateEditor.date_sortie,
+        },
+      });
+      applyUpdatedRequest(updated);
+      setDateEditor(null);
+      setNotice("Dates de la demande mises à jour.");
+    } catch (actionError) {
+      if (isApiError(actionError)) {
+        setError(actionError.message);
+      } else {
+        setError(actionError instanceof Error ? actionError.message : "Mise à jour des dates impossible.");
+      }
+    } finally {
+      setSavingDates(false);
     }
   };
 
@@ -245,11 +288,70 @@ const BookingRequestsPage = () => {
                 </div>
 
                 <div className="booking-requests-page__grid">
-                  <div><strong>Dates</strong><br />{formatDate(selectedRequest.date_entree)} → {formatDate(selectedRequest.date_sortie)}</div>
+                  <div className="booking-requests-page__date-summary">
+                    <strong>Dates</strong><br />
+                    {formatDate(selectedRequest.date_entree)} → {formatDate(selectedRequest.date_sortie)}
+                    {selectedRequest.status === "pending" ? (
+                      <button
+                        type="button"
+                        className="button-secondary booking-requests-page__date-edit-button"
+                        onClick={openDateEditor}
+                        disabled={savingDates || Boolean(submittingAction)}
+                      >
+                        Modifier les dates
+                      </button>
+                    ) : null}
+                  </div>
                   <div><strong>Voyageurs</strong><br />{selectedRequest.nb_adultes} adulte(s), {selectedRequest.nb_enfants_2_17} enfant(s)</div>
                   <div><strong>Contact</strong><br />{selectedRequest.telephone || "Téléphone absent"}<br />{selectedRequest.email || "Email absent"}</div>
                   <div><strong>Blocage jusqu’au</strong><br />{new Date(selectedRequest.hold_expires_at).toLocaleString("fr-FR")}</div>
                 </div>
+
+                {dateEditor?.requestId === selectedRequest.id ? (
+                  <div className="booking-requests-page__date-editor">
+                    <label className="field">
+                      Arrivée
+                      <input
+                        type="date"
+                        value={dateEditor.date_entree}
+                        onChange={(event) =>
+                          setDateEditor((current) =>
+                            current ? { ...current, date_entree: event.target.value } : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      Départ
+                      <input
+                        type="date"
+                        value={dateEditor.date_sortie}
+                        onChange={(event) =>
+                          setDateEditor((current) =>
+                            current ? { ...current, date_sortie: event.target.value } : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <div className="booking-requests-page__date-editor-actions">
+                      <button
+                        type="button"
+                        onClick={() => void saveDateEditor()}
+                        disabled={savingDates || Boolean(submittingAction)}
+                      >
+                        {savingDates ? "Enregistrement…" : "Enregistrer"}
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => setDateEditor(null)}
+                        disabled={savingDates}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 {selectedRequest.message_client ? (
                   <div className="note" style={{ marginTop: 16 }}>
