@@ -380,7 +380,10 @@ test("POST /booking-requests/:id/dates met a jour les dates et recalcule le devi
     assert.equal(updateData.date_entree.toISOString().slice(0, 10), "2026-09-14");
     assert.equal(updateData.date_sortie.toISOString().slice(0, 10), "2026-09-17");
 
-    const pricingSnapshot = JSON.parse(updateData.pricing_snapshot);
+    const pricingSnapshot =
+      typeof updateData.pricing_snapshot === "string"
+        ? JSON.parse(updateData.pricing_snapshot)
+        : updateData.pricing_snapshot;
     assert.equal(pricingSnapshot.nb_nuits, 3);
     assert.equal(pricingSnapshot.montant_hebergement, 300);
     assert.equal(pricingSnapshot.total_options, 20);
