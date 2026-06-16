@@ -1182,9 +1182,9 @@ const IMPORT_FIELD_LABELS: Record<ImportFieldKey, string> = {
   source_paiement: "Source de paiement",
   commentaire: "Commentaire",
   gite_abbreviation: "Abréviation gîte",
-  frais_optionnels_montant: "Montant frais optionnels",
-  frais_optionnels_libelle: "Libellé frais optionnels",
-  frais_optionnels_declares: "Frais optionnels déclarés",
+  frais_optionnels_montant: "Montant options",
+  frais_optionnels_libelle: "Libellé options",
+  frais_optionnels_declares: "Options déclarées",
 };
 
 const resolveImportColumnMap = (

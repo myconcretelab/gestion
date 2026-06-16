@@ -334,9 +334,9 @@ const IMPORT_COLUMN_FIELDS: Array<{ key: ImportColumnField; label: string; requi
   { key: "source_paiement", label: "Source paiement" },
   { key: "commentaire", label: "Commentaire" },
   { key: "gite_abbreviation", label: "Abréviation gîte" },
-  { key: "frais_optionnels_montant", label: "Montant frais optionnels" },
-  { key: "frais_optionnels_libelle", label: "Libellé frais optionnels" },
-  { key: "frais_optionnels_declares", label: "Frais optionnels déclarés" },
+  { key: "frais_optionnels_montant", label: "Montant options" },
+  { key: "frais_optionnels_libelle", label: "Libellé options" },
+  { key: "frais_optionnels_declares", label: "Options déclarées" },
 ];
 
 const normalizeTextKey = (value: string) =>
@@ -3782,9 +3782,9 @@ const ReservationsPage = () => {
       "Adultes",
       "Prix/nuit (€)",
       "Total (€)",
-      "Frais optionnels (€)",
-      "Frais déclarés (€)",
-      "Frais non déclarés (€)",
+      "Options (€)",
+      "Options déclarées (€)",
+      "Options non déclarées (€)",
       "Source paiement",
       "Commentaire",
     ];
@@ -4893,13 +4893,13 @@ const ReservationsPage = () => {
                         title: `Total du mois ${MONTHS[monthIndex - 1]}`,
                         rows: [
                           { label: "Nuitées", value: formatEuro(summary.baseRevenue) },
-                          { label: "Frais déclarés", value: formatEuro(summary.declaredFees) },
-                          { label: "Frais non déclarés", value: formatEuro(summary.undeclaredFees) },
+                          { label: "Options déclarées", value: formatEuro(summary.declaredFees) },
+                          { label: "Options non déclarées", value: formatEuro(summary.undeclaredFees) },
                           { label: "Total", value: formatEuro(summary.revenue) },
                         ],
                         note: "Les séjours à cheval sur deux mois sont proratisés sur le mois affiché.",
                       })}
-                      <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} frais</span>
+                      <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} options</span>
                       {isAllGitesTab
                         ? monthEnergySummariesForAllGites.map((energySummary) => (
                             <Fragment
@@ -4940,9 +4940,9 @@ const ReservationsPage = () => {
                           title: `Base URSSAF déclarée ${MONTHS[monthIndex - 1]}`,
                           rows: [
                             { label: "Nuitées déclarables", value: formatEuro(declaredUrssafBreakdown.baseRevenue) },
-                            { label: "Frais déclarés inclus", value: formatEuro(declaredUrssafBreakdown.declaredFees) },
+                            { label: "Options déclarées incluses", value: formatEuro(declaredUrssafBreakdown.declaredFees) },
                             {
-                              label: "Frais non déclarés exclus",
+                              label: "Options non déclarées exclues",
                               value: formatEuro(declaredUrssafBreakdown.undeclaredFeesExcluded),
                             },
                             { label: "Total déclaré", value: formatEuro(declaredUrssafForMonth.amount) },
@@ -4961,14 +4961,14 @@ const ReservationsPage = () => {
                           title: `Base URSSAF à déclarer ${MONTHS[monthIndex - 1]}`,
                           rows: [
                             { label: "Nuitées déclarables", value: formatEuro(undeclaredUrssafBreakdown.baseRevenue) },
-                            { label: "Frais déclarés inclus", value: formatEuro(undeclaredUrssafBreakdown.declaredFees) },
+                            { label: "Options déclarées incluses", value: formatEuro(undeclaredUrssafBreakdown.declaredFees) },
                             {
-                              label: "Frais non déclarés exclus",
+                              label: "Options non déclarées exclues",
                               value: formatEuro(undeclaredUrssafBreakdown.undeclaredFeesExcluded),
                             },
                             { label: "Total à déclarer", value: formatEuro(undeclaredUrssafForMonth) },
                           ],
-                          note: "L'URSSAF retient les nuitées et les seuls frais marqués comme déclarés.",
+                          note: "L'URSSAF retient les nuitées et les seules options marquées comme déclarées.",
                         })
                       ) : null}
                     </div>
@@ -5029,7 +5029,7 @@ const ReservationsPage = () => {
                       <th className="reservations-col-adults">Adultes</th>
                       <th>Prix/nuit</th>
                       <th>Total</th>
-                      <th className="reservations-col-fees">Frais</th>
+                      <th className="reservations-col-fees">Options</th>
                       <th>Source</th>
                       <th>Commentaire</th>
                       <th>Actions</th>
@@ -5933,15 +5933,15 @@ const ReservationsPage = () => {
                                     isDetailsClosing,
                                   }).catch((err) => setError((err as Error).message))
                                 }
-                                title={isDetailsExpanded ? "Fermer les options de frais" : "Ouvrir les options de frais"}
+                                title={isDetailsExpanded ? "Fermer les options" : "Ouvrir les options"}
                               >
                                 <span className="reservations-fees-stack">
                                   <span className="reservations-fees-cell">
-                                    <span className="reservations-fee-pill reservations-fee-pill--declared" title="Frais déclarés">
+                                    <span className="reservations-fee-pill reservations-fee-pill--declared" title="Options déclarées">
                                       {formatEuro(feeBreakdown.declared)}
                                     </span>
                                     <span className="reservations-fees-separator">/</span>
-                                    <span className="reservations-fee-pill reservations-fee-pill--undeclared" title="Frais non déclarés">
+                                    <span className="reservations-fee-pill reservations-fee-pill--undeclared" title="Options non déclarées">
                                       {formatEuro(feeBreakdown.undeclared)}
                                     </span>
                                   </span>
@@ -6183,7 +6183,7 @@ const ReservationsPage = () => {
                                   <button
                                     className={`table-action table-action--neutral ${hasFees ? "reservations-fee-btn--active" : ""}`}
                                     onClick={() => toggleDetails(reservation)}
-                                    title="Frais optionnels"
+                                    title="Options"
                                   >
                                     €
                                   </button>
