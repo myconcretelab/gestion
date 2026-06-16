@@ -703,6 +703,11 @@ const TodayPage = () => {
   const unassignedCount = deferredOverview?.unassigned_count ?? 0;
   const newReservations = deferredOverview?.new_reservations ?? [];
   const icalConflicts = deferredOverview?.ical_conflicts ?? [];
+  const notificationSummary = deferredOverview
+    ? `${newReservations.length} réservation${newReservations.length > 1 ? "s" : ""} sur ${formatNotificationDayLabel(
+        notificationDayCount
+      )} · ${icalConflicts.length} conflit${icalConflicts.length > 1 ? "s" : ""} iCal en attente`
+    : "Chargement des notifications...";
   const mobileActionEvent = useMemo(
     () =>
       mobileActionState?.mode === "rotation-choice"
@@ -1220,20 +1225,16 @@ const TodayPage = () => {
         <div className="today-section-head today-section-head--notifications">
           <div>
             <div className="section-title">Centre de notifications</div>
-            <div className="field-hint">
-              {deferredOverview
-                ? `${notificationItems.length} notification${notificationItems.length > 1 ? "s" : ""} sur ${formatNotificationDayLabel(
-                    notificationDayCount
-                  )}`
-                : "Chargement des notifications..."}
-            </div>
+            <div className="field-hint">{notificationSummary}</div>
           </div>
         </div>
 
         {!deferredOverview && deferredLoading ? (
           <div className="today-notifications-empty">Chargement des notifications et conflits iCal...</div>
         ) : notificationItems.length === 0 ? (
-          <div className="today-notifications-empty">Aucun conflit iCal ni nouvelle réservation sur cette période.</div>
+          <div className="today-notifications-empty">
+            Aucun conflit iCal en attente ni nouvelle réservation sur cette période.
+          </div>
         ) : (
           <div className="today-notifications-list">
             {notificationItems.map((item) => {

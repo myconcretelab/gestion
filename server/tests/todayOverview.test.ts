@@ -120,3 +120,68 @@ test("GET /today/overview inclut les départs du jour", async () => {
   assert.equal(body.new_reservations[0].hote_nom, "Camille Martin");
   assert.equal(body.new_reservations[0].nb_nuits, 3);
 });
+
+test("GET /today/overview garde les conflits iCal ouverts hors fenêtre de notification", async () => {
+  let loadedConflictReservationIds: string[] = [];
+
+  const get = createOverviewHandler({
+    loadGites: async () => [],
+    loadReservations: async () => [],
+    countUnassignedReservations: async () => 0,
+    loadRecentAppActivity: async () => [],
+    listOpenIcalConflicts: () => [
+      {
+        id: "conflict-old-open",
+        type: "deleted",
+        status: "open",
+        reservation_id: "reservation-old-conflict",
+        detected_at: "2020-01-01T08:00:00.000Z",
+        reservation_snapshot: {
+          reservation_id: "reservation-old-conflict",
+          gite_id: "g1",
+          gite_nom: "Mauron",
+          hote_nom: "Client iCal",
+          date_entree: "2026-04-03",
+          date_sortie: "2026-04-06",
+          source_paiement: "Airbnb",
+          airbnb_url: null,
+          commentaire: null,
+          origin_system: "ical",
+          origin_reference: "event-old",
+        },
+        incoming_snapshot: null,
+      },
+    ],
+    loadConflictReservations: async (reservationIds) => {
+      loadedConflictReservationIds = reservationIds;
+      return [{ id: "reservation-old-conflict", hote_nom: "Client iCal" }];
+    },
+    buildNewReservations: async () => [],
+    loadLiveEnergyByReservationId: async () => ({}),
+    readTraceabilityLog: () => [],
+    readSourceColors: () => ({}),
+  });
+
+  const response = createMockResponse();
+  let nextError: unknown = null;
+
+  await get(
+    {
+      query: { notification_days: "1" },
+      params: {},
+    } as any,
+    response as any,
+    (err) => {
+      nextError = err ?? null;
+    }
+  );
+
+  assert.equal(nextError, null);
+  assert.deepEqual(loadedConflictReservationIds, ["reservation-old-conflict"]);
+
+  const body = response.body as any;
+  assert.equal(body.notification_days, 1);
+  assert.equal(body.ical_conflicts.length, 1);
+  assert.equal(body.ical_conflicts[0].id, "conflict-old-open");
+  assert.equal(body.ical_conflicts[0].reservation?.hote_nom, "Client iCal");
+});

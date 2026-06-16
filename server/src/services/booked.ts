@@ -2,6 +2,7 @@ import prisma from "../db/prisma.js";
 import { normalizeOptions, validateDocumentOccupancy } from "../routes/shared/rentalDocument.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { round2, toNumber } from "../utils/money.js";
+import { getBookedCalendarPeriodsForRange } from "./bookedCalendarPeriods.js";
 import type { OptionsInput } from "./contractCalculator.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -64,6 +65,29 @@ type SeasonRateRow = {
   ordre: number;
 };
 
+type BookedQuoteGite = {
+  id: string;
+  capacite_max: number;
+  nb_adultes_max: number;
+  nb_enfants_max?: number | null;
+  prix_nuit_liste?: unknown;
+  prix_nuit_basse_saison?: unknown;
+  prix_nuit_haute_saison?: unknown;
+  min_nuits_toute_annee?: number | null;
+  min_nuits_vacances_scolaires?: number | null;
+  min_nuits_juillet_aout?: number | null;
+  taxe_sejour_par_personne_par_nuit: unknown;
+  options_draps_par_lit: unknown;
+  options_linge_toilette_par_personne: unknown;
+  options_menage_forfait: unknown;
+  options_depart_tardif_forfait: unknown;
+  options_chiens_forfait: unknown;
+  arrhes_taux_defaut: unknown;
+  regle_animaux_acceptes: boolean;
+  regle_bois_premiere_flambee: boolean;
+  regle_tiers_personnes_info: boolean;
+};
+
 const toUtcDate = (year: number, month: number, day: number) => {
   const date = new Date(Date.UTC(year, month - 1, day));
   if (
@@ -115,6 +139,74 @@ const normalizeSeasonRate = (row: SeasonRateRow) => ({
   ...row,
   prix_par_nuit: toNumber(row.prix_par_nuit as any),
 });
+
+const parseNightlySuggestionList = (raw: unknown) => {
+  const parsed = fromJsonString<unknown>(raw, []);
+  return Array.isArray(parsed)
+    ? parsed.map((value) => toNumber(value as any)).filter((value) => Number.isFinite(value) && value >= 0)
+    : [];
+};
+
+const getDefaultNightlyPrice = (
+  gite: Pick<BookedQuoteGite, "prix_nuit_liste" | "prix_nuit_basse_saison" | "prix_nuit_haute_saison">,
+  mode: "low" | "high"
+) => {
+  const low = toNumber(gite.prix_nuit_basse_saison as any);
+  const high = toNumber(gite.prix_nuit_haute_saison as any);
+  const suggestions = parseNightlySuggestionList(gite.prix_nuit_liste);
+
+  if (mode === "high") {
+    if (high > 0) return high;
+    if (suggestions.length > 0) return suggestions[suggestions.length - 1];
+    return low;
+  }
+
+  if (low > 0) return low;
+  if (suggestions.length > 0) return suggestions[0];
+  return high;
+};
+
+const getDefaultMinNights = (
+  gite: Pick<BookedQuoteGite, "min_nuits_toute_annee" | "min_nuits_vacances_scolaires" | "min_nuits_juillet_aout">,
+  type?: string
+) => {
+  if (type === "july_august") return Math.max(1, Number(gite.min_nuits_juillet_aout) || 1);
+  if (type === "school_holiday") return Math.max(1, Number(gite.min_nuits_vacances_scolaires) || 1);
+  return Math.max(1, Number(gite.min_nuits_toute_annee) || 1);
+};
+
+export const buildQuoteSeasonRates = (params: {
+  gite: BookedQuoteGite;
+  dateEntree: Date;
+  dateSortie: Date;
+  seasonRates: SeasonRateRow[];
+  calendarPeriods: Awaited<ReturnType<typeof getBookedCalendarPeriodsForRange>>;
+}) => {
+  const rows = [...params.seasonRates];
+
+  for (let cursor = params.dateEntree; cursor.getTime() < params.dateSortie.getTime(); cursor = addUtcDays(cursor, 1)) {
+    const hasExplicitRate = params.seasonRates.some(
+      (rate) => rate.date_debut.getTime() <= cursor.getTime() && rate.date_fin.getTime() > cursor.getTime()
+    );
+    if (hasExplicitRate) continue;
+
+    const date = formatBookedDateInput(cursor);
+    const period = params.calendarPeriods.find((item) => item.start <= date && item.end > date);
+    const isHighSeason = period?.type === "school_holiday" || period?.type === "july_august";
+
+    rows.push({
+      id: `default:${date}`,
+      gite_id: params.gite.id,
+      date_debut: cursor,
+      date_fin: addUtcDays(cursor, 1),
+      prix_par_nuit: getDefaultNightlyPrice(params.gite, isHighSeason ? "high" : "low"),
+      min_nuits: getDefaultMinNights(params.gite, period?.type),
+      ordre: Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  return rows;
+};
 
 const normalizeOptionsForGite = (gite: {
   regle_animaux_acceptes: boolean;
@@ -261,22 +353,7 @@ const resolveOptionAmounts = (params: {
 };
 
 export const computeSeasonQuote = async (params: {
-  gite: {
-    id: string;
-    capacite_max: number;
-    nb_adultes_max: number;
-    nb_enfants_max?: number | null;
-    taxe_sejour_par_personne_par_nuit: unknown;
-    options_draps_par_lit: unknown;
-    options_linge_toilette_par_personne: unknown;
-    options_menage_forfait: unknown;
-    options_depart_tardif_forfait: unknown;
-    options_chiens_forfait: unknown;
-    arrhes_taux_defaut: unknown;
-    regle_animaux_acceptes: boolean;
-    regle_bois_premiere_flambee: boolean;
-    regle_tiers_personnes_info: boolean;
-  };
+  gite: BookedQuoteGite;
   dateEntree: Date;
   dateSortie: Date;
   nbAdultes: number;
@@ -372,6 +449,40 @@ export const computeSeasonQuote = async (params: {
     arrhes_theoriques,
     options_detail: resolvedOptions.options_detail,
   } satisfies BookingQuote;
+};
+
+export const computeBookedQuote = async (params: {
+  gite: BookedQuoteGite;
+  dateEntree: Date;
+  dateSortie: Date;
+  nbAdultes: number;
+  nbEnfants: number;
+  options?: OptionsInput | null;
+}) => {
+  const [seasonRates, calendarPeriods] = await Promise.all([
+    loadSeasonRatesForGite(params.gite.id),
+    getBookedCalendarPeriodsForRange({
+      from: formatBookedDateInput(params.dateEntree),
+      to: formatBookedDateInput(params.dateSortie),
+      zone: "B",
+    }),
+  ]);
+
+  return computeSeasonQuote({
+    gite: params.gite,
+    dateEntree: params.dateEntree,
+    dateSortie: params.dateSortie,
+    nbAdultes: params.nbAdultes,
+    nbEnfants: params.nbEnfants,
+    options: params.options,
+    seasonRates: buildQuoteSeasonRates({
+      gite: params.gite,
+      dateEntree: params.dateEntree,
+      dateSortie: params.dateSortie,
+      seasonRates,
+      calendarPeriods,
+    }),
+  });
 };
 
 export const loadBookedConflicts = async (params: {

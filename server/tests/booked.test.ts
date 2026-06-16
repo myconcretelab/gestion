@@ -244,3 +244,156 @@ test("POST /booking-requests/:id/approve crée une réservation booked avec les 
     prisma.$transaction = originals.$transaction;
   }
 });
+
+test("POST /booking-requests/:id/dates met a jour les dates et recalcule le devis", async () => {
+  const originals = {
+    bookingRequestUpdateMany: prisma.bookingRequest.updateMany,
+    bookingRequestFindUnique: prisma.bookingRequest.findUnique,
+    bookingRequestFindMany: prisma.bookingRequest.findMany,
+    bookingRequestUpdate: prisma.bookingRequest.update,
+    reservationFindMany: prisma.reservation.findMany,
+    giteFindUnique: prisma.gite.findUnique,
+    giteSeasonRateFindMany: prisma.giteSeasonRate.findMany,
+    fetch: globalThis.fetch,
+  };
+
+  let updateData: any = null;
+
+  try {
+    prisma.bookingRequest.updateMany = async () => ({ count: 0 } as any);
+    prisma.bookingRequest.findMany = async () => [];
+    prisma.reservation.findMany = async () => [];
+    prisma.giteSeasonRate.findMany = async () => [
+      {
+        id: "rate-1",
+        gite_id: "g1",
+        date_debut: new Date("2026-09-01T00:00:00.000Z"),
+        date_fin: new Date("2026-10-01T00:00:00.000Z"),
+        prix_par_nuit: 100,
+        min_nuits: 1,
+        ordre: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as any;
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ results: [] }),
+    } as any);
+    prisma.gite.findUnique = async () => ({
+      id: "g1",
+      capacite_max: 6,
+      nb_adultes_max: 4,
+      nb_enfants_max: 2,
+      prix_nuit_liste: "[]",
+      prix_nuit_basse_saison: 80,
+      prix_nuit_haute_saison: 120,
+      min_nuits_toute_annee: 1,
+      min_nuits_vacances_scolaires: 2,
+      min_nuits_juillet_aout: 7,
+      taxe_sejour_par_personne_par_nuit: 1.5,
+      options_draps_par_lit: 0,
+      options_linge_toilette_par_personne: 0,
+      options_menage_forfait: 20,
+      options_depart_tardif_forfait: 0,
+      options_chiens_forfait: 0,
+      arrhes_taux_defaut: 0.2,
+      regle_animaux_acceptes: false,
+      regle_bois_premiere_flambee: false,
+      regle_tiers_personnes_info: false,
+    } as any);
+    prisma.bookingRequest.findUnique = async () => ({
+      id: "br1",
+      gite_id: "g1",
+      approved_reservation_id: null,
+      hote_nom: "Client Booked",
+      telephone: "0600000000",
+      email: null,
+      date_entree: new Date("2026-09-10T00:00:00.000Z"),
+      date_sortie: new Date("2026-09-12T00:00:00.000Z"),
+      nb_nuits: 2,
+      nb_adultes: 2,
+      nb_enfants_2_17: 1,
+      options: JSON.stringify({ menage: { enabled: true } }),
+      message_client: null,
+      pricing_snapshot: JSON.stringify({
+        nb_nuits: 2,
+        montant_hebergement: 200,
+        total_options: 20,
+        taxe_sejour: 6,
+        total_global: 220,
+      }),
+      status: "pending",
+      hold_expires_at: new Date(Date.now() + 60_000),
+      decided_at: null,
+      decision_note: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      gite: { id: "g1", nom: "Gite booked", email: "owner@example.com" },
+      approved_reservation: null,
+    } as any);
+    prisma.bookingRequest.update = async ({ data }: any) => {
+      updateData = data;
+      return {
+        id: "br1",
+        gite_id: "g1",
+        hote_nom: "Client Booked",
+        telephone: "0600000000",
+        email: null,
+        date_entree: data.date_entree,
+        date_sortie: data.date_sortie,
+        nb_nuits: data.nb_nuits,
+        nb_adultes: 2,
+        nb_enfants_2_17: 1,
+        options: JSON.stringify({ menage: { enabled: true } }),
+        message_client: null,
+        pricing_snapshot: data.pricing_snapshot,
+        status: "pending",
+        hold_expires_at: new Date(Date.now() + 60_000),
+        decided_at: null,
+        decision_note: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        gite: { id: "g1", nom: "Gite booked", email: "owner@example.com" },
+        approved_reservation: null,
+      };
+    };
+
+    const updateDates = getRouteHandler(bookedRouter, "post", "/:id/dates");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await updateDates(
+      {
+        params: { id: "br1" },
+        body: { date_entree: "2026-09-14", date_sortie: "2026-09-17" },
+      },
+      response,
+      (error) => {
+        nextError = error ?? null;
+      }
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal(updateData.nb_nuits, 3);
+    assert.equal(updateData.date_entree.toISOString().slice(0, 10), "2026-09-14");
+    assert.equal(updateData.date_sortie.toISOString().slice(0, 10), "2026-09-17");
+
+    const pricingSnapshot = JSON.parse(updateData.pricing_snapshot);
+    assert.equal(pricingSnapshot.nb_nuits, 3);
+    assert.equal(pricingSnapshot.montant_hebergement, 300);
+    assert.equal(pricingSnapshot.total_options, 20);
+    assert.equal(pricingSnapshot.taxe_sejour, 9);
+    assert.equal(pricingSnapshot.total_global, 320);
+  } finally {
+    prisma.bookingRequest.updateMany = originals.bookingRequestUpdateMany;
+    prisma.bookingRequest.findUnique = originals.bookingRequestFindUnique;
+    prisma.bookingRequest.findMany = originals.bookingRequestFindMany;
+    prisma.bookingRequest.update = originals.bookingRequestUpdate;
+    prisma.reservation.findMany = originals.reservationFindMany;
+    prisma.gite.findUnique = originals.giteFindUnique;
+    prisma.giteSeasonRate.findMany = originals.giteSeasonRateFindMany;
+    globalThis.fetch = originals.fetch;
+  }
+});

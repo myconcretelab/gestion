@@ -212,15 +212,10 @@ export const createOverviewHandler = (deps: OverviewHandlerDependencies): Reques
       new_reservations: newReservations,
       recent_import_log: recentImportLog,
       recent_app_activity: recentAppActivity,
-      ical_conflicts: openIcalConflicts
-        .filter((conflict) => {
-          const detectedAt = parseDateTime(conflict.detected_at);
-          return detectedAt ? detectedAt.getTime() >= notificationSince.getTime() : false;
-        })
-        .map((conflict) => ({
-          ...conflict,
-          reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
-        })),
+      ical_conflicts: openIcalConflicts.map((conflict) => ({
+        ...conflict,
+        reservation: conflictReservationById.get(conflict.reservation_id) ?? null,
+      })),
     });
   } catch (error) {
     return next(error);
