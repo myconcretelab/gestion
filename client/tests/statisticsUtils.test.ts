@@ -58,7 +58,7 @@ const payload: StatisticsPayload = {
   availableYears: [2026],
 };
 
-test("les stats de CA brut incluent les frais optionnels et excluent HomeExchange", () => {
+test("les stats de CA brut incluent les options et excluent HomeExchange", () => {
   const parsed = parseStatisticsPayload(payload);
   const entries = parsed.entriesByGite.g1;
 

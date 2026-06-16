@@ -1179,7 +1179,7 @@ const TodayPage = () => {
           </div>
           <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
             {revenueAverages.map((metric) => (
-              <div key={metric.id} className="today-revenue-mini__item" title={`${formatEuro(metric.gross_revenue)} revenus - ${formatEuro(metric.expenses)} frais`}>
+              <div key={metric.id} className="today-revenue-mini__item" title={`${formatEuro(metric.gross_revenue)} revenus - ${formatEuro(metric.expenses)} dépenses`}>
                 <span>
                   <i aria-hidden="true">{getRevenueAverageIcon(metric.id)}</i>
                   {metric.label}
