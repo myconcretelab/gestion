@@ -9312,6 +9312,45 @@ button.warning {
   gap: 8px;
 }
 
+.reservations-extra-fees-editor {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+}
+
+.reservations-extra-fees-editor__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reservations-extra-fees-editor__head strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.reservations-extra-fees-editor__head > span {
+  color: #1d4ed8;
+  font-size: 1rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.reservations-extra-fees-editor__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(140px, 0.5fr);
+  gap: 12px;
+}
+
+.reservations-extra-fees-editor__fields input {
+  min-height: 46px;
+  border-radius: 12px;
+}
+
 .reservation-options-editor--compact .reservations-options-list {
   grid-template-columns: 1fr;
   gap: 12px;
