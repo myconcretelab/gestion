@@ -329,6 +329,11 @@ export type ContratOptions = {
   regle_tiers_personnes_info?: boolean;
 };
 
+export type InvoiceExtraFee = {
+  libelle: string;
+  montant: number;
+};
+
 export type Contrat = {
   id: string;
   numero_contrat: string;
@@ -397,6 +402,7 @@ export type Facture = {
   nb_nuits: number;
   prix_par_nuit: number;
   remise_montant: number;
+  frais_supplementaires: InvoiceExtraFee[];
   taxe_sejour_calculee?: number;
   options: ContratOptions;
   arrhes_montant: number;

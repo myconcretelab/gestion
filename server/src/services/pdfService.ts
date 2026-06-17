@@ -101,6 +101,7 @@ export type InvoiceRenderInput = {
   heure_depart: string;
   prix_par_nuit: NumericLike;
   remise_montant: NumericLike;
+  frais_supplementaires?: InvoiceExtraFeeInput[] | string | null;
   arrhes_montant: NumericLike;
   arrhes_date_limite: Date;
   solde_montant: NumericLike;
@@ -112,6 +113,11 @@ export type InvoiceRenderInput = {
   clauses?: Record<string, unknown> | string | null;
   statut_paiement?: "non_reglee" | "reglee";
   notes?: string | null;
+};
+
+type InvoiceExtraFeeInput = {
+  libelle?: string | null;
+  montant?: NumericLike | null;
 };
 
 const getBrowser = async () => {
@@ -960,6 +966,16 @@ const buildInvoiceOptionsRowsHtml = (params: {
   return rows.join("");
 };
 
+const buildInvoiceExtraFeesRowsHtml = (fees: InvoiceExtraFeeInput[]) =>
+  fees
+    .map((fee) => ({
+      libelle: (fee.libelle ?? "").trim() || "Frais complémentaires",
+      montant: round2(toNumber(fee.montant ?? 0)),
+    }))
+    .filter((fee) => fee.montant > 0)
+    .map((fee) => `<tr><td>${escapeHtml(fee.libelle)}</td><td>${formatEuro(fee.montant)}</td></tr>`)
+    .join("");
+
 const buildInvoiceNotesHtml = (params: {
   notes: string | null | undefined;
   clauses: Record<string, unknown>;
@@ -989,12 +1005,17 @@ const buildInvoiceHtml = async (params: {
   const template = await loadInvoiceTemplate();
   const options = parseJsonField<OptionsInput>(params.invoice.options, {});
   const clauses = parseJsonField<Record<string, unknown>>(params.invoice.clauses ?? {}, {});
+  const fraisSupplementaires = parseJsonField<InvoiceExtraFeeInput[]>(
+    params.invoice.frais_supplementaires ?? [],
+    []
+  );
   const statutPaiement = params.invoice.statut_paiement ?? "non_reglee";
   const remiseMontantValue = toNumber(params.invoice.remise_montant);
   const remiseReasonRaw = clauses["remise_raison"];
   const remiseReason = typeof remiseReasonRaw === "string" ? remiseReasonRaw.trim() : "";
   const acompteMontantValue = toNumber(params.invoice.arrhes_montant);
   const optionsRowsHtml = buildInvoiceOptionsRowsHtml({ totals: params.totals, options, gite: params.gite });
+  const extraFeesRowsHtml = buildInvoiceExtraFeesRowsHtml(fraisSupplementaires);
   const notesHtml = buildInvoiceNotesHtml({ notes: params.invoice.notes, clauses });
   const remiseLabelHtml = remiseReason
     ? `Remise<div class="invoice-remise-reason">${escapeHtml(remiseReason)}</div>`
@@ -1043,7 +1064,7 @@ const buildInvoiceHtml = async (params: {
     locationLineLabel,
     montantBase: formatEuro(params.totals.montantBase),
     remiseRowHtml,
-    optionsRowsHtml,
+    optionsRowsHtml: `${optionsRowsHtml}${extraFeesRowsHtml}`,
     taxeSejour: formatEuro(params.totals.taxeSejourCalculee),
     totalGlobal: formatEuro(params.totals.totalGlobal),
     acompteRowHtml,

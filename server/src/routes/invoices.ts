@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs/promises";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
-import { computeTotals, type OptionsInput } from "../services/contractCalculator.js";
+import { computeTotals, type ContractTotals, type OptionsInput } from "../services/contractCalculator.js";
 import { syncReservationFromDocument } from "../services/documentReservationSync.js";
 import { generateInvoiceNumber } from "../services/invoiceNumber.js";
 import {
@@ -39,6 +39,35 @@ const emptyStringToNull = (value: unknown) => {
   return trimmed.length === 0 ? null : trimmed;
 };
 
+const invoiceExtraFeeSchema = z.object({
+  libelle: z.string().optional().default(""),
+  montant: z.number().min(0).optional().default(0),
+});
+
+type InvoiceExtraFeeInput = z.infer<typeof invoiceExtraFeeSchema>;
+type InvoiceExtraFee = { libelle: string; montant: number };
+
+const normalizeInvoiceExtraFees = (fees: InvoiceExtraFeeInput[] | null | undefined): InvoiceExtraFee[] =>
+  (fees ?? [])
+    .map((fee) => ({
+      libelle: fee.libelle.trim() || "Frais complémentaires",
+      montant: round2(fee.montant ?? 0),
+    }))
+    .filter((fee) => fee.montant > 0);
+
+const getInvoiceExtraFeesTotal = (fees: InvoiceExtraFee[]) =>
+  round2(fees.reduce((sum, fee) => sum + fee.montant, 0));
+
+const addInvoiceExtraFeesToTotals = (totals: ContractTotals, fees: InvoiceExtraFee[]): ContractTotals => {
+  const feesTotal = getInvoiceExtraFeesTotal(fees);
+  if (feesTotal <= 0) return totals;
+  return {
+    ...totals,
+    totalGlobal: round2(totals.totalGlobal + feesTotal),
+    solde: round2(totals.solde + feesTotal),
+  };
+};
+
 const invoiceSchema = z.object({
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
@@ -53,6 +82,7 @@ const invoiceSchema = z.object({
   heure_depart: z.string().min(1),
   prix_par_nuit: z.number().min(0),
   remise_montant: z.number().min(0).default(0),
+  frais_supplementaires: z.array(invoiceExtraFeeSchema).optional().default([]),
   options: optionsSchema.default({}),
   arrhes_montant: z.number().min(0).optional(),
   arrhes_date_limite: z.string().min(1),
@@ -91,6 +121,7 @@ const previewSchema = z.object({
   heure_depart: z.string().optional().default("12:00"),
   prix_par_nuit: z.number().min(0).optional().default(0),
   remise_montant: z.number().min(0).optional().default(0),
+  frais_supplementaires: z.array(invoiceExtraFeeSchema).optional().default([]),
   options: optionsSchema.default({}),
   arrhes_montant: z.number().min(0).optional(),
   arrhes_date_limite: optionalDateString,
@@ -119,6 +150,7 @@ const hydrateInvoiceMoneyFields = (invoice: any) => ({
 
 const hydrateInvoice = (contrat: any) => ({
   ...hydrateInvoiceMoneyFields(contrat),
+  frais_supplementaires: fromJsonString<InvoiceExtraFee[]>(contrat.frais_supplementaires, []),
   options: fromJsonString<OptionsInput>(contrat.options, {}),
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
@@ -137,6 +169,7 @@ const toInvoiceRenderInput = (contrat: any): InvoiceRenderInput => ({
   heure_depart: contrat.heure_depart,
   prix_par_nuit: contrat.prix_par_nuit,
   remise_montant: contrat.remise_montant,
+  frais_supplementaires: fromJsonString<InvoiceExtraFee[]>(contrat.frais_supplementaires, []),
   arrhes_montant: contrat.arrhes_montant,
   arrhes_date_limite: contrat.arrhes_date_limite,
   solde_montant: contrat.solde_montant,
@@ -158,7 +191,7 @@ const invoiceTemplatePaths = [
 const regenerateStoredInvoicePdf = async (contrat: any) => {
   const options = normalizeOptions(fromJsonString<OptionsInput>(contrat.options, {}), contrat.gite);
 
-  const totals = computeTotals({
+  const totalsBase = computeTotals({
     dateDebut: contrat.date_debut,
     dateFin: contrat.date_fin,
     prixParNuit: toNumber(contrat.prix_par_nuit),
@@ -169,6 +202,10 @@ const regenerateStoredInvoicePdf = async (contrat: any) => {
     options,
     gite: contrat.gite,
   });
+  const fraisSupplementaires = normalizeInvoiceExtraFees(
+    fromJsonString<InvoiceExtraFeeInput[]>(contrat.frais_supplementaires, [])
+  );
+  const totals = addInvoiceExtraFeesToTotals(totalsBase, fraisSupplementaires);
 
   const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
     contrat.numero_facture,
@@ -183,6 +220,7 @@ const regenerateStoredInvoicePdf = async (contrat: any) => {
       solde_montant: totals.solde,
       pdf_path: pdfRelativePath,
       options: encodeJsonField(options),
+      frais_supplementaires: encodeJsonField(fraisSupplementaires),
     },
   });
 
@@ -190,6 +228,7 @@ const regenerateStoredInvoicePdf = async (contrat: any) => {
     ...toInvoiceRenderInput(contrat),
     solde_montant: totals.solde,
     options,
+    frais_supplementaires: fraisSupplementaires,
   };
   await generateInvoicePdf({
     invoice: invoiceForPdf,
@@ -285,7 +324,7 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
   const arrhesMontant =
     data.arrhes_montant !== undefined ? data.arrhes_montant : round2(totalsPre.totalSansOptions * arrhesRate);
 
-  const totals = computeTotals({
+  const totalsBase = computeTotals({
     dateDebut: totalsDateDebut,
     dateFin: totalsDateFin,
     prixParNuit: data.prix_par_nuit ?? 0,
@@ -296,6 +335,8 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
     options,
     gite,
   });
+  const fraisSupplementaires = normalizeInvoiceExtraFees(data.frais_supplementaires);
+  const totals = addInvoiceExtraFeesToTotals(totalsBase, fraisSupplementaires);
 
   const arrhesDateLimite = data.arrhes_date_limite ? parseDate(data.arrhes_date_limite) : addDays(new Date(), 15);
   if (data.arrhes_date_limite) ensureValidDate(arrhesDateLimite, "arrhes_date_limite");
@@ -313,6 +354,7 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
     heure_depart: data.heure_depart ?? "12:00",
     prix_par_nuit: data.prix_par_nuit ?? 0,
     remise_montant: data.remise_montant ?? 0,
+    frais_supplementaires: fraisSupplementaires,
     arrhes_montant: arrhesMontant,
     arrhes_date_limite: arrhesDateLimite,
     solde_montant: totals.solde,
@@ -447,6 +489,8 @@ router.post("/", async (req, res, next) => {
       options,
       gite,
     });
+    const fraisSupplementaires = normalizeInvoiceExtraFees(data.frais_supplementaires);
+    const invoiceTotals = addInvoiceExtraFeesToTotals(totals, fraisSupplementaires);
 
     const numeroFacture = await generateInvoiceNumber(
       data.gite_id,
@@ -475,6 +519,10 @@ router.post("/", async (req, res, next) => {
       remiseMontant: data.remise_montant ?? 0,
       options,
       optionsTotal: totals.optionsTotal,
+      additionalFees: fraisSupplementaires.map((fee) => ({
+        label: fee.libelle,
+        amount: fee.montant,
+      })),
     });
 
     const contrat = await prisma.facture.create({
@@ -498,7 +546,8 @@ router.post("/", async (req, res, next) => {
         options: encodeJsonField(options),
         arrhes_montant: arrhesMontant,
         arrhes_date_limite: parseDate(data.arrhes_date_limite),
-        solde_montant: totals.solde,
+        frais_supplementaires: encodeJsonField(fraisSupplementaires),
+        solde_montant: invoiceTotals.solde,
         caution_montant: data.caution_montant,
         cheque_menage_montant: data.cheque_menage_montant,
         afficher_caution_phrase: data.afficher_caution_phrase ?? true,
@@ -516,7 +565,7 @@ router.post("/", async (req, res, next) => {
     await generateInvoicePdf({
       invoice: invoiceForPdf,
       gite,
-      totals,
+      totals: invoiceTotals,
       outputPath: pdfAbsolutePath,
     });
 
@@ -571,6 +620,8 @@ router.put("/:id", async (req, res, next) => {
       options,
       gite,
     });
+    const fraisSupplementaires = normalizeInvoiceExtraFees(data.frais_supplementaires);
+    const invoiceTotals = addInvoiceExtraFeesToTotals(totals, fraisSupplementaires);
 
     const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
       existing.numero_facture,
@@ -594,6 +645,10 @@ router.put("/:id", async (req, res, next) => {
       remiseMontant: data.remise_montant ?? 0,
       options,
       optionsTotal: totals.optionsTotal,
+      additionalFees: fraisSupplementaires.map((fee) => ({
+        label: fee.libelle,
+        amount: fee.montant,
+      })),
     });
 
     const contrat = await prisma.facture.update({
@@ -617,7 +672,8 @@ router.put("/:id", async (req, res, next) => {
         options: encodeJsonField(options),
         arrhes_montant: arrhesMontant,
         arrhes_date_limite: parseDate(data.arrhes_date_limite),
-        solde_montant: totals.solde,
+        frais_supplementaires: encodeJsonField(fraisSupplementaires),
+        solde_montant: invoiceTotals.solde,
         caution_montant: data.caution_montant,
         cheque_menage_montant: data.cheque_menage_montant,
         afficher_caution_phrase: data.afficher_caution_phrase ?? true,
@@ -635,7 +691,7 @@ router.put("/:id", async (req, res, next) => {
     await generateInvoicePdf({
       invoice: invoiceForPdf,
       gite,
-      totals,
+      totals: invoiceTotals,
       outputPath: pdfAbsolutePath,
     });
 
