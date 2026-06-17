@@ -200,6 +200,13 @@ type ReservationOptionsPreview = {
 type ReservationFeesBreakdown = {
   declared: number;
   undeclared: number;
+  extra: number;
+  total: number;
+};
+
+type ReservationFeesDetails = {
+  label: string;
+  amount: number;
 };
 
 type GuestNightDeclarationRow = {
@@ -795,12 +802,15 @@ const computeReservationFeesBreakdown = (params: {
   let declared = 0;
   let undeclared = 0;
   let hasEnabledOption = false;
+  let structuredTotal = 0;
+  const rawAmount = round2(Math.max(0, Number(params.draft.frais_optionnels_montant ?? params.reservation.frais_optionnels_montant ?? 0)));
 
   for (const key of SERVICE_OPTION_KEYS) {
     const service = options[key];
     if (!service?.enabled) continue;
     hasEnabledOption = true;
     const amount = round2(Number(params.optionPreview.byKey[key] ?? 0));
+    structuredTotal = round2(structuredTotal + amount);
     if (amount <= 0) continue;
     if (service.declared) {
       declared += amount;
@@ -810,18 +820,51 @@ const computeReservationFeesBreakdown = (params: {
   }
 
   if (!hasEnabledOption) {
-    const rawAmount = round2(Math.max(0, Number(params.draft.frais_optionnels_montant ?? params.reservation.frais_optionnels_montant ?? 0)));
     if (params.draft.frais_optionnels_declares) {
       declared = rawAmount;
     } else {
       undeclared = rawAmount;
     }
+    structuredTotal = rawAmount;
   }
+
+  const extra = hasEnabledOption ? round2(Math.max(0, rawAmount - structuredTotal)) : 0;
+  undeclared = round2(undeclared + extra);
 
   return {
     declared: round2(declared),
     undeclared: round2(undeclared),
+    extra,
+    total: round2(declared + undeclared),
   };
+};
+
+const splitReservationFeeLabel = (value: string) => {
+  const normalized = value.trim();
+  if (!normalized) return { optionsLabel: "", invoiceFeesLabel: "" };
+  const marker = "Frais facture:";
+  const markerIndex = normalized.toLowerCase().indexOf(marker.toLowerCase());
+  if (markerIndex < 0) return { optionsLabel: normalized, invoiceFeesLabel: "" };
+  const beforeMarker = normalized.slice(0, markerIndex).replace(/\s*·\s*$/, "").trim();
+  const afterMarker = normalized.slice(markerIndex + marker.length).trim();
+  return { optionsLabel: beforeMarker, invoiceFeesLabel: afterMarker };
+};
+
+const getReservationFeeDetails = (reservation: Reservation, feeBreakdown: ReservationFeesBreakdown): ReservationFeesDetails[] => {
+  const label = String(reservation.frais_optionnels_libelle ?? "").trim();
+  const details: ReservationFeesDetails[] = [];
+  const { optionsLabel, invoiceFeesLabel } = splitReservationFeeLabel(label);
+  const optionsAmount = round2(Math.max(0, feeBreakdown.total - feeBreakdown.extra));
+  if (optionsAmount > 0 || (optionsLabel && feeBreakdown.extra <= 0)) {
+    details.push({
+      label: optionsLabel || "Options",
+      amount: feeBreakdown.extra > 0 ? optionsAmount : feeBreakdown.total,
+    });
+  }
+  if (feeBreakdown.extra > 0) {
+    details.push({ label: invoiceFeesLabel || "Frais facture", amount: feeBreakdown.extra });
+  }
+  return details;
 };
 
 const computeNights = (entry: string, exit: string) => {
@@ -4893,13 +4936,15 @@ const ReservationsPage = () => {
                         title: `Total du mois ${MONTHS[monthIndex - 1]}`,
                         rows: [
                           { label: "Nuitées", value: formatEuro(summary.baseRevenue) },
-                          { label: "Options déclarées", value: formatEuro(summary.declaredFees) },
-                          { label: "Options non déclarées", value: formatEuro(summary.undeclaredFees) },
+                          { label: "Options / frais déclarés", value: formatEuro(summary.declaredFees) },
+                          { label: "Options / frais non déclarés", value: formatEuro(summary.undeclaredFees) },
                           { label: "Total", value: formatEuro(summary.revenue) },
                         ],
                         note: "Les séjours à cheval sur deux mois sont proratisés sur le mois affiché.",
                       })}
-                      <span className="reservations-summary-pill reservations-summary-pill--fees">{formatEuro(summary.fees)} options</span>
+                      <span className="reservations-summary-pill reservations-summary-pill--fees">
+                        {formatEuro(summary.fees)} options / frais
+                      </span>
                       {isAllGitesTab
                         ? monthEnergySummariesForAllGites.map((energySummary) => (
                             <Fragment
@@ -5069,6 +5114,7 @@ const ReservationsPage = () => {
                         optionPreview,
                       });
                       const hasFees = feeBreakdown.declared > 0 || feeBreakdown.undeclared > 0;
+                      const feeDetails = getReservationFeeDetails(reservation, feeBreakdown);
                       const isDetailsExpanded = Boolean(expandedDetails[reservation.id]);
                       const isDetailsClosing = Boolean(closingDetails[reservation.id]);
                       const isRowSavedFading = Boolean(savedRowFade[reservation.id]);
@@ -5944,6 +5990,29 @@ const ReservationsPage = () => {
                                     <span className="reservations-fee-pill reservations-fee-pill--undeclared" title="Options non déclarées">
                                       {formatEuro(feeBreakdown.undeclared)}
                                     </span>
+                                    {feeDetails.length > 0 ? (
+                                      <span
+                                        className="reservations-fees-detail"
+                                        aria-label="Détail des frais"
+                                        title="Détail des frais"
+                                      >
+                                        <span className="reservations-fees-detail__icon">i</span>
+                                        <span className="reservations-fees-detail__popover" role="tooltip">
+                                          <span className="reservations-fees-detail__title">Détail des frais</span>
+                                          {feeDetails.map((detail) => (
+                                            <span className="reservations-fees-detail__row" key={`${reservation.id}-${detail.label}`}>
+                                              <span>{detail.label}</span>
+                                              <strong>{formatEuro(detail.amount)}</strong>
+                                            </span>
+                                          ))}
+                                          {feeBreakdown.extra > 0 ? (
+                                            <span className="reservations-fees-detail__note">
+                                              Inclut {formatEuro(feeBreakdown.extra)} de frais facture.
+                                            </span>
+                                          ) : null}
+                                        </span>
+                                      </span>
+                                    ) : null}
                                   </span>
                                   {hasDisplayedEnergyInline ? (
                                     <span className="reservations-energy-inline reservations-energy-inline--compact">

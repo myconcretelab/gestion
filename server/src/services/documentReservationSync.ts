@@ -22,6 +22,11 @@ type SyncReservationFromDocumentParams = {
   remiseMontant: number;
   options: OptionsInput;
   optionsTotal: number;
+  additionalFees?: Array<{
+    label: string;
+    amount: number;
+    declared?: boolean;
+  }>;
 };
 
 const normalizeTextKey = (value: string) =>
@@ -66,6 +71,15 @@ const toReservationOptionsSummary = (options: OptionsInput) => {
   };
 };
 
+const normalizeAdditionalFees = (fees: SyncReservationFromDocumentParams["additionalFees"] = []) =>
+  fees
+    .map((fee) => ({
+      label: fee.label.trim() || "Frais complémentaires",
+      amount: round2(sanitizeReservationAmount(fee.amount)),
+      declared: Boolean(fee.declared),
+    }))
+    .filter((fee) => fee.amount > 0);
+
 const isSameDate = (left: Date | string, right: Date | string) => new Date(left).getTime() === new Date(right).getTime();
 
 export const syncReservationFromDocument = async (params: SyncReservationFromDocumentParams) => {
@@ -86,6 +100,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
     remiseMontant,
     options,
     optionsTotal,
+    additionalFees,
   } = params;
   const sourceReservationId = explicitReservationId ?? existingReservationId ?? null;
   const normalizedHost = normalizeTextKey(locataireNom);
@@ -138,6 +153,18 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
 
   const normalizedOptionsTotal = sanitizeReservationAmount(optionsTotal);
   const normalizedRemiseMontant = sanitizeReservationAmount(remiseMontant);
+  const normalizedAdditionalFees = normalizeAdditionalFees(additionalFees);
+  const additionalFeesTotal = normalizedAdditionalFees.reduce((sum, fee) => round2(sum + fee.amount), 0);
+  const totalOptionalFees = round2(normalizedOptionsTotal + additionalFeesTotal);
+  const additionalFeesLabel = normalizedAdditionalFees.length
+    ? `Frais facture: ${normalizedAdditionalFees.map((fee) => fee.label).join(" · ")}`
+    : "";
+  const optionalFeesLabel = [summary.label, additionalFeesLabel].filter(Boolean).join(" · ") || null;
+  const declarationFlags = [
+    ...(summary.label ? [summary.allDeclared] : []),
+    ...normalizedAdditionalFees.map((fee) => fee.declared),
+  ];
+  const optionalFeesDeclared = declarationFlags.length > 0 && declarationFlags.every(Boolean);
 
   const reservationData = {
     gite_id: giteId,
@@ -153,9 +180,9 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
     prix_par_nuit: round2(prixParNuit),
     prix_total: round2(prixTotal),
     remise_montant: round2(normalizedRemiseMontant),
-    frais_optionnels_montant: round2(normalizedOptionsTotal),
-    frais_optionnels_libelle: summary.label || null,
-    frais_optionnels_declares: summary.allDeclared,
+    frais_optionnels_montant: totalOptionalFees,
+    frais_optionnels_libelle: optionalFeesLabel,
+    frais_optionnels_declares: optionalFeesDeclared,
     options: encodeJsonField(options),
   };
 

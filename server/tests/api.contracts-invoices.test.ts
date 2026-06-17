@@ -250,6 +250,10 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       cheque_menage_montant: 0,
       afficher_caution_phrase: false,
       afficher_cheque_menage_phrase: false,
+      frais_supplementaires: [
+        { libelle: "Frais de dossier", montant: 15 },
+        { libelle: "Traitement", montant: 5.5 },
+      ],
       clauses: {},
       notes: "note facture",
       statut_paiement: "non_reglee",
@@ -266,13 +270,22 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     );
     assert.equal(nextError, null);
     assert.equal(createInvoiceRes.statusCode, 201);
-    assert.equal(Number((createInvoiceRes.body as any).solde_montant), 272);
+    assert.equal(Number((createInvoiceRes.body as any).solde_montant), 292.5);
     assert.equal(Number((createInvoiceRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((createInvoiceRes.body as any).reservation_id, "r-invoice-created");
+    assert.deepEqual((createInvoiceRes.body as any).frais_supplementaires, [
+      { libelle: "Frais de dossier", montant: 15 },
+      { libelle: "Traitement", montant: 5.5 },
+    ]);
     assert.equal((createInvoiceRes.body as any).options.chiens.prix_unitaire, 5);
     assert.equal(lastCreatedReservationData.telephone, null);
     assert.equal(lastCreatedReservationData.email, "client.facture@example.com");
-    assert.equal(lastCreatedReservationData.frais_optionnels_libelle, "Draps x2 · Linge x1 · Ménage · Chiens x2");
+    assert.equal(Number(lastCreatedReservationData.prix_total), 300);
+    assert.equal(Number(lastCreatedReservationData.frais_optionnels_montant), 102.5);
+    assert.equal(
+      lastCreatedReservationData.frais_optionnels_libelle,
+      "Draps x2 · Linge x1 · Ménage · Chiens x2 · Frais facture: Frais de dossier · Traitement"
+    );
 
     const updateInvoiceRes = createMockResponse();
     nextError = null;
@@ -299,15 +312,18 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     );
     assert.equal(nextError, null);
     assert.equal(updateInvoiceRes.statusCode, 200);
-    assert.equal(Number((updateInvoiceRes.body as any).solde_montant), 359.5);
+    assert.equal(Number((updateInvoiceRes.body as any).solde_montant), 380);
     assert.equal(Number((updateInvoiceRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((updateInvoiceRes.body as any).reservation_id, "r-invoice");
     assert.deepEqual(lastUpdatedReservationData.where, { id: "r-invoice" });
     assert.equal(lastUpdatedReservationData.data.email, "client.facture@example.com");
     assert.equal(lastUpdatedReservationData.data.telephone, null);
     assert.equal(Number(lastUpdatedReservationData.data.prix_total), 360);
-    assert.equal(lastUpdatedReservationData.data.frais_optionnels_libelle, "Draps x2 · Linge x1 · Départ tardif");
-    assert.equal(Number(lastUpdatedReservationData.data.frais_optionnels_montant), 59.5);
+    assert.equal(
+      lastUpdatedReservationData.data.frais_optionnels_libelle,
+      "Draps x2 · Linge x1 · Départ tardif · Frais facture: Frais de dossier · Traitement"
+    );
+    assert.equal(Number(lastUpdatedReservationData.data.frais_optionnels_montant), 80);
     const updatedOptions =
       typeof lastUpdatedReservationData.data.options === "string"
         ? JSON.parse(lastUpdatedReservationData.data.options)

@@ -21,6 +21,32 @@ import { useHtmlPreview } from "./shared/useHtmlPreview";
 import { useDocumentSubmit } from "./shared/useDocumentSubmit";
 const INVOICE_GUARANTEE_AMOUNT = 0;
 
+type InvoiceExtraFeeRow = {
+  id: string;
+  libelle: string;
+  montant: string;
+};
+
+const createInvoiceExtraFeeRow = (values?: { libelle?: string | null; montant?: number | string | null }): InvoiceExtraFeeRow => ({
+  id:
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  libelle: values?.libelle ?? "",
+  montant:
+    values?.montant === null || values?.montant === undefined || Number(values.montant) === 0
+      ? ""
+      : String(values.montant),
+});
+
+const normalizeInvoiceExtraFees = (rows: InvoiceExtraFeeRow[]) =>
+  rows
+    .map((row) => ({
+      libelle: row.libelle.trim() || "Frais complémentaires",
+      montant: Math.round(Number(row.montant || 0) * 100) / 100,
+    }))
+    .filter((fee) => Number.isFinite(fee.montant) && fee.montant > 0);
+
 type ContractFieldKey =
   | "gite_id"
   | "locataire_nom"
@@ -82,6 +108,7 @@ const FactureFormPage = () => {
   const [remiseMode, setRemiseMode] = useState<"euro" | "percent">("euro");
   const [remiseValue, setRemiseValue] = useState("");
   const [remiseReason, setRemiseReason] = useState("");
+  const [fraisSupplementaires, setFraisSupplementaires] = useState<InvoiceExtraFeeRow[]>([]);
   const [options, setOptions] = useState<ContratOptions>(defaultOptions);
   const [arrhesMontant, setArrhesMontant] = useState("0.00");
   const [arrhesDateLimite, setArrhesDateLimite] = useState("");
@@ -139,6 +166,7 @@ const FactureFormPage = () => {
         setRemiseMode("euro");
         setRemiseValue(data.remise_montant ? String(data.remise_montant) : "");
         setRemiseReason(typeof data.clauses?.remise_raison === "string" ? data.clauses.remise_raison : "");
+        setFraisSupplementaires((data.frais_supplementaires ?? []).map((fee) => createInvoiceExtraFeeRow(fee)));
         setOptions(mergeOptions(data.options));
         setArrhesAuto(false);
         setArrhesMontant(Number(data.arrhes_montant ?? 0).toFixed(2));
@@ -196,6 +224,7 @@ const FactureFormPage = () => {
         setRemiseMode("euro");
         setRemiseValue(data.remise_montant ? String(data.remise_montant) : "");
         setRemiseReason(typeof data.clauses?.remise_raison === "string" ? data.clauses.remise_raison : "");
+        setFraisSupplementaires([]);
         setOptions(mergeOptions(data.options));
         setArrhesAuto(false);
         setArrhesMontant(Number(data.arrhes_montant ?? 0).toFixed(2));
@@ -236,6 +265,7 @@ const FactureFormPage = () => {
     setLoadingFromReservation(false);
     setLinkedReservationId(null);
     setLocataireEmail("");
+    setFraisSupplementaires([]);
   }, [isEdit, fromContractId, fromReservationId]);
 
   useEffect(() => {
@@ -268,6 +298,7 @@ const FactureFormPage = () => {
         setRemiseMode("euro");
         setRemiseValue(prefill.remiseValue);
         setRemiseReason("");
+        setFraisSupplementaires([]);
         setOptions(prefill.options);
         setArrhesAuto(false);
         setArrhesMontant("0.00");
@@ -333,6 +364,28 @@ const FactureFormPage = () => {
   const updateRule = (key: RuleOptionKey, value: boolean) => {
     setOptions((prev) => ({ ...prev, [key]: value }));
   };
+
+  const addFraisSupplementaire = () => {
+    setFraisSupplementaires((prev) => [...prev, createInvoiceExtraFeeRow()]);
+  };
+
+  const updateFraisSupplementaire = (id: string, value: Partial<Omit<InvoiceExtraFeeRow, "id">>) => {
+    setFraisSupplementaires((prev) => prev.map((row) => (row.id === id ? { ...row, ...value } : row)));
+  };
+
+  const removeFraisSupplementaire = (id: string) => {
+    setFraisSupplementaires((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const fraisSupplementairesPayload = useMemo(
+    () => normalizeInvoiceExtraFees(fraisSupplementaires),
+    [fraisSupplementaires]
+  );
+
+  const fraisSupplementairesTotal = useMemo(
+    () => fraisSupplementairesPayload.reduce((sum, fee) => sum + fee.montant, 0),
+    [fraisSupplementairesPayload]
+  );
 
   useEffect(() => {
     if (!selectedGite) return;
@@ -421,6 +474,7 @@ const FactureFormPage = () => {
       heure_depart: effectiveHeureDepart,
       prix_par_nuit: prixParNuit,
       remise_montant: remiseMontant,
+      frais_supplementaires: fraisSupplementairesPayload,
       options,
       arrhes_montant: Number(arrhesMontant || 0),
       arrhes_date_limite: arrhesDateLimite,
@@ -448,6 +502,7 @@ const FactureFormPage = () => {
     effectiveHeureDepart,
     prixParNuit,
     remiseMontant,
+    fraisSupplementairesPayload,
     options,
     arrhesDateLimite,
     clausesPayload,
@@ -711,6 +766,55 @@ const FactureFormPage = () => {
                 placeholder="Ex: remise fidélité"
               />
             </label>
+            <div className="invoice-extra-fees">
+              <div className="invoice-extra-fees__header">
+                <div>
+                  <div className="invoice-extra-fees__title">Frais supplémentaires</div>
+                  <div className="field-hint">Ajoutés uniquement à cette facture.</div>
+                </div>
+                <button type="button" className="secondary" onClick={addFraisSupplementaire}>
+                  Ajouter
+                </button>
+              </div>
+              {fraisSupplementaires.length > 0 ? (
+                <div className="invoice-extra-fees__list">
+                  {fraisSupplementaires.map((fee, index) => (
+                    <div className="invoice-extra-fees__row" key={fee.id}>
+                      <label className="field">
+                        Libellé
+                        <input
+                          type="text"
+                          maxLength={120}
+                          value={fee.libelle}
+                          onChange={(e) => updateFraisSupplementaire(fee.id, { libelle: e.target.value })}
+                          placeholder={`Frais ${index + 1}`}
+                        />
+                      </label>
+                      <label className="field invoice-extra-fees__amount">
+                        Montant
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={fee.montant}
+                          onChange={(e) => updateFraisSupplementaire(fee.id, { montant: e.target.value })}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="secondary invoice-extra-fees__remove"
+                        onClick={() => removeFraisSupplementaire(fee.id)}
+                      >
+                        Retirer
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="field-hint">Aucun frais ajouté.</div>
+              )}
+              <div className="field-hint">Total frais: {formatEuro(fraisSupplementairesTotal)}</div>
+            </div>
           </div>
 
           <div className="field-group">

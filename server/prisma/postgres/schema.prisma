@@ -296,6 +296,7 @@ model Facture {
   nb_nuits               Int
   prix_par_nuit          Decimal  @db.Decimal(10,2)
   remise_montant         Decimal  @default(0) @db.Decimal(10,2)
+  frais_supplementaires  Json     @default("[]")
   taxe_sejour_calculee   Decimal? @db.Decimal(10,2)
   options                Json
   arrhes_montant         Decimal  @db.Decimal(10,2)

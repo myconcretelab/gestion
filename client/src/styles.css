@@ -8186,11 +8186,112 @@ button.warning {
   white-space: nowrap;
 }
 
+.reservations-fees-cell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .reservations-fees-stack {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
+}
+
+.reservations-fees-detail {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: #1d4ed8;
+  cursor: help;
+}
+
+.reservations-fees-detail__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.68rem;
+  font-weight: 900;
+  font-family: Georgia, serif;
+  line-height: 1;
+}
+
+.reservations-fees-detail__popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 80;
+  width: max-content;
+  min-width: 230px;
+  max-width: min(340px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid rgba(191, 219, 254, 0.95);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.16);
+  color: #334155;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  transform: translate(-50%, -4px) scale(0.98);
+  pointer-events: none;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+}
+
+.reservations-fees-detail:hover .reservations-fees-detail__popover,
+.reservations-fees-trigger:focus-visible .reservations-fees-detail__popover {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.reservations-fees-detail__title {
+  display: block;
+  margin-bottom: 8px;
+  color: #0f172a;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.reservations-fees-detail__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.reservations-fees-detail__row + .reservations-fees-detail__row {
+  margin-top: 4px;
+}
+
+.reservations-fees-detail__row strong {
+  color: #0f172a;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.reservations-fees-detail__note {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 0.7rem;
+  line-height: 1.35;
 }
 
 .reservations-nights-cell {
@@ -11003,6 +11104,56 @@ button.warning {
 .field--small select,
 .field--small textarea {
   max-width: 280px;
+}
+
+.invoice-extra-fees {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.invoice-extra-fees__header,
+.invoice-extra-fees__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.invoice-extra-fees__header {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.invoice-extra-fees__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.invoice-extra-fees__list {
+  display: grid;
+  gap: 10px;
+}
+
+.invoice-extra-fees__row {
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.invoice-extra-fees__row .field {
+  flex: 1 1 220px;
+}
+
+.invoice-extra-fees__row .invoice-extra-fees__amount {
+  flex-basis: 120px;
+  max-width: 150px;
+}
+
+.invoice-extra-fees__remove {
+  flex: 0 0 auto;
 }
 
 .option-grid {
