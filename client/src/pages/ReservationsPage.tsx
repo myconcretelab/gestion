@@ -784,13 +784,25 @@ const computeReservationOptionsPreview = (
 const buildReservationPricingAdjustedDraft = (params: {
   draft: ReservationDraft;
   optionPreview: ReservationOptionsPreview;
+  additionalFeesAmount?: number;
+  additionalFeesLabel?: string;
 }) => {
+  const additionalFeesAmount = round2(Math.max(0, Number(params.additionalFeesAmount ?? 0)));
+  const additionalFeesLabel = String(params.additionalFeesLabel ?? "").trim();
+  const labelParts = [
+    params.optionPreview.label,
+    additionalFeesAmount > 0 ? `Frais complémentaires: ${additionalFeesLabel || "Frais complémentaires"}` : "",
+  ].filter(Boolean);
+
   return {
     ...params.draft,
-    frais_optionnels_montant: params.optionPreview.total,
-    frais_optionnels_libelle: params.optionPreview.label,
+    frais_optionnels_montant: round2(params.optionPreview.total + additionalFeesAmount),
+    frais_optionnels_libelle: labelParts.join(" · "),
   };
 };
+
+const getReservationAdditionalFeesAmount = (draft: ReservationDraft, optionPreview: ReservationOptionsPreview) =>
+  round2(Math.max(0, Number(draft.frais_optionnels_montant ?? 0) - optionPreview.total));
 
 const computeReservationFeesBreakdown = (params: {
   reservation: Reservation;
@@ -842,13 +854,19 @@ const computeReservationFeesBreakdown = (params: {
 const splitReservationFeeLabel = (value: string) => {
   const normalized = value.trim();
   if (!normalized) return { optionsLabel: "", invoiceFeesLabel: "" };
-  const marker = "Frais facture:";
-  const markerIndex = normalized.toLowerCase().indexOf(marker.toLowerCase());
-  if (markerIndex < 0) return { optionsLabel: normalized, invoiceFeesLabel: "" };
-  const beforeMarker = normalized.slice(0, markerIndex).replace(/\s*·\s*$/, "").trim();
-  const afterMarker = normalized.slice(markerIndex + marker.length).trim();
-  return { optionsLabel: beforeMarker, invoiceFeesLabel: afterMarker };
+  const markers = ["Frais facture:", "Frais complémentaires:"];
+  for (const marker of markers) {
+    const markerIndex = normalized.toLowerCase().indexOf(marker.toLowerCase());
+    if (markerIndex < 0) continue;
+    const beforeMarker = normalized.slice(0, markerIndex).replace(/\s*·\s*$/, "").trim();
+    const afterMarker = normalized.slice(markerIndex + marker.length).trim();
+    return { optionsLabel: beforeMarker, invoiceFeesLabel: afterMarker };
+  }
+  return { optionsLabel: normalized, invoiceFeesLabel: "" };
 };
+
+const getReservationAdditionalFeesLabel = (draft: ReservationDraft) =>
+  splitReservationFeeLabel(String(draft.frais_optionnels_libelle ?? "")).invoiceFeesLabel || "Frais complémentaires";
 
 const getReservationFeeDetails = (reservation: Reservation, feeBreakdown: ReservationFeesBreakdown): ReservationFeesDetails[] => {
   const label = String(reservation.frais_optionnels_libelle ?? "").trim();
@@ -2297,6 +2315,7 @@ const ReservationsPage = () => {
       if (existingReservation && optionDraft) {
         const optionGite = resolveReservationGite(existingReservation, draft);
         const optionPreview = computeReservationOptionsPreview(optionDraft, draft, optionGite);
+        const additionalFeesAmount = getReservationAdditionalFeesAmount(draft, optionPreview);
         const enabledDeclarationFlags = [
           optionDraft.draps?.enabled ? Boolean(optionDraft.draps.declared) : null,
           optionDraft.linge_toilette?.enabled ? Boolean(optionDraft.linge_toilette.declared) : null,
@@ -2304,9 +2323,15 @@ const ReservationsPage = () => {
           optionDraft.depart_tardif?.enabled ? Boolean(optionDraft.depart_tardif.declared) : null,
           optionDraft.chiens?.enabled ? Boolean(optionDraft.chiens.declared) : null,
         ].filter((value): value is boolean => value !== null);
-        const allDeclared = enabledDeclarationFlags.length > 0 && enabledDeclarationFlags.every(Boolean);
+        const allDeclared =
+          additionalFeesAmount <= 0 && enabledDeclarationFlags.length > 0 && enabledDeclarationFlags.every(Boolean);
         nextDraft = {
-          ...buildReservationPricingAdjustedDraft({ draft, optionPreview }),
+          ...buildReservationPricingAdjustedDraft({
+            draft,
+            optionPreview,
+            additionalFeesAmount,
+            additionalFeesLabel: getReservationAdditionalFeesLabel(draft),
+          }),
           frais_optionnels_declares: allDeclared,
         };
       }
@@ -3106,13 +3131,29 @@ const ReservationsPage = () => {
     draft: ReservationDraft,
     updater: (previous: ContratOptions) => ContratOptions
   ) => {
-    setReservationOptions((previous) => {
-      const base = mergeOptions(previous[reservation.id] ?? buildDefaultReservationOptions(draft));
-      return {
-        ...previous,
-        [reservation.id]: mergeOptions(updater(base)),
-      };
-    });
+    const optionGite = resolveReservationGite(reservation, draft);
+    const base = mergeOptions(reservationOptionsRef.current[reservation.id] ?? buildDefaultReservationOptions(draft));
+    const nextOptions = mergeOptions(updater(base));
+
+    setReservationOptions((previous) => ({
+      ...previous,
+      [reservation.id]: nextOptions,
+    }));
+
+    if (optionGite) {
+      const previousPreview = computeReservationOptionsPreview(base, draft, optionGite);
+      const nextPreview = computeReservationOptionsPreview(nextOptions, draft, optionGite);
+      const additionalFeesAmount = getReservationAdditionalFeesAmount(draft, previousPreview);
+      updateExistingField(reservation, (previousDraft) => {
+        const additionalFeesLabel = getReservationAdditionalFeesLabel(previousDraft);
+        return buildReservationPricingAdjustedDraft({
+          draft: previousDraft,
+          optionPreview: nextPreview,
+          additionalFeesAmount,
+          additionalFeesLabel,
+        });
+      }, { autosave: false });
+    }
   };
 
   const applyOptionsToReservationFees = async (reservation: Reservation, draft: ReservationDraft) => {
@@ -3123,6 +3164,7 @@ const ReservationsPage = () => {
     }
     const optionDraft = getOptionsDraft(reservation, draft);
     const preview = computeReservationOptionsPreview(optionDraft, draft, gite);
+    const additionalFeesAmount = getReservationAdditionalFeesAmount(draft, preview);
     const enabledDeclarationFlags = [
       optionDraft.draps?.enabled ? Boolean(optionDraft.draps.declared) : null,
       optionDraft.linge_toilette?.enabled ? Boolean(optionDraft.linge_toilette.declared) : null,
@@ -3130,10 +3172,16 @@ const ReservationsPage = () => {
       optionDraft.depart_tardif?.enabled ? Boolean(optionDraft.depart_tardif.declared) : null,
       optionDraft.chiens?.enabled ? Boolean(optionDraft.chiens.declared) : null,
     ].filter((value): value is boolean => value !== null);
-    const allDeclared = enabledDeclarationFlags.length > 0 && enabledDeclarationFlags.every(Boolean);
+    const allDeclared =
+      additionalFeesAmount <= 0 && enabledDeclarationFlags.length > 0 && enabledDeclarationFlags.every(Boolean);
 
     const nextDraft: ReservationDraft = {
-      ...buildReservationPricingAdjustedDraft({ draft, optionPreview: preview }),
+      ...buildReservationPricingAdjustedDraft({
+        draft,
+        optionPreview: preview,
+        additionalFeesAmount,
+        additionalFeesLabel: getReservationAdditionalFeesLabel(draft),
+      }),
       frais_optionnels_declares: allDeclared,
     };
 
@@ -5107,6 +5155,9 @@ const ReservationsPage = () => {
                       const optionGite = resolveReservationGite(reservation, draft);
                       const nightlySuggestions = getGiteNightlyPriceSuggestions(optionGite);
                       const optionPreview = computeReservationOptionsPreview(optionDraft, draft, optionGite);
+                      const additionalFeesAmount = getReservationAdditionalFeesAmount(draft, optionPreview);
+                      const additionalFeesLabel = getReservationAdditionalFeesLabel(draft);
+                      const combinedFeesTotal = round2(optionPreview.total + additionalFeesAmount);
                       const feeBreakdown = computeReservationFeesBreakdown({
                         reservation,
                         draft,
@@ -5352,7 +5403,7 @@ const ReservationsPage = () => {
                                 </div>
                               </div>
                               {optionGite ? (
-                                <div className="reservations-options-builder__total">{formatEuro(optionPreview.total)}</div>
+                                <div className="reservations-options-builder__total">{formatEuro(combinedFeesTotal)}</div>
                               ) : null}
                             </div>
                             {optionGite ? (
@@ -5367,10 +5418,64 @@ const ReservationsPage = () => {
                                     updateReservationOptionsSelection(reservation, draft, () => nextOptions)
                                   }
                                 />
+                                <div className="reservations-extra-fees-editor">
+                                  <div className="reservations-extra-fees-editor__head">
+                                    <div>
+                                      <strong>Frais complémentaires</strong>
+                                      <div className="field-hint">Inclus dans les frais optionnels et le total mensuel.</div>
+                                    </div>
+                                    <span>{formatEuro(additionalFeesAmount)}</span>
+                                  </div>
+                                  <div className="reservations-extra-fees-editor__fields">
+                                    <label className="field">
+                                      Libellé
+                                      <input
+                                        value={additionalFeesLabel}
+                                        onChange={(event) =>
+                                          updateExistingField(
+                                            reservation,
+                                            (previousDraft) =>
+                                              buildReservationPricingAdjustedDraft({
+                                                draft: previousDraft,
+                                                optionPreview,
+                                                additionalFeesAmount,
+                                                additionalFeesLabel: event.target.value,
+                                              }),
+                                            { autosave: false }
+                                          )
+                                        }
+                                        placeholder="Ex: frais de dossier"
+                                      />
+                                    </label>
+                                    <label className="field">
+                                      Montant
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        value={additionalFeesAmount}
+                                        onChange={(event) => {
+                                          const nextAmount = round2(Math.max(0, Number(event.target.value)));
+                                          updateExistingField(
+                                            reservation,
+                                            (previousDraft) =>
+                                              buildReservationPricingAdjustedDraft({
+                                                draft: previousDraft,
+                                                optionPreview,
+                                                additionalFeesAmount: nextAmount,
+                                                additionalFeesLabel: getReservationAdditionalFeesLabel(previousDraft),
+                                              }),
+                                            { autosave: false }
+                                          );
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
                                 {isDetailsInlineVisible ? (
                                   <div className="reservations-options-builder__foot">
                                     <div className="field-hint">
-                                      Libellé généré: {optionPreview.label || "Aucune option sélectionnée"}
+                                      Libellé généré: {draft.frais_optionnels_libelle || "Aucune option sélectionnée"}
                                     </div>
                                     <div className="reservations-options-builder__actions">
                                       <button
@@ -5390,7 +5495,9 @@ const ReservationsPage = () => {
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className="field-hint">Libellé généré: {optionPreview.label || "Aucune option sélectionnée"}</div>
+                                  <div className="field-hint">
+                                    Libellé généré: {draft.frais_optionnels_libelle || "Aucune option sélectionnée"}
+                                  </div>
                                 )}
                               </>
                             ) : null}
@@ -6323,9 +6430,20 @@ const ReservationsPage = () => {
                                 <div className="reservation-details-drawer__header-cards">
                                   {optionGite ? (
                                     <div className="reservation-details-drawer__total-card">
-                                      <span>Total options</span>
-                                      <strong>{formatEuro(optionPreview.total)}</strong>
-                                      <small>{optionPreview.label || "Aucune option sélectionnée"}</small>
+                                      <span>Total frais</span>
+                                      <strong>{formatEuro(combinedFeesTotal)}</strong>
+                                      <small>
+                                        {optionPreview.label || additionalFeesAmount > 0
+                                          ? [
+                                              optionPreview.label,
+                                              additionalFeesAmount > 0
+                                                ? `${additionalFeesLabel}: ${formatEuro(additionalFeesAmount)}`
+                                                : "",
+                                            ]
+                                              .filter(Boolean)
+                                              .join(" · ")
+                                          : "Aucun frais sélectionné"}
+                                      </small>
                                     </div>
                                   ) : null}
                                   {energyHeaderCard}

@@ -379,7 +379,7 @@
 
       .iban {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: minmax(78mm, 1.8fr) minmax(32mm, 0.7fr) minmax(42mm, 0.9fr);
         gap: 3mm 4mm;
       }
 
@@ -394,7 +394,13 @@
       .iban-item .meta-value {
         margin-top: 0.7mm;
         font-size: 9.1pt;
-        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+
+      .iban-item--iban .meta-value {
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
       }
 
       body.compact-sections .page {
@@ -729,7 +735,7 @@
       <div class="box bank-footer">
         <div class="bank-title">Coordonnées bancaires</div>
         <div class="iban">
-          <div class="iban-item">
+          <div class="iban-item iban-item--iban">
             <span class="meta-label">IBAN</span>
             <span class="meta-value">{{iban}}</span>
           </div>
