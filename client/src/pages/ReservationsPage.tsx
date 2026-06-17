@@ -791,7 +791,7 @@ const buildReservationPricingAdjustedDraft = (params: {
   const additionalFeesLabel = String(params.additionalFeesLabel ?? "").trim();
   const labelParts = [
     params.optionPreview.label,
-    additionalFeesAmount > 0 ? `Frais complémentaires: ${additionalFeesLabel || "Frais complémentaires"}` : "",
+    additionalFeesAmount > 0 ? `Options complémentaires: ${additionalFeesLabel || "Option complémentaire"}` : "",
   ].filter(Boolean);
 
   return {
@@ -854,7 +854,7 @@ const computeReservationFeesBreakdown = (params: {
 const splitReservationFeeLabel = (value: string) => {
   const normalized = value.trim();
   if (!normalized) return { optionsLabel: "", invoiceFeesLabel: "" };
-  const markers = ["Frais facture:", "Frais complémentaires:"];
+  const markers = ["Frais facture:", "Frais complémentaires:", "Options complémentaires:"];
   for (const marker of markers) {
     const markerIndex = normalized.toLowerCase().indexOf(marker.toLowerCase());
     if (markerIndex < 0) continue;
@@ -866,7 +866,7 @@ const splitReservationFeeLabel = (value: string) => {
 };
 
 const getReservationAdditionalFeesLabel = (draft: ReservationDraft) =>
-  splitReservationFeeLabel(String(draft.frais_optionnels_libelle ?? "")).invoiceFeesLabel || "Frais complémentaires";
+  splitReservationFeeLabel(String(draft.frais_optionnels_libelle ?? "")).invoiceFeesLabel || "Option complémentaire";
 
 const getReservationFeeDetails = (reservation: Reservation, feeBreakdown: ReservationFeesBreakdown): ReservationFeesDetails[] => {
   const label = String(reservation.frais_optionnels_libelle ?? "").trim();
@@ -880,7 +880,7 @@ const getReservationFeeDetails = (reservation: Reservation, feeBreakdown: Reserv
     });
   }
   if (feeBreakdown.extra > 0) {
-    details.push({ label: invoiceFeesLabel || "Frais facture", amount: feeBreakdown.extra });
+    details.push({ label: invoiceFeesLabel || "Option complémentaire", amount: feeBreakdown.extra });
   }
   return details;
 };
@@ -4984,14 +4984,14 @@ const ReservationsPage = () => {
                         title: `Total du mois ${MONTHS[monthIndex - 1]}`,
                         rows: [
                           { label: "Nuitées", value: formatEuro(summary.baseRevenue) },
-                          { label: "Options / frais déclarés", value: formatEuro(summary.declaredFees) },
-                          { label: "Options / frais non déclarés", value: formatEuro(summary.undeclaredFees) },
+                          { label: "Options déclarées", value: formatEuro(summary.declaredFees) },
+                          { label: "Options non déclarées", value: formatEuro(summary.undeclaredFees) },
                           { label: "Total", value: formatEuro(summary.revenue) },
                         ],
                         note: "Les séjours à cheval sur deux mois sont proratisés sur le mois affiché.",
                       })}
                       <span className="reservations-summary-pill reservations-summary-pill--fees">
-                        {formatEuro(summary.fees)} options / frais
+                        {formatEuro(summary.fees)} options
                       </span>
                       {isAllGitesTab
                         ? monthEnergySummariesForAllGites.map((energySummary) => (
@@ -5421,8 +5421,8 @@ const ReservationsPage = () => {
                                 <div className="reservations-extra-fees-editor">
                                   <div className="reservations-extra-fees-editor__head">
                                     <div>
-                                      <strong>Frais complémentaires</strong>
-                                      <div className="field-hint">Inclus dans les frais optionnels et le total mensuel.</div>
+                                      <strong>Options complémentaires</strong>
+                                      <div className="field-hint">Inclus dans les options et le total mensuel.</div>
                                     </div>
                                     <span>{formatEuro(additionalFeesAmount)}</span>
                                   </div>
@@ -5444,7 +5444,7 @@ const ReservationsPage = () => {
                                             { autosave: false }
                                           )
                                         }
-                                        placeholder="Ex: frais de dossier"
+                                        placeholder="Ex: option personnalisée"
                                       />
                                     </label>
                                     <label className="field">
@@ -6100,12 +6100,12 @@ const ReservationsPage = () => {
                                     {feeDetails.length > 0 ? (
                                       <span
                                         className="reservations-fees-detail"
-                                        aria-label="Détail des frais"
-                                        title="Détail des frais"
+                                        aria-label="Détail des options"
+                                        title="Détail des options"
                                       >
                                         <span className="reservations-fees-detail__icon">i</span>
                                         <span className="reservations-fees-detail__popover" role="tooltip">
-                                          <span className="reservations-fees-detail__title">Détail des frais</span>
+                                          <span className="reservations-fees-detail__title">Détail des options</span>
                                           {feeDetails.map((detail) => (
                                             <span className="reservations-fees-detail__row" key={`${reservation.id}-${detail.label}`}>
                                               <span>{detail.label}</span>
@@ -6114,7 +6114,7 @@ const ReservationsPage = () => {
                                           ))}
                                           {feeBreakdown.extra > 0 ? (
                                             <span className="reservations-fees-detail__note">
-                                              Inclut {formatEuro(feeBreakdown.extra)} de frais facture.
+                                              Inclut {formatEuro(feeBreakdown.extra)} d'options complémentaires.
                                             </span>
                                           ) : null}
                                         </span>
@@ -6430,7 +6430,7 @@ const ReservationsPage = () => {
                                 <div className="reservation-details-drawer__header-cards">
                                   {optionGite ? (
                                     <div className="reservation-details-drawer__total-card">
-                                      <span>Total frais</span>
+                                      <span>Total options</span>
                                       <strong>{formatEuro(combinedFeesTotal)}</strong>
                                       <small>
                                         {optionPreview.label || additionalFeesAmount > 0
@@ -6442,7 +6442,7 @@ const ReservationsPage = () => {
                                             ]
                                               .filter(Boolean)
                                               .join(" · ")
-                                          : "Aucun frais sélectionné"}
+                                          : "Aucune option sélectionnée"}
                                       </small>
                                     </div>
                                   ) : null}
