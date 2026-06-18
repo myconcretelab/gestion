@@ -208,6 +208,7 @@ router.get("/gites/:id/content", async (req, res, next) => {
         public_structured_content: true,
         public_equipment: true,
         public_rooms: true,
+        public_web_info: true,
         options_draps_par_lit: true,
         options_linge_toilette_par_personne: true,
         options_menage_forfait: true,
@@ -248,6 +249,7 @@ router.get("/gites/:id/content", async (req, res, next) => {
       public_summary: gite.public_summary,
       public_description: gite.public_description,
       public_technical_description: gite.public_technical_description,
+      public_web_info: fromJsonString<unknown>(gite.public_web_info, null),
       adresse_complete: formatAddress(gite),
       variables: {
         prix_nuit_basse_saison: formatEuro(gite.prix_nuit_basse_saison),

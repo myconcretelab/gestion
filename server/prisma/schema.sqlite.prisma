@@ -39,6 +39,7 @@ model Gite {
   public_rooms                         String?
   public_practical_info                String?
   public_location_info                 String?
+  public_web_info                      String?
   public_latitude                      Float?
   public_longitude                     Float?
   email                                String?

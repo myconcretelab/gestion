@@ -58,6 +58,17 @@ const emptyStringToNull = (value: unknown) => {
   return trimmed.length === 0 ? null : trimmed;
 };
 const publicJsonFieldSchema = z.preprocess(emptyStringToNull, z.unknown().nullable()).optional();
+const publicWebInfoSchema = z
+  .object({
+    surface_m2: z.preprocess(emptyStringToNull, z.coerce.number().int().min(1).nullable()).optional(),
+    max_people: z.preprocess(emptyStringToNull, z.coerce.number().int().min(1).nullable()).optional(),
+    sleeping_capacity: z.preprocess(emptyStringToNull, z.coerce.number().int().min(1).nullable()).optional(),
+    fireplace: z.boolean().default(false),
+    private_garden: z.boolean().default(false),
+    private_courtyard: z.boolean().default(false),
+  })
+  .optional()
+  .default({});
 const expenseCategorySchema = z.object({
   id: z.string().trim().min(1),
   name: z.string().trim().min(1),
@@ -110,6 +121,7 @@ const giteSchemaShape = {
   public_rooms: publicJsonFieldSchema,
   public_practical_info: publicJsonFieldSchema,
   public_location_info: publicJsonFieldSchema,
+  public_web_info: publicWebInfoSchema,
   public_latitude: z.preprocess(emptyStringToNull, z.coerce.number().min(-90).max(90).nullable()).optional(),
   public_longitude: z.preprocess(emptyStringToNull, z.coerce.number().min(-180).max(180).nullable()).optional(),
   email: z.preprocess(emptyStringToNull, z.string().email().nullable()).optional(),
@@ -162,6 +174,25 @@ const normalizeMinNights = (value: unknown) => {
 const normalizeMoney = (value: unknown) => {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue >= 0 ? Math.round(numericValue * 100) / 100 : 0;
+};
+
+const normalizeOptionalPositiveInt = (value: unknown) => {
+  if (value === null || value === undefined || value === "") return null;
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue < 1) return null;
+  return Math.trunc(numericValue);
+};
+
+const normalizePublicWebInfo = (value: unknown) => {
+  const parsed = publicWebInfoSchema.parse(value ?? {});
+  return {
+    surface_m2: normalizeOptionalPositiveInt(parsed.surface_m2),
+    max_people: normalizeOptionalPositiveInt(parsed.max_people),
+    sleeping_capacity: normalizeOptionalPositiveInt(parsed.sleeping_capacity),
+    fireplace: Boolean(parsed.fireplace),
+    private_garden: Boolean(parsed.private_garden),
+    private_courtyard: Boolean(parsed.private_courtyard),
+  };
 };
 
 const normalizeExpenseManagement = (value: unknown) => {
@@ -316,6 +347,7 @@ const toGitePersistenceData = (payload: GiteInput) => ({
   public_rooms: encodeJsonField(payload.public_rooms ?? null),
   public_practical_info: encodeJsonField(payload.public_practical_info ?? null),
   public_location_info: encodeJsonField(payload.public_location_info ?? null),
+  public_web_info: encodeJsonField(normalizePublicWebInfo(payload.public_web_info)),
   frais_gestion: encodeJsonField(normalizeExpenseManagement(payload.frais_gestion)),
 });
 
@@ -392,6 +424,7 @@ const hydrateGite = (gite: any) => {
     public_rooms: fromJsonString<unknown>(rest.public_rooms, null),
     public_practical_info: fromJsonString<unknown>(rest.public_practical_info, null),
     public_location_info: fromJsonString<unknown>(rest.public_location_info, null),
+    public_web_info: normalizePublicWebInfo(fromJsonString<unknown>(rest.public_web_info, null)),
     frais_gestion: normalizeExpenseManagement(fromJsonString<unknown>(rest.frais_gestion, null)),
     public_latitude: rest.public_latitude === null || rest.public_latitude === undefined ? null : toNumber(rest.public_latitude),
     public_longitude: rest.public_longitude === null || rest.public_longitude === undefined ? null : toNumber(rest.public_longitude),
@@ -1217,6 +1250,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         public_rooms: encodeJsonField(existing.public_rooms),
         public_practical_info: encodeJsonField(existing.public_practical_info),
         public_location_info: encodeJsonField(existing.public_location_info),
+        public_web_info: encodeJsonField(existing.public_web_info),
         public_latitude: existing.public_latitude,
         public_longitude: existing.public_longitude,
         email: existing.email,
