@@ -1908,7 +1908,7 @@ const CalendrierPage = () => {
           details={[
             { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
             {
-              label: "Total du mois",
+              label: "Total",
               value: formatEuro(
                 getReservationMonthlyAmountsForMonth(
                   mobileActionReservation,
@@ -1932,6 +1932,7 @@ const CalendrierPage = () => {
               year,
             })
           }
+          note={mobileActionReservation.commentaire}
           highlightedCard={
             mobileActionReservation.linked_contract
               ? {

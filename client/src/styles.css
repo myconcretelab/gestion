@@ -3343,6 +3343,18 @@ body.app-scroll-locked {
   color: #ffffff;
 }
 
+.mobile-reservation-actions__note {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .mobile-reservation-actions__close,
 .mobile-reservation-actions__icon-button,
 .mobile-reservation-actions__choice,
