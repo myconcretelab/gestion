@@ -29,3 +29,5 @@ This repository is a Node.js + React monorepo (workspaces) for generating and ar
 - Production can use PostgreSQL; see `README.md` for the example and `server/prisma/schema.postgres.prisma`.
 - If Playwright is not installed, `SEED_SKIP_PDF=1 npm run seed` skips PDF generation.
 - There are no automated tests configured in this repo.
+
+- Commit + push after each run
