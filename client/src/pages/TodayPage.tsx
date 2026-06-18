@@ -1539,6 +1539,7 @@ const TodayPage = () => {
           ]}
           onClose={() => setMobileActionState(null)}
           onEdit={() => openMobileReservationEditPage(mobileActionReservation)}
+          note={mobileActionReservation.commentaire}
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
           smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
           airbnbUrl={mobileActionReservation.airbnb_url}

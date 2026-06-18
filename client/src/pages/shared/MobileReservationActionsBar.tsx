@@ -11,6 +11,7 @@ type MobileReservationActionsBarProps = {
     label: string;
     value: string;
   }>;
+  note?: string | null;
   mode?: MobileReservationActionsBarMode;
   onClose: () => void;
   onEdit?: () => void;
@@ -135,6 +136,7 @@ const MobileReservationActionsBar = ({
   title,
   subtitle,
   details,
+  note,
   mode = "actions",
   onClose,
   onEdit,
@@ -150,6 +152,7 @@ const MobileReservationActionsBar = ({
   if (!open) return null;
 
   const hasThreePrimaryActions = Boolean(onEdit && smsHref && phoneHref && !airbnbUrl);
+  const normalizedNote = note?.trim();
 
   return (
     <div className="mobile-reservation-actions" role="status" aria-live="polite">
@@ -201,6 +204,7 @@ const MobileReservationActionsBar = ({
                 </div>
               )
             ) : null}
+            {normalizedNote ? <p className="mobile-reservation-actions__note">{normalizedNote}</p> : null}
           </div>
           <button
             type="button"
