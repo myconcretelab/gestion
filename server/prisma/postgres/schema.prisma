@@ -39,6 +39,7 @@ model Gite {
   public_rooms                         Json?
   public_practical_info                Json?
   public_location_info                 Json?
+  public_web_info                      Json?
   public_latitude                      Decimal? @db.Decimal(9,6)
   public_longitude                     Decimal? @db.Decimal(9,6)
   email                                String?

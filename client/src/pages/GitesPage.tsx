@@ -10,6 +10,25 @@ import {
   type StatisticsPayload,
 } from "./statistics/statisticsUtils";
 
+type NumberInputValue = number | "";
+type PublicWebInfoForm = {
+  surface_m2: NumberInputValue;
+  max_people: NumberInputValue;
+  sleeping_capacity: NumberInputValue;
+  fireplace: boolean;
+  private_garden: boolean;
+  private_courtyard: boolean;
+};
+
+const emptyPublicWebInfo = (): PublicWebInfoForm => ({
+  surface_m2: "",
+  max_people: "",
+  sleeping_capacity: "",
+  fireplace: false,
+  private_garden: false,
+  private_courtyard: false,
+});
+
 const emptyForm = {
   nom: "",
   prefixe_contrat: "",
@@ -35,6 +54,7 @@ const emptyForm = {
   public_rooms: "",
   public_practical_info: "",
   public_location_info: "",
+  public_web_info: emptyPublicWebInfo(),
   public_latitude: "",
   public_longitude: "",
   email: "",
@@ -90,7 +110,6 @@ const emptyForm = {
 };
 
 type BaseFormState = typeof emptyForm;
-type NumberInputValue = number | "";
 type NumberInputKey = {
   [Key in keyof BaseFormState]: BaseFormState[Key] extends number ? Key : never;
 }[keyof BaseFormState];
@@ -271,6 +290,30 @@ const toNumberOrDefault = (value: NumberInputValue, fallback = 0) => {
   if (value === "") return fallback;
   return Number.isFinite(value) ? value : fallback;
 };
+
+const toNullablePositiveInt = (value: NumberInputValue) => {
+  if (value === "") return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 1 ? Math.trunc(numericValue) : null;
+};
+
+const normalizePublicWebInfoForm = (value: Gite["public_web_info"]): PublicWebInfoForm => ({
+  surface_m2: value?.surface_m2 ?? "",
+  max_people: value?.max_people ?? "",
+  sleeping_capacity: value?.sleeping_capacity ?? "",
+  fireplace: Boolean(value?.fireplace),
+  private_garden: Boolean(value?.private_garden),
+  private_courtyard: Boolean(value?.private_courtyard),
+});
+
+const toPublicWebInfoPayload = (value: PublicWebInfoForm) => ({
+  surface_m2: toNullablePositiveInt(value.surface_m2),
+  max_people: toNullablePositiveInt(value.max_people),
+  sleeping_capacity: toNullablePositiveInt(value.sleeping_capacity),
+  fireplace: Boolean(value.fireplace),
+  private_garden: Boolean(value.private_garden),
+  private_courtyard: Boolean(value.private_courtyard),
+});
 
 const createLocalId = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1643,6 +1686,7 @@ const GitesPage = () => {
       public_rooms: formatJsonField(selected.public_rooms),
       public_practical_info: formatJsonField(selected.public_practical_info),
       public_location_info: formatJsonField(selected.public_location_info),
+      public_web_info: normalizePublicWebInfoForm(selected.public_web_info),
       public_latitude: selected.public_latitude ?? "",
       public_longitude: selected.public_longitude ?? "",
       email: selected.email ?? "",
@@ -1702,6 +1746,16 @@ const GitesPage = () => {
 
   const handleChange = (key: keyof FormState, value: string | number | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handlePublicWebInfoChange = (key: keyof PublicWebInfoForm, value: NumberInputValue | boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      public_web_info: {
+        ...prev.public_web_info,
+        [key]: value,
+      },
+    }));
   };
 
   const expenseManagement = useMemo(
@@ -1912,6 +1966,7 @@ const GitesPage = () => {
         public_rooms: null,
         public_practical_info: null,
         public_location_info: null,
+        public_web_info: toPublicWebInfoPayload(form.public_web_info),
         public_latitude: null,
         public_longitude: null,
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
@@ -2917,6 +2972,83 @@ const GitesPage = () => {
                   type="checkbox"
                   checked={form.public_is_published}
                   onChange={(e) => handleChange("public_is_published", e.target.checked)}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div id="gite-editor-site-card-info" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-presentation"}>
+          <div className="section-subtitle">Informations cards</div>
+          <div className="grid-2">
+            <label className="field">
+              Surface du gîte en m2
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={form.public_web_info.surface_m2}
+                onChange={(e) => handlePublicWebInfoChange("surface_m2", readNumberInput(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Nombre de personnes maximum
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={form.public_web_info.max_people}
+                onChange={(e) => handlePublicWebInfoChange("max_people", readNumberInput(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Nombre de couchages
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={form.public_web_info.sleeping_capacity}
+                onChange={(e) => handlePublicWebInfoChange("sleeping_capacity", readNumberInput(e.target.value))}
+              />
+            </label>
+          </div>
+          <div className="rules-grid" style={{ marginTop: 12 }}>
+            <div className="rule-card">
+              <div>
+                <div className="rule-title">Cheminée</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={form.public_web_info.fireplace}
+                  onChange={(e) => handlePublicWebInfoChange("fireplace", e.target.checked)}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+            <div className="rule-card">
+              <div>
+                <div className="rule-title">Jardin privé</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={form.public_web_info.private_garden}
+                  onChange={(e) => handlePublicWebInfoChange("private_garden", e.target.checked)}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+            <div className="rule-card">
+              <div>
+                <div className="rule-title">Cour privée</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={form.public_web_info.private_courtyard}
+                  onChange={(e) => handlePublicWebInfoChange("private_courtyard", e.target.checked)}
                 />
                 <span className="slider" />
               </label>

@@ -29,6 +29,14 @@ export type Gite = {
   public_rooms?: unknown;
   public_practical_info?: unknown;
   public_location_info?: unknown;
+  public_web_info?: {
+    surface_m2?: number | null;
+    max_people?: number | null;
+    sleeping_capacity?: number | null;
+    fireplace?: boolean;
+    private_garden?: boolean;
+    private_courtyard?: boolean;
+  } | null;
   public_latitude?: number | null;
   public_longitude?: number | null;
   capacite_max: number;
