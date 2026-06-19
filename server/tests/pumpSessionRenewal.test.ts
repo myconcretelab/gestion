@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  extractAirbnbAuthRateLimitMessage,
   extractAirbnbSmsChallengeDestination,
+  isAirbnbAuthRateLimitedScreenText,
   isAirbnbAccountRenewalScreenText,
   isAirbnbSmsChallengeScreenText,
   isAirbnbStandardLoginScreenText,
@@ -38,6 +40,18 @@ test("isAirbnbStandardLoginScreenText detecte le login Airbnb standard", () => {
   assert.equal(
     isAirbnbStandardLoginScreenText("Confirmez qu'il s'agit bien de vous\nNous avons envoyé un code"),
     false
+  );
+});
+
+test("isAirbnbAuthRateLimitedScreenText detecte le blocage temporaire Airbnb", () => {
+  const bodyText =
+    "Ravis de vous revoir, Sebastien Soazig\ns***r@hotmail.fr\nTrop de tentatives\nVous pouvez vous connecter par un autre moyen maintenant, ou réessayer dans 1 heure.\n\nNous vous enverrons peut-être un code de connexion par e-mail ou par SMS.\n\nSe connecter";
+
+  assert.equal(isAirbnbAccountRenewalScreenText(bodyText), true);
+  assert.equal(isAirbnbAuthRateLimitedScreenText(bodyText), true);
+  assert.equal(
+    extractAirbnbAuthRateLimitMessage(bodyText),
+    "Trop de tentatives Vous pouvez vous connecter par un autre moyen maintenant, ou réessayer dans 1 heure."
   );
 });
 

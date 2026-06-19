@@ -98,6 +98,39 @@ export const isAirbnbSmsChallengeScreenText = (value: string | null | undefined)
   );
 };
 
+export const extractAirbnbAuthRateLimitMessage = (value: string | null | undefined) => {
+  const raw = String(value ?? "").replace(/\u00a0/g, " ");
+  const lines = raw
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const titleIndex = lines.findIndex((line) => {
+    const text = normalizeAirbnbText(line);
+    return text.includes("trop de tentatives") || text.includes("too many attempts");
+  });
+
+  if (titleIndex === -1) return null;
+
+  const title = lines[titleIndex] ?? "Trop de tentatives";
+  const details = lines
+    .slice(titleIndex + 1, titleIndex + 3)
+    .filter((line) => {
+      const text = normalizeAirbnbText(line);
+      return (
+        text.includes("reessayer") ||
+        text.includes("retry") ||
+        text.includes("autre moyen") ||
+        text.includes("another way") ||
+        text.includes("another method")
+      );
+    });
+
+  return [title, ...details].join(" ");
+};
+
+export const isAirbnbAuthRateLimitedScreenText = (value: string | null | undefined) =>
+  Boolean(extractAirbnbAuthRateLimitMessage(value));
+
 export const isAirbnbStandardLoginScreenText = (value: string | null | undefined) => {
   const text = normalizeAirbnbText(value);
   return (
@@ -314,19 +347,36 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   const bodyText = await getBodyText(page);
   if (!isAirbnbAccountRenewalScreenText(bodyText)) return false;
 
+  const source = getPumpAutomationSourceDefinition(config.sourceType);
+  const rateLimitMessage = extractAirbnbAuthRateLimitMessage(bodyText);
+  if (rateLimitMessage) {
+    throw new Error(
+      `${source.label} bloque temporairement le renouvellement: ${rateLimitMessage} Relancez le renouvellement après le délai indiqué par Airbnb.`
+    );
+  }
+
   const button = await resolveAirbnbAccountChooserContinueButton(
     page,
     config.advancedSelectors.accountChooserContinueButton
   );
   if (!button) {
     throw new Error(
-      `${getPumpAutomationSourceDefinition(config.sourceType).label} demande de confirmer le compte mais le bouton de confirmation du compte est introuvable.`
+      `${source.label} demande de confirmer le compte mais le bouton de confirmation du compte est introuvable.`
     );
   }
 
   await button.click({ timeout: 5_000 });
   await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
   await wait(1_000);
+
+  const nextBodyText = await getBodyText(page);
+  const nextRateLimitMessage = extractAirbnbAuthRateLimitMessage(nextBodyText);
+  if (nextRateLimitMessage) {
+    throw new Error(
+      `${source.label} bloque temporairement le renouvellement: ${nextRateLimitMessage} Relancez le renouvellement après le délai indiqué par Airbnb.`
+    );
+  }
+
   return true;
 };
 
@@ -584,6 +634,13 @@ const runRenewalStart = async () => {
     }
 
     const bodyText = await getBodyText(page);
+    const rateLimitMessage = extractAirbnbAuthRateLimitMessage(bodyText);
+    if (rateLimitMessage) {
+      throw new Error(
+        `${source.label} bloque temporairement le renouvellement: ${rateLimitMessage} Relancez le renouvellement après le délai indiqué par Airbnb.`
+      );
+    }
+
     if (isAirbnbSmsChallengeScreenText(bodyText)) {
       updateRenewal({
         status: "awaiting_sms_code",
