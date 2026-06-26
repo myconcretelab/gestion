@@ -3,6 +3,7 @@ import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page, type Response as PlaywrightResponse, type Request as PlaywrightRequest } from "playwright";
 import { getPumpStorageStateId, type PumpAutomationConfig, type PumpFilterRule } from "./pumpAutomationConfig.js";
 import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
+import { PumpAuthRateLimitError, registerPumpAuthRateLimit } from "./pumpAuthGuard.js";
 
 const DEFAULT_MULTI_STEP_SELECTORS = {
   continueWithEmail: [
@@ -73,6 +74,45 @@ type ResolvedScrollTarget = {
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const normalizeAirbnbAuthText = (value: string | null | undefined) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u00a0/g, " ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractAirbnbAuthRateLimitMessage = (value: string | null | undefined) => {
+  const raw = String(value ?? "").replace(/\u00a0/g, " ");
+  const lines = raw
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const titleIndex = lines.findIndex((line) => {
+    const text = normalizeAirbnbAuthText(line);
+    return text.includes("trop de tentatives") || text.includes("too many attempts");
+  });
+
+  if (titleIndex === -1) return null;
+
+  const title = lines[titleIndex] ?? "Trop de tentatives";
+  const details = lines
+    .slice(titleIndex + 1, titleIndex + 3)
+    .filter((line) => {
+      const text = normalizeAirbnbAuthText(line);
+      return (
+        text.includes("reessayer") ||
+        text.includes("retry") ||
+        text.includes("autre moyen") ||
+        text.includes("another way") ||
+        text.includes("another method")
+      );
+    });
+
+  return [title, ...details].join(" ");
+};
 
 const logInfo = (message: string, data?: unknown) =>
   console.log(`[pump-local] ${message}`, data ?? "");
@@ -885,9 +925,17 @@ export class PumpPlaywrightSession {
       return { success: true, method: "persisted" };
     }
 
+    const source = getPumpAutomationSourceDefinition(this.config.sourceType);
+    const bodyText = await this.page.locator("body").innerText().catch(() => "");
+    const rateLimitMessage = extractAirbnbAuthRateLimitMessage(bodyText);
+    if (rateLimitMessage) {
+      registerPumpAuthRateLimit(source.label, rateLimitMessage);
+      throw new PumpAuthRateLimitError(source.label, rateLimitMessage);
+    }
+
     if (this.config.authMode === "persisted-only") {
       throw new Error(
-        `Session ${getPumpAutomationSourceDefinition(this.config.sourceType).label} expirée ou absente. Le mode phase 1 utilise uniquement une session persistée importée depuis le local.`
+        `Session ${source.label} expirée ou absente. Le mode phase 1 utilise uniquement une session persistée importée depuis le local.`
       );
     }
 

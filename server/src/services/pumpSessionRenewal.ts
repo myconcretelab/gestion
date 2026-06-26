@@ -9,6 +9,12 @@ import { PumpPlaywrightSession, checkIfLoginRequired } from "./pumpAutomationCap
 import { resolveAirbnbAccountChooserContinueButton } from "./airbnbAccountChooser.js";
 import { syncPumpHealthAlerts } from "./pumpHealth.js";
 import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
+import {
+  PumpAuthRateLimitError,
+  assertNoActivePumpAuthCooldown,
+  clearPumpAuthCooldown,
+  registerPumpAuthRateLimit,
+} from "./pumpAuthGuard.js";
 
 type RenewalStatus =
   | "idle"
@@ -350,9 +356,8 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   const source = getPumpAutomationSourceDefinition(config.sourceType);
   const rateLimitMessage = extractAirbnbAuthRateLimitMessage(bodyText);
   if (rateLimitMessage) {
-    throw new Error(
-      `${source.label} bloque temporairement le renouvellement: ${rateLimitMessage} Relancez le renouvellement après le délai indiqué par Airbnb.`
-    );
+    registerPumpAuthRateLimit(source.label, rateLimitMessage);
+    throw new PumpAuthRateLimitError(source.label, rateLimitMessage);
   }
 
   const button = await resolveAirbnbAccountChooserContinueButton(
@@ -372,9 +377,8 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
   const nextBodyText = await getBodyText(page);
   const nextRateLimitMessage = extractAirbnbAuthRateLimitMessage(nextBodyText);
   if (nextRateLimitMessage) {
-    throw new Error(
-      `${source.label} bloque temporairement le renouvellement: ${nextRateLimitMessage} Relancez le renouvellement après le délai indiqué par Airbnb.`
-    );
+    registerPumpAuthRateLimit(source.label, nextRateLimitMessage);
+    throw new PumpAuthRateLimitError(source.label, nextRateLimitMessage);
   }
 
   return true;
@@ -578,6 +582,7 @@ const saveAuthenticatedSession = async (renewal: RenewalRecord, session: PumpPla
     currentUrl: session.getPage()?.url() ?? null,
   });
   await session.saveStorageState();
+  clearPumpAuthCooldown();
   await syncPumpHealthAlerts("pump-session-renewal-saved").catch(() => undefined);
   await finalizeRenewal("saved", {
     message: `Session persistée ${source.label} renouvelée avec succès.`,
@@ -594,6 +599,7 @@ const runRenewalStart = async () => {
   try {
     const { config, storageStateId, storageStatePath } = getRenewalContext();
     const source = getPumpAutomationSourceDefinition(config.sourceType);
+    assertNoActivePumpAuthCooldown(source.label);
     const session = new PumpPlaywrightSession(config, storageStatesRoot);
 
     updateRenewal({
@@ -636,9 +642,8 @@ const runRenewalStart = async () => {
     const bodyText = await getBodyText(page);
     const rateLimitMessage = extractAirbnbAuthRateLimitMessage(bodyText);
     if (rateLimitMessage) {
-      throw new Error(
-        `${source.label} bloque temporairement le renouvellement: ${rateLimitMessage} Relancez le renouvellement après le délai indiqué par Airbnb.`
-      );
+      registerPumpAuthRateLimit(source.label, rateLimitMessage);
+      throw new PumpAuthRateLimitError(source.label, rateLimitMessage);
     }
 
     if (isAirbnbSmsChallengeScreenText(bodyText)) {
