@@ -27,6 +27,12 @@ import {
   type PumpLatestReservation,
 } from "./pumpAutomationExtraction.js";
 import { syncPumpHealthAlerts } from "./pumpHealth.js";
+import {
+  PumpAuthRateLimitError,
+  assertNoActivePumpAuthCooldown,
+  clearPumpAuthCooldown,
+  registerPumpAuthRateLimit,
+} from "./pumpAuthGuard.js";
 
 export type PumpStatusResponse = {
   sessionId: string | null;
@@ -153,6 +159,44 @@ const getPumpPassword = () => env.PUMP_SESSION_PASSWORD || "";
 const getConfiguredStorageStatePath = (config: Pick<PumpAutomationConfig, "baseUrl" | "username">) =>
   path.join(storageStatesRoot, `${getPumpStorageStateId(config)}.json`);
 
+const parseDate = (value: string | null | undefined) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const hasPumpPersistedAuthFailureFingerprint = (value: string | null | undefined) => {
+  const message = String(value ?? "").trim().toLowerCase();
+  if (!message) return false;
+  return (
+    message.includes("session airbnb expir") ||
+    message.includes("session expir") ||
+    message.includes("session persist") ||
+    message.includes("persisted")
+  );
+};
+
+export const isUnresolvedPumpPersistedAuthFailure = ({
+  latestSessionStatus,
+  latestError,
+  latestRefreshAt,
+  sessionFileUpdatedAt,
+}: {
+  latestSessionStatus: string | null | undefined;
+  latestError: string | null | undefined;
+  latestRefreshAt: string | null | undefined;
+  sessionFileUpdatedAt: string | null | undefined;
+}) => {
+  if (latestSessionStatus !== "failed" && latestSessionStatus !== "stopped") return false;
+  if (!hasPumpPersistedAuthFailureFingerprint(latestError)) return false;
+
+  const sessionFileTime = parseDate(sessionFileUpdatedAt)?.getTime() ?? null;
+  const latestRefreshTime = parseDate(latestRefreshAt)?.getTime() ?? null;
+  if (sessionFileTime === null || latestRefreshTime === null) return true;
+
+  return sessionFileTime <= latestRefreshTime;
+};
+
 const sanitizeSessionStatusResponse = (session: ActiveSessionState | null) => {
   if (!session) return null;
   return {
@@ -213,6 +257,36 @@ const buildEffectiveConfig = (override?: Partial<PumpAutomationConfig>) => {
   return effectiveConfig;
 };
 
+const assertRefreshNotBlockedByExpiredPersistedSession = (config: PumpAutomationConfig) => {
+  if (config.authMode !== "persisted-only") return;
+
+  const latestSession = findLatestRefreshSession();
+  const latestRefreshAt = latestSession?.updatedAt || latestSession?.createdAt || null;
+  const storageStatePath =
+    config.baseUrl.trim() && config.username.trim() ? getConfiguredStorageStatePath(config) : null;
+  const sessionFileUpdatedAt =
+    storageStatePath && fs.existsSync(storageStatePath) ? fs.statSync(storageStatePath).mtime.toISOString() : null;
+
+  if (
+    isUnresolvedPumpPersistedAuthFailure({
+      latestSessionStatus: latestSession?.status,
+      latestError: latestSession?.lastError,
+      latestRefreshAt,
+      sessionFileUpdatedAt,
+    })
+  ) {
+    const source = getPumpAutomationSourceDefinition(config.sourceType);
+    throw new Error(
+      `Refresh Pump suspendu: la session persistée ${source.label} est expirée depuis le dernier essai (${latestRefreshAt ?? "date inconnue"}). Renouvelez ou réimportez une session avant de relancer Pump.`
+    );
+  }
+};
+
+export const assertPumpBrowserAutomationAllowed = (config: PumpAutomationConfig) => {
+  assertNoActivePumpAuthCooldown(getPumpAutomationSourceDefinition(config.sourceType).label);
+  assertRefreshNotBlockedByExpiredPersistedSession(config);
+};
+
 const executeSession = async (sessionId: string, password: string) => {
   const sessionData = activeSessions.get(sessionId);
   if (!sessionData) return;
@@ -246,6 +320,9 @@ const executeSession = async (sessionId: string, password: string) => {
     sessionData.results = persistCapturedSession(saver, networkCapture, [], Date.now() - startedAt);
     setSessionStatus(sessionData, "completed");
   } catch (error) {
+    if (error instanceof PumpAuthRateLimitError) {
+      registerPumpAuthRateLimit(error.sourceLabel, error.rateLimitMessage);
+    }
     const message = error instanceof Error ? error.message : "Erreur inconnue.";
     sessionData.errors.push({
       message,
@@ -327,6 +404,7 @@ export const importPersistedPumpSession = (
   };
 
   fs.writeFileSync(targetPath, JSON.stringify(normalizedState, null, 2), "utf-8");
+  clearPumpAuthCooldown();
 
   return {
     storageStateId,
@@ -388,6 +466,7 @@ export const updatePumpAutomationConfig = (patch: Partial<PumpAutomationConfig>)
 export const testPumpAutomationConnection = async (override?: Partial<PumpAutomationConfig>) => {
   ensurePumpDirectories();
   const config = buildEffectiveConfig(override);
+  assertNoActivePumpAuthCooldown(getPumpAutomationSourceDefinition(config.sourceType).label);
   const session = new PumpPlaywrightSession(config, storageStatesRoot);
   return session.testLogin(getPumpPassword());
 };
@@ -395,6 +474,7 @@ export const testPumpAutomationConnection = async (override?: Partial<PumpAutoma
 export const testPumpAutomationScrollTarget = async (override?: Partial<PumpAutomationConfig>) => {
   ensurePumpDirectories();
   const config = buildEffectiveConfig(override);
+  assertNoActivePumpAuthCooldown(getPumpAutomationSourceDefinition(config.sourceType).label);
   const session = new PumpPlaywrightSession(config, storageStatesRoot);
   return session.testScrollTarget(getPumpPassword());
 };
@@ -402,6 +482,7 @@ export const testPumpAutomationScrollTarget = async (override?: Partial<PumpAuto
 export const triggerLocalPumpRefresh = async () => {
   ensurePumpDirectories();
   const config = buildEffectiveConfig();
+  assertPumpBrowserAutomationAllowed(config);
   const password = getPumpPassword();
   const sessionId = generatePumpSessionId();
 

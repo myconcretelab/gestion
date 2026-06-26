@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { Locator, Page } from "playwright";
 import { env } from "../config/env.js";
 import { resolveDataDir } from "../utils/paths.js";
-import { getPumpAutomationConfig } from "./pumpAutomation.js";
+import { assertPumpBrowserAutomationAllowed, getPumpAutomationConfig } from "./pumpAutomation.js";
 import { PumpPlaywrightSession } from "./pumpAutomationCapture.js";
 import { resolveAirbnbAccountChooserContinueButton } from "./airbnbAccountChooser.js";
 import type { PumpAutomationConfig } from "./pumpAutomationConfig.js";
@@ -251,6 +251,7 @@ const executeAirbnbCalendarRefresh = async ({
   diagnosticsDir,
 }: AirbnbCalendarRefreshExecutorParams) => {
   const config = getPumpAutomationConfig();
+  assertPumpBrowserAutomationAllowed(config);
   const session = new PumpPlaywrightSession(config, storageStatesRoot);
   const targetUrl = `https://www.airbnb.fr/multicalendar/${encodeURIComponent(listingId)}/availability-settings`;
   let page: Page | null = null;
