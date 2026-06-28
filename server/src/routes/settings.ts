@@ -117,6 +117,10 @@ import {
   shouldExportReservationToIcal,
 } from "../utils/reservationOrigin.js";
 import { pumpAutomationSourceTypes } from "../services/pumpSources.js";
+import {
+  getOperationsCalendarSettings,
+  resetOperationsCalendarToken,
+} from "../services/operationsCalendarSettings.js";
 
 const router = Router();
 
@@ -750,6 +754,22 @@ router.get("/ical-exports", async (_req, res, next) => {
         exported_reservations_count: exportableCountsByGite.get(gite.id) ?? 0,
       })),
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/ical-operations", (_req, res, next) => {
+  try {
+    res.json(getOperationsCalendarSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/ical-operations/reset-token", (_req, res, next) => {
+  try {
+    res.json(resetOperationsCalendarToken());
   } catch (error) {
     next(error);
   }

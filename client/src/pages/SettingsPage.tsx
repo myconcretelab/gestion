@@ -771,6 +771,10 @@ type IcalExportFeed = {
   exported_reservations_count: number;
 };
 
+type OperationsCalendarFeed = {
+  token: string;
+};
+
 const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
   gite_id: "",
   type: "Airbnb",
@@ -1515,6 +1519,11 @@ const getIcalExportUrl = (
     `/gites/${feed.id}/calendar.ics?token=${encodeURIComponent(feed.ical_export_token ?? "")}`,
   );
 
+const getOperationsCalendarUrl = (feed: OperationsCalendarFeed) =>
+  buildApiUrl(
+    `/gites/operations/calendar.ics?token=${encodeURIComponent(feed.token)}`,
+  );
+
 const normalizeTextKey = (value: string) =>
   value
     .toLowerCase()
@@ -1662,6 +1671,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
 
   const [loadingSources, setLoadingSources] = useState(true);
   const [icalExports, setIcalExports] = useState<IcalExportFeed[]>([]);
+  const [operationsCalendar, setOperationsCalendar] =
+    useState<OperationsCalendarFeed | null>(null);
+  const [resettingOperationsCalendarToken, setResettingOperationsCalendarToken] =
+    useState(false);
   const [loadingIcalExports, setLoadingIcalExports] = useState(true);
   const [resettingIcalExportId, setResettingIcalExportId] = useState<
     string | null
@@ -2255,14 +2268,16 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   };
 
   const loadSources = async () => {
-    const [gitesData, sourcesData, exportsData] = await Promise.all([
+    const [gitesData, sourcesData, exportsData, operationsData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<IcalSource[]>("/settings/ical-sources"),
       apiFetch<IcalExportFeed[]>("/settings/ical-exports"),
+      apiFetch<OperationsCalendarFeed>("/settings/ical-operations"),
     ]);
     setGites(gitesData);
     setSources(sourcesData);
     setIcalExports(exportsData);
+    setOperationsCalendar(operationsData);
     setSourceDraft((previous) => ({
       ...previous,
       gite_id: previous.gite_id || gitesData[0]?.id || "",
@@ -4208,6 +4223,50 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       setIcalExportsNotice(`URL iCal copiée pour ${feed.nom}.`);
     } catch (error: any) {
       setIcalExportsError(error?.message ?? "Impossible de copier l'URL iCal.");
+    }
+  };
+
+  const copyOperationsCalendarUrl = async () => {
+    if (!operationsCalendar) return;
+    setIcalExportsError(null);
+    setIcalExportsNotice(null);
+    try {
+      await navigator.clipboard.writeText(
+        getOperationsCalendarUrl(operationsCalendar),
+      );
+      setIcalExportsNotice("URL du programme des gîtes copiée.");
+    } catch (error: any) {
+      setIcalExportsError(
+        error?.message ?? "Impossible de copier l'URL du programme.",
+      );
+    }
+  };
+
+  const resetOperationsCalendarFeedToken = async () => {
+    if (
+      !confirm(
+        "Régénérer le token du programme des gîtes ? L'ancien abonnement calendrier cessera de fonctionner.",
+      )
+    ) {
+      return;
+    }
+
+    setResettingOperationsCalendarToken(true);
+    setIcalExportsError(null);
+    setIcalExportsNotice(null);
+    try {
+      const data = await apiFetch<OperationsCalendarFeed>(
+        "/settings/ical-operations/reset-token",
+        { method: "POST" },
+      );
+      setOperationsCalendar(data);
+      setIcalExportsNotice("Token du programme des gîtes régénéré.");
+    } catch (error: any) {
+      setIcalExportsError(
+        error?.message ?? "Impossible de régénérer le token du programme.",
+      );
+    } finally {
+      setResettingOperationsCalendarToken(false);
     }
   };
 
@@ -9232,7 +9291,57 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 Gérez les flux iCal publics publiés pour les OTA.
               </p>
             </div>
+            {icalExportsNotice && (
+              <div className="note note--success">{icalExportsNotice}</div>
+            )}
+            {icalExportsError && <div className="note">{icalExportsError}</div>}
             <div className="settings-cluster__grid">
+              <div className="card settings-card settings-card--blue settings-card--span-12">
+                <div className="settings-card__topline">
+                  <span className="settings-card__tag">Alexa et calendrier</span>
+                  <span className="settings-card__badge">2 événements par séjour</span>
+                </div>
+                <div className="section-title">Programme des arrivées et départs</div>
+                <div className="field-hint">
+                  Ce flux réunit tous les gîtes. Chaque réservation crée un événement
+                  « Arrivée » et un événement « Départ », à l'heure du contrat ou à
+                  l'heure par défaut du gîte.
+                </div>
+                <label className="field" style={{ marginTop: 12 }}>
+                  URL iCalendar privée
+                  <input
+                    value={operationsCalendar ? getOperationsCalendarUrl(operationsCalendar) : ""}
+                    readOnly
+                  />
+                </label>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="table-action table-action--neutral"
+                    onClick={() => void copyOperationsCalendarUrl()}
+                    disabled={!operationsCalendar || resettingOperationsCalendarToken}
+                  >
+                    Copier l'URL
+                  </button>
+                  <button
+                    type="button"
+                    className="table-action table-action--danger"
+                    onClick={() => void resetOperationsCalendarFeedToken()}
+                    disabled={!operationsCalendar || resettingOperationsCalendarToken}
+                  >
+                    {resettingOperationsCalendarToken ? "Régénération..." : "Régénérer le token"}
+                  </button>
+                </div>
+                <div className="field-hint" style={{ marginTop: 12 }}>
+                  Pour Alexa : ajoutez cette URL dans Google Calendar via « Autres agendas »
+                  puis « À partir de l'URL ». Associez ensuite ce compte Google dans les
+                  réglages Calendrier de l'application Alexa. Vous pourrez demander :
+                  « Alexa, quel est mon programme aujourd'hui ? »
+                </div>
+                <div className="field-hint" style={{ marginTop: 6 }}>
+                  L'URL donne accès aux noms des hôtes : conservez-la privée.
+                </div>
+              </div>
               <div className="card settings-card settings-card--blue settings-card--span-12">
                 <div className="settings-card__topline">
                   <span className="settings-card__tag">Publication OTA</span>
@@ -9246,12 +9355,6 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   <code>what-today</code>. Les réservations importées depuis
                   iCal, Pump ou CSV ne sont pas réémises.
                 </div>
-                {icalExportsNotice && (
-                  <div className="note note--success">{icalExportsNotice}</div>
-                )}
-                {icalExportsError && (
-                  <div className="note">{icalExportsError}</div>
-                )}
                 {loadingIcalExports ? (
                   <div className="field-hint" style={{ marginTop: 10 }}>
                     Chargement...
