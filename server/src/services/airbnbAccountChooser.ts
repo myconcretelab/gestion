@@ -46,7 +46,9 @@ const getVisibleLocator = async (locator: Locator) => {
   const count = await locator.count();
   for (let index = 0; index < count; index += 1) {
     const current = locator.nth(index);
-    if (await current.isVisible().catch(() => false)) return current;
+    if (!(await current.isVisible().catch(() => false))) continue;
+    if (!(await current.isEnabled().catch(() => false))) continue;
+    return current;
   }
   return null;
 };
@@ -79,9 +81,28 @@ export const resolveAirbnbAccountChooserContinueButton = async (
   for (let index = 0; index < count; index += 1) {
     const control = controls.nth(index);
     if (!(await control.isVisible().catch(() => false))) continue;
+    if (!(await control.isEnabled().catch(() => false))) continue;
     const text = await getControlText(control);
     if (isAirbnbAccountChooserActionLabel(text)) return control;
   }
 
   return null;
+};
+
+export const clickAirbnbAccountChooserContinueButton = async (
+  page: Page,
+  configuredSelector: string | null | undefined,
+  timeout = 5_000
+) => {
+  const button = await resolveAirbnbAccountChooserContinueButton(page, configuredSelector);
+  if (!button) return false;
+
+  // Keep a handle to the actual account-chooser button. Airbnb replaces it with
+  // a disabled OTP submit button during the click; a live Locator can otherwise
+  // retarget that new button and wait until its timeout expires.
+  const handle = await button.elementHandle();
+  if (!handle) return false;
+
+  await handle.click({ timeout });
+  return true;
 };

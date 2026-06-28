@@ -6,7 +6,10 @@ import { env } from "../config/env.js";
 import { resolveDataDir } from "../utils/paths.js";
 import { assertPumpBrowserAutomationAllowed, getPumpAutomationConfig } from "./pumpAutomation.js";
 import { PumpPlaywrightSession } from "./pumpAutomationCapture.js";
-import { resolveAirbnbAccountChooserContinueButton } from "./airbnbAccountChooser.js";
+import {
+  clickAirbnbAccountChooserContinueButton,
+  resolveAirbnbAccountChooserContinueButton,
+} from "./airbnbAccountChooser.js";
 import type { PumpAutomationConfig } from "./pumpAutomationConfig.js";
 
 export type AirbnbCalendarRefreshQueueResult = {
@@ -189,7 +192,20 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
     );
   }
 
-  await button.click({ timeout: 5_000 });
+  if (accountChooserDetected) {
+    const clicked = await clickAirbnbAccountChooserContinueButton(
+      page,
+      config.advancedSelectors.accountChooserContinueButton
+    );
+    if (!clicked) {
+      throw new AirbnbCalendarRefreshError(
+        "account_chooser_unhandled",
+        "Airbnb demande de confirmer le compte mais le bouton de confirmation du compte est introuvable."
+      );
+    }
+  } else {
+    await button.click({ timeout: 5_000 });
+  }
   await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
   await wait(1_000);
   return true;
