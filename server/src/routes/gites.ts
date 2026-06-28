@@ -8,6 +8,7 @@ import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 import { getGitePhotoPaths, resolveStoredDataFilePath } from "../utils/paths.js";
 import { getGiteIcalExport } from "../services/icalExport.js";
+import { getOperationsCalendar } from "../services/operationsCalendar.js";
 import { generateIcalExportToken } from "../utils/reservationOrigin.js";
 import {
   assertNoSeasonRateOverlap,
@@ -836,6 +837,23 @@ router.delete("/:id/season-rates/:rateId", async (req, res, next) => {
     res.status(204).end();
   } catch (error) {
     next(error);
+  }
+});
+
+router.get("/operations/calendar.ics", async (req, res, next) => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    const exportFeed = await getOperationsCalendar(token);
+    if (!exportFeed) {
+      return res.status(404).json({ error: "Calendrier introuvable." });
+    }
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", `inline; filename="${exportFeed.filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send(exportFeed.body);
+  } catch (err) {
+    next(err);
   }
 });
 
