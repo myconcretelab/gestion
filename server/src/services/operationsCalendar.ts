@@ -66,8 +66,8 @@ export const buildOperationsCalendarIcs = (reservations: OperationsReservation[]
     const time = (isArrival ? reservation.heure_arrivee : reservation.heure_depart)
       || (isArrival ? reservation.gite.heure_arrivee_defaut : reservation.gite.heure_depart_defaut);
     const summary = isArrival
-      ? `Arrivée au gîte ${reservation.gite.nom}`
-      : `Départ du gîte ${reservation.gite.nom}`;
+      ? `Arrivée ${reservation.gite.nom}`
+      : `Départ ${reservation.gite.nom}`;
 
     lines.push("BEGIN:VEVENT");
     lines.push(`UID:${kind}-${reservation.id}@contrats`);

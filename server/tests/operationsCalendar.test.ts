@@ -25,11 +25,12 @@ test("le flux opérationnel crée une arrivée et un départ avec les horaires d
   assert.match(body, /X-WR-CALNAME:Programme des gîtes/);
   assert.match(body, /UID:arrival-reservation-1@contrats/);
   assert.match(body, /DTSTART;TZID=Europe\/Paris:20260710T183000/);
-  assert.match(body, /SUMMARY:Arrivée au gîte La Prairie/);
+  assert.match(body, /SUMMARY:Arrivée La Prairie/);
   assert.match(body, /UID:departure-reservation-1@contrats/);
   assert.match(body, /DTSTART;TZID=Europe\/Paris:20260714T101500/);
-  assert.match(body, /SUMMARY:Départ du gîte La Prairie/);
+  assert.match(body, /SUMMARY:Départ La Prairie/);
   assert.doesNotMatch(body, /·/);
+  assert.doesNotMatch(body, /SUMMARY:.*gîte/);
   assert.equal((body.match(/BEGIN:VEVENT/g) ?? []).length, 2);
 });
 
