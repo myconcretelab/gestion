@@ -9339,7 +9339,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   « Alexa, quel est mon programme aujourd'hui ? »
                 </div>
                 <div className="field-hint" style={{ marginTop: 6 }}>
-                  L'URL donne accès aux noms des hôtes : conservez-la privée.
+                  L'URL est privée : conservez-la confidentielle.
                 </div>
               </div>
               <div className="card settings-card settings-card--blue settings-card--span-12">
