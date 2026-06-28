@@ -6,7 +6,7 @@ import { resolveDataDir } from "../utils/paths.js";
 import { readPumpAutomationConfig, buildDefaultPumpAutomationConfig, getPumpStorageStateId, validatePumpAutomationConfig } from "./pumpAutomationConfig.js";
 import type { PumpAutomationConfig } from "./pumpAutomationConfig.js";
 import { PumpPlaywrightSession, checkIfLoginRequired } from "./pumpAutomationCapture.js";
-import { resolveAirbnbAccountChooserContinueButton } from "./airbnbAccountChooser.js";
+import { clickAirbnbAccountChooserContinueButton } from "./airbnbAccountChooser.js";
 import { syncPumpHealthAlerts } from "./pumpHealth.js";
 import { getPumpAutomationSourceDefinition } from "./pumpSources.js";
 import {
@@ -284,10 +284,20 @@ const getVisibleLocator = async (locator: Locator) => {
 
 const clickFirstVisible = async (page: Page, selectors: string[], timeout = 5_000) => {
   for (const selector of selectors) {
-    const target = await getVisibleLocator(page.locator(selector));
-    if (!target) continue;
-    await target.click({ timeout });
-    return true;
+    const targets = page.locator(selector);
+    const count = await targets.count();
+    for (let index = 0; index < count; index += 1) {
+      const target = targets.nth(index);
+      if (!(await target.isVisible().catch(() => false))) continue;
+      if (!(await target.isEnabled().catch(() => false))) continue;
+
+      // Use the current DOM node instead of a live Locator: Airbnb frequently
+      // swaps submit buttons while the click is being processed.
+      const handle = await target.elementHandle();
+      if (!handle) continue;
+      await handle.click({ timeout });
+      return true;
+    }
   }
   return false;
 };
@@ -360,17 +370,25 @@ const maybeHandleAccountChooser = async (page: Page, config: PumpAutomationConfi
     throw new PumpAuthRateLimitError(source.label, rateLimitMessage);
   }
 
-  const button = await resolveAirbnbAccountChooserContinueButton(
-    page,
-    config.advancedSelectors.accountChooserContinueButton
-  );
-  if (!button) {
+  let clicked = false;
+  try {
+    clicked = await clickAirbnbAccountChooserContinueButton(
+      page,
+      config.advancedSelectors.accountChooserContinueButton
+    );
+  } catch (error) {
+    // The headed browser is interactive: the user or Airbnb itself may advance
+    // to the OTP screen while Playwright is preparing the click.
+    if (isAirbnbSmsChallengeScreenText(await getBodyText(page))) return true;
+    throw error;
+  }
+  if (!clicked) {
+    if (isAirbnbSmsChallengeScreenText(await getBodyText(page))) return true;
     throw new Error(
       `${source.label} demande de confirmer le compte mais le bouton de confirmation du compte est introuvable.`
     );
   }
 
-  await button.click({ timeout: 5_000 });
   await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
   await wait(1_000);
 
