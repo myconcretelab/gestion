@@ -7,7 +7,6 @@ test("le flux opérationnel crée une arrivée et un départ avec les horaires d
     [
       {
         id: "reservation-1",
-        hote_nom: "Alice Martin",
         date_entree: new Date("2026-07-10T00:00:00.000Z"),
         date_sortie: new Date("2026-07-14T00:00:00.000Z"),
         updatedAt: new Date("2026-06-28T10:30:00.000Z"),
@@ -26,10 +25,11 @@ test("le flux opérationnel crée une arrivée et un départ avec les horaires d
   assert.match(body, /X-WR-CALNAME:Programme des gîtes/);
   assert.match(body, /UID:arrival-reservation-1@contrats/);
   assert.match(body, /DTSTART;TZID=Europe\/Paris:20260710T183000/);
-  assert.match(body, /SUMMARY:Arrivée · La Prairie · Alice Martin/);
+  assert.match(body, /SUMMARY:Arrivée au gîte La Prairie/);
   assert.match(body, /UID:departure-reservation-1@contrats/);
   assert.match(body, /DTSTART;TZID=Europe\/Paris:20260714T101500/);
-  assert.match(body, /SUMMARY:Départ · La Prairie · Alice Martin/);
+  assert.match(body, /SUMMARY:Départ du gîte La Prairie/);
+  assert.doesNotMatch(body, /·/);
   assert.equal((body.match(/BEGIN:VEVENT/g) ?? []).length, 2);
 });
 
@@ -37,7 +37,6 @@ test("le flux opérationnel utilise les horaires par défaut du gîte", () => {
   const body = buildOperationsCalendarIcs([
     {
       id: "reservation-2",
-      hote_nom: "Bob",
       date_entree: new Date("2026-08-01T00:00:00.000Z"),
       date_sortie: new Date("2026-08-02T00:00:00.000Z"),
       updatedAt: new Date("2026-06-28T10:30:00.000Z"),

@@ -37,7 +37,6 @@ const foldIcalLine = (line: string) => {
 
 type OperationsReservation = {
   id: string;
-  hote_nom: string;
   date_entree: Date;
   date_sortie: Date;
   updatedAt: Date;
@@ -63,19 +62,20 @@ export const buildOperationsCalendarIcs = (reservations: OperationsReservation[]
 
   const pushEvent = (reservation: OperationsReservation, kind: "arrival" | "departure") => {
     const isArrival = kind === "arrival";
-    const label = isArrival ? "Arrivée" : "Départ";
     const date = isArrival ? reservation.date_entree : reservation.date_sortie;
     const time = (isArrival ? reservation.heure_arrivee : reservation.heure_depart)
       || (isArrival ? reservation.gite.heure_arrivee_defaut : reservation.gite.heure_depart_defaut);
-    const guest = reservation.hote_nom.trim() || "Hôte non renseigné";
+    const summary = isArrival
+      ? `Arrivée au gîte ${reservation.gite.nom}`
+      : `Départ du gîte ${reservation.gite.nom}`;
 
     lines.push("BEGIN:VEVENT");
     lines.push(`UID:${kind}-${reservation.id}@contrats`);
     lines.push(`DTSTAMP:${formatUtcTimestamp(reservation.updatedAt || now)}`);
     lines.push(`DTSTART;TZID=Europe/Paris:${formatLocalDateTime(date, time)}`);
     lines.push(`DTEND;TZID=Europe/Paris:${formatLocalDateTime(date, time, EVENT_DURATION_MINUTES)}`);
-    lines.push(foldIcalLine(`SUMMARY:${escapeIcalText(`${label} · ${reservation.gite.nom} · ${guest}`)}`));
-    lines.push(foldIcalLine(`DESCRIPTION:${escapeIcalText(`${label} de ${guest} au gîte ${reservation.gite.nom}.`)}`));
+    lines.push(foldIcalLine(`SUMMARY:${escapeIcalText(summary)}`));
+    lines.push(foldIcalLine(`DESCRIPTION:${escapeIcalText(`${summary}.`)}`));
     lines.push("STATUS:CONFIRMED");
     lines.push("TRANSP:TRANSPARENT");
     lines.push("END:VEVENT");
@@ -103,7 +103,6 @@ export const getOperationsCalendar = async (token: string) => {
     },
     select: {
       id: true,
-      hote_nom: true,
       date_entree: true,
       date_sortie: true,
       updatedAt: true,
