@@ -276,7 +276,7 @@ const OperationsPrintPage = () => {
 
           <div className="operations-legend">
             <span><i className="arrival" /> Entrée</span>
-            <span><i className="departure" /> Sortie + ménage</span>
+            <span><i className="departure" /> Sortie</span>
             <span><i className="rotation" /> Rotation le même jour</span>
           </div>
 

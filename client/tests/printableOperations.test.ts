@@ -22,6 +22,7 @@ const reservation = {
   options: {
     draps: { enabled: true, nb_lits: 2 },
     linge_toilette: { enabled: true, nb_personnes: 3 },
+    menage: { enabled: true },
     depart_tardif: { enabled: true },
   },
 } as Reservation;
@@ -42,6 +43,21 @@ test("décrit le ménage et le départ tardif à la sortie", () => {
   assert.deepEqual(getOperationsForDate(reservation, "2026-07-13").map((item) => item.label), [
     "Sortie",
     "Ménage",
+    "Départ tardif",
+  ]);
+});
+
+test("n'affiche pas de ménage à la sortie quand l'option n'est pas activée", () => {
+  const withoutCleaning = {
+    ...reservation,
+    options: {
+      ...reservation.options,
+      menage: { enabled: false },
+    },
+  };
+
+  assert.deepEqual(getOperationsForDate(withoutCleaning, "2026-07-13").map((item) => item.label), [
+    "Sortie",
     "Départ tardif",
   ]);
 });
