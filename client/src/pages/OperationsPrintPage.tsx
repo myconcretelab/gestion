@@ -85,7 +85,7 @@ const OperationsPrintPage = () => {
   const [gites, setGites] = useState<Gite[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedGiteIds, setSelectedGiteIds] = useState<Set<string>>(new Set());
-  const [showTimeline, setShowTimeline] = useState(true);
+  const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(true);
   const [showPhones, setShowPhones] = useState(false);
   const [loading, setLoading] = useState(true);
