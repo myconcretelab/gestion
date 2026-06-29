@@ -131,6 +131,10 @@ const OperationsPrintPage = () => {
   const operationsByDate = useMemo(() => {
     return buildPrintableOperationRows(days, visibleReservations);
   }, [days, visibleReservations]);
+  const hasCleaningInPeriod = useMemo(
+    () => operationsByDate.some((row) => row.stays.some((stay) => stay.operations.some((operation) => operation.kind === "cleaning"))),
+    [operationsByDate]
+  );
 
   const setPreset = (daysToShow: number) => {
     setTo(toIsoDateUtc(addUtcDays(parseIsoDateUtc(from), daysToShow - 1)));
@@ -272,9 +276,16 @@ const OperationsPrintPage = () => {
             {operationsByDate.length === 0 ? (
               <div className="operations-empty">Aucune entrée ni sortie sur cette période.</div>
             ) : (
-              <table className="operations-table">
+              <table className={`operations-table${hasCleaningInPeriod ? "" : " operations-table--without-cleaning"}`}>
                 <thead>
-                  <tr><th>Date</th><th className="operations-table__cleaning-heading">Ménage</th><th>Gîte</th><th>Séjour</th><th>Interventions</th>{showComments || showPhones ? <th>Informations</th> : null}</tr>
+                  <tr>
+                    <th className="operations-table__date-heading">Date</th>
+                    {hasCleaningInPeriod ? <th className="operations-table__cleaning-heading">Ménage</th> : null}
+                    <th className="operations-table__gite-heading">Gîte</th>
+                    <th className="operations-table__stay-heading">Séjour</th>
+                    <th className="operations-table__interventions-heading">Interventions</th>
+                    {showComments || showPhones ? <th>Informations</th> : null}
+                  </tr>
                 </thead>
                 <tbody>
                   {operationsByDate.map(({ date, giteId, stays }) => {
@@ -292,9 +303,11 @@ const OperationsPrintPage = () => {
                             <span>Entre 13h et 17h</span>
                           </div>
                         </td>
-                        <td className="operations-table__cleaning">
-                          {hasCleaning ? <span className="operations-badge operations-badge--cleaning">Ménage</span> : null}
-                        </td>
+                        {hasCleaningInPeriod ? (
+                          <td className="operations-table__cleaning">
+                            {hasCleaning ? <span className="operations-badge operations-badge--cleaning">Ménage</span> : null}
+                          </td>
+                        ) : null}
                         <td><strong>{firstReservation.gite?.nom ?? "Gîte"}</strong></td>
                         <td>
                           <div className={`operations-stay-summaries${isRotation ? " operations-stay-summaries--rotation" : ""}`}>

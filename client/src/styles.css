@@ -4738,11 +4738,16 @@ body {
   letter-spacing: 0.05em;
 }
 
-.operations-table th:nth-child(1) { width: 19%; }
-.operations-table th:nth-child(2) { width: 8%; }
-.operations-table th:nth-child(3) { width: 11%; }
-.operations-table th:nth-child(4) { width: 20%; }
-.operations-table th:nth-child(5) { width: 24%; }
+.operations-table__date-heading { width: 19%; }
+.operations-table__cleaning-heading { width: 8%; }
+.operations-table__gite-heading { width: 11%; }
+.operations-table__stay-heading { width: 20%; }
+.operations-table__interventions-heading { width: 24%; }
+
+.operations-table--without-cleaning .operations-table__date-heading { width: 21%; }
+.operations-table--without-cleaning .operations-table__gite-heading { width: 13%; }
+.operations-table--without-cleaning .operations-table__stay-heading { width: 23%; }
+.operations-table--without-cleaning .operations-table__interventions-heading { width: 25%; }
 
 .operations-table td {
   padding: 7px;
