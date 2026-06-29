@@ -224,13 +224,13 @@ const OperationsPrintPage = () => {
           <p>Choisissez jusqu’à 31 jours. La feuille regroupe l’occupation et toutes les interventions à prévoir.</p>
         </div>
         <div className="operations-controls__dates">
-          <label className="field">
-            Du
-            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-          </label>
-          <label className="field">
-            Au
-            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+          <label className="field operations-period-field">
+            Période
+            <span className="operations-period-picker">
+              <input type="date" aria-label="Début de la période" value={from} onChange={(event) => setFrom(event.target.value)} />
+              <span className="operations-period-picker__separator" aria-hidden="true">→</span>
+              <input type="date" aria-label="Fin de la période" value={to} onChange={(event) => setTo(event.target.value)} />
+            </span>
           </label>
           <div className="operations-presets" aria-label="Durées rapides">
             {[7, 14, 21, 31].map((count) => (
