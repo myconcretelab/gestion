@@ -1,6 +1,6 @@
 import { Router } from "express";
 import crypto from "node:crypto";
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
@@ -278,6 +278,8 @@ const buildReservationListWhere = (query: Record<string, unknown>) => {
   const giteId = typeof query.giteId === "string" ? query.giteId : undefined;
   const yearRaw = typeof query.year === "string" ? Number(query.year) : undefined;
   const monthRaw = typeof query.month === "string" ? Number(query.month) : undefined;
+  const fromRaw = typeof query.from === "string" ? query.from : undefined;
+  const toRaw = typeof query.to === "string" ? query.to : undefined;
 
   const where: any = {};
 
@@ -285,7 +287,12 @@ const buildReservationListWhere = (query: Record<string, unknown>) => {
     where.gite_id = giteId;
   }
 
-  if (Number.isFinite(yearRaw)) {
+  if (fromRaw || toRaw) {
+    const from = fromRaw ? parseDateInput(fromRaw, "début de période") : undefined;
+    const to = toRaw ? addDays(parseDateInput(toRaw, "fin de période"), 1) : undefined;
+    if (to) where.date_entree = { lt: to };
+    if (from) where.date_sortie = { gte: from };
+  } else if (Number.isFinite(yearRaw)) {
     const year = Number(yearRaw);
     const month = Number.isFinite(monthRaw) && monthRaw && monthRaw >= 1 && monthRaw <= 12 ? Number(monthRaw) : null;
     const from = month ? makeUtcDate(year, month, 1) : makeUtcDate(year, 1, 1);

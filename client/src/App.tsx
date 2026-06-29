@@ -20,6 +20,7 @@ const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
+const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
 
 const MenuIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -264,6 +265,9 @@ const App = () => {
   const isCalendarSection =
     location.pathname === "/calendrier" ||
     location.pathname.startsWith("/calendrier/");
+  const isOperationsSection =
+    location.pathname === "/planning-relais" ||
+    location.pathname.startsWith("/planning-relais/");
   const isStatsSection =
     location.pathname === "/statistiques" ||
     location.pathname.startsWith("/statistiques/");
@@ -296,6 +300,12 @@ const App = () => {
       label: "Calendrier",
       isActive: isCalendarSection,
       mobilePrimary: true,
+    },
+    {
+      to: "/planning-relais",
+      label: "Planning relais",
+      isActive: isOperationsSection,
+      desktopOverflow: true,
     },
     {
       to: "/contrats",
@@ -799,6 +809,7 @@ const App = () => {
             <Route path="/reservations/mobile" element={<MobileReservationEditorPage />} />
             <Route path="/reservations" element={<ReservationsPage />} />
             <Route path="/calendrier" element={<CalendrierPage />} />
+            <Route path="/planning-relais" element={<OperationsPrintPage />} />
             <Route path="/statistiques" element={<StatisticsPage />} />
             <Route path="/tarifs" element={<SeasonRatesPage />} />
             <Route path="/parametres/*" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
