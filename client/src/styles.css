@@ -4738,18 +4738,18 @@ body {
   letter-spacing: 0.05em;
 }
 
-.operations-table__date-heading { width: 22%; }
-.operations-table__type-heading { width: 13%; }
-.operations-table__cleaning-heading { width: 8%; }
-.operations-table__gite-heading { width: 12%; }
-.operations-table__stay-heading { width: 21%; }
-.operations-table__information-heading { width: 24%; }
+.operations-table__date-heading { width: 16%; }
+.operations-table__type-heading { width: 9%; }
+.operations-table__cleaning-heading { width: 7%; }
+.operations-table__gite-heading { width: 10%; }
+.operations-table__stay-heading { width: 27%; }
+.operations-table__information-heading { width: 31%; }
 
-.operations-table--without-cleaning .operations-table__date-heading { width: 25%; }
-.operations-table--without-cleaning .operations-table__type-heading { width: 14%; }
-.operations-table--without-cleaning .operations-table__gite-heading { width: 14%; }
-.operations-table--without-cleaning .operations-table__stay-heading { width: 23%; }
-.operations-table--without-cleaning .operations-table__information-heading { width: 24%; }
+.operations-table--without-cleaning .operations-table__date-heading { width: 18%; }
+.operations-table--without-cleaning .operations-table__type-heading { width: 10%; }
+.operations-table--without-cleaning .operations-table__gite-heading { width: 11%; }
+.operations-table--without-cleaning .operations-table__stay-heading { width: 28%; }
+.operations-table--without-cleaning .operations-table__information-heading { width: 33%; }
 
 .operations-table__stay-heading,
 .operations-table__information-heading,
@@ -4922,7 +4922,7 @@ body {
 }
 
 @page {
-  size: A4 landscape;
+  size: A4 portrait;
   margin: 8mm;
 }
 
@@ -4959,7 +4959,7 @@ body {
 
   .operations-sheet {
     width: 100%;
-    min-height: 190mm;
+    min-height: 277mm;
     padding: 0;
     border: 0;
     box-shadow: none;
@@ -5002,7 +5002,7 @@ body {
 
   .operations-timeline__header,
   .operations-timeline__row {
-    grid-template-columns: 27mm repeat(var(--operations-day-count), minmax(0, 1fr));
+    grid-template-columns: 22mm repeat(var(--operations-day-count), minmax(0, 1fr));
   }
 
   .operations-timeline__header > div {
