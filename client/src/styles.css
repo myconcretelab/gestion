@@ -4388,6 +4388,76 @@ body {
   gap: 24px;
 }
 
+.public-relay-page {
+  min-height: 100vh;
+  padding: 24px;
+  background: #eef2f7;
+}
+
+.public-relay-toolbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  width: min(100%, 210mm);
+  margin: 0 auto;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.public-relay-toolbar img {
+  width: 70px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.public-relay-toolbar span {
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.public-relay-toolbar h1 {
+  margin: 1px 0 0;
+  font-size: 1.2rem;
+}
+
+.public-relay-toolbar p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.public-relay-state {
+  display: grid;
+  min-height: 100vh;
+  padding: 32px;
+  place-content: center;
+  justify-items: center;
+  background: #eef2f7;
+  color: #334155;
+  text-align: center;
+}
+
+.public-relay-state img {
+  width: 130px;
+  margin-bottom: 18px;
+}
+
+.public-relay-state h1 {
+  margin: 0 0 8px;
+}
+
+.public-relay-state p {
+  max-width: 45ch;
+  margin: 0;
+}
+
 .operations-controls {
   display: grid;
   grid-template-columns: minmax(240px, 0.75fr) minmax(440px, 1.25fr);
@@ -4541,6 +4611,13 @@ body {
   flex-wrap: wrap;
 }
 
+.operations-saved-periods__error {
+  grid-column: 1 / -1;
+  color: #b91c1c;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .operations-saved-period {
   display: inline-flex;
   overflow: hidden;
@@ -4553,6 +4630,11 @@ body {
   border-color: var(--primary);
   background: var(--primary-soft);
   box-shadow: 0 0 0 2px var(--primary-strong);
+}
+
+.operations-saved-period.is-disabled {
+  border-style: dashed;
+  opacity: 0.62;
 }
 
 .operations-saved-period button {
@@ -4576,6 +4658,24 @@ body {
   color: #64748b;
   font-size: 1rem;
   line-height: 1;
+}
+
+.operations-saved-period .operations-saved-period__action {
+  display: grid;
+  min-width: 28px;
+  padding: 7px 4px;
+  place-items: center;
+  color: #64748b;
+  font-size: 0.86rem;
+}
+
+.operations-saved-period .operations-saved-period__action:hover:not(:disabled) {
+  color: var(--primary);
+}
+
+.operations-saved-period .operations-saved-period__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 .operations-saved-period .operations-saved-period__remove:hover {
@@ -5069,6 +5169,18 @@ body {
     padding: 16px;
   }
 
+  .public-relay-page {
+    padding: 12px;
+  }
+
+  .public-relay-toolbar {
+    grid-template-columns: auto 1fr;
+  }
+
+  .public-relay-toolbar button {
+    grid-column: 1 / -1;
+  }
+
   .operations-timeline,
   .operations-table-section,
   .operations-sheet__header,
@@ -5112,6 +5224,12 @@ body {
 
   .operations-print-page {
     display: block;
+  }
+
+  .public-relay-page {
+    min-height: 0;
+    padding: 0;
+    background: #fff;
   }
 
   .operations-sheet {
