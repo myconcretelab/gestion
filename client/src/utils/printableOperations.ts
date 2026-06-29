@@ -56,7 +56,9 @@ export const getOperationsForDate = (reservation: Reservation, isoDate: string):
 
   if (isDeparture) {
     operations.push({ kind: "departure", label: "Sortie" });
-    operations.push({ kind: "cleaning", label: "Ménage" });
+    if (reservation.options?.menage?.enabled) {
+      operations.push({ kind: "cleaning", label: "Ménage" });
+    }
     if (reservation.options?.depart_tardif?.enabled) {
       operations.push({ kind: "late-checkout", label: "Départ tardif" });
     }
@@ -64,4 +66,3 @@ export const getOperationsForDate = (reservation: Reservation, isoDate: string):
 
   return operations;
 };
-
