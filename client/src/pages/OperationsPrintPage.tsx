@@ -289,6 +289,7 @@ const OperationsPrintPage = () => {
                 <thead>
                   <tr>
                     <th className="operations-table__date-heading">Date</th>
+                    <th className="operations-table__type-heading">Type</th>
                     {hasCleaningInPeriod ? <th className="operations-table__cleaning-heading">Ménage</th> : null}
                     <th className="operations-table__gite-heading">Gîte</th>
                     <th className="operations-table__stay-heading">Séjour</th>
@@ -309,9 +310,11 @@ const OperationsPrintPage = () => {
                           <div className="operations-table__date">
                             <strong>{formatOperationDate(date)}</strong>
                             <span>{getOperationSchedule(firstReservation, hasArrival, hasDeparture)}</span>
-                            <div className="operations-badges">
-                              {stays.flatMap((stay) => stay.operations.filter((operation) => operation.kind !== "cleaning").map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}
-                            </div>
+                          </div>
+                        </td>
+                        <td className="operations-table__type">
+                          <div className="operations-badges">
+                            {stays.flatMap((stay) => stay.operations.filter((operation) => operation.kind !== "cleaning").map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}
                           </div>
                         </td>
                         {hasCleaningInPeriod ? (

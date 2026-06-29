@@ -4738,16 +4738,18 @@ body {
   letter-spacing: 0.05em;
 }
 
-.operations-table__date-heading { width: 27%; }
-.operations-table__cleaning-heading { width: 9%; }
-.operations-table__gite-heading { width: 14%; }
-.operations-table__stay-heading { width: 24%; }
-.operations-table__information-heading { width: 26%; }
+.operations-table__date-heading { width: 22%; }
+.operations-table__type-heading { width: 13%; }
+.operations-table__cleaning-heading { width: 8%; }
+.operations-table__gite-heading { width: 12%; }
+.operations-table__stay-heading { width: 21%; }
+.operations-table__information-heading { width: 24%; }
 
-.operations-table--without-cleaning .operations-table__date-heading { width: 30%; }
-.operations-table--without-cleaning .operations-table__gite-heading { width: 16%; }
-.operations-table--without-cleaning .operations-table__stay-heading { width: 27%; }
-.operations-table--without-cleaning .operations-table__information-heading { width: 27%; }
+.operations-table--without-cleaning .operations-table__date-heading { width: 25%; }
+.operations-table--without-cleaning .operations-table__type-heading { width: 14%; }
+.operations-table--without-cleaning .operations-table__gite-heading { width: 14%; }
+.operations-table--without-cleaning .operations-table__stay-heading { width: 23%; }
+.operations-table--without-cleaning .operations-table__information-heading { width: 24%; }
 
 .operations-table__stay-heading,
 .operations-table__information-heading,
@@ -4799,22 +4801,6 @@ body {
   font-weight: 700;
   white-space: nowrap;
 }
-
-.operations-table__date .operations-badges {
-  margin-top: 2px;
-}
-
-.operations-table__date .operations-badge {
-  color: #334155;
-  font-size: 0.6rem;
-}
-
-.operations-table__date .operations-badge--arrival { color: #166534; }
-.operations-table__date .operations-badge--departure,
-.operations-table__date .operations-badge--cleaning { color: #9a3412; }
-.operations-table__date .operations-badge--linen,
-.operations-table__date .operations-badge--towels { color: #1e40af; }
-.operations-table__date .operations-badge--late-checkout { color: #9d174d; }
 
 .operations-table__cleaning,
 .operations-table__cleaning-heading {
@@ -5092,10 +5078,6 @@ body {
 
   .operations-table__date span {
     font-size: 0.56rem;
-  }
-
-  .operations-table__date .operations-badge {
-    font-size: 0.5rem;
   }
 
   .operations-stay-summaries,
