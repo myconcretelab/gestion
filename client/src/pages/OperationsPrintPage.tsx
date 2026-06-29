@@ -56,11 +56,20 @@ const formatOperationDate = (value: string) =>
 const formatRange = (from: string, to: string) =>
   from === to ? formatLongDate(from) : `du ${formatLongDate(from)} au ${formatLongDate(to)}`;
 
-const getArrivalTime = (reservation: Reservation) =>
-  reservation.linked_contract?.heure_arrivee || reservation.gite?.heure_arrivee_defaut || "—";
+const formatGiteTime = (value?: string) => {
+  if (!value) return "—";
+  const [hours, minutes] = value.split(":");
+  return minutes && minutes !== "00" ? `${hours}h${minutes}` : `${hours}h`;
+};
 
-const getDepartureTime = (reservation: Reservation) =>
-  reservation.linked_contract?.heure_depart || reservation.gite?.heure_depart_defaut || "—";
+const getOperationSchedule = (reservation: Reservation, hasArrival: boolean, hasDeparture: boolean) => {
+  const arrivalTime = formatGiteTime(reservation.gite?.heure_arrivee_defaut);
+  const departureTime = formatGiteTime(reservation.gite?.heure_depart_defaut);
+
+  if (hasArrival && hasDeparture) return `Entre ${departureTime} et ${arrivalTime}`;
+  if (hasDeparture) return `À partir de ${departureTime}`;
+  return `Avant ${arrivalTime}`;
+};
 
 const getOperationTone = (operations: StayOperation[]) => {
   const kinds = new Set(operations.map((operation) => operation.kind));
@@ -283,8 +292,7 @@ const OperationsPrintPage = () => {
                     {hasCleaningInPeriod ? <th className="operations-table__cleaning-heading">Ménage</th> : null}
                     <th className="operations-table__gite-heading">Gîte</th>
                     <th className="operations-table__stay-heading">Séjour</th>
-                    <th className="operations-table__interventions-heading">Interventions</th>
-                    {showComments || showPhones ? <th>Informations</th> : null}
+                    {showComments || showPhones ? <th className="operations-table__information-heading">Informations</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -300,7 +308,10 @@ const OperationsPrintPage = () => {
                         <td>
                           <div className="operations-table__date">
                             <strong>{formatOperationDate(date)}</strong>
-                            <span>Entre 13h et 17h</span>
+                            <span>{getOperationSchedule(firstReservation, hasArrival, hasDeparture)}</span>
+                            <div className="operations-badges">
+                              {stays.flatMap((stay) => stay.operations.filter((operation) => operation.kind !== "cleaning").map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}
+                            </div>
                           </div>
                         </td>
                         {hasCleaningInPeriod ? (
@@ -309,7 +320,7 @@ const OperationsPrintPage = () => {
                           </td>
                         ) : null}
                         <td><strong>{firstReservation.gite?.nom ?? "Gîte"}</strong></td>
-                        <td>
+                        <td className="operations-table__stay-cell">
                           <div className={`operations-stay-summaries${isRotation ? " operations-stay-summaries--rotation" : ""}`}>
                             {stays.map((stay) => {
                               const reservation = stay.reservation;
@@ -326,21 +337,8 @@ const OperationsPrintPage = () => {
                             })}
                           </div>
                         </td>
-                        <td>
-                          <div className="operations-badges">
-                            {stays.flatMap((stay) => stay.operations.filter((operation) => operation.kind !== "cleaning").map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}
-                          </div>
-                          <span className="operations-hours">
-                            {stays.flatMap((stay) => {
-                              const labels: string[] = [];
-                              if (stay.operations.some((operation) => operation.kind === "departure")) labels.push(`Départ ${getDepartureTime(stay.reservation)}`);
-                              if (stay.operations.some((operation) => operation.kind === "arrival")) labels.push(`Arrivée ${getArrivalTime(stay.reservation)}`);
-                              return labels;
-                            }).join(" · ")}
-                          </span>
-                        </td>
                         {showComments || showPhones ? (
-                          <td>
+                          <td className="operations-table__information-cell">
                             {stays.map(({ reservation }) => {
                               const hasInformation = (showPhones && reservation.telephone) || (showComments && reservation.commentaire);
                               if (!hasInformation) return null;
