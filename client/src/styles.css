@@ -4724,7 +4724,7 @@ body {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 0.66rem;
+  font-size: 0.8rem;
 }
 
 .operations-table th {
@@ -4732,22 +4732,29 @@ body {
   border-bottom: 2px solid #334155;
   background: #f8fafc;
   color: #475569;
-  font-size: 0.58rem;
+  font-size: 0.66rem;
   text-align: left;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.operations-table__date-heading { width: 19%; }
-.operations-table__cleaning-heading { width: 8%; }
-.operations-table__gite-heading { width: 11%; }
-.operations-table__stay-heading { width: 20%; }
-.operations-table__interventions-heading { width: 24%; }
+.operations-table__date-heading { width: 27%; }
+.operations-table__cleaning-heading { width: 9%; }
+.operations-table__gite-heading { width: 14%; }
+.operations-table__stay-heading { width: 24%; }
+.operations-table__information-heading { width: 26%; }
 
-.operations-table--without-cleaning .operations-table__date-heading { width: 21%; }
-.operations-table--without-cleaning .operations-table__gite-heading { width: 13%; }
-.operations-table--without-cleaning .operations-table__stay-heading { width: 23%; }
-.operations-table--without-cleaning .operations-table__interventions-heading { width: 25%; }
+.operations-table--without-cleaning .operations-table__date-heading { width: 30%; }
+.operations-table--without-cleaning .operations-table__gite-heading { width: 16%; }
+.operations-table--without-cleaning .operations-table__stay-heading { width: 27%; }
+.operations-table--without-cleaning .operations-table__information-heading { width: 27%; }
+
+.operations-table__stay-heading,
+.operations-table__information-heading,
+.operations-table__stay-cell,
+.operations-table__information-cell {
+  font-size: 0.66rem;
+}
 
 .operations-table td {
   padding: 7px;
@@ -4776,23 +4783,38 @@ body {
 
 .operations-table__date {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .operations-table__date strong {
+  font-size: 0.9rem;
   text-transform: capitalize;
 }
 
 .operations-table__date span {
-  padding-left: 6px;
-  border-left: 1px solid #cbd5e1;
   color: #64748b;
-  font-size: 0.58rem;
+  font-size: 0.68rem;
   font-weight: 700;
   white-space: nowrap;
 }
+
+.operations-table__date .operations-badges {
+  margin-top: 2px;
+}
+
+.operations-table__date .operations-badge {
+  color: #334155;
+  font-size: 0.6rem;
+}
+
+.operations-table__date .operations-badge--arrival { color: #166534; }
+.operations-table__date .operations-badge--departure,
+.operations-table__date .operations-badge--cleaning { color: #9a3412; }
+.operations-table__date .operations-badge--linen,
+.operations-table__date .operations-badge--towels { color: #1e40af; }
+.operations-table__date .operations-badge--late-checkout { color: #9d174d; }
 
 .operations-table__cleaning,
 .operations-table__cleaning-heading {
@@ -5040,12 +5062,19 @@ body {
   }
 
   .operations-table {
-    font-size: 0.54rem;
+    font-size: 0.64rem;
   }
 
   .operations-table th {
     padding: 3px 5px;
-    font-size: 0.48rem;
+    font-size: 0.54rem;
+  }
+
+  .operations-table__stay-heading,
+  .operations-table__information-heading,
+  .operations-table__stay-cell,
+  .operations-table__information-cell {
+    font-size: 0.54rem;
   }
 
   .operations-table td {
@@ -5057,9 +5086,16 @@ body {
     gap: 3px;
   }
 
+  .operations-table__date strong {
+    font-size: 0.72rem;
+  }
+
   .operations-table__date span {
-    padding-left: 3px;
-    font-size: 0.46rem;
+    font-size: 0.56rem;
+  }
+
+  .operations-table__date .operations-badge {
+    font-size: 0.5rem;
   }
 
   .operations-stay-summaries,
