@@ -9,6 +9,17 @@ export type StayOperation = {
   label: string;
 };
 
+export type PrintableOperationStay = {
+  reservation: Reservation;
+  operations: StayOperation[];
+};
+
+export type PrintableOperationRow = {
+  date: string;
+  giteId: string;
+  stays: PrintableOperationStay[];
+};
+
 export const parseIsoDateUtc = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
@@ -65,4 +76,35 @@ export const getOperationsForDate = (reservation: Reservation, isoDate: string):
   }
 
   return operations;
+};
+
+export const buildPrintableOperationRows = (dates: string[], reservations: Reservation[]) => {
+  const rows: PrintableOperationRow[] = [];
+
+  for (const date of dates) {
+    const rowsByGiteId = new Map<string, PrintableOperationRow>();
+    for (const reservation of reservations) {
+      if (!reservation.gite_id) continue;
+      const operations = getOperationsForDate(reservation, date);
+      if (operations.length === 0) continue;
+
+      let row = rowsByGiteId.get(reservation.gite_id);
+      if (!row) {
+        row = { date, giteId: reservation.gite_id, stays: [] };
+        rowsByGiteId.set(reservation.gite_id, row);
+        rows.push(row);
+      }
+      row.stays.push({ reservation, operations });
+    }
+  }
+
+  for (const row of rows) {
+    row.stays.sort((left, right) => {
+      const leftIsDeparture = left.operations.some((operation) => operation.kind === "departure");
+      const rightIsDeparture = right.operations.some((operation) => operation.kind === "departure");
+      return Number(rightIsDeparture) - Number(leftIsDeparture);
+    });
+  }
+
+  return rows;
 };
