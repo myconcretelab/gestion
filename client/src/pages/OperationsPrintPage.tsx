@@ -85,6 +85,7 @@ const OperationsPrintPage = () => {
   const [gites, setGites] = useState<Gite[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedGiteIds, setSelectedGiteIds] = useState<Set<string>>(new Set());
+  const [showTimeline, setShowTimeline] = useState(true);
   const [showComments, setShowComments] = useState(true);
   const [showPhones, setShowPhones] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -202,6 +203,7 @@ const OperationsPrintPage = () => {
             </div>
           </fieldset>
           <div className="operations-detail-toggles">
+            <label><input type="checkbox" checked={showTimeline} onChange={(event) => setShowTimeline(event.target.checked)} /> Tableau graphique</label>
             <label><input type="checkbox" checked={showComments} onChange={(event) => setShowComments(event.target.checked)} /> Commentaires</label>
             <label><input type="checkbox" checked={showPhones} onChange={(event) => setShowPhones(event.target.checked)} /> Téléphones</label>
           </div>
@@ -228,57 +230,61 @@ const OperationsPrintPage = () => {
             </div>
           </header>
 
-          <section className="operations-timeline" aria-label="Occupation graphique" style={timelineColumns}>
-            <div className="operations-timeline__header">
-              <div className="operations-timeline__corner">Gîte</div>
-              {days.map((day) => {
-                const label = formatDayHeader(day);
-                const isWeekend = [0, 6].includes(parseIsoDateUtc(day).getUTCDay());
-                return <div key={day} className={isWeekend ? "is-weekend" : ""}><span>{label.weekday}</span><strong>{label.day}</strong></div>;
-              })}
-            </div>
-            {visibleGites.map((gite, giteIndex) => {
-              const giteReservations = visibleReservations.filter((reservation) => reservation.gite_id === gite.id);
-              return (
-                <div key={gite.id} className="operations-timeline__row">
-                  <div className="operations-timeline__gite" style={{ "--gite-color": getGiteColor(gite, giteIndex) } as CSSProperties}>
-                    <span />{gite.nom}
-                  </div>
+          {showTimeline ? (
+            <>
+              <section className="operations-timeline" aria-label="Occupation graphique" style={timelineColumns}>
+                <div className="operations-timeline__header">
+                  <div className="operations-timeline__corner">Gîte</div>
                   {days.map((day) => {
-                    const hasArrival = giteReservations.some((reservation) => reservation.date_entree.slice(0, 10) === day);
-                    const hasDeparture = giteReservations.some((reservation) => reservation.date_sortie.slice(0, 10) === day);
-                    return <div key={day} className={`operations-timeline__day${hasArrival || hasDeparture ? " has-intervention" : ""}${hasArrival && hasDeparture ? " has-rotation" : hasArrival ? " has-arrival" : hasDeparture ? " has-departure" : ""}`} />;
+                    const label = formatDayHeader(day);
+                    const isWeekend = [0, 6].includes(parseIsoDateUtc(day).getUTCDay());
+                    return <div key={day} className={isWeekend ? "is-weekend" : ""}><span>{label.weekday}</span><strong>{label.day}</strong></div>;
                   })}
-                  <div className="operations-timeline__stays">
-                    {giteReservations.map((reservation) => {
-                      const start = Math.max(0, diffUtcDays(parseIsoDateUtc(reservation.date_entree), parseIsoDateUtc(from)));
-                      const end = Math.min(days.length, diffUtcDays(parseIsoDateUtc(reservation.date_sortie), parseIsoDateUtc(from)));
-                      if (end <= 0 || start >= days.length || end <= start) return null;
-                      return (
-                        <div
-                          key={reservation.id}
-                          className="operations-timeline__stay"
-                          style={{
-                            gridColumn: `${start + 1} / ${end + 1}`,
-                            "--gite-color": getGiteColor(gite, giteIndex),
-                          } as CSSProperties}
-                          title={`${reservation.hote_nom}, ${formatShortDate(reservation.date_entree)} – ${formatShortDate(reservation.date_sortie)}`}
-                        >
-                          <span>{reservation.hote_nom}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
-              );
-            })}
-          </section>
+                {visibleGites.map((gite, giteIndex) => {
+                  const giteReservations = visibleReservations.filter((reservation) => reservation.gite_id === gite.id);
+                  return (
+                    <div key={gite.id} className="operations-timeline__row">
+                      <div className="operations-timeline__gite" style={{ "--gite-color": getGiteColor(gite, giteIndex) } as CSSProperties}>
+                        <span />{gite.nom}
+                      </div>
+                      {days.map((day) => {
+                        const hasArrival = giteReservations.some((reservation) => reservation.date_entree.slice(0, 10) === day);
+                        const hasDeparture = giteReservations.some((reservation) => reservation.date_sortie.slice(0, 10) === day);
+                        return <div key={day} className={`operations-timeline__day${hasArrival || hasDeparture ? " has-intervention" : ""}${hasArrival && hasDeparture ? " has-rotation" : hasArrival ? " has-arrival" : hasDeparture ? " has-departure" : ""}`} />;
+                      })}
+                      <div className="operations-timeline__stays">
+                        {giteReservations.map((reservation) => {
+                          const start = Math.max(0, diffUtcDays(parseIsoDateUtc(reservation.date_entree), parseIsoDateUtc(from)));
+                          const end = Math.min(days.length, diffUtcDays(parseIsoDateUtc(reservation.date_sortie), parseIsoDateUtc(from)));
+                          if (end <= 0 || start >= days.length || end <= start) return null;
+                          return (
+                            <div
+                              key={reservation.id}
+                              className="operations-timeline__stay"
+                              style={{
+                                gridColumn: `${start + 1} / ${end + 1}`,
+                                "--gite-color": getGiteColor(gite, giteIndex),
+                              } as CSSProperties}
+                              title={`${reservation.hote_nom}, ${formatShortDate(reservation.date_entree)} – ${formatShortDate(reservation.date_sortie)}`}
+                            >
+                              <span>{reservation.hote_nom}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </section>
 
-          <div className="operations-legend">
-            <span><i className="arrival" /> Entrée</span>
-            <span><i className="departure" /> Sortie</span>
-            <span><i className="rotation" /> Rotation le même jour</span>
-          </div>
+              <div className="operations-legend">
+                <span><i className="arrival" /> Entrée</span>
+                <span><i className="departure" /> Sortie</span>
+                <span><i className="rotation" /> Rotation le même jour</span>
+              </div>
+            </>
+          ) : null}
 
           <section className="operations-table-section">
             <h3>Interventions à prévoir</h3>
