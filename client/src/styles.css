@@ -4522,8 +4522,12 @@ body {
 
 .operations-sheet {
   width: 100%;
+  max-width: 210mm;
+  min-height: 297mm;
   min-width: 0;
-  padding: 26px;
+  margin: 0 auto;
+  padding: 12mm;
+  box-sizing: border-box;
   border: 1px solid #d1d5db;
   background: #fff;
   color: #111827;
@@ -4923,7 +4927,7 @@ body {
 
 @page {
   size: A4 portrait;
-  margin: 8mm;
+  margin: 12mm;
 }
 
 @media print {
@@ -4959,7 +4963,9 @@ body {
 
   .operations-sheet {
     width: 100%;
-    min-height: 277mm;
+    max-width: none;
+    min-height: 273mm;
+    margin: 0;
     padding: 0;
     border: 0;
     box-shadow: none;
