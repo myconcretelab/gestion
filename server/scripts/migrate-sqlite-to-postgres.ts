@@ -141,7 +141,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, guestNightDeclarations, urssafDeclarations] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, guestNightDeclarations, urssafDeclarations] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -151,6 +151,7 @@ const main = async () => {
         tableNames.has("facture_counters") ? sqlite.factureCounter.findMany() : Promise.resolve([]),
         tableNames.has("reservation_placeholders") ? sqlite.reservationPlaceholder.findMany() : Promise.resolve([]),
         tableNames.has("reservations") ? sqlite.reservation.findMany() : Promise.resolve([]),
+        tableNames.has("planning_relay_periods") ? sqlite.planningRelayPeriod.findMany() : Promise.resolve([]),
         tableNames.has("guest_night_declarations") ? sqlite.guestNightDeclaration.findMany() : Promise.resolve([]),
         tableNames.has("urssaf_declarations") ? sqlite.urssafDeclaration.findMany() : Promise.resolve([]),
       ]);
@@ -163,6 +164,7 @@ const main = async () => {
     console.log(`Compteurs factures: ${factureCounters.length}`);
     console.log(`Placeholders reservations: ${placeholders.length}`);
     console.log(`Reservations: ${reservations.length}`);
+    console.log(`Periodes planning relais: ${planningRelayPeriods.length}`);
     console.log(`Declarations nuitees: ${guestNightDeclarations.length}`);
     console.log(`Declarations URSSAF: ${urssafDeclarations.length}`);
 
@@ -173,6 +175,7 @@ const main = async () => {
       await postgres.$transaction([
         postgres.reservation.deleteMany(),
         postgres.reservationPlaceholder.deleteMany(),
+        postgres.planningRelayPeriod.deleteMany(),
         postgres.guestNightDeclaration.deleteMany(),
         postgres.urssafDeclaration.deleteMany(),
         postgres.facture.deleteMany(),
@@ -279,6 +282,21 @@ const main = async () => {
       };
       const { id: _, ...update } = data;
       await postgres.reservation.upsert({
+        where: { id },
+        create: data,
+        update,
+      });
+    }
+
+    for (const period of planningRelayPeriods) {
+      const { id, gite_ids, ...rest } = period;
+      const data = {
+        id,
+        gite_ids: parseJson(gite_ids, [] as string[]),
+        ...rest,
+      };
+      const { id: _, ...update } = data;
+      await postgres.planningRelayPeriod.upsert({
         where: { id },
         create: data,
         update,

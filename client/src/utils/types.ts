@@ -114,6 +114,33 @@ export type GitePhoto = {
   updatedAt?: string;
 };
 
+export type PlanningRelayPeriod = {
+  id: string;
+  label: string;
+  from: string;
+  to: string;
+  gite_ids: string[];
+  show_timeline: boolean;
+  show_comments: boolean;
+  show_phones: boolean;
+  is_active: boolean;
+  expires_at: string | null;
+  last_accessed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  public_path: string;
+};
+
+export type PublicPlanningRelayResponse = {
+  period: Pick<
+    PlanningRelayPeriod,
+    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "expires_at"
+  >;
+  gites: Gite[];
+  reservations: Reservation[];
+  generated_at: string;
+};
+
 export type IcalSource = {
   id: string;
   gite_id: string;

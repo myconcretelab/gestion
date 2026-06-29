@@ -19,6 +19,7 @@ import guestNightDeclarationsRouter from "./routes/guestNightDeclarations.js";
 import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
 import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
+import { planningRelayPeriodsRouter, publicPlanningRelayRouter } from "./routes/planningRelayPeriods.js";
 import { hasValidCronTriggerToken, parseBearerToken } from "./utils/cronTriggerAuth.js";
 import { isPublicApiPath } from "./utils/publicApiPath.js";
 import {
@@ -104,6 +105,7 @@ export const createApp = () => {
 
   app.use("/api/gites", gitesRouter);
   app.use("/api/public/gites", publicGitesRouter);
+  app.use("/api/public/planning-relay", publicPlanningRelayRouter);
   app.use("/api/managers", managersRouter);
   app.use("/api/contracts", contractsRouter);
   app.use("/api/invoices", invoicesRouter);
@@ -116,6 +118,7 @@ export const createApp = () => {
   app.use("/api/urssaf-declarations", urssafDeclarationsRouter);
   app.use("/api/school-holidays", schoolHolidaysRouter);
   app.use("/api/today", todayRouter);
+  app.use("/api/planning-relay-periods", planningRelayPeriodsRouter);
 
   const clientDistCandidates = [
     process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,

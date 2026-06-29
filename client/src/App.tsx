@@ -21,6 +21,7 @@ const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
+const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
 
 const MenuIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -644,6 +645,16 @@ const App = () => {
       ) : null}
     </span>
   );
+
+  if (location.pathname.startsWith("/relais/")) {
+    return (
+      <Suspense fallback={<main className="public-relay-state">Chargement du planning…</main>}>
+        <Routes>
+          <Route path="/relais/:token" element={<PublicPlanningRelayPage />} />
+        </Routes>
+      </Suspense>
+    );
+  }
 
   if (authLoading) {
     return (

@@ -344,6 +344,26 @@ model ReservationPlaceholder {
   @@map("reservation_placeholders")
 }
 
+model PlanningRelayPeriod {
+  id               String    @id @default(cuid())
+  label            String
+  date_debut       DateTime
+  date_fin         DateTime
+  gite_ids         Json      @default("[]")
+  show_timeline    Boolean   @default(false)
+  show_comments    Boolean   @default(false)
+  show_phones      Boolean   @default(false)
+  is_active        Boolean   @default(true)
+  share_nonce      String
+  expires_at       DateTime?
+  last_accessed_at DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([is_active, date_fin], map: "planning_relay_periods_active_date_fin_idx")
+  @@map("planning_relay_periods")
+}
+
 model Reservation {
   id                        String                   @id @default(cuid())
   gite_id                   String?
