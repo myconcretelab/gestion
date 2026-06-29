@@ -4441,6 +4441,58 @@ body {
   padding: 8px 14px;
 }
 
+.operations-presets .operations-presets__save {
+  margin-left: auto;
+}
+
+.operations-saved-periods {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.operations-saved-period {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.operations-saved-period.is-active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 2px var(--primary-strong);
+}
+
+.operations-saved-period button {
+  padding: 7px 5px 7px 12px;
+  border-radius: 0;
+  background: transparent;
+  color: #4b5563;
+  box-shadow: none;
+  font-size: 0.78rem;
+}
+
+.operations-saved-period.is-active button {
+  color: #9f1239;
+}
+
+.operations-saved-period .operations-saved-period__remove {
+  display: grid;
+  min-width: 30px;
+  padding: 7px 10px 7px 6px;
+  place-items: center;
+  color: #64748b;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.operations-saved-period .operations-saved-period__remove:hover {
+  color: #be123c;
+}
+
 .operations-controls__options {
   grid-column: 1 / -1;
   display: flex;

@@ -14,6 +14,29 @@ import {
 import type { Gite, Reservation } from "../utils/types";
 
 const MAX_DAYS = 31;
+const SAVED_PERIODS_STORAGE_KEY = "operations-print-saved-periods";
+
+type SavedPeriod = {
+  id: string;
+  from: string;
+  to: string;
+};
+
+const readSavedPeriods = (): SavedPeriod[] => {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(SAVED_PERIODS_STORAGE_KEY) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((period): period is SavedPeriod =>
+      typeof period === "object" && period !== null &&
+      typeof period.id === "string" &&
+      typeof period.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period.from) &&
+      typeof period.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period.to) &&
+      period.from <= period.to
+    );
+  } catch {
+    return [];
+  }
+};
 
 const todayIso = () => {
   const now = new Date();
@@ -56,6 +79,9 @@ const formatOperationDate = (value: string) =>
 const formatRange = (from: string, to: string) =>
   from === to ? formatLongDate(from) : `du ${formatLongDate(from)} au ${formatLongDate(to)}`;
 
+const formatSavedPeriod = (from: string, to: string) =>
+  `${formatShortDate(from)} → ${formatShortDate(to)}`;
+
 const formatGiteTime = (value?: string) => {
   if (!value) return "—";
   const [hours, minutes] = value.split(":");
@@ -85,6 +111,7 @@ const OperationsPrintPage = () => {
   const [gites, setGites] = useState<Gite[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedGiteIds, setSelectedGiteIds] = useState<Set<string>>(new Set());
+  const [savedPeriods, setSavedPeriods] = useState<SavedPeriod[]>(readSavedPeriods);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(true);
   const [showPhones, setShowPhones] = useState(false);
@@ -93,6 +120,14 @@ const OperationsPrintPage = () => {
 
   const dayCount = diffUtcDays(parseIsoDateUtc(to), parseIsoDateUtc(from)) + 1;
   const periodIsValid = dayCount >= 1 && dayCount <= MAX_DAYS;
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SAVED_PERIODS_STORAGE_KEY, JSON.stringify(savedPeriods));
+    } catch {
+      // The feature remains usable for the current session if storage is unavailable.
+    }
+  }, [savedPeriods]);
 
   useEffect(() => {
     if (!periodIsValid) return;
@@ -150,6 +185,23 @@ const OperationsPrintPage = () => {
     setTo(toIsoDateUtc(addUtcDays(parseIsoDateUtc(from), daysToShow - 1)));
   };
 
+  const savePeriod = () => {
+    if (!periodIsValid) return;
+    const id = `${from}_${to}`;
+    setSavedPeriods((current) => current.some((period) => period.id === id)
+      ? current
+      : [...current, { id, from, to }]);
+  };
+
+  const applySavedPeriod = (period: SavedPeriod) => {
+    setFrom(period.from);
+    setTo(period.to);
+  };
+
+  const removeSavedPeriod = (periodId: string) => {
+    setSavedPeriods((current) => current.filter((period) => period.id !== periodId));
+  };
+
   const toggleGite = (giteId: string) => {
     setSelectedGiteIds((current) => {
       const next = new Set(current);
@@ -186,7 +238,27 @@ const OperationsPrintPage = () => {
                 {count} j
               </button>
             ))}
+            <button type="button" className="secondary operations-presets__save" onClick={savePeriod} disabled={!periodIsValid}>
+              Enregistrer la période
+            </button>
           </div>
+          {savedPeriods.length > 0 ? (
+            <div className="operations-saved-periods" aria-label="Périodes enregistrées">
+              {savedPeriods.map((period) => {
+                const isActive = period.from === from && period.to === to;
+                return (
+                  <span key={period.id} className={`operations-saved-period${isActive ? " is-active" : ""}`}>
+                    <button type="button" onClick={() => applySavedPeriod(period)} aria-pressed={isActive}>
+                      {formatSavedPeriod(period.from, period.to)}
+                    </button>
+                    <button type="button" className="operations-saved-period__remove" onClick={() => removeSavedPeriod(period.id)} aria-label={`Supprimer la période ${formatSavedPeriod(period.from, period.to)}`}>
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
         {!periodIsValid ? <div className="operations-error">La période doit contenir entre 1 et 31 jours.</div> : null}
         <div className="operations-controls__options">
