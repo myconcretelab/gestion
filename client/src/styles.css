@@ -4430,39 +4430,92 @@ body {
 }
 
 .operations-period-field {
+  position: relative;
   min-width: 0;
 }
 
-.operations-period-picker {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+.operations-period-trigger {
+  display: flex;
   align-items: center;
-  overflow: hidden;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
   border: 1px solid var(--field-border);
   border-radius: 10px;
   background: var(--field-bg);
+  color: var(--ink);
+  box-shadow: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: left;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.operations-period-picker:focus-within {
+.operations-period-trigger:hover,
+.operations-period-trigger[aria-expanded="true"] {
+  border-color: var(--primary);
+}
+
+.operations-period-trigger:focus-visible {
+  outline: 0;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-.field .operations-period-picker input {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  outline: 0;
+.operations-period-trigger__icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  color: var(--primary);
 }
 
-.operations-period-picker__separator {
-  color: #94a3b8;
-  font-size: 0.9rem;
-  font-weight: 700;
+.operations-period-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 22px 55px rgba(15, 23, 42, 0.2);
+}
+
+.operations-range-calendar.rdp-root {
+  --rdp-accent-color: var(--primary);
+  --rdp-accent-background-color: var(--primary-soft);
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-height: 34px;
+  --rdp-day_button-width: 34px;
+  --rdp-months-gap: 18px;
+  margin: 0;
+  color: #1f2937;
+  font-size: 0.82rem;
+}
+
+.operations-range-calendar .rdp-day_button,
+.operations-range-calendar .rdp-button_next,
+.operations-range-calendar .rdp-button_previous {
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+
+.operations-range-calendar .rdp-month_caption {
+  font-size: 0.92rem;
+  text-transform: capitalize;
+}
+
+.operations-period-popover__hint {
+  margin: 10px 4px 0;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 600;
 }
 
 .operations-presets {
@@ -4997,6 +5050,18 @@ body {
   .operations-controls__dates,
   .operations-controls__options {
     grid-column: 1;
+  }
+
+  .operations-period-popover {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 64px);
+    max-height: 70vh;
+    overflow: auto;
+  }
+
+  .operations-range-calendar .rdp-months {
+    flex-direction: column;
   }
 
   .operations-sheet {
