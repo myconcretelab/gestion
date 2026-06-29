@@ -4794,6 +4794,48 @@ body {
   text-align: center !important;
 }
 
+.operations-stay-summaries,
+.operations-stay-information {
+  display: grid;
+  gap: 4px;
+}
+
+.operations-stay-summaries--rotation .operations-stay-summary + .operations-stay-summary,
+.operations-stay-information + .operations-stay-information {
+  padding-top: 4px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.operations-stay-summary > div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.operations-stay-summary > span,
+.operations-stay-information span {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+}
+
+.operations-stay-summary__role {
+  flex: 0 0 auto;
+  font-size: 0.5rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.operations-stay-summary__role--arrival { color: #15803d; }
+.operations-stay-summary__role--departure { color: #c2410c; }
+
+.operations-stay-information strong {
+  display: block;
+  margin-bottom: 1px;
+  font-size: 0.58rem;
+}
+
 .operations-badges {
   display: flex;
   gap: 3px;
@@ -5015,6 +5057,20 @@ body {
     font-size: 0.46rem;
   }
 
+  .operations-stay-summaries,
+  .operations-stay-information {
+    gap: 2px;
+  }
+
+  .operations-stay-summaries--rotation .operations-stay-summary + .operations-stay-summary,
+  .operations-stay-information + .operations-stay-information {
+    padding-top: 2px;
+  }
+
+  .operations-stay-summary__role {
+    font-size: 0.42rem;
+  }
+
   .operations-badge {
     padding: 1px 4px;
     font-size: 0.47rem;
@@ -5025,8 +5081,12 @@ body {
   }
 
   .operations-sheet__footer {
-    margin-top: 5px;
-    padding-top: 4px;
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    margin-top: 0;
+    padding-top: 2px;
     font-size: 0.48rem;
   }
 

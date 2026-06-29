@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { enumerateIsoDates, getOperationsForDate, reservationOverlapsPeriod } from "../src/utils/printableOperations";
+import {
+  buildPrintableOperationRows,
+  enumerateIsoDates,
+  getOperationsForDate,
+  reservationOverlapsPeriod,
+} from "../src/utils/printableOperations";
 import type { Reservation } from "../src/utils/types";
 
 const reservation = {
@@ -65,4 +70,28 @@ test("n'affiche pas de ménage à la sortie quand l'option n'est pas activée", 
 test("conserve un séjour qui chevauche la période", () => {
   assert.equal(reservationOverlapsPeriod(reservation, "2026-07-12", "2026-07-15"), true);
   assert.equal(reservationOverlapsPeriod(reservation, "2026-07-14", "2026-07-15"), false);
+});
+
+test("fusionne une sortie et une entrée le même jour dans le même gîte", () => {
+  const departingReservation = { ...reservation, gite_id: "gite-1" };
+  const arrivingReservation = {
+    ...reservation,
+    id: "reservation-2",
+    gite_id: "gite-1",
+    hote_nom: "Durand",
+    date_entree: "2026-07-13",
+    date_sortie: "2026-07-15",
+    options: {},
+  } as Reservation;
+
+  const rows = buildPrintableOperationRows(["2026-07-13"], [arrivingReservation, departingReservation]);
+
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].stays.map((stay) => stay.reservation.id), ["reservation-1", "reservation-2"]);
+  assert.deepEqual(rows[0].stays.flatMap((stay) => stay.operations.map((operation) => operation.kind)), [
+    "departure",
+    "cleaning",
+    "late-checkout",
+    "arrival",
+  ]);
 });
