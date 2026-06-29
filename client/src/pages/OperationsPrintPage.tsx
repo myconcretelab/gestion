@@ -51,6 +51,14 @@ const formatShortDate = (value: string) =>
     timeZone: "UTC",
   });
 
+const formatOperationDate = (value: string) =>
+  parseIsoDateUtc(value).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
+
 const formatRange = (from: string, to: string) =>
   from === to ? formatLongDate(from) : `du ${formatLongDate(from)} au ${formatLongDate(to)}`;
 
@@ -279,20 +287,29 @@ const OperationsPrintPage = () => {
             ) : (
               <table className="operations-table">
                 <thead>
-                  <tr><th>Date</th><th>Gîte</th><th>Séjour</th><th>Interventions</th>{showComments || showPhones ? <th>Informations</th> : null}</tr>
+                  <tr><th>Date</th><th className="operations-table__cleaning-heading">Ménage</th><th>Gîte</th><th>Séjour</th><th>Interventions</th>{showComments || showPhones ? <th>Informations</th> : null}</tr>
                 </thead>
                 <tbody>
                   {operationsByDate.map(({ date, reservation, operations }) => {
                     const hasArrival = operations.some((operation) => operation.kind === "arrival");
                     const hasDeparture = operations.some((operation) => operation.kind === "departure");
+                    const hasCleaning = operations.some((operation) => operation.kind === "cleaning");
                     return (
                       <tr key={`${date}-${reservation.id}`} className={`operations-table__row--${getOperationTone(operations)}`}>
-                        <td><strong>{formatDayHeader(date).weekday} {formatDayHeader(date).day}</strong><span>{parseIsoDateUtc(date).toLocaleDateString("fr-FR", { month: "long", timeZone: "UTC" })}</span></td>
+                        <td>
+                          <div className="operations-table__date">
+                            <strong>{formatOperationDate(date)}</strong>
+                            <span>Entre 13h et 17h</span>
+                          </div>
+                        </td>
+                        <td className="operations-table__cleaning">
+                          {hasCleaning ? <span className="operations-badge operations-badge--cleaning">Ménage</span> : null}
+                        </td>
                         <td><strong>{reservation.gite?.nom ?? "Gîte"}</strong></td>
                         <td><strong>{reservation.hote_nom}</strong><span>{formatShortDate(reservation.date_entree)} → {formatShortDate(reservation.date_sortie)} · {reservation.nb_nuits} nuit{reservation.nb_nuits > 1 ? "s" : ""}</span></td>
                         <td>
                           <div className="operations-badges">
-                            {operations.map((operation) => <span key={operation.kind} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>)}
+                            {operations.filter((operation) => operation.kind !== "cleaning").map((operation) => <span key={operation.kind} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>)}
                           </div>
                           <span className="operations-hours">{hasArrival ? `Arrivée ${getArrivalTime(reservation)}` : ""}{hasArrival && hasDeparture ? " · " : ""}{hasDeparture ? `Départ ${getDepartureTime(reservation)}` : ""}</span>
                         </td>
@@ -314,4 +331,3 @@ const OperationsPrintPage = () => {
 };
 
 export default OperationsPrintPage;
-

@@ -4738,10 +4738,11 @@ body {
   letter-spacing: 0.05em;
 }
 
-.operations-table th:nth-child(1) { width: 9%; }
-.operations-table th:nth-child(2) { width: 12%; }
-.operations-table th:nth-child(3) { width: 22%; }
-.operations-table th:nth-child(4) { width: 32%; }
+.operations-table th:nth-child(1) { width: 19%; }
+.operations-table th:nth-child(2) { width: 8%; }
+.operations-table th:nth-child(3) { width: 11%; }
+.operations-table th:nth-child(4) { width: 20%; }
+.operations-table th:nth-child(5) { width: 24%; }
 
 .operations-table td {
   padding: 7px;
@@ -4766,6 +4767,31 @@ body {
 .operations-table td > span {
   margin-top: 2px;
   color: #64748b;
+}
+
+.operations-table__date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.operations-table__date strong {
+  text-transform: capitalize;
+}
+
+.operations-table__date span {
+  padding-left: 6px;
+  border-left: 1px solid #cbd5e1;
+  color: #64748b;
+  font-size: 0.58rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.operations-table__cleaning,
+.operations-table__cleaning-heading {
+  text-align: center !important;
 }
 
 .operations-badges {
@@ -4978,6 +5004,15 @@ body {
   .operations-table td {
     padding: 3px 5px;
     line-height: 1.15;
+  }
+
+  .operations-table__date {
+    gap: 3px;
+  }
+
+  .operations-table__date span {
+    padding-left: 3px;
+    font-size: 0.46rem;
   }
 
   .operations-badge {
