@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { DayPicker, type DateRange } from "@daypicker/react";
+import { fr } from "@daypicker/react/locale";
+import "@daypicker/react/style.css";
 import { apiFetch, isAbortError } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -41,6 +44,18 @@ const readSavedPeriods = (): SavedPeriod[] => {
 const todayIso = () => {
   const now = new Date();
   return toIsoDateUtc(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())));
+};
+
+const isoToPickerDate = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const pickerDateToIso = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const formatDayHeader = (value: string) => {
@@ -108,6 +123,8 @@ const OperationsPrintPage = () => {
   const initialFrom = todayIso();
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(toIsoDateUtc(addUtcDays(parseIsoDateUtc(initialFrom), 13)));
+  const [periodPickerIsOpen, setPeriodPickerIsOpen] = useState(false);
+  const [draftPeriod, setDraftPeriod] = useState<DateRange>();
   const [gites, setGites] = useState<Gite[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedGiteIds, setSelectedGiteIds] = useState<Set<string>>(new Set());
@@ -117,6 +134,7 @@ const OperationsPrintPage = () => {
   const [showPhones, setShowPhones] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const periodPickerRef = useRef<HTMLDivElement>(null);
 
   const dayCount = diffUtcDays(parseIsoDateUtc(to), parseIsoDateUtc(from)) + 1;
   const periodIsValid = dayCount >= 1 && dayCount <= MAX_DAYS;
@@ -128,6 +146,24 @@ const OperationsPrintPage = () => {
       // The feature remains usable for the current session if storage is unavailable.
     }
   }, [savedPeriods]);
+
+  useEffect(() => {
+    if (!periodPickerIsOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!periodPickerRef.current?.contains(event.target as Node)) setPeriodPickerIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPeriodPickerIsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [periodPickerIsOpen]);
 
   useEffect(() => {
     if (!periodIsValid) return;
@@ -185,6 +221,22 @@ const OperationsPrintPage = () => {
     setTo(toIsoDateUtc(addUtcDays(parseIsoDateUtc(from), daysToShow - 1)));
   };
 
+  const togglePeriodPicker = () => {
+    if (!periodPickerIsOpen) {
+      setDraftPeriod({ from: isoToPickerDate(from), to: isoToPickerDate(to) });
+    }
+    setPeriodPickerIsOpen((current) => !current);
+  };
+
+  const selectPeriod = (period: DateRange | undefined) => {
+    setDraftPeriod(period);
+    if (!period?.from || !period.to) return;
+
+    setFrom(pickerDateToIso(period.from));
+    setTo(pickerDateToIso(period.to));
+    setPeriodPickerIsOpen(false);
+  };
+
   const savePeriod = () => {
     if (!periodIsValid) return;
     const id = `${from}_${to}`;
@@ -224,14 +276,41 @@ const OperationsPrintPage = () => {
           <p>Choisissez jusqu’à 31 jours. La feuille regroupe l’occupation et toutes les interventions à prévoir.</p>
         </div>
         <div className="operations-controls__dates">
-          <label className="field operations-period-field">
-            Période
-            <span className="operations-period-picker">
-              <input type="date" aria-label="Début de la période" value={from} onChange={(event) => setFrom(event.target.value)} />
-              <span className="operations-period-picker__separator" aria-hidden="true">→</span>
-              <input type="date" aria-label="Fin de la période" value={to} onChange={(event) => setTo(event.target.value)} />
-            </span>
-          </label>
+          <div className="field operations-period-field" ref={periodPickerRef}>
+            <span>Période</span>
+            <button
+              type="button"
+              className="operations-period-trigger"
+              aria-expanded={periodPickerIsOpen}
+              aria-haspopup="dialog"
+              onClick={togglePeriodPicker}
+            >
+              <span>{formatSavedPeriod(from, to)}</span>
+              <svg className="operations-period-trigger__icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
+              </svg>
+            </button>
+            {periodPickerIsOpen ? (
+              <div className="operations-period-popover" role="dialog" aria-label="Sélectionner une période">
+                <DayPicker
+                  className="operations-range-calendar"
+                  mode="range"
+                  locale={fr}
+                  numberOfMonths={2}
+                  defaultMonth={draftPeriod?.from}
+                  selected={draftPeriod}
+                  onSelect={selectPeriod}
+                  max={MAX_DAYS - 1}
+                  resetOnSelect
+                />
+                <p className="operations-period-popover__hint">
+                  {draftPeriod?.from && !draftPeriod.to
+                    ? "Choisissez maintenant la date de fin."
+                    : "Choisissez la date de début, puis la date de fin."}
+                </p>
+              </div>
+            ) : null}
+          </div>
           <div className="operations-presets" aria-label="Durées rapides">
             {[7, 14, 21, 31].map((count) => (
               <button key={count} type="button" className={dayCount === count ? "" : "secondary"} onClick={() => setPreset(count)}>
