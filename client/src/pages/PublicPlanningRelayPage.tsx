@@ -112,6 +112,7 @@ const PublicPlanningRelayPage = () => {
     () => getAlreadyHandledArrivalRowKeys(operationsByDate),
     [operationsByDate],
   );
+  const interventionCount = operationsByDate.length - alreadyHandledArrivalRows.size;
   const timelineColumns = { "--operations-day-count": Math.max(1, days.length) } as CSSProperties;
 
   if (loading) return <main className="public-relay-state">Chargement du planning…</main>;
@@ -147,8 +148,8 @@ const PublicPlanningRelayPage = () => {
             <p>{formatRange(period.from, period.to)}</p>
           </div>
           <div className="operations-sheet__summary">
-            <strong>{operationsByDate.length}</strong>
-            <span>passage{operationsByDate.length > 1 ? "s" : ""} à prévoir</span>
+            <strong>{interventionCount}</strong>
+            <span>passage{interventionCount > 1 ? "s" : ""} à prévoir</span>
           </div>
         </header>
 

@@ -267,6 +267,7 @@ const OperationsPrintPage = () => {
     () => getAlreadyHandledArrivalRowKeys(operationsByDate),
     [operationsByDate],
   );
+  const interventionCount = operationsByDate.length - alreadyHandledArrivalRows.size;
 
   const setPreset = (daysToShow: number) => {
     setTo(toIsoDateUtc(addUtcDays(parseIsoDateUtc(from), daysToShow - 1)));
@@ -516,8 +517,8 @@ const OperationsPrintPage = () => {
               <p>{formatRange(from, to)}</p>
             </div>
             <div className="operations-sheet__summary">
-              <strong>{operationsByDate.length}</strong>
-              <span>passage{operationsByDate.length > 1 ? "s" : ""} à prévoir</span>
+              <strong>{interventionCount}</strong>
+              <span>passage{interventionCount > 1 ? "s" : ""} à prévoir</span>
             </div>
           </header>
 
