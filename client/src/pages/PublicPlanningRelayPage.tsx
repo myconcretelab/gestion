@@ -103,8 +103,8 @@ const PublicPlanningRelayPage = () => {
     () => data ? buildPrintableOperationRows(days, data.reservations) : [],
     [data, days],
   );
-  const hasCleaningInPeriod = useMemo(
-    () => operationsByDate.some((row) => row.stays.some((stay) => stay.operations.some((operation) => operation.kind === "cleaning"))),
+  const hasOptionsInPeriod = useMemo(
+    () => operationsByDate.some((row) => row.stays.some((stay) => stay.operations.some((operation) => !["arrival", "departure"].includes(operation.kind)))),
     [operationsByDate],
   );
   const timelineColumns = { "--operations-day-count": Math.max(1, days.length) } as CSSProperties;
@@ -195,12 +195,12 @@ const PublicPlanningRelayPage = () => {
         <section className="operations-table-section">
           <h3>Interventions à prévoir</h3>
           {operationsByDate.length === 0 ? <div className="operations-empty">Aucune entrée ni sortie sur cette période.</div> : (
-            <table className={`operations-table${hasCleaningInPeriod ? "" : " operations-table--without-cleaning"}`}>
+            <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}`}>
               <thead><tr>
                 <th className="operations-table__date-heading">Date</th>
-                <th className="operations-table__type-heading">Type</th>
-                {hasCleaningInPeriod ? <th className="operations-table__cleaning-heading">Ménage</th> : null}
                 <th className="operations-table__gite-heading">Gîte</th>
+                <th className="operations-table__type-heading">Type</th>
+                {hasOptionsInPeriod ? <th className="operations-table__options-heading">Options</th> : null}
                 <th className="operations-table__stay-heading">Séjour</th>
                 {period.show_comments || period.show_phones ? <th className="operations-table__information-heading">Informations</th> : null}
               </tr></thead>
@@ -209,15 +209,14 @@ const PublicPlanningRelayPage = () => {
                   const operations = stays.flatMap((stay) => stay.operations);
                   const hasArrival = operations.some((operation) => operation.kind === "arrival");
                   const hasDeparture = operations.some((operation) => operation.kind === "departure");
-                  const hasCleaning = operations.some((operation) => operation.kind === "cleaning");
                   const isRotation = hasArrival && hasDeparture;
                   const firstReservation = stays[0].reservation;
                   return (
                     <tr key={`${date}-${giteId}`} className={`operations-table__row--${getOperationTone(operations)}`}>
                       <td><div className="operations-table__date"><strong>{formatOperationDate(date)}</strong><span>{getOperationSchedule(firstReservation, hasArrival, hasDeparture)}</span></div></td>
-                      <td className="operations-table__type"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => operation.kind !== "cleaning").map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td>
-                      {hasCleaningInPeriod ? <td className="operations-table__cleaning">{hasCleaning ? <span className="operations-badge operations-badge--cleaning">Ménage</span> : null}</td> : null}
                       <td><strong>{firstReservation.gite?.nom ?? "Gîte"}</strong></td>
+                      <td className="operations-table__type"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => ["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td>
+                      {hasOptionsInPeriod ? <td className="operations-table__options"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => !["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td> : null}
                       <td className="operations-table__stay-cell">
                         <div className={`operations-stay-summaries${isRotation ? " operations-stay-summaries--rotation" : ""}`}>
                           {stays.map((stay) => {

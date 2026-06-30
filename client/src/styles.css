@@ -4994,17 +4994,17 @@ body {
 }
 
 .operations-table__date-heading { width: 16%; }
+.operations-table__gite-heading { width: 15%; }
 .operations-table__type-heading { width: 9%; }
-.operations-table__cleaning-heading { width: 7%; }
-.operations-table__gite-heading { width: 10%; }
-.operations-table__stay-heading { width: 27%; }
-.operations-table__information-heading { width: 31%; }
+.operations-table__options-heading { width: 12%; }
+.operations-table__stay-heading { width: 22%; }
+.operations-table__information-heading { width: 26%; }
 
-.operations-table--without-cleaning .operations-table__date-heading { width: 18%; }
-.operations-table--without-cleaning .operations-table__type-heading { width: 10%; }
-.operations-table--without-cleaning .operations-table__gite-heading { width: 11%; }
-.operations-table--without-cleaning .operations-table__stay-heading { width: 28%; }
-.operations-table--without-cleaning .operations-table__information-heading { width: 33%; }
+.operations-table--without-options .operations-table__date-heading { width: 18%; }
+.operations-table--without-options .operations-table__gite-heading { width: 17%; }
+.operations-table--without-options .operations-table__type-heading { width: 10%; }
+.operations-table--without-options .operations-table__stay-heading { width: 24%; }
+.operations-table--without-options .operations-table__information-heading { width: 31%; }
 
 .operations-table__stay-heading,
 .operations-table__information-heading,
@@ -5057,10 +5057,8 @@ body {
   white-space: nowrap;
 }
 
-.operations-table__cleaning,
-.operations-table__cleaning-heading {
-  text-align: center !important;
-}
+.operations-table__options,
+.operations-table__options-heading { text-align: left; }
 
 .operations-stay-summaries,
 .operations-stay-information {
