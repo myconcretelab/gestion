@@ -11,6 +11,13 @@ import {
   verifyServerPassword,
   getServerAuthSessionIdFromRequest,
 } from "../services/serverAuth.js";
+import {
+  checkRequestThrottle,
+  clearRequestThrottleFailures,
+  LOGIN_THROTTLE_CONFIG,
+  recordRequestThrottleFailure,
+  sendThrottleResponse,
+} from "../services/requestThrottle.js";
 
 const router = Router();
 
@@ -37,11 +44,18 @@ router.post("/login", async (req, res, next) => {
       return res.status(503).json({ error: "Authentification serveur non configurée." });
     }
 
+    const throttleState = await checkRequestThrottle(req, res, LOGIN_THROTTLE_CONFIG);
+    if (throttleState.blocked) return sendThrottleResponse(res, throttleState);
+
     const isValid = await verifyServerPassword(payload.password);
     if (!isValid) {
       clearServerAuthCookie(req, res);
+      const failureState = await recordRequestThrottleFailure(req, res, LOGIN_THROTTLE_CONFIG);
+      if (failureState.blocked) return sendThrottleResponse(res, failureState);
       return res.status(401).json({ error: "Mot de passe invalide.", code: "AUTH_REQUIRED" });
     }
+
+    await clearRequestThrottleFailures(req, res, LOGIN_THROTTLE_CONFIG);
 
     const previousSessionId = getServerAuthSessionIdFromRequest(req);
     if (previousSessionId) {

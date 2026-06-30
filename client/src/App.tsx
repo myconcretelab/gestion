@@ -646,10 +646,11 @@ const App = () => {
     </span>
   );
 
-  if (location.pathname.startsWith("/relais/")) {
+  if (location.pathname.startsWith("/r/") || location.pathname.startsWith("/relais/")) {
     return (
       <Suspense fallback={<main className="public-relay-state">Chargement du planning…</main>}>
         <Routes>
+          <Route path="/r/:token" element={<PublicPlanningRelayPage />} />
           <Route path="/relais/:token" element={<PublicPlanningRelayPage />} />
         </Routes>
       </Suspense>

@@ -32,6 +32,8 @@ import {
 export const createApp = () => {
   const app = express();
 
+  if (env.TRUST_PROXY) app.set("trust proxy", 1);
+
   app.use(express.json({ limit: "20mb" }));
   app.use(
     cors({

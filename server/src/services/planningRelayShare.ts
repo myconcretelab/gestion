@@ -27,7 +27,31 @@ const getSecret = () => {
 const sign = (id: string, nonce: string) =>
   crypto.createHmac("sha256", getSecret()).update(`${id}:${nonce}`).digest("base64url");
 
+const SHORT_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const SHORT_CODE_LENGTH = 8;
+
+const encodeShortCode = (input: Buffer) => {
+  const base = BigInt(SHORT_CODE_ALPHABET.length);
+  const modulo = base ** BigInt(SHORT_CODE_LENGTH);
+  let value = input.readBigUInt64BE(0) % modulo;
+  let output = "";
+  for (let index = 0; index < SHORT_CODE_LENGTH; index += 1) {
+    output = SHORT_CODE_ALPHABET[Number(value % base)] + output;
+    value /= base;
+  }
+  return output;
+};
+
 export const generatePlanningRelayNonce = () => crypto.randomBytes(18).toString("base64url");
+
+export const buildPlanningRelayShortCode = (nonce: string) =>
+  encodeShortCode(crypto.createHmac("sha256", getSecret()).update(`short:${nonce}`).digest());
+
+export const hashPlanningRelayShortCode = (code: string) =>
+  crypto.createHmac("sha256", getSecret()).update(`lookup:${code}`).digest("hex");
+
+export const isPlanningRelayShortCode = (value: string) =>
+  value.length === SHORT_CODE_LENGTH && [...value].every((character) => SHORT_CODE_ALPHABET.includes(character));
 
 export const buildPlanningRelayToken = (id: string, nonce: string) => `${id}.${sign(id, nonce)}`;
 

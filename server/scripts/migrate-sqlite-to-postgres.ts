@@ -173,6 +173,7 @@ const main = async () => {
     if (wipe) {
       console.log("Suppression des donnees cibles...");
       await postgres.$transaction([
+        postgres.securityThrottle.deleteMany(),
         postgres.reservation.deleteMany(),
         postgres.reservationPlaceholder.deleteMany(),
         postgres.planningRelayPeriod.deleteMany(),

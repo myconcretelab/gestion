@@ -355,6 +355,7 @@ model PlanningRelayPeriod {
   show_phones      Boolean   @default(false)
   is_active        Boolean   @default(true)
   share_nonce      String
+  public_code_hash String?   @unique
   expires_at       DateTime?
   last_accessed_at DateTime?
   createdAt        DateTime  @default(now())
@@ -362,6 +363,18 @@ model PlanningRelayPeriod {
 
   @@index([is_active, date_fin], map: "planning_relay_periods_active_date_fin_idx")
   @@map("planning_relay_periods")
+}
+
+model SecurityThrottle {
+  key               String    @id
+  scope             String
+  failure_count     Int       @default(0)
+  window_started_at DateTime
+  blocked_until     DateTime?
+  updatedAt         DateTime  @updatedAt
+
+  @@index([scope, updatedAt], map: "security_throttles_scope_updated_at_idx")
+  @@map("security_throttles")
 }
 
 model Reservation {
