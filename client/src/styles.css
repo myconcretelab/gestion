@@ -8616,6 +8616,17 @@ button.warning {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
 }
 
+.reservations-tab__badge--attention {
+  gap: 0.2rem;
+  min-width: 1.45rem;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.reservations-tab__badge--attention > span {
+  font-size: 0.68rem;
+}
+
 .reservations-tab--active:hover {
   border-color: #fb7185;
 }

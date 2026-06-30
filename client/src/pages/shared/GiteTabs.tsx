@@ -5,6 +5,8 @@ export type GiteTabItem = {
   label: string;
   badge?: number | null;
   badgeLabel?: string | null;
+  attentionBadge?: number | null;
+  attentionBadgeLabel?: string | null;
   title?: string;
   variant?: "default" | "all";
   draggable?: boolean;
@@ -42,6 +44,8 @@ const GiteTabs = ({ activeId, items, onChange, sticky = false, ariaLabel = "Navi
       const isActive = activeId === item.id;
       const badgeCount = Number(item.badge ?? 0);
       const shouldShowBadge = Number.isFinite(badgeCount) && badgeCount > 0;
+      const attentionBadgeCount = Number(item.attentionBadge ?? 0);
+      const shouldShowAttentionBadge = Number.isFinite(attentionBadgeCount) && attentionBadgeCount > 0;
 
       return (
         <button
@@ -66,6 +70,16 @@ const GiteTabs = ({ activeId, items, onChange, sticky = false, ariaLabel = "Navi
           title={item.title}
         >
           <span className="reservations-tab__label">{item.label}</span>
+          {shouldShowAttentionBadge ? (
+            <span
+              className="reservations-tab__badge reservations-tab__badge--attention"
+              aria-label={item.attentionBadgeLabel ?? undefined}
+              title={item.attentionBadgeLabel ?? undefined}
+            >
+              <span aria-hidden="true">!</span>
+              {attentionBadgeCount}
+            </span>
+          ) : null}
           {shouldShowBadge ? (
             <span className="reservations-tab__badge" aria-label={item.badgeLabel ?? undefined} title={item.badgeLabel ?? undefined}>
               {badgeCount}
