@@ -9,6 +9,7 @@ import {
   buildPrintableOperationRows,
   diffUtcDays,
   enumerateIsoDates,
+  getAlreadyHandledArrivalRowKeys,
   parseIsoDateUtc,
   reservationOverlapsPeriod,
   toIsoDateUtc,
@@ -261,6 +262,10 @@ const OperationsPrintPage = () => {
   const hasOptionsInPeriod = useMemo(
     () => operationsByDate.some((row) => row.stays.some((stay) => stay.operations.some((operation) => !["arrival", "departure"].includes(operation.kind)))),
     [operationsByDate]
+  );
+  const alreadyHandledArrivalRows = useMemo(
+    () => getAlreadyHandledArrivalRowKeys(operationsByDate),
+    [operationsByDate],
   );
 
   const setPreset = (daysToShow: number) => {
@@ -595,8 +600,13 @@ const OperationsPrintPage = () => {
                     const hasDeparture = operations.some((operation) => operation.kind === "departure");
                     const isRotation = hasArrival && hasDeparture;
                     const firstReservation = stays[0].reservation;
+                    const isAlreadyHandledArrival = alreadyHandledArrivalRows.has(`${date}-${giteId}`);
                     return (
-                      <tr key={`${date}-${giteId}`} className={`operations-table__row--${getOperationTone(operations)}`}>
+                      <tr
+                        key={`${date}-${giteId}`}
+                        className={`operations-table__row--${getOperationTone(operations)}${isAlreadyHandledArrival ? " operations-table__row--already-handled" : ""}`}
+                        title={isAlreadyHandledArrival ? "Intervention déjà réalisée lors de la sortie précédente" : undefined}
+                      >
                         <td>
                           <div className="operations-table__date">
                             <strong>{formatOperationDate(date)}</strong>

@@ -6,6 +6,7 @@ import {
   buildPrintableOperationRows,
   diffUtcDays,
   enumerateIsoDates,
+  getAlreadyHandledArrivalRowKeys,
   parseIsoDateUtc,
   type StayOperation,
 } from "../utils/printableOperations";
@@ -105,6 +106,10 @@ const PublicPlanningRelayPage = () => {
   );
   const hasOptionsInPeriod = useMemo(
     () => operationsByDate.some((row) => row.stays.some((stay) => stay.operations.some((operation) => !["arrival", "departure"].includes(operation.kind)))),
+    [operationsByDate],
+  );
+  const alreadyHandledArrivalRows = useMemo(
+    () => getAlreadyHandledArrivalRowKeys(operationsByDate),
     [operationsByDate],
   );
   const timelineColumns = { "--operations-day-count": Math.max(1, days.length) } as CSSProperties;
@@ -211,8 +216,13 @@ const PublicPlanningRelayPage = () => {
                   const hasDeparture = operations.some((operation) => operation.kind === "departure");
                   const isRotation = hasArrival && hasDeparture;
                   const firstReservation = stays[0].reservation;
+                  const isAlreadyHandledArrival = alreadyHandledArrivalRows.has(`${date}-${giteId}`);
                   return (
-                    <tr key={`${date}-${giteId}`} className={`operations-table__row--${getOperationTone(operations)}`}>
+                    <tr
+                      key={`${date}-${giteId}`}
+                      className={`operations-table__row--${getOperationTone(operations)}${isAlreadyHandledArrival ? " operations-table__row--already-handled" : ""}`}
+                      title={isAlreadyHandledArrival ? "Intervention déjà réalisée lors de la sortie précédente" : undefined}
+                    >
                       <td><div className="operations-table__date"><strong>{formatOperationDate(date)}</strong><span>{getOperationSchedule(firstReservation, hasArrival, hasDeparture)}</span></div></td>
                       <td><strong>{firstReservation.gite?.nom ?? "Gîte"}</strong></td>
                       <td className="operations-table__type"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => ["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td>
