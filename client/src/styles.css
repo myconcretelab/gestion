@@ -4433,6 +4433,79 @@ body {
   font-size: 0.72rem;
 }
 
+.public-relay-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.public-relay-past-days-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.public-relay-past-days-toggle > span:first-child {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.public-relay-switch {
+  position: relative;
+  display: inline-flex;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.public-relay-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.public-relay-switch > span {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #e2e8f0;
+  transition: background 0.2s ease;
+}
+
+.public-relay-switch > span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
+  transition: transform 0.2s ease;
+}
+
+.public-relay-switch input:checked + span {
+  background: var(--primary);
+}
+
+.public-relay-switch input:checked + span::after {
+  transform: translateX(16px);
+}
+
+.public-relay-switch input:focus-visible + span {
+  outline: 3px solid var(--primary-soft);
+  outline-offset: 2px;
+}
+
 .public-relay-state {
   display: grid;
   min-height: 100vh;
@@ -5206,7 +5279,13 @@ body {
   }
 
   .public-relay-toolbar button {
+    width: 100%;
+  }
+
+  .public-relay-toolbar__actions {
     grid-column: 1 / -1;
+    justify-content: space-between;
+    flex-wrap: wrap;
   }
 
   .operations-timeline,

@@ -48,6 +48,14 @@ const formatOperationDate = (value: string) =>
 const formatRange = (from: string, to: string) =>
   from === to ? formatLongDate(from) : `du ${formatLongDate(from)} au ${formatLongDate(to)}`;
 
+const getLocalIsoDate = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const formatGiteTime = (value?: string) => {
   if (!value) return "—";
   const [hours, minutes] = value.split(":");
@@ -74,6 +82,7 @@ const PublicPlanningRelayPage = () => {
   const [data, setData] = useState<PublicPlanningRelayResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hidePastDays, setHidePastDays] = useState(true);
 
   const load = useCallback(async (silent = false) => {
     if (!token) return;
@@ -111,9 +120,17 @@ const PublicPlanningRelayPage = () => {
     };
   }, []);
 
-  const days = useMemo(
+  const allDays = useMemo(
     () => data ? enumerateIsoDates(data.period.from, data.period.to) : [],
     [data],
+  );
+  const days = useMemo(
+    () => hidePastDays ? allDays.filter((day) => day >= getLocalIsoDate()) : allDays,
+    [allDays, hidePastDays],
+  );
+  const allOperationsByDate = useMemo(
+    () => data ? buildPrintableOperationRows(allDays, data.reservations) : [],
+    [allDays, data],
   );
   const operationsByDate = useMemo(
     () => data ? buildPrintableOperationRows(days, data.reservations) : [],
@@ -124,10 +141,10 @@ const PublicPlanningRelayPage = () => {
     [operationsByDate],
   );
   const alreadyHandledArrivalRows = useMemo(
-    () => getAlreadyHandledArrivalRowKeys(operationsByDate),
-    [operationsByDate],
+    () => getAlreadyHandledArrivalRowKeys(allOperationsByDate),
+    [allOperationsByDate],
   );
-  const interventionCount = operationsByDate.length - alreadyHandledArrivalRows.size;
+  const interventionCount = operationsByDate.filter((row) => !alreadyHandledArrivalRows.has(`${row.date}-${row.giteId}`)).length;
   const timelineColumns = { "--operations-day-count": Math.max(1, days.length) } as CSSProperties;
 
   if (loading) return <main className="public-relay-state">Chargement du planning…</main>;
@@ -152,7 +169,20 @@ const PublicPlanningRelayPage = () => {
           <h1>{period.label}</h1>
           <p>Mis à jour le {new Date(data.generated_at).toLocaleString("fr-FR")}</p>
         </div>
-        <button type="button" onClick={() => window.print()}>Imprimer</button>
+        <div className="public-relay-toolbar__actions">
+          <label className="public-relay-past-days-toggle">
+            <span>Masquer les jours passés</span>
+            <span className="public-relay-switch">
+              <input
+                type="checkbox"
+                checked={hidePastDays}
+                onChange={(event) => setHidePastDays(event.target.checked)}
+              />
+              <span aria-hidden="true" />
+            </span>
+          </label>
+          <button type="button" onClick={() => window.print()}>Imprimer</button>
+        </div>
       </header>
 
       <article className="operations-sheet">
@@ -168,7 +198,7 @@ const PublicPlanningRelayPage = () => {
           </div>
         </header>
 
-        {period.show_timeline ? (
+        {period.show_timeline && days.length > 0 ? (
           <>
             <section className="operations-timeline" aria-label="Occupation graphique" style={timelineColumns}>
               <div className="operations-timeline__header">
@@ -191,8 +221,9 @@ const PublicPlanningRelayPage = () => {
                     })}
                     <div className="operations-timeline__stays">
                       {giteReservations.map((reservation) => {
-                        const start = Math.max(0, diffUtcDays(parseIsoDateUtc(reservation.date_entree), parseIsoDateUtc(period.from)));
-                        const end = Math.min(days.length, diffUtcDays(parseIsoDateUtc(reservation.date_sortie), parseIsoDateUtc(period.from)));
+                        const visiblePeriodStart = days[0];
+                        const start = Math.max(0, diffUtcDays(parseIsoDateUtc(reservation.date_entree), parseIsoDateUtc(visiblePeriodStart)));
+                        const end = Math.min(days.length, diffUtcDays(parseIsoDateUtc(reservation.date_sortie), parseIsoDateUtc(visiblePeriodStart)));
                         if (end <= 0 || start >= days.length || end <= start) return null;
                         return (
                           <div key={reservation.id} className="operations-timeline__stay" style={{ gridColumn: `${start + 1} / ${end + 1}`, "--gite-color": getGiteColor(gite, giteIndex) } as CSSProperties}>
@@ -215,7 +246,7 @@ const PublicPlanningRelayPage = () => {
 
         <section className="operations-table-section">
           <h3>Interventions à prévoir</h3>
-          {operationsByDate.length === 0 ? <div className="operations-empty">Aucune entrée ni sortie sur cette période.</div> : (
+          {operationsByDate.length === 0 ? <div className="operations-empty">{hidePastDays ? "Aucune intervention à venir sur cette période." : "Aucune entrée ni sortie sur cette période."}</div> : (
             <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}`}>
               <thead><tr>
                 <th className="operations-table__date-heading">Date</th>
