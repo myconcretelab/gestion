@@ -4678,6 +4678,16 @@ body {
   opacity: 0.35;
 }
 
+.operations-saved-period__share-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
 .operations-saved-period .operations-saved-period__remove:hover {
   color: #be123c;
 }
