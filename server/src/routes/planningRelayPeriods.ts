@@ -4,11 +4,20 @@ import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 import {
-  buildPlanningRelayToken,
+  buildPlanningRelayShortCode,
   generatePlanningRelayNonce,
+  hashPlanningRelayShortCode,
+  isPlanningRelayShortCode,
   parsePlanningRelayToken,
   verifyPlanningRelayToken,
 } from "../services/planningRelayShare.js";
+import {
+  checkRequestThrottle,
+  clearRequestThrottleFailures,
+  PLANNING_RELAY_THROTTLE_CONFIG,
+  recordRequestThrottleFailure,
+  sendThrottleResponse,
+} from "../services/requestThrottle.js";
 
 const MAX_DAYS = 31;
 const privateRouter = Router();
@@ -80,8 +89,35 @@ const assertGitesExist = async (giteIds: string[]) => {
   if (count !== new Set(giteIds).size) throw new Error("Un ou plusieurs gîtes sont introuvables.");
 };
 
+const createShareIdentity = async (excludeId?: string) => {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const nonce = generatePlanningRelayNonce();
+    const code = buildPlanningRelayShortCode(nonce);
+    const publicCodeHash = hashPlanningRelayShortCode(code);
+    const collision = await prisma.planningRelayPeriod.findUnique({ where: { public_code_hash: publicCodeHash } });
+    if (!collision || collision.id === excludeId) return { nonce, publicCodeHash };
+  }
+  throw new Error("Impossible de générer un lien public unique.");
+};
+
+const ensureShortCode = async (period: any) => {
+  if (period.public_code_hash) return period;
+  let nonce = period.share_nonce;
+  let publicCodeHash = hashPlanningRelayShortCode(buildPlanningRelayShortCode(nonce));
+  const collision = await prisma.planningRelayPeriod.findUnique({ where: { public_code_hash: publicCodeHash } });
+  if (collision && collision.id !== period.id) {
+    const identity = await createShareIdentity(period.id);
+    nonce = identity.nonce;
+    publicCodeHash = identity.publicCodeHash;
+  }
+  return prisma.planningRelayPeriod.update({
+    where: { id: period.id },
+    data: { share_nonce: nonce, public_code_hash: publicCodeHash },
+  });
+};
+
 const serializePeriod = (period: any) => {
-  const token = buildPlanningRelayToken(period.id, period.share_nonce);
+  const code = buildPlanningRelayShortCode(period.share_nonce);
   return {
     id: period.id,
     label: period.label,
@@ -96,11 +132,14 @@ const serializePeriod = (period: any) => {
     last_accessed_at: period.last_accessed_at?.toISOString() ?? null,
     created_at: period.createdAt.toISOString(),
     updated_at: period.updatedAt.toISOString(),
-    public_path: `/relais/${token}`,
+    public_path: `/r/${code}`,
   };
 };
 
-const buildCreateData = (payload: z.infer<typeof payloadSchema>) => {
+const buildCreateData = (
+  payload: z.infer<typeof payloadSchema>,
+  identity: { nonce: string; publicCodeHash: string },
+) => {
   const { start, end } = validatePeriod(payload.from, payload.to);
   return {
     label: payload.label,
@@ -110,7 +149,8 @@ const buildCreateData = (payload: z.infer<typeof payloadSchema>) => {
     show_timeline: payload.show_timeline,
     show_comments: payload.show_comments,
     show_phones: payload.show_phones,
-    share_nonce: generatePlanningRelayNonce(),
+    share_nonce: identity.nonce,
+    public_code_hash: identity.publicCodeHash,
     expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : endOfDay(addDays(end, 7)),
   };
 };
@@ -120,7 +160,8 @@ privateRouter.get("/", async (_req, res, next) => {
     const periods = await prisma.planningRelayPeriod.findMany({
       orderBy: [{ date_debut: "asc" }, { createdAt: "asc" }],
     });
-    return res.json(periods.map(serializePeriod));
+    const periodsWithCodes = await Promise.all(periods.map(ensureShortCode));
+    return res.json(periodsWithCodes.map(serializePeriod));
   } catch (error) {
     return next(error);
   }
@@ -130,7 +171,8 @@ privateRouter.post("/", async (req, res, next) => {
   try {
     const payload = payloadSchema.parse(req.body);
     await assertGitesExist(payload.gite_ids);
-    const period = await prisma.planningRelayPeriod.create({ data: buildCreateData(payload) });
+    const identity = await createShareIdentity();
+    const period = await prisma.planningRelayPeriod.create({ data: buildCreateData(payload, identity) });
     return res.status(201).json(serializePeriod(period));
   } catch (error) {
     return next(error);
@@ -175,10 +217,12 @@ privateRouter.post("/:id/rotate-link", async (req, res, next) => {
   try {
     const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
     if (!current) return res.status(404).json({ error: "Période introuvable." });
+    const identity = await createShareIdentity(current.id);
     const period = await prisma.planningRelayPeriod.update({
       where: { id: current.id },
       data: {
-        share_nonce: generatePlanningRelayNonce(),
+        share_nonce: identity.nonce,
+        public_code_hash: identity.publicCodeHash,
         is_active: true,
         ...(current.expires_at && current.expires_at.getTime() < Date.now()
           ? { expires_at: endOfDay(addDays(new Date(), 7)) }
@@ -203,16 +247,35 @@ privateRouter.delete("/:id", async (req, res, next) => {
 publicRouter.get("/:token", async (req, res, next) => {
   try {
     res.setHeader("Cache-Control", "no-store, max-age=0");
-    const parsedToken = parsePlanningRelayToken(req.params.token);
-    if (!parsedToken) return res.status(404).json({ error: "Planning introuvable." });
+    res.setHeader("Referrer-Policy", "no-referrer");
+    const throttleState = await checkRequestThrottle(req, res, PLANNING_RELAY_THROTTLE_CONFIG);
+    if (throttleState.blocked) return sendThrottleResponse(res, throttleState);
 
-    const period = await prisma.planningRelayPeriod.findUnique({ where: { id: parsedToken.id } });
-    if (
-      !period ||
-      !period.is_active ||
-      (period.expires_at && period.expires_at.getTime() < Date.now()) ||
-      !verifyPlanningRelayToken(req.params.token, period.share_nonce)
-    ) {
+    const identifier = req.params.token;
+    let period: any = null;
+    let identifierIsValid = false;
+
+    if (isPlanningRelayShortCode(identifier)) {
+      period = await prisma.planningRelayPeriod.findUnique({
+        where: { public_code_hash: hashPlanningRelayShortCode(identifier) },
+      });
+      identifierIsValid = Boolean(period && buildPlanningRelayShortCode(period.share_nonce) === identifier);
+    } else {
+      const parsedToken = parsePlanningRelayToken(identifier);
+      if (parsedToken) {
+        period = await prisma.planningRelayPeriod.findUnique({ where: { id: parsedToken.id } });
+        identifierIsValid = Boolean(period && verifyPlanningRelayToken(identifier, period.share_nonce));
+      }
+    }
+
+    if (!identifierIsValid) {
+      const failureState = await recordRequestThrottleFailure(req, res, PLANNING_RELAY_THROTTLE_CONFIG);
+      if (failureState.blocked) return sendThrottleResponse(res, failureState);
+      return res.status(404).json({ error: "Planning introuvable." });
+    }
+
+    await clearRequestThrottleFailures(req, res, PLANNING_RELAY_THROTTLE_CONFIG);
+    if (!period.is_active || (period.expires_at && period.expires_at.getTime() < Date.now())) {
       return res.status(404).json({ error: "Ce planning n’est plus disponible." });
     }
 

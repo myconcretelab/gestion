@@ -6,6 +6,7 @@ node_modules
 data/*.json
 !data/import-log.json
 data/*.lock
+data/*-secret
 data/pdfs/
 data/pump/
 server/data

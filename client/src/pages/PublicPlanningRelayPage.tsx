@@ -96,6 +96,21 @@ const PublicPlanningRelayPage = () => {
     return () => window.clearInterval(interval);
   }, [load]);
 
+  useEffect(() => {
+    const existing = document.querySelector<HTMLMetaElement>('meta[name="referrer"]');
+    const previousContent = existing?.content;
+    const meta = existing ?? document.createElement("meta");
+    if (!existing) {
+      meta.name = "referrer";
+      document.head.appendChild(meta);
+    }
+    meta.content = "no-referrer";
+    return () => {
+      if (!existing) meta.remove();
+      else meta.content = previousContent ?? "";
+    };
+  }, []);
+
   const days = useMemo(
     () => data ? enumerateIsoDates(data.period.from, data.period.to) : [],
     [data],
