@@ -5028,6 +5028,26 @@ body {
 .operations-table__row--departure { border-left-color: #f97316; }
 .operations-table__row--rotation { border-left-color: var(--primary); }
 
+.operations-table__row--already-handled {
+  border-left-color: #94a3b8;
+  color: #64748b;
+}
+
+.operations-table__row--already-handled td {
+  background: #f1f5f9;
+}
+
+.operations-table__row--already-handled .operations-badge {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.operations-table__row--already-handled strong,
+.operations-table__row--already-handled span {
+  color: #64748b;
+}
+
 .operations-table td > span,
 .operations-table td > strong {
   display: block;

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildPrintableOperationRows,
   enumerateIsoDates,
+  getAlreadyHandledArrivalRowKeys,
   getOperationsForDate,
   reservationOverlapsPeriod,
 } from "../src/utils/printableOperations";
@@ -94,4 +95,39 @@ test("fusionne une sortie et une entrée le même jour dans le même gîte", () 
     "late-checkout",
     "arrival",
   ]);
+});
+
+test("grise la prochaine entrée après une sortie séparée", () => {
+  const departingReservation = { ...reservation, gite_id: "gite-1" };
+  const arrivingReservation = {
+    ...reservation,
+    id: "reservation-2",
+    gite_id: "gite-1",
+    date_entree: "2026-07-15",
+    date_sortie: "2026-07-18",
+    options: {},
+  } as Reservation;
+  const rows = buildPrintableOperationRows(["2026-07-13", "2026-07-15"], [departingReservation, arrivingReservation]);
+
+  assert.deepEqual([...getAlreadyHandledArrivalRowKeys(rows)], ["2026-07-15-gite-1"]);
+});
+
+test("ne grise pas une rotation réalisée le même jour", () => {
+  const rows = [
+    {
+      date: "2026-07-13",
+      giteId: "gite-1",
+      stays: [
+        { reservation, operations: [{ kind: "departure" as const, label: "Sortie" }] },
+        { reservation: { ...reservation, id: "reservation-2" }, operations: [{ kind: "arrival" as const, label: "Entrée" }] },
+      ],
+    },
+    {
+      date: "2026-07-14",
+      giteId: "gite-1",
+      stays: [{ reservation: { ...reservation, id: "reservation-3" }, operations: [{ kind: "arrival" as const, label: "Entrée" }] }],
+    },
+  ];
+
+  assert.deepEqual([...getAlreadyHandledArrivalRowKeys(rows)], []);
 });

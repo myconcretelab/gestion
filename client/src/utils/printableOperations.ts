@@ -108,3 +108,31 @@ export const buildPrintableOperationRows = (dates: string[], reservations: Reser
 
   return rows;
 };
+
+export const getAlreadyHandledArrivalRowKeys = (rows: PrintableOperationRow[]) => {
+  const pendingDepartureByGite = new Set<string>();
+  const handledArrivalRows = new Set<string>();
+
+  for (const row of rows) {
+    const operations = row.stays.flatMap((stay) => stay.operations);
+    const hasArrival = operations.some((operation) => operation.kind === "arrival");
+    const hasDeparture = operations.some((operation) => operation.kind === "departure");
+
+    if (hasArrival && hasDeparture) {
+      pendingDepartureByGite.delete(row.giteId);
+      continue;
+    }
+
+    if (hasDeparture) {
+      pendingDepartureByGite.add(row.giteId);
+      continue;
+    }
+
+    if (hasArrival && pendingDepartureByGite.has(row.giteId)) {
+      handledArrivalRows.add(`${row.date}-${row.giteId}`);
+      pendingDepartureByGite.delete(row.giteId);
+    }
+  }
+
+  return handledArrivalRows;
+};
