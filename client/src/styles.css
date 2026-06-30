@@ -8698,8 +8698,8 @@ button.warning {
 .reservations-tab__badge--attention {
   gap: 0.2rem;
   min-width: 1.45rem;
-  background: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary-soft);
+  background: #f97316;
+  box-shadow: 0 0 0 2px #ffedd5;
 }
 
 .reservations-tab__badge--attention > span {
