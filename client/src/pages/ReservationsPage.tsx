@@ -1660,6 +1660,15 @@ const ReservationsPage = () => {
     return counts;
   }, [currentTimeMs, reservations]);
 
+  const zeroTotalCountByGite = useMemo(() => {
+    const counts = new Map<string, number>();
+    reservations.forEach((reservation) => {
+      if (!reservation.gite_id || round2(Number(reservation.prix_total ?? 0)) !== 0) return;
+      counts.set(reservation.gite_id, (counts.get(reservation.gite_id) ?? 0) + 1);
+    });
+    return counts;
+  }, [reservations]);
+
   const schoolHolidayRangeFrom = `${year}-01-01`;
   const schoolHolidayRangeTo = `${year + 1}-01-07`;
 
@@ -4435,12 +4444,18 @@ const ReservationsPage = () => {
     ...gites.map((gite) => {
       const recentImportedCount = recentImportedCountByTab.get(gite.id) ?? 0;
       const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
+      const zeroTotalCount = zeroTotalCountByGite.get(gite.id) ?? 0;
+      const zeroTotalLabel = zeroTotalCount > 0
+        ? `${formatPluralLabel(zeroTotalCount, "réservation", "réservations")} avec un total à 0 €`
+        : null;
 
       return {
         id: gite.id,
         label: gite.nom,
         badge: recentImportedCount,
         badgeLabel: recentImportedLabel,
+        attentionBadge: zeroTotalCount,
+        attentionBadgeLabel: zeroTotalLabel,
         draggable: !reorderingTabs,
         disabled: reorderingTabs,
         isDragging: draggedGiteId === gite.id,
@@ -4451,9 +4466,7 @@ const ReservationsPage = () => {
         onDragEnd: handleTabDragEnd,
         title: reorderingTabs
           ? "Réorganisation en cours..."
-          : recentImportedLabel
-            ? `${recentImportedLabel}. Glisser-déposer pour réorganiser`
-            : "Glisser-déposer pour réorganiser",
+          : [zeroTotalLabel, recentImportedLabel, "Glisser-déposer pour réorganiser"].filter(Boolean).join(". "),
       };
     }),
     ...(showUnassignedTab
