@@ -5305,6 +5305,88 @@ body {
   }
 }
 
+@media screen and (max-width: 900px) and (orientation: portrait) {
+  .public-relay-page .operations-sheet {
+    overflow-x: hidden;
+    padding: 12px;
+  }
+
+  .public-relay-page .operations-timeline,
+  .public-relay-page .operations-table-section,
+  .public-relay-page .operations-sheet__header,
+  .public-relay-page .operations-sheet__footer,
+  .public-relay-page .operations-legend {
+    min-width: 0;
+  }
+
+  .public-relay-page .operations-timeline {
+    overflow-x: auto;
+  }
+
+  .public-relay-page .operations-legend {
+    flex-wrap: wrap;
+  }
+
+  .public-relay-page .operations-table__stay-heading,
+  .public-relay-page .operations-table__information-heading,
+  .public-relay-page .operations-table__stay-cell,
+  .public-relay-page .operations-table__information-cell {
+    display: none;
+  }
+
+  .public-relay-page .operations-table__date-heading {
+    width: 34%;
+  }
+
+  .public-relay-page .operations-table__gite-heading {
+    width: 23%;
+  }
+
+  .public-relay-page .operations-table__type-heading {
+    width: 21%;
+  }
+
+  .public-relay-page .operations-table__options-heading {
+    width: 22%;
+  }
+
+  .public-relay-page .operations-table--without-options .operations-table__date-heading {
+    width: 42%;
+  }
+
+  .public-relay-page .operations-table--without-options .operations-table__gite-heading {
+    width: 28%;
+  }
+
+  .public-relay-page .operations-table--without-options .operations-table__type-heading {
+    width: 30%;
+  }
+
+  .public-relay-page .operations-table th,
+  .public-relay-page .operations-table td {
+    padding-right: 4px;
+    padding-left: 4px;
+  }
+
+  .public-relay-page .operations-table td > strong {
+    overflow-wrap: anywhere;
+  }
+
+  .public-relay-page .operations-table__date strong {
+    font-size: 0.78rem;
+  }
+
+  .public-relay-page .operations-table__date span {
+    font-size: 0.6rem;
+    white-space: normal;
+  }
+
+  .public-relay-page .operations-badge {
+    padding: 2px 4px;
+    font-size: 0.52rem;
+  }
+}
+
 @page {
   size: A4 portrait;
   margin: 0;
