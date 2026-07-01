@@ -321,6 +321,8 @@ const telegramNotificationSettingsSchema = z.object({
     .array(z.string().trim().min(1))
     .default([]),
   notify_booking_request_created: z.boolean().default(true),
+  notify_contract_return_overdue: z.boolean().default(true),
+  notify_invoice_payment_overdue: z.boolean().default(true),
 });
 const dailyReservationEmailRunSchema = z.object({
   force: z.boolean().optional().default(false),

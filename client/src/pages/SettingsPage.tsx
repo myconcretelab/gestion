@@ -484,6 +484,8 @@ type TelegramNotificationConfig = {
   bot_token: string;
   chat_ids: string[];
   notify_booking_request_created: boolean;
+  notify_contract_return_overdue: boolean;
+  notify_invoice_payment_overdue: boolean;
 };
 
 type TelegramNotificationState = {
@@ -924,6 +926,8 @@ const DEFAULT_TELEGRAM_NOTIFICATION_CONFIG: TelegramNotificationConfig = {
   bot_token: "",
   chat_ids: [],
   notify_booking_request_created: true,
+  notify_contract_return_overdue: true,
+  notify_invoice_payment_overdue: true,
 };
 
 const DEFAULT_TELEGRAM_NOTIFICATION_STATE: TelegramNotificationState = {
@@ -2431,6 +2435,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         chat_ids: chatIds,
         notify_booking_request_created:
           data?.config?.notify_booking_request_created !== false,
+        notify_contract_return_overdue:
+          data?.config?.notify_contract_return_overdue !== false,
+        notify_invoice_payment_overdue:
+          data?.config?.notify_invoice_payment_overdue !== false,
       },
       bot_configured: Boolean(data?.bot_configured),
     };
@@ -3415,6 +3423,10 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
             chat_ids: deduplicatedChatIds,
             notify_booking_request_created:
               telegramNotificationDraft.notify_booking_request_created,
+            notify_contract_return_overdue:
+              telegramNotificationDraft.notify_contract_return_overdue,
+            notify_invoice_payment_overdue:
+              telegramNotificationDraft.notify_invoice_payment_overdue,
           },
         },
       );
@@ -6075,8 +6087,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                   </div>
                   <div className="section-title">Bot Telegram</div>
                   <div className="field-hint">
-                    Le premier événement disponible envoie un message quand un
-                    client crée une demande de réservation depuis Booked.
+                    Les alertes d'échéance concernent uniquement les documents
+                    déjà envoyés. Une seule alerte est envoyée par échéance.
                   </div>
                   {loadingTelegramNotification ? (
                     <div className="field-hint" style={{ marginTop: 12 }}>
@@ -6129,6 +6141,61 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                             }
                           >
                             <option value="1">Notifier</option>
+                            <option value="0">Ignorer</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="grid-2" style={{ marginTop: 16 }}>
+                        <label className="field">
+                          Contrats non rendus
+                          <select
+                            value={
+                              telegramNotificationDraft.notify_contract_return_overdue
+                                ? "1"
+                                : "0"
+                            }
+                            onChange={(event) => {
+                              setTelegramNotificationError(null);
+                              setTelegramNotificationNotice(null);
+                              setTelegramNotificationDraft((previous) => ({
+                                ...previous,
+                                notify_contract_return_overdue:
+                                  event.target.value === "1",
+                              }));
+                            }}
+                            disabled={
+                              savingTelegramNotification ||
+                              testingTelegramNotification
+                            }
+                          >
+                            <option value="1">Notifier après l'échéance</option>
+                            <option value="0">Ignorer</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          Factures impayées
+                          <select
+                            value={
+                              telegramNotificationDraft.notify_invoice_payment_overdue
+                                ? "1"
+                                : "0"
+                            }
+                            onChange={(event) => {
+                              setTelegramNotificationError(null);
+                              setTelegramNotificationNotice(null);
+                              setTelegramNotificationDraft((previous) => ({
+                                ...previous,
+                                notify_invoice_payment_overdue:
+                                  event.target.value === "1",
+                              }));
+                            }}
+                            disabled={
+                              savingTelegramNotification ||
+                              testingTelegramNotification
+                            }
+                          >
+                            <option value="1">Notifier après l'échéance</option>
                             <option value="0">Ignorer</option>
                           </select>
                         </label>
