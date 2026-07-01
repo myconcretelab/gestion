@@ -4739,7 +4739,9 @@ body {
   padding: 7px 4px;
   place-items: center;
   color: #64748b;
+  cursor: pointer;
   font-size: 0.86rem;
+  text-decoration: none;
 }
 
 .operations-saved-period .operations-saved-period__action:hover:not(:disabled) {
@@ -4749,6 +4751,12 @@ body {
 .operations-saved-period .operations-saved-period__action:disabled {
   cursor: not-allowed;
   opacity: 0.35;
+}
+
+.operations-saved-period .operations-saved-period__action[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 .operations-saved-period__share-icon {

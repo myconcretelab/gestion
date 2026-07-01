@@ -462,12 +462,21 @@ const OperationsPrintPage = () => {
                       {period.label}
                     </button>
                     <button type="button" className="operations-saved-period__action" onClick={() => void renameSavedPeriod(period)} aria-label={`Renommer ${period.label}`} title="Renommer">✎</button>
-                    <button type="button" className="operations-saved-period__action" onClick={() => window.open(period.public_path, "_blank", "noopener,noreferrer")} aria-label={`Ouvrir le planning public ${period.label}`} title="Ouvrir le planning public" disabled={!isAvailable}>
+                    <a
+                      className="operations-saved-period__action"
+                      href={isAvailable ? new URL(period.public_path, window.location.origin).toString() : undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Ouvrir le planning public ${period.label}`}
+                      aria-disabled={!isAvailable}
+                      tabIndex={isAvailable ? undefined : -1}
+                      title="Ouvrir le planning public"
+                    >
                       <svg className="operations-saved-period__share-icon" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M14 4h6v6M20 4l-9 9" />
                         <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
                       </svg>
-                    </button>
+                    </a>
                     <button type="button" className="operations-saved-period__action" onClick={() => void copySavedPeriodLink(period)} aria-label={`Copier le lien de ${period.label}`} title="Copier le lien" disabled={!isAvailable}>⧉</button>
                     <button type="button" className="operations-saved-period__action" onClick={() => void toggleSavedPeriod(period)} aria-label={`${period.is_active ? "Désactiver" : "Activer"} ${period.label}`} title={isExpired ? "Lien expiré : régénérez-le" : period.is_active ? "Désactiver le lien" : "Activer le lien"} disabled={isExpired}>{period.is_active ? "●" : "○"}</button>
                     <button type="button" className="operations-saved-period__action" onClick={() => void rotateSavedPeriodLink(period)} aria-label={`Régénérer le lien de ${period.label}`} title="Régénérer le lien">↻</button>
