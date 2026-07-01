@@ -8,6 +8,8 @@ export type TelegramNotificationConfig = {
   bot_token: string;
   chat_ids: string[];
   notify_booking_request_created: boolean;
+  notify_contract_return_overdue: boolean;
+  notify_invoice_payment_overdue: boolean;
 };
 
 export type TelegramNotificationPublicState = {
@@ -85,6 +87,8 @@ export const buildDefaultTelegramNotificationConfig =
     bot_token: "",
     chat_ids: [],
     notify_booking_request_created: true,
+    notify_contract_return_overdue: true,
+    notify_invoice_payment_overdue: true,
   });
 
 export const normalizeTelegramNotificationConfig = (
@@ -100,6 +104,14 @@ export const normalizeTelegramNotificationConfig = (
   notify_booking_request_created: toBoolean(
     input?.notify_booking_request_created,
     fallback.notify_booking_request_created,
+  ),
+  notify_contract_return_overdue: toBoolean(
+    input?.notify_contract_return_overdue,
+    fallback.notify_contract_return_overdue,
+  ),
+  notify_invoice_payment_overdue: toBoolean(
+    input?.notify_invoice_payment_overdue,
+    fallback.notify_invoice_payment_overdue,
   ),
 });
 
@@ -153,6 +165,8 @@ export const buildTelegramNotificationState = (
     bot_token: "",
     chat_ids: config.chat_ids,
     notify_booking_request_created: config.notify_booking_request_created,
+    notify_contract_return_overdue: config.notify_contract_return_overdue,
+    notify_invoice_payment_overdue: config.notify_invoice_payment_overdue,
   },
   bot_configured: Boolean(config.bot_token.trim()),
 });
