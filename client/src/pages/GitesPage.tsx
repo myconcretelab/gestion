@@ -206,6 +206,7 @@ const GITE_EDITOR_SECTIONS = [
   { id: "web-photos", label: "Photos" },
   { id: "gestion-finance", label: "Fiscalité & banque" },
   { id: "gestion-frais", label: "Gestion des frais" },
+  { id: "gestion-frais-statistiques", label: "Statistiques des frais" },
   { id: "gestion-contact", label: "Propriétaires & contact" },
   { id: "sejour-services", label: "Services & horaires" },
   { id: "sejour-tarifs", label: "Tarifs & garanties" },
@@ -222,7 +223,7 @@ const GITE_EDITOR_SECTION_GROUPS = [
   },
   {
     title: "Gestion",
-    items: ["gestion-finance", "gestion-frais", "gestion-contact"],
+    items: ["gestion-finance", "gestion-frais", "gestion-frais-statistiques", "gestion-contact"],
   },
   {
     title: "Séjour",
@@ -1780,6 +1781,59 @@ const GitesPage = () => {
     }
     return totals;
   }, [expenseManagement]);
+  const expenseStatistics = useMemo(() => {
+    const rowsByGite = gites
+      .map((gite) => {
+        const data = gite.id === selectedId
+          ? expenseManagement
+          : normalizeExpenseManagement(gite.frais_gestion, expenseCategories);
+        const totals = getExpenseTotals(data);
+        return {
+          id: gite.id,
+          name: gite.nom,
+          monthly: totals.monthly,
+          annual: totals.annual,
+          lineCount: data.expenses.length,
+        };
+      })
+      .sort((left, right) => right.annual - left.annual || left.name.localeCompare(right.name, "fr"));
+
+    const rowsByCategory = expenseCategories
+      .map((category) => {
+        let monthly = 0;
+        let annual = 0;
+        let lineCount = 0;
+        for (const gite of gites) {
+          const data = gite.id === selectedId
+            ? expenseManagement
+            : normalizeExpenseManagement(gite.frais_gestion, expenseCategories);
+          for (const expense of data.expenses) {
+            if (expense.category_id !== category.id) continue;
+            monthly += normalizeMoney(expense.monthly_amount);
+            annual += normalizeMoney(expense.annual_amount);
+            lineCount += 1;
+          }
+        }
+        return { ...category, monthly, annual, lineCount };
+      })
+      .sort((left, right) => right.annual - left.annual || left.name.localeCompare(right.name, "fr"));
+
+    const monthly = rowsByGite.reduce((sum, row) => sum + row.monthly, 0);
+    const annual = rowsByGite.reduce((sum, row) => sum + row.annual, 0);
+    return {
+      rowsByGite,
+      rowsByCategory,
+      monthly,
+      annual,
+      averageAnnual: rowsByGite.length > 0 ? annual / rowsByGite.length : 0,
+      maxGiteAnnual: Math.max(0, ...rowsByGite.map((row) => row.annual)),
+      maxCategoryAnnual: Math.max(0, ...rowsByCategory.map((row) => row.annual)),
+    };
+  }, [expenseCategories, expenseManagement, gites, selectedId]);
+  const expenseProjectionYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 5 }, (_, index) => currentYear - 2 + index);
+  }, []);
 
   const updateExpenseManagement = (updater: (current: ExpenseManagementData) => ExpenseManagementData) => {
     setForm((current) => ({
@@ -2835,14 +2889,16 @@ const GitesPage = () => {
                 </div>
               ) : null}
               <div className="gites-editor-header__actions">
-                <button
-                  type="button"
-                  className="table-action table-action--primary"
-                  onClick={() => void save({ keepOpen: true })}
-                  disabled={loading}
-                >
-                  {loading ? "Enregistrement..." : "Enregistrer cette section"}
-                </button>
+                {activeEditorSection !== "gestion-frais-statistiques" ? (
+                  <button
+                    type="button"
+                    className="table-action table-action--primary"
+                    onClick={() => void save({ keepOpen: true })}
+                    disabled={loading}
+                  >
+                    {loading ? "Enregistrement..." : "Enregistrer cette section"}
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -3721,6 +3777,123 @@ const GitesPage = () => {
           </div>
         </div>
 
+        <div
+          id="gite-editor-frais-statistiques"
+          className="form-section gites-editor-section"
+          hidden={activeEditorSection !== "gestion-frais-statistiques"}
+        >
+          <div className="section-subtitle">Statistiques des frais</div>
+          <div className="field-hint expense-statistics__intro">
+            Consolidation des frais récurrents configurés pour tous les gîtes. Les montants annuels sont des projections basées sur la configuration actuelle.
+          </div>
+
+          <div className="expense-summary expense-summary--statistics">
+            <div className="expense-summary__item">
+              <span>Total mensuel</span>
+              <strong>{formatCurrency(expenseStatistics.monthly)}</strong>
+              <small>Ensemble des gîtes</small>
+            </div>
+            <div className="expense-summary__item">
+              <span>Total annuel</span>
+              <strong>{formatCurrency(expenseStatistics.annual)}</strong>
+              <small>Projection sur 12 mois</small>
+            </div>
+            <div className="expense-summary__item">
+              <span>Moyenne annuelle par gîte</span>
+              <strong>{formatCurrency(expenseStatistics.averageAnnual)}</strong>
+              <small>{expenseStatistics.rowsByGite.length} gîte(s)</small>
+            </div>
+            <div className="expense-summary__item">
+              <span>Première catégorie</span>
+              <strong>{expenseStatistics.annual > 0 ? expenseStatistics.rowsByCategory[0]?.name ?? "—" : "—"}</strong>
+              <small>{formatCurrency(expenseStatistics.rowsByCategory[0]?.annual ?? 0)} / an</small>
+            </div>
+          </div>
+
+          <div className="expense-panel">
+            <div className="expense-panel__header">
+              <div>
+                <div className="expense-panel__title">Totaux par gîte</div>
+                <div className="field-hint">Classement selon le total annuel projeté.</div>
+              </div>
+            </div>
+            <div className="expense-statistics-table-wrap">
+              <table className="expense-statistics-table">
+                <thead>
+                  <tr>
+                    <th>Gîte</th>
+                    <th>Frais</th>
+                    <th>Mensuel</th>
+                    <th>Annuel</th>
+                    <th>Part du total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseStatistics.rowsByGite.map((row) => (
+                    <tr key={row.id}>
+                      <td><strong>{row.name}</strong></td>
+                      <td>{row.lineCount}</td>
+                      <td>{formatCurrency(row.monthly)}</td>
+                      <td><strong>{formatCurrency(row.annual)}</strong></td>
+                      <td>
+                        <div className="expense-statistics-bar" aria-label={`${expenseStatistics.annual > 0 ? Math.round((row.annual / expenseStatistics.annual) * 100) : 0} % du total`}>
+                          <span style={{ width: `${expenseStatistics.maxGiteAnnual > 0 ? (row.annual / expenseStatistics.maxGiteAnnual) * 100 : 0}%` }} />
+                        </div>
+                        <small>{expenseStatistics.annual > 0 ? Math.round((row.annual / expenseStatistics.annual) * 100) : 0} %</small>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="expense-panel">
+            <div className="expense-panel__header">
+              <div>
+                <div className="expense-panel__title">Totaux par catégorie</div>
+                <div className="field-hint">Répartition consolidée sur tous les gîtes.</div>
+              </div>
+            </div>
+            <div className="expense-statistics-categories">
+              {expenseStatistics.rowsByCategory.map((category) => (
+                <div key={category.id} className="expense-statistics-category" style={{ "--expense-color": category.color } as CSSProperties}>
+                  <div className="expense-statistics-category__header">
+                    <span className="expense-statistics-category__dot" />
+                    <strong>{category.name}</strong>
+                    <span>{category.lineCount} frais</span>
+                  </div>
+                  <div className="expense-statistics-category__amounts">
+                    <span>{formatCurrency(category.monthly)} / mois</span>
+                    <strong>{formatCurrency(category.annual)} / an</strong>
+                  </div>
+                  <div className="expense-statistics-bar expense-statistics-bar--category">
+                    <span style={{ width: `${expenseStatistics.maxCategoryAnnual > 0 ? (category.annual / expenseStatistics.maxCategoryAnnual) * 100 : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="expense-panel">
+            <div className="expense-panel__header">
+              <div>
+                <div className="expense-panel__title">Projection par année</div>
+                <div className="field-hint">Budget annuel récurrent avec la configuration actuelle, sans historique comptable.</div>
+              </div>
+            </div>
+            <div className="expense-year-grid">
+              {expenseProjectionYears.map((year) => (
+                <div key={year} className={`expense-year-card${year === expenseProjectionYears[2] ? " expense-year-card--current" : ""}`}>
+                  <span>{year}</span>
+                  <strong>{formatCurrency(expenseStatistics.annual)}</strong>
+                  <small>{formatCurrency(expenseStatistics.monthly)} / mois</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <div id="gite-editor-services" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-services"}>
           <div className="section-subtitle">Services</div>
           <div className="grid-2">
@@ -3958,7 +4131,7 @@ const GitesPage = () => {
           </div>
         </div>
 
-        <div className="actions" style={{ marginTop: 16 }}>
+        <div className="actions" style={{ marginTop: 16 }} hidden={activeEditorSection === "gestion-frais-statistiques"}>
           <button type="button" onClick={save} disabled={loading}>
             {loading ? "Enregistrement..." : "Enregistrer"}
           </button>

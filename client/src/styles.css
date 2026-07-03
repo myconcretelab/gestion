@@ -6216,6 +6216,154 @@ body {
   line-height: 1.25;
 }
 
+.expense-summary--statistics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.expense-statistics__intro {
+  max-width: 820px;
+  line-height: 1.5;
+}
+
+.expense-statistics-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.expense-statistics-table {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.expense-statistics-table th,
+.expense-statistics-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.expense-statistics-table th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.expense-statistics-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.expense-statistics-table td:last-child {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
+}
+
+.expense-statistics-table td small {
+  color: #64748b;
+  font-weight: 750;
+}
+
+.expense-statistics-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--primary-soft);
+}
+
+.expense-statistics-bar > span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.expense-statistics-categories {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.expense-statistics-category {
+  --expense-color: var(--primary);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--expense-color) 22%, #e5e7eb);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--expense-color) 5%, #ffffff);
+}
+
+.expense-statistics-category__header,
+.expense-statistics-category__amounts {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.expense-statistics-category__header strong {
+  margin-right: auto;
+}
+
+.expense-statistics-category__header > span:last-child,
+.expense-statistics-category__amounts span {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.expense-statistics-category__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--expense-color);
+}
+
+.expense-statistics-bar--category {
+  background: color-mix(in srgb, var(--expense-color) 14%, #f1f5f9);
+}
+
+.expense-statistics-bar--category > span {
+  background: var(--expense-color);
+}
+
+.expense-year-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.expense-year-card {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.expense-year-card > span,
+.expense-year-card small {
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.expense-year-card--current {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 1px var(--primary-strong);
+}
+
 .expense-panel {
   display: grid;
   gap: 12px;
@@ -8154,6 +8302,11 @@ body {
   .expense-category-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .expense-summary--statistics,
+  .expense-year-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -8276,6 +8429,12 @@ body {
   }
 
   .expense-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .expense-summary--statistics,
+  .expense-statistics-categories,
+  .expense-year-grid {
     grid-template-columns: 1fr;
   }
 
