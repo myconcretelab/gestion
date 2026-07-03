@@ -6,6 +6,7 @@ import {
   computeGiteStats,
   computeGlobalStats,
   getEntryGrossCA,
+  getEntryUrssafBase,
   getMonthlyCAByYear,
   parseStatisticsPayload,
   type StatisticsPayload,
@@ -76,4 +77,12 @@ test("les stats de CA brut incluent les options et excluent HomeExchange", () =>
   assert.equal(computeAverageCA(entries, "all", 5), 250);
   assert.equal(computeAveragePrice(entries, "all", 5), 125);
   assert.equal(getMonthlyCAByYear(parsed.entriesByGite)[2026].months[4].ca, 250);
+});
+
+test("l'assiette Urssaf inclut uniquement les revenus et options déclarés des sources éligibles", () => {
+  const parsed = parseStatisticsPayload(payload);
+  const [airbnb, homeExchange] = parsed.entriesByGite.g1;
+
+  assert.equal(getEntryUrssafBase(airbnb), 220);
+  assert.equal(getEntryUrssafBase(homeExchange), 0);
 });

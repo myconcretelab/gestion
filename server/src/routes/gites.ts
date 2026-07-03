@@ -29,6 +29,7 @@ import {
 import {
   hasGiteExpenseCategorySettings,
   normalizeGiteExpenseCategories,
+  normalizeGiteDynamicExpenseRules,
   readGiteExpenseCategorySettings,
   writeGiteExpenseCategorySettings,
 } from "../services/giteExpenseCategorySettings.js";
@@ -92,6 +93,14 @@ const expenseManagementSchema = z
   .default({ version: 1, categories: [], expenses: [] });
 const expenseCategorySettingsSchema = z.object({
   categories: z.array(expenseCategorySchema).min(1),
+  dynamic_expenses: z.array(z.object({
+    id: z.string().trim().min(1),
+    label: z.string().trim().min(1),
+    category_id: z.string().trim().min(1),
+    basis: z.literal("urssaf_revenue"),
+    rate: z.coerce.number().min(0).max(1),
+    enabled: z.boolean(),
+  })).optional(),
 });
 
 const giteSchemaShape = {
@@ -198,8 +207,10 @@ const normalizePublicWebInfo = (value: unknown) => {
 
 const normalizeExpenseManagement = (value: unknown) => {
   const parsed = expenseManagementSchema.parse(value ?? { version: 1, categories: [], expenses: [] });
+  const fallbackCategories = normalizeGiteExpenseCategories(parsed.categories);
   const categories = readGiteExpenseCategorySettings({
-    categories: normalizeGiteExpenseCategories(parsed.categories),
+    categories: fallbackCategories,
+    dynamic_expenses: normalizeGiteDynamicExpenseRules(undefined, fallbackCategories),
   }).categories;
   const categoryIds = new Set(categories.map((category) => category.id));
   const fallbackCategoryId = categories[0]?.id ?? "";
@@ -520,7 +531,11 @@ const buildInitialExpenseCategorySettings = async () => {
     }
   }
 
-  const settings = { categories: normalizeGiteExpenseCategories(categories) };
+  const normalizedCategories = normalizeGiteExpenseCategories(categories);
+  const settings = {
+    categories: normalizedCategories,
+    dynamic_expenses: normalizeGiteDynamicExpenseRules(undefined, normalizedCategories),
+  };
   writeGiteExpenseCategorySettings(settings);
   return settings;
 };
@@ -536,7 +551,11 @@ router.get("/expense-categories", async (_req, res, next) => {
 router.put("/expense-categories", async (req, res, next) => {
   try {
     const payload = expenseCategorySettingsSchema.parse(req.body ?? {});
-    const settings = { categories: normalizeGiteExpenseCategories(payload.categories) };
+    const categories = normalizeGiteExpenseCategories(payload.categories);
+    const settings = {
+      categories,
+      dynamic_expenses: normalizeGiteDynamicExpenseRules(payload.dynamic_expenses, categories),
+    };
     writeGiteExpenseCategorySettings(settings);
     res.json(settings);
   } catch (err) {

@@ -74,6 +74,11 @@ const normalizeLabel = (value: string) =>
 
 const isHomeExchange = (entry: ParsedStatisticsEntry) => normalizeLabel(entry.paiement) === "homeexchange";
 
+export const getEntryUrssafBase = (entry: StatisticsEntry) => {
+  if (!URSSAF_PAYMENTS.some((label) => normalizeLabel(entry.paiement).includes(normalizeLabel(label)))) return 0;
+  return (Number(entry.revenus) || 0) + (Number(entry.fraisOptionnelsDeclares) || 0);
+};
+
 export const getEntryGrossCA = (entry: StatisticsEntry) =>
   (Number(entry.revenus) || 0) + (Number(entry.fraisOptionnelsTotal) || 0);
 
@@ -349,8 +354,7 @@ export const computeUrssafByManager = (
     if (!gite.gestionnaire?.id) continue;
     for (const entry of entriesByGite[gite.id] ?? []) {
       if (!entryMatch(entry, selectedYear, selectedMonth)) continue;
-      if (!URSSAF_PAYMENTS.some((label) => normalizeLabel(entry.paiement).includes(normalizeLabel(label)))) continue;
-      byManager[gite.gestionnaire.id].amount += (entry.revenus || 0) + (entry.fraisOptionnelsDeclares || 0);
+      byManager[gite.gestionnaire.id].amount += getEntryUrssafBase(entry);
     }
   }
 

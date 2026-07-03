@@ -5,6 +5,7 @@ import type { Gestionnaire, Gite, GitePhoto, ReservationPlaceholder } from "../u
 import { getGiteColor } from "../utils/giteColors";
 import {
   getEntryGrossCA,
+  getEntryUrssafBase,
   parseStatisticsPayload,
   type ParsedStatisticsPayload,
   type StatisticsPayload,
@@ -165,6 +166,15 @@ type ExpenseManagementData = {
 };
 type ExpenseCategorySettings = {
   categories: ExpenseCategory[];
+  dynamic_expenses: DynamicExpenseRule[];
+};
+type DynamicExpenseRule = {
+  id: string;
+  label: string;
+  category_id: string;
+  basis: "urssaf_revenue";
+  rate: number;
+  enabled: boolean;
 };
 type ExpenseAmountField = "monthly_amount" | "annual_amount";
 const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
@@ -178,6 +188,16 @@ const DEFAULT_EXPENSE_MANAGEMENT: ExpenseManagementData = {
   categories: DEFAULT_EXPENSE_CATEGORIES,
   expenses: [],
 };
+const DEFAULT_DYNAMIC_EXPENSE_RULES: DynamicExpenseRule[] = [
+  {
+    id: "urssaf",
+    label: "Urssaf",
+    category_id: "taxes",
+    basis: "urssaf_revenue",
+    rate: 0.06,
+    enabled: true,
+  },
+];
 const EXPENSE_CATEGORY_COLORS = ["#2d8cff", "#43b77d", "#f5a623", "#7e5bef", "#fe5c73", "#14b8a6", "#ef4444", "#64748b"];
 const StarIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -410,6 +430,22 @@ const getExpenseTotals = (data: ExpenseManagementData) => {
   };
 };
 
+const getDynamicExpenseAmounts = (
+  dataset: ParsedStatisticsPayload | null,
+  giteId: string,
+  year: number,
+  rules: DynamicExpenseRule[]
+) => {
+  const base = (dataset?.entriesByGite[giteId] ?? [])
+    .filter((entry) => entry.debutDate.getUTCFullYear() === year)
+    .reduce((sum, entry) => sum + getEntryUrssafBase(entry), 0);
+  return rules.map((rule) => ({
+    ...rule,
+    base,
+    amount: rule.enabled ? normalizeMoney(base * rule.rate) : 0,
+  }));
+};
+
 const getRevenueAveragePeriod = (now = new Date()) => {
   const currentYear = now.getFullYear();
   const previousYear = currentYear - 1;
@@ -426,7 +462,8 @@ const getRevenueAveragePeriod = (now = new Date()) => {
 const getNetAverageMonthlyRevenue = (
   dataset: ParsedStatisticsPayload | null,
   giteId: string | null,
-  monthlyExpenses: number
+  monthlyExpenses: number,
+  dynamicExpenseRules: DynamicExpenseRule[] = []
 ) => {
   const period = getRevenueAveragePeriod();
   if (!dataset || !giteId || period.monthCount <= 0) {
@@ -438,15 +475,21 @@ const getNetAverageMonthlyRevenue = (
     };
   }
 
-  const grossRevenue = (dataset.entriesByGite[giteId] ?? [])
+  const periodEntries = (dataset.entriesByGite[giteId] ?? [])
     .filter((entry) => {
       const year = entry.debutDate.getUTCFullYear();
       const month = entry.debutDate.getUTCMonth() + 1;
       if (normalizeExpenseRevenueLabel(entry.paiement) === "homeexchange") return false;
       return year === period.previousYear || (year === period.currentYear && month <= period.completedCurrentYearMonths);
-    })
-    .reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
-  const expenses = normalizeMoney(monthlyExpenses * period.monthCount);
+    });
+  const grossRevenue = periodEntries.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
+  const dynamicExpenses = periodEntries.reduce((sum, entry) => {
+    const base = getEntryUrssafBase(entry);
+    return sum + dynamicExpenseRules
+      .filter((rule) => rule.enabled)
+      .reduce((ruleSum, rule) => ruleSum + base * rule.rate, 0);
+  }, 0);
+  const expenses = normalizeMoney(monthlyExpenses * period.monthCount + dynamicExpenses);
 
   return {
     ...period,
@@ -1572,6 +1615,8 @@ const GitesPage = () => {
   const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(DEFAULT_EXPENSE_CATEGORIES);
+  const [dynamicExpenseRules, setDynamicExpenseRules] = useState<DynamicExpenseRule[]>(DEFAULT_DYNAMIC_EXPENSE_RULES);
+  const [expenseStatisticsYear, setExpenseStatisticsYear] = useState(() => new Date().getFullYear());
   const [placeholderTargets, setPlaceholderTargets] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, PhotoDraft>>({});
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -1639,6 +1684,11 @@ const GitesPage = () => {
     setGestionnaires(gestionnairesData);
     setStatisticsDataset(parseStatisticsPayload(statisticsData));
     setExpenseCategories(normalizeExpenseManagement({ categories: expenseCategoryData.categories, expenses: [] }).categories);
+    setDynamicExpenseRules(
+      Array.isArray(expenseCategoryData.dynamic_expenses) && expenseCategoryData.dynamic_expenses.length > 0
+        ? expenseCategoryData.dynamic_expenses
+        : DEFAULT_DYNAMIC_EXPENSE_RULES
+    );
     setPlaceholderTargets((prev) => {
       const next = { ...prev };
       for (const placeholder of placeholdersData) {
@@ -1765,8 +1815,8 @@ const GitesPage = () => {
   );
   const expenseTotals = useMemo(() => getExpenseTotals(expenseManagement), [expenseManagement]);
   const netAverageMonthlyRevenue = useMemo(
-    () => getNetAverageMonthlyRevenue(statisticsDataset, selectedId, expenseTotals.monthly),
-    [expenseTotals.monthly, selectedId, statisticsDataset]
+    () => getNetAverageMonthlyRevenue(statisticsDataset, selectedId, expenseTotals.monthly, dynamicExpenseRules),
+    [dynamicExpenseRules, expenseTotals.monthly, selectedId, statisticsDataset]
   );
   const expenseTotalsByCategory = useMemo(() => {
     const totals = new Map<string, { monthly: number; annual: number }>();
@@ -1781,6 +1831,12 @@ const GitesPage = () => {
     }
     return totals;
   }, [expenseManagement]);
+  const currentGiteDynamicExpenses = useMemo(
+    () => selectedId
+      ? getDynamicExpenseAmounts(statisticsDataset, selectedId, new Date().getFullYear(), dynamicExpenseRules)
+      : [],
+    [dynamicExpenseRules, selectedId, statisticsDataset]
+  );
   const expenseStatistics = useMemo(() => {
     const rowsByGite = gites
       .map((gite) => {
@@ -1788,12 +1844,20 @@ const GitesPage = () => {
           ? expenseManagement
           : normalizeExpenseManagement(gite.frais_gestion, expenseCategories);
         const totals = getExpenseTotals(data);
+        const dynamicExpenses = getDynamicExpenseAmounts(
+          statisticsDataset,
+          gite.id,
+          expenseStatisticsYear,
+          dynamicExpenseRules
+        );
+        const dynamic = dynamicExpenses.reduce((sum, expense) => sum + expense.amount, 0);
         return {
           id: gite.id,
           name: gite.nom,
-          monthly: totals.monthly,
-          annual: totals.annual,
-          lineCount: data.expenses.length,
+          fixed: totals.annual,
+          dynamic,
+          monthly: totals.monthly + dynamic / 12,
+          annual: totals.annual + dynamic,
         };
       })
       .sort((left, right) => right.annual - left.annual || left.name.localeCompare(right.name, "fr"));
@@ -1813,6 +1877,19 @@ const GitesPage = () => {
             annual += normalizeMoney(expense.annual_amount);
             lineCount += 1;
           }
+          const dynamicExpenses = getDynamicExpenseAmounts(
+            statisticsDataset,
+            gite.id,
+            expenseStatisticsYear,
+            dynamicExpenseRules
+          );
+          for (const expense of dynamicExpenses) {
+            if (!expense.enabled) continue;
+            if (expense.category_id !== category.id) continue;
+            monthly += expense.amount / 12;
+            annual += expense.amount;
+            lineCount += 1;
+          }
         }
         return { ...category, monthly, annual, lineCount };
       })
@@ -1820,20 +1897,44 @@ const GitesPage = () => {
 
     const monthly = rowsByGite.reduce((sum, row) => sum + row.monthly, 0);
     const annual = rowsByGite.reduce((sum, row) => sum + row.annual, 0);
+    const fixed = rowsByGite.reduce((sum, row) => sum + row.fixed, 0);
+    const dynamic = rowsByGite.reduce((sum, row) => sum + row.dynamic, 0);
     return {
       rowsByGite,
       rowsByCategory,
       monthly,
       annual,
+      fixed,
+      dynamic,
       averageAnnual: rowsByGite.length > 0 ? annual / rowsByGite.length : 0,
       maxGiteAnnual: Math.max(0, ...rowsByGite.map((row) => row.annual)),
       maxCategoryAnnual: Math.max(0, ...rowsByCategory.map((row) => row.annual)),
     };
-  }, [expenseCategories, expenseManagement, gites, selectedId]);
+  }, [dynamicExpenseRules, expenseCategories, expenseManagement, expenseStatisticsYear, gites, selectedId, statisticsDataset]);
   const expenseProjectionYears = useMemo(() => {
     const currentYear = new Date().getFullYear();
-    return Array.from({ length: 5 }, (_, index) => currentYear - 2 + index);
-  }, []);
+    return [...new Set([currentYear, ...(statisticsDataset?.availableYears ?? [])])].sort((left, right) => right - left);
+  }, [statisticsDataset?.availableYears]);
+  const expenseYearStatistics = useMemo(() => {
+    const fixed = gites.reduce((sum, gite) => {
+      const data = gite.id === selectedId
+        ? expenseManagement
+        : normalizeExpenseManagement(gite.frais_gestion, expenseCategories);
+      return sum + getExpenseTotals(data).annual;
+    }, 0);
+    return expenseProjectionYears.map((year) => {
+      const dynamic = gites.reduce(
+        (sum, gite) => sum + getDynamicExpenseAmounts(statisticsDataset, gite.id, year, dynamicExpenseRules)
+          .reduce((ruleSum, expense) => ruleSum + expense.amount, 0),
+        0
+      );
+      return { year, fixed, dynamic, total: fixed + dynamic };
+    });
+  }, [dynamicExpenseRules, expenseCategories, expenseManagement, expenseProjectionYears, gites, selectedId, statisticsDataset]);
+  const dynamicExpenseLabel = dynamicExpenseRules
+    .filter((rule) => rule.enabled)
+    .map((rule) => rule.label)
+    .join(", ") || "Frais dynamiques";
 
   const updateExpenseManagement = (updater: (current: ExpenseManagementData) => ExpenseManagementData) => {
     setForm((current) => ({
@@ -1873,13 +1974,16 @@ const GitesPage = () => {
       if (current.length <= 1) return current;
       const categories = current.filter((category) => category.id !== categoryId);
       const fallbackCategoryId = categories[0]?.id ?? "";
+      setDynamicExpenseRules((rules) => rules.map((rule) =>
+        rule.category_id === categoryId ? { ...rule, category_id: fallbackCategoryId } : rule
+      ));
       setForm((formState) => ({
         ...formState,
         frais_gestion: (() => {
           const normalized = normalizeExpenseManagement(formState.frais_gestion, current);
           return {
             ...normalized,
-          categories,
+            categories,
             expenses: normalized.expenses.map((expense) =>
               expense.category_id === categoryId ? { ...expense, category_id: fallbackCategoryId } : expense
             ),
@@ -1888,6 +1992,12 @@ const GitesPage = () => {
       }));
       return categories;
     });
+  };
+
+  const updateDynamicExpenseRule = (ruleId: string, patch: Partial<DynamicExpenseRule>) => {
+    setDynamicExpenseRules((current) => current.map((rule) =>
+      rule.id === ruleId ? { ...rule, ...patch } : rule
+    ));
   };
 
   const addExpenseLine = () => {
@@ -2054,11 +2164,12 @@ const GitesPage = () => {
       };
       const savedExpenseCategorySettings = await apiFetch<ExpenseCategorySettings>("/gites/expense-categories", {
         method: "PUT",
-        json: { categories: expenseCategories },
+        json: { categories: expenseCategories, dynamic_expenses: dynamicExpenseRules },
       });
       setExpenseCategories(
         normalizeExpenseManagement({ categories: savedExpenseCategorySettings.categories, expenses: [] }).categories
       );
+      setDynamicExpenseRules(savedExpenseCategorySettings.dynamic_expenses);
       let created: Gite | null = null;
       if (savedSelectedId) {
         await apiFetch(`/gites/${savedSelectedId}`, { method: "PUT", json: payload });
@@ -3775,6 +3886,69 @@ const GitesPage = () => {
               </button>
             </div>
           </div>
+
+          <div className="expense-panel expense-dynamic-panel">
+            <div className="expense-panel__header">
+              <div>
+                <div className="expense-panel__title">Frais dynamiques</div>
+                <div className="field-hint">Calculés automatiquement depuis le chiffre d'affaires éligible aux déclarations.</div>
+              </div>
+            </div>
+            {dynamicExpenseRules.map((rule) => {
+              const computed = currentGiteDynamicExpenses.find((expense) => expense.id === rule.id);
+              return (
+                <div key={rule.id} className="expense-dynamic-rule">
+                  <label className="switch expense-dynamic-rule__switch">
+                    <input
+                      type="checkbox"
+                      checked={rule.enabled}
+                      onChange={(event) => updateDynamicExpenseRule(rule.id, { enabled: event.target.checked })}
+                    />
+                    <span className="slider" />
+                  </label>
+                  <label className="field">
+                    Libellé
+                    <input
+                      value={rule.label}
+                      onChange={(event) => updateDynamicExpenseRule(rule.id, { label: event.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    Catégorie
+                    <select
+                      value={rule.category_id}
+                      onChange={(event) => updateDynamicExpenseRule(rule.id, { category_id: event.target.value })}
+                    >
+                      {expenseCategories.map((category) => (
+                        <option key={category.id} value={category.id}>{category.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    Taux du CA
+                    <div className="expense-rate-input">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        value={Math.round(rule.rate * 10000) / 100}
+                        onChange={(event) => updateDynamicExpenseRule(rule.id, {
+                          rate: Math.min(1, Math.max(0, Number(event.target.value) / 100)),
+                        })}
+                      />
+                      <span>%</span>
+                    </div>
+                  </label>
+                  <div className="expense-dynamic-rule__result">
+                    <span>{new Date().getFullYear()} · {selected?.nom ?? "Gîte"}</span>
+                    <strong>{rule.enabled ? formatCurrency(computed?.amount ?? 0) : "Désactivé"}</strong>
+                    <small>Assiette : {formatCurrency(computed?.base ?? 0)}</small>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div
@@ -3782,31 +3956,41 @@ const GitesPage = () => {
           className="form-section gites-editor-section"
           hidden={activeEditorSection !== "gestion-frais-statistiques"}
         >
-          <div className="section-subtitle">Statistiques des frais</div>
-          <div className="field-hint expense-statistics__intro">
-            Consolidation des frais récurrents configurés pour tous les gîtes. Les montants annuels sont des projections basées sur la configuration actuelle.
+          <div className="expense-statistics__heading">
+            <div>
+              <div className="section-subtitle">Statistiques des frais</div>
+              <div className="field-hint expense-statistics__intro">
+                Frais fixes configurés et frais dynamiques calculés depuis les réservations de la période.
+              </div>
+            </div>
+            <label className="field expense-statistics__year">
+              Année
+              <select value={expenseStatisticsYear} onChange={(event) => setExpenseStatisticsYear(Number(event.target.value))}>
+                {expenseProjectionYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </label>
           </div>
 
           <div className="expense-summary expense-summary--statistics">
             <div className="expense-summary__item">
-              <span>Total mensuel</span>
-              <strong>{formatCurrency(expenseStatistics.monthly)}</strong>
-              <small>Ensemble des gîtes</small>
+              <span>Frais fixes</span>
+              <strong>{formatCurrency(expenseStatistics.fixed)}</strong>
+              <small>Budget annuel récurrent</small>
             </div>
             <div className="expense-summary__item">
-              <span>Total annuel</span>
+              <span>{dynamicExpenseLabel}</span>
+              <strong>{formatCurrency(expenseStatistics.dynamic)}</strong>
+              <small>Selon le CA éligible {expenseStatisticsYear}</small>
+            </div>
+            <div className="expense-summary__item">
+              <span>Total {expenseStatisticsYear}</span>
               <strong>{formatCurrency(expenseStatistics.annual)}</strong>
-              <small>Projection sur 12 mois</small>
+              <small>{formatCurrency(expenseStatistics.monthly)} / mois en moyenne</small>
             </div>
             <div className="expense-summary__item">
-              <span>Moyenne annuelle par gîte</span>
+              <span>Moyenne par gîte</span>
               <strong>{formatCurrency(expenseStatistics.averageAnnual)}</strong>
               <small>{expenseStatistics.rowsByGite.length} gîte(s)</small>
-            </div>
-            <div className="expense-summary__item">
-              <span>Première catégorie</span>
-              <strong>{expenseStatistics.annual > 0 ? expenseStatistics.rowsByCategory[0]?.name ?? "—" : "—"}</strong>
-              <small>{formatCurrency(expenseStatistics.rowsByCategory[0]?.annual ?? 0)} / an</small>
             </div>
           </div>
 
@@ -3814,7 +3998,7 @@ const GitesPage = () => {
             <div className="expense-panel__header">
               <div>
                 <div className="expense-panel__title">Totaux par gîte</div>
-                <div className="field-hint">Classement selon le total annuel projeté.</div>
+                <div className="field-hint">Frais fixes et Urssaf calculée pour {expenseStatisticsYear}.</div>
               </div>
             </div>
             <div className="expense-statistics-table-wrap">
@@ -3822,9 +4006,9 @@ const GitesPage = () => {
                 <thead>
                   <tr>
                     <th>Gîte</th>
-                    <th>Frais</th>
-                    <th>Mensuel</th>
-                    <th>Annuel</th>
+                    <th>Fixes</th>
+                    <th>{dynamicExpenseLabel}</th>
+                    <th>Total</th>
                     <th>Part du total</th>
                   </tr>
                 </thead>
@@ -3832,8 +4016,8 @@ const GitesPage = () => {
                   {expenseStatistics.rowsByGite.map((row) => (
                     <tr key={row.id}>
                       <td><strong>{row.name}</strong></td>
-                      <td>{row.lineCount}</td>
-                      <td>{formatCurrency(row.monthly)}</td>
+                      <td>{formatCurrency(row.fixed)}</td>
+                      <td>{formatCurrency(row.dynamic)}</td>
                       <td><strong>{formatCurrency(row.annual)}</strong></td>
                       <td>
                         <div className="expense-statistics-bar" aria-label={`${expenseStatistics.annual > 0 ? Math.round((row.annual / expenseStatistics.annual) * 100) : 0} % du total`}>
@@ -3852,7 +4036,7 @@ const GitesPage = () => {
             <div className="expense-panel__header">
               <div>
                 <div className="expense-panel__title">Totaux par catégorie</div>
-                <div className="field-hint">Répartition consolidée sur tous les gîtes.</div>
+                <div className="field-hint">Répartition consolidée, Urssaf incluse dans sa catégorie.</div>
               </div>
             </div>
             <div className="expense-statistics-categories">
@@ -3861,7 +4045,7 @@ const GitesPage = () => {
                   <div className="expense-statistics-category__header">
                     <span className="expense-statistics-category__dot" />
                     <strong>{category.name}</strong>
-                    <span>{category.lineCount} frais</span>
+                    <span>{category.lineCount} élément(s)</span>
                   </div>
                   <div className="expense-statistics-category__amounts">
                     <span>{formatCurrency(category.monthly)} / mois</span>
@@ -3878,16 +4062,16 @@ const GitesPage = () => {
           <div className="expense-panel">
             <div className="expense-panel__header">
               <div>
-                <div className="expense-panel__title">Projection par année</div>
-                <div className="field-hint">Budget annuel récurrent avec la configuration actuelle, sans historique comptable.</div>
+                <div className="expense-panel__title">Totaux par année</div>
+                <div className="field-hint">Les frais fixes utilisent la configuration actuelle ; les frais dynamiques suivent le CA enregistré chaque année.</div>
               </div>
             </div>
             <div className="expense-year-grid">
-              {expenseProjectionYears.map((year) => (
-                <div key={year} className={`expense-year-card${year === expenseProjectionYears[2] ? " expense-year-card--current" : ""}`}>
-                  <span>{year}</span>
-                  <strong>{formatCurrency(expenseStatistics.annual)}</strong>
-                  <small>{formatCurrency(expenseStatistics.monthly)} / mois</small>
+              {expenseYearStatistics.map((row) => (
+                <div key={row.year} className={`expense-year-card${row.year === expenseStatisticsYear ? " expense-year-card--current" : ""}`}>
+                  <span>{row.year}</span>
+                  <strong>{formatCurrency(row.total)}</strong>
+                  <small>{formatCurrency(row.fixed)} fixes + {formatCurrency(row.dynamic)} dynamiques</small>
                 </div>
               ))}
             </div>
