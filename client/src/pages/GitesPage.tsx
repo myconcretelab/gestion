@@ -3975,12 +3975,12 @@ const GitesPage = () => {
             <div className="expense-summary__item">
               <span>Frais fixes</span>
               <strong>{formatCurrency(expenseStatistics.fixed)}</strong>
-              <small>Budget annuel récurrent</small>
+              <small>{formatCurrency(expenseStatistics.fixed / 12)} / mois · budget annuel récurrent</small>
             </div>
             <div className="expense-summary__item">
               <span>{dynamicExpenseLabel}</span>
               <strong>{formatCurrency(expenseStatistics.dynamic)}</strong>
-              <small>Selon le CA éligible {expenseStatisticsYear}</small>
+              <small>{formatCurrency(expenseStatistics.dynamic / 12)} / mois · selon le CA éligible {expenseStatisticsYear}</small>
             </div>
             <div className="expense-summary__item">
               <span>Total {expenseStatisticsYear}</span>
@@ -3990,7 +3990,7 @@ const GitesPage = () => {
             <div className="expense-summary__item">
               <span>Moyenne par gîte</span>
               <strong>{formatCurrency(expenseStatistics.averageAnnual)}</strong>
-              <small>{expenseStatistics.rowsByGite.length} gîte(s)</small>
+              <small>{formatCurrency(expenseStatistics.averageAnnual / 12)} / mois · {expenseStatistics.rowsByGite.length} gîte(s)</small>
             </div>
           </div>
 
