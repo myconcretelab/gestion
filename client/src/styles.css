@@ -11411,6 +11411,19 @@ button.warning {
   width: 10%;
 }
 
+.contracts-locataire-link {
+  color: #111827;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.25);
+}
+
+.contracts-locataire-link:hover,
+.contracts-locataire-link:focus-visible {
+  color: var(--primary-strong);
+  border-bottom-color: var(--primary-strong);
+}
+
 .contracts-table__col--retour {
   width: 17%;
 }
