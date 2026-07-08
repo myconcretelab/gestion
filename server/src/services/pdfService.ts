@@ -5,6 +5,11 @@ import { renderTemplate } from "./template.js";
 import { formatDate } from "../utils/dates.js";
 import { formatEuro, round2, toNumber, type NumericLike } from "../utils/money.js";
 import type { ContractTotals, OptionsInput } from "./contractCalculator.js";
+import {
+  normalizeBookedGiteContentSections,
+  type BookedGiteContentGroup,
+  type BookedGiteContentItem,
+} from "./bookedGiteContent.js";
 
 let browser: Browser | null = null;
 let browserLaunchPromise: Promise<Browser> | null = null;
@@ -45,6 +50,9 @@ type GiteLike = {
   site_web?: string | null;
   email?: string | null;
   telephones: unknown;
+  public_structured_content?: unknown;
+  public_equipment?: unknown;
+  public_rooms?: unknown;
   taxe_sejour_par_personne_par_nuit: NumericLike;
   iban: string;
   bic?: string | null;
@@ -231,6 +239,215 @@ const buildGiteCaracteristiquesHtml = (value: string | null | undefined) => {
     .filter(Boolean);
   if (!items.length) return "";
   return `<ul class="caracteristiques-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+};
+
+const CONTENT_PRESENTATION_SECTION_IDS = new Set(["equipements", "pieces-couchages"]);
+const BED_LABELS: Record<string, { label: string; detail: string }> = {
+  single: { label: "Lit 90", detail: "90 x 190" },
+  double: { label: "Lit 140", detail: "140 x 190" },
+  queen: { label: "Lit 160", detail: "160 x 200" },
+  king: { label: "Lit 180", detail: "180 x 200" },
+  bunk: { label: "Lits superposés", detail: "2 couchages" },
+  sofa_bed: { label: "Canapé-lit", detail: "Convertible" },
+  baby: { label: "Lit bébé", detail: "Bébé" },
+};
+
+const isContentPresentationSection = (sectionId: string) =>
+  CONTENT_PRESENTATION_SECTION_IDS.has(sectionId) ||
+  Array.from(CONTENT_PRESENTATION_SECTION_IDS).some((familyId) => sectionId.startsWith(`${familyId}-`));
+
+const hasPresentationGroupContent = (group: BookedGiteContentGroup) =>
+  group.items.length > 0 || Boolean(group.note?.trim());
+
+const isBedContentItem = (item: BookedGiteContentItem): item is Extract<BookedGiteContentItem, { kind: "bed" }> =>
+  Boolean(item && typeof item === "object" && !Array.isArray(item) && item.kind === "bed");
+
+const getBedLabel = (item: Extract<BookedGiteContentItem, { kind: "bed" }>) => BED_LABELS[item.type] ?? BED_LABELS.queen;
+
+const countBedsInGroup = (group: BookedGiteContentGroup) =>
+  group.items.reduce((total, item) => (isBedContentItem(item) ? total + item.count : total), 0);
+
+const countSleepingPlacesInGroup = (group: BookedGiteContentGroup) =>
+  group.items.reduce((total, item) => {
+    if (!isBedContentItem(item)) return total;
+    return total + item.count * (item.type === "bunk" ? 2 : 1);
+  }, 0);
+
+const iconSvg = (name: "home" | "bed" | "check" | "info") => {
+  const paths = {
+    home: '<path d="M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4z"></path>',
+    bed: '<path d="M5 7v6h14V9.5A2.5 2.5 0 0 0 16.5 7H12v6"></path><path d="M5 5v15"></path><path d="M19 13v7"></path><path d="M5 17h14"></path>',
+    check: '<path d="m5 12 4 4 10-10"></path>',
+    info: '<path d="M12 8h.01"></path><path d="M11 12h1v5h1"></path><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z"></path>',
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[name]}</svg>`;
+};
+
+const buildBedItemsHtml = (items: BookedGiteContentItem[]) =>
+  items
+    .map((item) => {
+      if (isBedContentItem(item)) {
+        const bed = getBedLabel(item);
+        return `
+          <div class="composition-bed">
+            <span class="composition-bed__icon">${iconSvg("bed")}</span>
+            <span class="composition-bed__text">
+              <span class="composition-bed__label">${escapeHtml(
+                item.count > 1 ? `${item.count} x ${bed.label}` : bed.label
+              )}</span>
+              <span class="composition-bed__detail">${escapeHtml(bed.detail)}</span>
+            </span>
+          </div>
+        `;
+      }
+
+      const text = String(item).trim();
+      if (!text) return "";
+      return `
+        <div class="composition-bed">
+          <span class="composition-bed__icon">${iconSvg("check")}</span>
+          <span class="composition-bed__text">
+            <span class="composition-bed__label">${escapeHtml(text)}</span>
+          </span>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join("");
+
+const buildEquipmentItemsHtml = (items: BookedGiteContentItem[]) => {
+  const rows = items
+    .map((item) => (typeof item === "string" ? item.trim() : getBedLabel(item).label))
+    .filter(Boolean)
+    .map(
+      (item) => `
+        <li>
+          <span class="composition-list__icon">${iconSvg("check")}</span>
+          <span>${escapeHtml(item)}</span>
+        </li>
+      `
+    )
+    .join("");
+
+  return rows ? `<ul class="composition-list">${rows}</ul>` : "";
+};
+
+const buildRoomCardHtml = (group: BookedGiteContentGroup) => {
+  const bedCount = countBedsInGroup(group);
+  const sleepingPlaces = countSleepingPlacesInGroup(group);
+  const stats = [
+    bedCount > 0 ? formatCountLabel(bedCount, "lit") : "",
+    sleepingPlaces > 0 ? formatCountLabel(sleepingPlaces, "couchage") : "",
+  ].filter(Boolean);
+
+  return `
+    <article class="composition-card composition-card--room">
+      <div class="composition-card__head">
+        <span class="composition-card__icon">${iconSvg("bed")}</span>
+        <div>
+          <h3>${escapeHtml(group.titre)}</h3>
+          ${stats.length ? `<div class="composition-card__meta">${escapeHtml(stats.join(" · "))}</div>` : ""}
+        </div>
+      </div>
+      <div class="composition-bed-grid">${buildBedItemsHtml(group.items)}</div>
+      ${group.note ? `<p class="composition-note">${escapeHtml(group.note)}</p>` : ""}
+    </article>
+  `;
+};
+
+const buildEquipmentCardHtml = (group: BookedGiteContentGroup) => `
+  <article class="composition-card">
+    <div class="composition-card__head">
+      <span class="composition-card__icon">${iconSvg("home")}</span>
+      <div>
+        <h3>${escapeHtml(group.titre)}</h3>
+        <div class="composition-card__meta">Équipements et aménagements</div>
+      </div>
+    </div>
+    ${buildEquipmentItemsHtml(group.items)}
+    ${group.note ? `<p class="composition-note">${escapeHtml(group.note)}</p>` : ""}
+  </article>
+`;
+
+const buildGiteCompositionPageHtml = (gite: GiteLike) => {
+  const sections = normalizeBookedGiteContentSections({
+    public_structured_content: gite.public_structured_content,
+    public_equipment: gite.public_equipment,
+    public_rooms: gite.public_rooms,
+  })
+    .map((section) => ({
+      ...section,
+      groupes: section.groupes.filter(hasPresentationGroupContent),
+    }))
+    .filter(
+      (section) =>
+        section.groupes.length > 0 &&
+        (isContentPresentationSection(section.id) || section.groupes.some((group) => group.type === "chambre"))
+    );
+
+  if (!sections.length) return "";
+
+  const roomGroups = sections.flatMap((section) => section.groupes.filter((group) => group.type === "chambre"));
+  const equipmentGroups = sections.flatMap((section) => section.groupes.filter((group) => group.type !== "chambre"));
+  const bedCount = roomGroups.reduce((total, group) => total + countBedsInGroup(group), 0);
+  const sleepingPlaces = roomGroups.reduce((total, group) => total + countSleepingPlacesInGroup(group), 0);
+
+  return `
+    <div class="page page--composition">
+      <div class="composition-header">
+        <div>
+          <div class="composition-kicker">Présentation du gîte</div>
+          <h2>Composition et couchages</h2>
+          <p>${escapeHtml(gite.nom)}${gite.capacite_max ? ` · jusqu'à ${escapeHtml(formatCountLabel(gite.capacite_max, "personne"))}` : ""}</p>
+        </div>
+        <div class="composition-summary">
+          ${
+            roomGroups.length > 0
+              ? `<div><strong>${escapeHtml(String(roomGroups.length))}</strong><span>${escapeHtml(
+                  formatCountLabel(roomGroups.length, "chambre")
+                )}</span></div>`
+              : ""
+          }
+          ${
+            sleepingPlaces > 0
+              ? `<div><strong>${escapeHtml(String(sleepingPlaces))}</strong><span>${escapeHtml(
+                  formatCountLabel(sleepingPlaces, "couchage")
+                )}</span></div>`
+              : ""
+          }
+          ${bedCount > 0 ? `<div><strong>${escapeHtml(String(bedCount))}</strong><span>${escapeHtml(formatCountLabel(bedCount, "lit"))}</span></div>` : ""}
+        </div>
+      </div>
+
+      ${
+        roomGroups.length
+          ? `<section class="composition-section">
+              <div class="composition-section__title">
+                <span>${iconSvg("bed")}</span>
+                <h3>Chambres</h3>
+              </div>
+              <div class="composition-grid composition-grid--rooms">
+                ${roomGroups.map(buildRoomCardHtml).join("")}
+              </div>
+            </section>`
+          : ""
+      }
+
+      ${
+        equipmentGroups.length
+          ? `<section class="composition-section">
+              <div class="composition-section__title">
+                <span>${iconSvg("info")}</span>
+                <h3>Pièces et équipements</h3>
+              </div>
+              <div class="composition-grid">
+                ${equipmentGroups.map(buildEquipmentCardHtml).join("")}
+              </div>
+            </section>`
+          : ""
+      }
+    </div>
+  `;
 };
 
 const formatOptionalDate = (value: Date | string | null | undefined, fallback = "À renseigner") => {
@@ -833,6 +1050,7 @@ const buildContractHtml = async (params: {
     titulaire: params.gite.titulaire,
     notesHtml: buildNotesHtml({ gite: params.gite, options }),
     giteCaracteristiquesHtml: buildGiteCaracteristiquesHtml(params.gite.caracteristiques),
+    giteCompositionPageHtml: buildGiteCompositionPageHtml(params.gite),
     clausesHtml: buildClausesHtml({ gite: params.gite, options, clauses }),
     lieuSignature: params.gite.adresse_ligne2 ?? params.gite.adresse_ligne1,
     dateSignature: formatDate(new Date()),
