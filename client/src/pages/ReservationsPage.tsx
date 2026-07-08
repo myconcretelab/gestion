@@ -661,6 +661,16 @@ const getReservationNightsInMonth = (reservation: Reservation, year: number, mon
   return Math.round((overlapEnd - overlapStart) / DAY_MS);
 };
 
+const reservationOverlapsMonth = (reservation: Reservation, year: number, month: number) => {
+  const start = toUtcDateOnly(reservation.date_entree);
+  const end = toUtcDateOnly(reservation.date_sortie);
+  if (!start || !end || end.getTime() <= start.getTime()) return false;
+
+  const monthStart = Date.UTC(year, month - 1, 1);
+  const monthEnd = Date.UTC(year, month, 1);
+  return start.getTime() < monthEnd && end.getTime() > monthStart;
+};
+
 const parseInputDate = (value: string): Date | null => {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
@@ -1986,11 +1996,10 @@ const ReservationsPage = () => {
     }
 
     for (const reservation of visibleReservations) {
-      const date = new Date(reservation.date_entree);
-      const monthIndex = date.getUTCMonth() + 1;
-      const group = map.get(monthIndex);
-      if (!group) continue;
-      group.push(reservation);
+      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+        if (!reservationOverlapsMonth(reservation, year, monthIndex)) continue;
+        map.get(monthIndex)?.push(reservation);
+      }
     }
 
     for (const list of map.values()) {
@@ -2011,7 +2020,7 @@ const ReservationsPage = () => {
     }
 
     return map;
-  }, [activeTab, giteOrderById, visibleReservations]);
+  }, [activeTab, giteOrderById, visibleReservations, year]);
 
   const monthlyAmountsByReservationMonthKey = useMemo(() => {
     const byKey = new Map<string, ReservationMonthlyAmounts>();
