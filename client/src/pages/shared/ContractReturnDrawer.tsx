@@ -162,7 +162,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
         (contract.statut_paiement_arrhes === "recu" ? todayInputValue() : "")
     );
     setArrhesPaymentMode(contract.mode_paiement_arrhes ?? "");
-    setAdultCount(Math.max(1, Number(contract.nb_adultes ?? 1)));
+    setAdultCount(Math.max(0, Number(contract.nb_adultes ?? 1)));
     setChildrenCount(Math.max(0, Number(contract.nb_enfants_2_17 ?? 0)));
     setReservationPaymentSource("");
     setInternalComment(contract.commentaire_interne ?? "");
@@ -476,10 +476,10 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 Adultes
                 <input
                   type="number"
-                  min={1}
+                  min={0}
                   step={1}
                   value={adultCount}
-                  onChange={(event) => setAdultCount(Math.max(1, Number(event.target.value) || 1))}
+                  onChange={(event) => setAdultCount(Math.max(0, Number(event.target.value) || 0))}
                 />
               </label>
               <label className="field">

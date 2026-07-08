@@ -127,7 +127,7 @@ export const getDocumentChildrenMax = (gite?: Gite | null, nbAdultes?: number) =
 };
 
 export const clampDocumentAdults = (value: number, gite?: Gite | null) =>
-  Math.min(getDocumentAdultsMax(gite), Math.max(1, toSafeInt(value, 1)));
+  Math.min(getDocumentAdultsMax(gite), Math.max(0, toSafeInt(value, 0)));
 
 export const clampDocumentChildren = (value: number, gite?: Gite | null, nbAdultes?: number) =>
   Math.min(getDocumentChildrenMax(gite, nbAdultes), Math.max(0, toSafeInt(value, 0)));
