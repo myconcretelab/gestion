@@ -489,16 +489,12 @@ const buildLocataireAdresseHtml = (value: string | null | undefined) => {
 };
 
 const buildLocataireOccupantsHtml = (params: { nbAdultes: number; nbEnfants: number }) => {
-  const lines: string[] = [];
-  if (params.nbAdultes > 0) {
-    lines.push(`Nombre d'adultes : <span class="write-line write-line--count">${escapeHtml(String(params.nbAdultes))}</span>`);
-  }
-  if (params.nbEnfants > 0) {
-    lines.push(
-      `Nombre d'enfants (3 à 16 ans) : <span class="write-line write-line--count">${escapeHtml(String(params.nbEnfants))}</span>`
-    );
-  }
-  if (!lines.length) return "";
+  const adultCount = params.nbAdultes > 0 ? escapeHtml(String(params.nbAdultes)) : "";
+  const childrenCount = params.nbEnfants > 0 ? escapeHtml(String(params.nbEnfants)) : "";
+  const lines = [
+    `Nombre d'adultes : <span class="write-line write-line--count">${adultCount}</span>`,
+    `Nombre d'enfants (3 à 16 ans) : <span class="write-line write-line--count">${childrenCount}</span>`,
+  ];
   return `<div class="small" style="margin-top:2mm;">${lines.join("<br />")}</div>`;
 };
 
