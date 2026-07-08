@@ -43,6 +43,16 @@ const formatCompactDate = (value: string) => {
 const normalizeInternalComment = (value: string | null | undefined) =>
   String(value ?? "").trim();
 
+const buildLinkedReservationPath = (contrat: Contrat) => {
+  if (!contrat.reservation_id) return null;
+
+  const params = new URLSearchParams({ focus: contrat.reservation_id });
+  if (contrat.gite_id) params.set("tab", contrat.gite_id);
+  const startYear = Number.parseInt(toDateKey(contrat.date_debut).slice(0, 4), 10);
+  if (Number.isFinite(startYear) && startYear > 0) params.set("year", String(startYear));
+  return `/reservations?${params.toString()}`;
+};
+
 const getReturnBadge = (contrat: Contrat) => {
   if (contrat.statut_reception_contrat === "recu") return null;
 
@@ -620,6 +630,7 @@ const ContratsListPage = () => {
           <tbody>
             {contrats.map((contrat) => {
               const returnBadge = getReturnBadge(contrat);
+              const linkedReservationPath = buildLinkedReservationPath(contrat);
 
               return (
                 <tr key={contrat.id}>
@@ -633,7 +644,19 @@ const ContratsListPage = () => {
                     </div>
                   </td>
                   <td>{contrat.gite?.nom ?? ""}</td>
-                  <td>{contrat.locataire_nom}</td>
+                  <td>
+                    {linkedReservationPath ? (
+                      <Link
+                        className="contracts-locataire-link"
+                        to={linkedReservationPath}
+                        title="Afficher la réservation liée"
+                      >
+                        {contrat.locataire_nom}
+                      </Link>
+                    ) : (
+                      contrat.locataire_nom
+                    )}
+                  </td>
                   <td>
                     {contrat.statut_reception_contrat === "recu" ? (
                       <div className="contract-return-status">
