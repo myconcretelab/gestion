@@ -488,6 +488,20 @@ const buildLocataireAdresseHtml = (value: string | null | undefined) => {
     .join("<br />");
 };
 
+const buildLocataireOccupantsHtml = (params: { nbAdultes: number; nbEnfants: number }) => {
+  const lines: string[] = [];
+  if (params.nbAdultes > 0) {
+    lines.push(`Nombre d'adultes : <span class="write-line write-line--count">${escapeHtml(String(params.nbAdultes))}</span>`);
+  }
+  if (params.nbEnfants > 0) {
+    lines.push(
+      `Nombre d'enfants (3 à 16 ans) : <span class="write-line write-line--count">${escapeHtml(String(params.nbEnfants))}</span>`
+    );
+  }
+  if (!lines.length) return "";
+  return `<div class="small" style="margin-top:2mm;">${lines.join("<br />")}</div>`;
+};
+
 const buildNotesHtml = (params: { gite: GiteLike; options: OptionsInput }) => {
   const { gite, options } = params;
   const regles = resolveContractRules(gite, options);
@@ -1002,8 +1016,10 @@ const buildContractHtml = async (params: {
     locataireNom: params.contract.locataire_nom,
     locataireAdresseHtml: buildLocataireAdresseHtml(params.contract.locataire_adresse),
     locataireTel: params.contract.locataire_tel,
-    nbAdultes: String(params.contract.nb_adultes),
-    nbEnfants: String(params.contract.nb_enfants_2_17),
+    locataireOccupantsHtml: buildLocataireOccupantsHtml({
+      nbAdultes: params.contract.nb_adultes,
+      nbEnfants: params.contract.nb_enfants_2_17,
+    }),
     capaciteMax: String(params.gite.capacite_max),
     dateDebut: formatOptionalDate(params.contract.date_debut),
     heureArrivee: params.contract.heure_arrivee,
