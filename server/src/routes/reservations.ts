@@ -67,6 +67,7 @@ const reservationLinkedContractSelect = {
 const calendarReservationSelect = {
   id: true,
   gite_id: true,
+  stay_group_id: true,
   hote_nom: true,
   date_entree: true,
   date_sortie: true,
@@ -298,9 +299,9 @@ const buildReservationListWhere = (query: Record<string, unknown>) => {
     const from = month ? makeUtcDate(year, month, 1) : makeUtcDate(year, 1, 1);
     const to = month ? makeUtcDate(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1, 1) : makeUtcDate(year + 1, 1, 1);
     where.date_entree = {
-      gte: from,
       lt: to,
     };
+    where.date_sortie = { gt: from };
   }
 
   return where;
@@ -501,10 +502,13 @@ const buildReservationSegmentRecords = (
   stayGroupId?: string,
 ) => {
   const computed = computeReservationFields(payload);
-  const segments = splitReservationByMonth(computed.dateEntree, computed.dateSortie);
-  if (segments.length === 0) {
-    throw new Error("La date de sortie doit être postérieure à la date d'entrée.");
-  }
+  const segments: ReservationPeriodSegment[] = [
+    {
+      dateEntree: computed.dateEntree,
+      dateSortie: computed.dateSortie,
+      nbNuits: computed.nbNuits,
+    },
+  ];
 
   const priceTotalsBySegment = allocateAmountByNights(computed.prixTotal, segments);
   const optionalFeesBySegment = allocateAmountByNights(round2(payload.frais_optionnels_montant ?? 0), segments);
@@ -651,6 +655,112 @@ const hydrateReservation = (reservation: any) => {
   };
 };
 
+const buildGroupedStayReservation = (rows: any[]) => {
+  if (rows.length === 0) return null;
+
+  const sorted = [...rows].sort((left, right) => {
+    const byDate = toUnix(left.date_entree) - toUnix(right.date_entree);
+    if (byDate !== 0) return byDate;
+    return String(left.id).localeCompare(String(right.id));
+  });
+  const primary = sorted[0];
+  const dateEntree = sorted.reduce(
+    (min, row) => (toUnix(row.date_entree) < toUnix(min) ? row.date_entree : min),
+    primary.date_entree,
+  );
+  const dateSortie = sorted.reduce(
+    (max, row) => (toUnix(row.date_sortie) > toUnix(max) ? row.date_sortie : max),
+    primary.date_sortie,
+  );
+  const prixTotal = round2(sorted.reduce((sum, row) => sum + toNumber(row.prix_total), 0));
+  const fraisOptionnelsMontant = round2(
+    sorted.reduce((sum, row) => sum + toNumber(row.frais_optionnels_montant), 0),
+  );
+  const nbNuits = Math.max(0, Math.round((toUnix(dateSortie) - toUnix(dateEntree)) / DAY_MS));
+
+  return {
+    ...primary,
+    id: primary.id,
+    date_entree: dateEntree,
+    date_sortie: dateSortie,
+    nb_nuits: nbNuits,
+    prix_total: prixTotal,
+    prix_par_nuit: nbNuits > 0 ? round2(prixTotal / nbNuits) : 0,
+    frais_optionnels_montant: fraisOptionnelsMontant,
+  };
+};
+
+const loadGroupedStayRows = async (reservation: any) => {
+  const stayGroupId = typeof reservation.stay_group_id === "string" ? reservation.stay_group_id.trim() : "";
+  if (!stayGroupId) return [reservation];
+
+  const rows = await prisma.reservation.findMany({
+    where: { stay_group_id: stayGroupId },
+    include: {
+      gite: {
+        select: {
+          ...reservationGiteSelect,
+          heure_arrivee_defaut: true,
+          heure_depart_defaut: true,
+        },
+      },
+      placeholder: { select: reservationPlaceholderSelect },
+    },
+    orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+  });
+
+  return rows.length > 0 ? rows : [reservation];
+};
+
+const coalesceGroupedReservationRows = async (
+  reservations: any[],
+  query: { include?: any; select?: any },
+) => {
+  const stayGroupIds = [
+    ...new Set(
+      reservations
+        .map((reservation) => (typeof reservation.stay_group_id === "string" ? reservation.stay_group_id.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+  if (stayGroupIds.length === 0) return reservations;
+
+  const groupedRows = query.include
+    ? await prisma.reservation.findMany({
+        where: { stay_group_id: { in: stayGroupIds } },
+        include: query.include,
+        orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      })
+    : await prisma.reservation.findMany({
+        where: { stay_group_id: { in: stayGroupIds } },
+        select: query.select,
+        orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      });
+  const rowsByStayGroupId = new Map<string, any[]>();
+  for (const row of groupedRows as any[]) {
+    const stayGroupId = typeof row.stay_group_id === "string" ? row.stay_group_id.trim() : "";
+    if (!stayGroupId) continue;
+    rowsByStayGroupId.set(stayGroupId, [...(rowsByStayGroupId.get(stayGroupId) ?? []), row]);
+  }
+
+  const seenStayGroupIds = new Set<string>();
+  const coalesced: any[] = [];
+  for (const reservation of reservations) {
+    const stayGroupId =
+      typeof reservation.stay_group_id === "string" ? reservation.stay_group_id.trim() : "";
+    const groupRows = stayGroupId ? rowsByStayGroupId.get(stayGroupId) ?? [] : [];
+    if (groupRows.length <= 1) {
+      coalesced.push(reservation);
+      continue;
+    }
+    if (seenStayGroupIds.has(stayGroupId)) continue;
+    seenStayGroupIds.add(stayGroupId);
+    coalesced.push(buildGroupedStayReservation(groupRows) ?? reservation);
+  }
+
+  return coalesced;
+};
+
 const hydrateReservationLinkedContract = (contract: any) => ({
   id: contract.id,
   numero_contrat: contract.numero_contrat,
@@ -724,7 +834,7 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
   });
 };
 
-const attachLinkedContractsToReservations = async <T extends { id: string }>(
+const attachLinkedContractsToReservations = async <T extends { id: string; stay_group_id?: string | null }>(
   reservations: T[],
 ) => {
   if (reservations.length === 0) {
@@ -741,26 +851,62 @@ const attachLinkedContractsToReservations = async <T extends { id: string }>(
     }));
   }
 
-  const contracts = await loadLinkedContracts(
-    reservations.map((reservation) => reservation.id),
-  );
+  const visibleReservationIds = reservations.map((reservation) => reservation.id);
+  const stayGroupIds = [
+    ...new Set(
+      reservations
+        .map((reservation) => (typeof reservation.stay_group_id === "string" ? reservation.stay_group_id.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+  const groupedReservationRows =
+    stayGroupIds.length > 0
+      ? await prisma.reservation.findMany({
+          where: { stay_group_id: { in: stayGroupIds } },
+          select: { id: true, stay_group_id: true },
+        })
+      : [];
+  const reservationGroupById = new Map<string, string>();
+  for (const row of groupedReservationRows) {
+    if (!row.stay_group_id) continue;
+    reservationGroupById.set(row.id, row.stay_group_id);
+  }
+  for (const reservation of reservations) {
+    if (reservation.stay_group_id) {
+      reservationGroupById.set(reservation.id, reservation.stay_group_id);
+    }
+  }
+
+  const contracts = await loadLinkedContracts([
+    ...new Set([...visibleReservationIds, ...groupedReservationRows.map((row) => row.id)]),
+  ]);
 
   const linkedContractByReservationId = new Map<
     string,
     ReturnType<typeof hydrateReservationLinkedContract>
   >();
+  const linkedContractByGroupId = new Map<
+    string,
+    ReturnType<typeof hydrateReservationLinkedContract>
+  >();
   for (const contract of contracts) {
     if (!contract.reservation_id) continue;
-    if (linkedContractByReservationId.has(contract.reservation_id)) continue;
-    linkedContractByReservationId.set(
-      contract.reservation_id,
-      hydrateReservationLinkedContract(contract),
-    );
+    const hydratedContract = hydrateReservationLinkedContract(contract);
+    if (!linkedContractByReservationId.has(contract.reservation_id)) {
+      linkedContractByReservationId.set(contract.reservation_id, hydratedContract);
+    }
+    const groupId = reservationGroupById.get(contract.reservation_id);
+    if (groupId && !linkedContractByGroupId.has(groupId)) {
+      linkedContractByGroupId.set(groupId, hydratedContract);
+    }
   }
 
   return reservations.map((reservation) => ({
     ...reservation,
-    linked_contract: linkedContractByReservationId.get(reservation.id) ?? null,
+    linked_contract:
+      linkedContractByReservationId.get(reservation.id) ??
+      (reservation.stay_group_id ? linkedContractByGroupId.get(reservation.stay_group_id) : null) ??
+      null,
   }));
 };
 
@@ -1369,14 +1515,16 @@ const parseImportContent = (payload: z.infer<typeof importPayloadSchema>) => {
 router.get("/years", async (_req, res, next) => {
   try {
     const rows = await prisma.reservation.findMany({
-      select: { date_entree: true },
+      select: { date_entree: true, date_sortie: true },
     });
 
     const years = new Set<number>();
     for (const row of rows) {
-      const parsed = new Date(row.date_entree);
-      if (!Number.isNaN(parsed.getTime())) {
-        years.add(parsed.getUTCFullYear());
+      for (const value of [row.date_entree, row.date_sortie]) {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+          years.add(parsed.getUTCFullYear());
+        }
       }
     }
 
@@ -1450,8 +1598,14 @@ router.get("/", async (req, res, next) => {
         })
       : reservations;
 
+    const coalescedReservations = await coalesceGroupedReservationRows(filtered, {
+      include: {
+        gite: { select: reservationGiteSelect },
+        placeholder: { select: reservationPlaceholderSelect },
+      },
+    });
     const hydratedReservations = await attachLinkedContractsToReservations(
-      filtered.map(hydrateReservation),
+      coalescedReservations.map(hydrateReservation),
     );
     const smartlifeConfig = includeLiveEnergy
       ? readSmartlifeAutomationConfig(
@@ -1541,13 +1695,42 @@ router.get("/calendar", async (req, res, next) => {
       }),
     ]);
 
-    const reservationIds = reservationRows.map((reservation) => reservation.id);
+    const coalescedReservationRows = await coalesceGroupedReservationRows(reservationRows, {
+      select: calendarReservationSelect,
+    });
+    const reservationIds = coalescedReservationRows.map((reservation) => reservation.id);
+    const stayGroupIds = [
+      ...new Set(
+        coalescedReservationRows
+          .map((reservation) => (typeof reservation.stay_group_id === "string" ? reservation.stay_group_id.trim() : ""))
+          .filter(Boolean),
+      ),
+    ];
+    const groupedReservationRows =
+      stayGroupIds.length > 0
+        ? await prisma.reservation.findMany({
+            where: { stay_group_id: { in: stayGroupIds } },
+            select: { id: true, stay_group_id: true },
+          })
+        : [];
+    const reservationGroupById = new Map<string, string>();
+    for (const row of groupedReservationRows) {
+      if (row.stay_group_id) reservationGroupById.set(row.id, row.stay_group_id);
+    }
+    for (const reservation of coalescedReservationRows) {
+      if (reservation.stay_group_id) {
+        reservationGroupById.set(reservation.id, reservation.stay_group_id);
+      }
+    }
+    const contractLookupReservationIds = [
+      ...new Set([...reservationIds, ...groupedReservationRows.map((reservation) => reservation.id)]),
+    ];
     const linkedContracts =
-      reservationIds.length > 0
+      contractLookupReservationIds.length > 0
         ? await prisma.contrat.findMany({
             where: {
               reservation_id: {
-                in: reservationIds,
+                in: contractLookupReservationIds,
               },
             },
             select: {
@@ -1560,13 +1743,20 @@ router.get("/calendar", async (req, res, next) => {
         .map((contract) => contract.reservation_id)
         .filter((reservationId): reservationId is string => Boolean(reservationId))
     );
+    const stayGroupIdsWithLinkedContract = new Set(
+      linkedContracts
+        .map((contract) => (contract.reservation_id ? reservationGroupById.get(contract.reservation_id) : null))
+        .filter((stayGroupId): stayGroupId is string => Boolean(stayGroupId))
+    );
 
     return res.json({
       year,
       gites,
-      reservations: reservationRows.map((reservation) => ({
+      reservations: coalescedReservationRows.map((reservation) => ({
         ...reservation,
-        has_linked_contract: reservationIdsWithLinkedContract.has(reservation.id),
+        has_linked_contract:
+          reservationIdsWithLinkedContract.has(reservation.id) ||
+          (reservation.stay_group_id ? stayGroupIdsWithLinkedContract.has(reservation.stay_group_id) : false),
       })),
       source_colors: readSourceColorSettings().colors,
     });
@@ -1659,7 +1849,9 @@ router.get("/prefill/:id", async (req, res, next) => {
       return res.status(400).json({ error: "La réservation doit être associée à un gîte pour préremplir un document." });
     }
 
-    return res.json(await hydrateReservationWithLinkedContract(reservation));
+    const groupedRows = await loadGroupedStayRows(reservation);
+    const groupedReservation = buildGroupedStayReservation(groupedRows) ?? reservation;
+    return res.json(await hydrateReservationWithLinkedContract(groupedReservation));
   } catch (err) {
     next(err);
   }
@@ -2007,11 +2199,18 @@ router.put("/:id", async (req, res, next) => {
     const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
 
     const computed = computeReservationFields(payload);
+    const existingGroupRows = existing.stay_group_id
+      ? await prisma.reservation.findMany({
+          where: { stay_group_id: existing.stay_group_id },
+          select: { id: true },
+        })
+      : [{ id: existing.id }];
+    const existingGroupIds = existingGroupRows.map((row) => row.id);
     const conflicts = await findConflicts({
       association,
       dateEntree: computed.dateEntree,
       dateSortie: computed.dateSortie,
-      excludeId: existing.id,
+      excludeIds: existingGroupIds,
     });
     if (conflicts.length > 0) {
       return res.status(409).json(buildConflictPayload(conflicts));
@@ -2070,6 +2269,21 @@ router.put("/:id", async (req, res, next) => {
         }
       }
 
+      const siblingIds = existingGroupIds.filter((id) => id !== existing.id);
+      if (siblingIds.length > 0) {
+        await tx.contrat.updateMany({
+          where: { reservation_id: { in: siblingIds } },
+          data: { reservation_id: existing.id },
+        });
+        await tx.facture.updateMany({
+          where: { reservation_id: { in: siblingIds } },
+          data: { reservation_id: existing.id },
+        });
+        await tx.reservation.deleteMany({
+          where: { id: { in: siblingIds } },
+        });
+      }
+
       return updatedReservation;
     });
 
@@ -2081,10 +2295,14 @@ router.put("/:id", async (req, res, next) => {
 
 router.delete("/:id", async (req, res, next) => {
   try {
-    const existing = await prisma.reservation.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    const existing = await prisma.reservation.findUnique({ where: { id: req.params.id }, select: { id: true, stay_group_id: true } });
     if (!existing) return res.status(404).json({ error: "Réservation introuvable" });
 
-    await prisma.reservation.delete({ where: { id: existing.id } });
+    if (existing.stay_group_id) {
+      await prisma.reservation.deleteMany({ where: { stay_group_id: existing.stay_group_id } });
+    } else {
+      await prisma.reservation.delete({ where: { id: existing.id } });
+    }
     return res.status(204).end();
   } catch (err) {
     next(err);
