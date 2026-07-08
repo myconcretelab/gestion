@@ -67,7 +67,7 @@ const contractSchema = z.object({
   locataire_adresse: z.string().optional().default(""),
   locataire_tel: z.string().min(1),
   locataire_email: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
-  nb_adultes: z.number().int().min(1),
+  nb_adultes: z.number().int().min(0),
   nb_enfants_2_17: z.number().int().min(0),
   date_debut: z.string().min(1),
   heure_arrivee: z.string().min(1),
@@ -139,7 +139,7 @@ const reservationPaymentSourceValues = [
 const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
 
 const returnProcessingSchema = z.object({
-  nb_adultes: z.number().int().min(1).optional(),
+  nb_adultes: z.number().int().min(0).optional(),
   nb_enfants_2_17: z.number().int().min(0).optional(),
   statut_reception_contrat: z.enum(["non_recu", "recu"]).optional(),
   date_reception_contrat: nullableDateString,
@@ -170,7 +170,7 @@ const previewSchema = z.object({
   locataire_adresse: z.string().optional().default(""),
   locataire_tel: z.string().optional().default(""),
   locataire_email: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
-  nb_adultes: z.number().int().min(1).optional().default(1),
+  nb_adultes: z.number().int().min(0).optional().default(1),
   nb_enfants_2_17: z.number().int().min(0).optional().default(0),
   date_debut: optionalDateString,
   heure_arrivee: z.string().optional().default("17:00"),

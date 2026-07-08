@@ -375,7 +375,7 @@ const ContratFormPage = () => {
   const adultesMax = useMemo(() => getDocumentAdultsMax(selectedGite), [selectedGite]);
   const enfantsConfiguredMax = useMemo(() => getDocumentChildrenConfiguredMax(selectedGite), [selectedGite]);
   const enfantsMax = useMemo(() => getDocumentChildrenMax(selectedGite, nbAdultes), [selectedGite, nbAdultes]);
-  const adultOptions = useMemo(() => Array.from({ length: adultesMax }, (_, index) => index + 1), [adultesMax]);
+  const adultOptions = useMemo(() => Array.from({ length: adultesMax + 1 }, (_, index) => index), [adultesMax]);
   const childrenOptions = useMemo(() => Array.from({ length: enfantsMax + 1 }, (_, index) => index), [enfantsMax]);
 
   const previewPayload = useMemo(() => {
