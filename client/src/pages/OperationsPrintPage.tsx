@@ -18,7 +18,7 @@ import {
 import type {
   Gite,
   PlanningRelayPeriod,
-  PlanningRelaySmsSendResult,
+  PlanningRelayProgramSmsSendResult,
   PlanningRelaySmsStatus,
   Reservation,
 } from "../utils/types";
@@ -30,6 +30,17 @@ type LegacySavedPeriod = {
   id: string;
   from: string;
   to: string;
+};
+
+type PlanningRelayPeriodDraft = {
+  label: string;
+  is_active: boolean;
+  show_timeline: boolean;
+  show_comments: boolean;
+  show_phones: boolean;
+  sms_enabled: boolean;
+  sms_recipient: string;
+  sms_send_time: string;
 };
 
 const readLegacySavedPeriods = (): LegacySavedPeriod[] => {
@@ -104,6 +115,17 @@ const formatRange = (from: string, to: string) =>
 const formatSavedPeriod = (from: string, to: string) =>
   `${formatShortDate(from)} → ${formatShortDate(to)}`;
 
+const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft => ({
+  label: period.label,
+  is_active: period.is_active,
+  show_timeline: period.show_timeline,
+  show_comments: period.show_comments,
+  show_phones: period.show_phones,
+  sms_enabled: period.sms_enabled,
+  sms_recipient: period.sms_recipient ?? "",
+  sms_send_time: period.sms_send_time || "18:00",
+});
+
 const formatGiteTime = (value?: string) => {
   if (!value) return "—";
   const [hours, minutes] = value.split(":");
@@ -141,6 +163,9 @@ const OperationsPrintPage = () => {
   const [savedPeriodsNotice, setSavedPeriodsNotice] = useState<string | null>(null);
   const [smsStatus, setSmsStatus] = useState<PlanningRelaySmsStatus | null>(null);
   const [sendingSmsPeriodId, setSendingSmsPeriodId] = useState<string | null>(null);
+  const [periodManagerIsOpen, setPeriodManagerIsOpen] = useState(false);
+  const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
+  const [savingPeriodDetailsId, setSavingPeriodDetailsId] = useState<string | null>(null);
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -174,6 +199,16 @@ const OperationsPrintPage = () => {
       .then(setSmsStatus)
       .catch(() => setSmsStatus({ configured: false, missing: ["SMS"] }));
   }, []);
+
+  useEffect(() => {
+    setPeriodDrafts((current) => {
+      const next: Record<string, PlanningRelayPeriodDraft> = {};
+      for (const period of savedPeriods) {
+        next[period.id] = current[period.id] ?? buildPeriodDraft(period);
+      }
+      return next;
+    });
+  }, [savedPeriods]);
 
   useEffect(() => {
     if (!periodPickerIsOpen) return;
@@ -343,6 +378,7 @@ const OperationsPrintPage = () => {
 
   const updateSavedPeriod = (updated: PlanningRelayPeriod) => {
     setSavedPeriods((current) => current.map((period) => period.id === updated.id ? updated : period));
+    setPeriodDrafts((current) => ({ ...current, [updated.id]: buildPeriodDraft(updated) }));
   };
 
   const removeSavedPeriod = async (period: PlanningRelayPeriod) => {
@@ -352,30 +388,6 @@ const OperationsPrintPage = () => {
       setSavedPeriods((current) => current.filter((item) => item.id !== period.id));
     } catch (caught) {
       setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible de supprimer la période.");
-    }
-  };
-
-  const renameSavedPeriod = async (period: PlanningRelayPeriod) => {
-    const label = window.prompt("Nom de la période", period.label)?.trim();
-    if (!label || label === period.label) return;
-    try {
-      updateSavedPeriod(await apiFetch<PlanningRelayPeriod>(`/planning-relay-periods/${period.id}`, {
-        method: "PATCH",
-        json: { label },
-      }));
-    } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible de renommer la période.");
-    }
-  };
-
-  const toggleSavedPeriod = async (period: PlanningRelayPeriod) => {
-    try {
-      updateSavedPeriod(await apiFetch<PlanningRelayPeriod>(`/planning-relay-periods/${period.id}`, {
-        method: "PATCH",
-        json: { is_active: !period.is_active },
-      }));
-    } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible de modifier le partage.");
     }
   };
 
@@ -398,7 +410,58 @@ const OperationsPrintPage = () => {
     }
   };
 
-  const sendSavedPeriodSms = async (period: PlanningRelayPeriod) => {
+  const updatePeriodDraft = (periodId: string, patch: Partial<PlanningRelayPeriodDraft>) => {
+    setPeriodDrafts((current) => {
+      const period = savedPeriods.find((item) => item.id === periodId);
+      const existing = current[periodId] ?? (period ? buildPeriodDraft(period) : null);
+      if (!existing) return current;
+      return {
+        ...current,
+        [periodId]: {
+          ...existing,
+          ...patch,
+        },
+      };
+    });
+  };
+
+  const savePeriodDetails = async (period: PlanningRelayPeriod) => {
+    const draft = periodDrafts[period.id] ?? buildPeriodDraft(period);
+    if (!draft.label.trim()) {
+      setSavedPeriodsError("Le nom de la période est obligatoire.");
+      return;
+    }
+    if (draft.sms_enabled && !draft.sms_recipient.trim()) {
+      setSavedPeriodsError("Ajoutez un numéro avant d'activer l'envoi automatique.");
+      return;
+    }
+
+    setSavingPeriodDetailsId(period.id);
+    setSavedPeriodsError(null);
+    setSavedPeriodsNotice(null);
+    try {
+      updateSavedPeriod(await apiFetch<PlanningRelayPeriod>(`/planning-relay-periods/${period.id}`, {
+        method: "PATCH",
+        json: {
+          label: draft.label.trim(),
+          is_active: draft.is_active,
+          show_timeline: draft.show_timeline,
+          show_comments: draft.show_comments,
+          show_phones: draft.show_phones,
+          sms_enabled: draft.sms_enabled,
+          sms_recipient: draft.sms_recipient.trim() || null,
+          sms_send_time: draft.sms_send_time || "18:00",
+        },
+      }));
+      setSavedPeriodsNotice("Détails de la période enregistrés.");
+    } catch (caught) {
+      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d'enregistrer la période.");
+    } finally {
+      setSavingPeriodDetailsId(null);
+    }
+  };
+
+  const sendSavedPeriodProgramSms = async (period: PlanningRelayPeriod) => {
     if (sendingSmsPeriodId) return;
     if (!smsStatus?.configured) {
       setSavedPeriodsError(
@@ -408,20 +471,21 @@ const OperationsPrintPage = () => {
       );
       return;
     }
-
-    const recipient = window.prompt("Numéro de téléphone du destinataire")?.trim();
-    if (!recipient) return;
+    if (!period.sms_recipient?.trim()) {
+      setSavedPeriodsError("Ajoutez et enregistrez un numéro SMS pour cette période.");
+      return;
+    }
 
     setSendingSmsPeriodId(period.id);
     setSavedPeriodsError(null);
     setSavedPeriodsNotice(null);
     try {
-      const result = await apiFetch<PlanningRelaySmsSendResult>(`/planning-relay-periods/${period.id}/send-sms`, {
+      const result = await apiFetch<PlanningRelayProgramSmsSendResult>(`/planning-relay-periods/${period.id}/send-program-sms`, {
         method: "POST",
-        json: { recipient },
       });
       const credits = result.credits === null ? "" : ` (${result.credits} crédit${result.credits > 1 ? "s" : ""})`;
-      setSavedPeriodsNotice(`SMS envoyé vers ${result.recipient}${credits}.`);
+      setSavedPeriodsNotice(`Programme du ${formatShortDate(result.target_date)} envoyé vers ${result.recipient}${credits}.`);
+      void refreshSavedPeriods();
     } catch (caught) {
       setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d’envoyer le SMS.");
     } finally {
@@ -499,54 +563,28 @@ const OperationsPrintPage = () => {
           {savedPeriodsNotice ? <div className="operations-saved-periods__notice">{savedPeriodsNotice}</div> : null}
           {savedPeriodsError ? <div className="operations-saved-periods__error">{savedPeriodsError}</div> : null}
           {savedPeriods.length > 0 ? (
-            <div className="operations-saved-periods" aria-label="Périodes enregistrées">
-              {savedPeriods.map((period) => {
-                const isSelected = period.from === from && period.to === to &&
-                  period.gite_ids.length === selectedGiteIds.size &&
-                  period.gite_ids.every((id) => selectedGiteIds.has(id));
-                const isExpired = Boolean(period.expires_at && new Date(period.expires_at).getTime() < Date.now());
-                const isAvailable = period.is_active && !isExpired;
-                return (
-                  <span key={period.id} className={`operations-saved-period${isSelected ? " is-active" : ""}${isAvailable ? "" : " is-disabled"}`}>
-                    <button type="button" onClick={() => applySavedPeriod(period)} aria-pressed={isSelected} title={formatSavedPeriod(period.from, period.to)}>
-                      {period.label}
-                    </button>
-                    <button type="button" className="operations-saved-period__action" onClick={() => void renameSavedPeriod(period)} aria-label={`Renommer ${period.label}`} title="Renommer">✎</button>
-                    <a
-                      className="operations-saved-period__action"
-                      href={isAvailable ? new URL(period.public_path, window.location.origin).toString() : undefined}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`Ouvrir le planning public ${period.label}`}
-                      aria-disabled={!isAvailable}
-                      tabIndex={isAvailable ? undefined : -1}
-                      title="Ouvrir le planning public"
-                    >
-                      <svg className="operations-saved-period__share-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M14 4h6v6M20 4l-9 9" />
-                        <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-                      </svg>
-                    </a>
-                    <button type="button" className="operations-saved-period__action" onClick={() => void copySavedPeriodLink(period)} aria-label={`Copier le lien de ${period.label}`} title="Copier le lien" disabled={!isAvailable}>⧉</button>
-                    <button
-                      type="button"
-                      className="operations-saved-period__action"
-                      onClick={() => void sendSavedPeriodSms(period)}
-                      aria-label={`Envoyer le lien ${period.label} par SMS`}
-                      title={smsStatus?.configured ? "Envoyer par SMS" : "SMS non configuré"}
-                      disabled={!isAvailable || !smsStatus?.configured || sendingSmsPeriodId === period.id}
-                    >
-                      {sendingSmsPeriodId === period.id ? "…" : "SMS"}
-                    </button>
-                    <button type="button" className="operations-saved-period__action" onClick={() => void toggleSavedPeriod(period)} aria-label={`${period.is_active ? "Désactiver" : "Activer"} ${period.label}`} title={isExpired ? "Lien expiré : régénérez-le" : period.is_active ? "Désactiver le lien" : "Activer le lien"} disabled={isExpired}>{period.is_active ? "●" : "○"}</button>
-                    <button type="button" className="operations-saved-period__action" onClick={() => void rotateSavedPeriodLink(period)} aria-label={`Régénérer le lien de ${period.label}`} title="Régénérer le lien">↻</button>
-                    <button type="button" className="operations-saved-period__remove" onClick={() => void removeSavedPeriod(period)} aria-label={`Supprimer la période ${period.label}`} title="Supprimer">
-                      <span aria-hidden="true">×</span>
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
+            <>
+              <div className="operations-saved-periods" aria-label="Périodes enregistrées">
+                {savedPeriods.map((period) => {
+                  const isSelected = period.from === from && period.to === to &&
+                    period.gite_ids.length === selectedGiteIds.size &&
+                    period.gite_ids.every((id) => selectedGiteIds.has(id));
+                  const isExpired = Boolean(period.expires_at && new Date(period.expires_at).getTime() < Date.now());
+                  const isAvailable = period.is_active && !isExpired;
+                  return (
+                    <span key={period.id} className={`operations-saved-period${isSelected ? " is-active" : ""}${isAvailable ? "" : " is-disabled"}`}>
+                      <button type="button" onClick={() => applySavedPeriod(period)} aria-pressed={isSelected} title={formatSavedPeriod(period.from, period.to)}>
+                        {period.label}
+                        {period.sms_enabled ? <span className="operations-saved-period__sms-dot" aria-label="SMS automatique actif" /> : null}
+                      </button>
+                    </span>
+                  );
+                })}
+                <button type="button" className="secondary operations-saved-periods__manage" onClick={() => setPeriodManagerIsOpen(true)}>
+                  Gérer
+                </button>
+              </div>
+            </>
           ) : null}
         </div>
         {!periodIsValid ? <div className="operations-error">La période doit contenir entre 1 et 31 jours.</div> : null}
@@ -573,6 +611,161 @@ const OperationsPrintPage = () => {
           </button>
         </div>
       </section>
+
+      {periodManagerIsOpen ? (
+        <div className="operations-period-drawer no-print" role="dialog" aria-modal="true" aria-labelledby="operations-period-drawer-title">
+          <button
+            type="button"
+            className="operations-period-drawer__backdrop"
+            aria-label="Fermer la gestion des périodes"
+            onClick={() => setPeriodManagerIsOpen(false)}
+          />
+          <aside className="operations-period-drawer__panel">
+            <header className="operations-period-drawer__header">
+              <div>
+                <div className="operations-controls__eyebrow">Périodes enregistrées</div>
+                <h2 id="operations-period-drawer-title">Gestion des relais</h2>
+              </div>
+              <button type="button" className="operations-period-drawer__close" onClick={() => setPeriodManagerIsOpen(false)} aria-label="Fermer">
+                ×
+              </button>
+            </header>
+            <div className="operations-period-drawer__content">
+              {savedPeriods.map((period) => {
+                const draft = periodDrafts[period.id] ?? buildPeriodDraft(period);
+                const isExpired = Boolean(period.expires_at && new Date(period.expires_at).getTime() < Date.now());
+                const isAvailable = period.is_active && !isExpired;
+                const isSavingDetails = savingPeriodDetailsId === period.id;
+                const isSendingProgram = sendingSmsPeriodId === period.id;
+                return (
+                  <section key={period.id} className="operations-period-detail">
+                    <div className="operations-period-detail__title">
+                      <div>
+                        <strong>{period.label}</strong>
+                        <span>{formatSavedPeriod(period.from, period.to)}</span>
+                      </div>
+                      <button type="button" className="secondary" onClick={() => applySavedPeriod(period)}>
+                        Afficher
+                      </button>
+                    </div>
+
+                    <label className="field">
+                      <span>Nom</span>
+                      <input
+                        value={draft.label}
+                        onChange={(event) => updatePeriodDraft(period.id, { label: event.target.value })}
+                      />
+                    </label>
+
+                    <div className="operations-period-detail__grid">
+                      <label className="field">
+                        <span>Numéro SMS</span>
+                        <input
+                          value={draft.sms_recipient}
+                          onChange={(event) => updatePeriodDraft(period.id, { sms_recipient: event.target.value })}
+                          placeholder="06 00 00 00 00"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Heure d'envoi</span>
+                        <input
+                          type="time"
+                          value={draft.sms_send_time}
+                          onChange={(event) => updatePeriodDraft(period.id, { sms_send_time: event.target.value })}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="operations-period-detail__toggles">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.sms_enabled}
+                          onChange={(event) => updatePeriodDraft(period.id, { sms_enabled: event.target.checked })}
+                        />
+                        SMS automatique
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.is_active}
+                          onChange={(event) => updatePeriodDraft(period.id, { is_active: event.target.checked })}
+                        />
+                        Lien public actif
+                      </label>
+                    </div>
+
+                    <div className="operations-period-detail__toggles">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.show_timeline}
+                          onChange={(event) => updatePeriodDraft(period.id, { show_timeline: event.target.checked })}
+                        />
+                        Tableau graphique
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.show_comments}
+                          onChange={(event) => updatePeriodDraft(period.id, { show_comments: event.target.checked })}
+                        />
+                        Commentaires
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.show_phones}
+                          onChange={(event) => updatePeriodDraft(period.id, { show_phones: event.target.checked })}
+                        />
+                        Téléphones
+                      </label>
+                    </div>
+
+                    <div className="operations-period-detail__meta">
+                      <span>Dernière tentative : {period.sms_last_attempt_for_date ? formatShortDate(period.sms_last_attempt_for_date) : "aucune"}</span>
+                      <span>Dernier envoi : {period.sms_last_sent_for_date ? formatShortDate(period.sms_last_sent_for_date) : "aucun"}</span>
+                    </div>
+
+                    <div className="operations-period-detail__actions">
+                      <button type="button" onClick={() => void savePeriodDetails(period)} disabled={isSavingDetails}>
+                        {isSavingDetails ? "Enregistrement…" : "Enregistrer"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void sendSavedPeriodProgramSms(period)}
+                        disabled={!smsStatus?.configured || !period.sms_recipient || isSendingProgram}
+                      >
+                        {isSendingProgram ? "Envoi…" : "Envoyer demain"}
+                      </button>
+                      <a
+                        className={`button secondary${isAvailable ? "" : " is-disabled"}`}
+                        href={isAvailable ? new URL(period.public_path, window.location.origin).toString() : undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-disabled={!isAvailable}
+                        tabIndex={isAvailable ? undefined : -1}
+                      >
+                        Ouvrir
+                      </a>
+                      <button type="button" className="secondary" onClick={() => void copySavedPeriodLink(period)} disabled={!isAvailable}>
+                        Copier
+                      </button>
+                      <button type="button" className="secondary" onClick={() => void rotateSavedPeriodLink(period)}>
+                        Régénérer
+                      </button>
+                      <button type="button" className="danger" onClick={() => void removeSavedPeriod(period)}>
+                        Supprimer
+                      </button>
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       {error ? <div className="operations-error no-print">{error}</div> : null}
       {loading ? <div className="card no-print">Chargement du planning…</div> : null}

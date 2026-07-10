@@ -20,6 +20,12 @@ import {
   sendThrottleResponse,
 } from "../services/requestThrottle.js";
 import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
+import {
+  addPlanningRelayIsoDays,
+  getParisDateTimeParts,
+  normalizePlanningRelaySmsTime,
+  sendPlanningRelayProgramSms,
+} from "../services/planningRelaySms.js";
 
 const MAX_DAYS = 31;
 const privateRouter = Router();
@@ -44,6 +50,12 @@ const payloadSchema = z.object({
 
 const patchSchema = payloadSchema.partial().extend({
   is_active: z.boolean().optional(),
+  sms_enabled: z.boolean().optional(),
+  sms_recipient: z.preprocess(
+    (value) => value === "" || value === undefined ? null : value,
+    z.string().trim().min(6).max(32).nullable(),
+  ).optional(),
+  sms_send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/).optional(),
 });
 const smsSchema = z.object({
   recipient: z.string().trim().min(6).max(32),
@@ -135,6 +147,11 @@ const serializePeriod = (period: any) => {
     is_active: period.is_active,
     expires_at: period.expires_at?.toISOString() ?? null,
     last_accessed_at: period.last_accessed_at?.toISOString() ?? null,
+    sms_enabled: Boolean(period.sms_enabled),
+    sms_recipient: period.sms_recipient ?? null,
+    sms_send_time: normalizePlanningRelaySmsTime(period.sms_send_time),
+    sms_last_sent_for_date: period.sms_last_sent_for_date ?? null,
+    sms_last_attempt_for_date: period.sms_last_attempt_for_date ?? null,
     created_at: period.createdAt.toISOString(),
     updated_at: period.updatedAt.toISOString(),
     public_path: `/r/${code}`,
@@ -223,6 +240,11 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.show_comments !== undefined ? { show_comments: payload.show_comments } : {}),
         ...(payload.show_phones !== undefined ? { show_phones: payload.show_phones } : {}),
         ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
+        ...(payload.sms_enabled !== undefined ? { sms_enabled: payload.sms_enabled } : {}),
+        ...(payload.sms_recipient !== undefined ? { sms_recipient: payload.sms_recipient } : {}),
+        ...(payload.sms_send_time !== undefined
+          ? { sms_send_time: normalizePlanningRelaySmsTime(payload.sms_send_time) }
+          : {}),
         ...(payload.expires_at !== undefined
           ? { expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : null }
           : {}),
@@ -283,6 +305,35 @@ privateRouter.post("/:id/send-sms", async (req, res, next) => {
       ids: result.ids ?? [],
       invalid_receivers: result.invalidReceivers ?? [],
       valid_receivers: result.validReceivers ?? [],
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.post("/:id/send-program-sms", async (req, res, next) => {
+  try {
+    const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: "Période introuvable." });
+    if (!current.sms_recipient?.trim()) {
+      return res.status(400).json({ error: "Ajoutez un numéro SMS à cette période." });
+    }
+
+    const { isoDate } = getParisDateTimeParts();
+    const targetIsoDate = addPlanningRelayIsoDays(isoDate, 1);
+    const result = await sendPlanningRelayProgramSms(current, targetIsoDate);
+    if (!result.sent) {
+      return res.status(409).json({ error: "Aucune intervention à envoyer pour demain." });
+    }
+
+    return res.json({
+      ok: true,
+      target_date: targetIsoDate,
+      message: result.message,
+      provider: result.result.provider,
+      recipient: result.result.recipient,
+      credits: result.result.totalCreditsRemoved ?? null,
+      ids: result.result.ids ?? [],
     });
   } catch (error) {
     return next(error);

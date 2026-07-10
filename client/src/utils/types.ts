@@ -126,6 +126,11 @@ export type PlanningRelayPeriod = {
   is_active: boolean;
   expires_at: string | null;
   last_accessed_at: string | null;
+  sms_enabled: boolean;
+  sms_recipient: string | null;
+  sms_send_time: string;
+  sms_last_sent_for_date: string | null;
+  sms_last_attempt_for_date: string | null;
   created_at: string;
   updated_at: string;
   public_path: string;
@@ -144,6 +149,16 @@ export type PlanningRelaySmsSendResult = {
   ids: number[];
   invalid_receivers: string[];
   valid_receivers: string[];
+};
+
+export type PlanningRelayProgramSmsSendResult = {
+  ok: boolean;
+  target_date: string;
+  message: string;
+  provider: "ovh";
+  recipient: string;
+  credits: number | null;
+  ids: number[];
 };
 
 export type PublicPlanningRelayResponse = {
