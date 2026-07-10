@@ -128,17 +128,15 @@ const buildReservationTimes = (contracts: ProgramContractTime[]) => {
   return times;
 };
 
-export const buildPlanningRelayProgramSmsMessage = (params: {
+export const buildPlanningRelayProgramSmsMessages = (params: {
   targetIsoDate: string;
   heading?: string;
   reservations: ProgramReservation[];
   contracts?: ProgramContractTime[];
 }) => {
   const timesByReservationId = buildReservationTimes(params.contracts ?? []);
-  const rowsByGite = new Map<string, {
-    gite: NonNullable<ProgramReservation["gite"]>;
-    parts: Array<{ rank: number; text: string }>;
-  }>();
+  const messages: Array<{ giteOrder: number; giteName: string; rank: number; reservationId: string; text: string }> = [];
+  const heading = params.heading ?? "Programme demain";
 
   const sortedReservations = [...params.reservations].sort((left, right) =>
     (left.gite?.ordre ?? 0) - (right.gite?.ordre ?? 0) ||
@@ -150,35 +148,42 @@ export const buildPlanningRelayProgramSmsMessage = (params: {
     if (!reservation.gite || !reservation.gite_id) continue;
     const options = optionsFromValue(reservation.options);
     const times = timesByReservationId.get(reservation.id);
-    let row = rowsByGite.get(reservation.gite_id);
-    if (!row) {
-      row = { gite: reservation.gite, parts: [] };
-      rowsByGite.set(reservation.gite_id, row);
-    }
 
     if (isSameIsoDate(reservation.date_sortie, params.targetIsoDate)) {
       const labels = ["sortie"];
       if (options.menage?.enabled) labels.push("menage");
-      row.parts.push({
+      messages.push({
+        giteOrder: reservation.gite.ordre,
+        giteName: reservation.gite.nom,
         rank: 0,
-        text: `${formatSmsTime(times?.heure_depart ?? reservation.gite.heure_depart_defaut)} ${labels.join(" + ")}`,
+        reservationId: reservation.id,
+        text: stripSmsAccents(
+          `${heading}:\n${reservation.gite.nom}: ${formatSmsTime(times?.heure_depart ?? reservation.gite.heure_depart_defaut)} ${labels.join(" + ")}`
+        ),
       });
     }
 
     if (isSameIsoDate(reservation.date_entree, params.targetIsoDate)) {
-      row.parts.push({
+      messages.push({
+        giteOrder: reservation.gite.ordre,
+        giteName: reservation.gite.nom,
         rank: 1,
-        text: `${formatSmsTime(times?.heure_arrivee ?? reservation.gite.heure_arrivee_defaut)} entree`,
+        reservationId: reservation.id,
+        text: stripSmsAccents(
+          `${heading}:\n${reservation.gite.nom}: ${formatSmsTime(times?.heure_arrivee ?? reservation.gite.heure_arrivee_defaut)} entree`
+        ),
       });
     }
   }
 
-  const lines = [...rowsByGite.values()]
-    .filter((row) => row.parts.length > 0)
-    .map((row) => `- ${row.gite.nom}: ${row.parts.sort((left, right) => left.rank - right.rank).map((part) => part.text).join(" / ")}`);
-
-  if (lines.length === 0) return null;
-  return stripSmsAccents([`${params.heading ?? "Programme demain"}:`, ...lines].join("\n"));
+  return messages
+    .sort((left, right) =>
+      left.giteOrder - right.giteOrder ||
+      left.giteName.localeCompare(right.giteName, "fr") ||
+      left.rank - right.rank ||
+      left.reservationId.localeCompare(right.reservationId)
+    )
+    .map((message) => message.text);
 };
 
 export const buildPlanningRelayProgramSmsForPeriod = async (period: {
@@ -229,7 +234,7 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
       })
     : [];
 
-  return buildPlanningRelayProgramSmsMessage({ targetIsoDate, heading, reservations, contracts });
+  return buildPlanningRelayProgramSmsMessages({ targetIsoDate, heading, reservations, contracts });
 };
 
 export const sendPlanningRelayProgramSms = async (period: {
@@ -239,18 +244,21 @@ export const sendPlanningRelayProgramSms = async (period: {
   sms_send_day?: string | null;
 }, targetIsoDate: string) => {
   if (!period.sms_recipient?.trim()) throw new Error("Numero SMS manquant pour la periode relais.");
-  const message = await buildPlanningRelayProgramSmsForPeriod(
+  const messages = await buildPlanningRelayProgramSmsForPeriod(
     period,
     targetIsoDate,
     getPlanningRelayProgramHeading(period.sms_send_day),
   );
-  if (!message) return { sent: false as const, reason: "empty" as const };
+  if (!messages || messages.length === 0) return { sent: false as const, reason: "empty" as const };
 
   await prisma.planningRelayPeriod.update({
     where: { id: period.id },
     data: { sms_last_attempt_for_date: targetIsoDate },
   });
-  const result = await sendOvhSms({ recipient: period.sms_recipient, message });
+  const results = [];
+  for (const message of messages) {
+    results.push(await sendOvhSms({ recipient: period.sms_recipient, message }));
+  }
   await prisma.planningRelayPeriod.update({
     where: { id: period.id },
     data: {
@@ -259,7 +267,7 @@ export const sendPlanningRelayProgramSms = async (period: {
     },
   });
 
-  return { sent: true as const, message, result };
+  return { sent: true as const, messages, results };
 };
 
 export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
@@ -296,7 +304,7 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
 
     try {
       const result = await sendPlanningRelayProgramSms(period, targetIsoDate);
-      if (result.sent) sentCount += 1;
+      if (result.sent) sentCount += result.messages.length;
     } catch (error) {
       await prisma.planningRelayPeriod.update({
         where: { id: period.id },

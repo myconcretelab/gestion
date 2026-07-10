@@ -152,16 +152,6 @@ export type PlanningRelaySmsSendResult = {
   valid_receivers: string[];
 };
 
-export type PlanningRelayProgramSmsSendResult = {
-  ok: boolean;
-  target_date: string;
-  message: string;
-  provider: "ovh";
-  recipient: string;
-  credits: number | null;
-  ids: number[];
-};
-
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,

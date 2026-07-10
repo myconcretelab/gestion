@@ -21,11 +21,8 @@ import {
 } from "../services/requestThrottle.js";
 import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
 import {
-  getParisDateTimeParts,
-  getPlanningRelayProgramTargetIsoDate,
   normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsTime,
-  sendPlanningRelayProgramSms,
 } from "../services/planningRelaySms.js";
 
 const MAX_DAYS = 31;
@@ -311,35 +308,6 @@ privateRouter.post("/:id/send-sms", async (req, res, next) => {
       ids: result.ids ?? [],
       invalid_receivers: result.invalidReceivers ?? [],
       valid_receivers: result.validReceivers ?? [],
-    });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-privateRouter.post("/:id/send-program-sms", async (req, res, next) => {
-  try {
-    const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
-    if (!current) return res.status(404).json({ error: "Période introuvable." });
-    if (!current.sms_recipient?.trim()) {
-      return res.status(400).json({ error: "Ajoutez un numéro SMS à cette période." });
-    }
-
-    const { isoDate } = getParisDateTimeParts();
-    const targetIsoDate = getPlanningRelayProgramTargetIsoDate(isoDate, current.sms_send_day);
-    const result = await sendPlanningRelayProgramSms(current, targetIsoDate);
-    if (!result.sent) {
-      return res.status(409).json({ error: "Aucune intervention à envoyer pour la date ciblée." });
-    }
-
-    return res.json({
-      ok: true,
-      target_date: targetIsoDate,
-      message: result.message,
-      provider: result.result.provider,
-      recipient: result.result.recipient,
-      credits: result.result.totalCreditsRemoved ?? null,
-      ids: result.result.ids ?? [],
     });
   } catch (error) {
     return next(error);
