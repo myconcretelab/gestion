@@ -39,6 +39,8 @@ type ProgramContractTime = {
   heure_depart: string;
 };
 
+export type PlanningRelaySmsSendDay = "previous_day" | "same_day";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const parsePlanningRelayIsoDate = (value: string) => {
@@ -76,6 +78,15 @@ export const normalizePlanningRelaySmsTime = (value: string | null | undefined) 
   if (!match) return "18:00";
   return `${match[1].padStart(2, "0")}:${match[2]}`;
 };
+
+export const normalizePlanningRelaySmsSendDay = (value: string | null | undefined): PlanningRelaySmsSendDay =>
+  value === "same_day" ? "same_day" : "previous_day";
+
+export const getPlanningRelayProgramTargetIsoDate = (currentIsoDate: string, sendDay: string | null | undefined) =>
+  addPlanningRelayIsoDays(currentIsoDate, normalizePlanningRelaySmsSendDay(sendDay) === "previous_day" ? 1 : 0);
+
+export const getPlanningRelayProgramHeading = (sendDay: string | null | undefined) =>
+  normalizePlanningRelaySmsSendDay(sendDay) === "same_day" ? "Programme aujourd'hui" : "Programme demain";
 
 export const isPlanningRelaySmsDue = (params: {
   nowTime: string;
@@ -119,6 +130,7 @@ const buildReservationTimes = (contracts: ProgramContractTime[]) => {
 
 export const buildPlanningRelayProgramSmsMessage = (params: {
   targetIsoDate: string;
+  heading?: string;
   reservations: ProgramReservation[];
   contracts?: ProgramContractTime[];
 }) => {
@@ -166,12 +178,12 @@ export const buildPlanningRelayProgramSmsMessage = (params: {
     .map((row) => `- ${row.gite.nom}: ${row.parts.sort((left, right) => left.rank - right.rank).map((part) => part.text).join(" / ")}`);
 
   if (lines.length === 0) return null;
-  return stripSmsAccents(["Programme demain:", ...lines].join("\n"));
+  return stripSmsAccents([`${params.heading ?? "Programme demain"}:`, ...lines].join("\n"));
 };
 
 export const buildPlanningRelayProgramSmsForPeriod = async (period: {
   gite_ids: unknown;
-}, targetIsoDate: string) => {
+}, targetIsoDate: string, heading = "Programme demain") => {
   const giteIds = [
     ...new Set(
       fromJsonString<unknown[]>(period.gite_ids, [])
@@ -217,16 +229,21 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
       })
     : [];
 
-  return buildPlanningRelayProgramSmsMessage({ targetIsoDate, reservations, contracts });
+  return buildPlanningRelayProgramSmsMessage({ targetIsoDate, heading, reservations, contracts });
 };
 
 export const sendPlanningRelayProgramSms = async (period: {
   id: string;
   gite_ids: unknown;
   sms_recipient: string | null;
+  sms_send_day?: string | null;
 }, targetIsoDate: string) => {
   if (!period.sms_recipient?.trim()) throw new Error("Numero SMS manquant pour la periode relais.");
-  const message = await buildPlanningRelayProgramSmsForPeriod(period, targetIsoDate);
+  const message = await buildPlanningRelayProgramSmsForPeriod(
+    period,
+    targetIsoDate,
+    getPlanningRelayProgramHeading(period.sms_send_day),
+  );
   if (!message) return { sent: false as const, reason: "empty" as const };
 
   await prisma.planningRelayPeriod.update({
@@ -247,21 +264,25 @@ export const sendPlanningRelayProgramSms = async (period: {
 
 export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
   const { isoDate, time } = getParisDateTimeParts(now);
-  const targetIsoDate = addPlanningRelayIsoDays(isoDate, 1);
-  const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
+  const todayDate = parsePlanningRelayIsoDate(isoDate);
+  const tomorrowDate = parsePlanningRelayIsoDate(addPlanningRelayIsoDays(isoDate, 1));
   const periods = await prisma.planningRelayPeriod.findMany({
     where: {
       is_active: true,
       sms_enabled: true,
       sms_recipient: { not: null },
-      date_debut: { lte: targetDate },
-      date_fin: { gte: targetDate },
+      date_debut: { lte: tomorrowDate },
+      date_fin: { gte: todayDate },
     },
     orderBy: [{ sms_send_time: "asc" }, { createdAt: "asc" }],
   });
 
   let sentCount = 0;
   for (const period of periods) {
+    const targetIsoDate = getPlanningRelayProgramTargetIsoDate(isoDate, period.sms_send_day);
+    const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
+    if (period.date_debut > targetDate || period.date_fin < targetDate) continue;
+
     if (
       !isPlanningRelaySmsDue({
         nowTime: time,
@@ -289,7 +310,7 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
     }
   }
 
-  return { targetIsoDate, checkedCount: periods.length, sentCount };
+  return { checkedCount: periods.length, sentCount };
 };
 
 let planningRelaySmsTimer: NodeJS.Timeout | null = null;
