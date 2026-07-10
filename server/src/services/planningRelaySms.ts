@@ -88,6 +88,17 @@ export const getPlanningRelayProgramTargetIsoDate = (currentIsoDate: string, sen
 export const getPlanningRelayProgramHeading = (sendDay: string | null | undefined) =>
   normalizePlanningRelaySmsSendDay(sendDay) === "same_day" ? "Programme aujourd'hui" : "Programme demain";
 
+const formatPlanningRelaySmsHeadingDate = (isoDate: string) =>
+  parsePlanningRelayIsoDate(isoDate).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+export const getPlanningRelayTestProgramHeading = (targetIsoDate: string) =>
+  `TEST - Programme du ${formatPlanningRelaySmsHeadingDate(targetIsoDate)}`;
+
 export const isPlanningRelaySmsDue = (params: {
   nowTime: string;
   sendTime: string;
@@ -378,6 +389,38 @@ export const sendPlanningRelayProgramSms = async (period: {
   });
 
   return { sent: true as const, messages, results };
+};
+
+export const sendPlanningRelayProgramTestSms = async (period: {
+  gite_ids: unknown;
+  date_debut: Date;
+  date_fin: Date;
+  sms_recipient: string | null;
+}, currentIsoDate = getParisDateTimeParts().isoDate) => {
+  if (!period.sms_recipient?.trim()) throw new Error("Numero SMS manquant pour la periode relais.");
+
+  let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
+    ? toPlanningRelayIsoDate(period.date_debut)
+    : currentIsoDate;
+  const endIsoDate = toPlanningRelayIsoDate(period.date_fin);
+
+  while (targetIsoDate <= endIsoDate) {
+    const messages = await buildPlanningRelayProgramSmsForPeriod(
+      period,
+      targetIsoDate,
+      getPlanningRelayTestProgramHeading(targetIsoDate),
+    );
+    if (messages?.length) {
+      const results = [];
+      for (const message of messages) {
+        results.push(await sendOvhSms({ recipient: period.sms_recipient, message }));
+      }
+      return { sent: true as const, targetIsoDate, messages, results };
+    }
+    targetIsoDate = addPlanningRelayIsoDays(targetIsoDate, 1);
+  }
+
+  return { sent: false as const, reason: "no_intervention" as const };
 };
 
 export const runPlanningRelaySmsSchedule = async (now = new Date()) => {

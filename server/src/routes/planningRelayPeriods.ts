@@ -23,6 +23,7 @@ import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
 import {
   normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsTime,
+  sendPlanningRelayProgramTestSms,
 } from "../services/planningRelaySms.js";
 
 const MAX_DAYS = 31;
@@ -58,6 +59,12 @@ const patchSchema = payloadSchema.partial().extend({
 });
 const smsSchema = z.object({
   recipient: z.string().trim().min(6).max(32),
+});
+const smsTestSchema = z.object({
+  recipient: z.preprocess(
+    (value) => value === "" || value === undefined ? undefined : value,
+    z.string().trim().min(6).max(32).optional(),
+  ),
 });
 
 const parseIsoDate = (value: string) => {
@@ -276,6 +283,38 @@ privateRouter.post("/:id/rotate-link", async (req, res, next) => {
       },
     });
     return res.json(serializePeriod(period));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
+  try {
+    const payload = smsTestSchema.parse(req.body ?? {});
+    const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: "Période introuvable." });
+    const recipient = payload.recipient ?? current.sms_recipient;
+    if (!recipient?.trim()) {
+      return res.status(400).json({ error: "Ajoutez un numéro SMS sur cette période avant d'envoyer un test." });
+    }
+
+    const result = await sendPlanningRelayProgramTestSms({ ...current, sms_recipient: recipient });
+    if (!result.sent) {
+      return res.status(409).json({ error: "Aucune intervention à venir à envoyer pour cette période." });
+    }
+
+    const firstResult = result.results[0];
+    return res.json({
+      ok: true,
+      provider: firstResult?.provider ?? "ovh",
+      recipient: firstResult?.recipient ?? recipient,
+      target_date: result.targetIsoDate,
+      message: result.messages[0] ?? "",
+      credits: result.results.reduce((sum, item) => sum + (item.totalCreditsRemoved ?? 0), 0),
+      ids: result.results.flatMap((item) => item.ids ?? []),
+      invalid_receivers: result.results.flatMap((item) => item.invalidReceivers ?? []),
+      valid_receivers: result.results.flatMap((item) => item.validReceivers ?? []),
+    });
   } catch (error) {
     return next(error);
   }

@@ -152,6 +152,11 @@ export type PlanningRelaySmsSendResult = {
   valid_receivers: string[];
 };
 
+export type PlanningRelaySmsTestResult = PlanningRelaySmsSendResult & {
+  target_date: string;
+  message: string;
+};
+
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,

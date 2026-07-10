@@ -4,6 +4,7 @@ import {
   buildPlanningRelayProgramSmsMessages,
   getPlanningRelayProgramHeading,
   getPlanningRelayProgramTargetIsoDate,
+  getPlanningRelayTestProgramHeading,
   isPlanningRelaySmsDue,
   normalizePlanningRelaySmsTime,
 } from "../src/services/planningRelaySms.ts";
@@ -124,6 +125,7 @@ test("buildPlanningRelayProgramSmsMessages ignore les arrivees deja traitees par
 });
 
 test("isPlanningRelaySmsDue evite les doublons quotidiens", () => {
+  assert.equal(getPlanningRelayTestProgramHeading("2026-07-13"), "TEST - Programme du 13/07/2026");
   assert.equal(normalizePlanningRelaySmsTime("8:05"), "08:05");
   assert.equal(
     isPlanningRelaySmsDue({
