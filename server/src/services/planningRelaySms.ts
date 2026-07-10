@@ -110,6 +110,13 @@ const formatSmsTime = (value: string | null | undefined) => {
   return minutes === "00" ? `${Number(hours)}h` : `${Number(hours)}h${minutes}`;
 };
 
+const getOperationSchedule = (departureTime: string | null, arrivalTime: string | null) => {
+  if (departureTime && arrivalTime) return `Entre ${departureTime} et ${arrivalTime}`;
+  if (departureTime) return `A partir de ${departureTime}`;
+  if (arrivalTime) return `Avant ${arrivalTime}`;
+  return "";
+};
+
 const optionsFromValue = (value: unknown): ReservationOptions =>
   fromJsonString<ReservationOptions>(value, {});
 
@@ -135,7 +142,15 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
   contracts?: ProgramContractTime[];
 }) => {
   const timesByReservationId = buildReservationTimes(params.contracts ?? []);
-  const messages: Array<{ giteOrder: number; giteName: string; rank: number; reservationId: string; text: string }> = [];
+  const rowsByGite = new Map<string, {
+    giteOrder: number;
+    giteName: string;
+    arrivalTime: string | null;
+    departureTime: string | null;
+    hasArrival: boolean;
+    hasDeparture: boolean;
+    hasCleaning: boolean;
+  }>();
   const heading = params.heading ?? "Programme demain";
 
   const sortedReservations = [...params.reservations].sort((left, right) =>
@@ -148,42 +163,50 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
     if (!reservation.gite || !reservation.gite_id) continue;
     const options = optionsFromValue(reservation.options);
     const times = timesByReservationId.get(reservation.id);
-
-    if (isSameIsoDate(reservation.date_sortie, params.targetIsoDate)) {
-      const labels = ["sortie"];
-      if (options.menage?.enabled) labels.push("menage");
-      messages.push({
+    let row = rowsByGite.get(reservation.gite_id);
+    if (!row) {
+      row = {
         giteOrder: reservation.gite.ordre,
         giteName: reservation.gite.nom,
-        rank: 0,
-        reservationId: reservation.id,
-        text: stripSmsAccents(
-          `${heading}:\n${reservation.gite.nom}: ${formatSmsTime(times?.heure_depart ?? reservation.gite.heure_depart_defaut)} ${labels.join(" + ")}`
-        ),
-      });
+        arrivalTime: null,
+        departureTime: null,
+        hasArrival: false,
+        hasDeparture: false,
+        hasCleaning: false,
+      };
+      rowsByGite.set(reservation.gite_id, row);
+    }
+
+    if (isSameIsoDate(reservation.date_sortie, params.targetIsoDate)) {
+      row.hasDeparture = true;
+      row.departureTime ??= formatSmsTime(times?.heure_depart ?? reservation.gite.heure_depart_defaut);
+      if (options.menage?.enabled) row.hasCleaning = true;
     }
 
     if (isSameIsoDate(reservation.date_entree, params.targetIsoDate)) {
-      messages.push({
-        giteOrder: reservation.gite.ordre,
-        giteName: reservation.gite.nom,
-        rank: 1,
-        reservationId: reservation.id,
-        text: stripSmsAccents(
-          `${heading}:\n${reservation.gite.nom}: ${formatSmsTime(times?.heure_arrivee ?? reservation.gite.heure_arrivee_defaut)} entree`
-        ),
-      });
+      row.hasArrival = true;
+      row.arrivalTime ??= formatSmsTime(times?.heure_arrivee ?? reservation.gite.heure_arrivee_defaut);
     }
   }
 
-  return messages
+  const lines = [...rowsByGite.values()]
+    .filter((row) => row.hasArrival || row.hasDeparture)
     .sort((left, right) =>
       left.giteOrder - right.giteOrder ||
-      left.giteName.localeCompare(right.giteName, "fr") ||
-      left.rank - right.rank ||
-      left.reservationId.localeCompare(right.reservationId)
+      left.giteName.localeCompare(right.giteName, "fr")
     )
-    .map((message) => message.text);
+    .map((row) => {
+      const kinds = row.hasArrival && row.hasDeparture
+        ? "entree + sortie"
+        : row.hasArrival
+          ? "entree"
+          : "sortie";
+      const cleaning = row.hasCleaning ? " + menage" : "";
+      return `${row.giteName}: ${getOperationSchedule(row.departureTime, row.arrivalTime)} (${kinds})${cleaning}`;
+    });
+
+  if (lines.length === 0) return [];
+  return [stripSmsAccents([`${heading}:`, ...lines].join("\n"))];
 };
 
 export const buildPlanningRelayProgramSmsForPeriod = async (period: {
