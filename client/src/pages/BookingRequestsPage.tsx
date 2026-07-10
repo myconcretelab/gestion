@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, isAbortError, isApiError } from "../utils/api";
-import type { BookingRequest, Gite } from "../utils/types";
+import type { BookingRequest, BookingRequestStatus, Gite } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
 import {
   buildBookingRequestApprovedEmailDraft,
@@ -18,6 +18,47 @@ type ApprovalEmailComposerState = {
 };
 
 const toDateInputValue = (value: string) => value.slice(0, 10);
+
+const requestStatusLabels: Record<BookingRequestStatus, string> = {
+  pending: "À traiter",
+  approved: "Approuvée",
+  rejected: "Refusée",
+  expired: "Expirée",
+};
+
+const requestStatusDetail: Record<BookingRequestStatus, { title: string; description: string }> = {
+  pending: {
+    title: "Demande en attente",
+    description: "Aucune réservation n'a encore été créée pour cette demande.",
+  },
+  approved: {
+    title: "Demande approuvée",
+    description: "La demande est clôturée et la réservation correspondante a été créée.",
+  },
+  rejected: {
+    title: "Demande refusée",
+    description: "La demande est clôturée sans création de réservation.",
+  },
+  expired: {
+    title: "Demande expirée",
+    description: "Le blocage temporaire est terminé sans validation.",
+  },
+};
+
+const requestGroups: Array<{ key: string; title: string; statuses: BookingRequestStatus[] }> = [
+  { key: "pending", title: "Demandes à traiter", statuses: ["pending"] },
+  { key: "approved", title: "Demandes approuvées", statuses: ["approved"] },
+  { key: "closed", title: "Demandes non approuvées", statuses: ["rejected", "expired"] },
+];
+
+const getRequestTimelineLabel = (request: BookingRequest) => {
+  if (request.status === "pending") return "Blocage jusqu’au";
+  if (request.status === "expired") return "Expiration";
+  return "Décision";
+};
+
+const getRequestTimelineValue = (request: BookingRequest) =>
+  new Date(request.decided_at ?? request.hold_expires_at).toLocaleString("fr-FR");
 
 const BookingRequestsPage = () => {
   const [requests, setRequests] = useState<BookingRequest[]>([]);
@@ -51,7 +92,9 @@ const BookingRequestsPage = () => {
       .then(([requestRows, giteRows]) => {
         setRequests(requestRows);
         setGites(giteRows);
-        setSelectedId((current) => current || requestRows[0]?.id || "");
+        setSelectedId((current) =>
+          requestRows.some((request) => request.id === current) ? current : requestRows[0]?.id || "",
+        );
       })
       .catch((fetchError) => {
         if (isAbortError(fetchError)) return;
@@ -69,6 +112,23 @@ const BookingRequestsPage = () => {
     [requests, selectedId],
   );
 
+  const groupedRequests = useMemo(
+    () =>
+      requestGroups
+        .map((group) => ({
+          ...group,
+          requests: requests.filter((request) => group.statuses.includes(request.status)),
+        }))
+        .filter((group) => group.requests.length > 0),
+    [requests],
+  );
+
+  useEffect(() => {
+    setSelectedId((current) =>
+      requests.some((request) => request.id === current) ? current : requests[0]?.id || "",
+    );
+  }, [requests]);
+
   useEffect(() => {
     if (!selectedRequest) return;
     setDecisionNote(selectedRequest.decision_note ?? "");
@@ -76,7 +136,12 @@ const BookingRequestsPage = () => {
   }, [selectedRequest?.id]);
 
   const applyUpdatedRequest = (updated: BookingRequest) => {
-    setRequests((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    setRequests((current) => {
+      if (status && updated.status !== status) {
+        return current.filter((item) => item.id !== updated.id);
+      }
+      return current.map((item) => (item.id === updated.id ? updated : item));
+    });
   };
 
   const approveRequest = async (
@@ -258,20 +323,34 @@ const BookingRequestsPage = () => {
           <div className="booking-requests-page__list">
             {loading ? <div className="note">Chargement…</div> : null}
             {!loading && requests.length === 0 ? <div className="note">Aucune demande trouvée.</div> : null}
-            {requests.map((request) => (
-              <button
-                key={request.id}
-                type="button"
-                className={`booking-requests-page__item${selectedRequest?.id === request.id ? " booking-requests-page__item--active" : ""}`}
-                onClick={() => setSelectedId(request.id)}
-              >
-                <strong>{request.hote_nom}</strong>
-                <span>{request.gite?.nom ?? request.gite_id}</span>
-                <span>
-                  {formatDate(request.date_entree)} → {formatDate(request.date_sortie)}
-                </span>
-                <span className={`badge badge--${request.status}`}>{request.status}</span>
-              </button>
+            {groupedRequests.map((group) => (
+              <div key={group.key} className="booking-requests-page__group">
+                <div className="booking-requests-page__group-title">
+                  <span>{group.title}</span>
+                  <strong>{group.requests.length}</strong>
+                </div>
+                {group.requests.map((request) => (
+                  <button
+                    key={request.id}
+                    type="button"
+                    className={`booking-requests-page__item booking-requests-page__item--${request.status}${selectedRequest?.id === request.id ? " booking-requests-page__item--active" : ""}`}
+                    onClick={() => setSelectedId(request.id)}
+                  >
+                    <span className="booking-requests-page__item-head">
+                      <strong>{request.hote_nom || "Client sans nom"}</strong>
+                      <span className={`badge badge--${request.status}`}>{requestStatusLabels[request.status]}</span>
+                    </span>
+                    <span className="booking-requests-page__item-meta">{request.gite?.nom ?? request.gite_id}</span>
+                    <span className="booking-requests-page__item-dates">
+                      {formatDate(request.date_entree)} → {formatDate(request.date_sortie)} · {request.nb_nuits} nuit{request.nb_nuits > 1 ? "s" : ""}
+                    </span>
+                    <span className="booking-requests-page__item-foot">
+                      <span>{request.telephone || request.email || "Contact absent"}</span>
+                      {request.approved_reservation?.id ? <span>Réservation créée</span> : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
 
@@ -280,6 +359,14 @@ const BookingRequestsPage = () => {
               <div className="note">Sélectionnez une demande.</div>
             ) : (
               <>
+                <div className={`booking-requests-page__status booking-requests-page__status--${selectedRequest.status}`}>
+                  <span className={`badge badge--${selectedRequest.status}`}>{requestStatusLabels[selectedRequest.status]}</span>
+                  <div>
+                    <strong>{requestStatusDetail[selectedRequest.status].title}</strong>
+                    <span>{requestStatusDetail[selectedRequest.status].description}</span>
+                  </div>
+                </div>
+
                 <div className="section-title-row">
                   <div>
                     <h2>{selectedRequest.hote_nom}</h2>
@@ -304,7 +391,7 @@ const BookingRequestsPage = () => {
                   </div>
                   <div><strong>Voyageurs</strong><br />{selectedRequest.nb_adultes} adulte(s), {selectedRequest.nb_enfants_2_17} enfant(s)</div>
                   <div><strong>Contact</strong><br />{selectedRequest.telephone || "Téléphone absent"}<br />{selectedRequest.email || "Email absent"}</div>
-                  <div><strong>Blocage jusqu’au</strong><br />{new Date(selectedRequest.hold_expires_at).toLocaleString("fr-FR")}</div>
+                  <div><strong>{getRequestTimelineLabel(selectedRequest)}</strong><br />{getRequestTimelineValue(selectedRequest)}</div>
                 </div>
 
                 {dateEditor?.requestId === selectedRequest.id ? (
@@ -368,50 +455,59 @@ const BookingRequestsPage = () => {
                   <div><strong>Total : {formatEuro(selectedRequest.pricing_snapshot.total_global)}</strong></div>
                 </div>
 
-                <label className="field" style={{ marginTop: 16 }}>
-                  Note de décision
-                  <textarea
-                    rows={4}
-                    value={decisionNote}
-                    onChange={(event) => setDecisionNote(event.target.value)}
-                    placeholder="Optionnel"
-                  />
-                </label>
+                {selectedRequest.status === "pending" ? (
+                  <>
+                    <label className="field" style={{ marginTop: 16 }}>
+                      Note de décision
+                      <textarea
+                        rows={4}
+                        value={decisionNote}
+                        onChange={(event) => setDecisionNote(event.target.value)}
+                        placeholder="Optionnel"
+                      />
+                    </label>
 
-                <div className="actions" style={{ marginTop: 16 }}>
-                  <button
-                    type="button"
-                    onClick={() => void openApprovalEmailComposer()}
-                    disabled={selectedRequest.status !== "pending" || Boolean(submittingAction)}
-                  >
-                    {submittingAction === "approve-email" ? "Préparation…" : "Prévisualiser puis approuver"}
-                  </button>
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    onClick={() => void approveRequest()}
-                    disabled={selectedRequest.status !== "pending" || Boolean(submittingAction)}
-                  >
-                    {submittingAction === "approve"
-                      ? "Envoi…"
-                      : selectedRequest.email
-                        ? "Approuver sans relecture"
-                        : "Approuver sans email"}
-                  </button>
-                  <button
-                    type="button"
-                    className="button-secondary"
-                    onClick={() => void rejectRequest()}
-                    disabled={selectedRequest.status !== "pending" || Boolean(submittingAction)}
-                  >
-                    {submittingAction === "reject" ? "Refus…" : "Rejeter"}
-                  </button>
-                  {selectedRequest.approved_reservation?.id ? (
-                    <Link to="/reservations" className="button-secondary">
-                      Voir les réservations
-                    </Link>
-                  ) : null}
-                </div>
+                    <div className="actions" style={{ marginTop: 16 }}>
+                      <button
+                        type="button"
+                        onClick={() => void openApprovalEmailComposer()}
+                        disabled={Boolean(submittingAction)}
+                      >
+                        {submittingAction === "approve-email" ? "Préparation…" : "Prévisualiser puis approuver"}
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => void approveRequest()}
+                        disabled={Boolean(submittingAction)}
+                      >
+                        {submittingAction === "approve"
+                          ? "Envoi…"
+                          : selectedRequest.email
+                            ? "Approuver sans relecture"
+                            : "Approuver sans email"}
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => void rejectRequest()}
+                        disabled={Boolean(submittingAction)}
+                      >
+                        {submittingAction === "reject" ? "Refus…" : "Rejeter"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="booking-requests-page__decision">
+                    <strong>Note de décision</strong>
+                    <p>{selectedRequest.decision_note || "Aucune note enregistrée."}</p>
+                    {selectedRequest.approved_reservation?.id ? (
+                      <Link to="/reservations" className="button-secondary">
+                        Voir la réservation créée
+                      </Link>
+                    ) : null}
+                  </div>
+                )}
               </>
             )}
           </div>
