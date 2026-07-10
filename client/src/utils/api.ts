@@ -11,7 +11,7 @@ type ApiValidationDetails = {
 type ApiErrorPayload = {
   error?: string;
   code?: string;
-  details?: ApiValidationDetails;
+  details?: ApiValidationDetails | unknown;
 };
 
 export class ApiError extends Error {
@@ -32,6 +32,25 @@ export const isAbortError = (error: unknown) =>
     ? error.name === "AbortError"
     : typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 export const buildApiUrl = (path: string) => new URL(`${API_BASE}${path}`, window.location.origin).toString();
+
+export const formatApiErrorMessage = (error: unknown, fallback = "Erreur API.") => {
+  if (!isApiError(error)) return error instanceof Error ? error.message : fallback;
+
+  const details = error.payload.details;
+  if (details && typeof details === "object") {
+    const record = details as Record<string, unknown>;
+    const parts = [
+      error.message,
+      typeof record.provider_status === "number" ? `Statut fournisseur: ${record.provider_status}.` : null,
+      typeof record.provider_message === "string" ? `Message fournisseur: ${record.provider_message}` : null,
+      typeof record.required_right === "string" ? `Droit requis: ${record.required_right}.` : null,
+      typeof record.hint === "string" ? record.hint : null,
+    ].filter(Boolean);
+    if (parts.length > 1) return parts.join(" ");
+  }
+
+  return error.message || fallback;
+};
 
 export const apiFetch = async <T>(path: string, options: ApiOptions = {}): Promise<T> => {
   const hasJsonBody = options.json !== undefined;

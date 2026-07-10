@@ -4689,6 +4689,8 @@ body {
   color: #b91c1c;
   font-size: 0.78rem;
   font-weight: 700;
+  line-height: 1.4;
+  white-space: pre-wrap;
 }
 
 .operations-saved-periods__notice {
