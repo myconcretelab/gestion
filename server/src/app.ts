@@ -29,6 +29,30 @@ import {
   isServerAuthRequired,
 } from "./services/serverAuth.js";
 
+const getHttpErrorPayload = (err: Error) => {
+  const maybeHttpError = err as Error & {
+    statusCode?: unknown;
+    status?: unknown;
+    code?: unknown;
+    details?: unknown;
+  };
+  const rawStatus = typeof maybeHttpError.statusCode === "number"
+    ? maybeHttpError.statusCode
+    : typeof maybeHttpError.status === "number"
+      ? maybeHttpError.status
+      : 500;
+  const status = rawStatus >= 400 && rawStatus <= 599 ? rawStatus : 500;
+
+  return {
+    status,
+    body: {
+      error: err.message,
+      ...(typeof maybeHttpError.code === "string" ? { code: maybeHttpError.code } : {}),
+      ...(maybeHttpError.details !== undefined ? { details: maybeHttpError.details } : {}),
+    },
+  };
+};
+
 export const createApp = () => {
   const app = express();
 
@@ -142,7 +166,8 @@ export const createApp = () => {
       return res.status(400).json({ error: "Validation", details: err.flatten() });
     }
     if (err instanceof Error) {
-      return res.status(500).json({ error: err.message });
+      const payload = getHttpErrorPayload(err);
+      return res.status(payload.status).json(payload.body);
     }
     return res.status(500).json({ error: "Erreur inconnue" });
   });

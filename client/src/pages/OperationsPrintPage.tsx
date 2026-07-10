@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { DayPicker, type DateRange } from "@daypicker/react";
 import { fr } from "@daypicker/react/locale";
 import "@daypicker/react/style.css";
-import { apiFetch, isAbortError } from "../utils/api";
+import { apiFetch, formatApiErrorMessage, isAbortError } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
 import {
   addUtcDays,
@@ -186,7 +186,7 @@ const OperationsPrintPage = () => {
       setSavedPeriods(periods);
       setSavedPeriodsError(null);
     } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible de charger les périodes enregistrées.");
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de charger les périodes enregistrées."));
     } finally {
       setSavedPeriodsLoaded(true);
     }
@@ -288,7 +288,7 @@ const OperationsPrintPage = () => {
         window.localStorage.removeItem(SAVED_PERIODS_STORAGE_KEY);
         await refreshSavedPeriods();
       } catch (caught) {
-        setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible de migrer les périodes locales.");
+        setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de migrer les périodes locales."));
       }
     };
 
@@ -363,7 +363,7 @@ const OperationsPrintPage = () => {
       setSavedPeriods((current) => [...current, period]);
       setSavedPeriodsNotice("Période enregistrée.");
     } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d’enregistrer la période.");
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d’enregistrer la période."));
     } finally {
       setSavingPeriod(false);
     }
@@ -389,7 +389,7 @@ const OperationsPrintPage = () => {
       await apiFetch(`/planning-relay-periods/${period.id}`, { method: "DELETE" });
       setSavedPeriods((current) => current.filter((item) => item.id !== period.id));
     } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible de supprimer la période.");
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de supprimer la période."));
     }
   };
 
@@ -398,7 +398,7 @@ const OperationsPrintPage = () => {
     try {
       updateSavedPeriod(await apiFetch<PlanningRelayPeriod>(`/planning-relay-periods/${period.id}/rotate-link`, { method: "POST" }));
     } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible de régénérer le lien.");
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de régénérer le lien."));
     }
   };
 
@@ -458,7 +458,7 @@ const OperationsPrintPage = () => {
       }));
       setSavedPeriodsNotice("Détails de la période enregistrés.");
     } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d'enregistrer la période.");
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'enregistrer la période."));
     } finally {
       setSavingPeriodDetailsId(null);
     }
@@ -485,7 +485,7 @@ const OperationsPrintPage = () => {
       });
       setSavedPeriodsNotice(`SMS test envoyé pour le ${formatShortDate(result.target_date)}.`);
     } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d'envoyer le SMS test.");
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'envoyer le SMS test."));
     } finally {
       setTestingPeriodSmsId(null);
     }

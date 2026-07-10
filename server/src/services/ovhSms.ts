@@ -14,6 +14,28 @@ type SendSmsParams = {
   message: string;
 };
 
+type OvhSmsErrorDetails = {
+  provider: "ovh";
+  provider_status?: number;
+  provider_message?: string;
+  required_right?: string;
+  hint?: string;
+};
+
+export class OvhSmsError extends Error {
+  statusCode: number;
+  code: string;
+  details: OvhSmsErrorDetails;
+
+  constructor(message: string, options: { statusCode?: number; code?: string; details: OvhSmsErrorDetails }) {
+    super(message);
+    this.name = "OvhSmsError";
+    this.statusCode = options.statusCode ?? 502;
+    this.code = options.code ?? "ovh_sms_error";
+    this.details = options.details;
+  }
+}
+
 export const getSmsConfigurationStatus = () => {
   const missing = [
     ["SMS_APP_KEY", env.SMS_APP_KEY],
@@ -73,6 +95,45 @@ const getOvhTimestamp = async () => {
   return Number(response.data);
 };
 
+const stringifyOvhMessage = (value: unknown) => {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "message" in value) {
+    const message = (value as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return undefined;
+};
+
+const toOvhSmsError = (error: unknown, requiredRight: string) => {
+  if (!axios.isAxiosError(error)) return error;
+
+  const providerStatus = error.response?.status;
+  const providerMessage = stringifyOvhMessage(error.response?.data);
+  const isForbidden = providerStatus === 403;
+  const hint = isForbidden
+    ? `La Consumer Key OVH n'a pas le droit requis. Ajoutez le droit ${requiredRight}, puis remplacez SMS_CONSUMER_KEY avec la nouvelle clé.`
+    : providerStatus
+      ? "OVH a refusé la demande SMS. Vérifiez les identifiants, le service SMS, l'expéditeur et le solde de crédits."
+      : "Impossible de joindre l'API SMS OVH. Vérifiez la connexion du serveur et SMS_API_BASE_URL.";
+
+  return new OvhSmsError(
+    isForbidden
+      ? "OVH refuse l'envoi SMS: droit API insuffisant."
+      : `OVH refuse l'envoi SMS${providerStatus ? ` (${providerStatus})` : ""}.`,
+    {
+      statusCode: 502,
+      code: isForbidden ? "ovh_sms_forbidden" : "ovh_sms_request_failed",
+      details: {
+        provider: "ovh",
+        ...(providerStatus ? { provider_status: providerStatus } : {}),
+        ...(providerMessage ? { provider_message: providerMessage } : {}),
+        required_right: requiredRight,
+        hint,
+      },
+    },
+  );
+};
+
 export const sendOvhSms = async ({ recipient, message }: SendSmsParams) => {
   const status = getSmsConfigurationStatus();
   if (!status.configured) {
@@ -85,6 +146,7 @@ export const sendOvhSms = async ({ recipient, message }: SendSmsParams) => {
   if (trimmedMessage.length > 1000) throw new Error("Message SMS trop long.");
 
   const method = "POST";
+  const requiredRight = `POST /sms/${env.SMS_SERVICE_NAME}/jobs`;
   const url = `${env.SMS_API_BASE_URL}/sms/${encodeURIComponent(env.SMS_SERVICE_NAME)}/jobs`;
   const payload = {
     charset: "UTF-8",
@@ -95,7 +157,9 @@ export const sendOvhSms = async ({ recipient, message }: SendSmsParams) => {
     ...(env.SMS_SENDER.trim() ? { sender: env.SMS_SENDER.trim() } : {}),
   };
   const body = JSON.stringify(payload);
-  const timestamp = await getOvhTimestamp();
+  const timestamp = await getOvhTimestamp().catch((error) => {
+    throw toOvhSmsError(error, "GET /auth/time");
+  });
 
   const response = await axios.post<OvhSmsJobResponse>(url, body, {
     timeout: 15_000,
@@ -113,6 +177,8 @@ export const sendOvhSms = async ({ recipient, message }: SendSmsParams) => {
         timestamp,
       }),
     },
+  }).catch((error) => {
+    throw toOvhSmsError(error, requiredRight);
   });
 
   return {
