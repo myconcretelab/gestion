@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildPlanningRelayProgramSmsMessage,
+  getPlanningRelayProgramHeading,
+  getPlanningRelayProgramTargetIsoDate,
   isPlanningRelaySmsDue,
   normalizePlanningRelaySmsTime,
 } from "../src/services/planningRelaySms.ts";
@@ -51,6 +53,20 @@ test("buildPlanningRelayProgramSmsMessage genere un programme sans noms d'hotes"
   assert.equal(
     message,
     "Programme demain:\n- Gite Etang: 9h30 sortie + menage / 17h entree",
+  );
+});
+
+test("calcule le programme vise selon l'option veille ou jour meme", () => {
+  assert.equal(getPlanningRelayProgramTargetIsoDate("2026-07-10", "previous_day"), "2026-07-11");
+  assert.equal(getPlanningRelayProgramTargetIsoDate("2026-07-10", "same_day"), "2026-07-10");
+  assert.equal(getPlanningRelayProgramHeading("same_day"), "Programme aujourd'hui");
+  assert.equal(
+    buildPlanningRelayProgramSmsMessage({
+      targetIsoDate: "2026-07-10",
+      heading: getPlanningRelayProgramHeading("same_day"),
+      reservations: [],
+    }),
+    null,
   );
 });
 

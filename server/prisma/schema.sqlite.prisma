@@ -361,6 +361,7 @@ model PlanningRelayPeriod {
   sms_enabled      Boolean   @default(false)
   sms_recipient    String?
   sms_send_time    String    @default("18:00")
+  sms_send_day     String    @default("previous_day")
   sms_last_sent_for_date    String?
   sms_last_attempt_for_date String?
   createdAt        DateTime  @default(now())

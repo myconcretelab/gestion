@@ -41,6 +41,7 @@ type PlanningRelayPeriodDraft = {
   sms_enabled: boolean;
   sms_recipient: string;
   sms_send_time: string;
+  sms_send_day: "previous_day" | "same_day";
 };
 
 const readLegacySavedPeriods = (): LegacySavedPeriod[] => {
@@ -124,6 +125,7 @@ const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft
   sms_enabled: period.sms_enabled,
   sms_recipient: period.sms_recipient ?? "",
   sms_send_time: period.sms_send_time || "18:00",
+  sms_send_day: period.sms_send_day === "same_day" ? "same_day" : "previous_day",
 });
 
 const formatGiteTime = (value?: string) => {
@@ -451,6 +453,7 @@ const OperationsPrintPage = () => {
           sms_enabled: draft.sms_enabled,
           sms_recipient: draft.sms_recipient.trim() || null,
           sms_send_time: draft.sms_send_time || "18:00",
+          sms_send_day: draft.sms_send_day,
         },
       }));
       setSavedPeriodsNotice("Détails de la période enregistrés.");
@@ -674,6 +677,18 @@ const OperationsPrintPage = () => {
                           onChange={(event) => updatePeriodDraft(period.id, { sms_send_time: event.target.value })}
                         />
                       </label>
+                      <label className="field">
+                        <span>Programme envoyé</span>
+                        <select
+                          value={draft.sms_send_day}
+                          onChange={(event) => updatePeriodDraft(period.id, {
+                            sms_send_day: event.target.value === "same_day" ? "same_day" : "previous_day",
+                          })}
+                        >
+                          <option value="previous_day">La veille pour le lendemain</option>
+                          <option value="same_day">Le jour même</option>
+                        </select>
+                      </label>
                     </div>
 
                     <div className="operations-period-detail__toggles">
@@ -737,7 +752,7 @@ const OperationsPrintPage = () => {
                         onClick={() => void sendSavedPeriodProgramSms(period)}
                         disabled={!smsStatus?.configured || !period.sms_recipient || isSendingProgram}
                       >
-                        {isSendingProgram ? "Envoi…" : "Envoyer demain"}
+                        {isSendingProgram ? "Envoi…" : "Envoyer maintenant"}
                       </button>
                       <a
                         className={`button secondary${isAvailable ? "" : " is-disabled"}`}
@@ -747,10 +762,10 @@ const OperationsPrintPage = () => {
                         aria-disabled={!isAvailable}
                         tabIndex={isAvailable ? undefined : -1}
                       >
-                        Ouvrir
+                        Ouvrir la page
                       </a>
                       <button type="button" className="secondary" onClick={() => void copySavedPeriodLink(period)} disabled={!isAvailable}>
-                        Copier
+                        Copier le lien
                       </button>
                       <button type="button" className="secondary" onClick={() => void rotateSavedPeriodLink(period)}>
                         Régénérer

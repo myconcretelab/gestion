@@ -21,8 +21,9 @@ import {
 } from "../services/requestThrottle.js";
 import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
 import {
-  addPlanningRelayIsoDays,
   getParisDateTimeParts,
+  getPlanningRelayProgramTargetIsoDate,
+  normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsTime,
   sendPlanningRelayProgramSms,
 } from "../services/planningRelaySms.js";
@@ -56,6 +57,7 @@ const patchSchema = payloadSchema.partial().extend({
     z.string().trim().min(6).max(32).nullable(),
   ).optional(),
   sms_send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/).optional(),
+  sms_send_day: z.enum(["previous_day", "same_day"]).optional(),
 });
 const smsSchema = z.object({
   recipient: z.string().trim().min(6).max(32),
@@ -150,6 +152,7 @@ const serializePeriod = (period: any) => {
     sms_enabled: Boolean(period.sms_enabled),
     sms_recipient: period.sms_recipient ?? null,
     sms_send_time: normalizePlanningRelaySmsTime(period.sms_send_time),
+    sms_send_day: normalizePlanningRelaySmsSendDay(period.sms_send_day),
     sms_last_sent_for_date: period.sms_last_sent_for_date ?? null,
     sms_last_attempt_for_date: period.sms_last_attempt_for_date ?? null,
     created_at: period.createdAt.toISOString(),
@@ -245,6 +248,9 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.sms_send_time !== undefined
           ? { sms_send_time: normalizePlanningRelaySmsTime(payload.sms_send_time) }
           : {}),
+        ...(payload.sms_send_day !== undefined
+          ? { sms_send_day: normalizePlanningRelaySmsSendDay(payload.sms_send_day) }
+          : {}),
         ...(payload.expires_at !== undefined
           ? { expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : null }
           : {}),
@@ -320,10 +326,10 @@ privateRouter.post("/:id/send-program-sms", async (req, res, next) => {
     }
 
     const { isoDate } = getParisDateTimeParts();
-    const targetIsoDate = addPlanningRelayIsoDays(isoDate, 1);
+    const targetIsoDate = getPlanningRelayProgramTargetIsoDate(isoDate, current.sms_send_day);
     const result = await sendPlanningRelayProgramSms(current, targetIsoDate);
     if (!result.sent) {
-      return res.status(409).json({ error: "Aucune intervention à envoyer pour demain." });
+      return res.status(409).json({ error: "Aucune intervention à envoyer pour la date ciblée." });
     }
 
     return res.json({
