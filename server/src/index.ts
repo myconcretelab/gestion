@@ -5,6 +5,7 @@ import { startPumpCron } from "./services/pumpCron.js";
 import { startSmartlifeAutomationCron } from "./services/smartlifeAutomation.js";
 import { startGitePhotosWordPressWebhookQueue } from "./services/bookedWordPressWebhook.js";
 import { startTelegramDeadlineNotificationCron } from "./services/telegramDeadlineNotifications.js";
+import { startPlanningRelaySmsCron } from "./services/planningRelaySms.js";
 
 const app = createApp();
 
@@ -14,6 +15,7 @@ if (env.NODE_ENV !== "test") {
   startSmartlifeAutomationCron();
   startGitePhotosWordPressWebhookQueue();
   startTelegramDeadlineNotificationCron();
+  startPlanningRelaySmsCron();
 }
 
 app.listen(env.PORT, () => {

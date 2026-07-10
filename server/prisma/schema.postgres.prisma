@@ -358,10 +358,16 @@ model PlanningRelayPeriod {
   public_code_hash String?   @unique
   expires_at       DateTime?
   last_accessed_at DateTime?
+  sms_enabled      Boolean   @default(false)
+  sms_recipient    String?
+  sms_send_time    String    @default("18:00")
+  sms_last_sent_for_date    String?
+  sms_last_attempt_for_date String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   @@index([is_active, date_fin], map: "planning_relay_periods_active_date_fin_idx")
+  @@index([sms_enabled, sms_send_time], map: "planning_relay_periods_sms_schedule_idx")
   @@map("planning_relay_periods")
 }
 
