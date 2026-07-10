@@ -14726,16 +14726,117 @@ button.warning {
   align-content: start;
 }
 
+.booking-requests-page__list {
+  gap: 16px;
+}
+
+.booking-requests-page__group {
+  display: grid;
+  gap: 8px;
+}
+
+.booking-requests-page__group-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.booking-requests-page__group-title strong {
+  min-width: 26px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #1f2937;
+  text-align: center;
+}
+
 .booking-requests-page__item,
 .season-rates-page__item {
   width: 100%;
   text-align: left;
   border: 1px solid var(--field-border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: #fff;
   padding: 14px 16px;
   display: grid;
   gap: 6px;
+}
+
+.booking-requests-page__item {
+  gap: 8px;
+  color: #111827;
+  box-shadow: none;
+}
+
+.booking-requests-page__item:hover {
+  background: #f8fafc;
+}
+
+.booking-requests-page__item--pending {
+  border-color: #fed7aa;
+}
+
+.booking-requests-page__item--approved {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.booking-requests-page__item--approved:hover {
+  background: #dcfce7;
+}
+
+.booking-requests-page__item--rejected {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.booking-requests-page__item--expired {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.booking-requests-page__item-head,
+.booking-requests-page__item-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.booking-requests-page__item-head strong,
+.booking-requests-page__item-meta,
+.booking-requests-page__item-dates,
+.booking-requests-page__item-foot span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.booking-requests-page__item-head strong {
+  font-size: 1rem;
+}
+
+.booking-requests-page__item-meta {
+  color: #334155;
+  font-weight: 700;
+}
+
+.booking-requests-page__item-dates,
+.booking-requests-page__item-foot {
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.booking-requests-page__item-foot span:last-child:not(:first-child) {
+  flex: 0 0 auto;
+  color: #166534;
+  font-weight: 800;
 }
 
 .season-rates-simple {
@@ -14984,13 +15085,64 @@ button.warning {
 }
 
 .booking-requests-page__item--active {
-  border-color: #0f766e;
-  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 .booking-requests-page__detail,
 .season-rates-page .card {
   align-self: start;
+}
+
+.booking-requests-page__status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.booking-requests-page__status .badge {
+  margin-top: 1px;
+}
+
+.booking-requests-page__status strong,
+.booking-requests-page__status span {
+  display: block;
+}
+
+.booking-requests-page__status strong {
+  color: #111827;
+}
+
+.booking-requests-page__status span {
+  color: #475569;
+  line-height: 1.35;
+}
+
+.booking-requests-page__status--pending {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.booking-requests-page__status--approved {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.booking-requests-page__status--rejected {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.booking-requests-page__status--expired {
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
 .booking-requests-page__grid {
@@ -15032,6 +15184,31 @@ button.warning {
   margin-top: 18px;
   display: grid;
   gap: 6px;
+}
+
+.booking-requests-page__decision {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.booking-requests-page__decision p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.booking-requests-page__decision a {
+  justify-self: start;
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 700;
 }
 
 .season-rates-editor {
@@ -15614,18 +15791,22 @@ button.warning {
 
 .badge--pending {
   color: #92400e;
+  background: #ffedd5;
 }
 
 .badge--approved {
   color: #166534;
+  background: #dcfce7;
 }
 
 .badge--rejected {
   color: #991b1b;
+  background: #fee2e2;
 }
 
 .badge--expired {
   color: #475569;
+  background: #e2e8f0;
 }
 
 @media (max-width: 980px) {
