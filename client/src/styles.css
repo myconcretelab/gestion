@@ -4820,6 +4820,7 @@ body {
   flex-direction: column;
   width: min(720px, 100vw);
   height: 100%;
+  min-height: 0;
   background: #fff;
   box-shadow: -24px 0 60px rgba(15, 23, 42, 0.22);
 }
@@ -4853,8 +4854,11 @@ body {
 .operations-period-drawer__content {
   display: grid;
   gap: 14px;
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 18px 24px 28px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .operations-period-detail {
