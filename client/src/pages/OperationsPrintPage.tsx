@@ -18,7 +18,6 @@ import {
 import type {
   Gite,
   PlanningRelayPeriod,
-  PlanningRelayProgramSmsSendResult,
   PlanningRelaySmsStatus,
   Reservation,
 } from "../utils/types";
@@ -164,7 +163,6 @@ const OperationsPrintPage = () => {
   const [savedPeriodsError, setSavedPeriodsError] = useState<string | null>(null);
   const [savedPeriodsNotice, setSavedPeriodsNotice] = useState<string | null>(null);
   const [smsStatus, setSmsStatus] = useState<PlanningRelaySmsStatus | null>(null);
-  const [sendingSmsPeriodId, setSendingSmsPeriodId] = useState<string | null>(null);
   const [periodManagerIsOpen, setPeriodManagerIsOpen] = useState(false);
   const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
   const [savingPeriodDetailsId, setSavingPeriodDetailsId] = useState<string | null>(null);
@@ -464,38 +462,6 @@ const OperationsPrintPage = () => {
     }
   };
 
-  const sendSavedPeriodProgramSms = async (period: PlanningRelayPeriod) => {
-    if (sendingSmsPeriodId) return;
-    if (!smsStatus?.configured) {
-      setSavedPeriodsError(
-        smsStatus?.missing?.length
-          ? `Configuration SMS incomplète: ${smsStatus.missing.join(", ")}.`
-          : "Configuration SMS indisponible."
-      );
-      return;
-    }
-    if (!period.sms_recipient?.trim()) {
-      setSavedPeriodsError("Ajoutez et enregistrez un numéro SMS pour cette période.");
-      return;
-    }
-
-    setSendingSmsPeriodId(period.id);
-    setSavedPeriodsError(null);
-    setSavedPeriodsNotice(null);
-    try {
-      const result = await apiFetch<PlanningRelayProgramSmsSendResult>(`/planning-relay-periods/${period.id}/send-program-sms`, {
-        method: "POST",
-      });
-      const credits = result.credits === null ? "" : ` (${result.credits} crédit${result.credits > 1 ? "s" : ""})`;
-      setSavedPeriodsNotice(`Programme du ${formatShortDate(result.target_date)} envoyé vers ${result.recipient}${credits}.`);
-      void refreshSavedPeriods();
-    } catch (caught) {
-      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d’envoyer le SMS.");
-    } finally {
-      setSendingSmsPeriodId(null);
-    }
-  };
-
   const toggleGite = (giteId: string) => {
     setSelectedGiteIds((current) => {
       const next = new Set(current);
@@ -639,7 +605,6 @@ const OperationsPrintPage = () => {
                 const isExpired = Boolean(period.expires_at && new Date(period.expires_at).getTime() < Date.now());
                 const isAvailable = period.is_active && !isExpired;
                 const isSavingDetails = savingPeriodDetailsId === period.id;
-                const isSendingProgram = sendingSmsPeriodId === period.id;
                 return (
                   <section key={period.id} className="operations-period-detail">
                     <div className="operations-period-detail__title">
@@ -745,14 +710,6 @@ const OperationsPrintPage = () => {
                     <div className="operations-period-detail__actions">
                       <button type="button" onClick={() => void savePeriodDetails(period)} disabled={isSavingDetails}>
                         {isSavingDetails ? "Enregistrement…" : "Enregistrer"}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => void sendSavedPeriodProgramSms(period)}
-                        disabled={!smsStatus?.configured || !period.sms_recipient || isSendingProgram}
-                      >
-                        {isSendingProgram ? "Envoi…" : "Envoyer maintenant"}
                       </button>
                       <a
                         className={`button secondary${isAvailable ? "" : " is-disabled"}`}
