@@ -87,6 +87,42 @@ test("calcule le programme vise selon l'option veille ou jour meme", () => {
   );
 });
 
+test("buildPlanningRelayProgramSmsMessages ignore les arrivees deja traitees par une sortie precedente", () => {
+  const gite = {
+    id: "gite-1",
+    nom: "Oncle Edmond",
+    ordre: 1,
+    heure_arrivee_defaut: "17:00",
+    heure_depart_defaut: "12:00",
+  };
+
+  assert.deepEqual(
+    buildPlanningRelayProgramSmsMessages({
+      contextStartIsoDate: "2026-07-10",
+      targetIsoDate: "2026-07-13",
+      reservations: [
+        {
+          id: "departure-previous",
+          gite_id: "gite-1",
+          date_entree: new Date("2026-07-10T00:00:00.000Z"),
+          date_sortie: new Date("2026-07-12T00:00:00.000Z"),
+          options: { menage: { enabled: true } },
+          gite,
+        },
+        {
+          id: "handled-arrival",
+          gite_id: "gite-1",
+          date_entree: new Date("2026-07-13T00:00:00.000Z"),
+          date_sortie: new Date("2026-07-27T00:00:00.000Z"),
+          options: {},
+          gite,
+        },
+      ],
+    }),
+    [],
+  );
+});
+
 test("isPlanningRelaySmsDue evite les doublons quotidiens", () => {
   assert.equal(normalizePlanningRelaySmsTime("8:05"), "08:05");
   assert.equal(

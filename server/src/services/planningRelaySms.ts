@@ -135,8 +135,85 @@ const buildReservationTimes = (contracts: ProgramContractTime[]) => {
   return times;
 };
 
+const buildAlreadyHandledArrivalKeys = (
+  reservations: ProgramReservation[],
+  contextStartIsoDate: string,
+  targetIsoDate: string,
+) => {
+  const rowsByKey = new Map<string, {
+    date: string;
+    giteId: string;
+    giteOrder: number;
+    giteName: string;
+    hasArrival: boolean;
+    hasDeparture: boolean;
+  }>();
+
+  const getRow = (reservation: ProgramReservation, date: string) => {
+    if (!reservation.gite || !reservation.gite_id) return null;
+    const key = `${date}-${reservation.gite_id}`;
+    let row = rowsByKey.get(key);
+    if (!row) {
+      row = {
+        date,
+        giteId: reservation.gite_id,
+        giteOrder: reservation.gite.ordre,
+        giteName: reservation.gite.nom,
+        hasArrival: false,
+        hasDeparture: false,
+      };
+      rowsByKey.set(key, row);
+    }
+    return row;
+  };
+
+  for (const reservation of reservations) {
+    const arrivalDate = toPlanningRelayIsoDate(reservation.date_entree);
+    const departureDate = toPlanningRelayIsoDate(reservation.date_sortie);
+
+    if (departureDate >= contextStartIsoDate && departureDate <= targetIsoDate) {
+      const row = getRow(reservation, departureDate);
+      if (row) row.hasDeparture = true;
+    }
+
+    if (arrivalDate >= contextStartIsoDate && arrivalDate <= targetIsoDate) {
+      const row = getRow(reservation, arrivalDate);
+      if (row) row.hasArrival = true;
+    }
+  }
+
+  const pendingDepartureByGite = new Set<string>();
+  const handledArrivalRows = new Set<string>();
+  const rows = [...rowsByKey.values()].sort((left, right) =>
+    left.date.localeCompare(right.date) ||
+    left.giteOrder - right.giteOrder ||
+    left.giteName.localeCompare(right.giteName, "fr") ||
+    left.giteId.localeCompare(right.giteId)
+  );
+
+  for (const row of rows) {
+    if (row.hasArrival && row.hasDeparture) {
+      pendingDepartureByGite.delete(row.giteId);
+      continue;
+    }
+
+    if (row.hasDeparture) {
+      pendingDepartureByGite.add(row.giteId);
+      continue;
+    }
+
+    if (row.hasArrival && pendingDepartureByGite.has(row.giteId)) {
+      handledArrivalRows.add(`${row.date}-${row.giteId}`);
+      pendingDepartureByGite.delete(row.giteId);
+    }
+  }
+
+  return handledArrivalRows;
+};
+
 export const buildPlanningRelayProgramSmsMessages = (params: {
   targetIsoDate: string;
+  contextStartIsoDate?: string;
   heading?: string;
   reservations: ProgramReservation[];
   contracts?: ProgramContractTime[];
@@ -152,6 +229,11 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
     hasCleaning: boolean;
   }>();
   const heading = params.heading ?? "Programme demain";
+  const handledArrivalRows = buildAlreadyHandledArrivalKeys(
+    params.reservations,
+    params.contextStartIsoDate ?? params.targetIsoDate,
+    params.targetIsoDate,
+  );
 
   const sortedReservations = [...params.reservations].sort((left, right) =>
     (left.gite?.ordre ?? 0) - (right.gite?.ordre ?? 0) ||
@@ -184,6 +266,7 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
     }
 
     if (isSameIsoDate(reservation.date_entree, params.targetIsoDate)) {
+      if (handledArrivalRows.has(`${params.targetIsoDate}-${reservation.gite_id}`)) continue;
       row.hasArrival = true;
       row.arrivalTime ??= formatSmsTime(times?.heure_arrivee ?? reservation.gite.heure_arrivee_defaut);
     }
@@ -211,6 +294,7 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
 
 export const buildPlanningRelayProgramSmsForPeriod = async (period: {
   gite_ids: unknown;
+  date_debut?: Date;
 }, targetIsoDate: string, heading = "Programme demain") => {
   const giteIds = [
     ...new Set(
@@ -221,14 +305,16 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
   if (giteIds.length === 0) return null;
 
   const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
+  const contextStartDate = period.date_debut && period.date_debut < targetDate
+    ? period.date_debut
+    : targetDate;
+  const contextStartIsoDate = toPlanningRelayIsoDate(contextStartDate);
   const nextDate = addDays(targetDate, 1);
   const reservations = await prisma.reservation.findMany({
     where: {
       gite_id: { in: giteIds },
-      OR: [
-        { date_entree: { gte: targetDate, lt: nextDate } },
-        { date_sortie: { gte: targetDate, lt: nextDate } },
-      ],
+      date_entree: { lt: nextDate },
+      date_sortie: { gte: contextStartDate },
     },
     select: {
       id: true,
@@ -257,12 +343,13 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
       })
     : [];
 
-  return buildPlanningRelayProgramSmsMessages({ targetIsoDate, heading, reservations, contracts });
+  return buildPlanningRelayProgramSmsMessages({ targetIsoDate, contextStartIsoDate, heading, reservations, contracts });
 };
 
 export const sendPlanningRelayProgramSms = async (period: {
   id: string;
   gite_ids: unknown;
+  date_debut?: Date;
   sms_recipient: string | null;
   sms_send_day?: string | null;
 }, targetIsoDate: string) => {
