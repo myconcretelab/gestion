@@ -8,7 +8,7 @@ import {
   normalizePlanningRelaySmsTime,
 } from "../src/services/planningRelaySms.ts";
 
-test("buildPlanningRelayProgramSmsMessages genere un SMS par intervention sans noms d'hotes", () => {
+test("buildPlanningRelayProgramSmsMessages regroupe les interventions du jour sans noms d'hotes", () => {
   const messages = buildPlanningRelayProgramSmsMessages({
     targetIsoDate: "2026-07-11",
     reservations: [
@@ -40,6 +40,20 @@ test("buildPlanningRelayProgramSmsMessages genere un SMS par intervention sans n
           heure_depart_defaut: "10:00",
         },
       },
+      {
+        id: "departure-2",
+        gite_id: "gite-2",
+        date_entree: new Date("2026-07-08T00:00:00.000Z"),
+        date_sortie: new Date("2026-07-11T00:00:00.000Z"),
+        options: {},
+        gite: {
+          id: "gite-2",
+          nom: "Le Liberté",
+          ordre: 2,
+          heure_arrivee_defaut: "17:00",
+          heure_depart_defaut: "12:00",
+        },
+      },
     ],
     contracts: [
       {
@@ -51,8 +65,11 @@ test("buildPlanningRelayProgramSmsMessages genere un SMS par intervention sans n
   });
 
   assert.deepEqual(messages, [
-    "Programme demain:\nGite Etang: 9h30 sortie + menage",
-    "Programme demain:\nGite Etang: 17h entree",
+    [
+      "Programme demain:",
+      "Gite Etang: Entre 9h30 et 17h (entree + sortie) + menage",
+      "Le Liberte: A partir de 12h (sortie)",
+    ].join("\n"),
   ]);
 });
 
