@@ -19,6 +19,7 @@ import type {
   Gite,
   PlanningRelayPeriod,
   PlanningRelaySmsStatus,
+  PlanningRelaySmsTestResult,
   Reservation,
 } from "../utils/types";
 
@@ -166,6 +167,7 @@ const OperationsPrintPage = () => {
   const [periodManagerIsOpen, setPeriodManagerIsOpen] = useState(false);
   const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
   const [savingPeriodDetailsId, setSavingPeriodDetailsId] = useState<string | null>(null);
+  const [testingPeriodSmsId, setTestingPeriodSmsId] = useState<string | null>(null);
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -462,6 +464,33 @@ const OperationsPrintPage = () => {
     }
   };
 
+  const sendPeriodTestSms = async (period: PlanningRelayPeriod) => {
+    const draft = periodDrafts[period.id] ?? buildPeriodDraft(period);
+    if (!draft.sms_recipient.trim()) {
+      setSavedPeriodsError("Ajoutez un numéro SMS avant d'envoyer un test.");
+      return;
+    }
+    if (!smsStatus?.configured) {
+      setSavedPeriodsError("La configuration SMS OVH est incomplète.");
+      return;
+    }
+
+    setTestingPeriodSmsId(period.id);
+    setSavedPeriodsError(null);
+    setSavedPeriodsNotice(null);
+    try {
+      const result = await apiFetch<PlanningRelaySmsTestResult>(`/planning-relay-periods/${period.id}/send-test-sms`, {
+        method: "POST",
+        json: { recipient: draft.sms_recipient.trim() },
+      });
+      setSavedPeriodsNotice(`SMS test envoyé pour le ${formatShortDate(result.target_date)}.`);
+    } catch (caught) {
+      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d'envoyer le SMS test.");
+    } finally {
+      setTestingPeriodSmsId(null);
+    }
+  };
+
   const toggleGite = (giteId: string) => {
     setSelectedGiteIds((current) => {
       const next = new Set(current);
@@ -605,6 +634,7 @@ const OperationsPrintPage = () => {
                 const isExpired = Boolean(period.expires_at && new Date(period.expires_at).getTime() < Date.now());
                 const isAvailable = period.is_active && !isExpired;
                 const isSavingDetails = savingPeriodDetailsId === period.id;
+                const isTestingSms = testingPeriodSmsId === period.id;
                 return (
                   <section key={period.id} className="operations-period-detail">
                     <div className="operations-period-detail__title">
@@ -710,6 +740,14 @@ const OperationsPrintPage = () => {
                     <div className="operations-period-detail__actions">
                       <button type="button" onClick={() => void savePeriodDetails(period)} disabled={isSavingDetails}>
                         {isSavingDetails ? "Enregistrement…" : "Enregistrer"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void sendPeriodTestSms(period)}
+                        disabled={isTestingSms || !draft.sms_recipient.trim() || !smsStatus?.configured}
+                      >
+                        {isTestingSms ? "Test en cours…" : "Tester SMS"}
                       </button>
                       <a
                         className={`button secondary${isAvailable ? "" : " is-disabled"}`}
