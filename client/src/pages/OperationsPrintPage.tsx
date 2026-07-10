@@ -15,7 +15,13 @@ import {
   toIsoDateUtc,
   type StayOperation,
 } from "../utils/printableOperations";
-import type { Gite, PlanningRelayPeriod, Reservation } from "../utils/types";
+import type {
+  Gite,
+  PlanningRelayPeriod,
+  PlanningRelaySmsSendResult,
+  PlanningRelaySmsStatus,
+  Reservation,
+} from "../utils/types";
 
 const MAX_DAYS = 31;
 const SAVED_PERIODS_STORAGE_KEY = "operations-print-saved-periods";
@@ -132,6 +138,9 @@ const OperationsPrintPage = () => {
   const [savedPeriods, setSavedPeriods] = useState<PlanningRelayPeriod[]>([]);
   const [savedPeriodsLoaded, setSavedPeriodsLoaded] = useState(false);
   const [savedPeriodsError, setSavedPeriodsError] = useState<string | null>(null);
+  const [savedPeriodsNotice, setSavedPeriodsNotice] = useState<string | null>(null);
+  const [smsStatus, setSmsStatus] = useState<PlanningRelaySmsStatus | null>(null);
+  const [sendingSmsPeriodId, setSendingSmsPeriodId] = useState<string | null>(null);
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -159,6 +168,12 @@ const OperationsPrintPage = () => {
   useEffect(() => {
     void refreshSavedPeriods();
   }, [refreshSavedPeriods]);
+
+  useEffect(() => {
+    apiFetch<PlanningRelaySmsStatus>("/planning-relay-periods/sms/status")
+      .then(setSmsStatus)
+      .catch(() => setSmsStatus({ configured: false, missing: ["SMS"] }));
+  }, []);
 
   useEffect(() => {
     if (!periodPickerIsOpen) return;
@@ -294,6 +309,7 @@ const OperationsPrintPage = () => {
     if ((showComments || showPhones) && !window.confirm("Le lien public donnera accès aux informations sélectionnées. Continuer ?")) return;
     setSavingPeriod(true);
     setSavedPeriodsError(null);
+    setSavedPeriodsNotice(null);
     try {
       const period = await apiFetch<PlanningRelayPeriod>("/planning-relay-periods", {
         method: "POST",
@@ -308,6 +324,7 @@ const OperationsPrintPage = () => {
         },
       });
       setSavedPeriods((current) => [...current, period]);
+      setSavedPeriodsNotice("Période enregistrée.");
     } catch (caught) {
       setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d’enregistrer la période.");
     } finally {
@@ -375,8 +392,40 @@ const OperationsPrintPage = () => {
     try {
       await navigator.clipboard.writeText(new URL(period.public_path, window.location.origin).toString());
       setSavedPeriodsError(null);
+      setSavedPeriodsNotice("Lien copié.");
     } catch {
       setSavedPeriodsError("Impossible de copier le lien. Ouvrez le planning puis copiez son adresse.");
+    }
+  };
+
+  const sendSavedPeriodSms = async (period: PlanningRelayPeriod) => {
+    if (sendingSmsPeriodId) return;
+    if (!smsStatus?.configured) {
+      setSavedPeriodsError(
+        smsStatus?.missing?.length
+          ? `Configuration SMS incomplète: ${smsStatus.missing.join(", ")}.`
+          : "Configuration SMS indisponible."
+      );
+      return;
+    }
+
+    const recipient = window.prompt("Numéro de téléphone du destinataire")?.trim();
+    if (!recipient) return;
+
+    setSendingSmsPeriodId(period.id);
+    setSavedPeriodsError(null);
+    setSavedPeriodsNotice(null);
+    try {
+      const result = await apiFetch<PlanningRelaySmsSendResult>(`/planning-relay-periods/${period.id}/send-sms`, {
+        method: "POST",
+        json: { recipient },
+      });
+      const credits = result.credits === null ? "" : ` (${result.credits} crédit${result.credits > 1 ? "s" : ""})`;
+      setSavedPeriodsNotice(`SMS envoyé vers ${result.recipient}${credits}.`);
+    } catch (caught) {
+      setSavedPeriodsError(caught instanceof Error ? caught.message : "Impossible d’envoyer le SMS.");
+    } finally {
+      setSendingSmsPeriodId(null);
     }
   };
 
@@ -447,6 +496,7 @@ const OperationsPrintPage = () => {
               {savingPeriod ? "Enregistrement…" : "Enregistrer la période"}
             </button>
           </div>
+          {savedPeriodsNotice ? <div className="operations-saved-periods__notice">{savedPeriodsNotice}</div> : null}
           {savedPeriodsError ? <div className="operations-saved-periods__error">{savedPeriodsError}</div> : null}
           {savedPeriods.length > 0 ? (
             <div className="operations-saved-periods" aria-label="Périodes enregistrées">
@@ -478,6 +528,16 @@ const OperationsPrintPage = () => {
                       </svg>
                     </a>
                     <button type="button" className="operations-saved-period__action" onClick={() => void copySavedPeriodLink(period)} aria-label={`Copier le lien de ${period.label}`} title="Copier le lien" disabled={!isAvailable}>⧉</button>
+                    <button
+                      type="button"
+                      className="operations-saved-period__action"
+                      onClick={() => void sendSavedPeriodSms(period)}
+                      aria-label={`Envoyer le lien ${period.label} par SMS`}
+                      title={smsStatus?.configured ? "Envoyer par SMS" : "SMS non configuré"}
+                      disabled={!isAvailable || !smsStatus?.configured || sendingSmsPeriodId === period.id}
+                    >
+                      {sendingSmsPeriodId === period.id ? "…" : "SMS"}
+                    </button>
                     <button type="button" className="operations-saved-period__action" onClick={() => void toggleSavedPeriod(period)} aria-label={`${period.is_active ? "Désactiver" : "Activer"} ${period.label}`} title={isExpired ? "Lien expiré : régénérez-le" : period.is_active ? "Désactiver le lien" : "Activer le lien"} disabled={isExpired}>{period.is_active ? "●" : "○"}</button>
                     <button type="button" className="operations-saved-period__action" onClick={() => void rotateSavedPeriodLink(period)} aria-label={`Régénérer le lien de ${period.label}`} title="Régénérer le lien">↻</button>
                     <button type="button" className="operations-saved-period__remove" onClick={() => void removeSavedPeriod(period)} aria-label={`Supprimer la période ${period.label}`} title="Supprimer">

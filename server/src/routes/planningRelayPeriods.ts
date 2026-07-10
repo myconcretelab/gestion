@@ -1,7 +1,8 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { addDays, differenceInCalendarDays, endOfDay } from "date-fns";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { env } from "../config/env.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 import {
   buildPlanningRelayShortCode,
@@ -18,6 +19,7 @@ import {
   recordRequestThrottleFailure,
   sendThrottleResponse,
 } from "../services/requestThrottle.js";
+import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
 
 const MAX_DAYS = 31;
 const privateRouter = Router();
@@ -42,6 +44,9 @@ const payloadSchema = z.object({
 
 const patchSchema = payloadSchema.partial().extend({
   is_active: z.boolean().optional(),
+});
+const smsSchema = z.object({
+  recipient: z.string().trim().min(6).max(32),
 });
 
 const parseIsoDate = (value: string) => {
@@ -136,6 +141,18 @@ const serializePeriod = (period: any) => {
   };
 };
 
+const getRequestOrigin = (req: Request) => {
+  const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const host = forwardedHost || req.get("host");
+  const protocol = forwardedProto || req.protocol;
+  if (host) return `${protocol}://${host}`;
+  return env.CLIENT_ORIGIN;
+};
+
+const buildPlanningRelayMessage = (label: string, publicUrl: string) =>
+  `Planning relais ${label}: ${publicUrl}`;
+
 const buildCreateData = (
   payload: z.infer<typeof payloadSchema>,
   identity: { nonce: string; publicCodeHash: string },
@@ -177,6 +194,10 @@ privateRouter.post("/", async (req, res, next) => {
   } catch (error) {
     return next(error);
   }
+});
+
+privateRouter.get("/sms/status", (_req, res) => {
+  res.json(getSmsConfigurationStatus());
 });
 
 privateRouter.patch("/:id", async (req, res, next) => {
@@ -230,6 +251,39 @@ privateRouter.post("/:id/rotate-link", async (req, res, next) => {
       },
     });
     return res.json(serializePeriod(period));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.post("/:id/send-sms", async (req, res, next) => {
+  try {
+    const payload = smsSchema.parse(req.body);
+    const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: "Période introuvable." });
+
+    const period = await ensureShortCode(current);
+    const serialized = serializePeriod(period);
+    const isExpired = Boolean(period.expires_at && period.expires_at.getTime() < Date.now());
+    if (!period.is_active || isExpired) {
+      return res.status(409).json({ error: "Le lien public doit être actif pour envoyer le SMS." });
+    }
+
+    const publicUrl = new URL(serialized.public_path, getRequestOrigin(req)).toString();
+    const result = await sendOvhSms({
+      recipient: payload.recipient,
+      message: buildPlanningRelayMessage(period.label, publicUrl),
+    });
+
+    return res.json({
+      ok: true,
+      provider: result.provider,
+      recipient: result.recipient,
+      credits: result.totalCreditsRemoved ?? null,
+      ids: result.ids ?? [],
+      invalid_receivers: result.invalidReceivers ?? [],
+      valid_receivers: result.validReceivers ?? [],
+    });
   } catch (error) {
     return next(error);
   }

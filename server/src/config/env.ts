@@ -154,4 +154,11 @@ export const env = {
   SMTP_PASS: process.env.SMTP_PASS ?? "",
   SMTP_FROM: process.env.SMTP_FROM ?? "",
   SMTP_REPLY_TO: process.env.SMTP_REPLY_TO ?? "",
+  SMS_APP_KEY: process.env.SMS_APP_KEY ?? process.env.OVH_APP_KEY ?? "",
+  SMS_APP_SECRET: process.env.SMS_APP_SECRET ?? process.env.SMS_SECRET ?? process.env.OVH_APP_SECRET ?? "",
+  SMS_CONSUMER_KEY: process.env.SMS_CONSUMER_KEY ?? process.env.OVH_CONSUMER_KEY ?? "",
+  SMS_SERVICE_NAME: process.env.SMS_SERVICE_NAME ?? process.env.OVH_SMS_SERVICE_NAME ?? "",
+  SMS_SENDER: process.env.SMS_SENDER ?? process.env.OVH_SMS_SENDER ?? "",
+  SMS_API_BASE_URL: process.env.SMS_API_BASE_URL ?? "https://eu.api.ovh.com/1.0",
+  SMS_NO_STOP_CLAUSE: parseBooleanEnv(process.env.SMS_NO_STOP_CLAUSE, true),
 };
