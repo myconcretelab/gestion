@@ -110,19 +110,28 @@ const toOvhSmsError = (error: unknown, requiredRight: string) => {
   const providerStatus = error.response?.status;
   const providerMessage = stringifyOvhMessage(error.response?.data);
   const isForbidden = providerStatus === 403;
+  const isSenderMissing = /sender\b.*does not exists/i.test(providerMessage ?? "");
   const hint = isForbidden
-    ? `La Consumer Key OVH n'a pas le droit requis. Ajoutez le droit ${requiredRight}, puis remplacez SMS_CONSUMER_KEY avec la nouvelle clé.`
+    ? isSenderMissing
+      ? "OVH ne trouve pas l'expéditeur SMS demandé. Créez un expéditeur dans OVH SMS, puis renseignez exactement ce nom dans SMS_SENDER, ou vérifiez qu'OVH accepte l'envoi sans expéditeur personnalisé sur ce compte."
+      : `La Consumer Key OVH n'a pas le droit requis. Ajoutez le droit ${requiredRight}, puis remplacez SMS_CONSUMER_KEY avec la nouvelle clé.`
     : providerStatus
       ? "OVH a refusé la demande SMS. Vérifiez les identifiants, le service SMS, l'expéditeur et le solde de crédits."
       : "Impossible de joindre l'API SMS OVH. Vérifiez la connexion du serveur et SMS_API_BASE_URL.";
 
   return new OvhSmsError(
-    isForbidden
+    isSenderMissing
+      ? "OVH refuse l'envoi SMS: expéditeur SMS introuvable."
+      : isForbidden
       ? "OVH refuse l'envoi SMS: droit API insuffisant."
       : `OVH refuse l'envoi SMS${providerStatus ? ` (${providerStatus})` : ""}.`,
     {
       statusCode: 502,
-      code: isForbidden ? "ovh_sms_forbidden" : "ovh_sms_request_failed",
+      code: isSenderMissing
+        ? "ovh_sms_sender_missing"
+        : isForbidden
+          ? "ovh_sms_forbidden"
+          : "ovh_sms_request_failed",
       details: {
         provider: "ovh",
         ...(providerStatus ? { provider_status: providerStatus } : {}),
