@@ -131,6 +131,21 @@ export type PlanningRelayPeriod = {
   public_path: string;
 };
 
+export type PlanningRelaySmsStatus = {
+  configured: boolean;
+  missing: string[];
+};
+
+export type PlanningRelaySmsSendResult = {
+  ok: boolean;
+  provider: "ovh";
+  recipient: string;
+  credits: number | null;
+  ids: number[];
+  invalid_receivers: string[];
+  valid_receivers: string[];
+};
+
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,

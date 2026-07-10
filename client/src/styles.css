@@ -4691,6 +4691,13 @@ body {
   font-weight: 700;
 }
 
+.operations-saved-periods__notice {
+  grid-column: 1 / -1;
+  color: #047857;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .operations-saved-period {
   display: inline-flex;
   overflow: hidden;
