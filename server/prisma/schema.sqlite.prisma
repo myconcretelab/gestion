@@ -367,9 +367,44 @@ model PlanningRelayPeriod {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  assignments      PlanningRelayAssignment[]
+
   @@index([is_active, date_fin], map: "planning_relay_periods_active_date_fin_idx")
   @@index([sms_enabled, sms_send_time], map: "planning_relay_periods_sms_schedule_idx")
   @@map("planning_relay_periods")
+}
+
+model PlanningRelayWorker {
+  id          String   @id @default(cuid())
+  nom         String
+  telephone   String
+  email       String?
+  adresse     String?
+  is_active   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments PlanningRelayAssignment[]
+
+  @@index([is_active, nom], map: "planning_relay_workers_active_nom_idx")
+  @@map("planning_relay_workers")
+}
+
+model PlanningRelayAssignment {
+  id         String   @id @default(cuid())
+  period_id String
+  date      String
+  gite_id   String
+  worker_id String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  period     PlanningRelayPeriod @relation(fields: [period_id], references: [id], onDelete: Cascade)
+  worker     PlanningRelayWorker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+
+  @@unique([period_id, date, gite_id], map: "planning_relay_assignments_period_date_gite_key")
+  @@index([worker_id], map: "planning_relay_assignments_worker_idx")
+  @@map("planning_relay_assignments")
 }
 
 model SecurityThrottle {
