@@ -360,6 +360,7 @@ model PlanningRelayPeriod {
   last_accessed_at DateTime?
   sms_enabled      Boolean   @default(false)
   sms_recipient    String?
+  sms_worker_id    String?
   sms_send_time    String    @default("18:00")
   sms_send_day     String    @default("previous_day")
   sms_last_sent_for_date    String?
@@ -368,9 +369,11 @@ model PlanningRelayPeriod {
   updatedAt        DateTime  @updatedAt
 
   assignments      PlanningRelayAssignment[]
+  sms_worker       PlanningRelayWorker? @relation("PlanningRelayPeriodSmsWorker", fields: [sms_worker_id], references: [id], onDelete: SetNull)
 
   @@index([is_active, date_fin], map: "planning_relay_periods_active_date_fin_idx")
   @@index([sms_enabled, sms_send_time], map: "planning_relay_periods_sms_schedule_idx")
+  @@index([sms_worker_id], map: "planning_relay_periods_sms_worker_idx")
   @@map("planning_relay_periods")
 }
 
@@ -385,6 +388,7 @@ model PlanningRelayWorker {
   updatedAt   DateTime @updatedAt
 
   assignments PlanningRelayAssignment[]
+  sms_periods PlanningRelayPeriod[] @relation("PlanningRelayPeriodSmsWorker")
 
   @@index([is_active, nom], map: "planning_relay_workers_active_nom_idx")
   @@map("planning_relay_workers")

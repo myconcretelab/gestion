@@ -54,6 +54,10 @@ const patchSchema = payloadSchema.partial().extend({
     (value) => value === "" || value === undefined ? null : value,
     z.string().trim().min(6).max(32).nullable(),
   ).optional(),
+  sms_worker_id: z.preprocess(
+    (value) => value === "" || value === undefined ? null : value,
+    z.string().trim().min(1).nullable(),
+  ).optional(),
   sms_send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/).optional(),
   sms_send_day: z.enum(["previous_day", "same_day"]).optional(),
 });
@@ -64,6 +68,10 @@ const smsTestSchema = z.object({
   recipient: z.preprocess(
     (value) => value === "" || value === undefined ? undefined : value,
     z.string().trim().min(6).max(32).optional(),
+  ),
+  worker_id: z.preprocess(
+    (value) => value === "" || value === undefined ? undefined : value,
+    z.string().trim().min(1).optional(),
   ),
 });
 const workerPayloadSchema = z.object({
@@ -201,6 +209,8 @@ const serializePeriod = (period: any) => {
     last_accessed_at: period.last_accessed_at?.toISOString() ?? null,
     sms_enabled: Boolean(period.sms_enabled),
     sms_recipient: period.sms_recipient ?? null,
+    sms_worker_id: period.sms_worker_id ?? null,
+    sms_worker: period.sms_worker ? serializeWorker(period.sms_worker) : null,
     sms_send_time: normalizePlanningRelaySmsTime(period.sms_send_time),
     sms_send_day: normalizePlanningRelaySmsSendDay(period.sms_send_day),
     sms_last_sent_for_date: period.sms_last_sent_for_date ?? null,
@@ -213,6 +223,7 @@ const serializePeriod = (period: any) => {
 };
 
 const periodWithAssignmentsInclude = {
+  sms_worker: true,
   assignments: {
     include: { worker: true },
     orderBy: [{ date: "asc" as const }, { gite_id: "asc" as const }],
@@ -355,6 +366,10 @@ privateRouter.patch("/:id", async (req, res, next) => {
     const { start, end } = validatePeriod(from, to);
     const giteIds = payload.gite_ids ?? normalizeGiteIds(current.gite_ids);
     await assertGitesExist(giteIds);
+    const smsWorker = payload.sms_worker_id
+      ? await prisma.planningRelayWorker.findUnique({ where: { id: payload.sms_worker_id } })
+      : null;
+    if (payload.sms_worker_id && !smsWorker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
 
     const period = await prisma.planningRelayPeriod.update({
       where: { id: current.id },
@@ -369,6 +384,12 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
         ...(payload.sms_enabled !== undefined ? { sms_enabled: payload.sms_enabled } : {}),
         ...(payload.sms_recipient !== undefined ? { sms_recipient: payload.sms_recipient } : {}),
+        ...(payload.sms_worker_id !== undefined
+          ? {
+              sms_worker_id: smsWorker?.id ?? null,
+              sms_recipient: smsWorker?.telephone ?? null,
+            }
+          : {}),
         ...(payload.sms_send_time !== undefined
           ? { sms_send_time: normalizePlanningRelaySmsTime(payload.sms_send_time) }
           : {}),
@@ -469,11 +490,18 @@ privateRouter.post("/:id/rotate-link", async (req, res, next) => {
 privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
   try {
     const payload = smsTestSchema.parse(req.body ?? {});
-    const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
+    const current = await prisma.planningRelayPeriod.findUnique({
+      where: { id: req.params.id },
+      include: { sms_worker: true },
+    });
     if (!current) return res.status(404).json({ error: "Période introuvable." });
-    const recipient = payload.recipient ?? current.sms_recipient;
+    const worker = payload.worker_id
+      ? await prisma.planningRelayWorker.findUnique({ where: { id: payload.worker_id } })
+      : current.sms_worker;
+    if (payload.worker_id && !worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
+    const recipient = worker?.telephone ?? payload.recipient ?? current.sms_recipient;
     if (!recipient?.trim()) {
-      return res.status(400).json({ error: "Ajoutez un numéro SMS sur cette période avant d'envoyer un test." });
+      return res.status(400).json({ error: "Choisissez un intervenant avec téléphone avant d'envoyer un test." });
     }
 
     const result = await sendPlanningRelayProgramTestSms({ ...current, sms_recipient: recipient });
