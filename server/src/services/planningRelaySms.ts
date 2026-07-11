@@ -39,6 +39,13 @@ type ProgramContractTime = {
   heure_depart: string;
 };
 
+type PlanningRelaySmsRecipientPeriod = {
+  sms_recipient?: string | null;
+  sms_worker?: {
+    telephone: string | null;
+  } | null;
+};
+
 export type PlanningRelaySmsSendDay = "previous_day" | "same_day";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -120,6 +127,9 @@ const formatSmsTime = (value: string | null | undefined) => {
   const [hours, minutes] = time.split(":");
   return minutes === "00" ? `${Number(hours)}h` : `${Number(hours)}h${minutes}`;
 };
+
+const getPlanningRelaySmsRecipient = (period: PlanningRelaySmsRecipientPeriod) =>
+  period.sms_worker?.telephone?.trim() || period.sms_recipient?.trim() || "";
 
 const getOperationSchedule = (departureTime: string | null, arrivalTime: string | null) => {
   if (departureTime && arrivalTime) return `Entre ${departureTime} et ${arrivalTime}`;
@@ -362,9 +372,13 @@ export const sendPlanningRelayProgramSms = async (period: {
   gite_ids: unknown;
   date_debut?: Date;
   sms_recipient: string | null;
+  sms_worker?: {
+    telephone: string | null;
+  } | null;
   sms_send_day?: string | null;
 }, targetIsoDate: string) => {
-  if (!period.sms_recipient?.trim()) throw new Error("Numero SMS manquant pour la periode relais.");
+  const recipient = getPlanningRelaySmsRecipient(period);
+  if (!recipient) throw new Error("Numero SMS manquant pour la periode relais.");
   const messages = await buildPlanningRelayProgramSmsForPeriod(
     period,
     targetIsoDate,
@@ -378,7 +392,7 @@ export const sendPlanningRelayProgramSms = async (period: {
   });
   const results = [];
   for (const message of messages) {
-    results.push(await sendOvhSms({ recipient: period.sms_recipient, message }));
+    results.push(await sendOvhSms({ recipient, message }));
   }
   await prisma.planningRelayPeriod.update({
     where: { id: period.id },
@@ -396,8 +410,12 @@ export const sendPlanningRelayProgramTestSms = async (period: {
   date_debut: Date;
   date_fin: Date;
   sms_recipient: string | null;
+  sms_worker?: {
+    telephone: string | null;
+  } | null;
 }, currentIsoDate = getParisDateTimeParts().isoDate) => {
-  if (!period.sms_recipient?.trim()) throw new Error("Numero SMS manquant pour la periode relais.");
+  const recipient = getPlanningRelaySmsRecipient(period);
+  if (!recipient) throw new Error("Numero SMS manquant pour la periode relais.");
 
   let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
     ? toPlanningRelayIsoDate(period.date_debut)
@@ -413,7 +431,7 @@ export const sendPlanningRelayProgramTestSms = async (period: {
     if (messages?.length) {
       const results = [];
       for (const message of messages) {
-        results.push(await sendOvhSms({ recipient: period.sms_recipient, message }));
+        results.push(await sendOvhSms({ recipient, message }));
       }
       return { sent: true as const, targetIsoDate, messages, results };
     }
@@ -431,10 +449,14 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
     where: {
       is_active: true,
       sms_enabled: true,
-      sms_recipient: { not: null },
+      OR: [
+        { sms_recipient: { not: null } },
+        { sms_worker_id: { not: null } },
+      ],
       date_debut: { lte: tomorrowDate },
       date_fin: { gte: todayDate },
     },
+    include: { sms_worker: true },
     orderBy: [{ sms_send_time: "asc" }, { createdAt: "asc" }],
   });
 

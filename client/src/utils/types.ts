@@ -128,6 +128,8 @@ export type PlanningRelayPeriod = {
   last_accessed_at: string | null;
   sms_enabled: boolean;
   sms_recipient: string | null;
+  sms_worker_id: string | null;
+  sms_worker: PlanningRelayWorker | null;
   sms_send_time: string;
   sms_send_day: "previous_day" | "same_day";
   sms_last_sent_for_date: string | null;
