@@ -145,6 +145,14 @@ const PublicPlanningRelayPage = () => {
     [allOperationsByDate],
   );
   const interventionCount = operationsByDate.filter((row) => !alreadyHandledArrivalRows.has(`${row.date}-${row.giteId}`)).length;
+  const assignmentByOperationKey = useMemo(() => {
+    const assignments = new Map<string, NonNullable<PublicPlanningRelayResponse["assignments"]>[number]>();
+    for (const assignment of data?.assignments ?? []) {
+      assignments.set(`${assignment.date}-${assignment.gite_id}`, assignment);
+    }
+    return assignments;
+  }, [data]);
+  const showWorkerColumn = assignmentByOperationKey.size > 0;
   const timelineColumns = { "--operations-day-count": Math.max(1, days.length) } as CSSProperties;
 
   if (loading) return <main className="public-relay-state">Chargement du planning…</main>;
@@ -247,12 +255,13 @@ const PublicPlanningRelayPage = () => {
         <section className="operations-table-section">
           <h3>Interventions à prévoir</h3>
           {operationsByDate.length === 0 ? <div className="operations-empty">{hidePastDays ? "Aucune intervention à venir sur cette période." : "Aucune entrée ni sortie sur cette période."}</div> : (
-            <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}`}>
+            <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}${showWorkerColumn ? " operations-table--with-workers" : ""}`}>
               <thead><tr>
                 <th className="operations-table__date-heading">Date</th>
                 <th className="operations-table__gite-heading">Gîte</th>
                 <th className="operations-table__type-heading">Type</th>
                 {hasOptionsInPeriod ? <th className="operations-table__options-heading">Options</th> : null}
+                {showWorkerColumn ? <th className="operations-table__worker-heading">Intervenant</th> : null}
                 <th className="operations-table__stay-heading">Séjour</th>
                 {period.show_comments || period.show_phones ? <th className="operations-table__information-heading">Informations</th> : null}
               </tr></thead>
@@ -264,6 +273,7 @@ const PublicPlanningRelayPage = () => {
                   const isRotation = hasArrival && hasDeparture;
                   const firstReservation = stays[0].reservation;
                   const isAlreadyHandledArrival = alreadyHandledArrivalRows.has(`${date}-${giteId}`);
+                  const assignedWorker = assignmentByOperationKey.get(`${date}-${giteId}`)?.worker ?? null;
                   return (
                     <tr
                       key={`${date}-${giteId}`}
@@ -274,6 +284,17 @@ const PublicPlanningRelayPage = () => {
                       <td><strong>{firstReservation.gite?.nom ?? "Gîte"}</strong></td>
                       <td className="operations-table__type"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => ["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td>
                       {hasOptionsInPeriod ? <td className="operations-table__options"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => !["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td> : null}
+                      {showWorkerColumn ? (
+                        <td className="operations-table__worker-cell">
+                          {assignedWorker ? (
+                            <div className="operations-worker-print">
+                              <strong>{assignedWorker.nom}</strong>
+                              <span>{assignedWorker.telephone}</span>
+                              {assignedWorker.email ? <span>{assignedWorker.email}</span> : null}
+                            </div>
+                          ) : <span className="operations-worker-empty">Aucun</span>}
+                        </td>
+                      ) : null}
                       <td className="operations-table__stay-cell">
                         <div className={`operations-stay-summaries${isRotation ? " operations-stay-summaries--rotation" : ""}`}>
                           {stays.map((stay) => {
@@ -286,8 +307,9 @@ const PublicPlanningRelayPage = () => {
                       {period.show_comments || period.show_phones ? (
                         <td className="operations-table__information-cell">
                           {stays.map(({ reservation }) => {
-                            if (!reservation.telephone && !reservation.commentaire) return null;
-                            return <div key={reservation.id} className="operations-stay-information">{isRotation ? <strong>{reservation.hote_nom}</strong> : null}{period.show_phones && reservation.telephone ? <span>{reservation.telephone}</span> : null}{period.show_comments && reservation.commentaire ? <span>{reservation.commentaire}</span> : null}</div>;
+                            const hasInformation = (period.show_phones && reservation.telephone && !assignedWorker) || (period.show_comments && reservation.commentaire);
+                            if (!hasInformation) return null;
+                            return <div key={reservation.id} className="operations-stay-information">{isRotation ? <strong>{reservation.hote_nom}</strong> : null}{period.show_phones && reservation.telephone && !assignedWorker ? <span>{reservation.telephone}</span> : null}{period.show_comments && reservation.commentaire ? <span>{reservation.commentaire}</span> : null}</div>;
                           })}
                         </td>
                       ) : null}

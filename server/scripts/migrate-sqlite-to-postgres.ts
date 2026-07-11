@@ -141,7 +141,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, guestNightDeclarations, urssafDeclarations] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -152,6 +152,8 @@ const main = async () => {
         tableNames.has("reservation_placeholders") ? sqlite.reservationPlaceholder.findMany() : Promise.resolve([]),
         tableNames.has("reservations") ? sqlite.reservation.findMany() : Promise.resolve([]),
         tableNames.has("planning_relay_periods") ? sqlite.planningRelayPeriod.findMany() : Promise.resolve([]),
+        tableNames.has("planning_relay_workers") ? sqlite.planningRelayWorker.findMany() : Promise.resolve([]),
+        tableNames.has("planning_relay_assignments") ? sqlite.planningRelayAssignment.findMany() : Promise.resolve([]),
         tableNames.has("guest_night_declarations") ? sqlite.guestNightDeclaration.findMany() : Promise.resolve([]),
         tableNames.has("urssaf_declarations") ? sqlite.urssafDeclaration.findMany() : Promise.resolve([]),
       ]);
@@ -165,6 +167,8 @@ const main = async () => {
     console.log(`Placeholders reservations: ${placeholders.length}`);
     console.log(`Reservations: ${reservations.length}`);
     console.log(`Periodes planning relais: ${planningRelayPeriods.length}`);
+    console.log(`Intervenants planning relais: ${planningRelayWorkers.length}`);
+    console.log(`Affectations planning relais: ${planningRelayAssignments.length}`);
     console.log(`Declarations nuitees: ${guestNightDeclarations.length}`);
     console.log(`Declarations URSSAF: ${urssafDeclarations.length}`);
 
@@ -174,6 +178,8 @@ const main = async () => {
       console.log("Suppression des donnees cibles...");
       await postgres.$transaction([
         postgres.securityThrottle.deleteMany(),
+        postgres.planningRelayAssignment.deleteMany(),
+        postgres.planningRelayWorker.deleteMany(),
         postgres.reservation.deleteMany(),
         postgres.reservationPlaceholder.deleteMany(),
         postgres.planningRelayPeriod.deleteMany(),
@@ -301,6 +307,24 @@ const main = async () => {
         where: { id },
         create: data,
         update,
+      });
+    }
+
+    for (const worker of planningRelayWorkers) {
+      const { id, ...rest } = worker;
+      await postgres.planningRelayWorker.upsert({
+        where: { id },
+        create: { id, ...rest },
+        update: rest,
+      });
+    }
+
+    for (const assignment of planningRelayAssignments) {
+      const { id, ...rest } = assignment;
+      await postgres.planningRelayAssignment.upsert({
+        where: { id },
+        create: { id, ...rest },
+        update: rest,
       });
     }
 

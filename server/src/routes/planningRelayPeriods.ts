@@ -66,6 +66,27 @@ const smsTestSchema = z.object({
     z.string().trim().min(6).max(32).optional(),
   ),
 });
+const workerPayloadSchema = z.object({
+  nom: z.string().trim().min(1).max(120),
+  telephone: z.string().trim().min(1).max(32),
+  email: z.preprocess(
+    (value) => value === "" || value === undefined ? null : value,
+    z.string().trim().email().max(180).nullable(),
+  ).optional(),
+  adresse: z.preprocess(
+    (value) => value === "" || value === undefined ? null : value,
+    z.string().trim().max(500).nullable(),
+  ).optional(),
+  is_active: z.boolean().optional(),
+});
+const assignmentPayloadSchema = z.object({
+  date: isoDateSchema,
+  gite_id: z.string().trim().min(1),
+  worker_id: z.preprocess(
+    (value) => value === "" || value === undefined ? null : value,
+    z.string().trim().min(1).nullable(),
+  ),
+});
 
 const parseIsoDate = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
@@ -96,6 +117,31 @@ const validatePeriod = (from: string, to: string) => {
 const normalizeGiteIds = (value: unknown) => [
   ...new Set(fromJsonString<unknown[]>(value, []).filter((id): id is string => typeof id === "string" && Boolean(id))),
 ];
+
+const serializeWorker = (worker: any) => ({
+  id: worker.id,
+  nom: worker.nom,
+  telephone: worker.telephone,
+  email: worker.email ?? null,
+  adresse: worker.adresse ?? null,
+  is_active: Boolean(worker.is_active),
+  created_at: worker.createdAt.toISOString(),
+  updated_at: worker.updatedAt.toISOString(),
+});
+
+const serializeAssignment = (assignment: any) => ({
+  id: assignment.id,
+  period_id: assignment.period_id,
+  date: assignment.date,
+  gite_id: assignment.gite_id,
+  worker_id: assignment.worker_id,
+  worker: assignment.worker ? serializeWorker(assignment.worker) : null,
+  created_at: assignment.createdAt.toISOString(),
+  updated_at: assignment.updatedAt.toISOString(),
+});
+
+const serializeAssignments = (period: any) =>
+  Array.isArray(period.assignments) ? period.assignments.map(serializeAssignment) : [];
 
 const sanitizePublicOptions = (value: unknown) => {
   const options = fromJsonString<Record<string, any>>(value, {});
@@ -159,11 +205,25 @@ const serializePeriod = (period: any) => {
     sms_send_day: normalizePlanningRelaySmsSendDay(period.sms_send_day),
     sms_last_sent_for_date: period.sms_last_sent_for_date ?? null,
     sms_last_attempt_for_date: period.sms_last_attempt_for_date ?? null,
+    assignments: serializeAssignments(period),
     created_at: period.createdAt.toISOString(),
     updated_at: period.updatedAt.toISOString(),
     public_path: `/r/${code}`,
   };
 };
+
+const periodWithAssignmentsInclude = {
+  assignments: {
+    include: { worker: true },
+    orderBy: [{ date: "asc" as const }, { gite_id: "asc" as const }],
+  },
+};
+
+const getPeriodWithAssignments = (id: string) =>
+  prisma.planningRelayPeriod.findUnique({
+    where: { id },
+    include: periodWithAssignmentsInclude,
+  });
 
 const getRequestOrigin = (req: Request) => {
   const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
@@ -200,6 +260,7 @@ privateRouter.get("/", async (_req, res, next) => {
   try {
     const periods = await prisma.planningRelayPeriod.findMany({
       orderBy: [{ date_debut: "asc" }, { createdAt: "asc" }],
+      include: periodWithAssignmentsInclude,
     });
     const periodsWithCodes = await Promise.all(periods.map(ensureShortCode));
     return res.json(periodsWithCodes.map(serializePeriod));
@@ -214,7 +275,66 @@ privateRouter.post("/", async (req, res, next) => {
     await assertGitesExist(payload.gite_ids);
     const identity = await createShareIdentity();
     const period = await prisma.planningRelayPeriod.create({ data: buildCreateData(payload, identity) });
-    return res.status(201).json(serializePeriod(period));
+    return res.status(201).json(serializePeriod({ ...period, assignments: [] }));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.get("/workers", async (_req, res, next) => {
+  try {
+    const workers = await prisma.planningRelayWorker.findMany({
+      orderBy: [{ is_active: "desc" }, { nom: "asc" }, { createdAt: "asc" }],
+    });
+    return res.json(workers.map(serializeWorker));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.post("/workers", async (req, res, next) => {
+  try {
+    const payload = workerPayloadSchema.parse(req.body ?? {});
+    const worker = await prisma.planningRelayWorker.create({
+      data: {
+        nom: payload.nom,
+        telephone: payload.telephone,
+        email: payload.email ?? null,
+        adresse: payload.adresse ?? null,
+        is_active: payload.is_active ?? true,
+      },
+    });
+    return res.status(201).json(serializeWorker(worker));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.patch("/workers/:id", async (req, res, next) => {
+  try {
+    const payload = workerPayloadSchema.partial().parse(req.body ?? {});
+    const current = await prisma.planningRelayWorker.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: "Intervenant introuvable." });
+    const worker = await prisma.planningRelayWorker.update({
+      where: { id: current.id },
+      data: {
+        ...(payload.nom !== undefined ? { nom: payload.nom } : {}),
+        ...(payload.telephone !== undefined ? { telephone: payload.telephone } : {}),
+        ...(payload.email !== undefined ? { email: payload.email } : {}),
+        ...(payload.adresse !== undefined ? { adresse: payload.adresse } : {}),
+        ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
+      },
+    });
+    return res.json(serializeWorker(worker));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.delete("/workers/:id", async (req, res, next) => {
+  try {
+    await prisma.planningRelayWorker.delete({ where: { id: req.params.id } });
+    return res.status(204).end();
   } catch (error) {
     return next(error);
   }
@@ -259,8 +379,65 @@ privateRouter.patch("/:id", async (req, res, next) => {
           ? { expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : null }
           : {}),
       },
+      include: periodWithAssignmentsInclude,
     });
     return res.json(serializePeriod(period));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.patch("/:id/assignments", async (req, res, next) => {
+  try {
+    const payload = assignmentPayloadSchema.parse(req.body ?? {});
+    const current = await getPeriodWithAssignments(req.params.id);
+    if (!current) return res.status(404).json({ error: "Période introuvable." });
+
+    const { start, end } = validatePeriod(toIsoDate(current.date_debut), toIsoDate(current.date_fin));
+    const assignmentDate = parseIsoDate(payload.date);
+    if (assignmentDate < start || assignmentDate > end) {
+      return res.status(400).json({ error: "La date n'appartient pas à cette période." });
+    }
+
+    const giteIds = normalizeGiteIds(current.gite_ids);
+    if (!giteIds.includes(payload.gite_id)) {
+      return res.status(400).json({ error: "Ce gîte n'appartient pas à cette période." });
+    }
+
+    const existing = await prisma.planningRelayAssignment.findUnique({
+      where: {
+        period_id_date_gite_id: {
+          period_id: current.id,
+          date: payload.date,
+          gite_id: payload.gite_id,
+        },
+      },
+    });
+
+    if (!payload.worker_id) {
+      if (existing) await prisma.planningRelayAssignment.delete({ where: { id: existing.id } });
+    } else {
+      const worker = await prisma.planningRelayWorker.findUnique({ where: { id: payload.worker_id } });
+      if (!worker) return res.status(404).json({ error: "Intervenant introuvable." });
+      if (existing) {
+        await prisma.planningRelayAssignment.update({
+          where: { id: existing.id },
+          data: { worker_id: worker.id },
+        });
+      } else {
+        await prisma.planningRelayAssignment.create({
+          data: {
+            period_id: current.id,
+            date: payload.date,
+            gite_id: payload.gite_id,
+            worker_id: worker.id,
+          },
+        });
+      }
+    }
+
+    const updated = await getPeriodWithAssignments(current.id);
+    return res.json(serializeAssignments(updated));
   } catch (error) {
     return next(error);
   }
@@ -281,6 +458,7 @@ privateRouter.post("/:id/rotate-link", async (req, res, next) => {
           ? { expires_at: endOfDay(addDays(new Date(), 7)) }
           : {}),
       },
+      include: periodWithAssignmentsInclude,
     });
     return res.json(serializePeriod(period));
   } catch (error) {
@@ -376,12 +554,16 @@ publicRouter.get("/:token", async (req, res, next) => {
     if (isPlanningRelayShortCode(identifier)) {
       period = await prisma.planningRelayPeriod.findUnique({
         where: { public_code_hash: hashPlanningRelayShortCode(identifier) },
+        include: periodWithAssignmentsInclude,
       });
       identifierIsValid = Boolean(period && buildPlanningRelayShortCode(period.share_nonce) === identifier);
     } else {
       const parsedToken = parsePlanningRelayToken(identifier);
       if (parsedToken) {
-        period = await prisma.planningRelayPeriod.findUnique({ where: { id: parsedToken.id } });
+        period = await prisma.planningRelayPeriod.findUnique({
+          where: { id: parsedToken.id },
+          include: periodWithAssignmentsInclude,
+        });
         identifierIsValid = Boolean(period && verifyPlanningRelayToken(identifier, period.share_nonce));
       }
     }
@@ -457,6 +639,7 @@ publicRouter.get("/:token", async (req, res, next) => {
         show_phones: period.show_phones,
         expires_at: period.expires_at?.toISOString() ?? null,
       },
+      assignments: serializeAssignments(period),
       gites,
       reservations: reservations.map((reservation) => ({
         ...reservation,
