@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { formatEuro } from "../../../utils/format";
 import { buildPaymentColorMap, getPaymentColorFromMap } from "../../../utils/paymentColors";
 
@@ -20,28 +20,25 @@ const PaymentPieChart = ({ payments, sourceColors }: PaymentPieChartProps) => {
     return <div className="stats-empty-chart">Aucun paiement</div>;
   }
 
-  const renderLegend = ({ payload }: { payload?: Array<{ value?: string; color?: string; payload?: { value?: number } }> }) => {
-    if (!payload || payload.length === 0) return null;
-
+  const renderLegend = () => {
     return (
       <div className="stats-pie-legend">
-        {payload.map((entry) => {
-          const label = entry.value ?? "";
-          const amount = Number(entry.payload?.value ?? 0);
-          const isActive = activeLegend === label;
+        {data.map((entry) => {
+          const color = getPaymentColorFromMap(entry.name, paymentColorMap);
+          const isActive = activeLegend === entry.name;
           return (
             <div
-              key={label}
+              key={entry.name}
               className="stats-pie-legend-item"
-              onMouseEnter={() => setActiveLegend(label)}
+              onMouseEnter={() => setActiveLegend(entry.name)}
               onMouseLeave={() => setActiveLegend(null)}
-              onFocus={() => setActiveLegend(label)}
+              onFocus={() => setActiveLegend(entry.name)}
               onBlur={() => setActiveLegend(null)}
               tabIndex={0}
             >
-              <span className="dot" style={{ backgroundColor: entry.color }} />
-              <span>{label}</span>
-              <span className={`stats-pie-amount ${isActive ? "active" : ""}`}>{formatEuro(amount)}</span>
+              <span className="dot" style={{ backgroundColor: color }} />
+              <span>{entry.name}</span>
+              <span className={`stats-pie-amount ${isActive ? "active" : ""}`}>{formatEuro(entry.value)}</span>
             </div>
           );
         })}
@@ -50,33 +47,30 @@ const PaymentPieChart = ({ payments, sourceColors }: PaymentPieChartProps) => {
   };
 
   return (
-    <ResponsiveContainer width="100%" height={140}>
-      <PieChart>
-        <Pie
-          data={data}
-          dataKey="value"
-          nameKey="name"
-          cx="30%"
-          cy="50%"
-          innerRadius={30}
-          outerRadius={50}
-          labelLine={false}
-          isAnimationActive
-        >
-          {data.map((entry) => (
-            <Cell key={entry.name} fill={getPaymentColorFromMap(entry.name, paymentColorMap)} />
-          ))}
-        </Pie>
-        <Legend
-          verticalAlign="middle"
-          align="right"
-          iconType="circle"
-          layout="vertical"
-          content={renderLegend}
-          wrapperStyle={{ right: 0, top: "50%", transform: "translateY(-50%)", fontSize: 12 }}
-        />
-      </PieChart>
-    </ResponsiveContainer>
+    <div className="stats-payment-pie-chart">
+      <div className="stats-payment-pie-visual">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={30}
+              outerRadius={50}
+              labelLine={false}
+              isAnimationActive
+            >
+              {data.map((entry) => (
+                <Cell key={entry.name} fill={getPaymentColorFromMap(entry.name, paymentColorMap)} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      {renderLegend()}
+    </div>
   );
 };
 
