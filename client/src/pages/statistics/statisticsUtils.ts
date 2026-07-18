@@ -233,26 +233,41 @@ export const computeAverageNights = (entries: ParsedStatisticsEntry[], selectedY
 export const computeAveragePrice = (entries: ParsedStatisticsEntry[], selectedYear: PeriodYear, selectedMonth: PeriodMonth) =>
   computeAverageMetric(entries, selectedYear, selectedMonth, "price");
 
-const isLeapYear = (year: number) => ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0);
+const getEntryNightsInPeriod = (entry: ParsedStatisticsEntry, periodStart: number, periodEnd: number) => {
+  const entryStart = entry.debutDate.getTime();
+  const entryEnd = entryStart + Math.max(0, Number(entry.nuits) || 0) * 24 * 60 * 60 * 1000;
+  const overlapStart = Math.max(entryStart, periodStart);
+  const overlapEnd = Math.min(entryEnd, periodEnd);
+  return overlapEnd > overlapStart ? Math.round((overlapEnd - overlapStart) / (24 * 60 * 60 * 1000)) : 0;
+};
 
-const daysInMonth = (month: number, year: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
-
-export const computeOccupation = (entries: ParsedStatisticsEntry[], year: number, month: PeriodMonth) => {
+export const computeOccupation = (
+  entries: ParsedStatisticsEntry[],
+  year: number,
+  month: PeriodMonth,
+  now = new Date()
+) => {
   const filtered = filterByPeriod(entries, year, month);
-  const totalNights = filtered.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
-  let daysInPeriod = 0;
-  const currentYear = new Date().getUTCFullYear();
+  const currentYear = now.getUTCFullYear();
+  let periodStart: number;
+  let periodEnd: number;
 
   if (month) {
-    daysInPeriod = daysInMonth(Number(month), year);
+    periodStart = Date.UTC(year, Number(month) - 1, 1);
+    periodEnd = Date.UTC(year, Number(month), 1);
   } else if (year === currentYear) {
-    const now = new Date();
-    const start = Date.UTC(year, 0, 1);
-    const end = Date.UTC(year, now.getUTCMonth(), now.getUTCDate() + 1);
-    daysInPeriod = Math.round((end - start) / (24 * 60 * 60 * 1000));
+    periodStart = Date.UTC(year, 0, 1);
+    periodEnd = Date.UTC(year, now.getUTCMonth(), now.getUTCDate() + 1);
   } else {
-    daysInPeriod = isLeapYear(year) ? 366 : 365;
+    periodStart = Date.UTC(year, 0, 1);
+    periodEnd = Date.UTC(year + 1, 0, 1);
   }
+
+  const totalNights = filtered.reduce(
+    (sum, entry) => sum + getEntryNightsInPeriod(entry, periodStart, periodEnd),
+    0
+  );
+  const daysInPeriod = Math.round((periodEnd - periodStart) / (24 * 60 * 60 * 1000));
 
   return daysInPeriod > 0 ? totalNights / daysInPeriod : 0;
 };
