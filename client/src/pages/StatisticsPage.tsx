@@ -586,6 +586,7 @@ const StatisticsPage = () => {
           const giteColor = getGiteColor(gite, index);
           const entries = entriesByGite[gite.id] ?? [];
           const stats = computeGiteStats(entries, selectedYear, selectedMonth);
+          if (stats.reservations === 0) return null;
           const avgReservations = computeAverageReservations(
             entries,
             selectedYear,
