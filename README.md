@@ -239,6 +239,41 @@ Options:
 
 Par defaut, la source SQLite vient de `DATABASE_URL` (ou `DATABASE_URL_SQLITE`) et la cible Postgres de `DATABASE_URL` (ou `DATABASE_URL_POSTGRES`). Vous pouvez aussi utiliser `--from-url` et `--to-url`.
 
+## Import des revenus historiques 2020
+
+L'outil importe les trois feuilles `Gree2020`, `Phonsine2020` et `Edmond2020` du classeur historique. Il fonctionne en aperçu par défaut et utilise une référence stable par ligne pour pouvoir être relancé sans créer de doublons.
+
+Aperçu local:
+
+```bash
+npm run import:revenus-2020 -w server -- --file "/chemin/Revenus Gites 2020.xlsx"
+```
+
+Application locale:
+
+```bash
+npm run import:revenus-2020 -w server -- --file "/chemin/Revenus Gites 2020.xlsx" --apply
+```
+
+En production, après sauvegarde de la base, déploiement, migration et build:
+
+```bash
+node server/dist/cli/importLegacyRevenues2020.js --file "/chemin/prive/Revenus Gites 2020.xlsx"
+node server/dist/cli/importLegacyRevenues2020.js --file "/chemin/prive/Revenus Gites 2020.xlsx" --apply
+```
+
+La première commande de production est une lecture seule. Vérifiez son récapitulatif avant d'ajouter `--apply`. L'outil:
+
+- associe les feuilles à **La Grée**, **Tante Phonsine** et **Edmond**;
+- ignore les lignes à zéro nuit;
+- reconstruit la sortie depuis la date d'entrée et le nombre de nuits;
+- conserve exactement le revenu indiqué dans le classeur;
+- marque les réservations avec l'origine `legacy` et désactive leur export iCal;
+- avance si nécessaire la date de début d'activité du gîte;
+- s'arrête si des réservations déjà présentes se chevauchent, sauf usage explicite et vérifié de `--allow-existing-conflicts`.
+
+Le classeur contient des données personnelles: gardez-le hors du dépôt et hors de tout répertoire public du serveur.
+
 ## Endpoints API principaux
 
 - `GET /api/gites`
