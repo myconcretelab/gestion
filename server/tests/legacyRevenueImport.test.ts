@@ -309,3 +309,67 @@ test("le format Airbnb 2015 reconstruit la sortie et le prix par nuit", () => {
   assert.equal(parsed.records[0].revenue, 357);
   assert.equal(parsed.records[0].paymentSource, "Airbnb");
 });
+
+test("le format Airbnb 2016 importe dès la première ligne sans en-tête", () => {
+  const parsed = parseLegacyRevenueSheets(
+    [
+      {
+        sheet: "Phonsine",
+        data: [
+          [
+            new Date("2016-11-01"),
+            "Réservation",
+            "MCF8SF",
+            "31/10/2016",
+            "10 (octobre)",
+            3,
+            "Roselyne Ars",
+            "Gîte de charme à Brocéliande",
+            null,
+            null,
+            "EUR",
+            187,
+          ],
+          [
+            new Date("2016-07-13"),
+            null,
+            null,
+            "13/07/2016",
+            "07 (juillet)",
+            null,
+            "MArie",
+            null,
+            null,
+            null,
+            null,
+            350,
+          ],
+        ],
+      },
+    ],
+    {
+      year: 2016,
+      sheets: [
+        {
+          sheetName: "Phonsine",
+          giteName: "Tante Phonsine",
+          defaultPaymentSource: "Airbnb",
+          hasHeader: false,
+          columns: {
+            guest: 6,
+            arrival: 3,
+            nights: 5,
+            revenue: 11,
+          },
+        },
+      ],
+    }
+  );
+
+  assert.equal(parsed.records.length, 1);
+  assert.equal(parsed.records[0].rowNumber, 1);
+  assert.equal(parsed.records[0].guestName, "Roselyne Ars");
+  assert.equal(parsed.records[0].departure.toISOString(), "2016-11-03T00:00:00.000Z");
+  assert.equal(parsed.skippedRows, 1);
+  assert.match(parsed.warnings[0], /350.00 € non importés/);
+});

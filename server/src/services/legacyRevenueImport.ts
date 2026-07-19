@@ -15,6 +15,7 @@ export type LegacyRevenueSheetConfig = {
   giteName: string;
   allowBlankDateHeaders?: boolean;
   defaultPaymentSource?: string;
+  hasHeader?: boolean;
   columns: {
     guest: number;
     arrival: number;
@@ -93,6 +94,13 @@ const COLUMNS_2015: LegacyRevenueSheetConfig["columns"] = {
   revenue: 10,
 };
 
+const COLUMNS_2016: LegacyRevenueSheetConfig["columns"] = {
+  guest: 6,
+  arrival: 3,
+  nights: 5,
+  revenue: 11,
+};
+
 export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
   {
     year: 2020,
@@ -130,6 +138,18 @@ export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
     ],
   },
   {
+    year: 2016,
+    sheets: [
+      {
+        sheetName: "Phonsine",
+        giteName: "Tante Phonsine",
+        defaultPaymentSource: "Airbnb",
+        hasHeader: false,
+        columns: COLUMNS_2016,
+      },
+    ],
+  },
+  {
     year: 2015,
     sheets: [
       {
@@ -142,11 +162,15 @@ export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
   },
 ];
 
-export const LEGACY_REVENUE_2020_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[0].sheets;
-export const LEGACY_REVENUE_2019_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[1].sheets;
-export const LEGACY_REVENUE_2018_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[2].sheets;
-export const LEGACY_REVENUE_2017_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[3].sheets;
-export const LEGACY_REVENUE_2015_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[4].sheets;
+const getLegacyRevenueSheetsForYear = (year: number) =>
+  LEGACY_REVENUE_WORKBOOK_CONFIGS.find((config) => config.year === year)!.sheets;
+
+export const LEGACY_REVENUE_2020_SHEETS = getLegacyRevenueSheetsForYear(2020);
+export const LEGACY_REVENUE_2019_SHEETS = getLegacyRevenueSheetsForYear(2019);
+export const LEGACY_REVENUE_2018_SHEETS = getLegacyRevenueSheetsForYear(2018);
+export const LEGACY_REVENUE_2017_SHEETS = getLegacyRevenueSheetsForYear(2017);
+export const LEGACY_REVENUE_2016_SHEETS = getLegacyRevenueSheetsForYear(2016);
+export const LEGACY_REVENUE_2015_SHEETS = getLegacyRevenueSheetsForYear(2015);
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
@@ -207,6 +231,7 @@ const normalizePaymentSource = (value: WorkbookCell) => {
 };
 
 const validateHeaders = (sheet: LegacyRevenueWorkbookSheet, config: LegacyRevenueSheetConfig) => {
+  if (config.hasHeader === false) return;
   const headers = sheet.data[0] ?? [];
   const expected: Array<{ index: number; values: string[] }> = [
     {
@@ -291,9 +316,10 @@ export const parseLegacyRevenueSheets = (
     const firstRecordIndex = records.length;
     let declaredTotalNights: number | null = null;
     let declaredTotalRevenue: number | null = null;
+    const hasHeader = config.hasHeader !== false;
 
-    sheet.data.slice(1).forEach((row, rowIndex) => {
-      const rowNumber = rowIndex + 2;
+    sheet.data.slice(hasHeader ? 1 : 0).forEach((row, rowIndex) => {
+      const rowNumber = rowIndex + (hasHeader ? 2 : 1);
       const arrival = toDate(row[config.columns.arrival]);
       const sourceDeparture =
         config.columns.departure === undefined ? null : toDate(row[config.columns.departure]);
@@ -315,7 +341,11 @@ export const parseLegacyRevenueSheets = (
         return;
       }
       if (nights <= 0) {
-        warnings.push(`${config.sheetName} ligne ${rowNumber}: nombre de nuits nul, ligne ignorée.`);
+        const ignoredRevenue = round2(toNumber(row[config.columns.revenue]) ?? 0);
+        warnings.push(
+          `${config.sheetName} ligne ${rowNumber}: nombre de nuits absent ou nul, ligne ignorée` +
+            `${ignoredRevenue !== 0 ? ` (${ignoredRevenue.toFixed(2)} € non importés)` : ""}.`
+        );
         skippedRows += 1;
         return;
       }
@@ -430,6 +460,6 @@ export const readLegacyRevenueWorkbook = async (
   }
 
   throw new Error(
-    "Classeur non reconnu. Formats acceptés: revenus historiques 2015, 2017, 2018, 2019 ou 2020."
+    "Classeur non reconnu. Formats acceptés: revenus historiques de 2015 à 2020."
   );
 };

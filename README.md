@@ -239,11 +239,12 @@ Options:
 
 Par defaut, la source SQLite vient de `DATABASE_URL` (ou `DATABASE_URL_SQLITE`) et la cible Postgres de `DATABASE_URL` (ou `DATABASE_URL_POSTGRES`). Vous pouvez aussi utiliser `--from-url` et `--to-url`.
 
-## Import des revenus historiques 2015 et 2017 à 2020
+## Import des revenus historiques 2015 à 2020
 
 L'écran **Statistiques** permet de sélectionner directement un classeur Excel, d'en vérifier l'aperçu puis de confirmer l'import. Le même écran fonctionne en production et accepte:
 
 - le fichier Airbnb 2015 avec la feuille `Phonsine 2015`;
+- le fichier Airbnb 2016 avec la feuille sans en-tête `Phonsine`;
 - le fichier 2017 avec les feuilles `Phonsine 2017` et `Grée 2017`;
 - le fichier 2018 avec les feuilles `Phonsine 2018` et `Grée 2018`;
 - le fichier 2019 avec les feuilles `Phonsine` et `Gree`;
