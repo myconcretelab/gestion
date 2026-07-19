@@ -330,9 +330,16 @@ body.app-scroll-locked {
 }
 
 .today-revenue-mini__popover {
+  display: block;
   top: auto;
   bottom: calc(100% + 8px);
   left: 0;
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 32px));
+  min-width: 0;
+  background: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .today-revenue-mini__explainer:last-child .today-revenue-mini__popover {
