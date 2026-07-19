@@ -52,7 +52,7 @@ router.post("/legacy-revenue-import", async (req, res, next) => {
     if (error instanceof LegacyRevenueConflictError) {
       return res.status(409).json({ error: error.message, details: { report: error.report } });
     }
-    if (error instanceof Error && /classeur|feuille|format attendu|aucun séjour/i.test(error.message)) {
+    if (error instanceof Error && /classeur|feuille|format attendu|aucun séjour|gîte.*introuvable/i.test(error.message)) {
       return res.status(400).json({ error: error.message });
     }
     return next(error);
