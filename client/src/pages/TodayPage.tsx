@@ -42,6 +42,12 @@ type TodayRevenueAverageMetric = {
   gross_revenue: number;
   expenses: number;
   net_average_monthly_revenue: number;
+  expense_details?: Array<{
+    gite_id: string;
+    gite_name: string;
+    monthly_expenses: number;
+    period_expenses: number;
+  }>;
 };
 
 type TodayDeferredReservationEnergy = Pick<
@@ -589,6 +595,7 @@ const TodayPage = () => {
   const [deferredLoading, setDeferredLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
+  const [openRevenueMetricId, setOpenRevenueMetricId] = useState<TodayRevenueAverageMetric["id"] | null>(null);
   const [trashNow, setTrashNow] = useState(() => new Date());
   const primaryRequestIdRef = useRef(0);
   const deferredRequestIdRef = useRef(0);
@@ -682,6 +689,18 @@ const TodayPage = () => {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!openRevenueMetricId) return;
+    const closePopover = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".today-revenue-mini__explainer")) return;
+      setOpenRevenueMetricId(null);
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    };
+    document.addEventListener("pointerdown", closePopover);
+    return () => document.removeEventListener("pointerdown", closePopover);
+  }, [openRevenueMetricId]);
 
   const todayIso = primaryOverview?.today ?? toIsoDate(new Date());
   const totalDays = primaryOverview?.days ?? TOTAL_DAY_COUNT;
@@ -1183,9 +1202,32 @@ const TodayPage = () => {
               return (
                 <div
                   key={metric.id}
-                  className="reservations-summary-explainer today-revenue-mini__explainer"
+                  className={`reservations-summary-explainer today-revenue-mini__explainer${
+                    openRevenueMetricId === metric.id ? " is-open" : ""
+                  }`}
                   tabIndex={0}
                   aria-describedby={popoverId}
+                  aria-expanded={openRevenueMetricId === metric.id}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const trigger = event.currentTarget;
+                    setOpenRevenueMetricId((current) => {
+                      if (current !== metric.id) return metric.id;
+                      trigger.blur();
+                      return null;
+                    });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const trigger = event.currentTarget;
+                    setOpenRevenueMetricId((current) => {
+                      if (current !== metric.id) return metric.id;
+                      trigger.blur();
+                      return null;
+                    });
+                  }}
                 >
                   <div className="today-revenue-mini__item">
                     <span>
@@ -1211,6 +1253,19 @@ const TodayPage = () => {
                       <span>Dépenses</span>
                       <strong>{formatEuro(metric.expenses)}</strong>
                     </div>
+                    {(metric.expense_details ?? []).length > 0 ? (
+                      <>
+                        <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
+                          Dépenses par gîte
+                        </div>
+                        {(metric.expense_details ?? []).map((detail) => (
+                          <div className="reservations-summary-popover__row" key={detail.gite_id}>
+                            <span>{detail.gite_name}</span>
+                            <strong>{formatEuro(detail.period_expenses)}</strong>
+                          </div>
+                        ))}
+                      </>
+                    ) : null}
                     <div className="reservations-summary-popover__note">
                       {metric.month_count > 1
                         ? `Moyenne nette mensuelle : (revenus − dépenses) ÷ ${metric.month_count} mois.`

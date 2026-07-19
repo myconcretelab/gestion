@@ -38,6 +38,12 @@ type TodayRevenueAverageMetric = {
   gross_revenue: number;
   expenses: number;
   net_average_monthly_revenue: number;
+  expense_details: Array<{
+    gite_id: string;
+    gite_name: string;
+    monthly_expenses: number;
+    period_expenses: number;
+  }>;
 };
 
 const icalConflictResolutionSchema = z.object({
@@ -154,7 +160,10 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
     },
   ];
   const [gites, reservations] = await Promise.all([
-    prisma.gite.findMany({ select: { id: true, frais_gestion: true } }),
+    prisma.gite.findMany({
+      select: { id: true, nom: true, ordre: true, frais_gestion: true },
+      orderBy: [{ ordre: "asc" }, { nom: "asc" }],
+    }),
     prisma.reservation.findMany({
       where: {
         gite_id: { not: null },
@@ -176,7 +185,15 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
       },
     }),
   ]);
-  const totalMonthlyExpenses = gites.reduce((sum, gite) => sum + getGiteMonthlyExpenses(gite.frais_gestion), 0);
+  const monthlyExpensesByGite = gites.map((gite) => ({
+    gite_id: gite.id,
+    gite_name: gite.nom,
+    monthly_expenses: getGiteMonthlyExpenses(gite.frais_gestion),
+  }));
+  const totalMonthlyExpenses = monthlyExpensesByGite.reduce(
+    (sum, gite) => sum + gite.monthly_expenses,
+    0
+  );
   const grossRevenueByMonth = new Map<string, number>();
 
   for (const reservation of reservations) {
@@ -202,6 +219,12 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
       gross_revenue: grossRevenue,
       expenses,
       net_average_monthly_revenue: period.month_count > 0 ? round2((grossRevenue - expenses) / period.month_count) : 0,
+      expense_details: monthlyExpensesByGite
+        .filter((gite) => gite.monthly_expenses > 0)
+        .map((gite) => ({
+          ...gite,
+          period_expenses: round2(gite.monthly_expenses * period.month_count),
+        })),
     };
   });
 };
