@@ -239,27 +239,30 @@ Options:
 
 Par defaut, la source SQLite vient de `DATABASE_URL` (ou `DATABASE_URL_SQLITE`) et la cible Postgres de `DATABASE_URL` (ou `DATABASE_URL_POSTGRES`). Vous pouvez aussi utiliser `--from-url` et `--to-url`.
 
-## Import des revenus historiques 2020
+## Import des revenus historiques 2019 et 2020
 
-L'outil importe les trois feuilles `Gree2020`, `Phonsine2020` et `Edmond2020` du classeur historique. Il fonctionne en aperçu par défaut et utilise une référence stable par ligne pour pouvoir être relancé sans créer de doublons.
+L'écran **Statistiques** permet de sélectionner directement un classeur Excel, d'en vérifier l'aperçu puis de confirmer l'import. Le même écran fonctionne en production et accepte:
 
-Aperçu local:
+- le fichier 2019 avec les feuilles `Phonsine` et `Gree`;
+- le fichier 2020 avec les feuilles `Gree2020`, `Phonsine2020` et `Edmond2020`.
+
+L'import utilise une référence stable par ligne: il peut être relancé sans créer de doublons. Une commande reste disponible pour l'administration. Aperçu local:
 
 ```bash
-npm run import:revenus-2020 -w server -- --file "/chemin/Revenus Gites 2020.xlsx"
+npm run import:revenus -w server -- --file "/chemin/Revenus Gites 2019.xlsx"
 ```
 
 Application locale:
 
 ```bash
-npm run import:revenus-2020 -w server -- --file "/chemin/Revenus Gites 2020.xlsx" --apply
+npm run import:revenus -w server -- --file "/chemin/Revenus Gites 2019.xlsx" --apply
 ```
 
 En production, après sauvegarde de la base, déploiement, migration et build:
 
 ```bash
-node server/dist/cli/importLegacyRevenues2020.js --file "/chemin/prive/Revenus Gites 2020.xlsx"
-node server/dist/cli/importLegacyRevenues2020.js --file "/chemin/prive/Revenus Gites 2020.xlsx" --apply
+node server/dist/cli/importLegacyRevenues.js --file "/chemin/prive/Revenus Gites 2019.xlsx"
+node server/dist/cli/importLegacyRevenues.js --file "/chemin/prive/Revenus Gites 2019.xlsx" --apply
 ```
 
 La première commande de production est une lecture seule. Vérifiez son récapitulatif avant d'ajouter `--apply`. L'outil:
