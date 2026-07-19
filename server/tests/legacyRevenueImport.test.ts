@@ -249,3 +249,63 @@ test("l'import refuse une association de gîte ambiguë", () => {
 
   assert.equal(resolveLegacyRevenueGite("Edmond", candidates), null);
 });
+
+test("le format Airbnb 2015 reconstruit la sortie et le prix par nuit", () => {
+  const parsed = parseLegacyRevenueSheets(
+    [
+      {
+        sheet: "Phonsine 2015",
+        data: [
+          [
+            "Date",
+            "Type",
+            "Code de confirmation",
+            "Début",
+            "Nuits",
+            "Voyageur",
+            "Logement",
+            "Détails",
+            "Référence",
+            "Devise",
+            "Montant",
+          ],
+          [
+            new Date("2015-10-19"),
+            "Réservation",
+            "P2C885",
+            new Date("2015-10-18"),
+            7,
+            "Nathalie Bigot",
+            "Gîte de charme",
+            null,
+            null,
+            "EUR",
+            357,
+          ],
+        ],
+      },
+    ],
+    {
+      year: 2015,
+      sheets: [
+        {
+          sheetName: "Phonsine 2015",
+          giteName: "Tante Phonsine",
+          defaultPaymentSource: "Airbnb",
+          columns: {
+            guest: 5,
+            arrival: 3,
+            nights: 4,
+            revenue: 10,
+          },
+        },
+      ],
+    }
+  );
+
+  assert.equal(parsed.records.length, 1);
+  assert.equal(parsed.records[0].departure.toISOString(), "2015-10-25T00:00:00.000Z");
+  assert.equal(parsed.records[0].nightlyPrice, 51);
+  assert.equal(parsed.records[0].revenue, 357);
+  assert.equal(parsed.records[0].paymentSource, "Airbnb");
+});

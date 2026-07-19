@@ -14,13 +14,14 @@ export type LegacyRevenueSheetConfig = {
   sheetName: string;
   giteName: string;
   allowBlankDateHeaders?: boolean;
+  defaultPaymentSource?: string;
   columns: {
     guest: number;
     arrival: number;
-    departure: number;
+    departure?: number;
     nights: number;
     adults?: number;
-    nightlyPrice: number;
+    nightlyPrice?: number;
     revenue: number;
     paymentSource?: number;
   };
@@ -85,6 +86,13 @@ const COLUMNS_2017_2018: LegacyRevenueSheetConfig["columns"] = {
   revenue: 7,
 };
 
+const COLUMNS_2015: LegacyRevenueSheetConfig["columns"] = {
+  guest: 5,
+  arrival: 3,
+  nights: 4,
+  revenue: 10,
+};
+
 export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
   {
     year: 2020,
@@ -121,12 +129,24 @@ export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
       },
     ],
   },
+  {
+    year: 2015,
+    sheets: [
+      {
+        sheetName: "Phonsine 2015",
+        giteName: "Tante Phonsine",
+        defaultPaymentSource: "Airbnb",
+        columns: COLUMNS_2015,
+      },
+    ],
+  },
 ];
 
 export const LEGACY_REVENUE_2020_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[0].sheets;
 export const LEGACY_REVENUE_2019_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[1].sheets;
 export const LEGACY_REVENUE_2018_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[2].sheets;
 export const LEGACY_REVENUE_2017_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[3].sheets;
+export const LEGACY_REVENUE_2015_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[4].sheets;
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
@@ -188,19 +208,23 @@ const normalizePaymentSource = (value: WorkbookCell) => {
 
 const validateHeaders = (sheet: LegacyRevenueWorkbookSheet, config: LegacyRevenueSheetConfig) => {
   const headers = sheet.data[0] ?? [];
-  const expected = [
+  const expected: Array<{ index: number; values: string[] }> = [
     {
       index: config.columns.arrival,
       values: config.allowBlankDateHeaders ? ["debut", "dtstart", ""] : ["debut", "dtstart"],
     },
-    {
+    { index: config.columns.nights, values: ["nb nuits", "nb de nuits", "nuits"] },
+    { index: config.columns.revenue, values: ["revenus", "montant"] },
+  ];
+  if (config.columns.departure !== undefined) {
+    expected.push({
       index: config.columns.departure,
       values: config.allowBlankDateHeaders ? ["fin", "dtend", ""] : ["fin", "dtend"],
-    },
-    { index: config.columns.nights, values: ["nb nuits", "nb de nuits"] },
-    { index: config.columns.nightlyPrice, values: ["prix/nuits", "prix/nuit"] },
-    { index: config.columns.revenue, values: ["revenus"] },
-  ];
+    });
+  }
+  if (config.columns.nightlyPrice !== undefined) {
+    expected.push({ index: config.columns.nightlyPrice, values: ["prix/nuits", "prix/nuit"] });
+  }
   if (config.columns.adults !== undefined) {
     expected.push({ index: config.columns.adults, values: ["nb adultes"] });
   }
@@ -271,7 +295,8 @@ export const parseLegacyRevenueSheets = (
     sheet.data.slice(1).forEach((row, rowIndex) => {
       const rowNumber = rowIndex + 2;
       const arrival = toDate(row[config.columns.arrival]);
-      const sourceDeparture = toDate(row[config.columns.departure]);
+      const sourceDeparture =
+        config.columns.departure === undefined ? null : toDate(row[config.columns.departure]);
       const nightsValue = toNumber(row[config.columns.nights]);
       const guestName = String(row[config.columns.guest] ?? "").trim();
       if (!arrival && !sourceDeparture && !guestName) {
@@ -284,7 +309,7 @@ export const parseLegacyRevenueSheets = (
       if (!hasStayData) return;
 
       const nights = nightsValue === null ? 0 : Math.trunc(nightsValue);
-      if (!arrival || !sourceDeparture) {
+      if (!arrival || (config.columns.departure !== undefined && !sourceDeparture)) {
         warnings.push(`${config.sheetName} ligne ${rowNumber}: dates absentes ou invalides, ligne ignorée.`);
         skippedRows += 1;
         return;
@@ -310,17 +335,23 @@ export const parseLegacyRevenueSheets = (
           `${config.sheetName} ligne ${rowNumber}: séjour commencé en ${arrivalYear} et terminé en ${workbookConfig.year}, conservé tel quel.`
         );
       }
-      if (sourceDeparture.getTime() !== departure.getTime()) {
+      if (sourceDeparture && sourceDeparture.getTime() !== departure.getTime()) {
         warnings.push(
           `${config.sheetName} ligne ${rowNumber}: sortie ${formatDate(sourceDeparture)} remplacée par ` +
             `${formatDate(departure)} pour respecter ${nights} nuit(s).`
         );
       }
 
-      const sourceNightlyPrice = toNumber(row[config.columns.nightlyPrice]) ?? 0;
-      const revenue = round2(toNumber(row[config.columns.revenue]) ?? sourceNightlyPrice * nights);
-      const nightlyPrice = round2(nights > 0 ? revenue / nights : sourceNightlyPrice);
-      if (Math.abs(round2(sourceNightlyPrice * nights) - revenue) > 0.01) {
+      const sourceNightlyPrice =
+        config.columns.nightlyPrice === undefined ? null : toNumber(row[config.columns.nightlyPrice]);
+      const revenue = round2(
+        toNumber(row[config.columns.revenue]) ?? (sourceNightlyPrice ?? 0) * nights
+      );
+      const nightlyPrice = round2(nights > 0 ? revenue / nights : sourceNightlyPrice ?? 0);
+      if (
+        sourceNightlyPrice !== null &&
+        Math.abs(round2(sourceNightlyPrice * nights) - revenue) > 0.01
+      ) {
         warnings.push(
           `${config.sheetName} ligne ${rowNumber}: prix/nuit recalculé à ${nightlyPrice.toFixed(2)} € ` +
             `pour préserver le revenu de ${revenue.toFixed(2)} €.`
@@ -345,7 +376,7 @@ export const parseLegacyRevenueSheets = (
         revenue,
         paymentSource:
           config.columns.paymentSource === undefined
-            ? "A définir"
+            ? config.defaultPaymentSource ?? "A définir"
             : normalizePaymentSource(row[config.columns.paymentSource]),
       });
     });
@@ -399,6 +430,6 @@ export const readLegacyRevenueWorkbook = async (
   }
 
   throw new Error(
-    "Classeur non reconnu. Formats acceptés: revenus historiques 2017, 2018, 2019 ou 2020."
+    "Classeur non reconnu. Formats acceptés: revenus historiques 2015, 2017, 2018, 2019 ou 2020."
   );
 };
