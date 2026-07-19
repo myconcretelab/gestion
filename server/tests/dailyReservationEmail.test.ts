@@ -2,9 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildDailyReservationEmailMessage,
+  buildNewReservationsWhere,
   getDailyReservationEmailMonthlyAmount,
   getDailyReservationEmailMonthBoundaries,
 } from "../src/services/dailyReservationEmail.ts";
+
+test("les nouvelles réservations excluent les imports historiques legacy", () => {
+  const windowStart = new Date("2026-04-03T00:00:00.000Z");
+  const windowEnd = new Date("2026-04-04T00:00:00.000Z");
+
+  assert.deepEqual(buildNewReservationsWhere(windowStart, windowEnd), {
+    createdAt: {
+      gte: windowStart,
+      lt: windowEnd,
+    },
+    OR: [
+      { origin_system: null },
+      { origin_system: { not: "legacy" } },
+    ],
+  });
+});
 
 test("getDailyReservationEmailMonthBoundaries garde le mois local pour les totaux", () => {
   const previousTimeZone = process.env.TZ;
