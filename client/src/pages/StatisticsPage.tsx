@@ -35,6 +35,23 @@ type AverageMode = "current" | "full";
 type SourceColorSettings = {
   colors: Record<string, string>;
 };
+type LegacyRevenueImportReport = {
+  year: number;
+  gites: Array<{ giteName: string; stays: number; nights: number; revenue: number }>;
+  totalStays: number;
+  totalNights: number;
+  totalRevenue: number;
+  skippedRows: number;
+  warnings: string[];
+  conflicts: string[];
+  createCount: number;
+  updateCount: number;
+  applied: boolean;
+};
+type LegacyRevenueUpload = {
+  filename: string;
+  data: string;
+};
 
 const MONTHS = [
   { value: "", label: "-- année entière --" },
@@ -153,6 +170,19 @@ const copyRounded = (value: number) => {
   document.body.removeChild(textarea);
 };
 
+const readFileAsBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const separatorIndex = result.indexOf(",");
+      if (separatorIndex < 0) reject(new Error("Le fichier n'a pas pu être lu."));
+      else resolve(result.slice(separatorIndex + 1));
+    };
+    reader.onerror = () => reject(new Error("Le fichier n'a pas pu être lu."));
+    reader.readAsDataURL(file);
+  });
+
 const StatisticsPage = () => {
   const currentYear = new Date().getUTCFullYear();
   const [dataset, setDataset] = useState<ParsedStatisticsPayload | null>(null);
@@ -165,6 +195,12 @@ const StatisticsPage = () => {
   const [showStats, setShowStats] = useState(false);
   const [avgMode, setAvgMode] = useState<AverageMode>("current");
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
+  const [legacyUpload, setLegacyUpload] = useState<LegacyRevenueUpload | null>(null);
+  const [legacyReport, setLegacyReport] = useState<LegacyRevenueImportReport | null>(null);
+  const [legacyImportBusy, setLegacyImportBusy] = useState(false);
+  const [legacyImportMessage, setLegacyImportMessage] = useState<string | null>(null);
+  const [legacyImportError, setLegacyImportError] = useState<string | null>(null);
+  const [legacyConflictsApproved, setLegacyConflictsApproved] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -187,6 +223,67 @@ const StatisticsPage = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const previewLegacyImport = async (file: File) => {
+    setLegacyImportError(null);
+    setLegacyImportMessage(null);
+    setLegacyReport(null);
+    setLegacyConflictsApproved(false);
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      setLegacyImportError("Choisissez un fichier Excel au format .xlsx.");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setLegacyImportError("Le fichier doit peser moins de 12 Mo.");
+      return;
+    }
+
+    try {
+      setLegacyImportBusy(true);
+      const upload = { filename: file.name, data: await readFileAsBase64(file) };
+      const report = await apiFetch<LegacyRevenueImportReport>("/statistics/legacy-revenue-import", {
+        method: "POST",
+        json: { ...upload, apply: false },
+      });
+      setLegacyUpload(upload);
+      setLegacyReport(report);
+    } catch (err) {
+      setLegacyUpload(null);
+      setLegacyImportError(isApiError(err) ? err.message : "Impossible d'analyser ce fichier.");
+    } finally {
+      setLegacyImportBusy(false);
+    }
+  };
+
+  const applyLegacyImport = async () => {
+    if (
+      !legacyUpload ||
+      !legacyReport ||
+      (legacyReport.conflicts.length > 0 && !legacyConflictsApproved)
+    ) return;
+    try {
+      setLegacyImportBusy(true);
+      setLegacyImportError(null);
+      const report = await apiFetch<LegacyRevenueImportReport>("/statistics/legacy-revenue-import", {
+        method: "POST",
+        json: {
+          ...legacyUpload,
+          apply: true,
+          allowExistingConflicts: legacyConflictsApproved,
+        },
+      });
+      setLegacyReport(null);
+      setLegacyUpload(null);
+      setLegacyImportMessage(
+        `Revenus ${report.year} importés : ${report.createCount} création(s), ${report.updateCount} mise(s) à jour.`
+      );
+      await loadData();
+    } catch (err) {
+      setLegacyImportError(isApiError(err) ? err.message : "L'import n'a pas pu être appliqué.");
+    } finally {
+      setLegacyImportBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!dataset) return;
@@ -329,8 +426,103 @@ const StatisticsPage = () => {
           <div className="stats-switches">
             <StatSwitch label="Mode déclaration" checked={showUrssaf} onChange={setShowUrssaf} />
             <StatSwitch label="Stats" checked={showStats} onChange={setShowStats} />
+            <label className={`stats-import-button${legacyImportBusy ? " is-disabled" : ""}`}>
+              {legacyImportBusy ? "Analyse…" : "Importer un Excel"}
+              <input
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                disabled={legacyImportBusy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void previewLegacyImport(file);
+                }}
+              />
+            </label>
           </div>
         </div>
+
+        {legacyImportError ? <div className="stats-import-alert stats-import-alert--error">{legacyImportError}</div> : null}
+        {legacyImportMessage ? <div className="stats-import-alert stats-import-alert--success">{legacyImportMessage}</div> : null}
+        {legacyReport ? (
+          <section className="stats-import-preview" aria-label={`Aperçu de l'import ${legacyReport.year}`}>
+            <div className="stats-import-preview__header">
+              <div>
+                <strong>Aperçu des revenus {legacyReport.year}</strong>
+                <span>
+                  {legacyReport.totalStays} séjours · {legacyReport.totalNights} nuits ·{" "}
+                  {formatEuro(legacyReport.totalRevenue)}
+                </span>
+              </div>
+              <span className="stats-import-preview__changes">
+                {legacyReport.createCount} créations · {legacyReport.updateCount} mises à jour
+              </span>
+            </div>
+            <div className="stats-import-preview__gites">
+              {legacyReport.gites.map((gite) => (
+                <article key={gite.giteName}>
+                  <strong>{gite.giteName}</strong>
+                  <span>
+                    {gite.stays} séjours · {gite.nights} nuits
+                  </span>
+                  <span>{formatEuro(gite.revenue)}</span>
+                </article>
+              ))}
+            </div>
+            {legacyReport.warnings.length > 0 ? (
+              <details className="stats-import-details">
+                <summary>{legacyReport.warnings.length} avertissement(s) dans le fichier</summary>
+                <ul>
+                  {legacyReport.warnings.map((warning, index) => (
+                    <li key={`${index}-${warning}`}>{warning}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {legacyReport.conflicts.length > 0 ? (
+              <div className="stats-import-alert stats-import-alert--error">
+                <strong>{legacyReport.conflicts.length} chevauchement(s) avec la base.</strong>
+                <ul>
+                  {legacyReport.conflicts.map((conflict, index) => (
+                    <li key={`${index}-${conflict}`}>{conflict}</li>
+                  ))}
+                </ul>
+                <label className="stats-import-conflict-approval">
+                  <input
+                    type="checkbox"
+                    checked={legacyConflictsApproved}
+                    onChange={(event) => setLegacyConflictsApproved(event.target.checked)}
+                  />
+                  J’ai vérifié ces chevauchements et je souhaite tout de même importer.
+                </label>
+              </div>
+            ) : null}
+            <div className="stats-import-preview__actions">
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={legacyImportBusy}
+                onClick={() => {
+                  setLegacyReport(null);
+                  setLegacyUpload(null);
+                  setLegacyConflictsApproved(false);
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={
+                  legacyImportBusy ||
+                  (legacyReport.conflicts.length > 0 && !legacyConflictsApproved)
+                }
+                onClick={() => void applyLegacyImport()}
+              >
+                {legacyImportBusy ? "Import en cours…" : `Confirmer l'import ${legacyReport.year}`}
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         {showUrssaf ? (
           <div className="stats-urssaf">

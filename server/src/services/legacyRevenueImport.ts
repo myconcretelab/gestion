@@ -1,6 +1,9 @@
+import { readSheet } from "read-excel-file/node";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type WorkbookCell = unknown;
+type WorkbookInput = string | Buffer;
 
 export type LegacyRevenueWorkbookSheet = {
   sheet: string;
@@ -10,9 +13,25 @@ export type LegacyRevenueWorkbookSheet = {
 export type LegacyRevenueSheetConfig = {
   sheetName: string;
   giteName: string;
+  columns: {
+    guest: number;
+    arrival: number;
+    departure: number;
+    nights: number;
+    adults?: number;
+    nightlyPrice: number;
+    revenue: number;
+    paymentSource?: number;
+  };
+};
+
+export type LegacyRevenueWorkbookConfig = {
+  year: number;
+  sheets: LegacyRevenueSheetConfig[];
 };
 
 export type LegacyRevenueRecord = {
+  year: number;
   sheetName: string;
   rowNumber: number;
   giteName: string;
@@ -28,16 +47,53 @@ export type LegacyRevenueRecord = {
 };
 
 export type LegacyRevenueParseResult = {
+  year: number;
+  sheetConfigs: LegacyRevenueSheetConfig[];
   records: LegacyRevenueRecord[];
   warnings: string[];
   skippedRows: number;
 };
 
-export const LEGACY_REVENUE_2020_SHEETS: LegacyRevenueSheetConfig[] = [
-  { sheetName: "Gree2020", giteName: "La Grée" },
-  { sheetName: "Phonsine2020", giteName: "Tante Phonsine" },
-  { sheetName: "Edmond2020", giteName: "Edmond" },
+const COLUMNS_2020: LegacyRevenueSheetConfig["columns"] = {
+  guest: 0,
+  arrival: 1,
+  departure: 2,
+  nights: 4,
+  adults: 5,
+  nightlyPrice: 6,
+  revenue: 7,
+  paymentSource: 8,
+};
+
+const COLUMNS_2019: LegacyRevenueSheetConfig["columns"] = {
+  guest: 0,
+  arrival: 1,
+  departure: 2,
+  nights: 4,
+  nightlyPrice: 5,
+  revenue: 6,
+};
+
+export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
+  {
+    year: 2020,
+    sheets: [
+      { sheetName: "Gree2020", giteName: "La Grée", columns: COLUMNS_2020 },
+      { sheetName: "Phonsine2020", giteName: "Tante Phonsine", columns: COLUMNS_2020 },
+      { sheetName: "Edmond2020", giteName: "Edmond", columns: COLUMNS_2020 },
+    ],
+  },
+  {
+    year: 2019,
+    sheets: [
+      { sheetName: "Phonsine", giteName: "Tante Phonsine", columns: COLUMNS_2019 },
+      { sheetName: "Gree", giteName: "La Grée", columns: COLUMNS_2019 },
+    ],
+  },
 ];
+
+export const LEGACY_REVENUE_2020_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[0].sheets;
+export const LEGACY_REVENUE_2019_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[1].sheets;
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
@@ -97,17 +153,27 @@ const normalizePaymentSource = (value: WorkbookCell) => {
   return label;
 };
 
-const validateHeaders = (sheet: LegacyRevenueWorkbookSheet) => {
+const validateHeaders = (sheet: LegacyRevenueWorkbookSheet, config: LegacyRevenueSheetConfig) => {
   const headers = sheet.data[0] ?? [];
-  const expected = ["debut", "fin", "nb nuits", "nb adultes", "prix/nuits", "revenus", "paiement"];
-  const actual = [headers[1], headers[2], headers[4], headers[5], headers[6], headers[7], headers[8]].map((value) =>
-    normalizeText(String(value ?? ""))
-  );
+  const expected = [
+    { index: config.columns.arrival, value: "debut" },
+    { index: config.columns.departure, value: "fin" },
+    { index: config.columns.nights, value: "nb nuits" },
+    { index: config.columns.nightlyPrice, value: "prix/nuits" },
+    { index: config.columns.revenue, value: "revenus" },
+  ];
+  if (config.columns.adults !== undefined) {
+    expected.push({ index: config.columns.adults, value: "nb adultes" });
+  }
+  if (config.columns.paymentSource !== undefined) {
+    expected.push({ index: config.columns.paymentSource, value: "paiement" });
+  }
 
-  for (let index = 0; index < expected.length; index += 1) {
-    if (actual[index] !== expected[index]) {
+  for (const item of expected) {
+    const actual = normalizeText(String(headers[item.index] ?? ""));
+    if (actual !== item.value) {
       throw new Error(
-        `La feuille ${sheet.sheet} n'a pas le format attendu (colonne ${index + 1}: "${actual[index]}").`
+        `La feuille ${sheet.sheet} n'a pas le format attendu (colonne ${item.index + 1}: "${actual}").`
       );
     }
   }
@@ -124,7 +190,9 @@ const findOverlaps = (records: LegacyRevenueRecord[]) => {
 
   for (const giteRecords of byGite.values()) {
     const ordered = [...giteRecords].sort(
-      (left, right) => left.arrival.getTime() - right.arrival.getTime() || left.departure.getTime() - right.departure.getTime()
+      (left, right) =>
+        left.arrival.getTime() - right.arrival.getTime() ||
+        left.departure.getTime() - right.departure.getTime()
     );
     for (let index = 0; index < ordered.length; index += 1) {
       for (let nextIndex = index + 1; nextIndex < ordered.length; nextIndex += 1) {
@@ -142,27 +210,27 @@ const findOverlaps = (records: LegacyRevenueRecord[]) => {
   return warnings;
 };
 
-export const parseLegacyRevenue2020Sheets = (
+export const parseLegacyRevenueSheets = (
   sheets: LegacyRevenueWorkbookSheet[],
-  configs: LegacyRevenueSheetConfig[] = LEGACY_REVENUE_2020_SHEETS
+  workbookConfig: LegacyRevenueWorkbookConfig
 ): LegacyRevenueParseResult => {
   const records: LegacyRevenueRecord[] = [];
   const warnings: string[] = [];
   let skippedRows = 0;
   const sheetsByName = new Map(sheets.map((sheet) => [sheet.sheet, sheet]));
 
-  for (const config of configs) {
+  for (const config of workbookConfig.sheets) {
     const sheet = sheetsByName.get(config.sheetName);
     if (!sheet) {
       throw new Error(`Feuille requise introuvable: ${config.sheetName}.`);
     }
-    validateHeaders(sheet);
+    validateHeaders(sheet, config);
 
     sheet.data.slice(1).forEach((row, rowIndex) => {
       const rowNumber = rowIndex + 2;
-      const arrival = toDate(row[1]);
-      const sourceDeparture = toDate(row[2]);
-      const nightsValue = toNumber(row[4]);
+      const arrival = toDate(row[config.columns.arrival]);
+      const sourceDeparture = toDate(row[config.columns.departure]);
+      const nightsValue = toNumber(row[config.columns.nights]);
       const hasStayData = arrival !== null || sourceDeparture !== null || nightsValue !== null;
       if (!hasStayData) return;
 
@@ -177,9 +245,9 @@ export const parseLegacyRevenue2020Sheets = (
         skippedRows += 1;
         return;
       }
-      if (arrival.getUTCFullYear() !== 2020) {
+      if (arrival.getUTCFullYear() !== workbookConfig.year) {
         throw new Error(
-          `${config.sheetName} ligne ${rowNumber}: arrivée hors de 2020 (${formatDate(arrival)}).`
+          `${config.sheetName} ligne ${rowNumber}: arrivée hors de ${workbookConfig.year} (${formatDate(arrival)}).`
         );
       }
 
@@ -191,8 +259,8 @@ export const parseLegacyRevenue2020Sheets = (
         );
       }
 
-      const sourceNightlyPrice = toNumber(row[6]) ?? 0;
-      const revenue = round2(toNumber(row[7]) ?? sourceNightlyPrice * nights);
+      const sourceNightlyPrice = toNumber(row[config.columns.nightlyPrice]) ?? 0;
+      const revenue = round2(toNumber(row[config.columns.revenue]) ?? sourceNightlyPrice * nights);
       const nightlyPrice = round2(nights > 0 ? revenue / nights : sourceNightlyPrice);
       if (Math.abs(round2(sourceNightlyPrice * nights) - revenue) > 0.01) {
         warnings.push(
@@ -202,22 +270,63 @@ export const parseLegacyRevenue2020Sheets = (
       }
 
       records.push({
+        year: workbookConfig.year,
         sheetName: config.sheetName,
         rowNumber,
         giteName: config.giteName,
-        originReference: `revenus-2020:${config.sheetName}:${rowNumber}`,
-        guestName: String(row[0] ?? "").trim() || "Hôte non renseigné",
+        originReference: `revenus-${workbookConfig.year}:${config.sheetName}:${rowNumber}`,
+        guestName: String(row[config.columns.guest] ?? "").trim() || "Hôte non renseigné",
         arrival,
         departure,
         nights,
-        adults: Math.max(0, Math.trunc(toNumber(row[5]) ?? 0)),
+        adults:
+          config.columns.adults === undefined
+            ? 2
+            : Math.max(0, Math.trunc(toNumber(row[config.columns.adults]) ?? 2)),
         nightlyPrice,
         revenue,
-        paymentSource: normalizePaymentSource(row[8]),
+        paymentSource:
+          config.columns.paymentSource === undefined
+            ? "A définir"
+            : normalizePaymentSource(row[config.columns.paymentSource]),
       });
     });
   }
 
   warnings.push(...findOverlaps(records));
-  return { records, warnings, skippedRows };
+  return {
+    year: workbookConfig.year,
+    sheetConfigs: workbookConfig.sheets,
+    records,
+    warnings,
+    skippedRows,
+  };
+};
+
+export const parseLegacyRevenue2020Sheets = (
+  sheets: LegacyRevenueWorkbookSheet[],
+  sheetConfigs: LegacyRevenueSheetConfig[] = LEGACY_REVENUE_2020_SHEETS
+) => parseLegacyRevenueSheets(sheets, { year: 2020, sheets: sheetConfigs });
+
+export const readLegacyRevenueWorkbook = async (
+  input: WorkbookInput
+): Promise<LegacyRevenueParseResult> => {
+  for (const config of LEGACY_REVENUE_WORKBOOK_CONFIGS) {
+    try {
+      const sheets = await Promise.all(
+        config.sheets.map(async (sheetConfig) => ({
+          sheet: sheetConfig.sheetName,
+          data: await readSheet(input, sheetConfig.sheetName),
+        }))
+      );
+      return parseLegacyRevenueSheets(sheets, config);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/sheet .* not found/i.test(message)) throw error;
+    }
+  }
+
+  throw new Error(
+    "Classeur non reconnu. Formats acceptés: revenus 2019 (feuilles Phonsine/Gree) ou 2020 (Gree2020/Phonsine2020/Edmond2020)."
+  );
 };
