@@ -9,6 +9,31 @@ const normalizeTextKey = (value: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "");
 
+type LegacyGiteCandidate = {
+  id: string;
+  nom: string;
+  date_debut_activite: Date | null;
+};
+
+export const resolveLegacyRevenueGite = (
+  expectedName: string,
+  candidates: LegacyGiteCandidate[]
+) => {
+  const expectedKey = normalizeTextKey(expectedName);
+  const exact = candidates.find((gite) => normalizeTextKey(gite.nom) === expectedKey);
+  if (exact) return exact;
+
+  const compatible = candidates.filter((gite) => {
+    const candidateKey = normalizeTextKey(gite.nom);
+    return (
+      expectedKey.length >= 5 &&
+      candidateKey.length >= 5 &&
+      (candidateKey.includes(expectedKey) || expectedKey.includes(candidateKey))
+    );
+  });
+  return compatible.length === 1 ? compatible[0] : null;
+};
+
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 
 const groupByGite = (records: LegacyRevenueRecord[]) => {
@@ -58,12 +83,20 @@ export const importLegacyRevenueWorkbook = async (
   const dbGites = await prisma.gite.findMany({
     select: { id: true, nom: true, date_debut_activite: true },
   });
-  const gitesByName = new Map(dbGites.map((gite) => [normalizeTextKey(gite.nom), gite]));
+  const gitesByName = new Map(
+    parsed.sheetConfigs.map((config) => [
+      normalizeTextKey(config.giteName),
+      resolveLegacyRevenueGite(config.giteName, dbGites),
+    ])
+  );
   const missingGites = parsed.sheetConfigs.filter(
-    (config) => !gitesByName.has(normalizeTextKey(config.giteName))
+    (config) => !gitesByName.get(normalizeTextKey(config.giteName))
   );
   if (missingGites.length > 0) {
-    throw new Error(`Gîte(s) introuvable(s): ${missingGites.map((config) => config.giteName).join(", ")}.`);
+    throw new Error(
+      `Gîte(s) introuvable(s): ${missingGites.map((config) => config.giteName).join(", ")}. ` +
+        `Gîtes disponibles: ${dbGites.map((gite) => gite.nom).join(", ") || "aucun"}.`
+    );
   }
 
   const originReferences = parsed.records.map((record) => record.originReference);

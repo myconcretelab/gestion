@@ -4,6 +4,7 @@ import {
   parseLegacyRevenue2020Sheets,
   parseLegacyRevenueSheets,
 } from "../src/services/legacyRevenueImport.ts";
+import { resolveLegacyRevenueGite } from "../src/services/legacyRevenueDatabaseImport.ts";
 
 const headers = [
   "Nom",
@@ -228,4 +229,23 @@ test("le format 2018 accepte un séjour commencé fin décembre 2017", () => {
 
   assert.equal(parsed.records.length, 1);
   assert.match(parsed.warnings[0], /commencé en 2017/);
+});
+
+test("l'import retrouve un gîte dont le libellé contient le nom historique", () => {
+  const candidates = [
+    { id: "gree", nom: "La Grée", date_debut_activite: null },
+    { id: "edmond", nom: "Gîte d'Edmond", date_debut_activite: null },
+  ];
+
+  assert.equal(resolveLegacyRevenueGite("Edmond", candidates)?.id, "edmond");
+  assert.equal(resolveLegacyRevenueGite("La Grée", candidates)?.id, "gree");
+});
+
+test("l'import refuse une association de gîte ambiguë", () => {
+  const candidates = [
+    { id: "edmond-1", nom: "Petit Edmond", date_debut_activite: null },
+    { id: "edmond-2", nom: "Grand Edmond", date_debut_activite: null },
+  ];
+
+  assert.equal(resolveLegacyRevenueGite("Edmond", candidates), null);
 });
