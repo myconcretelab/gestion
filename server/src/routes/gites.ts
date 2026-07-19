@@ -37,6 +37,18 @@ import {
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 const timeStringSchema = z.string().regex(timePattern, "Format attendu HH:MM");
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+const activityStartDateSchema = z
+  .string()
+  .trim()
+  .regex(dateOnlyPattern, "Date de début d'activité invalide.")
+  .refine(
+    (value) => {
+      const date = new Date(`${value}T00:00:00.000Z`);
+      return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+    },
+    "Date de début d'activité invalide."
+  );
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const colorPattern = /^#[0-9a-f]{6}$/i;
 const GITE_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
@@ -164,6 +176,10 @@ const giteSchemaShape = {
   min_nuits_juillet_aout: z.coerce.number().int().min(1).default(1),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
   gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
+  date_debut_activite: z.preprocess(
+    emptyStringToNull,
+    activityStartDateSchema.nullable()
+  ).optional().default(null),
 };
 
 const resolveChildrenMax = (value: {
@@ -350,6 +366,9 @@ type GiteImportInput = z.infer<typeof giteImportItemSchema>;
 
 const toGitePersistenceData = (payload: GiteInput) => ({
   ...payload,
+  date_debut_activite: payload.date_debut_activite
+    ? new Date(`${payload.date_debut_activite}T00:00:00.000Z`)
+    : null,
   nb_enfants_max: resolveChildrenMax(payload),
   prefixe_contrat: payload.prefixe_contrat.trim().toUpperCase(),
   telephones: encodeJsonField(payload.telephones),
@@ -1293,6 +1312,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         email: existing.email,
         caracteristiques: existing.caracteristiques,
         airbnb_listing_id: existing.airbnb_listing_id,
+        date_debut_activite: null,
         telephones: encodeJsonField(fromJsonString<string[]>(existing.telephones, [])),
         taxe_sejour_par_personne_par_nuit: existing.taxe_sejour_par_personne_par_nuit,
         iban: existing.iban,

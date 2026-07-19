@@ -91,6 +91,7 @@ export type Gite = {
   prix_nuit_liste?: number[];
   caracteristiques?: string | null;
   gestionnaire_id?: string | null;
+  date_debut_activite?: string | null;
   gestionnaire?: Pick<Gestionnaire, "id" | "prenom" | "nom"> | null;
   photos?: GitePhoto[];
   contrats_count?: number;

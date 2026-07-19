@@ -7,6 +7,7 @@ export type StatisticsGite = {
   prefixe_contrat: string;
   proprietaires_noms: string;
   gestionnaire_id?: string | null;
+  date_debut_activite?: string | null;
   gestionnaire?: {
     id: string;
     prenom: string;
@@ -61,6 +62,9 @@ export type ParsedStatisticsPayload = {
 
 type PeriodYear = number | "all";
 type PeriodMonth = number | "";
+type ActivityStart = string | Date | null | undefined;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const URSSAF_PAYMENTS = ["Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"];
 
@@ -91,6 +95,58 @@ const entryMatch = (entry: ParsedStatisticsEntry, year: PeriodYear, month: Perio
 
 const filterByPeriod = (entries: ParsedStatisticsEntry[], year: PeriodYear, month: PeriodMonth) =>
   entries.filter((entry) => entryMatch(entry, year, month) && !isHomeExchange(entry));
+
+const getActivityStartTime = (activityStart: ActivityStart) => {
+  if (!activityStart) return null;
+  const time =
+    activityStart instanceof Date
+      ? Date.UTC(activityStart.getUTCFullYear(), activityStart.getUTCMonth(), activityStart.getUTCDate())
+      : new Date(`${activityStart.slice(0, 10)}T00:00:00.000Z`).getTime();
+  return Number.isNaN(time) ? null : time;
+};
+
+const getPeriodBounds = (year: number, month: PeriodMonth, now = new Date()) => {
+  if (month) {
+    return {
+      start: Date.UTC(year, Number(month) - 1, 1),
+      end: Date.UTC(year, Number(month), 1),
+    };
+  }
+
+  if (year === now.getUTCFullYear()) {
+    return {
+      start: Date.UTC(year, 0, 1),
+      end: Date.UTC(year, now.getUTCMonth(), now.getUTCDate() + 1),
+    };
+  }
+
+  return {
+    start: Date.UTC(year, 0, 1),
+    end: Date.UTC(year + 1, 0, 1),
+  };
+};
+
+const isActivityPeriodAvailable = (
+  activityStart: ActivityStart,
+  year: number,
+  month: PeriodMonth,
+  now = new Date()
+) => {
+  const activityStartTime = getActivityStartTime(activityStart);
+  if (activityStartTime === null) return true;
+  return activityStartTime < getPeriodBounds(year, month, now).end;
+};
+
+const isFullyActivePeriod = (
+  activityStart: ActivityStart,
+  year: number,
+  month: PeriodMonth,
+  now = new Date()
+) => {
+  const activityStartTime = getActivityStartTime(activityStart);
+  if (activityStartTime === null) return true;
+  return activityStartTime <= getPeriodBounds(year, month, now).start;
+};
 
 export const parseStatisticsPayload = (payload: StatisticsPayload): ParsedStatisticsPayload => {
   const entriesByGite: Record<string, ParsedStatisticsEntry[]> = {};
@@ -168,7 +224,8 @@ const computeAverageMetric = (
   entries: ParsedStatisticsEntry[],
   selectedYear: PeriodYear,
   selectedMonth: PeriodMonth,
-  metric: "CA" | "reservations" | "nights" | "price"
+  metric: "CA" | "reservations" | "nights" | "price",
+  activityStart?: ActivityStart
 ) => {
   if (!entries.length) return 0;
 
@@ -180,6 +237,7 @@ const computeAverageMetric = (
 
   if (selectedYear === "all") {
     const values = years
+      .filter((year) => isFullyActivePeriod(activityStart, year, selectedMonth, now))
       .map((year) => {
         const filtered = filterByPeriod(entries, year, selectedMonth);
         return filtered.length > 0 ? computeValue(filtered, metric) : null;
@@ -189,7 +247,11 @@ const computeAverageMetric = (
   }
 
   const values = years
-    .filter((year) => year !== selectedYear)
+    .filter(
+      (year) =>
+        year !== selectedYear &&
+        isFullyActivePeriod(activityStart, year, selectedMonth, now)
+    )
     .map((year) => {
       let filtered: ParsedStatisticsEntry[];
 
@@ -218,56 +280,61 @@ const computeAverageMetric = (
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 };
 
-export const computeAverageCA = (entries: ParsedStatisticsEntry[], selectedYear: PeriodYear, selectedMonth: PeriodMonth) =>
-  computeAverageMetric(entries, selectedYear, selectedMonth, "CA");
+export const computeAverageCA = (
+  entries: ParsedStatisticsEntry[],
+  selectedYear: PeriodYear,
+  selectedMonth: PeriodMonth,
+  activityStart?: ActivityStart
+) => computeAverageMetric(entries, selectedYear, selectedMonth, "CA", activityStart);
 
 export const computeAverageReservations = (
   entries: ParsedStatisticsEntry[],
   selectedYear: PeriodYear,
-  selectedMonth: PeriodMonth
-) => computeAverageMetric(entries, selectedYear, selectedMonth, "reservations");
+  selectedMonth: PeriodMonth,
+  activityStart?: ActivityStart
+) => computeAverageMetric(entries, selectedYear, selectedMonth, "reservations", activityStart);
 
-export const computeAverageNights = (entries: ParsedStatisticsEntry[], selectedYear: PeriodYear, selectedMonth: PeriodMonth) =>
-  computeAverageMetric(entries, selectedYear, selectedMonth, "nights");
+export const computeAverageNights = (
+  entries: ParsedStatisticsEntry[],
+  selectedYear: PeriodYear,
+  selectedMonth: PeriodMonth,
+  activityStart?: ActivityStart
+) => computeAverageMetric(entries, selectedYear, selectedMonth, "nights", activityStart);
 
-export const computeAveragePrice = (entries: ParsedStatisticsEntry[], selectedYear: PeriodYear, selectedMonth: PeriodMonth) =>
-  computeAverageMetric(entries, selectedYear, selectedMonth, "price");
+export const computeAveragePrice = (
+  entries: ParsedStatisticsEntry[],
+  selectedYear: PeriodYear,
+  selectedMonth: PeriodMonth,
+  activityStart?: ActivityStart
+) => computeAverageMetric(entries, selectedYear, selectedMonth, "price", activityStart);
 
 const getEntryNightsInPeriod = (entry: ParsedStatisticsEntry, periodStart: number, periodEnd: number) => {
   const entryStart = entry.debutDate.getTime();
-  const entryEnd = entryStart + Math.max(0, Number(entry.nuits) || 0) * 24 * 60 * 60 * 1000;
+  const entryEnd = entryStart + Math.max(0, Number(entry.nuits) || 0) * DAY_MS;
   const overlapStart = Math.max(entryStart, periodStart);
   const overlapEnd = Math.min(entryEnd, periodEnd);
-  return overlapEnd > overlapStart ? Math.round((overlapEnd - overlapStart) / (24 * 60 * 60 * 1000)) : 0;
+  return overlapEnd > overlapStart ? Math.round((overlapEnd - overlapStart) / DAY_MS) : 0;
 };
 
 export const computeOccupation = (
   entries: ParsedStatisticsEntry[],
   year: number,
   month: PeriodMonth,
+  activityStart: ActivityStart = null,
   now = new Date()
 ) => {
   const filtered = filterByPeriod(entries, year, month);
-  const currentYear = now.getUTCFullYear();
-  let periodStart: number;
-  let periodEnd: number;
-
-  if (month) {
-    periodStart = Date.UTC(year, Number(month) - 1, 1);
-    periodEnd = Date.UTC(year, Number(month), 1);
-  } else if (year === currentYear) {
-    periodStart = Date.UTC(year, 0, 1);
-    periodEnd = Date.UTC(year, now.getUTCMonth(), now.getUTCDate() + 1);
-  } else {
-    periodStart = Date.UTC(year, 0, 1);
-    periodEnd = Date.UTC(year + 1, 0, 1);
-  }
+  const bounds = getPeriodBounds(year, month, now);
+  const activityStartTime = getActivityStartTime(activityStart);
+  const periodStart = activityStartTime === null ? bounds.start : Math.max(bounds.start, activityStartTime);
+  const periodEnd = bounds.end;
+  if (periodStart >= periodEnd) return 0;
 
   const totalNights = filtered.reduce(
     (sum, entry) => sum + getEntryNightsInPeriod(entry, periodStart, periodEnd),
     0
   );
-  const daysInPeriod = Math.round((periodEnd - periodStart) / (24 * 60 * 60 * 1000));
+  const daysInPeriod = Math.round((periodEnd - periodStart) / DAY_MS);
 
   return daysInPeriod > 0 ? totalNights / daysInPeriod : 0;
 };
@@ -275,8 +342,15 @@ export const computeOccupation = (
 export const getOccupationPerYear = (
   entries: ParsedStatisticsEntry[],
   years: number[],
-  selectedMonth: PeriodMonth
-) => years.map((year) => ({ year, occupation: computeOccupation(entries, year, selectedMonth) }));
+  selectedMonth: PeriodMonth,
+  activityStart?: ActivityStart
+) =>
+  years
+    .filter((year) => isActivityPeriodAvailable(activityStart, year, selectedMonth))
+    .map((year) => ({
+      year,
+      occupation: computeOccupation(entries, year, selectedMonth, activityStart),
+    }));
 
 export const getMonthlyCAByYear = (entriesByGite: Record<string, ParsedStatisticsEntry[]>) => {
   const result: Record<number, { months: Array<{ month: number; ca: number }>; total: number }> = {};
@@ -324,7 +398,10 @@ export const getMonthlyCAByGiteForYear = (
 
 export const getMonthlyAverageCA = (
   entriesByGite: Record<string, ParsedStatisticsEntry[]>,
-  options?: { excludeFutureMonthsInCurrentYear?: boolean }
+  options?: {
+    excludeFutureMonthsInCurrentYear?: boolean;
+    activityStart?: ActivityStart;
+  }
 ) => {
   const byYear = getMonthlyCAByYear(entriesByGite);
   const years = Object.keys(byYear).map(Number);
@@ -338,6 +415,7 @@ export const getMonthlyAverageCA = (
   for (const year of years) {
     byYear[year].months.forEach((monthStat, idx) => {
       if (excludeFutureMonthsInCurrentYear && year === currentYear && idx > currentMonth) return;
+      if (!isFullyActivePeriod(options?.activityStart, year, idx + 1, now)) return;
       sums[idx] += monthStat.ca;
       counts[idx] += 1;
     });

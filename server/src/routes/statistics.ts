@@ -23,6 +23,7 @@ router.get("/", async (_req, res, next) => {
           prefixe_contrat: true,
           proprietaires_noms: true,
           gestionnaire_id: true,
+          date_debut_activite: true,
           gestionnaire: {
             select: {
               id: true,

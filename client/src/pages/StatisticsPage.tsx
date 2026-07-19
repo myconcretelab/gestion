@@ -90,7 +90,13 @@ const buildChartGroups = (params: {
     const byGite = getMonthlyCAByGiteForYear(entriesByGite, gites, selectedItem);
     return gites.map((gite) => {
       const stats = byGite[gite.id];
-      const avgMonths = getMonthlyAverageCA({ [gite.id]: entriesByGite[gite.id] ?? [] }, { excludeFutureMonthsInCurrentYear });
+      const avgMonths = getMonthlyAverageCA(
+        { [gite.id]: entriesByGite[gite.id] ?? [] },
+        {
+          excludeFutureMonthsInCurrentYear,
+          activityStart: gite.date_debut_activite,
+        }
+      );
       return {
         key: gite.id,
         title: `Chiffre d'affaire ${gite.nom} ${selectedItem}`,
@@ -106,8 +112,12 @@ const buildChartGroups = (params: {
   }
 
   const filteredEntriesByGite = selectedItem === "Tous" ? entriesByGite : { [selectedItem]: entriesByGite[selectedItem] ?? [] };
+  const selectedGite = typeof selectedItem === "string" ? giteById.get(selectedItem) : null;
   const byYear = getMonthlyCAByYear(filteredEntriesByGite);
-  const average = getMonthlyAverageCA(filteredEntriesByGite, { excludeFutureMonthsInCurrentYear });
+  const average = getMonthlyAverageCA(filteredEntriesByGite, {
+    excludeFutureMonthsInCurrentYear,
+    activityStart: selectedGite?.date_debut_activite,
+  });
   const years = Object.keys(byYear)
     .map(Number)
     .sort((a, b) => b - a);
@@ -221,7 +231,12 @@ const StatisticsPage = () => {
     let leaderId: string | null = null;
 
     for (const [index, gite] of gites.entries()) {
-      const occupation = computeOccupation(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth);
+      const occupation = computeOccupation(
+        entriesByGite[gite.id] ?? [],
+        selectedYear,
+        selectedMonth,
+        gite.date_debut_activite
+      );
 
       if (occupation > bestOccupation + 1e-6) {
         bestOccupation = occupation;
@@ -379,11 +394,36 @@ const StatisticsPage = () => {
           const giteColor = getGiteColor(gite, index);
           const entries = entriesByGite[gite.id] ?? [];
           const stats = computeGiteStats(entries, selectedYear, selectedMonth);
-          const avgReservations = computeAverageReservations(entries, selectedYear, selectedMonth);
-          const avgNightsByGite = computeAverageNights(entries, selectedYear, selectedMonth);
-          const avgCAByGite = computeAverageCA(entries, selectedYear, selectedMonth);
-          const avgPriceByGite = computeAveragePrice(entries, selectedYear, selectedMonth);
-          const occupations = getOccupationPerYear(entries, availableYears, selectedMonth);
+          const avgReservations = computeAverageReservations(
+            entries,
+            selectedYear,
+            selectedMonth,
+            gite.date_debut_activite
+          );
+          const avgNightsByGite = computeAverageNights(
+            entries,
+            selectedYear,
+            selectedMonth,
+            gite.date_debut_activite
+          );
+          const avgCAByGite = computeAverageCA(
+            entries,
+            selectedYear,
+            selectedMonth,
+            gite.date_debut_activite
+          );
+          const avgPriceByGite = computeAveragePrice(
+            entries,
+            selectedYear,
+            selectedMonth,
+            gite.date_debut_activite
+          );
+          const occupations = getOccupationPerYear(
+            entries,
+            availableYears,
+            selectedMonth,
+            gite.date_debut_activite
+          );
 
           return (
             <article
