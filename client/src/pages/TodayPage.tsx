@@ -1178,15 +1178,48 @@ const TodayPage = () => {
             </div>
           </div>
           <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
-            {revenueAverages.map((metric) => (
-              <div key={metric.id} className="today-revenue-mini__item" title={`${formatEuro(metric.gross_revenue)} revenus - ${formatEuro(metric.expenses)} dépenses`}>
-                <span>
-                  <i aria-hidden="true">{getRevenueAverageIcon(metric.id)}</i>
-                  {metric.label}
-                </span>
-                <strong>{formatEuro(metric.net_average_monthly_revenue)}</strong>
-              </div>
-            ))}
+            {revenueAverages.map((metric) => {
+              const popoverId = `today-revenue-popover-${metric.id}`;
+              return (
+                <div
+                  key={metric.id}
+                  className="reservations-summary-explainer today-revenue-mini__explainer"
+                  tabIndex={0}
+                  aria-describedby={popoverId}
+                >
+                  <div className="today-revenue-mini__item">
+                    <span>
+                      <i aria-hidden="true">{getRevenueAverageIcon(metric.id)}</i>
+                      {metric.label}
+                    </span>
+                    <strong>{formatEuro(metric.net_average_monthly_revenue)}</strong>
+                  </div>
+                  <span
+                    id={popoverId}
+                    className="reservations-summary-popover today-revenue-mini__popover"
+                    role="tooltip"
+                    aria-hidden="true"
+                  >
+                    <div className="reservations-summary-popover__title">
+                      Détail · {metric.label}
+                    </div>
+                    <div className="reservations-summary-popover__row">
+                      <span>Revenus bruts</span>
+                      <strong>{formatEuro(metric.gross_revenue)}</strong>
+                    </div>
+                    <div className="reservations-summary-popover__row">
+                      <span>Dépenses</span>
+                      <strong>{formatEuro(metric.expenses)}</strong>
+                    </div>
+                    <div className="reservations-summary-popover__note">
+                      {metric.month_count > 1
+                        ? `Moyenne nette mensuelle : (revenus − dépenses) ÷ ${metric.month_count} mois.`
+                        : "Montant net : revenus − dépenses."}
+                    </div>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
 

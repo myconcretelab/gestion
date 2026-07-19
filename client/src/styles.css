@@ -316,6 +316,30 @@ body.app-scroll-locked {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.today-revenue-mini__explainer {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  cursor: help;
+}
+
+.today-revenue-mini__explainer:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.today-revenue-mini__popover {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+.today-revenue-mini__explainer:last-child .today-revenue-mini__popover {
+  right: 0;
+  left: auto;
+}
+
 .today-revenue-mini__item span {
   display: flex;
   align-items: center;
