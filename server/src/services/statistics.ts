@@ -7,6 +7,7 @@ export type StatisticsGite = {
   prefixe_contrat: string;
   proprietaires_noms: string;
   gestionnaire_id: string | null;
+  date_debut_activite?: Date | null;
   gestionnaire: {
     id: string;
     prenom: string;
@@ -192,6 +193,9 @@ export const buildStatisticsPayload = (params: {
 
   for (const gite of gites) {
     entriesByGite[gite.id] = [];
+    if (gite.date_debut_activite) {
+      years.add(gite.date_debut_activite.getUTCFullYear());
+    }
   }
 
   for (const reservation of params.reservations) {

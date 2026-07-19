@@ -61,6 +61,7 @@ const emptyForm = {
   email: "",
   caracteristiques: "",
   airbnb_listing_id: "",
+  date_debut_activite: "",
   telephones: "",
   taxe_sejour_par_personne_par_nuit: 0,
   iban: "",
@@ -1743,6 +1744,7 @@ const GitesPage = () => {
       email: selected.email ?? "",
       caracteristiques: selected.caracteristiques ?? "",
       airbnb_listing_id: selected.airbnb_listing_id ?? "",
+      date_debut_activite: selected.date_debut_activite?.slice(0, 10) ?? "",
       telephones: Array.isArray(selected.telephones) ? selected.telephones.join(", ") : "",
       taxe_sejour_par_personne_par_nuit: selected.taxe_sejour_par_personne_par_nuit,
       iban: selected.iban,
@@ -2136,6 +2138,7 @@ const GitesPage = () => {
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
         gestionnaire_id: form.gestionnaire_id || null,
+        date_debut_activite: form.date_debut_activite || null,
         capacite_max: Math.max(1, Math.trunc(toNumberOrDefault(form.capacite_max, 1))),
         nb_adultes_max: Math.max(1, Math.trunc(toNumberOrDefault(form.nb_adultes_max, 1))),
         nb_adultes_habituel: Math.max(1, Math.trunc(toNumberOrDefault(form.nb_adultes_habituel, 1))),
@@ -3049,6 +3052,15 @@ const GitesPage = () => {
                 onChange={(e) => handleChange("airbnb_listing_id", e.target.value)}
                 placeholder="48504640"
               />
+            </label>
+            <label className="field">
+              Début d'activité
+              <input
+                type="date"
+                value={form.date_debut_activite}
+                onChange={(e) => handleChange("date_debut_activite", e.target.value)}
+              />
+              <span className="field-hint">Utilisé pour proratiser les statistiques de la première période.</span>
             </label>
           </div>
         </div>

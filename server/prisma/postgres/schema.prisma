@@ -73,6 +73,7 @@ model Gite {
   airbnb_listing_id                    String?
   ical_export_token                    String?
   gestionnaire_id                      String?
+  date_debut_activite                  DateTime?
   createdAt                            DateTime @default(now())
   updatedAt                            DateTime @updatedAt
 
