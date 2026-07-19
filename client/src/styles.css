@@ -329,7 +329,7 @@ body.app-scroll-locked {
   outline-offset: 2px;
 }
 
-.today-revenue-mini__popover {
+.reservations-summary-popover.today-revenue-mini__popover {
   display: block;
   top: auto;
   bottom: calc(100% + 8px);
