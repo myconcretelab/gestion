@@ -626,14 +626,20 @@ const buildTotalsByGite = async (monthStart: Date, monthEnd: Date) => {
     .map(({ ordre: _ordre, ...item }) => item);
 };
 
+export const buildNewReservationsWhere = (windowStart: Date, windowEnd: Date) => ({
+  createdAt: {
+    gte: windowStart,
+    lt: windowEnd,
+  },
+  OR: [
+    { origin_system: null },
+    { origin_system: { not: "legacy" } },
+  ],
+});
+
 export const buildNewReservations = async (windowStart: Date, windowEnd: Date) => {
   const rows = await prisma.reservation.findMany({
-    where: {
-      createdAt: {
-        gte: windowStart,
-        lt: windowEnd,
-      },
-    },
+    where: buildNewReservationsWhere(windowStart, windowEnd),
     select: {
       id: true,
       gite_id: true,
