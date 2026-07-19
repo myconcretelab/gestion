@@ -13,6 +13,7 @@ export type LegacyRevenueWorkbookSheet = {
 export type LegacyRevenueSheetConfig = {
   sheetName: string;
   giteName: string;
+  allowBlankDateHeaders?: boolean;
   columns: {
     guest: number;
     arrival: number;
@@ -28,6 +29,7 @@ export type LegacyRevenueSheetConfig = {
 export type LegacyRevenueWorkbookConfig = {
   year: number;
   sheets: LegacyRevenueSheetConfig[];
+  allowPreviousYearArrival?: boolean;
 };
 
 export type LegacyRevenueRecord = {
@@ -74,6 +76,15 @@ const COLUMNS_2019: LegacyRevenueSheetConfig["columns"] = {
   revenue: 6,
 };
 
+const COLUMNS_2017_2018: LegacyRevenueSheetConfig["columns"] = {
+  guest: 0,
+  arrival: 1,
+  departure: 2,
+  nights: 4,
+  nightlyPrice: 5,
+  revenue: 7,
+};
+
 export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
   {
     year: 2020,
@@ -90,10 +101,32 @@ export const LEGACY_REVENUE_WORKBOOK_CONFIGS: LegacyRevenueWorkbookConfig[] = [
       { sheetName: "Gree", giteName: "La Grée", columns: COLUMNS_2019 },
     ],
   },
+  {
+    year: 2018,
+    allowPreviousYearArrival: true,
+    sheets: [
+      { sheetName: "Phonsine 2018", giteName: "Tante Phonsine", columns: COLUMNS_2017_2018 },
+      { sheetName: "Grée 2018", giteName: "La Grée", columns: COLUMNS_2017_2018 },
+    ],
+  },
+  {
+    year: 2017,
+    sheets: [
+      { sheetName: "Phonsine 2017", giteName: "Tante Phonsine", columns: COLUMNS_2017_2018 },
+      {
+        sheetName: "Grée 2017",
+        giteName: "La Grée",
+        allowBlankDateHeaders: true,
+        columns: COLUMNS_2017_2018,
+      },
+    ],
+  },
 ];
 
 export const LEGACY_REVENUE_2020_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[0].sheets;
 export const LEGACY_REVENUE_2019_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[1].sheets;
+export const LEGACY_REVENUE_2018_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[2].sheets;
+export const LEGACY_REVENUE_2017_SHEETS = LEGACY_REVENUE_WORKBOOK_CONFIGS[3].sheets;
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
@@ -156,22 +189,28 @@ const normalizePaymentSource = (value: WorkbookCell) => {
 const validateHeaders = (sheet: LegacyRevenueWorkbookSheet, config: LegacyRevenueSheetConfig) => {
   const headers = sheet.data[0] ?? [];
   const expected = [
-    { index: config.columns.arrival, value: "debut" },
-    { index: config.columns.departure, value: "fin" },
-    { index: config.columns.nights, value: "nb nuits" },
-    { index: config.columns.nightlyPrice, value: "prix/nuits" },
-    { index: config.columns.revenue, value: "revenus" },
+    {
+      index: config.columns.arrival,
+      values: config.allowBlankDateHeaders ? ["debut", "dtstart", ""] : ["debut", "dtstart"],
+    },
+    {
+      index: config.columns.departure,
+      values: config.allowBlankDateHeaders ? ["fin", "dtend", ""] : ["fin", "dtend"],
+    },
+    { index: config.columns.nights, values: ["nb nuits", "nb de nuits"] },
+    { index: config.columns.nightlyPrice, values: ["prix/nuits", "prix/nuit"] },
+    { index: config.columns.revenue, values: ["revenus"] },
   ];
   if (config.columns.adults !== undefined) {
-    expected.push({ index: config.columns.adults, value: "nb adultes" });
+    expected.push({ index: config.columns.adults, values: ["nb adultes"] });
   }
   if (config.columns.paymentSource !== undefined) {
-    expected.push({ index: config.columns.paymentSource, value: "paiement" });
+    expected.push({ index: config.columns.paymentSource, values: ["paiement"] });
   }
 
   for (const item of expected) {
     const actual = normalizeText(String(headers[item.index] ?? ""));
-    if (actual !== item.value) {
+    if (!item.values.includes(actual)) {
       throw new Error(
         `La feuille ${sheet.sheet} n'a pas le format attendu (colonne ${item.index + 1}: "${actual}").`
       );
@@ -225,12 +264,22 @@ export const parseLegacyRevenueSheets = (
       throw new Error(`Feuille requise introuvable: ${config.sheetName}.`);
     }
     validateHeaders(sheet, config);
+    const firstRecordIndex = records.length;
+    let declaredTotalNights: number | null = null;
+    let declaredTotalRevenue: number | null = null;
 
     sheet.data.slice(1).forEach((row, rowIndex) => {
       const rowNumber = rowIndex + 2;
       const arrival = toDate(row[config.columns.arrival]);
       const sourceDeparture = toDate(row[config.columns.departure]);
       const nightsValue = toNumber(row[config.columns.nights]);
+      const guestName = String(row[config.columns.guest] ?? "").trim();
+      if (!arrival && !sourceDeparture && !guestName) {
+        const summaryRevenue = toNumber(row[config.columns.revenue]);
+        if (nightsValue !== null) declaredTotalNights = nightsValue;
+        if (summaryRevenue !== null) declaredTotalRevenue = summaryRevenue;
+        return;
+      }
       const hasStayData = arrival !== null || sourceDeparture !== null || nightsValue !== null;
       if (!hasStayData) return;
 
@@ -245,13 +294,22 @@ export const parseLegacyRevenueSheets = (
         skippedRows += 1;
         return;
       }
-      if (arrival.getUTCFullYear() !== workbookConfig.year) {
+      const departure = addUtcDays(arrival, nights);
+      const arrivalYear = arrival.getUTCFullYear();
+      const previousYearArrivalAllowed =
+        workbookConfig.allowPreviousYearArrival &&
+        arrivalYear === workbookConfig.year - 1 &&
+        departure.getUTCFullYear() === workbookConfig.year;
+      if (arrivalYear !== workbookConfig.year && !previousYearArrivalAllowed) {
         throw new Error(
           `${config.sheetName} ligne ${rowNumber}: arrivée hors de ${workbookConfig.year} (${formatDate(arrival)}).`
         );
       }
-
-      const departure = addUtcDays(arrival, nights);
+      if (previousYearArrivalAllowed) {
+        warnings.push(
+          `${config.sheetName} ligne ${rowNumber}: séjour commencé en ${arrivalYear} et terminé en ${workbookConfig.year}, conservé tel quel.`
+        );
+      }
       if (sourceDeparture.getTime() !== departure.getTime()) {
         warnings.push(
           `${config.sheetName} ligne ${rowNumber}: sortie ${formatDate(sourceDeparture)} remplacée par ` +
@@ -275,7 +333,7 @@ export const parseLegacyRevenueSheets = (
         rowNumber,
         giteName: config.giteName,
         originReference: `revenus-${workbookConfig.year}:${config.sheetName}:${rowNumber}`,
-        guestName: String(row[config.columns.guest] ?? "").trim() || "Hôte non renseigné",
+        guestName: guestName || "Hôte non renseigné",
         arrival,
         departure,
         nights,
@@ -291,6 +349,20 @@ export const parseLegacyRevenueSheets = (
             : normalizePaymentSource(row[config.columns.paymentSource]),
       });
     });
+
+    const sheetRecords = records.slice(firstRecordIndex);
+    const computedNights = sheetRecords.reduce((sum, record) => sum + record.nights, 0);
+    const computedRevenue = round2(sheetRecords.reduce((sum, record) => sum + record.revenue, 0));
+    if (declaredTotalNights !== null && Math.abs(declaredTotalNights - computedNights) > 0.01) {
+      warnings.push(
+        `${config.sheetName}: le total affiché (${declaredTotalNights} nuits) ne correspond pas aux lignes (${computedNights} nuits).`
+      );
+    }
+    if (declaredTotalRevenue !== null && Math.abs(declaredTotalRevenue - computedRevenue) > 0.01) {
+      warnings.push(
+        `${config.sheetName}: le total affiché (${round2(declaredTotalRevenue).toFixed(2)} €) ne correspond pas aux lignes (${computedRevenue.toFixed(2)} €).`
+      );
+    }
   }
 
   warnings.push(...findOverlaps(records));
@@ -327,6 +399,6 @@ export const readLegacyRevenueWorkbook = async (
   }
 
   throw new Error(
-    "Classeur non reconnu. Formats acceptés: revenus 2019 (feuilles Phonsine/Gree) ou 2020 (Gree2020/Phonsine2020/Edmond2020)."
+    "Classeur non reconnu. Formats acceptés: revenus historiques 2017, 2018, 2019 ou 2020."
   );
 };

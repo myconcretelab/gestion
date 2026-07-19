@@ -38,10 +38,10 @@ const parseArgs = (args: string[]): CliOptions => {
 };
 
 const printHelp = () => {
-  console.log(`Import des revenus historiques 2019 ou 2020
+  console.log(`Import des revenus historiques 2017 à 2020
 
 Usage:
-  npm run import:revenus -w server -- --file "/chemin/Revenus Gites 2019.xlsx"
+  npm run import:revenus -w server -- --file "/chemin/Revenus Gites 2017.xlsx"
   npm run import:revenus -w server -- --file "/chemin/Revenus Gites 2020.xlsx" --apply
 
 Options:
