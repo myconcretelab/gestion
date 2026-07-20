@@ -16,6 +16,9 @@ const legacyRevenueImportSchema = z.object({
   apply: z.boolean().default(false),
   allowExistingConflicts: z.boolean().default(false),
 });
+const statisticsQuerySchema = z.object({
+  year: z.union([z.coerce.number().int().min(1900).max(3000), z.literal("all")]).optional(),
+});
 
 const hydrateStatisticsReservation = (reservation: any) => ({
   ...reservation,
@@ -59,9 +62,14 @@ router.post("/legacy-revenue-import", async (req, res, next) => {
   }
 });
 
-router.get("/", async (_req, res, next) => {
+router.get("/", async (req, res, next) => {
   try {
-    const [gites, rawReservations] = await Promise.all([
+    const query = statisticsQuerySchema.parse(req.query);
+    const selectedYear = typeof query.year === "number" ? query.year : null;
+    const periodStart = selectedYear ? new Date(Date.UTC(selectedYear, 0, 1)) : null;
+    const periodEnd = selectedYear ? new Date(Date.UTC(selectedYear + 1, 0, 1)) : null;
+
+    const [gites, rawReservations, reservationYearRows] = await Promise.all([
       prisma.gite.findMany({
         select: {
           id: true,
@@ -82,7 +90,15 @@ router.get("/", async (_req, res, next) => {
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
       prisma.reservation.findMany({
-        where: { gite_id: { not: null } },
+        where: {
+          gite_id: { not: null },
+          ...(periodStart && periodEnd
+            ? {
+                date_entree: { lt: periodEnd },
+                date_sortie: { gt: periodStart },
+              }
+            : {}),
+        },
         select: {
           id: true,
           gite_id: true,
@@ -98,16 +114,41 @@ router.get("/", async (_req, res, next) => {
         },
         orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
       }),
+      prisma.reservation.findMany({
+        where: { gite_id: { not: null } },
+        select: {
+          date_entree: true,
+          date_sortie: true,
+        },
+      }),
     ]);
     const reservations = rawReservations.map(hydrateStatisticsReservation);
+    const availableYears = new Set<number>();
+    for (const gite of gites) {
+      if (gite.date_debut_activite) {
+        availableYears.add(gite.date_debut_activite.getUTCFullYear());
+      }
+    }
+    for (const reservation of reservationYearRows) {
+      const firstYear = reservation.date_entree.getUTCFullYear();
+      const lastOccupiedYear = new Date(reservation.date_sortie.getTime() - 1).getUTCFullYear();
+      for (let year = firstYear; year <= lastOccupiedYear; year += 1) {
+        availableYears.add(year);
+      }
+    }
 
     res.json(
       buildStatisticsPayload({
         gites,
         reservations,
+        selectedYear,
+        availableYears: [...availableYears],
       })
     );
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Année invalide.", details: err.flatten() });
+    }
     next(err);
   }
 });

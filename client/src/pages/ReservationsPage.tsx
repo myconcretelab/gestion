@@ -1259,12 +1259,12 @@ const ReservationsPage = () => {
 
   const loadStatistics = useCallback(async () => {
     try {
-      const payload = await apiFetch<StatisticsPayload>("/statistics");
+      const payload = await apiFetch<StatisticsPayload>(`/statistics?year=${year}`);
       setStatisticsDataset(parseStatisticsPayload(payload));
     } catch {
       setStatisticsDataset(null);
     }
-  }, []);
+  }, [year]);
 
   useEffect(() => {
     void loadStatistics();

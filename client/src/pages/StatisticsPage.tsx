@@ -206,8 +206,9 @@ const StatisticsPage = () => {
     try {
       setLoading(true);
       setError(null);
+      const statisticsYear = selectedYear === "all" ? "all" : String(selectedYear);
       const [payload, colorSettings] = await Promise.all([
-        apiFetch<StatisticsPayload>("/statistics"),
+        apiFetch<StatisticsPayload>(`/statistics?year=${statisticsYear}`),
         apiFetch<SourceColorSettings>("/settings/source-colors"),
       ]);
       setDataset(parseStatisticsPayload(payload));
@@ -218,10 +219,10 @@ const StatisticsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedYear]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   const previewLegacyImport = async (file: File) => {
@@ -287,17 +288,6 @@ const StatisticsPage = () => {
 
   useEffect(() => {
     if (!dataset) return;
-    if (dataset.availableYears.length === 0) {
-      setSelectedYear("all");
-      return;
-    }
-    if (selectedYear !== "all" && !dataset.availableYears.includes(selectedYear)) {
-      setSelectedYear(dataset.availableYears[0]);
-    }
-  }, [dataset, selectedYear]);
-
-  useEffect(() => {
-    if (!dataset) return;
     if (selectedItem === "Tous" || typeof selectedItem === "number") return;
     const exists = dataset.gites.some((gite) => gite.id === selectedItem);
     if (!exists) setSelectedItem("Tous");
@@ -305,7 +295,10 @@ const StatisticsPage = () => {
 
   const gites = dataset?.gites ?? [];
   const entriesByGite = dataset?.entriesByGite ?? {};
-  const availableYears = dataset?.availableYears ?? [];
+  const availableYears = useMemo(
+    () => [...new Set([currentYear, ...(dataset?.availableYears ?? [])])].sort((left, right) => right - left),
+    [currentYear, dataset?.availableYears]
+  );
   const allEntries = useMemo(() => Object.values(entriesByGite).flat(), [entriesByGite]);
 
   const globalStats = useMemo(() => computeGlobalStats(entriesByGite, selectedYear, selectedMonth), [entriesByGite, selectedMonth, selectedYear]);
@@ -401,7 +394,16 @@ const StatisticsPage = () => {
           <div className="stats-filters">
             <label className="field">
               <span>Année</span>
-              <select value={selectedYear} onChange={(event) => setSelectedYear(event.target.value === "all" ? "all" : Number(event.target.value))}>
+              <select
+                value={selectedYear}
+                onChange={(event) => {
+                  const nextYear = event.target.value === "all" ? "all" : Number(event.target.value);
+                  setSelectedYear(nextYear);
+                  if (typeof selectedItem === "number" && nextYear !== "all") {
+                    setSelectedItem(nextYear);
+                  }
+                }}
+              >
                 <option value="all">Toutes les années</option>
                 {availableYears.map((year) => (
                   <option key={year} value={year}>
@@ -613,7 +615,7 @@ const StatisticsPage = () => {
           );
           const occupations = getOccupationPerYear(
             entries,
-            availableYears,
+            selectedYear === "all" ? availableYears : [selectedYear],
             selectedMonth,
             gite.date_debut_activite
           );
@@ -693,8 +695,13 @@ const StatisticsPage = () => {
               value={selectedItemValue}
               onChange={(event) => {
                 const next = event.target.value;
-                if (next.startsWith("year:")) setSelectedItem(Number(next.slice(5)));
-                else setSelectedItem(next);
+                if (next.startsWith("year:")) {
+                  const nextYear = Number(next.slice(5));
+                  setSelectedItem(nextYear);
+                  setSelectedYear(nextYear);
+                } else {
+                  setSelectedItem(next);
+                }
               }}
             >
               <option value="Tous">Tous les gîtes</option>
