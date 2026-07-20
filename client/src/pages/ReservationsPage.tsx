@@ -1147,6 +1147,8 @@ const ReservationsPage = () => {
   const detailsCloseTimers = useRef<Record<string, number>>({});
   const savedRowFadeTimers = useRef<Record<string, number>>({});
   const liveEnergyLoadKeyRef = useRef("");
+  const backgroundEnergyLoadCancelRef = useRef<(() => void) | null>(null);
+  const backgroundEnergyLoadControllerRef = useRef<AbortController | null>(null);
   const pendingViewSnapshotRef = useRef<ReservationsViewSnapshot | null>(null);
   const restoreViewRafRef = useRef<number | null>(null);
   const linkedFocusTimerRef = useRef<number | null>(null);
@@ -1296,6 +1298,8 @@ const ReservationsPage = () => {
       Object.values(detailsCloseTimers.current).forEach((timer) => window.clearTimeout(timer));
       Object.values(savedRowFadeTimers.current).forEach((timer) => window.clearTimeout(timer));
       airbnbCalendarRefreshControllersRef.current.forEach((controller) => controller.abort());
+      backgroundEnergyLoadCancelRef.current?.();
+      backgroundEnergyLoadControllerRef.current?.abort();
       if (restoreViewRafRef.current) {
         window.cancelAnimationFrame(restoreViewRafRef.current);
       }
@@ -1359,13 +1363,18 @@ const ReservationsPage = () => {
     energyParams.set("year", String(year));
     if (month) energyParams.set("month", String(month));
     const liveEnergyLoadKey = energyParams.toString();
+    const energyPeriodChanged = liveEnergyLoadKeyRef.current !== liveEnergyLoadKey;
     liveEnergyLoadKeyRef.current = liveEnergyLoadKey;
+    backgroundEnergyLoadCancelRef.current?.();
+    backgroundEnergyLoadControllerRef.current?.abort();
+    if (energyPeriodChanged) {
+      setMonthlyEnergySummaries([]);
+    }
 
     const [
       gitesData,
       placeholdersData,
       reservationsData,
-      monthlyEnergyData,
       monthlyEnergyEligibleGitesData,
       yearsData,
       sourceColorData,
@@ -1373,9 +1382,6 @@ const ReservationsPage = () => {
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Reservation[]>(`/reservations?${params.toString()}`),
-      apiFetch<ReservationMonthlyEnergySummary[]>(
-        `/reservations/monthly-energy?${energyParams.toString()}`,
-      ),
       apiFetch<string[]>("/reservations/monthly-energy/eligible-gites"),
       apiFetch<number[]>("/reservations/years"),
       apiFetch<SourceColorSettingsResponse>("/settings/source-colors").catch(() => ({
@@ -1388,11 +1394,6 @@ const ReservationsPage = () => {
     setPlaceholders(placeholdersData);
     setReservations(reservationsData);
     setSourceColors(sourceColorData.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
-    setMonthlyEnergySummaries(
-      monthlyEnergyData
-        .map((item) => normalizeReservationMonthlyEnergySummary(item))
-        .filter((item): item is ReservationMonthlyEnergySummary => item !== null),
-    );
     setMonthlyEnergyEligibleGiteIds(monthlyEnergyEligibleGitesData);
     setAvailableYears([...new Set([currentYear, ...yearsData])].sort((a, b) => b - a));
 
@@ -1422,23 +1423,41 @@ const ReservationsPage = () => {
       return current;
     });
 
-    void apiFetch<ReservationLiveEnergyById>(`/reservations/live-energy?${energyParams.toString()}`)
-      .then((liveEnergyById) => {
-        if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
-        setReservations((previous) =>
-          previous.map((reservation) =>
-            liveEnergyById[reservation.id]
-              ? {
-                  ...reservation,
-                  ...liveEnergyById[reservation.id],
-                }
-              : reservation,
-          ),
-        );
-      })
-      .catch(() => {
-        if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
-      });
+    const energyLoadController = new AbortController();
+    backgroundEnergyLoadControllerRef.current = energyLoadController;
+    backgroundEnergyLoadCancelRef.current = scheduleLazyTask(() => {
+      backgroundEnergyLoadCancelRef.current = null;
+
+      void Promise.allSettled([
+        apiFetch<ReservationMonthlyEnergySummary[]>(
+          `/reservations/monthly-energy?${energyParams.toString()}`,
+          { signal: energyLoadController.signal },
+        ).then((monthlyEnergyData) => {
+          if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
+          setMonthlyEnergySummaries(
+            monthlyEnergyData
+              .map((item) => normalizeReservationMonthlyEnergySummary(item))
+              .filter((item): item is ReservationMonthlyEnergySummary => item !== null),
+          );
+        }),
+        apiFetch<ReservationLiveEnergyById>(
+          `/reservations/live-energy?${energyParams.toString()}`,
+          { signal: energyLoadController.signal },
+        ).then((liveEnergyById) => {
+          if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
+          setReservations((previous) =>
+            previous.map((reservation) =>
+              liveEnergyById[reservation.id]
+                ? {
+                    ...reservation,
+                    ...liveEnergyById[reservation.id],
+                  }
+                : reservation,
+            ),
+          );
+        }),
+      ]);
+    });
   };
 
   const toggleLinkedContractBalanceStatus = async (reservation: Reservation) => {
