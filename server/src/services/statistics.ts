@@ -182,6 +182,8 @@ export const buildStatisticsReservationSegments = (
 export const buildStatisticsPayload = (params: {
   gites: StatisticsGite[];
   reservations: StatisticsReservation[];
+  selectedYear?: number | null;
+  availableYears?: number[];
 }): StatisticsPayload => {
   const gites = [...params.gites].sort(
     (left, right) => left.ordre - right.ordre || left.nom.localeCompare(right.nom, "fr")
@@ -204,6 +206,9 @@ export const buildStatisticsPayload = (params: {
     if (!gite) continue;
 
     for (const segment of buildStatisticsReservationSegments(reservation)) {
+      if (params.selectedYear !== null && params.selectedYear !== undefined && segment.year !== params.selectedYear) {
+        continue;
+      }
       years.add(segment.year);
       entriesByGite[gite.id].push({
         reservationId: reservation.id,
@@ -235,6 +240,6 @@ export const buildStatisticsPayload = (params: {
   return {
     gites,
     entriesByGite,
-    availableYears: [...years].sort((a, b) => b - a),
+    availableYears: [...new Set(params.availableYears ?? years)].sort((a, b) => b - a),
   };
 };

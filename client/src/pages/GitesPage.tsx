@@ -1648,6 +1648,11 @@ const GitesPage = () => {
   );
   const activeEditorSectionLabel = GITE_EDITOR_SECTION_BY_ID.get(activeEditorSection)?.label ?? "Section";
 
+  const loadStatisticsForYear = async (year: number) => {
+    const statisticsData = await apiFetch<StatisticsPayload>(`/statistics?year=${year}`);
+    setStatisticsDataset(parseStatisticsPayload(statisticsData));
+  };
+
   useEffect(() => {
     const queryGiteId = searchParams.get("gite") || null;
     const querySection = searchParams.get("section");
@@ -1677,7 +1682,7 @@ const GitesPage = () => {
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Gestionnaire[]>("/managers"),
-      apiFetch<StatisticsPayload>("/statistics"),
+      apiFetch<StatisticsPayload>(`/statistics?year=${expenseStatisticsYear}`),
       apiFetch<ExpenseCategorySettings>("/gites/expense-categories"),
     ]);
     setGites(gitesData);
@@ -1703,6 +1708,7 @@ const GitesPage = () => {
 
   useEffect(() => {
     load().catch((err) => setError(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1924,7 +1930,7 @@ const GitesPage = () => {
         : normalizeExpenseManagement(gite.frais_gestion, expenseCategories);
       return sum + getExpenseTotals(data).annual;
     }, 0);
-    return expenseProjectionYears.map((year) => {
+    return [expenseStatisticsYear].map((year) => {
       const dynamic = gites.reduce(
         (sum, gite) => sum + getDynamicExpenseAmounts(statisticsDataset, gite.id, year, dynamicExpenseRules)
           .reduce((ruleSum, expense) => ruleSum + expense.amount, 0),
@@ -1932,7 +1938,7 @@ const GitesPage = () => {
       );
       return { year, fixed, dynamic, total: fixed + dynamic };
     });
-  }, [dynamicExpenseRules, expenseCategories, expenseManagement, expenseProjectionYears, gites, selectedId, statisticsDataset]);
+  }, [dynamicExpenseRules, expenseCategories, expenseManagement, expenseStatisticsYear, gites, selectedId, statisticsDataset]);
   const dynamicExpenseLabel = dynamicExpenseRules
     .filter((rule) => rule.enabled)
     .map((rule) => rule.label)
@@ -3977,7 +3983,14 @@ const GitesPage = () => {
             </div>
             <label className="field expense-statistics__year">
               Année
-              <select value={expenseStatisticsYear} onChange={(event) => setExpenseStatisticsYear(Number(event.target.value))}>
+              <select
+                value={expenseStatisticsYear}
+                onChange={(event) => {
+                  const nextYear = Number(event.target.value);
+                  setExpenseStatisticsYear(nextYear);
+                  void loadStatisticsForYear(nextYear).catch((err) => setError(err.message));
+                }}
+              >
                 {expenseProjectionYears.map((year) => <option key={year} value={year}>{year}</option>)}
               </select>
             </label>
