@@ -5,6 +5,7 @@ import {
   enumerateIsoDates,
   filterArrivalOperationRows,
   getAlreadyHandledArrivalRowKeys,
+  getDisplayedHandledArrivalRowKeys,
   getOperationsForDate,
   reservationOverlapsPeriod,
 } from "../src/utils/printableOperations";
@@ -134,7 +135,7 @@ test("grise la prochaine entrée après une sortie séparée", () => {
   assert.deepEqual([...getAlreadyHandledArrivalRowKeys(rows)], ["2026-07-15-gite-1"]);
 });
 
-test("conserve l'entrée grisée lorsque le filtre masque la sortie précédente", () => {
+test("désactive le grisage des entrées lorsque le filtre masque les sorties", () => {
   const departingReservation = { ...reservation, gite_id: "gite-1" };
   const arrivingReservation = {
     ...reservation,
@@ -151,10 +152,9 @@ test("conserve l'entrée grisée lorsque le filtre masque la sortie précédente
   const arrivalRows = filterArrivalOperationRows(allRows, true);
 
   assert.deepEqual(arrivalRows.map((row) => row.date), ["2026-07-15"]);
-  assert.equal(
-    getAlreadyHandledArrivalRowKeys(allRows).has(`${arrivalRows[0].date}-${arrivalRows[0].giteId}`),
-    true,
-  );
+  const rowKey = `${arrivalRows[0].date}-${arrivalRows[0].giteId}`;
+  assert.equal(getDisplayedHandledArrivalRowKeys(allRows, false).has(rowKey), true);
+  assert.equal(getDisplayedHandledArrivalRowKeys(allRows, true).has(rowKey), false);
 });
 
 test("ne grise pas une rotation réalisée le même jour", () => {

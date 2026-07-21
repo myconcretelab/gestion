@@ -10,7 +10,7 @@ import {
   diffUtcDays,
   enumerateIsoDates,
   filterArrivalOperationRows,
-  getAlreadyHandledArrivalRowKeys,
+  getDisplayedHandledArrivalRowKeys,
   parseIsoDateUtc,
   reservationOverlapsPeriod,
   toIsoDateUtc,
@@ -459,8 +459,8 @@ const OperationsPrintPage = () => {
     [allOperationsByDate, arrivalsOnly],
   );
   const alreadyHandledArrivalRows = useMemo(
-    () => getAlreadyHandledArrivalRowKeys(allOperationsByDate),
-    [allOperationsByDate],
+    () => getDisplayedHandledArrivalRowKeys(allOperationsByDate, arrivalsOnly),
+    [allOperationsByDate, arrivalsOnly],
   );
   const interventionCount = operationsByDate.filter(
     (row) => !alreadyHandledArrivalRows.has(`${row.date}-${row.giteId}`),

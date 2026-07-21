@@ -143,3 +143,8 @@ export const getAlreadyHandledArrivalRowKeys = (rows: PrintableOperationRow[]) =
 
   return handledArrivalRows;
 };
+
+export const getDisplayedHandledArrivalRowKeys = (
+  rows: PrintableOperationRow[],
+  arrivalsOnly: boolean,
+) => arrivalsOnly ? new Set<string>() : getAlreadyHandledArrivalRowKeys(rows);
