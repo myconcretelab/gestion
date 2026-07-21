@@ -306,7 +306,9 @@ privateRouter.post("/", async (req, res, next) => {
     const payload = payloadSchema.parse(req.body);
     await assertGitesExist(payload.gite_ids);
     const identity = await createShareIdentity();
-    const period = await prisma.planningRelayPeriod.create({ data: buildCreateData(payload, identity) });
+    const period = await prisma.planningRelayPeriod.create({
+      data: { ...buildCreateData(payload, identity), public_origin: getRequestOrigin(req) },
+    });
     return res.status(201).json(serializePeriod({ ...period, assignments: [] }));
   } catch (error) {
     return next(error);
@@ -416,6 +418,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
     const period = await prisma.planningRelayPeriod.update({
       where: { id: current.id },
       data: {
+        public_origin: getRequestOrigin(req),
         ...(payload.label !== undefined ? { label: payload.label } : {}),
         date_debut: start,
         date_fin: end,
@@ -523,6 +526,7 @@ privateRouter.post("/:id/rotate-link", async (req, res, next) => {
       data: {
         share_nonce: identity.nonce,
         public_code_hash: identity.publicCodeHash,
+        public_origin: getRequestOrigin(req),
         is_active: true,
         ...(current.expires_at && current.expires_at.getTime() < Date.now()
           ? { expires_at: endOfDay(addDays(new Date(), 7)) }
@@ -544,6 +548,13 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       include: { sms_worker: true },
     });
     if (!current) return res.status(404).json({ error: "Période introuvable." });
+    const requestOrigin = getRequestOrigin(req);
+    if (current.public_origin !== requestOrigin) {
+      await prisma.planningRelayPeriod.update({
+        where: { id: current.id },
+        data: { public_origin: requestOrigin },
+      });
+    }
     if (payload.config) {
       const worker = await prisma.planningRelayWorker.findUnique({ where: { id: payload.config.worker_id } });
       if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
@@ -552,7 +563,7 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
         template: payload.config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
         last_sent_for_date: payload.config.last_sent_for_date ?? null,
         last_attempt_for_date: payload.config.last_attempt_for_date ?? null,
-      }, worker);
+      }, worker, undefined, requestOrigin);
       if (!result.sent) {
         return res.status(409).json({ error: "Aucune intervention n’est prévue sur cette période." });
       }
@@ -605,13 +616,20 @@ privateRouter.post("/:id/preview-sms", async (req, res, next) => {
     const config = smsConfigSchema.parse(req.body?.config);
     const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
     if (!current) return res.status(404).json({ error: "Période introuvable." });
+    const requestOrigin = getRequestOrigin(req);
+    if (current.public_origin !== requestOrigin) {
+      await prisma.planningRelayPeriod.update({
+        where: { id: current.id },
+        data: { public_origin: requestOrigin },
+      });
+    }
     const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_id } });
     if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
     const preview = await previewPlanningRelayConfigSms(current, {
       ...config,
       last_sent_for_date: config.last_sent_for_date ?? null,
       last_attempt_for_date: config.last_attempt_for_date ?? null,
-    }, worker);
+    }, worker, requestOrigin);
     return res.json(preview
       ? { message: preview.message, target_date: preview.targetIsoDate }
       : { message: null, target_date: null });

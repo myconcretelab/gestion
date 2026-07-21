@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildPlanningRelayProgramSmsMessages,
+  buildPlanningRelayPublicUrl,
   getPlanningRelayProgramHeading,
   getPlanningRelayProgramTargetIsoDate,
   getPlanningRelayTestProgramHeading,
@@ -74,6 +75,18 @@ test("buildPlanningRelayProgramSmsMessages regroupe les interventions du jour sa
       "Le Liberte: A partir de 12h (sortie)",
     ].join("\n"),
   ]);
+});
+
+test("utilise le domaine public de la requête et refuse localhost pour un envoi automatique", () => {
+  const period = { share_nonce: "preview-origin-test", public_origin: "http://localhost:5173" };
+  assert.match(
+    buildPlanningRelayPublicUrl(period, "https://gestion.example.fr"),
+    /^https:\/\/gestion\.example\.fr\/r\//,
+  );
+  assert.throws(
+    () => buildPlanningRelayPublicUrl(period, undefined, true),
+    /URL publique manquante/,
+  );
 });
 
 test("personnalise un SMS avec les variables disponibles", () => {

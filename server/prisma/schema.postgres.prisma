@@ -358,6 +358,7 @@ model PlanningRelayPeriod {
   is_active        Boolean   @default(true)
   share_nonce      String
   public_code_hash String?   @unique
+  public_origin    String?
   expires_at       DateTime?
   last_accessed_at DateTime?
   sms_enabled      Boolean   @default(false)
