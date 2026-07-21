@@ -261,6 +261,7 @@ const OperationsPrintPage = () => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedGiteIds, setSelectedGiteIds] = useState<Set<string>>(new Set());
   const [savedPeriods, setSavedPeriods] = useState<PlanningRelayPeriod[]>([]);
+  const [selectedSavedPeriodId, setSelectedSavedPeriodId] = useState<string | null>(null);
   const [savedPeriodsLoaded, setSavedPeriodsLoaded] = useState(false);
   const [savedPeriodsError, setSavedPeriodsError] = useState<string | null>(null);
   const [savedPeriodsNotice, setSavedPeriodsNotice] = useState<string | null>(null);
@@ -455,13 +456,17 @@ const OperationsPrintPage = () => {
     [operationsByDate],
   );
   const interventionCount = operationsByDate.length - alreadyHandledArrivalRows.size;
-  const activeSavedPeriod = useMemo(() => savedPeriods.find((period) =>
-    period.from === from &&
-    period.to === to &&
-    (period.stay_nights ?? null) === (stayNightsFilter ? Number(stayNightsFilter) : null) &&
-    period.gite_ids.length === selectedGiteIds.size &&
-    period.gite_ids.every((id) => selectedGiteIds.has(id))
-  ) ?? null, [from, savedPeriods, selectedGiteIds, stayNightsFilter, to]);
+  const activeSavedPeriod = useMemo(() => {
+    const matchingPeriods = savedPeriods.filter((period) =>
+      period.from === from &&
+      period.to === to &&
+      (period.stay_nights ?? null) === (stayNightsFilter ? Number(stayNightsFilter) : null) &&
+      period.gite_ids.length === selectedGiteIds.size &&
+      period.gite_ids.every((id) => selectedGiteIds.has(id))
+    );
+    return matchingPeriods.find((period) => period.id === selectedSavedPeriodId)
+      ?? (matchingPeriods.length === 1 ? matchingPeriods[0] : null);
+  }, [from, savedPeriods, selectedGiteIds, selectedSavedPeriodId, stayNightsFilter, to]);
   const assignmentByOperationKey = useMemo(() => {
     const assignments = new Map<string, PlanningRelayAssignment>();
     for (const assignment of activeSavedPeriod?.assignments ?? []) {
@@ -515,6 +520,7 @@ const OperationsPrintPage = () => {
         },
       });
       setSavedPeriods((current) => [...current, period]);
+      setSelectedSavedPeriodId(period.id);
       setSavedPeriodsNotice("Période enregistrée.");
     } catch (caught) {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d’enregistrer la période."));
@@ -524,6 +530,7 @@ const OperationsPrintPage = () => {
   };
 
   const applySavedPeriod = (period: PlanningRelayPeriod) => {
+    setSelectedSavedPeriodId(period.id);
     setFrom(period.from);
     setTo(period.to);
     setSelectedGiteIds(new Set(period.gite_ids));
@@ -549,6 +556,7 @@ const OperationsPrintPage = () => {
     try {
       await apiFetch(`/planning-relay-periods/${period.id}`, { method: "DELETE" });
       setSavedPeriods((current) => current.filter((item) => item.id !== period.id));
+      if (selectedSavedPeriodId === period.id) setSelectedSavedPeriodId(null);
     } catch (caught) {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de supprimer la période."));
     }
@@ -602,13 +610,6 @@ const OperationsPrintPage = () => {
     const draft = periodDrafts[periodId] ?? (period ? buildPeriodDraft(period) : null);
     if (!draft) return;
     updatePeriodDraft(periodId, { sms_configs: [...draft.sms_configs, createSmsConfig()] });
-  };
-
-  const removeSmsConfig = (periodId: string, configId: string) => {
-    const period = savedPeriods.find((item) => item.id === periodId);
-    const draft = periodDrafts[periodId] ?? (period ? buildPeriodDraft(period) : null);
-    if (!draft) return;
-    updatePeriodDraft(periodId, { sms_configs: draft.sms_configs.filter((config) => config.id !== configId) });
   };
 
   const updateWorkerDraft = (workerId: string, patch: Partial<PlanningRelayWorkerDraft>) => {
@@ -881,10 +882,7 @@ const OperationsPrintPage = () => {
             <>
               <div className="operations-saved-periods" aria-label="Périodes enregistrées">
                 {savedPeriods.map((period) => {
-                  const isSelected = period.from === from && period.to === to &&
-                    (period.stay_nights ?? null) === (stayNightsFilter ? Number(stayNightsFilter) : null) &&
-                    period.gite_ids.length === selectedGiteIds.size &&
-                    period.gite_ids.every((id) => selectedGiteIds.has(id));
+                  const isSelected = activeSavedPeriod?.id === period.id;
                   const isExpired = Boolean(period.expires_at && new Date(period.expires_at).getTime() < Date.now());
                   const isAvailable = period.is_active && !isExpired;
                   return (
@@ -1022,19 +1020,18 @@ const OperationsPrintPage = () => {
 
                     <details className="operations-sms-accordion">
                       <summary>
-                        <span>Messages SMS</span>
-                        <small>{draft.sms_configs.length} message{draft.sms_configs.length > 1 ? "s" : ""} configuré{draft.sms_configs.length > 1 ? "s" : ""}</small>
+                        <span>SMS de l’intervenant</span>
+                        <small>{draft.sms_configs.length ? "Configuré" : "Non configuré"}</small>
                       </summary>
                       <div className="operations-sms-accordion__content">
-                        <p>Chaque intervenant reçoit uniquement les séjours qui lui sont affectés dans le planning.</p>
-                        {draft.sms_configs.map((config, configIndex) => {
+                        <p>Cette période utilise un seul intervenant et ses propres instructions. Créez une autre période pour un second intervenant.</p>
+                        {draft.sms_configs.map((config) => {
                           const selectedWorker = workers.find((worker) => worker.id === config.worker_id);
                           return (
                             <section key={config.id} className="operations-sms-config">
                               <header>
-                                <strong>SMS {configIndex + 1}</strong>
+                                <strong>Configuration SMS</strong>
                                 <label><input type="checkbox" checked={config.enabled} onChange={(event) => updateSmsConfig(period.id, config.id, { enabled: event.target.checked })} /> Automatique</label>
-                                <button type="button" className="danger" onClick={() => removeSmsConfig(period.id, config.id)}>Retirer</button>
                               </header>
                               <div className="operations-period-detail__grid">
                                 <label className="field">
@@ -1078,7 +1075,9 @@ const OperationsPrintPage = () => {
                             </section>
                           );
                         })}
-                        <button type="button" className="secondary" onClick={() => addSmsConfig(period.id)}>Ajouter un SMS</button>
+                        {draft.sms_configs.length === 0 ? (
+                          <button type="button" className="secondary" onClick={() => addSmsConfig(period.id)}>Configurer le SMS</button>
+                        ) : null}
                       </div>
                     </details>
 

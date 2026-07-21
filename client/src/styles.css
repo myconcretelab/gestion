@@ -5148,14 +5148,6 @@ body {
   font-weight: 700;
 }
 
-.operations-sms-config > header .danger {
-  margin-left: auto;
-  padding: 6px 10px;
-  background: #fee2e2;
-  color: #991b1b;
-  box-shadow: none;
-}
-
 .operations-sms-template textarea {
   min-height: 110px;
   resize: vertical;

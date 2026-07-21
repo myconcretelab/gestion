@@ -89,14 +89,14 @@ test("personnalise un SMS avec les variables disponibles", () => {
   );
 });
 
-test("normalise plusieurs configurations SMS et migre le destinataire historique", () => {
+test("limite chaque période à une configuration SMS et migre le destinataire historique", () => {
   const configs = normalizePlanningRelaySmsConfigs(JSON.stringify([
     { id: "sms-1", worker_id: "worker-1", enabled: true, send_time: "8:05", send_day: "same_day", template: "{{programme}}" },
     { id: "sms-2", worker_id: "worker-2", enabled: false, send_time: "18:00", send_day: "previous_day", template: "Bonjour {{intervenant}}" },
   ]));
-  assert.equal(configs.length, 2);
+  assert.equal(configs.length, 1);
   assert.equal(configs[0].send_time, "08:05");
-  assert.equal(configs[1].worker_id, "worker-2");
+  assert.equal(configs[0].worker_id, "worker-1");
 
   const legacy = normalizePlanningRelaySmsConfigs("[]", {
     sms_enabled: true,
