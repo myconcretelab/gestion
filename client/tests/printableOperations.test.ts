@@ -134,6 +134,29 @@ test("grise la prochaine entrée après une sortie séparée", () => {
   assert.deepEqual([...getAlreadyHandledArrivalRowKeys(rows)], ["2026-07-15-gite-1"]);
 });
 
+test("conserve l'entrée grisée lorsque le filtre masque la sortie précédente", () => {
+  const departingReservation = { ...reservation, gite_id: "gite-1" };
+  const arrivingReservation = {
+    ...reservation,
+    id: "reservation-2",
+    gite_id: "gite-1",
+    date_entree: "2026-07-15",
+    date_sortie: "2026-07-18",
+    options: {},
+  } as Reservation;
+  const allRows = buildPrintableOperationRows(
+    ["2026-07-13", "2026-07-15"],
+    [departingReservation, arrivingReservation],
+  );
+  const arrivalRows = filterArrivalOperationRows(allRows, true);
+
+  assert.deepEqual(arrivalRows.map((row) => row.date), ["2026-07-15"]);
+  assert.equal(
+    getAlreadyHandledArrivalRowKeys(allRows).has(`${arrivalRows[0].date}-${arrivalRows[0].giteId}`),
+    true,
+  );
+});
+
 test("ne grise pas une rotation réalisée le même jour", () => {
   const rows = [
     {
