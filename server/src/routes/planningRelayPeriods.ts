@@ -541,7 +541,7 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
         last_attempt_for_date: payload.config.last_attempt_for_date ?? null,
       }, worker);
       if (!result.sent) {
-        return res.status(409).json({ error: "Aucune intervention affectée à cet intervenant sur cette période." });
+        return res.status(409).json({ error: "Aucune intervention n’est prévue sur cette période." });
       }
       const firstResult = result.results[0];
       return res.json({
