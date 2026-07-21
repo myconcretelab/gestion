@@ -388,25 +388,16 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
 };
 
 export const buildPlanningRelayProgramSmsForPeriod = async (period: {
-  id?: string;
   gite_ids: unknown;
   date_debut?: Date;
   stay_nights?: number | null;
-}, targetIsoDate: string, heading = "Programme demain", workerId?: string) => {
-  let giteIds = [
+}, targetIsoDate: string, heading = "Programme demain") => {
+  const giteIds = [
     ...new Set(
       fromJsonString<unknown[]>(period.gite_ids, [])
         .filter((id): id is string => typeof id === "string" && Boolean(id))
     ),
   ];
-  if (workerId && period.id) {
-    const assignments = await prisma.planningRelayAssignment.findMany({
-      where: { period_id: period.id, date: targetIsoDate, worker_id: workerId },
-      select: { gite_id: true },
-    });
-    const assignedGiteIds = new Set(assignments.map((assignment) => assignment.gite_id));
-    giteIds = giteIds.filter((id) => assignedGiteIds.has(id));
-  }
   if (giteIds.length === 0) return null;
 
   const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
@@ -503,7 +494,7 @@ const buildConfigMessage = async (period: {
   const heading = test
     ? getPlanningRelayTestProgramHeading(targetIsoDate)
     : getPlanningRelayProgramHeading(config.send_day);
-  const messages = await buildPlanningRelayProgramSmsForPeriod(period, targetIsoDate, heading, config.worker_id);
+  const messages = await buildPlanningRelayProgramSmsForPeriod(period, targetIsoDate, heading);
   if (!messages?.length) return null;
   return renderPlanningRelaySmsTemplate(config.template, {
     date: formatPlanningRelaySmsHeadingDate(targetIsoDate),

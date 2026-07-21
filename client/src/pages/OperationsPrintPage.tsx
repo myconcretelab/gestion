@@ -184,7 +184,7 @@ const PlanningRelaySmsLivePreview = ({
     ? "Choisissez un intervenant pour afficher l’aperçu."
     : !config.template.trim()
       ? "Saisissez le texte du SMS pour afficher l’aperçu."
-      : "Aucune intervention n’est affectée à cet intervenant sur cette période.";
+      : "Aucune intervention n’est prévue sur cette période avec les filtres actuels.";
 
   return (
     <section className="operations-sms-preview" aria-live="polite">
@@ -1024,7 +1024,7 @@ const OperationsPrintPage = () => {
                         <small>{draft.sms_configs.length ? "Configuré" : "Non configuré"}</small>
                       </summary>
                       <div className="operations-sms-accordion__content">
-                        <p>Cette période utilise un seul intervenant et ses propres instructions. Créez une autre période pour un second intervenant.</p>
+                        <p>L’intervenant reçoit toutes les interventions de cette période. Créez une autre période pour un second intervenant ou des instructions différentes.</p>
                         {draft.sms_configs.map((config) => {
                           const selectedWorker = workers.find((worker) => worker.id === config.worker_id);
                           return (
