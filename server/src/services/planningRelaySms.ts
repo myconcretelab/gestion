@@ -411,7 +411,7 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
       gite_id: { in: giteIds },
       date_entree: { lt: nextDate },
       date_sortie: { gte: contextStartDate },
-      ...(period.stay_nights ? { nb_nuits: period.stay_nights } : {}),
+      ...(period.stay_nights ? { nb_nuits: { gte: period.stay_nights } } : {}),
     },
     select: {
       id: true,
