@@ -233,6 +233,33 @@ test("buildPlanningRelayProgramSmsMessages ignore les arrivees deja traitees par
     }),
     [],
   );
+
+  assert.deepEqual(
+    buildPlanningRelayProgramSmsMessages({
+      contextStartIsoDate: "2026-07-10",
+      targetIsoDate: "2026-07-13",
+      arrivalsOnly: true,
+      reservations: [
+        {
+          id: "departure-previous",
+          gite_id: "gite-1",
+          date_entree: new Date("2026-07-10T00:00:00.000Z"),
+          date_sortie: new Date("2026-07-12T00:00:00.000Z"),
+          options: { menage: { enabled: true } },
+          gite,
+        },
+        {
+          id: "handled-arrival",
+          gite_id: "gite-1",
+          date_entree: new Date("2026-07-13T00:00:00.000Z"),
+          date_sortie: new Date("2026-07-27T00:00:00.000Z"),
+          options: {},
+          gite,
+        },
+      ],
+    }),
+    ["Programme demain:\nOncle Edmond: Avant 17h (entree)"],
+  );
 });
 
 test("isPlanningRelaySmsDue evite les doublons quotidiens", () => {

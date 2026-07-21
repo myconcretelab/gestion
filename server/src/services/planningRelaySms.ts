@@ -390,7 +390,7 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
     }
 
     if (isSameIsoDate(reservation.date_entree, params.targetIsoDate)) {
-      if (handledArrivalRows.has(`${params.targetIsoDate}-${reservation.gite_id}`)) continue;
+      if (!params.arrivalsOnly && handledArrivalRows.has(`${params.targetIsoDate}-${reservation.gite_id}`)) continue;
       row.hasArrival = true;
       row.arrivalTime ??= formatSmsTime(times?.heure_arrivee ?? reservation.gite.heure_arrivee_defaut);
     }

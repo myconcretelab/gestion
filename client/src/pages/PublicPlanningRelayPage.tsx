@@ -7,7 +7,7 @@ import {
   diffUtcDays,
   enumerateIsoDates,
   filterArrivalOperationRows,
-  getAlreadyHandledArrivalRowKeys,
+  getDisplayedHandledArrivalRowKeys,
   parseIsoDateUtc,
   type StayOperation,
 } from "../utils/printableOperations";
@@ -140,8 +140,8 @@ const PublicPlanningRelayPage = () => {
     [data, days],
   );
   const alreadyHandledArrivalRows = useMemo(
-    () => getAlreadyHandledArrivalRowKeys(allOperationsByDate),
-    [allOperationsByDate],
+    () => getDisplayedHandledArrivalRowKeys(allOperationsByDate, data?.period.arrivals_only ?? false),
+    [allOperationsByDate, data?.period.arrivals_only],
   );
   const interventionCount = operationsByDate.filter((row) => !alreadyHandledArrivalRows.has(`${row.date}-${row.giteId}`)).length;
   const timelineColumns = { "--operations-day-count": Math.max(1, days.length) } as CSSProperties;
