@@ -196,6 +196,11 @@ export type PlanningRelaySmsTestResult = PlanningRelaySmsSendResult & {
   message: string;
 };
 
+export type PlanningRelaySmsPreview = {
+  target_date: string | null;
+  message: string | null;
+};
+
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,

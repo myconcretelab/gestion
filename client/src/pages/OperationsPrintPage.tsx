@@ -20,6 +20,7 @@ import type {
   PlanningRelayAssignment,
   PlanningRelayPeriod,
   PlanningRelaySmsConfig,
+  PlanningRelaySmsPreview,
   PlanningRelaySmsStatus,
   PlanningRelaySmsTestResult,
   PlanningRelayWorker,
@@ -132,6 +133,72 @@ const formatRange = (from: string, to: string) =>
 
 const formatSavedPeriod = (from: string, to: string) =>
   `${formatShortDate(from)} → ${formatShortDate(to)}`;
+
+const PlanningRelaySmsLivePreview = ({
+  period,
+  config,
+}: {
+  period: PlanningRelayPeriod;
+  config: PlanningRelaySmsConfig;
+}) => {
+  const [preview, setPreview] = useState<PlanningRelaySmsPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!config.worker_id || !config.template.trim()) {
+      setPreview(null);
+      setPreviewError(null);
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setLoading(true);
+      setPreviewError(null);
+      apiFetch<PlanningRelaySmsPreview>(`/planning-relay-periods/${period.id}/preview-sms`, {
+        method: "POST",
+        signal: controller.signal,
+        json: { config },
+      })
+        .then(setPreview)
+        .catch((caught) => {
+          if (!isAbortError(caught)) {
+            setPreview(null);
+            setPreviewError(formatApiErrorMessage(caught, "Impossible de générer l’aperçu."));
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [config, period.id]);
+
+  const emptyMessage = !config.worker_id
+    ? "Choisissez un intervenant pour afficher l’aperçu."
+    : !config.template.trim()
+      ? "Saisissez le texte du SMS pour afficher l’aperçu."
+      : "Aucune intervention n’est affectée à cet intervenant sur cette période.";
+
+  return (
+    <section className="operations-sms-preview" aria-live="polite">
+      <header>
+        <strong>Aperçu du SMS envoyé</strong>
+        {preview?.target_date ? <span>Programme du {formatShortDate(preview.target_date)}</span> : null}
+      </header>
+      <div className={`operations-sms-preview__message${preview?.message ? "" : " is-empty"}`}>
+        {loading ? "Actualisation…" : previewError ?? preview?.message ?? emptyMessage}
+      </div>
+      {preview?.message && !loading ? <small>{preview.message.length} caractère{preview.message.length > 1 ? "s" : ""}</small> : null}
+    </section>
+  );
+};
 
 const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft => ({
   label: period.label,
@@ -1000,6 +1067,7 @@ const OperationsPrintPage = () => {
                                   <button key={variable} type="button" className="secondary" onClick={() => updateSmsConfig(period.id, config.id, { template: `${config.template}${config.template ? " " : ""}${variable}` })}>{variable}</button>
                                 ))}
                               </div>
+                              <PlanningRelaySmsLivePreview period={period} config={config} />
                               <div className="operations-period-detail__meta">
                                 <span>Dernière tentative : {config.last_attempt_for_date ? formatShortDate(config.last_attempt_for_date) : "aucune"}</span>
                                 <span>Dernier envoi : {config.last_sent_for_date ? formatShortDate(config.last_sent_for_date) : "aucun"}</span>
