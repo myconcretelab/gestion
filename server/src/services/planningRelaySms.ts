@@ -109,6 +109,18 @@ export const normalizePlanningRelaySmsConfigs = (
   }];
 };
 
+export const buildPlanningRelayPublicUrl = (
+  period: { share_nonce: string; public_origin?: string | null },
+  publicOrigin?: string,
+  requirePublicOrigin = false,
+) => {
+  const parsedOrigin = new URL(publicOrigin || period.public_origin || env.CLIENT_ORIGIN);
+  if (requirePublicOrigin && ["localhost", "127.0.0.1", "::1"].includes(parsedOrigin.hostname)) {
+    throw new Error("URL publique manquante: configurez CLIENT_ORIGIN avec le domaine de production.");
+  }
+  return new URL(`/r/${buildPlanningRelayShortCode(period.share_nonce)}`, parsedOrigin).toString();
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const parsePlanningRelayIsoDate = (value: string) => {
@@ -490,7 +502,8 @@ const buildConfigMessage = async (period: {
   date_debut: Date;
   stay_nights?: number | null;
   share_nonce: string;
-}, config: PlanningRelaySmsConfig, worker: { nom: string }, targetIsoDate: string, test = false) => {
+  public_origin?: string | null;
+}, config: PlanningRelaySmsConfig, worker: { nom: string }, targetIsoDate: string, test = false, publicOrigin?: string, requirePublicOrigin = false) => {
   const heading = test
     ? getPlanningRelayTestProgramHeading(targetIsoDate)
     : getPlanningRelayProgramHeading(config.send_day);
@@ -501,7 +514,7 @@ const buildConfigMessage = async (period: {
     programme: messages.join("\n"),
     intervenant: worker.nom,
     periode: period.label,
-    lien: new URL(`/r/${buildPlanningRelayShortCode(period.share_nonce)}`, env.CLIENT_ORIGIN).toString(),
+    lien: buildPlanningRelayPublicUrl(period, publicOrigin, requirePublicOrigin),
   });
 };
 
@@ -513,11 +526,12 @@ export const previewPlanningRelayConfigSms = async (period: {
   date_fin: Date;
   stay_nights?: number | null;
   share_nonce: string;
-}, config: PlanningRelaySmsConfig, worker: { nom: string }) => {
+  public_origin?: string | null;
+}, config: PlanningRelaySmsConfig, worker: { nom: string }, publicOrigin?: string) => {
   let targetIsoDate = toPlanningRelayIsoDate(period.date_debut);
   const endIsoDate = toPlanningRelayIsoDate(period.date_fin);
   while (targetIsoDate <= endIsoDate) {
-    const message = await buildConfigMessage(period, config, worker, targetIsoDate);
+    const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, publicOrigin);
     if (message) return { targetIsoDate, message };
     targetIsoDate = addPlanningRelayIsoDays(targetIsoDate, 1);
   }
@@ -532,13 +546,14 @@ export const sendPlanningRelayConfigTestSms = async (period: {
   date_fin: Date;
   stay_nights?: number | null;
   share_nonce: string;
-}, config: PlanningRelaySmsConfig, worker: { nom: string; telephone: string }, currentIsoDate = getParisDateTimeParts().isoDate) => {
+  public_origin?: string | null;
+}, config: PlanningRelaySmsConfig, worker: { nom: string; telephone: string }, currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
   let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
     ? toPlanningRelayIsoDate(period.date_debut)
     : currentIsoDate;
   const endIsoDate = toPlanningRelayIsoDate(period.date_fin);
   while (targetIsoDate <= endIsoDate) {
-    const message = await buildConfigMessage(period, config, worker, targetIsoDate, true);
+    const message = await buildConfigMessage(period, config, worker, targetIsoDate, true, publicOrigin);
     if (message) {
       const result = await sendOvhSms({ recipient: worker.telephone, message });
       return { sent: true as const, targetIsoDate, messages: [message], results: [result] };
@@ -622,7 +637,7 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
       try {
         const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_id } });
         if (!worker?.telephone.trim()) throw new Error("Intervenant SMS ou numero manquant.");
-        const message = await buildConfigMessage(period, config, worker, targetIsoDate);
+        const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
         if (!message) continue;
         await sendOvhSms({ recipient: worker.telephone, message });
         configs[configIndex] = { ...configs[configIndex], last_sent_for_date: targetIsoDate };
