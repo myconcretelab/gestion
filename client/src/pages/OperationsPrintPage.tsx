@@ -215,7 +215,7 @@ const createSmsConfig = (): PlanningRelaySmsConfig => ({
   enabled: true,
   send_time: "18:00",
   send_day: "previous_day",
-  template: "{{programme}}",
+  template: "{{gite}} : {{horaire}} ({{in-out}})",
   last_sent_for_date: null,
   last_attempt_for_date: null,
 });
@@ -1015,7 +1015,7 @@ const OperationsPrintPage = () => {
                               </label>
                               <div className="operations-sms-variables" aria-label="Variables disponibles">
                                 <span>Variables :</span>
-                                {["{{programme}}", "{{date}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
+                                {["{{gite}}", "{{horaire}}", "{{in-out}}", "{{date}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
                                   <button key={variable} type="button" className="secondary" onClick={() => updateSmsConfig(period.id, config.id, { template: `${config.template}${config.template ? " " : ""}${variable}` })}>{variable}</button>
                                 ))}
                               </div>
