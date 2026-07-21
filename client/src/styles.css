@@ -5177,6 +5177,55 @@ body {
   font-size: 0.68rem;
 }
 
+.operations-sms-preview {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  background: var(--primary-soft);
+}
+
+.operations-sms-preview > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.operations-sms-preview > header strong {
+  color: var(--primary-strong);
+  font-size: 0.84rem;
+}
+
+.operations-sms-preview > header span,
+.operations-sms-preview > small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.operations-sms-preview__message {
+  min-height: 72px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.operations-sms-preview__message.is-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.operations-sms-preview > small {
+  justify-self: end;
+}
+
 .operations-controls__options {
   grid-column: 1 / -1;
   display: flex;

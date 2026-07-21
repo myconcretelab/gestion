@@ -25,6 +25,7 @@ import {
   normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsConfigs,
   normalizePlanningRelaySmsTime,
+  previewPlanningRelayConfigSms,
   sendPlanningRelayConfigTestSms,
   sendPlanningRelayProgramTestSms,
 } from "../services/planningRelaySms.js";
@@ -581,6 +582,26 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       invalid_receivers: result.results.flatMap((item) => item.invalidReceivers ?? []),
       valid_receivers: result.results.flatMap((item) => item.validReceivers ?? []),
     });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.post("/:id/preview-sms", async (req, res, next) => {
+  try {
+    const config = smsConfigSchema.parse(req.body?.config);
+    const current = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: "Période introuvable." });
+    const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_id } });
+    if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
+    const preview = await previewPlanningRelayConfigSms(current, {
+      ...config,
+      last_sent_for_date: config.last_sent_for_date ?? null,
+      last_attempt_for_date: config.last_attempt_for_date ?? null,
+    }, worker);
+    return res.json(preview
+      ? { message: preview.message, target_date: preview.targetIsoDate }
+      : { message: null, target_date: null });
   } catch (error) {
     return next(error);
   }

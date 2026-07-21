@@ -514,6 +514,25 @@ const buildConfigMessage = async (period: {
   });
 };
 
+export const previewPlanningRelayConfigSms = async (period: {
+  id: string;
+  label: string;
+  gite_ids: unknown;
+  date_debut: Date;
+  date_fin: Date;
+  stay_nights?: number | null;
+  share_nonce: string;
+}, config: PlanningRelaySmsConfig, worker: { nom: string }) => {
+  let targetIsoDate = toPlanningRelayIsoDate(period.date_debut);
+  const endIsoDate = toPlanningRelayIsoDate(period.date_fin);
+  while (targetIsoDate <= endIsoDate) {
+    const message = await buildConfigMessage(period, config, worker, targetIsoDate);
+    if (message) return { targetIsoDate, message };
+    targetIsoDate = addPlanningRelayIsoDays(targetIsoDate, 1);
+  }
+  return null;
+};
+
 export const sendPlanningRelayConfigTestSms = async (period: {
   id: string;
   label: string;
