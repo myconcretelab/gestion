@@ -78,6 +78,41 @@ test("buildPlanningRelayProgramSmsMessages regroupe les interventions du jour sa
   ]);
 });
 
+test("le filtre d'entrées SMS conserve les rotations et masque les sorties seules", () => {
+  const messages = buildPlanningRelayProgramSmsMessages({
+    targetIsoDate: "2026-07-11",
+    arrivalsOnly: true,
+    reservations: [
+      {
+        id: "departure-1",
+        gite_id: "gite-1",
+        date_entree: new Date("2026-07-08T00:00:00.000Z"),
+        date_sortie: new Date("2026-07-11T00:00:00.000Z"),
+        options: {},
+        gite: { id: "gite-1", nom: "Rotation", ordre: 1, heure_arrivee_defaut: "17:00", heure_depart_defaut: "10:00" },
+      },
+      {
+        id: "arrival-1",
+        gite_id: "gite-1",
+        date_entree: new Date("2026-07-11T00:00:00.000Z"),
+        date_sortie: new Date("2026-07-14T00:00:00.000Z"),
+        options: {},
+        gite: { id: "gite-1", nom: "Rotation", ordre: 1, heure_arrivee_defaut: "17:00", heure_depart_defaut: "10:00" },
+      },
+      {
+        id: "departure-2",
+        gite_id: "gite-2",
+        date_entree: new Date("2026-07-08T00:00:00.000Z"),
+        date_sortie: new Date("2026-07-11T00:00:00.000Z"),
+        options: {},
+        gite: { id: "gite-2", nom: "Sortie seule", ordre: 2, heure_arrivee_defaut: "17:00", heure_depart_defaut: "10:00" },
+      },
+    ],
+  });
+
+  assert.deepEqual(messages, ["Programme demain:\nRotation: Entre 10h et 17h (entree + sortie)"]);
+});
+
 test("utilise le domaine public de la requête et refuse localhost pour un envoi automatique", () => {
   const period = { share_nonce: "preview-origin-test", public_origin: "http://localhost:5173" };
   assert.match(

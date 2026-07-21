@@ -109,6 +109,13 @@ export const buildPrintableOperationRows = (dates: string[], reservations: Reser
   return rows;
 };
 
+export const filterArrivalOperationRows = (rows: PrintableOperationRow[], arrivalsOnly: boolean) =>
+  arrivalsOnly
+    ? rows.filter((row) => row.stays.some((stay) =>
+        stay.operations.some((operation) => operation.kind === "arrival")
+      ))
+    : rows;
+
 export const getAlreadyHandledArrivalRowKeys = (rows: PrintableOperationRow[]) => {
   const pendingDepartureByGite = new Set<string>();
   const handledArrivalRows = new Set<string>();

@@ -338,6 +338,7 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
   targetIsoDate: string;
   contextStartIsoDate?: string;
   heading?: string;
+  arrivalsOnly?: boolean;
   reservations: ProgramReservation[];
   contracts?: ProgramContractTime[];
 }) => {
@@ -397,6 +398,7 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
 
   const lines = [...rowsByGite.values()]
     .filter((row) => row.hasArrival || row.hasDeparture)
+    .filter((row) => !params.arrivalsOnly || row.hasArrival)
     .sort((left, right) =>
       left.giteOrder - right.giteOrder ||
       left.giteName.localeCompare(right.giteName, "fr")
@@ -419,6 +421,7 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
   gite_ids: unknown;
   date_debut?: Date;
   stay_nights?: number | null;
+  arrivals_only?: boolean;
 }, targetIsoDate: string, heading = "Programme demain") => {
   const giteIds = [
     ...new Set(
@@ -469,7 +472,14 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
       })
     : [];
 
-  return buildPlanningRelayProgramSmsMessages({ targetIsoDate, contextStartIsoDate, heading, reservations, contracts });
+  return buildPlanningRelayProgramSmsMessages({
+    targetIsoDate,
+    contextStartIsoDate,
+    heading,
+    arrivalsOnly: period.arrivals_only,
+    reservations,
+    contracts,
+  });
 };
 
 export const sendPlanningRelayProgramSms = async (period: {
@@ -482,6 +492,7 @@ export const sendPlanningRelayProgramSms = async (period: {
   } | null;
   sms_send_day?: string | null;
   stay_nights?: number | null;
+  arrivals_only?: boolean;
 }, targetIsoDate: string) => {
   const recipient = getPlanningRelaySmsRecipient(period);
   if (!recipient) throw new Error("Numero SMS manquant pour la periode relais.");
@@ -517,6 +528,7 @@ const buildConfigMessage = async (period: {
   gite_ids: unknown;
   date_debut: Date;
   stay_nights?: number | null;
+  arrivals_only?: boolean;
   share_nonce: string;
   public_origin?: string | null;
 }, config: PlanningRelaySmsConfig, worker: { nom: string }, targetIsoDate: string, test = false, publicOrigin?: string, requirePublicOrigin = false) => {
@@ -544,6 +556,7 @@ export const previewPlanningRelayConfigSms = async (period: {
   date_debut: Date;
   date_fin: Date;
   stay_nights?: number | null;
+  arrivals_only?: boolean;
   share_nonce: string;
   public_origin?: string | null;
 }, config: PlanningRelaySmsConfig, worker: { nom: string }, publicOrigin?: string) => {
@@ -564,6 +577,7 @@ export const sendPlanningRelayConfigTestSms = async (period: {
   date_debut: Date;
   date_fin: Date;
   stay_nights?: number | null;
+  arrivals_only?: boolean;
   share_nonce: string;
   public_origin?: string | null;
 }, config: PlanningRelaySmsConfig, worker: { nom: string; telephone: string }, currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
@@ -586,6 +600,7 @@ export const sendPlanningRelayProgramTestSms = async (period: {
   gite_ids: unknown;
   date_debut: Date;
   date_fin: Date;
+  arrivals_only?: boolean;
   sms_recipient: string | null;
   sms_worker?: {
     telephone: string | null;

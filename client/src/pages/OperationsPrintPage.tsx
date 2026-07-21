@@ -9,6 +9,7 @@ import {
   buildPrintableOperationRows,
   diffUtcDays,
   enumerateIsoDates,
+  filterArrivalOperationRows,
   getAlreadyHandledArrivalRowKeys,
   parseIsoDateUtc,
   reservationOverlapsPeriod,
@@ -41,6 +42,8 @@ type PlanningRelayPeriodDraft = {
   show_timeline: boolean;
   show_comments: boolean;
   show_phones: boolean;
+  show_options: boolean;
+  arrivals_only: boolean;
   stay_nights: string;
   sms_configs: PlanningRelaySmsConfig[];
 };
@@ -205,6 +208,8 @@ const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft
   show_timeline: period.show_timeline,
   show_comments: period.show_comments,
   show_phones: period.show_phones,
+  show_options: period.show_options,
+  arrivals_only: period.arrivals_only,
   stay_nights: period.stay_nights ? String(period.stay_nights) : "",
   sms_configs: period.sms_configs ?? [],
 });
@@ -280,6 +285,8 @@ const OperationsPrintPage = () => {
   const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [arrivalsOnly, setArrivalsOnly] = useState(false);
   const [stayNightsFilter, setStayNightsFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -415,6 +422,8 @@ const OperationsPrintPage = () => {
               show_timeline: false,
               show_comments: false,
               show_phones: false,
+              show_options: false,
+              arrivals_only: false,
             },
           });
         }
@@ -442,16 +451,16 @@ const OperationsPrintPage = () => {
     [from, reservations, selectedGiteIds, stayNightsFilter, to]
   );
 
-  const operationsByDate = useMemo(() => {
+  const allOperationsByDate = useMemo(() => {
     return buildPrintableOperationRows(days, visibleReservations);
   }, [days, visibleReservations]);
-  const hasOptionsInPeriod = useMemo(
-    () => operationsByDate.some((row) => row.stays.some((stay) => stay.operations.some((operation) => !["arrival", "departure"].includes(operation.kind)))),
-    [operationsByDate]
+  const operationsByDate = useMemo(
+    () => filterArrivalOperationRows(allOperationsByDate, arrivalsOnly),
+    [allOperationsByDate, arrivalsOnly],
   );
   const alreadyHandledArrivalRows = useMemo(
-    () => getAlreadyHandledArrivalRowKeys(operationsByDate),
-    [operationsByDate],
+    () => getAlreadyHandledArrivalRowKeys(allOperationsByDate),
+    [allOperationsByDate],
   );
   const interventionCount = operationsByDate.length - alreadyHandledArrivalRows.size;
   const activeSavedPeriod = useMemo(() => {
@@ -459,12 +468,14 @@ const OperationsPrintPage = () => {
       period.from === from &&
       period.to === to &&
       (period.stay_nights ?? null) === (stayNightsFilter ? Number(stayNightsFilter) : null) &&
+      period.arrivals_only === arrivalsOnly &&
+      period.show_options === showOptions &&
       period.gite_ids.length === selectedGiteIds.size &&
       period.gite_ids.every((id) => selectedGiteIds.has(id))
     );
     return matchingPeriods.find((period) => period.id === selectedSavedPeriodId)
       ?? (matchingPeriods.length === 1 ? matchingPeriods[0] : null);
-  }, [from, savedPeriods, selectedGiteIds, selectedSavedPeriodId, stayNightsFilter, to]);
+  }, [arrivalsOnly, from, savedPeriods, selectedGiteIds, selectedSavedPeriodId, showOptions, stayNightsFilter, to]);
   const activeWorkers = useMemo(
     () => workers.filter((worker) => worker.is_active),
     [workers],
@@ -507,6 +518,8 @@ const OperationsPrintPage = () => {
           show_timeline: showTimeline,
           show_comments: showComments,
           show_phones: showPhones,
+          show_options: showOptions,
+          arrivals_only: arrivalsOnly,
           stay_nights: stayNightsFilter ? Number(stayNightsFilter) : null,
         },
       });
@@ -528,6 +541,8 @@ const OperationsPrintPage = () => {
     setShowTimeline(period.show_timeline);
     setShowComments(period.show_comments);
     setShowPhones(period.show_phones);
+    setShowOptions(period.show_options);
+    setArrivalsOnly(period.arrivals_only);
     setStayNightsFilter(period.stay_nights ? String(period.stay_nights) : "");
   };
 
@@ -712,6 +727,8 @@ const OperationsPrintPage = () => {
           show_timeline: draft.show_timeline,
           show_comments: draft.show_comments,
           show_phones: draft.show_phones,
+          show_options: draft.show_options,
+          arrivals_only: draft.arrivals_only,
           stay_nights: draft.stay_nights ? Number(draft.stay_nights) : null,
           sms_configs: draft.sms_configs,
         },
@@ -894,6 +911,8 @@ const OperationsPrintPage = () => {
           </fieldset>
           <div className="operations-detail-toggles">
             <label><input type="checkbox" checked={showTimeline} onChange={(event) => setShowTimeline(event.target.checked)} /> Tableau graphique</label>
+            <label><input type="checkbox" checked={arrivalsOnly} onChange={(event) => setArrivalsOnly(event.target.checked)} /> Entrées uniquement</label>
+            <label><input type="checkbox" checked={showOptions} onChange={(event) => setShowOptions(event.target.checked)} /> Afficher la colonne Options</label>
             <label><input type="checkbox" checked={showComments} onChange={(event) => setShowComments(event.target.checked)} /> Commentaires</label>
             <label><input type="checkbox" checked={showPhones} onChange={(event) => setShowPhones(event.target.checked)} /> Téléphones</label>
           </div>
@@ -963,6 +982,22 @@ const OperationsPrintPage = () => {
                     </div>
 
                     <div className="operations-period-detail__toggles">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.arrivals_only}
+                          onChange={(event) => updatePeriodDraft(period.id, { arrivals_only: event.target.checked })}
+                        />
+                        Entrées uniquement
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.show_options}
+                          onChange={(event) => updatePeriodDraft(period.id, { show_options: event.target.checked })}
+                        />
+                        Afficher la colonne Options
+                      </label>
                       <label>
                         <input
                           type="checkbox"
@@ -1327,13 +1362,13 @@ const OperationsPrintPage = () => {
             {operationsByDate.length === 0 ? (
               <div className="operations-empty">Aucune entrée ni sortie sur cette période.</div>
             ) : (
-              <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}`}>
+              <table className={`operations-table${showOptions ? "" : " operations-table--without-options"}`}>
                 <thead>
                   <tr>
                     <th className="operations-table__date-heading">Date</th>
                     <th className="operations-table__gite-heading">Gîte</th>
                     <th className="operations-table__type-heading">Type</th>
-                    {hasOptionsInPeriod ? <th className="operations-table__options-heading">Options</th> : null}
+                    {showOptions ? <th className="operations-table__options-heading">Options</th> : null}
                     <th className="operations-table__stay-heading">Séjour</th>
                     {showComments || showPhones ? <th className="operations-table__information-heading">Informations</th> : null}
                   </tr>
@@ -1364,7 +1399,7 @@ const OperationsPrintPage = () => {
                             {stays.flatMap((stay) => stay.operations.filter((operation) => ["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}
                           </div>
                         </td>
-                        {hasOptionsInPeriod ? (
+                        {showOptions ? (
                           <td className="operations-table__options">
                             <div className="operations-badges">
                               {stays.flatMap((stay) => stay.operations.filter((operation) => !["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}

@@ -124,6 +124,8 @@ export type PlanningRelayPeriod = {
   show_timeline: boolean;
   show_comments: boolean;
   show_phones: boolean;
+  show_options: boolean;
+  arrivals_only: boolean;
   stay_nights: number | null;
   is_active: boolean;
   expires_at: string | null;
@@ -204,7 +206,7 @@ export type PlanningRelaySmsPreview = {
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,
-    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "stay_nights" | "expires_at"
+    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "show_options" | "arrivals_only" | "stay_nights" | "expires_at"
   >;
   assignments: PlanningRelayAssignment[];
   gites: Gite[];

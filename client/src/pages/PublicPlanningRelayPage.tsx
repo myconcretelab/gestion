@@ -6,6 +6,7 @@ import {
   buildPrintableOperationRows,
   diffUtcDays,
   enumerateIsoDates,
+  filterArrivalOperationRows,
   getAlreadyHandledArrivalRowKeys,
   parseIsoDateUtc,
   type StayOperation,
@@ -133,12 +134,10 @@ const PublicPlanningRelayPage = () => {
     [allDays, data],
   );
   const operationsByDate = useMemo(
-    () => data ? buildPrintableOperationRows(days, data.reservations) : [],
+    () => data
+      ? filterArrivalOperationRows(buildPrintableOperationRows(days, data.reservations), data.period.arrivals_only)
+      : [],
     [data, days],
-  );
-  const hasOptionsInPeriod = useMemo(
-    () => operationsByDate.some((row) => row.stays.some((stay) => stay.operations.some((operation) => !["arrival", "departure"].includes(operation.kind)))),
-    [operationsByDate],
   );
   const alreadyHandledArrivalRows = useMemo(
     () => getAlreadyHandledArrivalRowKeys(allOperationsByDate),
@@ -247,12 +246,12 @@ const PublicPlanningRelayPage = () => {
         <section className="operations-table-section">
           <h3>Interventions à prévoir</h3>
           {operationsByDate.length === 0 ? <div className="operations-empty">{hidePastDays ? "Aucune intervention à venir sur cette période." : "Aucune entrée ni sortie sur cette période."}</div> : (
-            <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}`}>
+            <table className={`operations-table${period.show_options ? "" : " operations-table--without-options"}`}>
               <thead><tr>
                 <th className="operations-table__date-heading">Date</th>
                 <th className="operations-table__gite-heading">Gîte</th>
                 <th className="operations-table__type-heading">Type</th>
-                {hasOptionsInPeriod ? <th className="operations-table__options-heading">Options</th> : null}
+                {period.show_options ? <th className="operations-table__options-heading">Options</th> : null}
                 <th className="operations-table__stay-heading">Séjour</th>
                 {period.show_comments || period.show_phones ? <th className="operations-table__information-heading">Informations</th> : null}
               </tr></thead>
@@ -273,7 +272,7 @@ const PublicPlanningRelayPage = () => {
                       <td><div className="operations-table__date"><strong>{formatOperationDate(date)}</strong><span>{getOperationSchedule(firstReservation, hasArrival, hasDeparture)}</span></div></td>
                       <td><strong>{firstReservation.gite?.nom ?? "Gîte"}</strong></td>
                       <td className="operations-table__type"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => ["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td>
-                      {hasOptionsInPeriod ? <td className="operations-table__options"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => !["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td> : null}
+                      {period.show_options ? <td className="operations-table__options"><div className="operations-badges">{stays.flatMap((stay) => stay.operations.filter((operation) => !["arrival", "departure"].includes(operation.kind)).map((operation) => <span key={`${stay.reservation.id}-${operation.kind}`} className={`operations-badge operations-badge--${operation.kind}`}>{operation.label}</span>))}</div></td> : null}
                       <td className="operations-table__stay-cell">
                         <div className={`operations-stay-summaries${isRotation ? " operations-stay-summaries--rotation" : ""}`}>
                           {stays.map((stay) => {
