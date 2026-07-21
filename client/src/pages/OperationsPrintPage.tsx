@@ -17,7 +17,6 @@ import {
 } from "../utils/printableOperations";
 import type {
   Gite,
-  PlanningRelayAssignment,
   PlanningRelayPeriod,
   PlanningRelaySmsConfig,
   PlanningRelaySmsPreview,
@@ -277,7 +276,6 @@ const OperationsPrintPage = () => {
   const [savingWorkerId, setSavingWorkerId] = useState<string | null>(null);
   const [deletingWorkerId, setDeletingWorkerId] = useState<string | null>(null);
   const [creatingWorker, setCreatingWorker] = useState(false);
-  const [savingAssignmentKey, setSavingAssignmentKey] = useState<string | null>(null);
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -467,13 +465,6 @@ const OperationsPrintPage = () => {
     return matchingPeriods.find((period) => period.id === selectedSavedPeriodId)
       ?? (matchingPeriods.length === 1 ? matchingPeriods[0] : null);
   }, [from, savedPeriods, selectedGiteIds, selectedSavedPeriodId, stayNightsFilter, to]);
-  const assignmentByOperationKey = useMemo(() => {
-    const assignments = new Map<string, PlanningRelayAssignment>();
-    for (const assignment of activeSavedPeriod?.assignments ?? []) {
-      assignments.set(`${assignment.date}-${assignment.gite_id}`, assignment);
-    }
-    return assignments;
-  }, [activeSavedPeriod]);
   const activeWorkers = useMemo(
     () => workers.filter((worker) => worker.is_active),
     [workers],
@@ -543,12 +534,6 @@ const OperationsPrintPage = () => {
   const updateSavedPeriod = (updated: PlanningRelayPeriod) => {
     setSavedPeriods((current) => current.map((period) => period.id === updated.id ? updated : period));
     setPeriodDrafts((current) => ({ ...current, [updated.id]: buildPeriodDraft(updated) }));
-  };
-
-  const updateSavedPeriodAssignments = (periodId: string, assignments: PlanningRelayAssignment[]) => {
-    setSavedPeriods((current) => current.map((period) =>
-      period.id === periodId ? { ...period, assignments } : period
-    ));
   };
 
   const removeSavedPeriod = async (period: PlanningRelayPeriod) => {
@@ -688,7 +673,7 @@ const OperationsPrintPage = () => {
   };
 
   const deleteWorker = async (worker: PlanningRelayWorker) => {
-    if (!window.confirm(`Supprimer l'intervenant « ${worker.nom} » ? Les affectations associées seront retirées.`)) return;
+    if (!window.confirm(`Supprimer l'intervenant « ${worker.nom} » ? Il sera retiré des périodes qui l’utilisent.`)) return;
     setDeletingWorkerId(worker.id);
     setSavedPeriodsError(null);
     setSavedPeriodsNotice(null);
@@ -701,34 +686,6 @@ const OperationsPrintPage = () => {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de supprimer l'intervenant."));
     } finally {
       setDeletingWorkerId(null);
-    }
-  };
-
-  const saveOperationAssignment = async (date: string, giteId: string, workerId: string) => {
-    if (!activeSavedPeriod) {
-      setSavedPeriodsError("Enregistrez ou appliquez une période avant d'affecter les intervenants.");
-      return;
-    }
-
-    const key = `${date}-${giteId}`;
-    setSavingAssignmentKey(key);
-    setSavedPeriodsError(null);
-    setSavedPeriodsNotice(null);
-    try {
-      const assignments = await apiFetch<PlanningRelayAssignment[]>(`/planning-relay-periods/${activeSavedPeriod.id}/assignments`, {
-        method: "PATCH",
-        json: {
-          date,
-          gite_id: giteId,
-          worker_id: workerId || null,
-        },
-      });
-      updateSavedPeriodAssignments(activeSavedPeriod.id, assignments);
-      setSavedPeriodsNotice(workerId ? "Intervenant affecté." : "Affectation retirée.");
-    } catch (caught) {
-      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'enregistrer l'affectation."));
-    } finally {
-      setSavingAssignmentKey(null);
     }
   };
 
@@ -915,9 +872,7 @@ const OperationsPrintPage = () => {
                 {activeWorkers.length > 4 ? <span>+{activeWorkers.length - 4}</span> : null}
               </div>
             ) : null}
-            {!activeSavedPeriod ? (
-              <p>Appliquez une période enregistrée pour affecter les lignes.</p>
-            ) : null}
+            <p>Chaque période peut utiliser un intervenant pour son SMS automatique.</p>
             <button type="button" className="secondary" onClick={() => setWorkerManagerIsOpen(true)}>
               Gérer les intervenants
             </button>
@@ -1372,14 +1327,13 @@ const OperationsPrintPage = () => {
             {operationsByDate.length === 0 ? (
               <div className="operations-empty">Aucune entrée ni sortie sur cette période.</div>
             ) : (
-              <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}${activeSavedPeriod ? " operations-table--with-workers" : ""}`}>
+              <table className={`operations-table${hasOptionsInPeriod ? "" : " operations-table--without-options"}`}>
                 <thead>
                   <tr>
                     <th className="operations-table__date-heading">Date</th>
                     <th className="operations-table__gite-heading">Gîte</th>
                     <th className="operations-table__type-heading">Type</th>
                     {hasOptionsInPeriod ? <th className="operations-table__options-heading">Options</th> : null}
-                    {activeSavedPeriod ? <th className="operations-table__worker-heading">Intervenant</th> : null}
                     <th className="operations-table__stay-heading">Séjour</th>
                     {showComments || showPhones ? <th className="operations-table__information-heading">Informations</th> : null}
                   </tr>
@@ -1392,9 +1346,6 @@ const OperationsPrintPage = () => {
                     const isRotation = hasArrival && hasDeparture;
                     const firstReservation = stays[0].reservation;
                     const isAlreadyHandledArrival = alreadyHandledArrivalRows.has(`${date}-${giteId}`);
-                    const assignmentKey = `${date}-${giteId}`;
-                    const assignment = assignmentByOperationKey.get(assignmentKey);
-                    const assignedWorker = assignment?.worker ?? workers.find((worker) => worker.id === assignment?.worker_id) ?? null;
                     return (
                       <tr
                         key={`${date}-${giteId}`}
@@ -1420,36 +1371,6 @@ const OperationsPrintPage = () => {
                             </div>
                           </td>
                         ) : null}
-                        {activeSavedPeriod ? (
-                          <td className="operations-table__worker-cell">
-                            <div className="operations-worker-assignment">
-                              <select
-                                className="no-print"
-                                value={assignment?.worker_id ?? ""}
-                                onChange={(event) => void saveOperationAssignment(date, giteId, event.target.value)}
-                                disabled={savingAssignmentKey === assignmentKey}
-                                aria-label={`Intervenant pour ${firstReservation.gite?.nom ?? "gîte"} le ${formatShortDate(date)}`}
-                              >
-                                <option value="">Aucun</option>
-                                {activeWorkers.map((worker) => (
-                                  <option key={worker.id} value={worker.id}>{worker.nom}</option>
-                                ))}
-                                {assignedWorker && !assignedWorker.is_active ? (
-                                  <option value={assignedWorker.id}>{assignedWorker.nom} (inactif)</option>
-                                ) : null}
-                              </select>
-                              {assignedWorker ? (
-                                <div className="operations-worker-print">
-                                  <strong>{assignedWorker.nom}</strong>
-                                  <span>{assignedWorker.telephone}</span>
-                                  {assignedWorker.email ? <span>{assignedWorker.email}</span> : null}
-                                </div>
-                              ) : (
-                                <span className="operations-worker-empty">Aucun</span>
-                              )}
-                            </div>
-                          </td>
-                        ) : null}
                         <td className="operations-table__stay-cell">
                           <div className={`operations-stay-summaries${isRotation ? " operations-stay-summaries--rotation" : ""}`}>
                             {stays.map((stay) => {
@@ -1470,12 +1391,12 @@ const OperationsPrintPage = () => {
                         {showComments || showPhones ? (
                           <td className="operations-table__information-cell">
                             {stays.map(({ reservation }) => {
-                              const hasInformation = (showPhones && reservation.telephone && !assignedWorker) || (showComments && reservation.commentaire);
+                              const hasInformation = (showPhones && reservation.telephone) || (showComments && reservation.commentaire);
                               if (!hasInformation) return null;
                               return (
                                 <div key={reservation.id} className="operations-stay-information">
                                   {isRotation ? <strong>{reservation.hote_nom}</strong> : null}
-                                  {showPhones && reservation.telephone && !assignedWorker ? <span>{reservation.telephone}</span> : null}
+                                  {showPhones && reservation.telephone ? <span>{reservation.telephone}</span> : null}
                                   {showComments && reservation.commentaire ? <span>{reservation.commentaire}</span> : null}
                                 </div>
                               );

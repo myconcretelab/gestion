@@ -365,7 +365,20 @@ privateRouter.patch("/workers/:id", async (req, res, next) => {
 
 privateRouter.delete("/workers/:id", async (req, res, next) => {
   try {
-    await prisma.planningRelayWorker.delete({ where: { id: req.params.id } });
+    const worker = await prisma.planningRelayWorker.findUnique({ where: { id: req.params.id } });
+    if (!worker) return res.status(404).json({ error: "Intervenant introuvable." });
+    const periods = await prisma.planningRelayPeriod.findMany();
+    const periodsUsingWorker = periods.filter((period) =>
+      normalizePlanningRelaySmsConfigs(period.sms_configs, period)
+        .some((config) => config.worker_id === worker.id)
+    );
+    await prisma.$transaction([
+      ...periodsUsingWorker.map((period) => prisma.planningRelayPeriod.update({
+        where: { id: period.id },
+        data: { sms_configs: encodeJsonField([]) },
+      })),
+      prisma.planningRelayWorker.delete({ where: { id: worker.id } }),
+    ]);
     return res.status(204).end();
   } catch (error) {
     return next(error);
