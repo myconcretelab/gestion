@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildPlanningRelayProgramSmsMessages,
   buildPlanningRelayPublicUrl,
+  extractPlanningRelayProgramVariables,
   getPlanningRelayProgramHeading,
   getPlanningRelayProgramTargetIsoDate,
   getPlanningRelayTestProgramHeading,
@@ -94,11 +95,38 @@ test("personnalise un SMS avec les variables disponibles", () => {
     renderPlanningRelaySmsTemplate("Bonjour {{intervenant}}, {{programme}} — {{date}} — {{periode}} — {{lien}}", {
       intervenant: "Élodie",
       programme: "Gîte Étang: ménage",
+      gite: "Gîte Étang",
+      horaire: "Entre 10h et 17h",
+      in_out: "entrée + sortie",
       date: "21/07/2026",
       periode: "Vacances Espagne",
       lien: "https://example.test/r/ABC12345",
     }),
     "Bonjour Elodie, Gite Etang: menage — 21/07/2026 — Vacances Espagne — https://example.test/r/ABC12345",
+  );
+});
+
+test("décompose le programme en variables gîte, horaire et entrée-sortie", () => {
+  const variables = extractPlanningRelayProgramVariables([
+    "Programme demain:",
+    "Tante Phonsine: Entre 12h et 17h (entree + sortie)",
+    "Le Liberte: A partir de 12h (sortie) + menage",
+  ].join("\n"));
+  assert.deepEqual(variables, {
+    gite: "Tante Phonsine / Le Liberte",
+    horaire: "Entre 12h et 17h / A partir de 12h",
+    in_out: "entree + sortie / sortie",
+  });
+  assert.equal(
+    renderPlanningRelaySmsTemplate("{{gite}} | {{horaire}} | {{in-out}}", {
+      ...variables,
+      date: "21/07/2026",
+      programme: "",
+      intervenant: "Mathilde",
+      periode: "Relais",
+      lien: "https://example.test/r/ABC12345",
+    }),
+    "Tante Phonsine / Le Liberte | Entre 12h et 17h / A partir de 12h | entree + sortie / sortie",
   );
 });
 
@@ -119,7 +147,7 @@ test("limite chaque période à une configuration SMS et migre le destinataire h
   });
   assert.equal(legacy.length, 1);
   assert.equal(legacy[0].worker_id, "worker-old");
-  assert.equal(legacy[0].template, "{{programme}}");
+  assert.equal(legacy[0].template, "{{gite}} : {{horaire}} ({{in_out}})");
 });
 
 test("calcule le programme vise selon l'option veille ou jour meme", () => {

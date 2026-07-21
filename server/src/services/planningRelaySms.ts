@@ -51,7 +51,7 @@ type PlanningRelaySmsRecipientPeriod = {
 
 export type PlanningRelaySmsSendDay = "previous_day" | "same_day";
 
-export const PLANNING_RELAY_SMS_DEFAULT_TEMPLATE = "{{programme}}";
+export const PLANNING_RELAY_SMS_DEFAULT_TEMPLATE = "{{gite}} : {{horaire}} ({{in_out}})";
 
 export type PlanningRelaySmsConfig = {
   id: string;
@@ -182,15 +182,31 @@ export const getPlanningRelayTestProgramHeading = (targetIsoDate: string) =>
 export const renderPlanningRelaySmsTemplate = (template: string, variables: {
   date: string;
   programme: string;
+  gite: string;
+  horaire: string;
+  in_out: string;
   intervenant: string;
   periode: string;
   lien: string;
 }) => stripSmsAccents(
   (template.trim() || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE).replace(
-    /{{\s*(date|programme|intervenant|periode|lien)\s*}}/gi,
-    (_match, key: string) => variables[key.toLowerCase() as keyof typeof variables],
+    /{{\s*(date|programme|gite|horaire|in_out|in-out|intervenant|periode|lien)\s*}}/gi,
+    (_match, key: string) => variables[key.toLowerCase().replace("-", "_") as keyof typeof variables],
   ),
 );
+
+export const extractPlanningRelayProgramVariables = (programme: string) => {
+  const rows = programme.split("\n").slice(1).flatMap((line) => {
+    const match = line.match(/^(.+?):\s*(.*?)\s*\((entree \+ sortie|entree|sortie)\)(?:\s*\+.*)?$/i);
+    if (!match) return [];
+    return [{ gite: match[1].trim(), horaire: match[2].trim(), in_out: match[3].trim() }];
+  });
+  return {
+    gite: rows.map((row) => row.gite).join(" / "),
+    horaire: rows.map((row) => row.horaire).join(" / "),
+    in_out: rows.map((row) => row.in_out).join(" / "),
+  };
+};
 
 export const isPlanningRelaySmsDue = (params: {
   nowTime: string;
@@ -509,9 +525,12 @@ const buildConfigMessage = async (period: {
     : getPlanningRelayProgramHeading(config.send_day);
   const messages = await buildPlanningRelayProgramSmsForPeriod(period, targetIsoDate, heading);
   if (!messages?.length) return null;
+  const programme = messages.join("\n");
+  const programVariables = extractPlanningRelayProgramVariables(programme);
   return renderPlanningRelaySmsTemplate(config.template, {
     date: formatPlanningRelaySmsHeadingDate(targetIsoDate),
-    programme: messages.join("\n"),
+    programme,
+    ...programVariables,
     intervenant: worker.nom,
     periode: period.label,
     lien: buildPlanningRelayPublicUrl(period, publicOrigin, requirePublicOrigin),
