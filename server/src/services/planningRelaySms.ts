@@ -1,6 +1,8 @@
 import { addDays } from "date-fns";
 import prisma from "../db/prisma.js";
-import { fromJsonString } from "../utils/jsonFields.js";
+import { env } from "../config/env.js";
+import { buildPlanningRelayShortCode } from "./planningRelayShare.js";
+import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 import { sendOvhSms } from "./ovhSms.js";
 
 const PARIS_TIME_ZONE = "Europe/Paris";
@@ -24,6 +26,7 @@ type ProgramReservation = {
   date_sortie: Date;
   options: unknown;
   gite_id: string | null;
+  nb_nuits?: number;
   gite: {
     id: string;
     nom: string;
@@ -47,6 +50,64 @@ type PlanningRelaySmsRecipientPeriod = {
 };
 
 export type PlanningRelaySmsSendDay = "previous_day" | "same_day";
+
+export const PLANNING_RELAY_SMS_DEFAULT_TEMPLATE = "{{programme}}";
+
+export type PlanningRelaySmsConfig = {
+  id: string;
+  worker_id: string;
+  enabled: boolean;
+  send_time: string;
+  send_day: PlanningRelaySmsSendDay;
+  template: string;
+  last_sent_for_date: string | null;
+  last_attempt_for_date: string | null;
+};
+
+const isSmsConfig = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+export const normalizePlanningRelaySmsConfigs = (
+  value: unknown,
+  legacy?: {
+    sms_enabled?: boolean;
+    sms_worker_id?: string | null;
+    sms_send_time?: string | null;
+    sms_send_day?: string | null;
+    sms_last_sent_for_date?: string | null;
+    sms_last_attempt_for_date?: string | null;
+  },
+): PlanningRelaySmsConfig[] => {
+  const parsed = fromJsonString<unknown[]>(value, []);
+  const configs = parsed.filter(isSmsConfig).flatMap((config) => {
+    const id = typeof config.id === "string" ? config.id.trim() : "";
+    const workerId = typeof config.worker_id === "string" ? config.worker_id.trim() : "";
+    if (!id || !workerId) return [];
+    return [{
+      id,
+      worker_id: workerId,
+      enabled: config.enabled !== false,
+      send_time: normalizePlanningRelaySmsTime(typeof config.send_time === "string" ? config.send_time : null),
+      send_day: normalizePlanningRelaySmsSendDay(typeof config.send_day === "string" ? config.send_day : null),
+      template: typeof config.template === "string" && config.template.trim()
+        ? config.template.trim().slice(0, 1000)
+        : PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
+      last_sent_for_date: typeof config.last_sent_for_date === "string" ? config.last_sent_for_date : null,
+      last_attempt_for_date: typeof config.last_attempt_for_date === "string" ? config.last_attempt_for_date : null,
+    }];
+  });
+  if (configs.length > 0 || !legacy?.sms_worker_id) return configs;
+  return [{
+    id: "legacy",
+    worker_id: legacy.sms_worker_id,
+    enabled: Boolean(legacy.sms_enabled),
+    send_time: normalizePlanningRelaySmsTime(legacy.sms_send_time),
+    send_day: normalizePlanningRelaySmsSendDay(legacy.sms_send_day),
+    template: PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
+    last_sent_for_date: legacy.sms_last_sent_for_date ?? null,
+    last_attempt_for_date: legacy.sms_last_attempt_for_date ?? null,
+  }];
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -105,6 +166,19 @@ const formatPlanningRelaySmsHeadingDate = (isoDate: string) =>
 
 export const getPlanningRelayTestProgramHeading = (targetIsoDate: string) =>
   `TEST - Programme du ${formatPlanningRelaySmsHeadingDate(targetIsoDate)}`;
+
+export const renderPlanningRelaySmsTemplate = (template: string, variables: {
+  date: string;
+  programme: string;
+  intervenant: string;
+  periode: string;
+  lien: string;
+}) => stripSmsAccents(
+  (template.trim() || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE).replace(
+    /{{\s*(date|programme|intervenant|periode|lien)\s*}}/gi,
+    (_match, key: string) => variables[key.toLowerCase() as keyof typeof variables],
+  ),
+);
 
 export const isPlanningRelaySmsDue = (params: {
   nowTime: string;
@@ -314,15 +388,25 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
 };
 
 export const buildPlanningRelayProgramSmsForPeriod = async (period: {
+  id?: string;
   gite_ids: unknown;
   date_debut?: Date;
-}, targetIsoDate: string, heading = "Programme demain") => {
-  const giteIds = [
+  stay_nights?: number | null;
+}, targetIsoDate: string, heading = "Programme demain", workerId?: string) => {
+  let giteIds = [
     ...new Set(
       fromJsonString<unknown[]>(period.gite_ids, [])
         .filter((id): id is string => typeof id === "string" && Boolean(id))
     ),
   ];
+  if (workerId && period.id) {
+    const assignments = await prisma.planningRelayAssignment.findMany({
+      where: { period_id: period.id, date: targetIsoDate, worker_id: workerId },
+      select: { gite_id: true },
+    });
+    const assignedGiteIds = new Set(assignments.map((assignment) => assignment.gite_id));
+    giteIds = giteIds.filter((id) => assignedGiteIds.has(id));
+  }
   if (giteIds.length === 0) return null;
 
   const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
@@ -336,12 +420,14 @@ export const buildPlanningRelayProgramSmsForPeriod = async (period: {
       gite_id: { in: giteIds },
       date_entree: { lt: nextDate },
       date_sortie: { gte: contextStartDate },
+      ...(period.stay_nights ? { nb_nuits: period.stay_nights } : {}),
     },
     select: {
       id: true,
       gite_id: true,
       date_entree: true,
       date_sortie: true,
+      nb_nuits: true,
       options: true,
       gite: {
         select: {
@@ -376,6 +462,7 @@ export const sendPlanningRelayProgramSms = async (period: {
     telephone: string | null;
   } | null;
   sms_send_day?: string | null;
+  stay_nights?: number | null;
 }, targetIsoDate: string) => {
   const recipient = getPlanningRelaySmsRecipient(period);
   if (!recipient) throw new Error("Numero SMS manquant pour la periode relais.");
@@ -403,6 +490,52 @@ export const sendPlanningRelayProgramSms = async (period: {
   });
 
   return { sent: true as const, messages, results };
+};
+
+const buildConfigMessage = async (period: {
+  id: string;
+  label: string;
+  gite_ids: unknown;
+  date_debut: Date;
+  stay_nights?: number | null;
+  share_nonce: string;
+}, config: PlanningRelaySmsConfig, worker: { nom: string }, targetIsoDate: string, test = false) => {
+  const heading = test
+    ? getPlanningRelayTestProgramHeading(targetIsoDate)
+    : getPlanningRelayProgramHeading(config.send_day);
+  const messages = await buildPlanningRelayProgramSmsForPeriod(period, targetIsoDate, heading, config.worker_id);
+  if (!messages?.length) return null;
+  return renderPlanningRelaySmsTemplate(config.template, {
+    date: formatPlanningRelaySmsHeadingDate(targetIsoDate),
+    programme: messages.join("\n"),
+    intervenant: worker.nom,
+    periode: period.label,
+    lien: new URL(`/r/${buildPlanningRelayShortCode(period.share_nonce)}`, env.CLIENT_ORIGIN).toString(),
+  });
+};
+
+export const sendPlanningRelayConfigTestSms = async (period: {
+  id: string;
+  label: string;
+  gite_ids: unknown;
+  date_debut: Date;
+  date_fin: Date;
+  stay_nights?: number | null;
+  share_nonce: string;
+}, config: PlanningRelaySmsConfig, worker: { nom: string; telephone: string }, currentIsoDate = getParisDateTimeParts().isoDate) => {
+  let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
+    ? toPlanningRelayIsoDate(period.date_debut)
+    : currentIsoDate;
+  const endIsoDate = toPlanningRelayIsoDate(period.date_fin);
+  while (targetIsoDate <= endIsoDate) {
+    const message = await buildConfigMessage(period, config, worker, targetIsoDate, true);
+    if (message) {
+      const result = await sendOvhSms({ recipient: worker.telephone, message });
+      return { sent: true as const, targetIsoDate, messages: [message], results: [result] };
+    }
+    targetIsoDate = addPlanningRelayIsoDays(targetIsoDate, 1);
+  }
+  return { sent: false as const, reason: "no_intervention" as const };
 };
 
 export const sendPlanningRelayProgramTestSms = async (period: {
@@ -448,48 +581,53 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
   const periods = await prisma.planningRelayPeriod.findMany({
     where: {
       is_active: true,
-      sms_enabled: true,
-      OR: [
-        { sms_recipient: { not: null } },
-        { sms_worker_id: { not: null } },
-      ],
       date_debut: { lte: tomorrowDate },
       date_fin: { gte: todayDate },
     },
     include: { sms_worker: true },
-    orderBy: [{ sms_send_time: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ createdAt: "asc" }],
   });
 
   let sentCount = 0;
   for (const period of periods) {
-    const targetIsoDate = getPlanningRelayProgramTargetIsoDate(isoDate, period.sms_send_day);
-    const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
-    if (period.date_debut > targetDate || period.date_fin < targetDate) continue;
-
-    if (
-      !isPlanningRelaySmsDue({
+    const configs = normalizePlanningRelaySmsConfigs(period.sms_configs, period);
+    for (const config of configs.filter((item) => item.enabled)) {
+      const targetIsoDate = getPlanningRelayProgramTargetIsoDate(isoDate, config.send_day);
+      const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
+      if (period.date_debut > targetDate || period.date_fin < targetDate) continue;
+      if (!isPlanningRelaySmsDue({
         nowTime: time,
-        sendTime: period.sms_send_time,
+        sendTime: config.send_time,
         targetIsoDate,
-        lastAttemptForDate: period.sms_last_attempt_for_date,
-      })
-    ) {
-      continue;
-    }
+        lastAttemptForDate: config.last_attempt_for_date,
+      })) continue;
 
-    try {
-      const result = await sendPlanningRelayProgramSms(period, targetIsoDate);
-      if (result.sent) sentCount += result.messages.length;
-    } catch (error) {
+      const configIndex = configs.findIndex((item) => item.id === config.id);
+      configs[configIndex] = { ...config, last_attempt_for_date: targetIsoDate };
       await prisma.planningRelayPeriod.update({
         where: { id: period.id },
-        data: { sms_last_attempt_for_date: targetIsoDate },
-      }).catch(() => undefined);
-      // eslint-disable-next-line no-console
-      console.error(
-        `Erreur envoi SMS planning relais ${period.id}:`,
-        error instanceof Error ? error.message : error,
-      );
+        data: { sms_configs: encodeJsonField(configs) },
+      });
+
+      try {
+        const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_id } });
+        if (!worker?.telephone.trim()) throw new Error("Intervenant SMS ou numero manquant.");
+        const message = await buildConfigMessage(period, config, worker, targetIsoDate);
+        if (!message) continue;
+        await sendOvhSms({ recipient: worker.telephone, message });
+        configs[configIndex] = { ...configs[configIndex], last_sent_for_date: targetIsoDate };
+        await prisma.planningRelayPeriod.update({
+          where: { id: period.id },
+          data: { sms_configs: encodeJsonField(configs) },
+        });
+        sentCount += 1;
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error(
+          `Erreur envoi SMS planning relais ${period.id}/${config.id}:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
     }
   }
 

@@ -354,6 +354,7 @@ model PlanningRelayPeriod {
   show_timeline    Boolean   @default(false)
   show_comments    Boolean   @default(false)
   show_phones      Boolean   @default(false)
+  stay_nights      Int?
   is_active        Boolean   @default(true)
   share_nonce      String
   public_code_hash String?   @unique
@@ -366,6 +367,7 @@ model PlanningRelayPeriod {
   sms_send_day     String    @default("previous_day")
   sms_last_sent_for_date    String?
   sms_last_attempt_for_date String?
+  sms_configs      String    @default("[]")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

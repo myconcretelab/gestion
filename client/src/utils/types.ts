@@ -124,6 +124,7 @@ export type PlanningRelayPeriod = {
   show_timeline: boolean;
   show_comments: boolean;
   show_phones: boolean;
+  stay_nights: number | null;
   is_active: boolean;
   expires_at: string | null;
   last_accessed_at: string | null;
@@ -135,10 +136,22 @@ export type PlanningRelayPeriod = {
   sms_send_day: "previous_day" | "same_day";
   sms_last_sent_for_date: string | null;
   sms_last_attempt_for_date: string | null;
+  sms_configs: PlanningRelaySmsConfig[];
   assignments: PlanningRelayAssignment[];
   created_at: string;
   updated_at: string;
   public_path: string;
+};
+
+export type PlanningRelaySmsConfig = {
+  id: string;
+  worker_id: string;
+  enabled: boolean;
+  send_time: string;
+  send_day: "previous_day" | "same_day";
+  template: string;
+  last_sent_for_date: string | null;
+  last_attempt_for_date: string | null;
 };
 
 export type PlanningRelayWorker = {
@@ -186,7 +199,7 @@ export type PlanningRelaySmsTestResult = PlanningRelaySmsSendResult & {
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,
-    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "expires_at"
+    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "stay_nights" | "expires_at"
   >;
   assignments: PlanningRelayAssignment[];
   gites: Gite[];

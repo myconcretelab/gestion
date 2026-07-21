@@ -4721,6 +4721,24 @@ body {
   margin-left: auto;
 }
 
+.operations-stay-nights-filter {
+  max-width: 390px;
+}
+
+.operations-stay-nights-filter > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.operations-stay-nights-filter input {
+  width: 110px;
+}
+
+.operations-stay-nights-filter button {
+  padding: 7px 12px;
+}
+
 .operations-saved-periods {
   grid-column: 1 / -1;
   display: flex;
@@ -5054,6 +5072,109 @@ body {
   cursor: not-allowed;
   opacity: 0.45;
   pointer-events: none;
+}
+
+.operations-sms-accordion {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.operations-sms-accordion > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.operations-sms-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
+.operations-sms-accordion > summary::after {
+  content: "+";
+  margin-left: auto;
+  font-size: 1.15rem;
+}
+
+.operations-sms-accordion[open] > summary::after {
+  content: "−";
+}
+
+.operations-sms-accordion > summary small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.operations-sms-accordion__content {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.operations-sms-accordion__content > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.operations-sms-config {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.operations-sms-config > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.operations-sms-config > header label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #374151;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.operations-sms-config > header .danger {
+  margin-left: auto;
+  padding: 6px 10px;
+  background: #fee2e2;
+  color: #991b1b;
+  box-shadow: none;
+}
+
+.operations-sms-template textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.operations-sms-variables {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.operations-sms-variables button {
+  padding: 5px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
 }
 
 .operations-controls__options {
