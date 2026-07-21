@@ -354,6 +354,8 @@ model PlanningRelayPeriod {
   show_timeline    Boolean   @default(false)
   show_comments    Boolean   @default(false)
   show_phones      Boolean   @default(false)
+  show_options     Boolean   @default(false)
+  arrivals_only    Boolean   @default(false)
   stay_nights      Int?
   is_active        Boolean   @default(true)
   share_nonce      String

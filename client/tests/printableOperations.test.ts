@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildPrintableOperationRows,
   enumerateIsoDates,
+  filterArrivalOperationRows,
   getAlreadyHandledArrivalRowKeys,
   getOperationsForDate,
   reservationOverlapsPeriod,
@@ -95,6 +96,27 @@ test("fusionne une sortie et une entrée le même jour dans le même gîte", () 
     "late-checkout",
     "arrival",
   ]);
+});
+
+test("le filtre d'entrées conserve les rotations et masque les sorties seules", () => {
+  const arrivingReservation = {
+    ...reservation,
+    id: "reservation-2",
+    gite_id: "gite-1",
+    date_entree: "2026-07-13",
+    date_sortie: "2026-07-15",
+    options: {},
+  } as Reservation;
+  const rows = buildPrintableOperationRows(
+    ["2026-07-13", "2026-07-15"],
+    [{ ...reservation, gite_id: "gite-1" }, arrivingReservation],
+  );
+
+  assert.deepEqual(
+    filterArrivalOperationRows(rows, true).map((row) => row.date),
+    ["2026-07-13"],
+  );
+  assert.equal(filterArrivalOperationRows(rows, false).length, 2);
 });
 
 test("grise la prochaine entrée après une sortie séparée", () => {
