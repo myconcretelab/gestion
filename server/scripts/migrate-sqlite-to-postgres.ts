@@ -296,10 +296,11 @@ const main = async () => {
     }
 
     for (const period of planningRelayPeriods) {
-      const { id, gite_ids, ...rest } = period;
+      const { id, gite_ids, sms_configs, ...rest } = period;
       const data = {
         id,
         gite_ids: parseJson(gite_ids, [] as string[]),
+        sms_configs: parseJson(sms_configs, []),
         ...rest,
       };
       const { id: _, ...update } = data;

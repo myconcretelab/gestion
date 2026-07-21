@@ -21,8 +21,11 @@ import {
 } from "../services/requestThrottle.js";
 import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
 import {
+  PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
   normalizePlanningRelaySmsSendDay,
+  normalizePlanningRelaySmsConfigs,
   normalizePlanningRelaySmsTime,
+  sendPlanningRelayConfigTestSms,
   sendPlanningRelayProgramTestSms,
 } from "../services/planningRelaySms.js";
 
@@ -44,7 +47,19 @@ const payloadSchema = z.object({
   show_timeline: z.boolean(),
   show_comments: z.boolean(),
   show_phones: z.boolean(),
+  stay_nights: z.number().int().min(1).max(365).nullable().optional(),
   expires_at: nullableIsoDateSchema.optional(),
+});
+
+const smsConfigSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  worker_id: z.string().trim().min(1),
+  enabled: z.boolean(),
+  send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/),
+  send_day: z.enum(["previous_day", "same_day"]),
+  template: z.string().trim().min(1).max(1000),
+  last_sent_for_date: isoDateSchema.nullable().optional(),
+  last_attempt_for_date: isoDateSchema.nullable().optional(),
 });
 
 const patchSchema = payloadSchema.partial().extend({
@@ -60,6 +75,7 @@ const patchSchema = payloadSchema.partial().extend({
   ).optional(),
   sms_send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/).optional(),
   sms_send_day: z.enum(["previous_day", "same_day"]).optional(),
+  sms_configs: z.array(smsConfigSchema).max(20).optional(),
 });
 const smsSchema = z.object({
   recipient: z.string().trim().min(6).max(32),
@@ -73,6 +89,7 @@ const smsTestSchema = z.object({
     (value) => value === "" || value === undefined ? undefined : value,
     z.string().trim().min(1).optional(),
   ),
+  config: smsConfigSchema.optional(),
 });
 const workerPayloadSchema = z.object({
   nom: z.string().trim().min(1).max(120),
@@ -204,6 +221,7 @@ const serializePeriod = (period: any) => {
     show_timeline: period.show_timeline,
     show_comments: period.show_comments,
     show_phones: period.show_phones,
+    stay_nights: period.stay_nights ?? null,
     is_active: period.is_active,
     expires_at: period.expires_at?.toISOString() ?? null,
     last_accessed_at: period.last_accessed_at?.toISOString() ?? null,
@@ -215,6 +233,7 @@ const serializePeriod = (period: any) => {
     sms_send_day: normalizePlanningRelaySmsSendDay(period.sms_send_day),
     sms_last_sent_for_date: period.sms_last_sent_for_date ?? null,
     sms_last_attempt_for_date: period.sms_last_attempt_for_date ?? null,
+    sms_configs: normalizePlanningRelaySmsConfigs(period.sms_configs, period),
     assignments: serializeAssignments(period),
     created_at: period.createdAt.toISOString(),
     updated_at: period.updatedAt.toISOString(),
@@ -261,6 +280,7 @@ const buildCreateData = (
     show_timeline: payload.show_timeline,
     show_comments: payload.show_comments,
     show_phones: payload.show_phones,
+    stay_nights: payload.stay_nights ?? null,
     share_nonce: identity.nonce,
     public_code_hash: identity.publicCodeHash,
     expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : endOfDay(addDays(end, 7)),
@@ -370,6 +390,14 @@ privateRouter.patch("/:id", async (req, res, next) => {
       ? await prisma.planningRelayWorker.findUnique({ where: { id: payload.sms_worker_id } })
       : null;
     if (payload.sms_worker_id && !smsWorker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
+    if (payload.sms_configs) {
+      const workerCount = await prisma.planningRelayWorker.count({
+        where: { id: { in: [...new Set(payload.sms_configs.map((config) => config.worker_id))] } },
+      });
+      if (workerCount !== new Set(payload.sms_configs.map((config) => config.worker_id)).size) {
+        return res.status(404).json({ error: "Un intervenant SMS est introuvable." });
+      }
+    }
 
     const period = await prisma.planningRelayPeriod.update({
       where: { id: current.id },
@@ -381,6 +409,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.show_timeline !== undefined ? { show_timeline: payload.show_timeline } : {}),
         ...(payload.show_comments !== undefined ? { show_comments: payload.show_comments } : {}),
         ...(payload.show_phones !== undefined ? { show_phones: payload.show_phones } : {}),
+        ...(payload.stay_nights !== undefined ? { stay_nights: payload.stay_nights } : {}),
         ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
         ...(payload.sms_enabled !== undefined ? { sms_enabled: payload.sms_enabled } : {}),
         ...(payload.sms_recipient !== undefined ? { sms_recipient: payload.sms_recipient } : {}),
@@ -395,6 +424,12 @@ privateRouter.patch("/:id", async (req, res, next) => {
           : {}),
         ...(payload.sms_send_day !== undefined
           ? { sms_send_day: normalizePlanningRelaySmsSendDay(payload.sms_send_day) }
+          : {}),
+        ...(payload.sms_configs !== undefined
+          ? { sms_configs: encodeJsonField(payload.sms_configs.map((config) => ({
+              ...config,
+              template: config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
+            }))) }
           : {}),
         ...(payload.expires_at !== undefined
           ? { expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : null }
@@ -495,6 +530,31 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       include: { sms_worker: true },
     });
     if (!current) return res.status(404).json({ error: "Période introuvable." });
+    if (payload.config) {
+      const worker = await prisma.planningRelayWorker.findUnique({ where: { id: payload.config.worker_id } });
+      if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
+      const result = await sendPlanningRelayConfigTestSms(current, {
+        ...payload.config,
+        template: payload.config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
+        last_sent_for_date: payload.config.last_sent_for_date ?? null,
+        last_attempt_for_date: payload.config.last_attempt_for_date ?? null,
+      }, worker);
+      if (!result.sent) {
+        return res.status(409).json({ error: "Aucune intervention affectée à cet intervenant sur cette période." });
+      }
+      const firstResult = result.results[0];
+      return res.json({
+        ok: true,
+        provider: firstResult?.provider ?? "ovh",
+        recipient: firstResult?.recipient ?? worker.telephone,
+        target_date: result.targetIsoDate,
+        message: result.messages[0] ?? "",
+        credits: firstResult?.totalCreditsRemoved ?? 0,
+        ids: firstResult?.ids ?? [],
+        invalid_receivers: firstResult?.invalidReceivers ?? [],
+        valid_receivers: firstResult?.validReceivers ?? [],
+      });
+    }
     const worker = payload.worker_id
       ? await prisma.planningRelayWorker.findUnique({ where: { id: payload.worker_id } })
       : current.sms_worker;
@@ -627,6 +687,7 @@ publicRouter.get("/:token", async (req, res, next) => {
           gite_id: { in: giteIds },
           date_entree: { lt: periodEndExclusive },
           date_sortie: { gte: period.date_debut },
+          ...(period.stay_nights ? { nb_nuits: period.stay_nights } : {}),
         },
         select: {
           id: true,
@@ -665,6 +726,7 @@ publicRouter.get("/:token", async (req, res, next) => {
         show_timeline: period.show_timeline,
         show_comments: period.show_comments,
         show_phones: period.show_phones,
+        stay_nights: period.stay_nights ?? null,
         expires_at: period.expires_at?.toISOString() ?? null,
       },
       assignments: serializeAssignments(period),
