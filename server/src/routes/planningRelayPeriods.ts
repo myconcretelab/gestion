@@ -721,7 +721,7 @@ publicRouter.get("/:token", async (req, res, next) => {
           gite_id: { in: giteIds },
           date_entree: { lt: periodEndExclusive },
           date_sortie: { gte: period.date_debut },
-          ...(period.stay_nights ? { nb_nuits: period.stay_nights } : {}),
+          ...(period.stay_nights ? { nb_nuits: { gte: period.stay_nights } } : {}),
         },
         select: {
           id: true,

@@ -437,7 +437,7 @@ const OperationsPrintPage = () => {
     () => reservations.filter((reservation) =>
       Boolean(reservation.gite_id && selectedGiteIds.has(reservation.gite_id)) &&
       reservationOverlapsPeriod(reservation, from, to) &&
-      (!stayNightsFilter || reservation.nb_nuits === Number(stayNightsFilter))
+      (!stayNightsFilter || reservation.nb_nuits >= Number(stayNightsFilter))
     ),
     [from, reservations, selectedGiteIds, stayNightsFilter, to]
   );
@@ -818,7 +818,7 @@ const OperationsPrintPage = () => {
             </button>
           </div>
           <label className="field operations-stay-nights-filter">
-            <span>N'afficher que les séjours de</span>
+            <span>N'afficher que les séjours d'au moins</span>
             <div>
               <input
                 type="number"
@@ -950,7 +950,7 @@ const OperationsPrintPage = () => {
 
                     <div className="operations-period-detail__grid">
                       <label className="field">
-                        <span>N'afficher que les séjours de</span>
+                        <span>N'afficher que les séjours d'au moins</span>
                         <input
                           type="number"
                           min="1"
