@@ -462,7 +462,9 @@ const OperationsPrintPage = () => {
     () => getAlreadyHandledArrivalRowKeys(allOperationsByDate),
     [allOperationsByDate],
   );
-  const interventionCount = operationsByDate.length - alreadyHandledArrivalRows.size;
+  const interventionCount = operationsByDate.filter(
+    (row) => !alreadyHandledArrivalRows.has(`${row.date}-${row.giteId}`),
+  ).length;
   const activeSavedPeriod = useMemo(() => {
     const matchingPeriods = savedPeriods.filter((period) =>
       period.from === from &&
