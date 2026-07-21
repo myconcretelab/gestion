@@ -76,7 +76,7 @@ const patchSchema = payloadSchema.partial().extend({
   ).optional(),
   sms_send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/).optional(),
   sms_send_day: z.enum(["previous_day", "same_day"]).optional(),
-  sms_configs: z.array(smsConfigSchema).max(20).optional(),
+  sms_configs: z.array(smsConfigSchema).max(1, "Une période ne peut avoir qu'un seul intervenant SMS.").optional(),
 });
 const smsSchema = z.object({
   recipient: z.string().trim().min(6).max(32),

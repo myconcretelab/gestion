@@ -96,7 +96,7 @@ export const normalizePlanningRelaySmsConfigs = (
       last_attempt_for_date: typeof config.last_attempt_for_date === "string" ? config.last_attempt_for_date : null,
     }];
   });
-  if (configs.length > 0 || !legacy?.sms_worker_id) return configs;
+  if (configs.length > 0 || !legacy?.sms_worker_id) return configs.slice(0, 1);
   return [{
     id: "legacy",
     worker_id: legacy.sms_worker_id,
