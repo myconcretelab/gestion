@@ -275,6 +275,7 @@ const OperationsPrintPage = () => {
   const [savedPeriodsNotice, setSavedPeriodsNotice] = useState<string | null>(null);
   const [smsStatus, setSmsStatus] = useState<PlanningRelaySmsStatus | null>(null);
   const [periodManagerIsOpen, setPeriodManagerIsOpen] = useState(false);
+  const [focusedPeriodId, setFocusedPeriodId] = useState<string | null>(null);
   const [drawerPeriodPickerId, setDrawerPeriodPickerId] = useState<string | null>(null);
   const [drawerDraftPeriod, setDrawerDraftPeriod] = useState<DateRange>();
   const [workerManagerIsOpen, setWorkerManagerIsOpen] = useState(false);
@@ -297,6 +298,7 @@ const OperationsPrintPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const periodPickerRef = useRef<HTMLDivElement>(null);
+  const periodDetailRefs = useRef<Map<string, HTMLElement>>(new Map());
   const smsTemplateRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const legacyMigrationAttemptedRef = useRef(false);
 
@@ -376,6 +378,16 @@ const OperationsPrintPage = () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [periodPickerIsOpen]);
+
+  useEffect(() => {
+    if (!periodManagerIsOpen || !focusedPeriodId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const detail = periodDetailRefs.current.get(focusedPeriodId);
+      detail?.focus({ preventScroll: true });
+      detail?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedPeriodId, periodManagerIsOpen]);
 
   useEffect(() => {
     if (!periodIsValid) return;
@@ -572,6 +584,18 @@ const OperationsPrintPage = () => {
     setShowOptions(period.show_options);
     setArrivalsOnly(period.arrivals_only);
     setStayNightsFilter(period.stay_nights ? String(period.stay_nights) : "");
+  };
+
+  const openPeriodEditor = (periodId: string) => {
+    setFocusedPeriodId(periodId);
+    setDrawerPeriodPickerId(null);
+    setPeriodManagerIsOpen(true);
+  };
+
+  const closePeriodEditor = () => {
+    setPeriodManagerIsOpen(false);
+    setFocusedPeriodId(null);
+    setDrawerPeriodPickerId(null);
   };
 
   const updateSavedPeriod = (updated: PlanningRelayPeriod) => {
@@ -915,12 +939,20 @@ const OperationsPrintPage = () => {
                         {period.label}
                         {period.sms_configs?.some((config) => config.enabled) ? <span className="operations-saved-period__sms-dot" aria-label="SMS automatique actif" /> : null}
                       </button>
+                      <button
+                        type="button"
+                        className="operations-saved-period__action operations-saved-period__edit"
+                        onClick={() => openPeriodEditor(period.id)}
+                        aria-label={`Modifier la période ${period.label}`}
+                        title="Modifier cette période"
+                      >
+                        <svg className="operations-saved-period__edit-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Zm9.5-13.5 4 4" />
+                        </svg>
+                      </button>
                     </span>
                   );
                 })}
-                <button type="button" className="secondary operations-saved-periods__manage" onClick={() => setPeriodManagerIsOpen(true)}>
-                  Gérer
-                </button>
               </div>
             </>
           ) : null}
@@ -978,7 +1010,7 @@ const OperationsPrintPage = () => {
             type="button"
             className="operations-period-drawer__backdrop"
             aria-label="Fermer la gestion des périodes"
-            onClick={() => setPeriodManagerIsOpen(false)}
+            onClick={closePeriodEditor}
           />
           <aside className="operations-period-drawer__panel">
             <header className="operations-period-drawer__header">
@@ -986,7 +1018,7 @@ const OperationsPrintPage = () => {
                 <div className="operations-controls__eyebrow">Périodes enregistrées</div>
                 <h2 id="operations-period-drawer-title">Gestion des relais</h2>
               </div>
-              <button type="button" className="operations-period-drawer__close" onClick={() => { setPeriodManagerIsOpen(false); setDrawerPeriodPickerId(null); }} aria-label="Fermer">
+              <button type="button" className="operations-period-drawer__close" onClick={closePeriodEditor} aria-label="Fermer">
                 ×
               </button>
             </header>
@@ -998,7 +1030,15 @@ const OperationsPrintPage = () => {
                 const isSavingDetails = savingPeriodDetailsId === period.id;
                 const isTestingSms = testingPeriodSmsId === period.id;
                 return (
-                  <section key={period.id} className="operations-period-detail">
+                  <section
+                    key={period.id}
+                    ref={(element) => {
+                      if (element) periodDetailRefs.current.set(period.id, element);
+                      else periodDetailRefs.current.delete(period.id);
+                    }}
+                    className={`operations-period-detail${focusedPeriodId === period.id ? " is-focused" : ""}`}
+                    tabIndex={-1}
+                  >
                     <div className="operations-period-detail__title">
                       <div>
                         <strong>{period.label}</strong>

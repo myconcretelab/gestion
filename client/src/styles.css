@@ -4811,11 +4811,6 @@ body {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-.operations-saved-periods__manage {
-  padding: 7px 14px;
-  font-size: 0.78rem;
-}
-
 .operations-saved-period .operations-saved-period__remove {
   display: grid;
   min-width: 30px;
@@ -4860,6 +4855,20 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.9;
+}
+
+.operations-saved-period__edit-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.operations-saved-period .operations-saved-period__edit {
+  padding-right: 9px;
 }
 
 .operations-saved-period .operations-saved-period__remove:hover {
@@ -4977,7 +4986,7 @@ body {
 
 .operations-period-drawer__content {
   display: grid;
-  gap: 14px;
+  gap: 24px;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -4988,10 +4997,20 @@ body {
 .operations-period-detail {
   display: grid;
   gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 18px;
+  border: 1px solid #cbd5e1;
+  border-top: 4px solid #e2e8f0;
+  border-radius: 16px;
   background: #fff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
+  scroll-margin-top: 18px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.operations-period-detail.is-focused {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft), 0 12px 28px rgba(15, 23, 42, 0.11);
+  outline: none;
 }
 
 .operations-worker-detail.is-disabled {
