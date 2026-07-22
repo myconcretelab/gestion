@@ -5177,63 +5177,6 @@ body {
   resize: vertical;
 }
 
-.operations-programme-composer {
-  overflow: hidden;
-  border: 1px solid var(--primary);
-  border-radius: 8px;
-  background: var(--primary-soft);
-}
-
-.operations-programme-composer > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  color: var(--primary-strong);
-  font-size: 0.8rem;
-  font-weight: 800;
-  cursor: pointer;
-  list-style: none;
-}
-
-.operations-programme-composer > summary::-webkit-details-marker {
-  display: none;
-}
-
-.operations-programme-composer > summary::after {
-  content: "+";
-  font-size: 1rem;
-}
-
-.operations-programme-composer[open] > summary::after {
-  content: "−";
-}
-
-.operations-programme-composer > summary small {
-  margin-left: auto;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.66rem;
-}
-
-.operations-programme-composer__content {
-  display: grid;
-  gap: 10px;
-  padding: 0 12px 12px;
-}
-
-.operations-programme-composer__content > p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.74rem;
-}
-
-.operations-programme-composer .operations-sms-template textarea {
-  min-height: 72px;
-  background: #fff;
-}
-
 .operations-sms-variable-groups {
   display: grid;
   gap: 8px;
@@ -5250,19 +5193,154 @@ body {
 }
 
 .operations-sms-variables--dynamic {
-  color: var(--primary-strong);
+  color: #334155;
 }
 
 .operations-sms-variables--dynamic button {
-  border: 1px solid var(--primary);
-  background: var(--primary-soft);
-  color: var(--primary-strong);
+  border: 1px solid #94a3b8;
+  background: #fff;
+  color: #334155;
 }
 
 .operations-sms-variables--fixed button {
   border: 1px solid var(--border);
   background: var(--chip);
   color: var(--ink);
+}
+
+.operations-sms-variables .operations-sms-manage-variables {
+  margin-left: 4px;
+  border-style: dashed;
+  font-family: inherit;
+  font-weight: 800;
+}
+
+.operations-variable-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.operations-variable-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.52);
+  box-shadow: none;
+}
+
+.operations-variable-modal__panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(820px, calc(100vh - 40px));
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.3);
+}
+
+.operations-variable-modal__panel > header,
+.operations-variable-modal__panel > footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.operations-variable-modal__panel > header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.operations-variable-modal__panel > header h2,
+.operations-variable-modal__panel > header p {
+  margin: 0;
+}
+
+.operations-variable-modal__panel > header p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.operations-variable-modal__panel > footer {
+  align-items: center;
+  justify-content: flex-end;
+  border-top: 1px solid #e2e8f0;
+}
+
+.operations-variable-modal__content {
+  display: grid;
+  gap: 16px;
+  overflow: auto;
+  padding: 18px 20px;
+}
+
+.operations-variable-template-card {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.operations-variable-template-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operations-variable-template-card > header .danger {
+  padding: 6px 10px;
+  background: #fff;
+  box-shadow: none;
+  color: #b91c1c;
+  font-size: 0.72rem;
+}
+
+.operations-variable-name-field {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.operations-variable-name-field span {
+  padding: 0 10px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.operations-variable-name-field input {
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid #e2e8f0;
+  border-left: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: inherit;
+}
+
+.operations-variable-template-card .operations-sms-template textarea {
+  min-height: 88px;
+  background: #fff;
+}
+
+.operations-variable-modal__add {
+  justify-self: start;
+  border-style: dashed;
 }
 
 .operations-sms-variables button {

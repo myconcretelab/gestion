@@ -54,6 +54,12 @@ export type PlanningRelaySmsSendDay = "previous_day" | "same_day";
 export const PLANNING_RELAY_SMS_DEFAULT_TEMPLATE = "{{programme_gite}}";
 export const PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE = "{{gite}} : {{horaire}} - {{in-out}}";
 
+export type PlanningRelaySmsProgrammeTemplate = {
+  id: string;
+  key: string;
+  template: string;
+};
+
 export type PlanningRelaySmsConfig = {
   id: string;
   worker_id: string;
@@ -61,13 +67,39 @@ export type PlanningRelaySmsConfig = {
   send_time: string;
   send_day: PlanningRelaySmsSendDay;
   template: string;
-  programme_template: string;
+  programme_template?: string;
+  programme_templates?: PlanningRelaySmsProgrammeTemplate[];
   last_sent_for_date: string | null;
   last_attempt_for_date: string | null;
 };
 
 const isSmsConfig = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
+
+const normalizePlanningRelayProgrammeTemplates = (
+  value: unknown,
+  legacyTemplate?: unknown,
+): PlanningRelaySmsProgrammeTemplate[] => {
+  const source = Array.isArray(value) ? value : [];
+  const seenKeys = new Set<string>();
+  const templates = source.flatMap((item) => {
+    if (!isSmsConfig(item)) return [];
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    const key = typeof item.key === "string" ? item.key.trim().toLowerCase() : "";
+    const template = typeof item.template === "string" ? item.template.trim() : "";
+    if (!id || !/^[a-z][a-z0-9_]{1,39}$/.test(key) || !template || seenKeys.has(key)) return [];
+    seenKeys.add(key);
+    return [{ id, key, template: template.slice(0, 500) }];
+  }).slice(0, 10);
+  if (templates.length > 0) return templates;
+  return [{
+    id: "programme-gite",
+    key: "programme_gite",
+    template: typeof legacyTemplate === "string" && legacyTemplate.trim()
+      ? legacyTemplate.trim().slice(0, 500)
+      : PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
+  }];
+};
 
 export const normalizePlanningRelaySmsConfigs = (
   value: unknown,
@@ -85,6 +117,7 @@ export const normalizePlanningRelaySmsConfigs = (
     const id = typeof config.id === "string" ? config.id.trim() : "";
     const workerId = typeof config.worker_id === "string" ? config.worker_id.trim() : "";
     if (!id || !workerId) return [];
+    const programmeTemplates = normalizePlanningRelayProgrammeTemplates(config.programme_templates, config.programme_template);
     return [{
       id,
       worker_id: workerId,
@@ -94,9 +127,8 @@ export const normalizePlanningRelaySmsConfigs = (
       template: typeof config.template === "string" && config.template.trim()
         ? config.template.trim().slice(0, 1000)
         : PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
-      programme_template: typeof config.programme_template === "string" && config.programme_template.trim()
-        ? config.programme_template.trim().slice(0, 500)
-        : PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
+      programme_template: programmeTemplates[0].template,
+      programme_templates: programmeTemplates,
       last_sent_for_date: typeof config.last_sent_for_date === "string" ? config.last_sent_for_date : null,
       last_attempt_for_date: typeof config.last_attempt_for_date === "string" ? config.last_attempt_for_date : null,
     }];
@@ -110,6 +142,7 @@ export const normalizePlanningRelaySmsConfigs = (
     send_day: normalizePlanningRelaySmsSendDay(legacy.sms_send_day),
     template: PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
     programme_template: PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
+    programme_templates: normalizePlanningRelayProgrammeTemplates(undefined),
     last_sent_for_date: legacy.sms_last_sent_for_date ?? null,
     last_attempt_for_date: legacy.sms_last_attempt_for_date ?? null,
   }];
@@ -204,10 +237,11 @@ export const renderPlanningRelaySmsTemplate = (template: string, variables: {
   intervenant: string;
   periode: string;
   lien: string;
+  [key: string]: string;
 }) => stripSmsAccents(
   (template.trim() || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE).replace(
-    /{{\s*(date|date_texte|programme|programme_gite|gite|horaire|in_out|in-out|intervenant|periode|lien)\s*}}/gi,
-    (_match, key: string) => variables[key.toLowerCase().replace("-", "_") as keyof typeof variables],
+    /{{\s*([a-z][a-z0-9_-]*)\s*}}/gi,
+    (match, key: string) => variables[key.toLowerCase().replace("-", "_")] ?? match,
   ),
 );
 
@@ -561,12 +595,18 @@ const buildConfigMessage = async (period: {
   const messages = await buildPlanningRelayProgramSmsForPeriod(period, targetIsoDate, heading);
   if (!messages?.length) return null;
   const programme = messages.join("\n");
-  const programVariables = extractPlanningRelayProgramVariables(programme, config.programme_template);
+  const programmeTemplates = normalizePlanningRelayProgrammeTemplates(config.programme_templates, config.programme_template);
+  const programVariables = extractPlanningRelayProgramVariables(programme, programmeTemplates[0].template);
+  const dynamicVariables = Object.fromEntries(programmeTemplates.map((item) => [
+    item.key,
+    extractPlanningRelayProgramVariables(programme, item.template).programme_gite,
+  ]));
   return renderPlanningRelaySmsTemplate(config.template, {
     date: formatPlanningRelaySmsHeadingDate(targetIsoDate),
     date_texte: formatPlanningRelaySmsTextDate(targetIsoDate),
     programme,
     ...programVariables,
+    ...dynamicVariables,
     intervenant: worker.nom,
     periode: period.label,
     lien: buildPlanningRelayPublicUrl(period, publicOrigin, requirePublicOrigin),
