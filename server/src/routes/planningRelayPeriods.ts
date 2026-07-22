@@ -21,6 +21,7 @@ import {
 } from "../services/requestThrottle.js";
 import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
 import {
+  PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
   PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
   normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsConfigs,
@@ -61,6 +62,7 @@ const smsConfigSchema = z.object({
   send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/),
   send_day: z.enum(["previous_day", "same_day"]),
   template: z.string().trim().min(1).max(1000),
+  programme_template: z.string().trim().min(1).max(500).optional(),
   last_sent_for_date: isoDateSchema.nullable().optional(),
   last_attempt_for_date: isoDateSchema.nullable().optional(),
 });
@@ -457,6 +459,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
           ? { sms_configs: encodeJsonField(payload.sms_configs.map((config) => ({
               ...config,
               template: config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
+              programme_template: config.programme_template || PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
             }))) }
           : {}),
         ...(payload.expires_at !== undefined
@@ -572,6 +575,7 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       const result = await sendPlanningRelayConfigTestSms(current, {
         ...payload.config,
         template: payload.config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
+        programme_template: payload.config.programme_template || PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
         last_sent_for_date: payload.config.last_sent_for_date ?? null,
         last_attempt_for_date: payload.config.last_attempt_for_date ?? null,
       }, worker, undefined, requestOrigin);
@@ -638,6 +642,7 @@ privateRouter.post("/:id/preview-sms", async (req, res, next) => {
     if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
     const preview = await previewPlanningRelayConfigSms(current, {
       ...config,
+      programme_template: config.programme_template || PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
       last_sent_for_date: config.last_sent_for_date ?? null,
       last_attempt_for_date: config.last_attempt_for_date ?? null,
     }, worker, requestOrigin);

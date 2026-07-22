@@ -5177,6 +5177,68 @@ body {
   resize: vertical;
 }
 
+.operations-programme-composer {
+  overflow: hidden;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  background: var(--primary-soft);
+}
+
+.operations-programme-composer > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--primary-strong);
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.operations-programme-composer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.operations-programme-composer > summary::after {
+  content: "+";
+  font-size: 1rem;
+}
+
+.operations-programme-composer[open] > summary::after {
+  content: "−";
+}
+
+.operations-programme-composer > summary small {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.66rem;
+}
+
+.operations-programme-composer__content {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.operations-programme-composer__content > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.operations-programme-composer .operations-sms-template textarea {
+  min-height: 72px;
+  background: #fff;
+}
+
+.operations-sms-variable-groups {
+  display: grid;
+  gap: 8px;
+}
+
 .operations-sms-variables {
   display: flex;
   align-items: center;
@@ -5185,6 +5247,22 @@ body {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
+}
+
+.operations-sms-variables--dynamic {
+  color: var(--primary-strong);
+}
+
+.operations-sms-variables--dynamic button {
+  border: 1px solid var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.operations-sms-variables--fixed button {
+  border: 1px solid var(--border);
+  background: var(--chip);
+  color: var(--ink);
 }
 
 .operations-sms-variables button {

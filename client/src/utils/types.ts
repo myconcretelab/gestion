@@ -152,6 +152,7 @@ export type PlanningRelaySmsConfig = {
   send_time: string;
   send_day: "previous_day" | "same_day";
   template: string;
+  programme_template: string;
   last_sent_for_date: string | null;
   last_attempt_for_date: string | null;
 };

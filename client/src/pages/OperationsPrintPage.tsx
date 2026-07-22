@@ -224,7 +224,8 @@ const createSmsConfig = (): PlanningRelaySmsConfig => ({
   enabled: true,
   send_time: "18:00",
   send_day: "previous_day",
-  template: "{{gite}} : {{horaire}} ({{in-out}})",
+  template: "{{programme_gite}}",
+  programme_template: "{{gite}} : {{horaire}} - {{in-out}}",
   last_sent_for_date: null,
   last_attempt_for_date: null,
 });
@@ -657,14 +658,20 @@ const OperationsPrintPage = () => {
     });
   };
 
-  const insertSmsVariable = (periodId: string, config: PlanningRelaySmsConfig, variable: string) => {
-    const refKey = `${periodId}:${config.id}`;
+  const insertSmsVariable = (
+    periodId: string,
+    config: PlanningRelaySmsConfig,
+    field: "template" | "programme_template",
+    variable: string,
+  ) => {
+    const refKey = `${periodId}:${config.id}:${field}`;
     const textarea = smsTemplateRefs.current.get(refKey);
-    const selectionStart = textarea?.selectionStart ?? config.template.length;
+    const currentTemplate = config[field];
+    const selectionStart = textarea?.selectionStart ?? currentTemplate.length;
     const selectionEnd = textarea?.selectionEnd ?? selectionStart;
-    const nextTemplate = `${config.template.slice(0, selectionStart)}${variable}${config.template.slice(selectionEnd)}`;
+    const nextTemplate = `${currentTemplate.slice(0, selectionStart)}${variable}${currentTemplate.slice(selectionEnd)}`;
     const nextCursorPosition = selectionStart + variable.length;
-    updateSmsConfig(periodId, config.id, { template: nextTemplate });
+    updateSmsConfig(periodId, config.id, { [field]: nextTemplate });
     window.requestAnimationFrame(() => {
       const nextTextarea = smsTemplateRefs.current.get(refKey);
       nextTextarea?.focus();
@@ -784,6 +791,10 @@ const OperationsPrintPage = () => {
     }
     if (draft.sms_configs.some((config) => !config.worker_id)) {
       setSavedPeriodsError("Choisissez un intervenant pour chaque SMS.");
+      return;
+    }
+    if (draft.sms_configs.some((config) => !config.template.trim() || !config.programme_template.trim())) {
+      setSavedPeriodsError("Le texte du SMS et le modèle d’intervention ne peuvent pas être vides.");
       return;
     }
 
@@ -1170,11 +1181,39 @@ const OperationsPrintPage = () => {
                                   </select>
                                 </label>
                               </div>
+                              <details className="operations-programme-composer">
+                                <summary>
+                                  <span>Composer une ligne d’intervention</span>
+                                  <small>Bloc répété · {"{{programme_gite}}"}</small>
+                                </summary>
+                                <div className="operations-programme-composer__content">
+                                  <p>Cette phrase est répétée une fois par intervention prévue le même jour.</p>
+                                  <label className="field operations-sms-template">
+                                    <span>Modèle d’une intervention</span>
+                                    <textarea
+                                      ref={(element) => {
+                                        const refKey = `${period.id}:${config.id}:programme_template`;
+                                        if (element) smsTemplateRefs.current.set(refKey, element);
+                                        else smsTemplateRefs.current.delete(refKey);
+                                      }}
+                                      rows={2}
+                                      value={config.programme_template}
+                                      onChange={(event) => updateSmsConfig(period.id, config.id, { programme_template: event.target.value })}
+                                    />
+                                  </label>
+                                  <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label="Variables répétées par intervention">
+                                    <span>Variables d’intervention :</span>
+                                    {["{{gite}}", "{{horaire}}", "{{in-out}}"].map((variable) => (
+                                      <button key={variable} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "programme_template", variable)}>{variable}</button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </details>
                               <label className="field operations-sms-template">
                                 <span>Texte du SMS</span>
                                 <textarea
                                   ref={(element) => {
-                                    const refKey = `${period.id}:${config.id}`;
+                                    const refKey = `${period.id}:${config.id}:template`;
                                     if (element) smsTemplateRefs.current.set(refKey, element);
                                     else smsTemplateRefs.current.delete(refKey);
                                   }}
@@ -1183,11 +1222,17 @@ const OperationsPrintPage = () => {
                                   onChange={(event) => updateSmsConfig(period.id, config.id, { template: event.target.value })}
                                 />
                               </label>
-                              <div className="operations-sms-variables" aria-label="Variables disponibles">
-                                <span>Variables :</span>
-                                {["{{programme_gite}}", "{{gite}}", "{{horaire}}", "{{in-out}}", "{{date}}", "{{date_texte}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
-                                  <button key={variable} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, variable)}>{variable}</button>
-                                ))}
+                              <div className="operations-sms-variable-groups">
+                                <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label="Bloc dynamique répété">
+                                  <span>Bloc répété :</span>
+                                  <button type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", "{{programme_gite}}")}>{"{{programme_gite}}"}</button>
+                                </div>
+                                <div className="operations-sms-variables operations-sms-variables--fixed" aria-label="Variables fixes du SMS">
+                                  <span>Variables fixes :</span>
+                                  {["{{date}}", "{{date_texte}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
+                                    <button key={variable} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", variable)}>{variable}</button>
+                                  ))}
+                                </div>
                               </div>
                               <PlanningRelaySmsLivePreview period={period} config={config} />
                               <div className="operations-period-detail__meta">
