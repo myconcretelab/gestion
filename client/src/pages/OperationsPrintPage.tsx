@@ -252,6 +252,22 @@ const DEFAULT_PROGRAMME_TEMPLATES: PlanningRelaySmsProgrammeTemplate[] = [{
   template: "{{gite}} : {{horaire}} - {{in-out}}",
 }];
 
+const mergeProgrammeTemplateCollections = (
+  ...collections: PlanningRelaySmsProgrammeTemplate[][]
+) => {
+  const templates: PlanningRelaySmsProgrammeTemplate[] = [];
+  const ids = new Set<string>();
+  const keys = new Set<string>();
+  for (const item of collections.flat()) {
+    if (ids.has(item.id) || keys.has(item.key)) continue;
+    ids.add(item.id);
+    keys.add(item.key);
+    templates.push({ ...item });
+    if (templates.length === 10) break;
+  }
+  return templates.length ? templates : DEFAULT_PROGRAMME_TEMPLATES;
+};
+
 const createSmsConfig = (programmeTemplates = DEFAULT_PROGRAMME_TEMPLATES): PlanningRelaySmsConfig => ({
   id: globalThis.crypto?.randomUUID?.() ?? `sms-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   worker_id: "",
@@ -568,6 +584,10 @@ const OperationsPrintPage = () => {
     () => workers.filter((worker) => worker.is_active),
     [workers],
   );
+  const availableProgrammeTemplates = useMemo(() => mergeProgrammeTemplateCollections(
+    sharedProgrammeTemplates,
+    savedPeriods.flatMap((period) => period.sms_configs.flatMap((config) => config.programme_templates ?? [])),
+  ), [savedPeriods, sharedProgrammeTemplates]);
 
   const setPreset = (daysToShow: number) => {
     setTo(toIsoDateUtc(addUtcDays(parseIsoDateUtc(from), daysToShow - 1)));
@@ -758,7 +778,7 @@ const OperationsPrintPage = () => {
 
   const openProgrammeTemplateEditor = () => {
     setProgrammeTemplateEditor(true);
-    setProgrammeTemplateDrafts(sharedProgrammeTemplates.map((item) => ({ ...item })));
+    setProgrammeTemplateDrafts(availableProgrammeTemplates.map((item) => ({ ...item })));
     setProgrammeTemplateError(null);
   };
 
@@ -859,7 +879,7 @@ const OperationsPrintPage = () => {
     const period = savedPeriods.find((item) => item.id === periodId);
     const draft = periodDrafts[periodId] ?? (period ? buildPeriodDraft(period) : null);
     if (!draft) return;
-    updatePeriodDraft(periodId, { sms_configs: [...draft.sms_configs, createSmsConfig(sharedProgrammeTemplates)] });
+    updatePeriodDraft(periodId, { sms_configs: [...draft.sms_configs, createSmsConfig(availableProgrammeTemplates)] });
   };
 
   const updateWorkerDraft = (workerId: string, patch: Partial<PlanningRelayWorkerDraft>) => {
@@ -1173,7 +1193,7 @@ const OperationsPrintPage = () => {
                 <span>Bibliothèque partagée par toutes les périodes</span>
               </div>
               <div className="operations-programme-mini__chips" aria-label="Variables dynamiques partagées">
-                {sharedProgrammeTemplates.map((item) => <span key={item.id}>{`{{${item.key}}}`}</span>)}
+                {availableProgrammeTemplates.map((item) => <span key={item.id}>{`{{${item.key}}}`}</span>)}
               </div>
               <button
                 type="button"
