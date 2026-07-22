@@ -176,12 +176,22 @@ const formatPlanningRelaySmsHeadingDate = (isoDate: string) =>
     timeZone: "UTC",
   });
 
+export const formatPlanningRelaySmsTextDate = (isoDate: string) =>
+  parsePlanningRelayIsoDate(isoDate).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
+
 export const getPlanningRelayTestProgramHeading = (targetIsoDate: string) =>
   `TEST - Programme du ${formatPlanningRelaySmsHeadingDate(targetIsoDate)}`;
 
 export const renderPlanningRelaySmsTemplate = (template: string, variables: {
   date: string;
+  date_texte: string;
   programme: string;
+  programme_gite: string;
   gite: string;
   horaire: string;
   in_out: string;
@@ -190,7 +200,7 @@ export const renderPlanningRelaySmsTemplate = (template: string, variables: {
   lien: string;
 }) => stripSmsAccents(
   (template.trim() || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE).replace(
-    /{{\s*(date|programme|gite|horaire|in_out|in-out|intervenant|periode|lien)\s*}}/gi,
+    /{{\s*(date|date_texte|programme|programme_gite|gite|horaire|in_out|in-out|intervenant|periode|lien)\s*}}/gi,
     (_match, key: string) => variables[key.toLowerCase().replace("-", "_") as keyof typeof variables],
   ),
 );
@@ -202,6 +212,7 @@ export const extractPlanningRelayProgramVariables = (programme: string) => {
     return [{ gite: match[1].trim(), horaire: match[2].trim(), in_out: match[3].trim() }];
   });
   return {
+    programme_gite: rows.map((row) => `${row.gite} : ${row.horaire} - ${row.in_out}`).join("\n"),
     gite: rows.map((row) => row.gite).join(" / "),
     horaire: rows.map((row) => row.horaire).join(" / "),
     in_out: rows.map((row) => row.in_out).join(" / "),
@@ -541,6 +552,7 @@ const buildConfigMessage = async (period: {
   const programVariables = extractPlanningRelayProgramVariables(programme);
   return renderPlanningRelaySmsTemplate(config.template, {
     date: formatPlanningRelaySmsHeadingDate(targetIsoDate),
+    date_texte: formatPlanningRelaySmsTextDate(targetIsoDate),
     programme,
     ...programVariables,
     intervenant: worker.nom,

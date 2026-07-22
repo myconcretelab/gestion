@@ -4,6 +4,7 @@ import {
   buildPlanningRelayProgramSmsMessages,
   buildPlanningRelayPublicUrl,
   extractPlanningRelayProgramVariables,
+  formatPlanningRelaySmsTextDate,
   getPlanningRelayProgramHeading,
   getPlanningRelayProgramTargetIsoDate,
   getPlanningRelayTestProgramHeading,
@@ -130,10 +131,12 @@ test("personnalise un SMS avec les variables disponibles", () => {
     renderPlanningRelaySmsTemplate("Bonjour {{intervenant}}, {{programme}} — {{date}} — {{periode}} — {{lien}}", {
       intervenant: "Élodie",
       programme: "Gîte Étang: ménage",
+      programme_gite: "Gîte Étang: ménage",
       gite: "Gîte Étang",
       horaire: "Entre 10h et 17h",
       in_out: "entrée + sortie",
       date: "21/07/2026",
+      date_texte: "mardi 21 juillet",
       periode: "Vacances Espagne",
       lien: "https://example.test/r/ABC12345",
     }),
@@ -148,6 +151,7 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
     "Le Liberte: A partir de 12h (sortie) + menage",
   ].join("\n"));
   assert.deepEqual(variables, {
+    programme_gite: "Tante Phonsine : Entre 12h et 17h - entree + sortie\nLe Liberte : A partir de 12h - sortie",
     gite: "Tante Phonsine / Le Liberte",
     horaire: "Entre 12h et 17h / A partir de 12h",
     in_out: "entree + sortie / sortie",
@@ -156,6 +160,7 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
     renderPlanningRelaySmsTemplate("{{gite}} | {{horaire}} | {{in-out}}", {
       ...variables,
       date: "21/07/2026",
+      date_texte: "mardi 21 juillet",
       programme: "",
       intervenant: "Mathilde",
       periode: "Relais",
@@ -163,6 +168,22 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
     }),
     "Tante Phonsine / Le Liberte | Entre 12h et 17h / A partir de 12h | entree + sortie / sortie",
   );
+  assert.equal(
+    renderPlanningRelaySmsTemplate("{{date_texte}}\n{{programme_gite}}", {
+      ...variables,
+      date: "21/07/2026",
+      date_texte: "mardi 21 juillet",
+      programme: "",
+      intervenant: "Mathilde",
+      periode: "Relais",
+      lien: "https://example.test/r/ABC12345",
+    }),
+    "mardi 21 juillet\nTante Phonsine : Entre 12h et 17h - entree + sortie\nLe Liberte : A partir de 12h - sortie",
+  );
+});
+
+test("formate la date textuelle de l'intervention", () => {
+  assert.equal(formatPlanningRelaySmsTextDate("2026-07-24"), "vendredi 24 juillet");
 });
 
 test("limite chaque période à une configuration SMS et migre le destinataire historique", () => {
