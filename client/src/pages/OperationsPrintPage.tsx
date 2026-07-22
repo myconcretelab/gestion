@@ -1322,39 +1322,35 @@ const OperationsPrintPage = () => {
                       </label>
                     </div>
 
-                    <details className="operations-sms-accordion">
-                      <summary>
-                        <span>SMS des intervenants</span>
-                        <small>{draft.sms_configs.length ? "Configuré" : "Non configuré"}</small>
-                      </summary>
-                      <div className="operations-sms-accordion__content">
-                        <p>Les intervenants sélectionnés reçoivent le même programme, avec le même texte et au même horaire.</p>
-                        {draft.sms_configs.map((config) => {
-                          const selectedWorkerIds = getSmsWorkerIds(config);
-                          const selectableWorkers = workers.filter((worker) => worker.is_active || selectedWorkerIds.includes(worker.id));
-                          return (
-                            <section key={config.id} className="operations-sms-config">
-                              <header>
-                                <strong>Configuration SMS</strong>
-                                <label><input type="checkbox" checked={config.enabled} onChange={(event) => updateSmsConfig(period.id, config.id, { enabled: event.target.checked })} /> Envoi automatique activé</label>
-                              </header>
-                              <div className="operations-period-detail__grid">
-                                <fieldset className="operations-sms-workers">
-                                  <legend>Intervenants</legend>
-                                  <div>
-                                    {selectableWorkers.map((worker) => (
-                                      <label key={worker.id} className={selectedWorkerIds.includes(worker.id) ? "is-selected" : ""}>
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedWorkerIds.includes(worker.id)}
-                                          onChange={() => toggleSmsWorker(period.id, config, worker.id)}
-                                        />
-                                        <span>{worker.nom}</span>
-                                        <small>{worker.telephone}{worker.is_active ? "" : " · inactif"}</small>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </fieldset>
+                    <div className="operations-sms-delivery">
+                      {draft.sms_configs.map((config) => {
+                        const selectedWorkerIds = getSmsWorkerIds(config);
+                        const selectableWorkers = workers.filter((worker) => worker.is_active || selectedWorkerIds.includes(worker.id));
+                        return (
+                          <section key={config.id} className="operations-sms-config">
+                            <header>
+                              <strong>Envoi aux intervenants</strong>
+                              <label><input type="checkbox" checked={config.enabled} onChange={(event) => updateSmsConfig(period.id, config.id, { enabled: event.target.checked })} /> Envoi automatique activé</label>
+                            </header>
+                            <p className="operations-sms-config__hint">Tous les destinataires partagent ce programme et cet horaire.</p>
+                            <div className="operations-period-detail__grid operations-sms-delivery__fields">
+                              <fieldset className="operations-sms-workers">
+                                <legend>Intervenants</legend>
+                                <div>
+                                  {selectableWorkers.map((worker) => (
+                                    <label key={worker.id} className={selectedWorkerIds.includes(worker.id) ? "is-selected" : ""}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedWorkerIds.includes(worker.id)}
+                                        onChange={() => toggleSmsWorker(period.id, config, worker.id)}
+                                      />
+                                      <span>{worker.nom}</span>
+                                      <small>{worker.telephone}{worker.is_active ? "" : " · inactif"}</small>
+                                    </label>
+                                  ))}
+                                </div>
+                              </fieldset>
+                              <div className="operations-sms-delivery__schedule">
                                 <label className="field">
                                   <span>Heure d'envoi</span>
                                   <input type="time" value={config.send_time} onChange={(event) => updateSmsConfig(period.id, config.id, { send_time: event.target.value })} />
@@ -1367,51 +1363,59 @@ const OperationsPrintPage = () => {
                                   </select>
                                 </label>
                               </div>
-                              <label className="field operations-sms-template">
-                                <span>Texte du SMS</span>
-                                <textarea
-                                  ref={(element) => {
-                                    const refKey = `${period.id}:${config.id}:template`;
-                                    if (element) smsTemplateRefs.current.set(refKey, element);
-                                    else smsTemplateRefs.current.delete(refKey);
-                                  }}
-                                  rows={5}
-                                  value={config.template}
-                                  onChange={(event) => updateSmsConfig(period.id, config.id, { template: event.target.value })}
-                                />
-                              </label>
-                              <div className="operations-sms-variable-groups">
-                                <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label="Bloc dynamique répété">
-                                  <span>Blocs répétés :</span>
-                                  {config.programme_templates.map((item) => {
-                                    const variable = `{{${item.key}}}`;
-                                    return <button key={item.id} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", variable)}>{variable}</button>;
-                                  })}
-                                  <button type="button" className="secondary operations-sms-manage-variables" onClick={() => openProgrammeTemplateEditor(period.id, config)}>Gérer…</button>
+                            </div>
+                            <details className="operations-sms-accordion operations-sms-accordion--message">
+                              <summary>
+                                <span>Texte et contenu du SMS</span>
+                                <small>{config.template.trim() ? "Configuré" : "À compléter"}</small>
+                              </summary>
+                              <div className="operations-sms-accordion__content">
+                                <label className="field operations-sms-template">
+                                  <span>Texte du SMS</span>
+                                  <textarea
+                                    ref={(element) => {
+                                      const refKey = `${period.id}:${config.id}:template`;
+                                      if (element) smsTemplateRefs.current.set(refKey, element);
+                                      else smsTemplateRefs.current.delete(refKey);
+                                    }}
+                                    rows={5}
+                                    value={config.template}
+                                    onChange={(event) => updateSmsConfig(period.id, config.id, { template: event.target.value })}
+                                  />
+                                </label>
+                                <div className="operations-sms-variable-groups">
+                                  <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label="Bloc dynamique répété">
+                                    <span>Blocs répétés :</span>
+                                    {config.programme_templates.map((item) => {
+                                      const variable = `{{${item.key}}}`;
+                                      return <button key={item.id} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", variable)}>{variable}</button>;
+                                    })}
+                                    <button type="button" className="secondary operations-sms-manage-variables" onClick={() => openProgrammeTemplateEditor(period.id, config)}>Gérer…</button>
+                                  </div>
+                                  <div className="operations-sms-variables operations-sms-variables--fixed" aria-label="Variables fixes du SMS">
+                                    <span>Variables fixes :</span>
+                                    {["{{date}}", "{{date_texte}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
+                                      <button key={variable} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", variable)}>{variable}</button>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="operations-sms-variables operations-sms-variables--fixed" aria-label="Variables fixes du SMS">
-                                  <span>Variables fixes :</span>
-                                  {["{{date}}", "{{date_texte}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
-                                    <button key={variable} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", variable)}>{variable}</button>
-                                  ))}
+                                <PlanningRelaySmsLivePreview period={period} config={config} />
+                                <div className="operations-period-detail__meta">
+                                  <span>Dernière tentative : {config.last_attempt_for_date ? formatShortDate(config.last_attempt_for_date) : "aucune"}</span>
+                                  <span>Dernier envoi : {config.last_sent_for_date ? formatShortDate(config.last_sent_for_date) : "aucun"}</span>
                                 </div>
+                                <button type="button" className="secondary" onClick={() => void sendPeriodTestSms(period, config)} disabled={isTestingSms || selectedWorkerIds.length === 0 || !smsStatus?.configured}>
+                                  {isTestingSms ? "Test en cours…" : "Tester ce SMS"}
+                                </button>
                               </div>
-                              <PlanningRelaySmsLivePreview period={period} config={config} />
-                              <div className="operations-period-detail__meta">
-                                <span>Dernière tentative : {config.last_attempt_for_date ? formatShortDate(config.last_attempt_for_date) : "aucune"}</span>
-                                <span>Dernier envoi : {config.last_sent_for_date ? formatShortDate(config.last_sent_for_date) : "aucun"}</span>
-                              </div>
-                              <button type="button" className="secondary" onClick={() => void sendPeriodTestSms(period, config)} disabled={isTestingSms || selectedWorkerIds.length === 0 || !smsStatus?.configured}>
-                                {isTestingSms ? "Test en cours…" : "Tester ce SMS"}
-                              </button>
-                            </section>
-                          );
-                        })}
-                        {draft.sms_configs.length === 0 ? (
-                          <button type="button" className="secondary" onClick={() => addSmsConfig(period.id)}>Configurer le SMS</button>
-                        ) : null}
-                      </div>
-                    </details>
+                            </details>
+                          </section>
+                        );
+                      })}
+                      {draft.sms_configs.length === 0 ? (
+                        <button type="button" className="secondary" onClick={() => addSmsConfig(period.id)}>Configurer l’envoi SMS</button>
+                      ) : null}
+                    </div>
 
                     <div className="operations-period-detail__toggles">
                       <label>

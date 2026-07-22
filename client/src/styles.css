@@ -5192,10 +5192,17 @@ body {
   background: #fff;
 }
 
+.operations-sms-delivery {
+  display: grid;
+  gap: 10px;
+}
+
 .operations-sms-config > header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .operations-sms-config > header label {
@@ -5205,6 +5212,28 @@ body {
   color: #374151;
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.operations-sms-config__hint {
+  margin: -4px 0 0 !important;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.operations-sms-delivery__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.72fr);
+  gap: 12px;
+}
+
+.operations-sms-delivery__schedule {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.operations-sms-accordion--message {
+  margin-top: 2px;
 }
 
 .operations-sms-workers {
@@ -5999,6 +6028,10 @@ body {
   }
 
   .operations-management-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-sms-delivery__fields {
     grid-template-columns: 1fr;
   }
 
