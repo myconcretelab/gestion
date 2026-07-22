@@ -268,8 +268,8 @@ const getOperationTone = (operations: StayOperation[]) => {
 
 const renderProgrammeTemplateExample = (template: string) => {
   const examples = [
-    { gite: "Tante Phonsine", horaire: "Entre 12h et 17h", in_out: "entrée + sortie", options: "draps 2 lits, ménage" },
-    { gite: "Le Liberté", horaire: "Avant 17h", in_out: "entrée", options: "serviettes 4 pers." },
+    { gite: "Tante Phonsine", horaire: "Entre 12h et 17h", in_out: "entrée + sortie", options: "(draps 2 lits, ménage)" },
+    { gite: "Le Liberté", horaire: "Avant 17h", in_out: "entrée", options: "" },
   ];
   return examples.map((values) => template.replace(
     /{{\s*(gite|horaire|in_out|in-out|options)\s*}}/gi,
