@@ -250,18 +250,29 @@ export const extractPlanningRelayProgramVariables = (
   programmeTemplate = PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
 ) => {
   const rows = programme.split("\n").slice(1).flatMap((line) => {
-    const match = line.match(/^(.+?):\s*(.*?)\s*\((entree \+ sortie|entree|sortie)\)(?:\s*\+.*)?$/i);
+    const match = line.match(/^(.+?):\s*(.*?)\s*\((entree \+ sortie|entree|sortie)\)(?:\s*\+\s*(.*))?$/i);
     if (!match) return [];
-    return [{ gite: match[1].trim(), horaire: match[2].trim(), in_out: match[3].trim() }];
+    const options = (match[4] ?? "")
+      .split(/\s*\+\s*/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(", ");
+    return [{
+      gite: match[1].trim(),
+      horaire: match[2].trim(),
+      in_out: match[3].trim(),
+      options: options || "aucune option",
+    }];
   });
   return {
     programme_gite: rows.map((row) => programmeTemplate.replace(
-      /{{\s*(gite|horaire|in_out|in-out)\s*}}/gi,
+      /{{\s*(gite|horaire|in_out|in-out|options)\s*}}/gi,
       (_match, key: string) => row[key.toLowerCase().replace("-", "_") as keyof typeof row],
     )).join("\n"),
     gite: rows.map((row) => row.gite).join(" / "),
     horaire: rows.map((row) => row.horaire).join(" / "),
     in_out: rows.map((row) => row.in_out).join(" / "),
+    options: rows.map((row) => row.options).join(" / "),
   };
 };
 
@@ -408,6 +419,9 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
     hasArrival: boolean;
     hasDeparture: boolean;
     hasCleaning: boolean;
+    hasLateCheckout: boolean;
+    linenBeds: number | null;
+    towelGuests: number | null;
   }>();
   const heading = params.heading ?? "Programme demain";
   const handledArrivalRows = buildAlreadyHandledArrivalKeys(
@@ -436,6 +450,9 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
         hasArrival: false,
         hasDeparture: false,
         hasCleaning: false,
+        hasLateCheckout: false,
+        linenBeds: null,
+        towelGuests: null,
       };
       rowsByGite.set(reservation.gite_id, row);
     }
@@ -444,12 +461,15 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
       row.hasDeparture = true;
       row.departureTime ??= formatSmsTime(times?.heure_depart ?? reservation.gite.heure_depart_defaut);
       if (options.menage?.enabled) row.hasCleaning = true;
+      if (options.depart_tardif?.enabled) row.hasLateCheckout = true;
     }
 
     if (isSameIsoDate(reservation.date_entree, params.targetIsoDate)) {
       if (!params.arrivalsOnly && handledArrivalRows.has(`${params.targetIsoDate}-${reservation.gite_id}`)) continue;
       row.hasArrival = true;
       row.arrivalTime ??= formatSmsTime(times?.heure_arrivee ?? reservation.gite.heure_arrivee_defaut);
+      if (options.draps?.enabled) row.linenBeds = Math.max(0, Math.round(options.draps.nb_lits ?? 0));
+      if (options.linge_toilette?.enabled) row.towelGuests = Math.max(0, Math.round(options.linge_toilette.nb_personnes ?? 0));
     }
   }
 
@@ -466,8 +486,14 @@ export const buildPlanningRelayProgramSmsMessages = (params: {
         : row.hasArrival
           ? "entree"
           : "sortie";
-      const cleaning = row.hasCleaning ? " + menage" : "";
-      return `${row.giteName}: ${getOperationSchedule(row.departureTime, row.arrivalTime)} (${kinds})${cleaning}`;
+      const optionLabels = [
+        row.linenBeds !== null ? `draps${row.linenBeds > 0 ? ` ${row.linenBeds} lit${row.linenBeds > 1 ? "s" : ""}` : ""}` : null,
+        row.towelGuests !== null ? `serviettes${row.towelGuests > 0 ? ` ${row.towelGuests} pers.` : ""}` : null,
+        row.hasCleaning ? "menage" : null,
+        row.hasLateCheckout ? "depart tardif" : null,
+      ].filter((label): label is string => Boolean(label));
+      const optionsSuffix = optionLabels.map((label) => ` + ${label}`).join("");
+      return `${row.giteName}: ${getOperationSchedule(row.departureTime, row.arrivalTime)} (${kinds})${optionsSuffix}`;
     });
 
   if (lines.length === 0) return [];

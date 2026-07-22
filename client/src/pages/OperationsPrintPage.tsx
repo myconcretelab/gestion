@@ -268,11 +268,11 @@ const getOperationTone = (operations: StayOperation[]) => {
 
 const renderProgrammeTemplateExample = (template: string) => {
   const examples = [
-    { gite: "Tante Phonsine", horaire: "Entre 12h et 17h", in_out: "entrée + sortie" },
-    { gite: "Le Liberté", horaire: "Avant 17h", in_out: "entrée" },
+    { gite: "Tante Phonsine", horaire: "Entre 12h et 17h", in_out: "entrée + sortie", options: "draps 2 lits, ménage" },
+    { gite: "Le Liberté", horaire: "Avant 17h", in_out: "entrée", options: "serviettes 4 pers." },
   ];
   return examples.map((values) => template.replace(
-    /{{\s*(gite|horaire|in_out|in-out)\s*}}/gi,
+    /{{\s*(gite|horaire|in_out|in-out|options)\s*}}/gi,
     (_match, key: string) => values[key.toLowerCase().replace("-", "_") as keyof typeof values],
   )).join("\n");
 };
@@ -753,7 +753,7 @@ const OperationsPrintPage = () => {
 
   const saveProgrammeTemplates = async () => {
     if (!programmeTemplateEditor) return;
-    const reservedKeys = new Set(["date", "date_texte", "programme", "gite", "horaire", "in_out", "intervenant", "periode", "lien"]);
+    const reservedKeys = new Set(["date", "date_texte", "programme", "gite", "horaire", "in_out", "options", "intervenant", "periode", "lien"]);
     const normalizedDrafts = programmeTemplateDrafts.map((item) => ({
       ...item,
       key: item.key.trim().toLowerCase(),
@@ -1495,7 +1495,7 @@ const OperationsPrintPage = () => {
                   </label>
                   <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label={`Variables disponibles pour ${item.key}`}>
                     <span>Variables d’intervention :</span>
-                    {["{{gite}}", "{{horaire}}", "{{in-out}}"].map((variable) => (
+                    {["{{gite}}", "{{horaire}}", "{{in-out}}", "{{options}}"].map((variable) => (
                       <button key={variable} type="button" className="secondary" onClick={() => insertProgrammeTemplateVariable(item.id, variable)}>{variable}</button>
                     ))}
                   </div>
