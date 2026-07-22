@@ -31,6 +31,7 @@ import {
   sendPlanningRelayProgramTestSms,
 } from "../services/planningRelaySms.js";
 import {
+  mergePlanningRelayProgrammeTemplates,
   readPlanningRelayProgrammeTemplates,
   writePlanningRelayProgrammeTemplates,
 } from "../services/planningRelayProgrammeTemplateSettings.js";
@@ -129,11 +130,18 @@ const defaultProgrammeTemplates = () => [{
 
 const getSharedProgrammeTemplates = async () => {
   const stored = readPlanningRelayProgrammeTemplates();
-  if (stored) return stored;
   const periods = await prisma.planningRelayPeriod.findMany({ orderBy: { createdAt: "asc" } });
-  const inherited = periods.flatMap((period) => normalizePlanningRelaySmsConfigs(period.sms_configs, period))[0]
-    ?.programme_templates;
-  return writePlanningRelayProgrammeTemplates(inherited?.length ? inherited : defaultProgrammeTemplates());
+  const inherited = periods.flatMap((period) =>
+    normalizePlanningRelaySmsConfigs(period.sms_configs, period)
+      .flatMap((config) => config.programme_templates ?? [])
+  );
+  const merged = mergePlanningRelayProgrammeTemplates(stored, inherited, defaultProgrammeTemplates());
+  if (
+    stored &&
+    stored.length === merged.length &&
+    stored.every((item, index) => item.id === merged[index].id && item.key === merged[index].key && item.template === merged[index].template)
+  ) return stored;
+  return writePlanningRelayProgrammeTemplates(merged);
 };
 
 const syncSmsTemplateVariableReferences = (

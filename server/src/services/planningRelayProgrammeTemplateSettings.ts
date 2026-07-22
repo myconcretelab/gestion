@@ -29,3 +29,19 @@ export const writePlanningRelayProgrammeTemplates = (templates: PlanningRelaySms
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ programme_templates: normalized }, null, 2), "utf-8");
   return normalized;
 };
+
+export const mergePlanningRelayProgrammeTemplates = (
+  ...collections: (PlanningRelaySmsProgrammeTemplate[] | null | undefined)[]
+) => {
+  const merged: PlanningRelaySmsProgrammeTemplate[] = [];
+  const ids = new Set<string>();
+  const keys = new Set<string>();
+  for (const item of collections.flat()) {
+    if (!item || ids.has(item.id) || keys.has(item.key)) continue;
+    ids.add(item.id);
+    keys.add(item.key);
+    merged.push({ ...item });
+    if (merged.length === 10) break;
+  }
+  return normalizePlanningRelayProgrammeTemplates(merged);
+};
