@@ -142,6 +142,30 @@ const formatSavedPeriod = (from: string, to: string) =>
 const getSmsWorkerIds = (config: PlanningRelaySmsConfig) =>
   config.worker_ids?.length ? config.worker_ids : config.worker_id ? [config.worker_id] : [];
 
+const applySharedProgrammeTemplates = (
+  config: PlanningRelaySmsConfig,
+  templates: PlanningRelaySmsProgrammeTemplate[],
+): PlanningRelaySmsConfig => {
+  let smsTemplate = config.template;
+  for (const previous of config.programme_templates) {
+    const replacement = templates.find((item) => item.id === previous.id);
+    if (!replacement) {
+      smsTemplate = smsTemplate.replace(new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"), "");
+    } else if (replacement.key !== previous.key) {
+      smsTemplate = smsTemplate.replace(
+        new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"),
+        `{{${replacement.key}}}`,
+      );
+    }
+  }
+  return {
+    ...config,
+    template: smsTemplate,
+    programme_template: templates[0].template,
+    programme_templates: templates.map((item) => ({ ...item })),
+  };
+};
+
 const PlanningRelaySmsLivePreview = ({
   period,
   config,
@@ -222,7 +246,13 @@ const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft
   sms_configs: period.sms_configs ?? [],
 });
 
-const createSmsConfig = (): PlanningRelaySmsConfig => ({
+const DEFAULT_PROGRAMME_TEMPLATES: PlanningRelaySmsProgrammeTemplate[] = [{
+  id: "programme-gite",
+  key: "programme_gite",
+  template: "{{gite}} : {{horaire}} - {{in-out}}",
+}];
+
+const createSmsConfig = (programmeTemplates = DEFAULT_PROGRAMME_TEMPLATES): PlanningRelaySmsConfig => ({
   id: globalThis.crypto?.randomUUID?.() ?? `sms-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   worker_id: "",
   worker_ids: [],
@@ -230,12 +260,8 @@ const createSmsConfig = (): PlanningRelaySmsConfig => ({
   send_time: "18:00",
   send_day: "previous_day",
   template: "{{programme_gite}}",
-  programme_template: "{{gite}} : {{horaire}} - {{in-out}}",
-  programme_templates: [{
-    id: "programme-gite",
-    key: "programme_gite",
-    template: "{{gite}} : {{horaire}} - {{in-out}}",
-  }],
+  programme_template: programmeTemplates[0]?.template ?? DEFAULT_PROGRAMME_TEMPLATES[0].template,
+  programme_templates: programmeTemplates.map((item) => ({ ...item })),
   last_sent_for_date: null,
   last_attempt_for_date: null,
 });
@@ -300,9 +326,11 @@ const OperationsPrintPage = () => {
   const [focusedPeriodId, setFocusedPeriodId] = useState<string | null>(null);
   const [drawerPeriodPickerId, setDrawerPeriodPickerId] = useState<string | null>(null);
   const [drawerDraftPeriod, setDrawerDraftPeriod] = useState<DateRange>();
-  const [programmeTemplateEditor, setProgrammeTemplateEditor] = useState<{ periodId: string; configId: string } | null>(null);
+  const [programmeTemplateEditor, setProgrammeTemplateEditor] = useState(false);
+  const [sharedProgrammeTemplates, setSharedProgrammeTemplates] = useState<PlanningRelaySmsProgrammeTemplate[]>(DEFAULT_PROGRAMME_TEMPLATES);
   const [programmeTemplateDrafts, setProgrammeTemplateDrafts] = useState<PlanningRelaySmsProgrammeTemplate[]>([]);
   const [programmeTemplateError, setProgrammeTemplateError] = useState<string | null>(null);
+  const [savingProgrammeTemplates, setSavingProgrammeTemplates] = useState(false);
   const [workerManagerIsOpen, setWorkerManagerIsOpen] = useState(false);
   const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
   const [workers, setWorkers] = useState<PlanningRelayWorker[]>([]);
@@ -353,6 +381,15 @@ const OperationsPrintPage = () => {
     }
   }, []);
 
+  const refreshProgrammeTemplates = useCallback(async () => {
+    try {
+      const response = await apiFetch<{ programme_templates: PlanningRelaySmsProgrammeTemplate[] }>("/planning-relay-periods/programme-templates");
+      setSharedProgrammeTemplates(response.programme_templates.length ? response.programme_templates : DEFAULT_PROGRAMME_TEMPLATES);
+    } catch (caught) {
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de charger les variables dynamiques."));
+    }
+  }, []);
+
   useEffect(() => {
     void refreshSavedPeriods();
   }, [refreshSavedPeriods]);
@@ -360,6 +397,10 @@ const OperationsPrintPage = () => {
   useEffect(() => {
     void refreshWorkers();
   }, [refreshWorkers]);
+
+  useEffect(() => {
+    void refreshProgrammeTemplates();
+  }, [refreshProgrammeTemplates]);
 
   useEffect(() => {
     apiFetch<PlanningRelaySmsStatus>("/planning-relay-periods/sms/status")
@@ -527,11 +568,6 @@ const OperationsPrintPage = () => {
     () => workers.filter((worker) => worker.is_active),
     [workers],
   );
-  const activeProgrammeConfig = useMemo(() => {
-    if (!activeSavedPeriod) return null;
-    const draft = periodDrafts[activeSavedPeriod.id] ?? buildPeriodDraft(activeSavedPeriod);
-    return draft.sms_configs[0] ?? null;
-  }, [activeSavedPeriod, periodDrafts]);
 
   const setPreset = (daysToShow: number) => {
     setTo(toIsoDateUtc(addUtcDays(parseIsoDateUtc(from), daysToShow - 1)));
@@ -720,14 +756,14 @@ const OperationsPrintPage = () => {
     });
   };
 
-  const openProgrammeTemplateEditor = (periodId: string, config: PlanningRelaySmsConfig) => {
-    setProgrammeTemplateEditor({ periodId, configId: config.id });
-    setProgrammeTemplateDrafts(config.programme_templates.map((item) => ({ ...item })));
+  const openProgrammeTemplateEditor = () => {
+    setProgrammeTemplateEditor(true);
+    setProgrammeTemplateDrafts(sharedProgrammeTemplates.map((item) => ({ ...item })));
     setProgrammeTemplateError(null);
   };
 
   const closeProgrammeTemplateEditor = () => {
-    setProgrammeTemplateEditor(null);
+    setProgrammeTemplateEditor(false);
     setProgrammeTemplateDrafts([]);
     setProgrammeTemplateError(null);
   };
@@ -794,45 +830,36 @@ const OperationsPrintPage = () => {
       setProgrammeTemplateError("Le modèle de chaque bloc répété est obligatoire.");
       return;
     }
-    const period = savedPeriods.find((item) => item.id === programmeTemplateEditor.periodId);
-    const periodDraft = periodDrafts[programmeTemplateEditor.periodId] ?? (period ? buildPeriodDraft(period) : null);
-    const config = periodDraft?.sms_configs.find((item) => item.id === programmeTemplateEditor.configId);
-    if (!period || !periodDraft || !config) return;
-    let nextSmsTemplate = config.template;
-    for (const previous of config.programme_templates) {
-      const renamed = normalizedDrafts.find((item) => item.id === previous.id);
-      if (!renamed) {
-        nextSmsTemplate = nextSmsTemplate.replace(new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"), "");
-      } else if (renamed.key !== previous.key) {
-        nextSmsTemplate = nextSmsTemplate.replace(
-          new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"),
-          `{{${renamed.key}}}`,
-        );
-      }
+    setSavingProgrammeTemplates(true);
+    setProgrammeTemplateError(null);
+    try {
+      const response = await apiFetch<{ programme_templates: PlanningRelaySmsProgrammeTemplate[] }>("/planning-relay-periods/programme-templates", {
+        method: "PUT",
+        json: { programme_templates: normalizedDrafts },
+      });
+      setSharedProgrammeTemplates(response.programme_templates);
+      await refreshSavedPeriods();
+      setPeriodDrafts((current) => Object.fromEntries(Object.entries(current).map(([periodId, draft]) => [
+        periodId,
+        {
+          ...draft,
+          sms_configs: draft.sms_configs.map((config) => applySharedProgrammeTemplates(config, response.programme_templates)),
+        },
+      ])));
+      setSavedPeriodsNotice("Variables dynamiques enregistrées pour toutes les périodes.");
+      closeProgrammeTemplateEditor();
+    } catch (caught) {
+      setProgrammeTemplateError(formatApiErrorMessage(caught, "Impossible d'enregistrer les variables dynamiques."));
+    } finally {
+      setSavingProgrammeTemplates(false);
     }
-    const nextConfig = {
-      ...config,
-      template: nextSmsTemplate,
-      programme_template: normalizedDrafts[0].template,
-      programme_templates: normalizedDrafts,
-    };
-    const nextPeriodDraft = {
-      ...periodDraft,
-      sms_configs: periodDraft.sms_configs.map((item) => item.id === config.id ? nextConfig : item),
-    };
-    updatePeriodDraft(programmeTemplateEditor.periodId, nextPeriodDraft);
-    if (!periodManagerIsOpen) {
-      const saved = await savePeriodDetails(period, nextPeriodDraft);
-      if (!saved) return;
-    }
-    closeProgrammeTemplateEditor();
   };
 
   const addSmsConfig = (periodId: string) => {
     const period = savedPeriods.find((item) => item.id === periodId);
     const draft = periodDrafts[periodId] ?? (period ? buildPeriodDraft(period) : null);
     if (!draft) return;
-    updatePeriodDraft(periodId, { sms_configs: [...draft.sms_configs, createSmsConfig()] });
+    updatePeriodDraft(periodId, { sms_configs: [...draft.sms_configs, createSmsConfig(sharedProgrammeTemplates)] });
   };
 
   const updateWorkerDraft = (workerId: string, patch: Partial<PlanningRelayWorkerDraft>) => {
@@ -1143,22 +1170,15 @@ const OperationsPrintPage = () => {
             <div className="operations-programme-mini">
               <div>
                 <strong>Variables dynamiques</strong>
-                <span>{activeSavedPeriod?.label ?? "Aucune période sélectionnée"}</span>
+                <span>Bibliothèque partagée par toutes les périodes</span>
               </div>
-              {activeProgrammeConfig ? (
-                <div className="operations-programme-mini__chips" aria-label="Variables dynamiques de la période">
-                  {activeProgrammeConfig.programme_templates.map((item) => <span key={item.id}>{`{{${item.key}}}`}</span>)}
-                </div>
-              ) : (
-                <p>Sélectionnez une période enregistrée pour afficher ses variables.</p>
-              )}
+              <div className="operations-programme-mini__chips" aria-label="Variables dynamiques partagées">
+                {sharedProgrammeTemplates.map((item) => <span key={item.id}>{`{{${item.key}}}`}</span>)}
+              </div>
               <button
                 type="button"
                 className="secondary"
-                disabled={!activeSavedPeriod || !activeProgrammeConfig}
-                onClick={() => {
-                  if (activeSavedPeriod && activeProgrammeConfig) openProgrammeTemplateEditor(activeSavedPeriod.id, activeProgrammeConfig);
-                }}
+                onClick={openProgrammeTemplateEditor}
               >
                 Modifier les variables
               </button>
@@ -1390,7 +1410,7 @@ const OperationsPrintPage = () => {
                                       const variable = `{{${item.key}}}`;
                                       return <button key={item.id} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", variable)}>{variable}</button>;
                                     })}
-                                    <button type="button" className="secondary operations-sms-manage-variables" onClick={() => openProgrammeTemplateEditor(period.id, config)}>Gérer…</button>
+                                    <button type="button" className="secondary operations-sms-manage-variables" onClick={openProgrammeTemplateEditor}>Gérer…</button>
                                   </div>
                                   <div className="operations-sms-variables operations-sms-variables--fixed" aria-label="Variables fixes du SMS">
                                     <span>Variables fixes :</span>
@@ -1482,9 +1502,9 @@ const OperationsPrintPage = () => {
           <section className="operations-variable-modal__panel">
             <header>
               <div>
-                <div className="operations-controls__eyebrow">Configuration SMS</div>
-                <h2 id="operations-variable-modal-title">Blocs répétés</h2>
-                <p>Chaque bloc génère une ligne par intervention prévue le même jour.</p>
+                <div className="operations-controls__eyebrow">Bibliothèque SMS partagée</div>
+                <h2 id="operations-variable-modal-title">Variables dynamiques</h2>
+                <p>Chaque bloc génère une ligne par intervention et s’applique à toutes les périodes.</p>
               </div>
               <button type="button" className="operations-period-drawer__close" onClick={closeProgrammeTemplateEditor} aria-label="Fermer">×</button>
             </header>
@@ -1541,8 +1561,8 @@ const OperationsPrintPage = () => {
             </div>
             <footer>
               <button type="button" className="secondary" onClick={closeProgrammeTemplateEditor}>Annuler</button>
-              <button type="button" onClick={() => void saveProgrammeTemplates()} disabled={savingPeriodDetailsId === programmeTemplateEditor.periodId}>
-                {savingPeriodDetailsId === programmeTemplateEditor.periodId ? "Enregistrement…" : "Enregistrer les blocs"}
+              <button type="button" onClick={() => void saveProgrammeTemplates()} disabled={savingProgrammeTemplates}>
+                {savingProgrammeTemplates ? "Enregistrement…" : "Enregistrer les blocs"}
               </button>
             </footer>
           </section>
