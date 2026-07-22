@@ -266,6 +266,17 @@ const getOperationTone = (operations: StayOperation[]) => {
   return "arrival";
 };
 
+const renderProgrammeTemplateExample = (template: string) => {
+  const examples = [
+    { gite: "Tante Phonsine", horaire: "Entre 12h et 17h", in_out: "entrée + sortie" },
+    { gite: "Le Liberté", horaire: "Avant 17h", in_out: "entrée" },
+  ];
+  return examples.map((values) => template.replace(
+    /{{\s*(gite|horaire|in_out|in-out)\s*}}/gi,
+    (_match, key: string) => values[key.toLowerCase().replace("-", "_") as keyof typeof values],
+  )).join("\n");
+};
+
 const OperationsPrintPage = () => {
   const initialFrom = todayIso();
   const [from, setFrom] = useState(initialFrom);
@@ -1445,6 +1456,10 @@ const OperationsPrintPage = () => {
                     {["{{gite}}", "{{horaire}}", "{{in-out}}"].map((variable) => (
                       <button key={variable} type="button" className="secondary" onClick={() => insertProgrammeTemplateVariable(item.id, variable)}>{variable}</button>
                     ))}
+                  </div>
+                  <div className="operations-variable-template-preview">
+                    <span>Aperçu instantané · 2 interventions</span>
+                    <div>{item.template.trim() ? renderProgrammeTemplateExample(item.template) : "Saisissez une phrase pour afficher l’aperçu."}</div>
                   </div>
                 </article>
               ))}
