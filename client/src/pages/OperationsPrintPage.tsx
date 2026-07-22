@@ -38,6 +38,8 @@ type LegacySavedPeriod = {
 
 type PlanningRelayPeriodDraft = {
   label: string;
+  from: string;
+  to: string;
   is_active: boolean;
   show_timeline: boolean;
   show_comments: boolean;
@@ -204,6 +206,8 @@ const PlanningRelaySmsLivePreview = ({
 
 const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft => ({
   label: period.label,
+  from: period.from,
+  to: period.to,
   is_active: period.is_active,
   show_timeline: period.show_timeline,
   show_comments: period.show_comments,
@@ -271,6 +275,8 @@ const OperationsPrintPage = () => {
   const [savedPeriodsNotice, setSavedPeriodsNotice] = useState<string | null>(null);
   const [smsStatus, setSmsStatus] = useState<PlanningRelaySmsStatus | null>(null);
   const [periodManagerIsOpen, setPeriodManagerIsOpen] = useState(false);
+  const [drawerPeriodPickerId, setDrawerPeriodPickerId] = useState<string | null>(null);
+  const [drawerDraftPeriod, setDrawerDraftPeriod] = useState<DateRange>();
   const [workerManagerIsOpen, setWorkerManagerIsOpen] = useState(false);
   const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
   const [workers, setWorkers] = useState<PlanningRelayWorker[]>([]);
@@ -503,6 +509,25 @@ const OperationsPrintPage = () => {
     setPeriodPickerIsOpen(false);
   };
 
+  const toggleDrawerPeriodPicker = (periodId: string, draft: PlanningRelayPeriodDraft) => {
+    if (drawerPeriodPickerId === periodId) {
+      setDrawerPeriodPickerId(null);
+      return;
+    }
+    setDrawerDraftPeriod({ from: isoToPickerDate(draft.from), to: isoToPickerDate(draft.to) });
+    setDrawerPeriodPickerId(periodId);
+  };
+
+  const selectDrawerPeriod = (periodId: string, period: DateRange | undefined) => {
+    setDrawerDraftPeriod(period);
+    if (!period?.from || !period.to) return;
+    updatePeriodDraft(periodId, {
+      from: pickerDateToIso(period.from),
+      to: pickerDateToIso(period.to),
+    });
+    setDrawerPeriodPickerId(null);
+  };
+
   const savePeriod = async () => {
     if (!periodIsValid || selectedGiteIds.size === 0 || savingPeriod) return;
     if ((showComments || showPhones) && !window.confirm("Le lien public donnera accès aux informations sélectionnées. Continuer ?")) return;
@@ -712,6 +737,11 @@ const OperationsPrintPage = () => {
       setSavedPeriodsError("Le nom de la période est obligatoire.");
       return;
     }
+    const draftDayCount = diffUtcDays(parseIsoDateUtc(draft.to), parseIsoDateUtc(draft.from)) + 1;
+    if (draft.from > draft.to || draftDayCount < 1 || draftDayCount > MAX_DAYS) {
+      setSavedPeriodsError("La période doit contenir entre 1 et 31 jours.");
+      return;
+    }
     if (draft.sms_configs.some((config) => !config.worker_id)) {
       setSavedPeriodsError("Choisissez un intervenant pour chaque SMS.");
       return;
@@ -725,6 +755,8 @@ const OperationsPrintPage = () => {
         method: "PATCH",
         json: {
           label: draft.label.trim(),
+          from: draft.from,
+          to: draft.to,
           is_active: draft.is_active,
           show_timeline: draft.show_timeline,
           show_comments: draft.show_comments,
@@ -938,7 +970,7 @@ const OperationsPrintPage = () => {
                 <div className="operations-controls__eyebrow">Périodes enregistrées</div>
                 <h2 id="operations-period-drawer-title">Gestion des relais</h2>
               </div>
-              <button type="button" className="operations-period-drawer__close" onClick={() => setPeriodManagerIsOpen(false)} aria-label="Fermer">
+              <button type="button" className="operations-period-drawer__close" onClick={() => { setPeriodManagerIsOpen(false); setDrawerPeriodPickerId(null); }} aria-label="Fermer">
                 ×
               </button>
             </header>
@@ -954,7 +986,7 @@ const OperationsPrintPage = () => {
                     <div className="operations-period-detail__title">
                       <div>
                         <strong>{period.label}</strong>
-                        <span>{formatSavedPeriod(period.from, period.to)}</span>
+                        <span>{formatSavedPeriod(draft.from, draft.to)}</span>
                       </div>
                       <button type="button" className="secondary" onClick={() => applySavedPeriod(period)}>
                         Afficher
@@ -968,6 +1000,42 @@ const OperationsPrintPage = () => {
                         onChange={(event) => updatePeriodDraft(period.id, { label: event.target.value })}
                       />
                     </label>
+
+                    <div className="field operations-period-field operations-period-detail__period-field">
+                      <span>Période</span>
+                      <button
+                        type="button"
+                        className="operations-period-trigger"
+                        aria-expanded={drawerPeriodPickerId === period.id}
+                        aria-haspopup="dialog"
+                        onClick={() => toggleDrawerPeriodPicker(period.id, draft)}
+                      >
+                        <span>{formatSavedPeriod(draft.from, draft.to)}</span>
+                        <svg className="operations-period-trigger__icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
+                        </svg>
+                      </button>
+                      {drawerPeriodPickerId === period.id ? (
+                        <div className="operations-period-popover" role="dialog" aria-label={`Modifier la période ${period.label}`}>
+                          <DayPicker
+                            className="operations-range-calendar"
+                            mode="range"
+                            locale={fr}
+                            numberOfMonths={2}
+                            defaultMonth={drawerDraftPeriod?.from}
+                            selected={drawerDraftPeriod}
+                            onSelect={(range) => selectDrawerPeriod(period.id, range)}
+                            max={MAX_DAYS - 1}
+                            resetOnSelect
+                          />
+                          <p className="operations-period-popover__hint">
+                            {drawerDraftPeriod?.from && !drawerDraftPeriod.to
+                              ? "Choisissez maintenant la date de fin."
+                              : "Choisissez la date de début, puis la date de fin."}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
 
                     <div className="operations-period-detail__grid">
                       <label className="field">

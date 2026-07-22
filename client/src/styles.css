@@ -4705,6 +4705,11 @@ body {
   font-weight: 600;
 }
 
+.operations-period-detail__period-field .operations-period-popover {
+  right: auto;
+  left: 0;
+}
+
 .operations-presets {
   grid-column: 1 / -1;
   display: flex;

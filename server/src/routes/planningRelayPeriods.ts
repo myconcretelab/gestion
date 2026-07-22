@@ -428,6 +428,9 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.label !== undefined ? { label: payload.label } : {}),
         date_debut: start,
         date_fin: end,
+        ...((payload.from !== undefined || payload.to !== undefined) && payload.expires_at === undefined
+          ? { expires_at: endOfDay(addDays(end, 7)) }
+          : {}),
         gite_ids: encodeJsonField([...new Set(giteIds)]),
         ...(payload.show_timeline !== undefined ? { show_timeline: payload.show_timeline } : {}),
         ...(payload.show_comments !== undefined ? { show_comments: payload.show_comments } : {}),
