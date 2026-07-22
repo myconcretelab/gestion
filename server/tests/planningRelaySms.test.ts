@@ -180,6 +180,14 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
     }),
     "mardi 21 juillet\nTante Phonsine : Entre 12h et 17h - entree + sortie\nLe Liberte : A partir de 12h - sortie",
   );
+  assert.equal(
+    extractPlanningRelayProgramVariables([
+      "Programme demain:",
+      "Tante Phonsine: Entre 12h et 17h (entree + sortie)",
+      "Le Liberte: A partir de 12h (sortie)",
+    ].join("\n"), "Intervention {{gite}} : {{in-out}}, {{horaire}}").programme_gite,
+    "Intervention Tante Phonsine : entree + sortie, Entre 12h et 17h\nIntervention Le Liberte : sortie, A partir de 12h",
+  );
 });
 
 test("formate la date textuelle de l'intervention", () => {
@@ -194,6 +202,7 @@ test("limite chaque période à une configuration SMS et migre le destinataire h
   assert.equal(configs.length, 1);
   assert.equal(configs[0].send_time, "08:05");
   assert.equal(configs[0].worker_id, "worker-1");
+  assert.equal(configs[0].programme_template, "{{gite}} : {{horaire}} - {{in-out}}");
 
   const legacy = normalizePlanningRelaySmsConfigs("[]", {
     sms_enabled: true,
@@ -203,7 +212,8 @@ test("limite chaque période à une configuration SMS et migre le destinataire h
   });
   assert.equal(legacy.length, 1);
   assert.equal(legacy[0].worker_id, "worker-old");
-  assert.equal(legacy[0].template, "{{gite}} : {{horaire}} ({{in_out}})");
+  assert.equal(legacy[0].template, "{{programme_gite}}");
+  assert.equal(legacy[0].programme_template, "{{gite}} : {{horaire}} - {{in-out}}");
 });
 
 test("calcule le programme vise selon l'option veille ou jour meme", () => {
