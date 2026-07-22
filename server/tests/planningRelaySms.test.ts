@@ -155,6 +155,7 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
     gite: "Tante Phonsine / Le Liberte",
     horaire: "Entre 12h et 17h / A partir de 12h",
     in_out: "entree + sortie / sortie",
+    options: "aucune option / menage",
   });
   assert.equal(
     renderPlanningRelaySmsTemplate("{{gite}} | {{horaire}} | {{in-out}}", {
@@ -196,10 +197,41 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
   assert.equal(
     extractPlanningRelayProgramVariables([
       "Programme demain:",
-      "Tante Phonsine: Entre 12h et 17h (entree + sortie)",
+      "Tante Phonsine: Entre 12h et 17h (entree + sortie) + draps 2 lits + menage",
       "Le Liberte: A partir de 12h (sortie)",
-    ].join("\n"), "Intervention {{gite}} : {{in-out}}, {{horaire}}").programme_gite,
-    "Intervention Tante Phonsine : entree + sortie, Entre 12h et 17h\nIntervention Le Liberte : sortie, A partir de 12h",
+    ].join("\n"), "Intervention {{gite}} : {{in-out}}, {{horaire}} — {{options}}").programme_gite,
+    "Intervention Tante Phonsine : entree + sortie, Entre 12h et 17h — draps 2 lits, menage\nIntervention Le Liberte : sortie, A partir de 12h — aucune option",
+  );
+});
+
+test("ajoute les options du séjour à chaque intervention SMS", () => {
+  const messages = buildPlanningRelayProgramSmsMessages({
+    targetIsoDate: "2026-07-11",
+    reservations: [{
+      id: "arrival-options",
+      gite_id: "gite-1",
+      date_entree: new Date("2026-07-11T00:00:00.000Z"),
+      date_sortie: new Date("2026-07-14T00:00:00.000Z"),
+      options: {
+        draps: { enabled: true, nb_lits: 2 },
+        linge_toilette: { enabled: true, nb_personnes: 4 },
+      },
+      gite: {
+        id: "gite-1",
+        nom: "Tante Phonsine",
+        ordre: 1,
+        heure_arrivee_defaut: "17:00",
+        heure_depart_defaut: "10:00",
+      },
+    }],
+  });
+
+  assert.deepEqual(messages, [
+    "Programme demain:\nTante Phonsine: Avant 17h (entree) + draps 2 lits + serviettes 4 pers.",
+  ]);
+  assert.equal(
+    extractPlanningRelayProgramVariables(messages[0], "{{gite}} : {{options}}").programme_gite,
+    "Tante Phonsine : draps 2 lits, serviettes 4 pers.",
   );
 });
 
