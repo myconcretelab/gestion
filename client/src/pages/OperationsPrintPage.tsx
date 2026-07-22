@@ -139,6 +139,9 @@ const formatRange = (from: string, to: string) =>
 const formatSavedPeriod = (from: string, to: string) =>
   `${formatShortDate(from)} → ${formatShortDate(to)}`;
 
+const getSmsWorkerIds = (config: PlanningRelaySmsConfig) =>
+  config.worker_ids?.length ? config.worker_ids : config.worker_id ? [config.worker_id] : [];
+
 const PlanningRelaySmsLivePreview = ({
   period,
   config,
@@ -151,7 +154,7 @@ const PlanningRelaySmsLivePreview = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!config.worker_id || !config.template.trim()) {
+    if (getSmsWorkerIds(config).length === 0 || !config.template.trim()) {
       setPreview(null);
       setPreviewError(null);
       setLoading(false);
@@ -185,8 +188,8 @@ const PlanningRelaySmsLivePreview = ({
     };
   }, [config, period.id]);
 
-  const emptyMessage = !config.worker_id
-    ? "Choisissez un intervenant pour afficher l’aperçu."
+  const emptyMessage = getSmsWorkerIds(config).length === 0
+    ? "Choisissez au moins un intervenant pour afficher l’aperçu."
     : !config.template.trim()
       ? "Saisissez le texte du SMS pour afficher l’aperçu."
       : "Aucune intervention n’est prévue sur cette période avec les filtres actuels.";
@@ -222,6 +225,7 @@ const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft
 const createSmsConfig = (): PlanningRelaySmsConfig => ({
   id: globalThis.crypto?.randomUUID?.() ?? `sms-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   worker_id: "",
+  worker_ids: [],
   enabled: true,
   send_time: "18:00",
   send_day: "previous_day",
@@ -684,6 +688,17 @@ const OperationsPrintPage = () => {
     });
   };
 
+  const toggleSmsWorker = (periodId: string, config: PlanningRelaySmsConfig, workerId: string) => {
+    const currentIds = getSmsWorkerIds(config);
+    const workerIds = currentIds.includes(workerId)
+      ? currentIds.filter((id) => id !== workerId)
+      : [...currentIds, workerId];
+    updateSmsConfig(periodId, config.id, {
+      worker_ids: workerIds,
+      worker_id: workerIds[0] ?? "",
+    });
+  };
+
   const insertSmsVariable = (
     periodId: string,
     config: PlanningRelaySmsConfig,
@@ -923,8 +938,8 @@ const OperationsPrintPage = () => {
       setSavedPeriodsError("La période doit contenir entre 1 et 31 jours.");
       return false;
     }
-    if (draft.sms_configs.some((config) => !config.worker_id)) {
-      setSavedPeriodsError("Choisissez un intervenant pour chaque SMS.");
+    if (draft.sms_configs.some((config) => getSmsWorkerIds(config).length === 0)) {
+      setSavedPeriodsError("Choisissez au moins un intervenant pour chaque SMS.");
       return false;
     }
     if (draft.sms_configs.some((config) => !config.template.trim() || config.programme_templates.length === 0)) {
@@ -963,8 +978,8 @@ const OperationsPrintPage = () => {
   };
 
   const sendPeriodTestSms = async (period: PlanningRelayPeriod, config: PlanningRelaySmsConfig) => {
-    if (!config.worker_id) {
-      setSavedPeriodsError("Choisissez un intervenant avant d'envoyer un test.");
+    if (getSmsWorkerIds(config).length === 0) {
+      setSavedPeriodsError("Choisissez au moins un intervenant avant d'envoyer un test.");
       return;
     }
     if (!smsStatus?.configured) {
@@ -980,7 +995,8 @@ const OperationsPrintPage = () => {
         method: "POST",
         json: { config },
       });
-      setSavedPeriodsNotice(`SMS test envoyé pour le ${formatShortDate(result.target_date)}.`);
+      const recipientCount = getSmsWorkerIds(config).length;
+      setSavedPeriodsNotice(`SMS test envoyé à ${recipientCount} intervenant${recipientCount > 1 ? "s" : ""} pour le ${formatShortDate(result.target_date)}.`);
     } catch (caught) {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'envoyer le SMS test."));
     } finally {
@@ -1119,7 +1135,7 @@ const OperationsPrintPage = () => {
                   {activeWorkers.length > 4 ? <span>+{activeWorkers.length - 4}</span> : null}
                 </div>
               ) : null}
-              <p>Chaque période peut utiliser un intervenant pour son SMS automatique.</p>
+              <p>Chaque période peut envoyer sa configuration SMS à plusieurs intervenants.</p>
               <button type="button" className="secondary" onClick={() => setWorkerManagerIsOpen(true)}>
                 Gérer les intervenants
               </button>
@@ -1308,13 +1324,14 @@ const OperationsPrintPage = () => {
 
                     <details className="operations-sms-accordion">
                       <summary>
-                        <span>SMS de l’intervenant</span>
+                        <span>SMS des intervenants</span>
                         <small>{draft.sms_configs.length ? "Configuré" : "Non configuré"}</small>
                       </summary>
                       <div className="operations-sms-accordion__content">
-                        <p>L’intervenant reçoit toutes les interventions de cette période. Créez une autre période pour un second intervenant ou des instructions différentes.</p>
+                        <p>Les intervenants sélectionnés reçoivent le même programme, avec le même texte et au même horaire.</p>
                         {draft.sms_configs.map((config) => {
-                          const selectedWorker = workers.find((worker) => worker.id === config.worker_id);
+                          const selectedWorkerIds = getSmsWorkerIds(config);
+                          const selectableWorkers = workers.filter((worker) => worker.is_active || selectedWorkerIds.includes(worker.id));
                           return (
                             <section key={config.id} className="operations-sms-config">
                               <header>
@@ -1322,14 +1339,22 @@ const OperationsPrintPage = () => {
                                 <label><input type="checkbox" checked={config.enabled} onChange={(event) => updateSmsConfig(period.id, config.id, { enabled: event.target.checked })} /> Envoi automatique activé</label>
                               </header>
                               <div className="operations-period-detail__grid">
-                                <label className="field">
-                                  <span>Intervenant</span>
-                                  <select value={config.worker_id} onChange={(event) => updateSmsConfig(period.id, config.id, { worker_id: event.target.value })}>
-                                    <option value="">Choisir…</option>
-                                    {activeWorkers.map((worker) => <option key={worker.id} value={worker.id}>{worker.nom} · {worker.telephone}</option>)}
-                                    {selectedWorker && !selectedWorker.is_active ? <option value={selectedWorker.id}>{selectedWorker.nom} (inactif)</option> : null}
-                                  </select>
-                                </label>
+                                <fieldset className="operations-sms-workers">
+                                  <legend>Intervenants</legend>
+                                  <div>
+                                    {selectableWorkers.map((worker) => (
+                                      <label key={worker.id} className={selectedWorkerIds.includes(worker.id) ? "is-selected" : ""}>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedWorkerIds.includes(worker.id)}
+                                          onChange={() => toggleSmsWorker(period.id, config, worker.id)}
+                                        />
+                                        <span>{worker.nom}</span>
+                                        <small>{worker.telephone}{worker.is_active ? "" : " · inactif"}</small>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </fieldset>
                                 <label className="field">
                                   <span>Heure d'envoi</span>
                                   <input type="time" value={config.send_time} onChange={(event) => updateSmsConfig(period.id, config.id, { send_time: event.target.value })} />
@@ -1376,7 +1401,7 @@ const OperationsPrintPage = () => {
                                 <span>Dernière tentative : {config.last_attempt_for_date ? formatShortDate(config.last_attempt_for_date) : "aucune"}</span>
                                 <span>Dernier envoi : {config.last_sent_for_date ? formatShortDate(config.last_sent_for_date) : "aucun"}</span>
                               </div>
-                              <button type="button" className="secondary" onClick={() => void sendPeriodTestSms(period, config)} disabled={isTestingSms || !config.worker_id || !smsStatus?.configured}>
+                              <button type="button" className="secondary" onClick={() => void sendPeriodTestSms(period, config)} disabled={isTestingSms || selectedWorkerIds.length === 0 || !smsStatus?.configured}>
                                 {isTestingSms ? "Test en cours…" : "Tester ce SMS"}
                               </button>
                             </section>

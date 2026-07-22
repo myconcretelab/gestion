@@ -63,6 +63,7 @@ export type PlanningRelaySmsProgrammeTemplate = {
 export type PlanningRelaySmsConfig = {
   id: string;
   worker_id: string;
+  worker_ids: string[];
   enabled: boolean;
   send_time: string;
   send_day: PlanningRelaySmsSendDay;
@@ -115,12 +116,17 @@ export const normalizePlanningRelaySmsConfigs = (
   const parsed = fromJsonString<unknown[]>(value, []);
   const configs = parsed.filter(isSmsConfig).flatMap((config) => {
     const id = typeof config.id === "string" ? config.id.trim() : "";
-    const workerId = typeof config.worker_id === "string" ? config.worker_id.trim() : "";
-    if (!id || !workerId) return [];
+    const workerIds = [...new Set([
+      ...(Array.isArray(config.worker_ids) ? config.worker_ids : []),
+      config.worker_id,
+    ].filter((workerId): workerId is string => typeof workerId === "string" && Boolean(workerId.trim()))
+      .map((workerId) => workerId.trim()))];
+    if (!id || workerIds.length === 0) return [];
     const programmeTemplates = normalizePlanningRelayProgrammeTemplates(config.programme_templates, config.programme_template);
     return [{
       id,
-      worker_id: workerId,
+      worker_id: workerIds[0],
+      worker_ids: workerIds,
       enabled: config.enabled !== false,
       send_time: normalizePlanningRelaySmsTime(typeof config.send_time === "string" ? config.send_time : null),
       send_day: normalizePlanningRelaySmsSendDay(typeof config.send_day === "string" ? config.send_day : null),
@@ -137,6 +143,7 @@ export const normalizePlanningRelaySmsConfigs = (
   return [{
     id: "legacy",
     worker_id: legacy.sms_worker_id,
+    worker_ids: [legacy.sms_worker_id],
     enabled: Boolean(legacy.sms_enabled),
     send_time: normalizePlanningRelaySmsTime(legacy.sms_send_time),
     send_day: normalizePlanningRelaySmsSendDay(legacy.sms_send_day),
@@ -670,16 +677,24 @@ export const sendPlanningRelayConfigTestSms = async (period: {
   arrivals_only?: boolean;
   share_nonce: string;
   public_origin?: string | null;
-}, config: PlanningRelaySmsConfig, worker: { nom: string; telephone: string }, currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
+}, config: PlanningRelaySmsConfig, workers: { nom: string; telephone: string }[], currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
   let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
     ? toPlanningRelayIsoDate(period.date_debut)
     : currentIsoDate;
   const endIsoDate = toPlanningRelayIsoDate(period.date_fin);
   while (targetIsoDate <= endIsoDate) {
-    const message = await buildConfigMessage(period, config, worker, targetIsoDate, true, publicOrigin);
-    if (message) {
-      const result = await sendOvhSms({ recipient: worker.telephone, message });
-      return { sent: true as const, targetIsoDate, messages: [message], results: [result] };
+    const deliveries = (await Promise.all(workers.map(async (worker) => {
+      const message = await buildConfigMessage(period, config, worker, targetIsoDate, true, publicOrigin);
+      if (!message) return null;
+      return { message, result: await sendOvhSms({ recipient: worker.telephone, message }) };
+    }))).filter((delivery): delivery is NonNullable<typeof delivery> => delivery !== null);
+    if (deliveries.length > 0) {
+      return {
+        sent: true as const,
+        targetIsoDate,
+        messages: deliveries.map((delivery) => delivery.message),
+        results: deliveries.map((delivery) => delivery.result),
+      };
     }
     targetIsoDate = addPlanningRelayIsoDays(targetIsoDate, 1);
   }
@@ -759,17 +774,24 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
       });
 
       try {
-        const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_id } });
-        if (!worker?.telephone.trim()) throw new Error("Intervenant SMS ou numero manquant.");
-        const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
-        if (!message) continue;
-        await sendOvhSms({ recipient: worker.telephone, message });
+        const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: config.worker_ids } } });
+        if (workers.length !== config.worker_ids.length || workers.some((worker) => !worker.telephone.trim())) {
+          throw new Error("Intervenant SMS ou numero manquant.");
+        }
+        let deliveredCount = 0;
+        for (const worker of workers) {
+          const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
+          if (!message) continue;
+          await sendOvhSms({ recipient: worker.telephone, message });
+          deliveredCount += 1;
+        }
+        if (deliveredCount === 0) continue;
         configs[configIndex] = { ...configs[configIndex], last_sent_for_date: targetIsoDate };
         await prisma.planningRelayPeriod.update({
           where: { id: period.id },
           data: { sms_configs: encodeJsonField(configs) },
         });
-        sentCount += 1;
+        sentCount += deliveredCount;
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error(

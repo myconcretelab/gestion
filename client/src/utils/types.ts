@@ -148,6 +148,7 @@ export type PlanningRelayPeriod = {
 export type PlanningRelaySmsConfig = {
   id: string;
   worker_id: string;
+  worker_ids: string[];
   enabled: boolean;
   send_time: string;
   send_day: "previous_day" | "same_day";

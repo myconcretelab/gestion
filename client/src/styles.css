@@ -5207,6 +5207,58 @@ body {
   font-weight: 700;
 }
 
+.operations-sms-workers {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.operations-sms-workers legend {
+  margin-bottom: 7px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.operations-sms-workers > div {
+  display: grid;
+  gap: 7px;
+}
+
+.operations-sms-workers label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.operations-sms-workers label.is-selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.operations-sms-workers input {
+  grid-row: 1 / 3;
+}
+
+.operations-sms-workers span {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.operations-sms-workers small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
 .operations-sms-template textarea {
   min-height: 110px;
   resize: vertical;

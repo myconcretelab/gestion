@@ -57,7 +57,8 @@ const payloadSchema = z.object({
 
 const smsConfigSchema = z.object({
   id: z.string().trim().min(1).max(80),
-  worker_id: z.string().trim().min(1),
+  worker_id: z.string().trim().min(1).optional(),
+  worker_ids: z.array(z.string().trim().min(1)).min(1).max(20).optional(),
   enabled: z.boolean(),
   send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/),
   send_day: z.enum(["previous_day", "same_day"]),
@@ -73,6 +74,13 @@ const smsConfigSchema = z.object({
   ).optional(),
   last_sent_for_date: isoDateSchema.nullable().optional(),
   last_attempt_for_date: isoDateSchema.nullable().optional(),
+}).transform((config, context) => {
+  const workerIds = [...new Set([...(config.worker_ids ?? []), config.worker_id].filter((id): id is string => Boolean(id)))];
+  if (workerIds.length === 0) {
+    context.addIssue({ code: "custom", message: "Choisissez au moins un intervenant SMS.", path: ["worker_ids"] });
+    return z.NEVER;
+  }
+  return { ...config, worker_id: workerIds[0], worker_ids: workerIds };
 });
 
 const patchSchema = payloadSchema.partial().extend({
@@ -88,7 +96,7 @@ const patchSchema = payloadSchema.partial().extend({
   ).optional(),
   sms_send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/).optional(),
   sms_send_day: z.enum(["previous_day", "same_day"]).optional(),
-  sms_configs: z.array(smsConfigSchema).max(1, "Une période ne peut avoir qu'un seul intervenant SMS.").optional(),
+  sms_configs: z.array(smsConfigSchema).max(1, "Une période ne peut avoir qu'une seule configuration SMS.").optional(),
 });
 const smsSchema = z.object({
   recipient: z.string().trim().min(6).max(32),
@@ -386,14 +394,21 @@ privateRouter.delete("/workers/:id", async (req, res, next) => {
     const worker = await prisma.planningRelayWorker.findUnique({ where: { id: req.params.id } });
     if (!worker) return res.status(404).json({ error: "Intervenant introuvable." });
     const periods = await prisma.planningRelayPeriod.findMany();
-    const periodsUsingWorker = periods.filter((period) =>
-      normalizePlanningRelaySmsConfigs(period.sms_configs, period)
-        .some((config) => config.worker_id === worker.id)
-    );
+    const periodsUsingWorker = periods.flatMap((period) => {
+      const configs = normalizePlanningRelaySmsConfigs(period.sms_configs, period);
+      if (!configs.some((config) => config.worker_ids.includes(worker.id))) return [];
+      return [{
+        period,
+        configs: configs.flatMap((config) => {
+          const workerIds = config.worker_ids.filter((id) => id !== worker.id);
+          return workerIds.length > 0 ? [{ ...config, worker_id: workerIds[0], worker_ids: workerIds }] : [];
+        }),
+      }];
+    });
     await prisma.$transaction([
-      ...periodsUsingWorker.map((period) => prisma.planningRelayPeriod.update({
+      ...periodsUsingWorker.map(({ period, configs }) => prisma.planningRelayPeriod.update({
         where: { id: period.id },
-        data: { sms_configs: encodeJsonField([]) },
+        data: { sms_configs: encodeJsonField(configs) },
       })),
       prisma.planningRelayWorker.delete({ where: { id: worker.id } }),
     ]);
@@ -423,10 +438,11 @@ privateRouter.patch("/:id", async (req, res, next) => {
       : null;
     if (payload.sms_worker_id && !smsWorker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
     if (payload.sms_configs) {
+      const workerIds = [...new Set(payload.sms_configs.flatMap((config) => config.worker_ids))];
       const workerCount = await prisma.planningRelayWorker.count({
-        where: { id: { in: [...new Set(payload.sms_configs.map((config) => config.worker_id))] } },
+        where: { id: { in: workerIds } },
       });
-      if (workerCount !== new Set(payload.sms_configs.map((config) => config.worker_id)).size) {
+      if (workerCount !== workerIds.length) {
         return res.status(404).json({ error: "Un intervenant SMS est introuvable." });
       }
     }
@@ -579,8 +595,8 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       });
     }
     if (payload.config) {
-      const worker = await prisma.planningRelayWorker.findUnique({ where: { id: payload.config.worker_id } });
-      if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
+      const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: payload.config.worker_ids } } });
+      if (workers.length !== payload.config.worker_ids.length) return res.status(404).json({ error: "Un intervenant SMS est introuvable." });
       const result = await sendPlanningRelayConfigTestSms(current, {
         ...payload.config,
         template: payload.config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
@@ -588,7 +604,7 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
         programme_templates: payload.config.programme_templates,
         last_sent_for_date: payload.config.last_sent_for_date ?? null,
         last_attempt_for_date: payload.config.last_attempt_for_date ?? null,
-      }, worker, undefined, requestOrigin);
+      }, workers, undefined, requestOrigin);
       if (!result.sent) {
         return res.status(409).json({ error: "Aucune intervention n’est prévue sur cette période." });
       }
@@ -596,13 +612,13 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       return res.json({
         ok: true,
         provider: firstResult?.provider ?? "ovh",
-        recipient: firstResult?.recipient ?? worker.telephone,
+        recipient: firstResult?.recipient ?? workers[0].telephone,
         target_date: result.targetIsoDate,
         message: result.messages[0] ?? "",
-        credits: firstResult?.totalCreditsRemoved ?? 0,
-        ids: firstResult?.ids ?? [],
-        invalid_receivers: firstResult?.invalidReceivers ?? [],
-        valid_receivers: firstResult?.validReceivers ?? [],
+        credits: result.results.reduce((sum, item) => sum + (item.totalCreditsRemoved ?? 0), 0),
+        ids: result.results.flatMap((item) => item.ids ?? []),
+        invalid_receivers: result.results.flatMap((item) => item.invalidReceivers ?? []),
+        valid_receivers: result.results.flatMap((item) => item.validReceivers ?? []),
       });
     }
     const worker = payload.worker_id
@@ -648,7 +664,7 @@ privateRouter.post("/:id/preview-sms", async (req, res, next) => {
         data: { public_origin: requestOrigin },
       });
     }
-    const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_id } });
+    const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_ids[0] } });
     if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
     const preview = await previewPlanningRelayConfigSms(current, {
       ...config,
