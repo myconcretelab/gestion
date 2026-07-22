@@ -1091,7 +1091,7 @@ const OperationsPrintPage = () => {
                             <section key={config.id} className="operations-sms-config">
                               <header>
                                 <strong>Configuration SMS</strong>
-                                <label><input type="checkbox" checked={config.enabled} onChange={(event) => updateSmsConfig(period.id, config.id, { enabled: event.target.checked })} /> Automatique</label>
+                                <label><input type="checkbox" checked={config.enabled} onChange={(event) => updateSmsConfig(period.id, config.id, { enabled: event.target.checked })} /> Envoi automatique activé</label>
                               </header>
                               <div className="operations-period-detail__grid">
                                 <label className="field">
