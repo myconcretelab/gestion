@@ -297,6 +297,7 @@ const OperationsPrintPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const periodPickerRef = useRef<HTMLDivElement>(null);
+  const smsTemplateRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const legacyMigrationAttemptedRef = useRef(false);
 
   const dayCount = diffUtcDays(parseIsoDateUtc(to), parseIsoDateUtc(from)) + 1;
@@ -629,6 +630,21 @@ const OperationsPrintPage = () => {
     if (!draft) return;
     updatePeriodDraft(periodId, {
       sms_configs: draft.sms_configs.map((config) => config.id === configId ? { ...config, ...patch } : config),
+    });
+  };
+
+  const insertSmsVariable = (periodId: string, config: PlanningRelaySmsConfig, variable: string) => {
+    const refKey = `${periodId}:${config.id}`;
+    const textarea = smsTemplateRefs.current.get(refKey);
+    const selectionStart = textarea?.selectionStart ?? config.template.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const nextTemplate = `${config.template.slice(0, selectionStart)}${variable}${config.template.slice(selectionEnd)}`;
+    const nextCursorPosition = selectionStart + variable.length;
+    updateSmsConfig(periodId, config.id, { template: nextTemplate });
+    window.requestAnimationFrame(() => {
+      const nextTextarea = smsTemplateRefs.current.get(refKey);
+      nextTextarea?.focus();
+      nextTextarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
     });
   };
 
@@ -1116,12 +1132,21 @@ const OperationsPrintPage = () => {
                               </div>
                               <label className="field operations-sms-template">
                                 <span>Texte du SMS</span>
-                                <textarea rows={5} value={config.template} onChange={(event) => updateSmsConfig(period.id, config.id, { template: event.target.value })} />
+                                <textarea
+                                  ref={(element) => {
+                                    const refKey = `${period.id}:${config.id}`;
+                                    if (element) smsTemplateRefs.current.set(refKey, element);
+                                    else smsTemplateRefs.current.delete(refKey);
+                                  }}
+                                  rows={5}
+                                  value={config.template}
+                                  onChange={(event) => updateSmsConfig(period.id, config.id, { template: event.target.value })}
+                                />
                               </label>
                               <div className="operations-sms-variables" aria-label="Variables disponibles">
                                 <span>Variables :</span>
-                                {["{{gite}}", "{{horaire}}", "{{in-out}}", "{{date}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
-                                  <button key={variable} type="button" className="secondary" onClick={() => updateSmsConfig(period.id, config.id, { template: `${config.template}${config.template ? " " : ""}${variable}` })}>{variable}</button>
+                                {["{{programme_gite}}", "{{gite}}", "{{horaire}}", "{{in-out}}", "{{date}}", "{{date_texte}}", "{{intervenant}}", "{{periode}}", "{{lien}}"].map((variable) => (
+                                  <button key={variable} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, variable)}>{variable}</button>
                                 ))}
                               </div>
                               <PlanningRelaySmsLivePreview period={period} config={config} />
