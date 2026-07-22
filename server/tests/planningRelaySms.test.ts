@@ -155,7 +155,7 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
     gite: "Tante Phonsine / Le Liberte",
     horaire: "Entre 12h et 17h / A partir de 12h",
     in_out: "entree + sortie / sortie",
-    options: "aucune option / menage",
+    options: "(menage)",
   });
   assert.equal(
     renderPlanningRelaySmsTemplate("{{gite}} | {{horaire}} | {{in-out}}", {
@@ -199,8 +199,8 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
       "Programme demain:",
       "Tante Phonsine: Entre 12h et 17h (entree + sortie) + draps 2 lits + menage",
       "Le Liberte: A partir de 12h (sortie)",
-    ].join("\n"), "Intervention {{gite}} : {{in-out}}, {{horaire}} — {{options}}").programme_gite,
-    "Intervention Tante Phonsine : entree + sortie, Entre 12h et 17h — draps 2 lits, menage\nIntervention Le Liberte : sortie, A partir de 12h — aucune option",
+    ].join("\n"), "{{gite}} {{options}}").programme_gite,
+    "Tante Phonsine (draps 2 lits, menage)\nLe Liberte",
   );
 });
 
@@ -231,7 +231,7 @@ test("ajoute les options du séjour à chaque intervention SMS", () => {
   ]);
   assert.equal(
     extractPlanningRelayProgramVariables(messages[0], "{{gite}} : {{options}}").programme_gite,
-    "Tante Phonsine : draps 2 lits, serviettes 4 pers.",
+    "Tante Phonsine : (draps 2 lits, serviettes 4 pers.)",
   );
 });
 

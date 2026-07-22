@@ -261,18 +261,18 @@ export const extractPlanningRelayProgramVariables = (
       gite: match[1].trim(),
       horaire: match[2].trim(),
       in_out: match[3].trim(),
-      options: options || "aucune option",
+      options: options ? `(${options})` : "",
     }];
   });
   return {
     programme_gite: rows.map((row) => programmeTemplate.replace(
       /{{\s*(gite|horaire|in_out|in-out|options)\s*}}/gi,
       (_match, key: string) => row[key.toLowerCase().replace("-", "_") as keyof typeof row],
-    )).join("\n"),
+    ).trimEnd()).join("\n"),
     gite: rows.map((row) => row.gite).join(" / "),
     horaire: rows.map((row) => row.horaire).join(" / "),
     in_out: rows.map((row) => row.in_out).join(" / "),
-    options: rows.map((row) => row.options).join(" / "),
+    options: rows.map((row) => row.options).filter(Boolean).join(" / "),
   };
 };
 
