@@ -30,6 +30,10 @@ import {
   sendPlanningRelayConfigTestSms,
   sendPlanningRelayProgramTestSms,
 } from "../services/planningRelaySms.js";
+import {
+  readPlanningRelayProgrammeTemplates,
+  writePlanningRelayProgrammeTemplates,
+} from "../services/planningRelayProgrammeTemplateSettings.js";
 
 const MAX_DAYS = 31;
 const privateRouter = Router();
@@ -55,6 +59,17 @@ const payloadSchema = z.object({
   expires_at: nullableIsoDateSchema.optional(),
 });
 
+const programmeTemplateSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,39}$/),
+  template: z.string().trim().min(1).max(500),
+});
+
+const programmeTemplatesSchema = z.array(programmeTemplateSchema).min(1).max(10).refine(
+  (items) => new Set(items.map((item) => item.key)).size === items.length,
+  "Chaque bloc répété doit avoir un nom unique.",
+);
+
 const smsConfigSchema = z.object({
   id: z.string().trim().min(1).max(80),
   worker_id: z.string().trim().min(1).optional(),
@@ -64,14 +79,7 @@ const smsConfigSchema = z.object({
   send_day: z.enum(["previous_day", "same_day"]),
   template: z.string().trim().min(1).max(1000),
   programme_template: z.string().trim().min(1).max(500).optional(),
-  programme_templates: z.array(z.object({
-    id: z.string().trim().min(1).max(80),
-    key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,39}$/),
-    template: z.string().trim().min(1).max(500),
-  })).max(10).refine(
-    (items) => new Set(items.map((item) => item.key)).size === items.length,
-    "Chaque bloc répété doit avoir un nom unique.",
-  ).optional(),
+  programme_templates: programmeTemplatesSchema.optional(),
   last_sent_for_date: isoDateSchema.nullable().optional(),
   last_attempt_for_date: isoDateSchema.nullable().optional(),
 }).transform((config, context) => {
@@ -112,6 +120,41 @@ const smsTestSchema = z.object({
   ),
   config: smsConfigSchema.optional(),
 });
+
+const defaultProgrammeTemplates = () => [{
+  id: "programme-gite",
+  key: "programme_gite",
+  template: PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
+}];
+
+const getSharedProgrammeTemplates = async () => {
+  const stored = readPlanningRelayProgrammeTemplates();
+  if (stored) return stored;
+  const periods = await prisma.planningRelayPeriod.findMany({ orderBy: { createdAt: "asc" } });
+  const inherited = periods.flatMap((period) => normalizePlanningRelaySmsConfigs(period.sms_configs, period))[0]
+    ?.programme_templates;
+  return writePlanningRelayProgrammeTemplates(inherited?.length ? inherited : defaultProgrammeTemplates());
+};
+
+const syncSmsTemplateVariableReferences = (
+  template: string,
+  previousTemplates: { id: string; key: string }[],
+  nextTemplates: { id: string; key: string }[],
+) => {
+  let nextTemplate = template;
+  for (const previous of previousTemplates) {
+    const replacement = nextTemplates.find((item) => item.id === previous.id);
+    if (!replacement) {
+      nextTemplate = nextTemplate.replace(new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"), "");
+    } else if (replacement.key !== previous.key) {
+      nextTemplate = nextTemplate.replace(
+        new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"),
+        `{{${replacement.key}}}`,
+      );
+    }
+  }
+  return nextTemplate;
+};
 const workerPayloadSchema = z.object({
   nom: z.string().trim().min(1).max(120),
   telephone: z.string().trim().min(1).max(32),
@@ -420,6 +463,44 @@ privateRouter.delete("/workers/:id", async (req, res, next) => {
 
 privateRouter.get("/sms/status", (_req, res) => {
   res.json(getSmsConfigurationStatus());
+});
+
+privateRouter.get("/programme-templates", async (_req, res, next) => {
+  try {
+    return res.json({ programme_templates: await getSharedProgrammeTemplates() });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+privateRouter.put("/programme-templates", async (req, res, next) => {
+  try {
+    const programmeTemplates = programmeTemplatesSchema.parse(req.body?.programme_templates);
+    const periods = await prisma.planningRelayPeriod.findMany();
+    const updates = periods.flatMap((period) => {
+      const configs = normalizePlanningRelaySmsConfigs(period.sms_configs, period);
+      if (configs.length === 0) return [];
+      const nextConfigs = configs.map((config) => ({
+        ...config,
+        template: syncSmsTemplateVariableReferences(
+          config.template,
+          config.programme_templates ?? defaultProgrammeTemplates(),
+          programmeTemplates,
+        ),
+        programme_template: programmeTemplates[0].template,
+        programme_templates: programmeTemplates,
+      }));
+      return [prisma.planningRelayPeriod.update({
+        where: { id: period.id },
+        data: { sms_configs: encodeJsonField(nextConfigs) },
+      })];
+    });
+    if (updates.length > 0) await prisma.$transaction(updates);
+    const saved = writePlanningRelayProgrammeTemplates(programmeTemplates);
+    return res.json({ programme_templates: saved });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 privateRouter.patch("/:id", async (req, res, next) => {

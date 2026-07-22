@@ -77,7 +77,7 @@ export type PlanningRelaySmsConfig = {
 const isSmsConfig = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const normalizePlanningRelayProgrammeTemplates = (
+export const normalizePlanningRelayProgrammeTemplates = (
   value: unknown,
   legacyTemplate?: unknown,
 ): PlanningRelaySmsProgrammeTemplate[] => {
