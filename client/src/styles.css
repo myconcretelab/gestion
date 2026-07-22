@@ -5338,6 +5338,31 @@ body {
   background: #fff;
 }
 
+.operations-variable-template-preview {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #dbe3ec;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.operations-variable-template-preview > span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.operations-variable-template-preview > div {
+  min-height: 42px;
+  color: #1e293b;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .operations-variable-modal__add {
   justify-self: start;
   border-style: dashed;
