@@ -63,6 +63,14 @@ const smsConfigSchema = z.object({
   send_day: z.enum(["previous_day", "same_day"]),
   template: z.string().trim().min(1).max(1000),
   programme_template: z.string().trim().min(1).max(500).optional(),
+  programme_templates: z.array(z.object({
+    id: z.string().trim().min(1).max(80),
+    key: z.string().trim().regex(/^[a-z][a-z0-9_]{1,39}$/),
+    template: z.string().trim().min(1).max(500),
+  })).max(10).refine(
+    (items) => new Set(items.map((item) => item.key)).size === items.length,
+    "Chaque bloc répété doit avoir un nom unique.",
+  ).optional(),
   last_sent_for_date: isoDateSchema.nullable().optional(),
   last_attempt_for_date: isoDateSchema.nullable().optional(),
 });
@@ -460,6 +468,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
               ...config,
               template: config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
               programme_template: config.programme_template || PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
+              programme_templates: config.programme_templates,
             }))) }
           : {}),
         ...(payload.expires_at !== undefined
@@ -576,6 +585,7 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
         ...payload.config,
         template: payload.config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
         programme_template: payload.config.programme_template || PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
+        programme_templates: payload.config.programme_templates,
         last_sent_for_date: payload.config.last_sent_for_date ?? null,
         last_attempt_for_date: payload.config.last_attempt_for_date ?? null,
       }, worker, undefined, requestOrigin);
@@ -643,6 +653,7 @@ privateRouter.post("/:id/preview-sms", async (req, res, next) => {
     const preview = await previewPlanningRelayConfigSms(current, {
       ...config,
       programme_template: config.programme_template || PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
+      programme_templates: config.programme_templates,
       last_sent_for_date: config.last_sent_for_date ?? null,
       last_attempt_for_date: config.last_attempt_for_date ?? null,
     }, worker, requestOrigin);

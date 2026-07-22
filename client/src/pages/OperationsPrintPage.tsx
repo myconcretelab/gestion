@@ -20,6 +20,7 @@ import type {
   Gite,
   PlanningRelayPeriod,
   PlanningRelaySmsConfig,
+  PlanningRelaySmsProgrammeTemplate,
   PlanningRelaySmsPreview,
   PlanningRelaySmsStatus,
   PlanningRelaySmsTestResult,
@@ -226,6 +227,11 @@ const createSmsConfig = (): PlanningRelaySmsConfig => ({
   send_day: "previous_day",
   template: "{{programme_gite}}",
   programme_template: "{{gite}} : {{horaire}} - {{in-out}}",
+  programme_templates: [{
+    id: "programme-gite",
+    key: "programme_gite",
+    template: "{{gite}} : {{horaire}} - {{in-out}}",
+  }],
   last_sent_for_date: null,
   last_attempt_for_date: null,
 });
@@ -279,6 +285,9 @@ const OperationsPrintPage = () => {
   const [focusedPeriodId, setFocusedPeriodId] = useState<string | null>(null);
   const [drawerPeriodPickerId, setDrawerPeriodPickerId] = useState<string | null>(null);
   const [drawerDraftPeriod, setDrawerDraftPeriod] = useState<DateRange>();
+  const [programmeTemplateEditor, setProgrammeTemplateEditor] = useState<{ periodId: string; configId: string } | null>(null);
+  const [programmeTemplateDrafts, setProgrammeTemplateDrafts] = useState<PlanningRelaySmsProgrammeTemplate[]>([]);
+  const [programmeTemplateError, setProgrammeTemplateError] = useState<string | null>(null);
   const [workerManagerIsOpen, setWorkerManagerIsOpen] = useState(false);
   const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
   const [workers, setWorkers] = useState<PlanningRelayWorker[]>([]);
@@ -301,6 +310,7 @@ const OperationsPrintPage = () => {
   const periodPickerRef = useRef<HTMLDivElement>(null);
   const periodDetailRefs = useRef<Map<string, HTMLElement>>(new Map());
   const smsTemplateRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
+  const programmeTemplateRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const legacyMigrationAttemptedRef = useRef(false);
 
   const dayCount = diffUtcDays(parseIsoDateUtc(to), parseIsoDateUtc(from)) + 1;
@@ -679,6 +689,104 @@ const OperationsPrintPage = () => {
     });
   };
 
+  const openProgrammeTemplateEditor = (periodId: string, config: PlanningRelaySmsConfig) => {
+    setProgrammeTemplateEditor({ periodId, configId: config.id });
+    setProgrammeTemplateDrafts(config.programme_templates.map((item) => ({ ...item })));
+    setProgrammeTemplateError(null);
+  };
+
+  const closeProgrammeTemplateEditor = () => {
+    setProgrammeTemplateEditor(null);
+    setProgrammeTemplateDrafts([]);
+    setProgrammeTemplateError(null);
+  };
+
+  const addProgrammeTemplateDraft = () => {
+    setProgrammeTemplateDrafts((current) => {
+      const usedKeys = new Set(current.map((item) => item.key));
+      let index = current.length + 1;
+      while (usedKeys.has(`programme_${index}`)) index += 1;
+      return [...current, {
+        id: globalThis.crypto?.randomUUID?.() ?? `programme-${Date.now()}-${index}`,
+        key: `programme_${index}`,
+        template: "{{gite}} : {{horaire}} - {{in-out}}",
+      }];
+    });
+  };
+
+  const updateProgrammeTemplateDraft = (id: string, patch: Partial<PlanningRelaySmsProgrammeTemplate>) => {
+    setProgrammeTemplateDrafts((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+    setProgrammeTemplateError(null);
+  };
+
+  const insertProgrammeTemplateVariable = (id: string, variable: string) => {
+    const draft = programmeTemplateDrafts.find((item) => item.id === id);
+    if (!draft) return;
+    const textarea = programmeTemplateRefs.current.get(id);
+    const selectionStart = textarea?.selectionStart ?? draft.template.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const nextTemplate = `${draft.template.slice(0, selectionStart)}${variable}${draft.template.slice(selectionEnd)}`;
+    const nextCursorPosition = selectionStart + variable.length;
+    updateProgrammeTemplateDraft(id, { template: nextTemplate });
+    window.requestAnimationFrame(() => {
+      const nextTextarea = programmeTemplateRefs.current.get(id);
+      nextTextarea?.focus();
+      nextTextarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
+
+  const saveProgrammeTemplates = () => {
+    if (!programmeTemplateEditor) return;
+    const reservedKeys = new Set(["date", "date_texte", "programme", "gite", "horaire", "in_out", "intervenant", "periode", "lien"]);
+    const normalizedDrafts = programmeTemplateDrafts.map((item) => ({
+      ...item,
+      key: item.key.trim().toLowerCase(),
+      template: item.template.trim(),
+    }));
+    if (normalizedDrafts.length === 0) {
+      setProgrammeTemplateError("Conservez au moins un bloc répété.");
+      return;
+    }
+    if (normalizedDrafts.some((item) => !/^[a-z][a-z0-9_]{1,39}$/.test(item.key))) {
+      setProgrammeTemplateError("Les noms commencent par une lettre et utilisent uniquement des lettres, chiffres et underscores.");
+      return;
+    }
+    if (normalizedDrafts.some((item) => reservedKeys.has(item.key))) {
+      setProgrammeTemplateError("Ce nom est déjà utilisé par une variable fixe ou une variable d’intervention.");
+      return;
+    }
+    if (new Set(normalizedDrafts.map((item) => item.key)).size !== normalizedDrafts.length) {
+      setProgrammeTemplateError("Chaque bloc répété doit avoir un nom unique.");
+      return;
+    }
+    if (normalizedDrafts.some((item) => !item.template)) {
+      setProgrammeTemplateError("Le modèle de chaque bloc répété est obligatoire.");
+      return;
+    }
+    const period = savedPeriods.find((item) => item.id === programmeTemplateEditor.periodId);
+    const periodDraft = periodDrafts[programmeTemplateEditor.periodId] ?? (period ? buildPeriodDraft(period) : null);
+    const config = periodDraft?.sms_configs.find((item) => item.id === programmeTemplateEditor.configId);
+    if (!config) return;
+    let nextSmsTemplate = config.template;
+    for (const previous of config.programme_templates) {
+      const renamed = normalizedDrafts.find((item) => item.id === previous.id);
+      if (!renamed) {
+        nextSmsTemplate = nextSmsTemplate.replace(new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"), "");
+      } else if (renamed.key !== previous.key) {
+        nextSmsTemplate = nextSmsTemplate.replace(
+          new RegExp(`{{\\s*${previous.key}\\s*}}`, "gi"),
+          `{{${renamed.key}}}`,
+        );
+      }
+    }
+    updateSmsConfig(programmeTemplateEditor.periodId, config.id, {
+      template: nextSmsTemplate,
+      programme_template: normalizedDrafts[0].template,
+      programme_templates: normalizedDrafts,
+    });
+    closeProgrammeTemplateEditor();
+  };
+
   const addSmsConfig = (periodId: string) => {
     const period = savedPeriods.find((item) => item.id === periodId);
     const draft = periodDrafts[periodId] ?? (period ? buildPeriodDraft(period) : null);
@@ -793,8 +901,8 @@ const OperationsPrintPage = () => {
       setSavedPeriodsError("Choisissez un intervenant pour chaque SMS.");
       return;
     }
-    if (draft.sms_configs.some((config) => !config.template.trim() || !config.programme_template.trim())) {
-      setSavedPeriodsError("Le texte du SMS et le modèle d’intervention ne peuvent pas être vides.");
+    if (draft.sms_configs.some((config) => !config.template.trim() || config.programme_templates.length === 0)) {
+      setSavedPeriodsError("Le texte du SMS et au moins un bloc répété sont obligatoires.");
       return;
     }
 
@@ -1181,34 +1289,6 @@ const OperationsPrintPage = () => {
                                   </select>
                                 </label>
                               </div>
-                              <details className="operations-programme-composer">
-                                <summary>
-                                  <span>Composer une ligne d’intervention</span>
-                                  <small>Bloc répété · {"{{programme_gite}}"}</small>
-                                </summary>
-                                <div className="operations-programme-composer__content">
-                                  <p>Cette phrase est répétée une fois par intervention prévue le même jour.</p>
-                                  <label className="field operations-sms-template">
-                                    <span>Modèle d’une intervention</span>
-                                    <textarea
-                                      ref={(element) => {
-                                        const refKey = `${period.id}:${config.id}:programme_template`;
-                                        if (element) smsTemplateRefs.current.set(refKey, element);
-                                        else smsTemplateRefs.current.delete(refKey);
-                                      }}
-                                      rows={2}
-                                      value={config.programme_template}
-                                      onChange={(event) => updateSmsConfig(period.id, config.id, { programme_template: event.target.value })}
-                                    />
-                                  </label>
-                                  <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label="Variables répétées par intervention">
-                                    <span>Variables d’intervention :</span>
-                                    {["{{gite}}", "{{horaire}}", "{{in-out}}"].map((variable) => (
-                                      <button key={variable} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "programme_template", variable)}>{variable}</button>
-                                    ))}
-                                  </div>
-                                </div>
-                              </details>
                               <label className="field operations-sms-template">
                                 <span>Texte du SMS</span>
                                 <textarea
@@ -1224,8 +1304,12 @@ const OperationsPrintPage = () => {
                               </label>
                               <div className="operations-sms-variable-groups">
                                 <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label="Bloc dynamique répété">
-                                  <span>Bloc répété :</span>
-                                  <button type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", "{{programme_gite}}")}>{"{{programme_gite}}"}</button>
+                                  <span>Blocs répétés :</span>
+                                  {config.programme_templates.map((item) => {
+                                    const variable = `{{${item.key}}}`;
+                                    return <button key={item.id} type="button" className="secondary" onClick={() => insertSmsVariable(period.id, config, "template", variable)}>{variable}</button>;
+                                  })}
+                                  <button type="button" className="secondary operations-sms-manage-variables" onClick={() => openProgrammeTemplateEditor(period.id, config)}>Gérer…</button>
                                 </div>
                                 <div className="operations-sms-variables operations-sms-variables--fixed" aria-label="Variables fixes du SMS">
                                   <span>Variables fixes :</span>
@@ -1307,6 +1391,73 @@ const OperationsPrintPage = () => {
               })}
             </div>
           </aside>
+        </div>
+      ) : null}
+
+      {programmeTemplateEditor ? (
+        <div className="operations-variable-modal no-print" role="dialog" aria-modal="true" aria-labelledby="operations-variable-modal-title">
+          <button type="button" className="operations-variable-modal__backdrop" onClick={closeProgrammeTemplateEditor} aria-label="Fermer la gestion des blocs répétés" />
+          <section className="operations-variable-modal__panel">
+            <header>
+              <div>
+                <div className="operations-controls__eyebrow">Configuration SMS</div>
+                <h2 id="operations-variable-modal-title">Blocs répétés</h2>
+                <p>Chaque bloc génère une ligne par intervention prévue le même jour.</p>
+              </div>
+              <button type="button" className="operations-period-drawer__close" onClick={closeProgrammeTemplateEditor} aria-label="Fermer">×</button>
+            </header>
+            <div className="operations-variable-modal__content">
+              {programmeTemplateDrafts.map((item, index) => (
+                <article key={item.id} className="operations-variable-template-card">
+                  <header>
+                    <strong>Bloc répété {index + 1}</strong>
+                    <button
+                      type="button"
+                      className="danger"
+                      disabled={programmeTemplateDrafts.length === 1}
+                      onClick={() => setProgrammeTemplateDrafts((current) => current.filter((draft) => draft.id !== item.id))}
+                    >
+                      Supprimer
+                    </button>
+                  </header>
+                  <label className="field">
+                    <span>Nom de la variable</span>
+                    <div className="operations-variable-name-field">
+                      <span>{"{{"}</span>
+                      <input value={item.key} onChange={(event) => updateProgrammeTemplateDraft(item.id, { key: event.target.value })} spellCheck={false} />
+                      <span>{"}}"}</span>
+                    </div>
+                  </label>
+                  <label className="field operations-sms-template">
+                    <span>Phrase répétée pour chaque intervention</span>
+                    <textarea
+                      ref={(element) => {
+                        if (element) programmeTemplateRefs.current.set(item.id, element);
+                        else programmeTemplateRefs.current.delete(item.id);
+                      }}
+                      rows={3}
+                      value={item.template}
+                      onChange={(event) => updateProgrammeTemplateDraft(item.id, { template: event.target.value })}
+                    />
+                  </label>
+                  <div className="operations-sms-variables operations-sms-variables--dynamic" aria-label={`Variables disponibles pour ${item.key}`}>
+                    <span>Variables d’intervention :</span>
+                    {["{{gite}}", "{{horaire}}", "{{in-out}}"].map((variable) => (
+                      <button key={variable} type="button" className="secondary" onClick={() => insertProgrammeTemplateVariable(item.id, variable)}>{variable}</button>
+                    ))}
+                  </div>
+                </article>
+              ))}
+              <button type="button" className="secondary operations-variable-modal__add" onClick={addProgrammeTemplateDraft} disabled={programmeTemplateDrafts.length >= 10}>
+                + Ajouter un bloc répété
+              </button>
+              {programmeTemplateError ? <div className="operations-saved-periods__error">{programmeTemplateError}</div> : null}
+            </div>
+            <footer>
+              <button type="button" className="secondary" onClick={closeProgrammeTemplateEditor}>Annuler</button>
+              <button type="button" onClick={saveProgrammeTemplates}>Enregistrer les blocs</button>
+            </footer>
+          </section>
         </div>
       ) : null}
 

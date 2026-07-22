@@ -181,6 +181,19 @@ test("décompose le programme en variables gîte, horaire et entrée-sortie", ()
     "mardi 21 juillet\nTante Phonsine : Entre 12h et 17h - entree + sortie\nLe Liberte : A partir de 12h - sortie",
   );
   assert.equal(
+    renderPlanningRelaySmsTemplate("{{programme_detaille}}", {
+      ...variables,
+      programme_detaille: "Tante Phonsine puis Le Liberte",
+      date: "21/07/2026",
+      date_texte: "mardi 21 juillet",
+      programme: "",
+      intervenant: "Mathilde",
+      periode: "Relais",
+      lien: "https://example.test/r/ABC12345",
+    }),
+    "Tante Phonsine puis Le Liberte",
+  );
+  assert.equal(
     extractPlanningRelayProgramVariables([
       "Programme demain:",
       "Tante Phonsine: Entre 12h et 17h (entree + sortie)",
@@ -196,13 +209,25 @@ test("formate la date textuelle de l'intervention", () => {
 
 test("limite chaque période à une configuration SMS et migre le destinataire historique", () => {
   const configs = normalizePlanningRelaySmsConfigs(JSON.stringify([
-    { id: "sms-1", worker_id: "worker-1", enabled: true, send_time: "8:05", send_day: "same_day", template: "{{programme}}" },
+    {
+      id: "sms-1",
+      worker_id: "worker-1",
+      enabled: true,
+      send_time: "8:05",
+      send_day: "same_day",
+      template: "{{programme}}",
+      programme_templates: [
+        { id: "compact", key: "programme_compact", template: "{{gite}}" },
+        { id: "detail", key: "programme_detaille", template: "{{gite}} : {{horaire}}" },
+      ],
+    },
     { id: "sms-2", worker_id: "worker-2", enabled: false, send_time: "18:00", send_day: "previous_day", template: "Bonjour {{intervenant}}" },
   ]));
   assert.equal(configs.length, 1);
   assert.equal(configs[0].send_time, "08:05");
   assert.equal(configs[0].worker_id, "worker-1");
-  assert.equal(configs[0].programme_template, "{{gite}} : {{horaire}} - {{in-out}}");
+  assert.equal(configs[0].programme_templates?.length, 2);
+  assert.equal(configs[0].programme_templates?.[1].key, "programme_detaille");
 
   const legacy = normalizePlanningRelaySmsConfigs("[]", {
     sms_enabled: true,
