@@ -258,6 +258,7 @@ test("limite chaque période à une configuration SMS et migre le destinataire h
   assert.equal(configs.length, 1);
   assert.equal(configs[0].send_time, "08:05");
   assert.equal(configs[0].worker_id, "worker-1");
+  assert.deepEqual(configs[0].worker_ids, ["worker-1"]);
   assert.equal(configs[0].programme_templates?.length, 2);
   assert.equal(configs[0].programme_templates?.[1].key, "programme_detaille");
 
@@ -269,8 +270,25 @@ test("limite chaque période à une configuration SMS et migre le destinataire h
   });
   assert.equal(legacy.length, 1);
   assert.equal(legacy[0].worker_id, "worker-old");
+  assert.deepEqual(legacy[0].worker_ids, ["worker-old"]);
   assert.equal(legacy[0].template, "{{programme_gite}}");
   assert.equal(legacy[0].programme_template, "{{gite}} : {{horaire}} - {{in-out}}");
+});
+
+test("conserve plusieurs intervenants dans une configuration SMS partagée", () => {
+  const [config] = normalizePlanningRelaySmsConfigs(JSON.stringify([{
+    id: "sms-shared",
+    worker_id: "worker-1",
+    worker_ids: ["worker-1", "worker-2", "worker-1"],
+    enabled: true,
+    send_time: "18:00",
+    send_day: "previous_day",
+    template: "Bonjour {{intervenant}}\n{{programme_gite}}",
+  }]));
+
+  assert.equal(config.worker_id, "worker-1");
+  assert.deepEqual(config.worker_ids, ["worker-1", "worker-2"]);
+  assert.equal(config.send_time, "18:00");
 });
 
 test("calcule le programme vise selon l'option veille ou jour meme", () => {
