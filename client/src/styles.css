@@ -4875,8 +4875,15 @@ body {
   color: #be123c;
 }
 
-.operations-worker-mini {
+.operations-management-cards {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+  gap: 12px;
+}
+
+.operations-worker-mini,
+.operations-programme-mini {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) auto;
   gap: 8px 12px;
@@ -4887,31 +4894,37 @@ body {
   background: #f8fafc;
 }
 
-.operations-worker-mini > div:first-child {
+.operations-worker-mini > div:first-child,
+.operations-programme-mini > div:first-child {
   display: grid;
   gap: 2px;
 }
 
-.operations-worker-mini strong {
+.operations-worker-mini strong,
+.operations-programme-mini strong {
   color: #111827;
   font-size: 0.9rem;
 }
 
 .operations-worker-mini span,
-.operations-worker-mini p {
+.operations-worker-mini p,
+.operations-programme-mini span,
+.operations-programme-mini p {
   margin: 0;
   color: var(--muted);
   font-size: 0.76rem;
   font-weight: 700;
 }
 
-.operations-worker-mini__chips {
+.operations-worker-mini__chips,
+.operations-programme-mini__chips {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.operations-worker-mini__chips span {
+.operations-worker-mini__chips span,
+.operations-programme-mini__chips span {
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -4924,10 +4937,32 @@ body {
   grid-column: 1 / -1;
 }
 
-.operations-worker-mini button {
+.operations-programme-mini__chips {
+  grid-column: 1 / -1;
+}
+
+.operations-programme-mini__chips span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.operations-programme-mini p {
+  grid-column: 1 / -1;
+}
+
+.operations-worker-mini button,
+.operations-programme-mini button {
   justify-self: end;
   padding: 8px 14px;
   font-size: 0.78rem;
+}
+
+.operations-programme-mini button {
+  grid-column: 1 / -1;
+}
+
+.operations-programme-mini button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .operations-period-drawer {
@@ -5909,6 +5944,10 @@ body {
   .operations-controls__dates,
   .operations-controls__options {
     grid-column: 1;
+  }
+
+  .operations-management-cards {
+    grid-template-columns: 1fr;
   }
 
   .operations-period-popover {

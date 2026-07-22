@@ -523,6 +523,11 @@ const OperationsPrintPage = () => {
     () => workers.filter((worker) => worker.is_active),
     [workers],
   );
+  const activeProgrammeConfig = useMemo(() => {
+    if (!activeSavedPeriod) return null;
+    const draft = periodDrafts[activeSavedPeriod.id] ?? buildPeriodDraft(activeSavedPeriod);
+    return draft.sms_configs[0] ?? null;
+  }, [activeSavedPeriod, periodDrafts]);
 
   const setPreset = (daysToShow: number) => {
     setTo(toIsoDateUtc(addUtcDays(parseIsoDateUtc(from), daysToShow - 1)));
@@ -746,7 +751,7 @@ const OperationsPrintPage = () => {
     });
   };
 
-  const saveProgrammeTemplates = () => {
+  const saveProgrammeTemplates = async () => {
     if (!programmeTemplateEditor) return;
     const reservedKeys = new Set(["date", "date_texte", "programme", "gite", "horaire", "in_out", "intervenant", "periode", "lien"]);
     const normalizedDrafts = programmeTemplateDrafts.map((item) => ({
@@ -777,7 +782,7 @@ const OperationsPrintPage = () => {
     const period = savedPeriods.find((item) => item.id === programmeTemplateEditor.periodId);
     const periodDraft = periodDrafts[programmeTemplateEditor.periodId] ?? (period ? buildPeriodDraft(period) : null);
     const config = periodDraft?.sms_configs.find((item) => item.id === programmeTemplateEditor.configId);
-    if (!config) return;
+    if (!period || !periodDraft || !config) return;
     let nextSmsTemplate = config.template;
     for (const previous of config.programme_templates) {
       const renamed = normalizedDrafts.find((item) => item.id === previous.id);
@@ -790,11 +795,21 @@ const OperationsPrintPage = () => {
         );
       }
     }
-    updateSmsConfig(programmeTemplateEditor.periodId, config.id, {
+    const nextConfig = {
+      ...config,
       template: nextSmsTemplate,
       programme_template: normalizedDrafts[0].template,
       programme_templates: normalizedDrafts,
-    });
+    };
+    const nextPeriodDraft = {
+      ...periodDraft,
+      sms_configs: periodDraft.sms_configs.map((item) => item.id === config.id ? nextConfig : item),
+    };
+    updatePeriodDraft(programmeTemplateEditor.periodId, nextPeriodDraft);
+    if (!periodManagerIsOpen) {
+      const saved = await savePeriodDetails(period, nextPeriodDraft);
+      if (!saved) return;
+    }
     closeProgrammeTemplateEditor();
   };
 
@@ -897,24 +912,24 @@ const OperationsPrintPage = () => {
     }
   };
 
-  const savePeriodDetails = async (period: PlanningRelayPeriod) => {
-    const draft = periodDrafts[period.id] ?? buildPeriodDraft(period);
+  const savePeriodDetails = async (period: PlanningRelayPeriod, draftOverride?: PlanningRelayPeriodDraft) => {
+    const draft = draftOverride ?? periodDrafts[period.id] ?? buildPeriodDraft(period);
     if (!draft.label.trim()) {
       setSavedPeriodsError("Le nom de la période est obligatoire.");
-      return;
+      return false;
     }
     const draftDayCount = diffUtcDays(parseIsoDateUtc(draft.to), parseIsoDateUtc(draft.from)) + 1;
     if (draft.from > draft.to || draftDayCount < 1 || draftDayCount > MAX_DAYS) {
       setSavedPeriodsError("La période doit contenir entre 1 et 31 jours.");
-      return;
+      return false;
     }
     if (draft.sms_configs.some((config) => !config.worker_id)) {
       setSavedPeriodsError("Choisissez un intervenant pour chaque SMS.");
-      return;
+      return false;
     }
     if (draft.sms_configs.some((config) => !config.template.trim() || config.programme_templates.length === 0)) {
       setSavedPeriodsError("Le texte du SMS et au moins un bloc répété sont obligatoires.");
-      return;
+      return false;
     }
 
     setSavingPeriodDetailsId(period.id);
@@ -938,8 +953,10 @@ const OperationsPrintPage = () => {
         },
       }));
       setSavedPeriodsNotice("Détails de la période enregistrés.");
+      return true;
     } catch (caught) {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'enregistrer la période."));
+      return false;
     } finally {
       setSavingPeriodDetailsId(null);
     }
@@ -1086,25 +1103,50 @@ const OperationsPrintPage = () => {
               </div>
             </>
           ) : null}
-          <div className="operations-worker-mini">
-            <div>
-              <strong>Intervenants</strong>
-              <span>
-                {workers.length === 0
-                  ? "Aucun intervenant"
-                  : `${activeWorkers.length} actif${activeWorkers.length > 1 ? "s" : ""} sur ${workers.length}`}
-              </span>
-            </div>
-            {activeWorkers.length > 0 ? (
-              <div className="operations-worker-mini__chips" aria-label="Intervenants actifs">
-                {activeWorkers.slice(0, 4).map((worker) => <span key={worker.id}>{worker.nom}</span>)}
-                {activeWorkers.length > 4 ? <span>+{activeWorkers.length - 4}</span> : null}
+          <div className="operations-management-cards">
+            <div className="operations-worker-mini">
+              <div>
+                <strong>Intervenants</strong>
+                <span>
+                  {workers.length === 0
+                    ? "Aucun intervenant"
+                    : `${activeWorkers.length} actif${activeWorkers.length > 1 ? "s" : ""} sur ${workers.length}`}
+                </span>
               </div>
-            ) : null}
-            <p>Chaque période peut utiliser un intervenant pour son SMS automatique.</p>
-            <button type="button" className="secondary" onClick={() => setWorkerManagerIsOpen(true)}>
-              Gérer les intervenants
-            </button>
+              {activeWorkers.length > 0 ? (
+                <div className="operations-worker-mini__chips" aria-label="Intervenants actifs">
+                  {activeWorkers.slice(0, 4).map((worker) => <span key={worker.id}>{worker.nom}</span>)}
+                  {activeWorkers.length > 4 ? <span>+{activeWorkers.length - 4}</span> : null}
+                </div>
+              ) : null}
+              <p>Chaque période peut utiliser un intervenant pour son SMS automatique.</p>
+              <button type="button" className="secondary" onClick={() => setWorkerManagerIsOpen(true)}>
+                Gérer les intervenants
+              </button>
+            </div>
+            <div className="operations-programme-mini">
+              <div>
+                <strong>Variables dynamiques</strong>
+                <span>{activeSavedPeriod?.label ?? "Aucune période sélectionnée"}</span>
+              </div>
+              {activeProgrammeConfig ? (
+                <div className="operations-programme-mini__chips" aria-label="Variables dynamiques de la période">
+                  {activeProgrammeConfig.programme_templates.map((item) => <span key={item.id}>{`{{${item.key}}}`}</span>)}
+                </div>
+              ) : (
+                <p>Sélectionnez une période enregistrée pour afficher ses variables.</p>
+              )}
+              <button
+                type="button"
+                className="secondary"
+                disabled={!activeSavedPeriod || !activeProgrammeConfig}
+                onClick={() => {
+                  if (activeSavedPeriod && activeProgrammeConfig) openProgrammeTemplateEditor(activeSavedPeriod.id, activeProgrammeConfig);
+                }}
+              >
+                Modifier les variables
+              </button>
+            </div>
           </div>
         </div>
         {!periodIsValid ? <div className="operations-error">La période doit contenir entre 1 et 31 jours.</div> : null}
@@ -1470,7 +1512,9 @@ const OperationsPrintPage = () => {
             </div>
             <footer>
               <button type="button" className="secondary" onClick={closeProgrammeTemplateEditor}>Annuler</button>
-              <button type="button" onClick={saveProgrammeTemplates}>Enregistrer les blocs</button>
+              <button type="button" onClick={() => void saveProgrammeTemplates()} disabled={savingPeriodDetailsId === programmeTemplateEditor.periodId}>
+                {savingPeriodDetailsId === programmeTemplateEditor.periodId ? "Enregistrement…" : "Enregistrer les blocs"}
+              </button>
             </footer>
           </section>
         </div>
