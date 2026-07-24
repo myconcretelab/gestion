@@ -84,10 +84,14 @@ import {
   buildTelegramNotificationState,
   mergeTelegramNotificationConfig,
   readTelegramNotificationConfig,
-  sendTelegramMessage,
   writeTelegramNotificationConfig,
   type TelegramNotificationConfig,
 } from "../services/telegramNotifications.js";
+import {
+  getMessageChannelAvailability,
+  listMessageChannels,
+  sendMessage,
+} from "../services/messageChannels/index.js";
 import {
   getDailyReservationEmailState,
   runDailyReservationEmail,
@@ -1369,6 +1373,25 @@ router.get("/telegram", (_req, res, next) => {
   }
 });
 
+router.get("/message-channels", (_req, res, next) => {
+  try {
+    const telegramConfig = readTelegramNotificationConfig(
+      buildDefaultTelegramNotificationConfig(),
+    );
+    res.json({
+      channels: listMessageChannels().map((channel) => ({
+        ...channel,
+        ...getMessageChannelAvailability(
+          channel.id,
+          channel.id === "telegram" ? telegramConfig : undefined,
+        ),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put("/declaration-nights", async (req, res, next) => {
   try {
     const payload = declarationNightsSettingsSchema.parse(req.body);
@@ -1454,7 +1477,12 @@ router.put("/telegram", (req, res, next) => {
 router.post("/telegram/test", async (req, res, next) => {
   try {
     const payload = telegramNotificationTestSchema.parse(req.body ?? {});
-    const result = await sendTelegramMessage(payload.message);
+    const result = await sendMessage("telegram", {
+      message: payload.message,
+      options: readTelegramNotificationConfig(
+        buildDefaultTelegramNotificationConfig(),
+      ),
+    });
     res.json({ ok: result.skipped_reason === null, ...result });
   } catch (error) {
     next(error);

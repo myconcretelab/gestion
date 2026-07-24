@@ -4,8 +4,8 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import {
   readTelegramNotificationConfig,
-  sendTelegramMessage,
 } from "./telegramNotifications.js";
+import { sendMessage } from "./messageChannels/index.js";
 
 type DeadlineDocument = {
   id: string;
@@ -159,7 +159,10 @@ export const runTelegramDeadlineNotifications = async (
       const key = alertKey(type, document);
       if (state.notified[key]) return;
       try {
-        const result = await sendTelegramMessage(message, config);
+        const result = await sendMessage("telegram", {
+          message,
+          options: config,
+        });
         if (result.sent_count > 0) {
           state.notified[key] = now.toISOString();
           writeState(state);

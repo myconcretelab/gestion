@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
+import { telegramMessageChannel } from "./messageChannels/telegram.js";
 
 export type TelegramNotificationConfig = {
   enabled: boolean;
@@ -191,56 +192,18 @@ const formatPrice = (value: number) =>
     maximumFractionDigits: 2,
   }).format(value);
 
-const postTelegramMessage = async (params: {
-  botToken: string;
-  chatId: string;
-  text: string;
-}) => {
-  const response = await fetch(
-    `https://api.telegram.org/bot${params.botToken}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: params.chatId,
-        text: params.text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `Telegram sendMessage failed (${response.status}): ${body || response.statusText}`,
-    );
-  }
-};
-
 export const sendTelegramMessage = async (
   text: string,
   config = readTelegramNotificationConfig(),
 ) => {
-  if (!config.enabled) {
-    return { sent_count: 0, skipped_reason: "disabled" as const };
-  }
-  if (!config.bot_token.trim()) {
-    return { sent_count: 0, skipped_reason: "missing_bot_token" as const };
-  }
-  if (config.chat_ids.length === 0) {
-    return { sent_count: 0, skipped_reason: "missing_chat_ids" as const };
-  }
-
-  for (const chatId of config.chat_ids) {
-    await postTelegramMessage({
-      botToken: config.bot_token,
-      chatId,
-      text,
-    });
-  }
-
-  return { sent_count: config.chat_ids.length, skipped_reason: null };
+  const result = await telegramMessageChannel.send({
+    message: text,
+    options: config,
+  });
+  return {
+    sent_count: result.sent_count,
+    skipped_reason: result.skipped_reason,
+  };
 };
 
 const buildBookingRequestCreatedMessage = (

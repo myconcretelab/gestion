@@ -19,7 +19,10 @@ import {
   recordRequestThrottleFailure,
   sendThrottleResponse,
 } from "../services/requestThrottle.js";
-import { getSmsConfigurationStatus, sendOvhSms } from "../services/ovhSms.js";
+import {
+  getMessageChannelAvailability,
+  sendMessage,
+} from "../services/messageChannels/index.js";
 import {
   PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
   PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
@@ -38,6 +41,30 @@ import {
 
 const MAX_DAYS = 31;
 const privateRouter = Router();
+
+const summarizeSmsResults = (
+  results: Awaited<ReturnType<typeof sendMessage>>[],
+) => {
+  const deliveries = results.flatMap((result) => result.deliveries);
+  const metadata = deliveries.map((delivery) => delivery.metadata ?? {});
+  return {
+    provider: deliveries[0]?.provider ?? "ovh",
+    recipient: deliveries[0]?.recipient,
+    credits: metadata.reduce(
+      (sum, item) => sum + Number(item.totalCreditsRemoved ?? 0),
+      0,
+    ),
+    ids: metadata.flatMap((item) =>
+      Array.isArray(item.ids) ? item.ids : [],
+    ),
+    invalid_receivers: metadata.flatMap((item) =>
+      Array.isArray(item.invalidReceivers) ? item.invalidReceivers : [],
+    ),
+    valid_receivers: metadata.flatMap((item) =>
+      Array.isArray(item.validReceivers) ? item.validReceivers : [],
+    ),
+  };
+};
 const publicRouter = Router();
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -470,7 +497,11 @@ privateRouter.delete("/workers/:id", async (req, res, next) => {
 });
 
 privateRouter.get("/sms/status", (_req, res) => {
-  res.json(getSmsConfigurationStatus());
+  const availability = getMessageChannelAvailability("sms");
+  res.json({
+    configured: availability.available,
+    missing: availability.missing,
+  });
 });
 
 privateRouter.get("/programme-templates", async (_req, res, next) => {
@@ -697,17 +728,13 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       if (!result.sent) {
         return res.status(409).json({ error: "Aucune intervention n’est prévue sur cette période." });
       }
-      const firstResult = result.results[0];
+      const summary = summarizeSmsResults(result.results);
       return res.json({
         ok: true,
-        provider: firstResult?.provider ?? "ovh",
-        recipient: firstResult?.recipient ?? workers[0].telephone,
+        ...summary,
+        recipient: summary.recipient ?? workers[0].telephone,
         target_date: result.targetIsoDate,
         message: result.messages[0] ?? "",
-        credits: result.results.reduce((sum, item) => sum + (item.totalCreditsRemoved ?? 0), 0),
-        ids: result.results.flatMap((item) => item.ids ?? []),
-        invalid_receivers: result.results.flatMap((item) => item.invalidReceivers ?? []),
-        valid_receivers: result.results.flatMap((item) => item.validReceivers ?? []),
       });
     }
     const worker = payload.worker_id
@@ -724,17 +751,13 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       return res.status(409).json({ error: "Aucune intervention à venir à envoyer pour cette période." });
     }
 
-    const firstResult = result.results[0];
+    const summary = summarizeSmsResults(result.results);
     return res.json({
       ok: true,
-      provider: firstResult?.provider ?? "ovh",
-      recipient: firstResult?.recipient ?? recipient,
+      ...summary,
+      recipient: summary.recipient ?? recipient,
       target_date: result.targetIsoDate,
       message: result.messages[0] ?? "",
-      credits: result.results.reduce((sum, item) => sum + (item.totalCreditsRemoved ?? 0), 0),
-      ids: result.results.flatMap((item) => item.ids ?? []),
-      invalid_receivers: result.results.flatMap((item) => item.invalidReceivers ?? []),
-      valid_receivers: result.results.flatMap((item) => item.validReceivers ?? []),
     });
   } catch (error) {
     return next(error);
@@ -784,19 +807,21 @@ privateRouter.post("/:id/send-sms", async (req, res, next) => {
     }
 
     const publicUrl = new URL(serialized.public_path, getRequestOrigin(req)).toString();
-    const result = await sendOvhSms({
-      recipient: payload.recipient,
+    const result = await sendMessage("sms", {
+      recipients: [payload.recipient],
       message: buildPlanningRelayMessage(period.label, publicUrl),
     });
+    const delivery = result.deliveries[0];
+    const metadata = delivery?.metadata ?? {};
 
     return res.json({
       ok: true,
-      provider: result.provider,
-      recipient: result.recipient,
-      credits: result.totalCreditsRemoved ?? null,
-      ids: result.ids ?? [],
-      invalid_receivers: result.invalidReceivers ?? [],
-      valid_receivers: result.validReceivers ?? [],
+      provider: delivery?.provider ?? result.channel,
+      recipient: delivery?.recipient ?? payload.recipient,
+      credits: metadata.totalCreditsRemoved ?? null,
+      ids: metadata.ids ?? [],
+      invalid_receivers: metadata.invalidReceivers ?? [],
+      valid_receivers: metadata.validReceivers ?? [],
     });
   } catch (error) {
     return next(error);

@@ -3,7 +3,7 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { buildPlanningRelayShortCode } from "./planningRelayShare.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
-import { sendOvhSms } from "./ovhSms.js";
+import { sendMessage } from "./messageChannels/index.js";
 
 const PARIS_TIME_ZONE = "Europe/Paris";
 
@@ -599,7 +599,7 @@ export const sendPlanningRelayProgramSms = async (period: {
   });
   const results = [];
   for (const message of messages) {
-    results.push(await sendOvhSms({ recipient, message }));
+    results.push(await sendMessage("sms", { recipients: [recipient], message }));
   }
   await prisma.planningRelayPeriod.update({
     where: { id: period.id },
@@ -686,7 +686,13 @@ export const sendPlanningRelayConfigTestSms = async (period: {
     const deliveries = (await Promise.all(workers.map(async (worker) => {
       const message = await buildConfigMessage(period, config, worker, targetIsoDate, true, publicOrigin);
       if (!message) return null;
-      return { message, result: await sendOvhSms({ recipient: worker.telephone, message }) };
+      return {
+        message,
+        result: await sendMessage("sms", {
+          recipients: [worker.telephone],
+          message,
+        }),
+      };
     }))).filter((delivery): delivery is NonNullable<typeof delivery> => delivery !== null);
     if (deliveries.length > 0) {
       return {
@@ -728,7 +734,7 @@ export const sendPlanningRelayProgramTestSms = async (period: {
     if (messages?.length) {
       const results = [];
       for (const message of messages) {
-        results.push(await sendOvhSms({ recipient, message }));
+        results.push(await sendMessage("sms", { recipients: [recipient], message }));
       }
       return { sent: true as const, targetIsoDate, messages, results };
     }
@@ -782,7 +788,10 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
         for (const worker of workers) {
           const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
           if (!message) continue;
-          await sendOvhSms({ recipient: worker.telephone, message });
+          await sendMessage("sms", {
+            recipients: [worker.telephone],
+            message,
+          });
           deliveredCount += 1;
         }
         if (deliveredCount === 0) continue;
