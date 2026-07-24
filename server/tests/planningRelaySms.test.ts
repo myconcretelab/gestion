@@ -8,6 +8,7 @@ import {
   getPlanningRelayProgramHeading,
   getPlanningRelayProgramTargetIsoDate,
   getPlanningRelayTestProgramHeading,
+  getPlanningRelayWorkerChannelAddress,
   isPlanningRelaySmsDue,
   normalizePlanningRelaySmsConfigs,
   normalizePlanningRelaySmsTime,
@@ -259,6 +260,7 @@ test("limite chaque période à une configuration SMS et migre le destinataire h
   assert.equal(configs[0].send_time, "08:05");
   assert.equal(configs[0].worker_id, "worker-1");
   assert.deepEqual(configs[0].worker_ids, ["worker-1"]);
+  assert.equal(configs[0].channel, "sms");
   assert.equal(configs[0].programme_templates?.length, 2);
   assert.equal(configs[0].programme_templates?.[1].key, "programme_detaille");
 
@@ -271,8 +273,37 @@ test("limite chaque période à une configuration SMS et migre le destinataire h
   assert.equal(legacy.length, 1);
   assert.equal(legacy[0].worker_id, "worker-old");
   assert.deepEqual(legacy[0].worker_ids, ["worker-old"]);
+  assert.equal(legacy[0].channel, "sms");
   assert.equal(legacy[0].template, "{{programme_gite}}");
   assert.equal(legacy[0].programme_template, "{{gite}} : {{horaire}} - {{in-out}}");
+});
+
+test("normalise Telegram et résout l'adresse du destinataire", () => {
+  const [config] = normalizePlanningRelaySmsConfigs(JSON.stringify([{
+    id: "telegram-1",
+    channel: "telegram",
+    worker_ids: ["worker-1"],
+    enabled: true,
+    send_time: "18:00",
+    send_day: "previous_day",
+    template: "{{programme_gite}}",
+  }]));
+
+  assert.equal(config.channel, "telegram");
+  assert.equal(
+    getPlanningRelayWorkerChannelAddress({
+      telephone: "06 00 00 00 00",
+      message_channel_addresses: JSON.stringify({ telegram: "123456789" }),
+    }, "telegram"),
+    "123456789",
+  );
+  assert.equal(
+    getPlanningRelayWorkerChannelAddress({
+      telephone: "06 00 00 00 00",
+      message_channel_addresses: {},
+    }, "sms"),
+    "06 00 00 00 00",
+  );
 });
 
 test("conserve plusieurs intervenants dans une configuration SMS partagée", () => {

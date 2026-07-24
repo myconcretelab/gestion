@@ -21,6 +21,7 @@ import {
 } from "../services/requestThrottle.js";
 import {
   getMessageChannelAvailability,
+  listMessageChannels,
   sendMessage,
 } from "../services/messageChannels/index.js";
 import {
@@ -29,10 +30,12 @@ import {
   normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsConfigs,
   normalizePlanningRelaySmsTime,
+  getPlanningRelayWorkerChannelAddress,
   previewPlanningRelayConfigSms,
   sendPlanningRelayConfigTestSms,
   sendPlanningRelayProgramTestSms,
 } from "../services/planningRelaySms.js";
+import { readTelegramNotificationConfig } from "../services/telegramNotifications.js";
 import {
   mergePlanningRelayProgrammeTemplates,
   readPlanningRelayProgrammeTemplates,
@@ -100,6 +103,7 @@ const programmeTemplatesSchema = z.array(programmeTemplateSchema).min(1).max(10)
 
 const smsConfigSchema = z.object({
   id: z.string().trim().min(1).max(80),
+  channel: z.enum(["sms", "telegram"]).default("sms"),
   worker_id: z.string().trim().min(1).optional(),
   worker_ids: z.array(z.string().trim().min(1)).min(1).max(20).optional(),
   enabled: z.boolean(),
@@ -113,7 +117,7 @@ const smsConfigSchema = z.object({
 }).transform((config, context) => {
   const workerIds = [...new Set([...(config.worker_ids ?? []), config.worker_id].filter((id): id is string => Boolean(id)))];
   if (workerIds.length === 0) {
-    context.addIssue({ code: "custom", message: "Choisissez au moins un intervenant SMS.", path: ["worker_ids"] });
+    context.addIssue({ code: "custom", message: "Choisissez au moins un intervenant.", path: ["worker_ids"] });
     return z.NEVER;
   }
   return { ...config, worker_id: workerIds[0], worker_ids: workerIds };
@@ -132,7 +136,7 @@ const patchSchema = payloadSchema.partial().extend({
   ).optional(),
   sms_send_time: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/).optional(),
   sms_send_day: z.enum(["previous_day", "same_day"]).optional(),
-  sms_configs: z.array(smsConfigSchema).max(1, "Une période ne peut avoir qu'une seule configuration SMS.").optional(),
+  sms_configs: z.array(smsConfigSchema).max(1, "Une période ne peut avoir qu'une seule configuration d'envoi.").optional(),
 });
 const smsSchema = z.object({
   recipient: z.string().trim().min(6).max(32),
@@ -201,6 +205,10 @@ const workerPayloadSchema = z.object({
     (value) => value === "" || value === undefined ? null : value,
     z.string().trim().max(500).nullable(),
   ).optional(),
+  message_channel_addresses: z.record(
+    z.string().trim().min(1).max(40),
+    z.string().trim().max(180),
+  ).optional(),
   is_active: z.boolean().optional(),
 });
 const assignmentPayloadSchema = z.object({
@@ -248,6 +256,13 @@ const serializeWorker = (worker: any) => ({
   telephone: worker.telephone,
   email: worker.email ?? null,
   adresse: worker.adresse ?? null,
+  message_channel_addresses: {
+    ...fromJsonString<Record<string, string>>(
+      worker.message_channel_addresses,
+      {},
+    ),
+    sms: worker.telephone,
+  },
   is_active: Boolean(worker.is_active),
   created_at: worker.createdAt.toISOString(),
   updated_at: worker.updatedAt.toISOString(),
@@ -437,6 +452,9 @@ privateRouter.post("/workers", async (req, res, next) => {
         telephone: payload.telephone,
         email: payload.email ?? null,
         adresse: payload.adresse ?? null,
+        message_channel_addresses: encodeJsonField(
+          payload.message_channel_addresses ?? {},
+        ),
         is_active: payload.is_active ?? true,
       },
     });
@@ -458,6 +476,13 @@ privateRouter.patch("/workers/:id", async (req, res, next) => {
         ...(payload.telephone !== undefined ? { telephone: payload.telephone } : {}),
         ...(payload.email !== undefined ? { email: payload.email } : {}),
         ...(payload.adresse !== undefined ? { adresse: payload.adresse } : {}),
+        ...(payload.message_channel_addresses !== undefined
+          ? {
+              message_channel_addresses: encodeJsonField(
+                payload.message_channel_addresses,
+              ),
+            }
+          : {}),
         ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
       },
     });
@@ -501,6 +526,21 @@ privateRouter.get("/sms/status", (_req, res) => {
   res.json({
     configured: availability.available,
     missing: availability.missing,
+  });
+});
+
+privateRouter.get("/message-channels/status", (_req, res) => {
+  const telegramConfig = readTelegramNotificationConfig();
+  res.json({
+    channels: listMessageChannels().map((channel) => ({
+      ...channel,
+      ...getMessageChannelAvailability(
+        channel.id,
+        channel.id === "telegram"
+          ? { ...telegramConfig, has_explicit_recipients: true }
+          : undefined,
+      ),
+    })),
   });
 });
 
@@ -559,11 +599,23 @@ privateRouter.patch("/:id", async (req, res, next) => {
     if (payload.sms_worker_id && !smsWorker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
     if (payload.sms_configs) {
       const workerIds = [...new Set(payload.sms_configs.flatMap((config) => config.worker_ids))];
-      const workerCount = await prisma.planningRelayWorker.count({
+      const configuredWorkers = await prisma.planningRelayWorker.findMany({
         where: { id: { in: workerIds } },
       });
-      if (workerCount !== workerIds.length) {
-        return res.status(404).json({ error: "Un intervenant SMS est introuvable." });
+      if (configuredWorkers.length !== workerIds.length) {
+        return res.status(404).json({ error: "Un intervenant est introuvable." });
+      }
+      for (const config of payload.sms_configs) {
+        const workerWithoutAddress = configuredWorkers.find(
+          (worker) =>
+            config.worker_ids.includes(worker.id) &&
+            !getPlanningRelayWorkerChannelAddress(worker, config.channel),
+        );
+        if (workerWithoutAddress) {
+          return res.status(400).json({
+            error: `Adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
+          });
+        }
       }
     }
 
@@ -716,7 +768,15 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
     }
     if (payload.config) {
       const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: payload.config.worker_ids } } });
-      if (workers.length !== payload.config.worker_ids.length) return res.status(404).json({ error: "Un intervenant SMS est introuvable." });
+      if (workers.length !== payload.config.worker_ids.length) return res.status(404).json({ error: "Un intervenant est introuvable." });
+      const workerWithoutAddress = workers.find(
+        (worker) => !getPlanningRelayWorkerChannelAddress(worker, payload.config!.channel),
+      );
+      if (workerWithoutAddress) {
+        return res.status(400).json({
+          error: `Adresse ${payload.config.channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
+        });
+      }
       const result = await sendPlanningRelayConfigTestSms(current, {
         ...payload.config,
         template: payload.config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,

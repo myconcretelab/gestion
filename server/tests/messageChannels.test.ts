@@ -61,3 +61,32 @@ test("un canal désactivé ignore l'envoi sans appeler le fournisseur", async ()
     deliveries: [],
   });
 });
+
+test("Telegram accepte un destinataire explicite en texte brut", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody: Record<string, unknown> | null = null;
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    return new Response(null, { status: 200 });
+  };
+
+  try {
+    const result = await sendMessage("telegram", {
+      message: "Tante <Phonsine> & Liberté",
+      recipients: ["worker-chat-id"],
+      options: {
+        enabled: true,
+        bot_token: "token",
+        chat_ids: ["default-chat-id"],
+        parse_mode: null,
+      },
+    });
+
+    assert.equal(result.sent_count, 1);
+    assert.equal(requestBody?.chat_id, "worker-chat-id");
+    assert.equal(requestBody?.text, "Tante <Phonsine> & Liberté");
+    assert.equal("parse_mode" in (requestBody ?? {}), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

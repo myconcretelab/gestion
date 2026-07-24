@@ -147,6 +147,7 @@ export type PlanningRelayPeriod = {
 
 export type PlanningRelaySmsConfig = {
   id: string;
+  channel: "sms" | "telegram";
   worker_id: string;
   worker_ids: string[];
   enabled: boolean;
@@ -171,6 +172,7 @@ export type PlanningRelayWorker = {
   telephone: string;
   email: string | null;
   adresse: string | null;
+  message_channel_addresses: Record<string, string>;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -192,9 +194,16 @@ export type PlanningRelaySmsStatus = {
   missing: string[];
 };
 
+export type PlanningRelayMessageChannelStatus = {
+  id: "sms" | "telegram";
+  label: string;
+  available: boolean;
+  missing: string[];
+};
+
 export type PlanningRelaySmsSendResult = {
   ok: boolean;
-  provider: "ovh";
+  provider: string;
   recipient: string;
   credits: number | null;
   ids: number[];

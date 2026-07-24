@@ -389,6 +389,7 @@ model PlanningRelayWorker {
   telephone   String
   email       String?
   adresse     String?
+  message_channel_addresses Json @default("{}")
   is_active   Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
