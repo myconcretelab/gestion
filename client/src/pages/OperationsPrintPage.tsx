@@ -19,10 +19,10 @@ import {
 import type {
   Gite,
   PlanningRelayPeriod,
+  PlanningRelayMessageChannelStatus,
   PlanningRelaySmsConfig,
   PlanningRelaySmsProgrammeTemplate,
   PlanningRelaySmsPreview,
-  PlanningRelaySmsStatus,
   PlanningRelaySmsTestResult,
   PlanningRelayWorker,
   Reservation,
@@ -56,6 +56,7 @@ type PlanningRelayWorkerDraft = {
   telephone: string;
   email: string;
   adresse: string;
+  telegram_chat_id: string;
   is_active: boolean;
 };
 
@@ -64,6 +65,7 @@ const EMPTY_WORKER_DRAFT: PlanningRelayWorkerDraft = {
   telephone: "",
   email: "",
   adresse: "",
+  telegram_chat_id: "",
   is_active: true,
 };
 
@@ -142,6 +144,14 @@ const formatSavedPeriod = (from: string, to: string) =>
 const getSmsWorkerIds = (config: PlanningRelaySmsConfig) =>
   config.worker_ids?.length ? config.worker_ids : config.worker_id ? [config.worker_id] : [];
 
+const getWorkerChannelAddress = (
+  worker: PlanningRelayWorker,
+  channel: PlanningRelaySmsConfig["channel"],
+) =>
+  channel === "sms"
+    ? worker.message_channel_addresses?.sms || worker.telephone
+    : worker.message_channel_addresses?.telegram || "";
+
 const applySharedProgrammeTemplates = (
   config: PlanningRelaySmsConfig,
   templates: PlanningRelaySmsProgrammeTemplate[],
@@ -215,13 +225,13 @@ const PlanningRelaySmsLivePreview = ({
   const emptyMessage = getSmsWorkerIds(config).length === 0
     ? "Choisissez au moins un intervenant pour afficher l’aperçu."
     : !config.template.trim()
-      ? "Saisissez le texte du SMS pour afficher l’aperçu."
+      ? "Saisissez le texte du message pour afficher l’aperçu."
       : "Aucune intervention n’est prévue sur cette période avec les filtres actuels.";
 
   return (
     <section className="operations-sms-preview" aria-live="polite">
       <header>
-        <strong>Aperçu du SMS envoyé</strong>
+        <strong>Aperçu du message envoyé</strong>
         {preview?.target_date ? <span>Programme du {formatShortDate(preview.target_date)}</span> : null}
       </header>
       <div className={`operations-sms-preview__message${preview?.message ? "" : " is-empty"}`}>
@@ -272,6 +282,7 @@ const createSmsConfig = (programmeTemplates = DEFAULT_PROGRAMME_TEMPLATES): Plan
   id: globalThis.crypto?.randomUUID?.() ?? `sms-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   worker_id: "",
   worker_ids: [],
+  channel: "sms",
   enabled: true,
   send_time: "18:00",
   send_day: "previous_day",
@@ -287,6 +298,7 @@ const buildWorkerDraft = (worker: PlanningRelayWorker): PlanningRelayWorkerDraft
   telephone: worker.telephone,
   email: worker.email ?? "",
   adresse: worker.adresse ?? "",
+  telegram_chat_id: worker.message_channel_addresses?.telegram ?? "",
   is_active: worker.is_active,
 });
 
@@ -337,7 +349,7 @@ const OperationsPrintPage = () => {
   const [savedPeriodsLoaded, setSavedPeriodsLoaded] = useState(false);
   const [savedPeriodsError, setSavedPeriodsError] = useState<string | null>(null);
   const [savedPeriodsNotice, setSavedPeriodsNotice] = useState<string | null>(null);
-  const [smsStatus, setSmsStatus] = useState<PlanningRelaySmsStatus | null>(null);
+  const [messageChannels, setMessageChannels] = useState<PlanningRelayMessageChannelStatus[]>([]);
   const [periodManagerIsOpen, setPeriodManagerIsOpen] = useState(false);
   const [focusedPeriodId, setFocusedPeriodId] = useState<string | null>(null);
   const [drawerPeriodPickerId, setDrawerPeriodPickerId] = useState<string | null>(null);
@@ -419,9 +431,12 @@ const OperationsPrintPage = () => {
   }, [refreshProgrammeTemplates]);
 
   useEffect(() => {
-    apiFetch<PlanningRelaySmsStatus>("/planning-relay-periods/sms/status")
-      .then(setSmsStatus)
-      .catch(() => setSmsStatus({ configured: false, missing: ["SMS"] }));
+    apiFetch<{ channels: PlanningRelayMessageChannelStatus[] }>("/planning-relay-periods/message-channels/status")
+      .then((response) => setMessageChannels(response.channels))
+      .catch(() => setMessageChannels([
+        { id: "sms", label: "SMS", available: false, missing: ["SMS"] },
+        { id: "telegram", label: "Telegram", available: false, missing: ["Telegram"] },
+      ]));
   }, []);
 
   useEffect(() => {
@@ -909,6 +924,12 @@ const OperationsPrintPage = () => {
           telephone: newWorkerDraft.telephone.trim(),
           email: newWorkerDraft.email.trim() || null,
           adresse: newWorkerDraft.adresse.trim() || null,
+          message_channel_addresses: {
+            sms: newWorkerDraft.telephone.trim(),
+            ...(newWorkerDraft.telegram_chat_id.trim()
+              ? { telegram: newWorkerDraft.telegram_chat_id.trim() }
+              : {}),
+          },
           is_active: newWorkerDraft.is_active,
         },
       });
@@ -942,6 +963,12 @@ const OperationsPrintPage = () => {
           telephone: draft.telephone.trim(),
           email: draft.email.trim() || null,
           adresse: draft.adresse.trim() || null,
+          message_channel_addresses: {
+            sms: draft.telephone.trim(),
+            ...(draft.telegram_chat_id.trim()
+              ? { telegram: draft.telegram_chat_id.trim() }
+              : {}),
+          },
           is_active: draft.is_active,
         },
       });
@@ -986,7 +1013,21 @@ const OperationsPrintPage = () => {
       return false;
     }
     if (draft.sms_configs.some((config) => getSmsWorkerIds(config).length === 0)) {
-      setSavedPeriodsError("Choisissez au moins un intervenant pour chaque SMS.");
+      setSavedPeriodsError("Choisissez au moins un intervenant pour chaque envoi.");
+      return false;
+    }
+    const missingChannelAddress = draft.sms_configs.flatMap((config) =>
+      getSmsWorkerIds(config).flatMap((workerId) => {
+        const worker = workers.find((item) => item.id === workerId);
+        return worker && !getWorkerChannelAddress(worker, config.channel)
+          ? [{ worker, channel: config.channel }]
+          : [];
+      }),
+    )[0];
+    if (missingChannelAddress) {
+      setSavedPeriodsError(
+        `Renseignez l’adresse ${missingChannelAddress.channel === "telegram" ? "Telegram" : "SMS"} de ${missingChannelAddress.worker.nom}.`,
+      );
       return false;
     }
     if (draft.sms_configs.some((config) => !config.template.trim() || config.programme_templates.length === 0)) {
@@ -1029,8 +1070,9 @@ const OperationsPrintPage = () => {
       setSavedPeriodsError("Choisissez au moins un intervenant avant d'envoyer un test.");
       return;
     }
-    if (!smsStatus?.configured) {
-      setSavedPeriodsError("La configuration SMS OVH est incomplète.");
+    const channelStatus = messageChannels.find((channel) => channel.id === config.channel);
+    if (!channelStatus?.available) {
+      setSavedPeriodsError(`La configuration ${config.channel === "telegram" ? "Telegram" : "SMS OVH"} est incomplète.`);
       return;
     }
 
@@ -1043,9 +1085,10 @@ const OperationsPrintPage = () => {
         json: { config },
       });
       const recipientCount = getSmsWorkerIds(config).length;
-      setSavedPeriodsNotice(`SMS test envoyé à ${recipientCount} intervenant${recipientCount > 1 ? "s" : ""} pour le ${formatShortDate(result.target_date)}.`);
+      const channelLabel = config.channel === "telegram" ? "Telegram" : "SMS";
+      setSavedPeriodsNotice(`${channelLabel} test envoyé à ${recipientCount} intervenant${recipientCount > 1 ? "s" : ""} pour le ${formatShortDate(result.target_date)}.`);
     } catch (caught) {
-      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'envoyer le SMS test."));
+      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'envoyer le message test."));
     } finally {
       setTestingPeriodSmsId(null);
     }
@@ -1182,7 +1225,7 @@ const OperationsPrintPage = () => {
                   {activeWorkers.length > 4 ? <span>+{activeWorkers.length - 4}</span> : null}
                 </div>
               ) : null}
-              <p>Chaque période peut envoyer sa configuration SMS à plusieurs intervenants.</p>
+              <p>Chaque période peut envoyer son programme à plusieurs intervenants via le canal choisi.</p>
               <button type="button" className="secondary" onClick={() => setWorkerManagerIsOpen(true)}>
                 Gérer les intervenants
               </button>
@@ -1366,6 +1409,10 @@ const OperationsPrintPage = () => {
                       {draft.sms_configs.map((config) => {
                         const selectedWorkerIds = getSmsWorkerIds(config);
                         const selectableWorkers = workers.filter((worker) => worker.is_active || selectedWorkerIds.includes(worker.id));
+                        const channelStatus = messageChannels.find((channel) => channel.id === config.channel);
+                        const hasMissingRecipient = selectableWorkers.some(
+                          (worker) => selectedWorkerIds.includes(worker.id) && !getWorkerChannelAddress(worker, config.channel),
+                        );
                         return (
                           <section key={config.id} className="operations-sms-config">
                             <header>
@@ -1385,12 +1432,36 @@ const OperationsPrintPage = () => {
                                         onChange={() => toggleSmsWorker(period.id, config, worker.id)}
                                       />
                                       <span>{worker.nom}</span>
-                                      <small>{worker.telephone}{worker.is_active ? "" : " · inactif"}</small>
+                                      <small>
+                                        {getWorkerChannelAddress(worker, config.channel) || `Adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante`}
+                                        {worker.is_active ? "" : " · inactif"}
+                                      </small>
                                     </label>
                                   ))}
                                 </div>
                               </fieldset>
                               <div className="operations-sms-delivery__schedule">
+                                <label className="field">
+                                  <span>Canal d'envoi</span>
+                                  <select
+                                    value={config.channel}
+                                    onChange={(event) => updateSmsConfig(period.id, config.id, {
+                                      channel: event.target.value === "telegram" ? "telegram" : "sms",
+                                    })}
+                                  >
+                                    {(messageChannels.length ? messageChannels : [
+                                      { id: "sms", label: "SMS", available: true, missing: [] },
+                                    ]).map((channel) => (
+                                      <option
+                                        key={channel.id}
+                                        value={channel.id}
+                                        disabled={!channel.available && channel.id !== config.channel}
+                                      >
+                                        {channel.label}{channel.available ? "" : " — non configuré"}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
                                 <label className="field">
                                   <span>Heure d'envoi</span>
                                   <input type="time" value={config.send_time} onChange={(event) => updateSmsConfig(period.id, config.id, { send_time: event.target.value })} />
@@ -1406,12 +1477,12 @@ const OperationsPrintPage = () => {
                             </div>
                             <details className="operations-sms-accordion operations-sms-accordion--message">
                               <summary>
-                                <span>Texte et contenu du SMS</span>
+                                <span>Texte et contenu du message</span>
                                 <small>{config.template.trim() ? "Configuré" : "À compléter"}</small>
                               </summary>
                               <div className="operations-sms-accordion__content">
                                 <label className="field operations-sms-template">
-                                  <span>Texte du SMS</span>
+                                  <span>Texte du message</span>
                                   <textarea
                                     ref={(element) => {
                                       const refKey = `${period.id}:${config.id}:template`;
@@ -1444,8 +1515,13 @@ const OperationsPrintPage = () => {
                                   <span>Dernière tentative : {config.last_attempt_for_date ? formatShortDate(config.last_attempt_for_date) : "aucune"}</span>
                                   <span>Dernier envoi : {config.last_sent_for_date ? formatShortDate(config.last_sent_for_date) : "aucun"}</span>
                                 </div>
-                                <button type="button" className="secondary" onClick={() => void sendPeriodTestSms(period, config)} disabled={isTestingSms || selectedWorkerIds.length === 0 || !smsStatus?.configured}>
-                                  {isTestingSms ? "Test en cours…" : "Tester ce SMS"}
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  onClick={() => void sendPeriodTestSms(period, config)}
+                                  disabled={isTestingSms || selectedWorkerIds.length === 0 || !channelStatus?.available || hasMissingRecipient}
+                                >
+                                  {isTestingSms ? "Test en cours…" : `Tester via ${config.channel === "telegram" ? "Telegram" : "SMS"}`}
                                 </button>
                               </div>
                             </details>
@@ -1453,7 +1529,7 @@ const OperationsPrintPage = () => {
                         );
                       })}
                       {draft.sms_configs.length === 0 ? (
-                        <button type="button" className="secondary" onClick={() => addSmsConfig(period.id)}>Configurer l’envoi SMS</button>
+                        <button type="button" className="secondary" onClick={() => addSmsConfig(period.id)}>Configurer l’envoi</button>
                       ) : null}
                     </div>
 
@@ -1636,6 +1712,14 @@ const OperationsPrintPage = () => {
                 </div>
                 <div className="operations-period-detail__grid">
                   <label className="field">
+                    <span>Identifiant de chat Telegram</span>
+                    <input
+                      value={newWorkerDraft.telegram_chat_id}
+                      onChange={(event) => setNewWorkerDraft((current) => ({ ...current, telegram_chat_id: event.target.value }))}
+                      placeholder="Ex. 123456789"
+                    />
+                  </label>
+                  <label className="field">
                     <span>Email</span>
                     <input
                       type="email"
@@ -1683,6 +1767,14 @@ const OperationsPrintPage = () => {
                       </div>
                     </div>
                     <div className="operations-period-detail__grid">
+                      <label className="field">
+                        <span>Identifiant de chat Telegram</span>
+                        <input
+                          value={draft.telegram_chat_id}
+                          onChange={(event) => updateWorkerDraft(worker.id, { telegram_chat_id: event.target.value })}
+                          placeholder="Ex. 123456789"
+                        />
+                      </label>
                       <label className="field">
                         <span>Nom</span>
                         <input

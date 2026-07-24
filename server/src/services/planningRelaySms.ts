@@ -4,6 +4,7 @@ import { env } from "../config/env.js";
 import { buildPlanningRelayShortCode } from "./planningRelayShare.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 import { sendMessage } from "./messageChannels/index.js";
+import { readTelegramNotificationConfig } from "./telegramNotifications.js";
 
 const PARIS_TIME_ZONE = "Europe/Paris";
 
@@ -50,6 +51,12 @@ type PlanningRelaySmsRecipientPeriod = {
 };
 
 export type PlanningRelaySmsSendDay = "previous_day" | "same_day";
+export type PlanningRelayMessageChannel = "sms" | "telegram";
+
+export const normalizePlanningRelayMessageChannel = (
+  value: unknown,
+): PlanningRelayMessageChannel =>
+  value === "telegram" ? "telegram" : "sms";
 
 export const PLANNING_RELAY_SMS_DEFAULT_TEMPLATE = "{{programme_gite}}";
 export const PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE = "{{gite}} : {{horaire}} - {{in-out}}";
@@ -62,6 +69,7 @@ export type PlanningRelaySmsProgrammeTemplate = {
 
 export type PlanningRelaySmsConfig = {
   id: string;
+  channel: PlanningRelayMessageChannel;
   worker_id: string;
   worker_ids: string[];
   enabled: boolean;
@@ -125,6 +133,7 @@ export const normalizePlanningRelaySmsConfigs = (
     const programmeTemplates = normalizePlanningRelayProgrammeTemplates(config.programme_templates, config.programme_template);
     return [{
       id,
+      channel: normalizePlanningRelayMessageChannel(config.channel),
       worker_id: workerIds[0],
       worker_ids: workerIds,
       enabled: config.enabled !== false,
@@ -142,6 +151,7 @@ export const normalizePlanningRelaySmsConfigs = (
   if (configs.length > 0 || !legacy?.sms_worker_id) return configs.slice(0, 1);
   return [{
     id: "legacy",
+    channel: "sms",
     worker_id: legacy.sms_worker_id,
     worker_ids: [legacy.sms_worker_id],
     enabled: Boolean(legacy.sms_enabled),
@@ -154,6 +164,41 @@ export const normalizePlanningRelaySmsConfigs = (
     last_attempt_for_date: legacy.sms_last_attempt_for_date ?? null,
   }];
 };
+
+export const getPlanningRelayWorkerChannelAddress = (
+  worker: {
+    telephone: string;
+    message_channel_addresses?: unknown;
+  },
+  channel: PlanningRelayMessageChannel,
+) => {
+  const addresses = fromJsonString<Record<string, unknown>>(
+    worker.message_channel_addresses,
+    {},
+  );
+  if (channel === "sms") return worker.telephone.trim();
+  return typeof addresses[channel] === "string"
+    ? addresses[channel].trim()
+    : "";
+};
+
+const sendPlanningRelayMessage = (
+  channel: PlanningRelayMessageChannel,
+  recipient: string,
+  message: string,
+) =>
+  sendMessage(channel, {
+    recipients: [recipient],
+    message,
+    ...(channel === "telegram"
+      ? {
+          options: {
+            ...readTelegramNotificationConfig(),
+            parse_mode: null,
+          },
+        }
+      : {}),
+  });
 
 export const buildPlanningRelayPublicUrl = (
   period: { share_nonce: string; public_origin?: string | null },
@@ -677,7 +722,11 @@ export const sendPlanningRelayConfigTestSms = async (period: {
   arrivals_only?: boolean;
   share_nonce: string;
   public_origin?: string | null;
-}, config: PlanningRelaySmsConfig, workers: { nom: string; telephone: string }[], currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
+}, config: PlanningRelaySmsConfig, workers: {
+  nom: string;
+  telephone: string;
+  message_channel_addresses?: unknown;
+}[], currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
   let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
     ? toPlanningRelayIsoDate(period.date_debut)
     : currentIsoDate;
@@ -686,12 +735,13 @@ export const sendPlanningRelayConfigTestSms = async (period: {
     const deliveries = (await Promise.all(workers.map(async (worker) => {
       const message = await buildConfigMessage(period, config, worker, targetIsoDate, true, publicOrigin);
       if (!message) return null;
+      const recipient = getPlanningRelayWorkerChannelAddress(worker, config.channel);
+      if (!recipient) {
+        throw new Error(`Adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${worker.nom}.`);
+      }
       return {
         message,
-        result: await sendMessage("sms", {
-          recipients: [worker.telephone],
-          message,
-        }),
+        result: await sendPlanningRelayMessage(config.channel, recipient, message),
       };
     }))).filter((delivery): delivery is NonNullable<typeof delivery> => delivery !== null);
     if (deliveries.length > 0) {
@@ -781,17 +831,21 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
 
       try {
         const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: config.worker_ids } } });
-        if (workers.length !== config.worker_ids.length || workers.some((worker) => !worker.telephone.trim())) {
-          throw new Error("Intervenant SMS ou numero manquant.");
+        if (
+          workers.length !== config.worker_ids.length ||
+          workers.some((worker) => !getPlanningRelayWorkerChannelAddress(worker, config.channel))
+        ) {
+          throw new Error(`Intervenant ou adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante.`);
         }
         let deliveredCount = 0;
         for (const worker of workers) {
           const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
           if (!message) continue;
-          await sendMessage("sms", {
-            recipients: [worker.telephone],
+          await sendPlanningRelayMessage(
+            config.channel,
+            getPlanningRelayWorkerChannelAddress(worker, config.channel),
             message,
-          });
+          );
           deliveredCount += 1;
         }
         if (deliveredCount === 0) continue;
@@ -804,7 +858,7 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error(
-          `Erreur envoi SMS planning relais ${period.id}/${config.id}:`,
+          `Erreur envoi ${config.channel} planning relais ${period.id}/${config.id}:`,
           error instanceof Error ? error.message : error,
         );
       }

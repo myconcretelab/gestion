@@ -8,6 +8,8 @@ export type TelegramMessageChannelOptions = {
   enabled: boolean;
   bot_token: string;
   chat_ids: string[];
+  parse_mode?: "HTML" | null;
+  has_explicit_recipients?: boolean;
 };
 
 const getOptions = (request: MessageSendRequest) =>
@@ -17,6 +19,7 @@ const postTelegramMessage = async (params: {
   botToken: string;
   chatId: string;
   text: string;
+  parseMode: "HTML" | null;
 }) => {
   const response = await fetch(
     `https://api.telegram.org/bot${params.botToken}/sendMessage`,
@@ -26,7 +29,7 @@ const postTelegramMessage = async (params: {
       body: JSON.stringify({
         chat_id: params.chatId,
         text: params.text,
-        parse_mode: "HTML",
+        ...(params.parseMode ? { parse_mode: params.parseMode } : {}),
         disable_web_page_preview: true,
       }),
     },
@@ -47,7 +50,9 @@ export const telegramMessageChannel: MessageChannel = {
     const options = rawOptions as TelegramMessageChannelOptions | undefined;
     const missing = [];
     if (!options?.bot_token.trim()) missing.push("bot_token");
-    if (!options?.chat_ids.length) missing.push("chat_ids");
+    if (!options?.has_explicit_recipients && !options?.chat_ids.length) {
+      missing.push("chat_ids");
+    }
     return {
       available: Boolean(options?.enabled) && missing.length === 0,
       missing,
@@ -94,6 +99,7 @@ export const telegramMessageChannel: MessageChannel = {
         botToken: options.bot_token,
         chatId,
         text: request.message,
+        parseMode: options.parse_mode === null ? null : "HTML",
       });
       deliveries.push({
         recipient: chatId,
