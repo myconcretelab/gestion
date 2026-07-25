@@ -13,6 +13,7 @@ import {
   isPlanningRelaySmsDue,
   normalizePlanningRelaySmsConfigs,
   normalizePlanningRelaySmsTime,
+  resolvePlanningRelayRecipientDelivery,
   renderPlanningRelaySmsTemplate,
 } from "../src/services/planningRelaySms.ts";
 
@@ -305,6 +306,22 @@ test("normalise Telegram et résout l'adresse du destinataire", () => {
     }, "sms"),
     "06 00 00 00 00",
   );
+});
+
+test("retombe sur SMS quand un destinataire n'a pas d'identifiant Telegram", () => {
+  const delivery = resolvePlanningRelayRecipientDelivery({
+    channel: "telegram",
+    recipient_channels: { christine: "telegram" },
+  }, {
+    id: "christine",
+    telephone: "06 00 00 00 00",
+    message_channel_addresses: {},
+  });
+
+  assert.deepEqual(delivery, {
+    channel: "sms",
+    recipient: "06 00 00 00 00",
+  });
 });
 
 test("conserve plusieurs intervenants dans une configuration SMS partagée", () => {

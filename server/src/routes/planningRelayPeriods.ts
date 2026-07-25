@@ -30,8 +30,7 @@ import {
   normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsConfigs,
   normalizePlanningRelaySmsTime,
-  getPlanningRelayRecipientChannel,
-  getPlanningRelayWorkerChannelAddress,
+  resolvePlanningRelayRecipientDelivery,
   previewPlanningRelayConfigSms,
   sendPlanningRelayConfigTestSms,
   sendPlanningRelayProgramTestSms,
@@ -634,15 +633,12 @@ privateRouter.patch("/:id", async (req, res, next) => {
         const workerWithoutAddress = configuredWorkers.find(
           (worker) =>
             config.worker_ids.includes(worker.id) &&
-            !getPlanningRelayWorkerChannelAddress(
-              worker,
-              getPlanningRelayRecipientChannel(config, worker.id),
-            ),
+            !resolvePlanningRelayRecipientDelivery(config, worker).recipient,
         );
         if (workerWithoutAddress) {
-          const channel = getPlanningRelayRecipientChannel(
+          const { channel } = resolvePlanningRelayRecipientDelivery(
             config,
-            workerWithoutAddress.id,
+            workerWithoutAddress,
           );
           return res.status(400).json({
             error: `Adresse ${channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
@@ -802,15 +798,16 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: payload.config.worker_ids } } });
       if (workers.length !== payload.config.worker_ids.length) return res.status(404).json({ error: "Un intervenant est introuvable." });
       const workerWithoutAddress = workers.find(
-        (worker) => !getPlanningRelayWorkerChannelAddress(
-          worker,
-          getPlanningRelayRecipientChannel(payload.config!, worker.id),
-        ),
+        (worker) =>
+          !resolvePlanningRelayRecipientDelivery(
+            payload.config!,
+            worker,
+          ).recipient,
       );
       if (workerWithoutAddress) {
-        const channel = getPlanningRelayRecipientChannel(
+        const { channel } = resolvePlanningRelayRecipientDelivery(
           payload.config,
-          workerWithoutAddress.id,
+          workerWithoutAddress,
         );
         return res.status(400).json({
           error: `Adresse ${channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
