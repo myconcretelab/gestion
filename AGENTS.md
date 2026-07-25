@@ -31,5 +31,3 @@ This repository is a Node.js + React monorepo (workspaces) for generating and ar
 - There are no automated tests configured in this repo.
 
 - Commit + push after each run
-
-- Executer ./update ou ./update --light suivant le besoin pour finir
