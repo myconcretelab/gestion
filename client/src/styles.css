@@ -5301,6 +5301,19 @@ body {
   font-size: 0.72rem;
 }
 
+.operations-sms-worker__fixed-channel {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 76px;
+  padding: 5px 9px;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
 .operations-sms-template textarea {
   min-height: 110px;
   resize: vertical;

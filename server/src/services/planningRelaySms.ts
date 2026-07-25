@@ -204,6 +204,33 @@ export const getPlanningRelayWorkerChannelAddress = (
     : "";
 };
 
+export const resolvePlanningRelayRecipientDelivery = (
+  config: Pick<PlanningRelaySmsConfig, "channel" | "recipient_channels">,
+  worker: {
+    id: string;
+    telephone: string;
+    message_channel_addresses?: unknown;
+  },
+) => {
+  const configuredChannel = getPlanningRelayRecipientChannel(config, worker.id);
+  const configuredRecipient = getPlanningRelayWorkerChannelAddress(
+    worker,
+    configuredChannel,
+  );
+  if (configuredRecipient) {
+    return {
+      channel: configuredChannel,
+      recipient: configuredRecipient,
+    };
+  }
+
+  const smsRecipient = getPlanningRelayWorkerChannelAddress(worker, "sms");
+  return {
+    channel: "sms" as const,
+    recipient: smsRecipient,
+  };
+};
+
 const sendPlanningRelayMessage = (
   channel: PlanningRelayMessageChannel,
   recipient: string,
@@ -758,8 +785,10 @@ export const sendPlanningRelayConfigTestSms = async (period: {
     const deliveries = (await Promise.all(workers.map(async (worker) => {
       const message = await buildConfigMessage(period, config, worker, targetIsoDate, true, publicOrigin);
       if (!message) return null;
-      const channel = getPlanningRelayRecipientChannel(config, worker.id);
-      const recipient = getPlanningRelayWorkerChannelAddress(worker, channel);
+      const { channel, recipient } = resolvePlanningRelayRecipientDelivery(
+        config,
+        worker,
+      );
       if (!recipient) {
         throw new Error(`Adresse ${channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${worker.nom}.`);
       }
@@ -857,10 +886,10 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
         const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: config.worker_ids } } });
         if (
           workers.length !== config.worker_ids.length ||
-          workers.some((worker) => {
-            const channel = getPlanningRelayRecipientChannel(config, worker.id);
-            return !getPlanningRelayWorkerChannelAddress(worker, channel);
-          })
+          workers.some(
+            (worker) =>
+              !resolvePlanningRelayRecipientDelivery(config, worker).recipient,
+          )
         ) {
           throw new Error("Intervenant ou adresse de messagerie manquante.");
         }
@@ -868,10 +897,13 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
         for (const worker of workers) {
           const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
           if (!message) continue;
-          const channel = getPlanningRelayRecipientChannel(config, worker.id);
+          const { channel, recipient } = resolvePlanningRelayRecipientDelivery(
+            config,
+            worker,
+          );
           await sendPlanningRelayMessage(
             channel,
-            getPlanningRelayWorkerChannelAddress(worker, channel),
+            recipient,
             message,
           );
           deliveredCount += 1;
