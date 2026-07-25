@@ -70,6 +70,7 @@ export type PlanningRelaySmsProgrammeTemplate = {
 export type PlanningRelaySmsConfig = {
   id: string;
   channel: PlanningRelayMessageChannel;
+  recipient_channels: Record<string, PlanningRelayMessageChannel>;
   worker_id: string;
   worker_ids: string[];
   enabled: boolean;
@@ -130,10 +131,22 @@ export const normalizePlanningRelaySmsConfigs = (
     ].filter((workerId): workerId is string => typeof workerId === "string" && Boolean(workerId.trim()))
       .map((workerId) => workerId.trim()))];
     if (!id || workerIds.length === 0) return [];
+    const defaultChannel = normalizePlanningRelayMessageChannel(config.channel);
+    const rawRecipientChannels = isSmsConfig(config.recipient_channels)
+      ? config.recipient_channels
+      : {};
     const programmeTemplates = normalizePlanningRelayProgrammeTemplates(config.programme_templates, config.programme_template);
     return [{
       id,
-      channel: normalizePlanningRelayMessageChannel(config.channel),
+      channel: defaultChannel,
+      recipient_channels: Object.fromEntries(
+        workerIds.map((workerId) => [
+          workerId,
+          normalizePlanningRelayMessageChannel(
+            rawRecipientChannels[workerId] ?? defaultChannel,
+          ),
+        ]),
+      ),
       worker_id: workerIds[0],
       worker_ids: workerIds,
       enabled: config.enabled !== false,
@@ -152,6 +165,7 @@ export const normalizePlanningRelaySmsConfigs = (
   return [{
     id: "legacy",
     channel: "sms",
+    recipient_channels: { [legacy.sms_worker_id]: "sms" },
     worker_id: legacy.sms_worker_id,
     worker_ids: [legacy.sms_worker_id],
     enabled: Boolean(legacy.sms_enabled),
@@ -164,6 +178,14 @@ export const normalizePlanningRelaySmsConfigs = (
     last_attempt_for_date: legacy.sms_last_attempt_for_date ?? null,
   }];
 };
+
+export const getPlanningRelayRecipientChannel = (
+  config: Pick<PlanningRelaySmsConfig, "channel" | "recipient_channels">,
+  workerId: string,
+) =>
+  normalizePlanningRelayMessageChannel(
+    config.recipient_channels?.[workerId] ?? config.channel,
+  );
 
 export const getPlanningRelayWorkerChannelAddress = (
   worker: {
@@ -726,6 +748,7 @@ export const sendPlanningRelayConfigTestSms = async (period: {
   nom: string;
   telephone: string;
   message_channel_addresses?: unknown;
+  id: string;
 }[], currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
   let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
     ? toPlanningRelayIsoDate(period.date_debut)
@@ -735,13 +758,14 @@ export const sendPlanningRelayConfigTestSms = async (period: {
     const deliveries = (await Promise.all(workers.map(async (worker) => {
       const message = await buildConfigMessage(period, config, worker, targetIsoDate, true, publicOrigin);
       if (!message) return null;
-      const recipient = getPlanningRelayWorkerChannelAddress(worker, config.channel);
+      const channel = getPlanningRelayRecipientChannel(config, worker.id);
+      const recipient = getPlanningRelayWorkerChannelAddress(worker, channel);
       if (!recipient) {
-        throw new Error(`Adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${worker.nom}.`);
+        throw new Error(`Adresse ${channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${worker.nom}.`);
       }
       return {
         message,
-        result: await sendPlanningRelayMessage(config.channel, recipient, message),
+        result: await sendPlanningRelayMessage(channel, recipient, message),
       };
     }))).filter((delivery): delivery is NonNullable<typeof delivery> => delivery !== null);
     if (deliveries.length > 0) {
@@ -833,17 +857,21 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
         const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: config.worker_ids } } });
         if (
           workers.length !== config.worker_ids.length ||
-          workers.some((worker) => !getPlanningRelayWorkerChannelAddress(worker, config.channel))
+          workers.some((worker) => {
+            const channel = getPlanningRelayRecipientChannel(config, worker.id);
+            return !getPlanningRelayWorkerChannelAddress(worker, channel);
+          })
         ) {
-          throw new Error(`Intervenant ou adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante.`);
+          throw new Error("Intervenant ou adresse de messagerie manquante.");
         }
         let deliveredCount = 0;
         for (const worker of workers) {
           const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
           if (!message) continue;
+          const channel = getPlanningRelayRecipientChannel(config, worker.id);
           await sendPlanningRelayMessage(
-            config.channel,
-            getPlanningRelayWorkerChannelAddress(worker, config.channel),
+            channel,
+            getPlanningRelayWorkerChannelAddress(worker, channel),
             message,
           );
           deliveredCount += 1;
@@ -858,7 +886,7 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error(
-          `Erreur envoi ${config.channel} planning relais ${period.id}/${config.id}:`,
+          `Erreur envoi planning relais ${period.id}/${config.id}:`,
           error instanceof Error ? error.message : error,
         );
       }

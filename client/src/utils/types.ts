@@ -148,6 +148,7 @@ export type PlanningRelayPeriod = {
 export type PlanningRelaySmsConfig = {
   id: string;
   channel: "sms" | "telegram";
+  recipient_channels: Record<string, "sms" | "telegram">;
   worker_id: string;
   worker_ids: string[];
   enabled: boolean;

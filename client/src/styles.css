@@ -5255,37 +5255,50 @@ body {
   gap: 7px;
 }
 
-.operations-sms-workers label {
+.operations-sms-worker {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 1px 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(105px, auto);
+  gap: 8px;
   align-items: center;
   padding: 8px 10px;
   border: 1px solid var(--field-border);
   border-radius: 8px;
   background: #fff;
+}
+
+.operations-sms-worker > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 8px;
+  align-items: center;
   cursor: pointer;
 }
 
-.operations-sms-workers label.is-selected {
+.operations-sms-worker.is-selected {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
 
-.operations-sms-workers input {
+.operations-sms-worker input {
   grid-row: 1 / 3;
 }
 
-.operations-sms-workers span {
+.operations-sms-worker span {
   color: var(--ink);
   font-size: 0.78rem;
   font-weight: 800;
 }
 
-.operations-sms-workers small {
+.operations-sms-worker small {
   color: var(--muted);
   font-size: 0.68rem;
   font-weight: 700;
+}
+
+.operations-sms-worker select {
+  min-width: 105px;
+  padding: 6px 26px 6px 8px;
+  font-size: 0.72rem;
 }
 
 .operations-sms-template textarea {
