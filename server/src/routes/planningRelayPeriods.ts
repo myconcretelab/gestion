@@ -30,6 +30,7 @@ import {
   normalizePlanningRelaySmsSendDay,
   normalizePlanningRelaySmsConfigs,
   normalizePlanningRelaySmsTime,
+  getPlanningRelayRecipientChannel,
   getPlanningRelayWorkerChannelAddress,
   previewPlanningRelayConfigSms,
   sendPlanningRelayConfigTestSms,
@@ -104,6 +105,10 @@ const programmeTemplatesSchema = z.array(programmeTemplateSchema).min(1).max(10)
 const smsConfigSchema = z.object({
   id: z.string().trim().min(1).max(80),
   channel: z.enum(["sms", "telegram"]).default("sms"),
+  recipient_channels: z.record(
+    z.string().trim().min(1),
+    z.enum(["sms", "telegram"]),
+  ).optional(),
   worker_id: z.string().trim().min(1).optional(),
   worker_ids: z.array(z.string().trim().min(1)).min(1).max(20).optional(),
   enabled: z.boolean(),
@@ -120,7 +125,17 @@ const smsConfigSchema = z.object({
     context.addIssue({ code: "custom", message: "Choisissez au moins un intervenant.", path: ["worker_ids"] });
     return z.NEVER;
   }
-  return { ...config, worker_id: workerIds[0], worker_ids: workerIds };
+  return {
+    ...config,
+    worker_id: workerIds[0],
+    worker_ids: workerIds,
+    recipient_channels: Object.fromEntries(
+      workerIds.map((workerId) => [
+        workerId,
+        config.recipient_channels?.[workerId] ?? config.channel,
+      ]),
+    ),
+  };
 });
 
 const patchSchema = payloadSchema.partial().extend({
@@ -504,7 +519,17 @@ privateRouter.delete("/workers/:id", async (req, res, next) => {
         period,
         configs: configs.flatMap((config) => {
           const workerIds = config.worker_ids.filter((id) => id !== worker.id);
-          return workerIds.length > 0 ? [{ ...config, worker_id: workerIds[0], worker_ids: workerIds }] : [];
+          return workerIds.length > 0
+            ? [{
+                ...config,
+                worker_id: workerIds[0],
+                worker_ids: workerIds,
+                recipient_channels: Object.fromEntries(
+                  Object.entries(config.recipient_channels)
+                    .filter(([workerId]) => workerId !== worker.id),
+                ),
+              }]
+            : [];
         }),
       }];
     });
@@ -609,11 +634,18 @@ privateRouter.patch("/:id", async (req, res, next) => {
         const workerWithoutAddress = configuredWorkers.find(
           (worker) =>
             config.worker_ids.includes(worker.id) &&
-            !getPlanningRelayWorkerChannelAddress(worker, config.channel),
+            !getPlanningRelayWorkerChannelAddress(
+              worker,
+              getPlanningRelayRecipientChannel(config, worker.id),
+            ),
         );
         if (workerWithoutAddress) {
+          const channel = getPlanningRelayRecipientChannel(
+            config,
+            workerWithoutAddress.id,
+          );
           return res.status(400).json({
-            error: `Adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
+            error: `Adresse ${channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
           });
         }
       }
@@ -770,11 +802,18 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: payload.config.worker_ids } } });
       if (workers.length !== payload.config.worker_ids.length) return res.status(404).json({ error: "Un intervenant est introuvable." });
       const workerWithoutAddress = workers.find(
-        (worker) => !getPlanningRelayWorkerChannelAddress(worker, payload.config!.channel),
+        (worker) => !getPlanningRelayWorkerChannelAddress(
+          worker,
+          getPlanningRelayRecipientChannel(payload.config!, worker.id),
+        ),
       );
       if (workerWithoutAddress) {
+        const channel = getPlanningRelayRecipientChannel(
+          payload.config,
+          workerWithoutAddress.id,
+        );
         return res.status(400).json({
-          error: `Adresse ${payload.config.channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
+          error: `Adresse ${channel === "telegram" ? "Telegram" : "SMS"} manquante pour ${workerWithoutAddress.nom}.`,
         });
       }
       const result = await sendPlanningRelayConfigTestSms(current, {

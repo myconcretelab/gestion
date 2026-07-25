@@ -7,6 +7,7 @@ import {
   formatPlanningRelaySmsTextDate,
   getPlanningRelayProgramHeading,
   getPlanningRelayProgramTargetIsoDate,
+  getPlanningRelayRecipientChannel,
   getPlanningRelayTestProgramHeading,
   getPlanningRelayWorkerChannelAddress,
   isPlanningRelaySmsDue,
@@ -311,6 +312,10 @@ test("conserve plusieurs intervenants dans une configuration SMS partagée", () 
     id: "sms-shared",
     worker_id: "worker-1",
     worker_ids: ["worker-1", "worker-2", "worker-1"],
+    recipient_channels: {
+      "worker-1": "sms",
+      "worker-2": "telegram",
+    },
     enabled: true,
     send_time: "18:00",
     send_day: "previous_day",
@@ -319,6 +324,12 @@ test("conserve plusieurs intervenants dans une configuration SMS partagée", () 
 
   assert.equal(config.worker_id, "worker-1");
   assert.deepEqual(config.worker_ids, ["worker-1", "worker-2"]);
+  assert.deepEqual(config.recipient_channels, {
+    "worker-1": "sms",
+    "worker-2": "telegram",
+  });
+  assert.equal(getPlanningRelayRecipientChannel(config, "worker-1"), "sms");
+  assert.equal(getPlanningRelayRecipientChannel(config, "worker-2"), "telegram");
   assert.equal(config.send_time, "18:00");
 });
 

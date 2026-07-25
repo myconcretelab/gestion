@@ -144,6 +144,11 @@ const formatSavedPeriod = (from: string, to: string) =>
 const getSmsWorkerIds = (config: PlanningRelaySmsConfig) =>
   config.worker_ids?.length ? config.worker_ids : config.worker_id ? [config.worker_id] : [];
 
+const getRecipientChannel = (
+  config: PlanningRelaySmsConfig,
+  workerId: string,
+) => config.recipient_channels?.[workerId] ?? config.channel ?? "sms";
+
 const getWorkerChannelAddress = (
   worker: PlanningRelayWorker,
   channel: PlanningRelaySmsConfig["channel"],
@@ -283,6 +288,7 @@ const createSmsConfig = (programmeTemplates = DEFAULT_PROGRAMME_TEMPLATES): Plan
   worker_id: "",
   worker_ids: [],
   channel: "sms",
+  recipient_channels: {},
   enabled: true,
   send_time: "18:00",
   send_day: "previous_day",
@@ -761,12 +767,31 @@ const OperationsPrintPage = () => {
 
   const toggleSmsWorker = (periodId: string, config: PlanningRelaySmsConfig, workerId: string) => {
     const currentIds = getSmsWorkerIds(config);
-    const workerIds = currentIds.includes(workerId)
+    const wasSelected = currentIds.includes(workerId);
+    const workerIds = wasSelected
       ? currentIds.filter((id) => id !== workerId)
       : [...currentIds, workerId];
+    const recipientChannels = { ...(config.recipient_channels ?? {}) };
+    if (wasSelected) delete recipientChannels[workerId];
+    else recipientChannels[workerId] = config.channel ?? "sms";
     updateSmsConfig(periodId, config.id, {
       worker_ids: workerIds,
       worker_id: workerIds[0] ?? "",
+      recipient_channels: recipientChannels,
+    });
+  };
+
+  const updateRecipientChannel = (
+    periodId: string,
+    config: PlanningRelaySmsConfig,
+    workerId: string,
+    channel: PlanningRelaySmsConfig["channel"],
+  ) => {
+    updateSmsConfig(periodId, config.id, {
+      recipient_channels: {
+        ...(config.recipient_channels ?? {}),
+        [workerId]: channel,
+      },
     });
   };
 
@@ -1019,8 +1044,9 @@ const OperationsPrintPage = () => {
     const missingChannelAddress = draft.sms_configs.flatMap((config) =>
       getSmsWorkerIds(config).flatMap((workerId) => {
         const worker = workers.find((item) => item.id === workerId);
-        return worker && !getWorkerChannelAddress(worker, config.channel)
-          ? [{ worker, channel: config.channel }]
+        const channel = getRecipientChannel(config, workerId);
+        return worker && !getWorkerChannelAddress(worker, channel)
+          ? [{ worker, channel }]
           : [];
       }),
     )[0];
@@ -1070,9 +1096,14 @@ const OperationsPrintPage = () => {
       setSavedPeriodsError("Choisissez au moins un intervenant avant d'envoyer un test.");
       return;
     }
-    const channelStatus = messageChannels.find((channel) => channel.id === config.channel);
-    if (!channelStatus?.available) {
-      setSavedPeriodsError(`La configuration ${config.channel === "telegram" ? "Telegram" : "SMS OVH"} est incomplète.`);
+    const selectedChannels = [...new Set(
+      getSmsWorkerIds(config).map((workerId) => getRecipientChannel(config, workerId)),
+    )];
+    const unavailableChannel = selectedChannels.find(
+      (channelId) => !messageChannels.find((channel) => channel.id === channelId)?.available,
+    );
+    if (unavailableChannel) {
+      setSavedPeriodsError(`La configuration ${unavailableChannel === "telegram" ? "Telegram" : "SMS OVH"} est incomplète.`);
       return;
     }
 
@@ -1085,8 +1116,7 @@ const OperationsPrintPage = () => {
         json: { config },
       });
       const recipientCount = getSmsWorkerIds(config).length;
-      const channelLabel = config.channel === "telegram" ? "Telegram" : "SMS";
-      setSavedPeriodsNotice(`${channelLabel} test envoyé à ${recipientCount} intervenant${recipientCount > 1 ? "s" : ""} pour le ${formatShortDate(result.target_date)}.`);
+      setSavedPeriodsNotice(`Message test envoyé à ${recipientCount} intervenant${recipientCount > 1 ? "s" : ""} pour le ${formatShortDate(result.target_date)}.`);
     } catch (caught) {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'envoyer le message test."));
     } finally {
@@ -1409,9 +1439,16 @@ const OperationsPrintPage = () => {
                       {draft.sms_configs.map((config) => {
                         const selectedWorkerIds = getSmsWorkerIds(config);
                         const selectableWorkers = workers.filter((worker) => worker.is_active || selectedWorkerIds.includes(worker.id));
-                        const channelStatus = messageChannels.find((channel) => channel.id === config.channel);
                         const hasMissingRecipient = selectableWorkers.some(
-                          (worker) => selectedWorkerIds.includes(worker.id) && !getWorkerChannelAddress(worker, config.channel),
+                          (worker) => {
+                            const channel = getRecipientChannel(config, worker.id);
+                            return selectedWorkerIds.includes(worker.id) && !getWorkerChannelAddress(worker, channel);
+                          },
+                        );
+                        const hasUnavailableChannel = selectedWorkerIds.some(
+                          (workerId) => !messageChannels.find(
+                            (channel) => channel.id === getRecipientChannel(config, workerId),
+                          )?.available,
                         );
                         return (
                           <section key={config.id} className="operations-sms-config">
@@ -1419,49 +1456,57 @@ const OperationsPrintPage = () => {
                               <strong>Envoi aux intervenants</strong>
                               <label><input type="checkbox" checked={config.enabled} onChange={(event) => updateSmsConfig(period.id, config.id, { enabled: event.target.checked })} /> Envoi automatique activé</label>
                             </header>
-                            <p className="operations-sms-config__hint">Tous les destinataires partagent ce programme et cet horaire.</p>
+                            <p className="operations-sms-config__hint">Tous partagent ce programme et cet horaire ; choisissez le canal sur chaque destinataire.</p>
                             <div className="operations-period-detail__grid operations-sms-delivery__fields">
                               <fieldset className="operations-sms-workers">
                                 <legend>Intervenants</legend>
                                 <div>
-                                  {selectableWorkers.map((worker) => (
-                                    <label key={worker.id} className={selectedWorkerIds.includes(worker.id) ? "is-selected" : ""}>
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedWorkerIds.includes(worker.id)}
-                                        onChange={() => toggleSmsWorker(period.id, config, worker.id)}
-                                      />
-                                      <span>{worker.nom}</span>
-                                      <small>
-                                        {getWorkerChannelAddress(worker, config.channel) || `Adresse ${config.channel === "telegram" ? "Telegram" : "SMS"} manquante`}
-                                        {worker.is_active ? "" : " · inactif"}
-                                      </small>
-                                    </label>
-                                  ))}
+                                  {selectableWorkers.map((worker) => {
+                                    const isSelected = selectedWorkerIds.includes(worker.id);
+                                    const recipientChannel = getRecipientChannel(config, worker.id);
+                                    return (
+                                      <div key={worker.id} className={`operations-sms-worker${isSelected ? " is-selected" : ""}`}>
+                                        <label>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => toggleSmsWorker(period.id, config, worker.id)}
+                                          />
+                                          <span>{worker.nom}</span>
+                                          <small>
+                                            {getWorkerChannelAddress(worker, recipientChannel) || `Adresse ${recipientChannel === "telegram" ? "Telegram" : "SMS"} manquante`}
+                                            {worker.is_active ? "" : " · inactif"}
+                                          </small>
+                                        </label>
+                                        <select
+                                          aria-label={`Canal d'envoi pour ${worker.nom}`}
+                                          value={recipientChannel}
+                                          disabled={!isSelected}
+                                          onChange={(event) => updateRecipientChannel(
+                                            period.id,
+                                            config,
+                                            worker.id,
+                                            event.target.value === "telegram" ? "telegram" : "sms",
+                                          )}
+                                        >
+                                          {(messageChannels.length ? messageChannels : [
+                                            { id: "sms", label: "SMS", available: true, missing: [] },
+                                          ]).map((channel) => (
+                                            <option
+                                              key={channel.id}
+                                              value={channel.id}
+                                              disabled={!channel.available && channel.id !== recipientChannel}
+                                            >
+                                              {channel.label}{channel.available ? "" : " — non configuré"}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </fieldset>
                               <div className="operations-sms-delivery__schedule">
-                                <label className="field">
-                                  <span>Canal d'envoi</span>
-                                  <select
-                                    value={config.channel}
-                                    onChange={(event) => updateSmsConfig(period.id, config.id, {
-                                      channel: event.target.value === "telegram" ? "telegram" : "sms",
-                                    })}
-                                  >
-                                    {(messageChannels.length ? messageChannels : [
-                                      { id: "sms", label: "SMS", available: true, missing: [] },
-                                    ]).map((channel) => (
-                                      <option
-                                        key={channel.id}
-                                        value={channel.id}
-                                        disabled={!channel.available && channel.id !== config.channel}
-                                      >
-                                        {channel.label}{channel.available ? "" : " — non configuré"}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
                                 <label className="field">
                                   <span>Heure d'envoi</span>
                                   <input type="time" value={config.send_time} onChange={(event) => updateSmsConfig(period.id, config.id, { send_time: event.target.value })} />
@@ -1519,9 +1564,9 @@ const OperationsPrintPage = () => {
                                   type="button"
                                   className="secondary"
                                   onClick={() => void sendPeriodTestSms(period, config)}
-                                  disabled={isTestingSms || selectedWorkerIds.length === 0 || !channelStatus?.available || hasMissingRecipient}
+                                  disabled={isTestingSms || selectedWorkerIds.length === 0 || hasUnavailableChannel || hasMissingRecipient}
                                 >
-                                  {isTestingSms ? "Test en cours…" : `Tester via ${config.channel === "telegram" ? "Telegram" : "SMS"}`}
+                                  {isTestingSms ? "Test en cours…" : "Tester les envois"}
                                 </button>
                               </div>
                             </details>
