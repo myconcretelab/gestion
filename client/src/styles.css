@@ -5257,10 +5257,10 @@ body {
 
 .operations-sms-worker {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(105px, auto);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  padding: 8px 10px;
+  padding: 7px 9px;
   border: 1px solid var(--field-border);
   border-radius: 8px;
   background: #fff;
@@ -5296,22 +5296,42 @@ body {
 }
 
 .operations-sms-worker select {
-  min-width: 105px;
-  padding: 6px 26px 6px 8px;
-  font-size: 0.72rem;
+  width: auto;
+  min-width: 88px;
+  max-width: 112px;
+  height: 26px;
+  margin: 0;
+  padding: 2px 22px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-color: #fff;
+  color: #334155;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.operations-sms-worker__fixed-channel {
+.operations-sms-worker select:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: var(--shadow-ring);
+}
+
+.operations-sms-worker .operations-sms-worker__fixed-channel {
   display: inline-flex;
+  align-items: center;
   justify-content: center;
-  min-width: 76px;
-  padding: 5px 9px;
-  border: 1px solid var(--primary);
+  justify-self: end;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--primary-soft);
-  color: var(--primary-strong);
-  font-size: 0.7rem;
-  font-weight: 800;
+  background: var(--chip);
+  color: #475569;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .operations-sms-template textarea {
