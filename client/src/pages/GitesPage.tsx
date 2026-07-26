@@ -4232,7 +4232,7 @@ const GitesPage = () => {
           <div className="section-subtitle">Planning relais</div>
           <div className="grid-2">
             <label className="field">
-              Prix par intervention
+              Prix par défaut d’une intervention
               <input
                 type="number"
                 min={0}
