@@ -218,7 +218,7 @@ test("ne facture pas deux fois une entrée déjà couverte par la sortie précé
   );
 });
 
-test("applique un prix propre à chaque intervention avant le tarif par défaut du gîte", () => {
+test("applique le tarif de la période à toutes les interventions du même gîte", () => {
   const rows = [
     {
       date: "2026-07-13",
@@ -230,14 +230,16 @@ test("applique un prix propre à chaque intervention avant le tarif par défaut 
       giteId: "gite-1",
       stays: [{ reservation, operations: [{ kind: "arrival" as const, label: "Entrée" }] }],
     },
+    {
+      date: "2026-07-16",
+      giteId: "gite-2",
+      stays: [{ reservation, operations: [{ kind: "arrival" as const, label: "Entrée" }] }],
+    },
   ];
-  const pricesByIntervention = new Map([
-    ["2026-07-13-gite-1", 35],
-    ["2026-07-15-gite-1", 52.5],
-  ]);
+  const periodPricesByGite = new Map([["gite-1", 10], ["gite-2", 5]]);
 
   assert.equal(
-    getInterventionPriceTotal(rows, new Set(), new Map([["gite-1", 42.5]]), pricesByIntervention),
-    87.5,
+    getInterventionPriceTotal(rows, new Set(), periodPricesByGite),
+    25,
   );
 });

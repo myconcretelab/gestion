@@ -155,21 +155,19 @@ const PublicPlanningRelayPage = () => {
   );
   const interventionCount = getBillableOperationRows(operationsByDate, alreadyHandledArrivalRows).length;
   const interventionPriceByGiteId = useMemo(
-    () => new Map((data?.gites ?? []).map((gite) => [gite.id, Number(gite.prix_intervention ?? 0)])),
-    [data?.gites],
-  );
-  const interventionPriceByOperationKey = useMemo(
-    () => new Map(Object.entries(data?.period.intervention_prices ?? {})),
-    [data?.period.intervention_prices],
+    () => new Map((data?.gites ?? []).map((gite) => [
+      gite.id,
+      Number(data?.period.gite_prices?.[gite.id] ?? 0),
+    ])),
+    [data?.gites, data?.period.gite_prices],
   );
   const interventionPriceTotal = useMemo(
     () => getInterventionPriceTotal(
       allDisplayedOperationsByDate,
       alreadyHandledArrivalRows,
       interventionPriceByGiteId,
-      interventionPriceByOperationKey,
     ),
-    [allDisplayedOperationsByDate, alreadyHandledArrivalRows, interventionPriceByGiteId, interventionPriceByOperationKey],
+    [allDisplayedOperationsByDate, alreadyHandledArrivalRows, interventionPriceByGiteId],
   );
   const operationsTableColumnCount = data
     ? 4
@@ -339,7 +337,6 @@ const PublicPlanningRelayPage = () => {
                             : <strong>{formatEuro(getInterventionPrice(
                                 { date, giteId },
                                 interventionPriceByGiteId,
-                                interventionPriceByOperationKey,
                               ))}</strong>}
                         </td>
                       ) : null}

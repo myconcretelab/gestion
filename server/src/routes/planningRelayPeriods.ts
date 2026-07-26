@@ -4,7 +4,6 @@ import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
-import { toNumber } from "../utils/money.js";
 import {
   buildPlanningRelayShortCode,
   generatePlanningRelayNonce,
@@ -87,7 +86,7 @@ const payloadSchema = z.object({
   show_phones: z.boolean(),
   show_options: z.boolean(),
   show_intervention_prices: z.boolean(),
-  intervention_prices: z.record(
+  gite_prices: z.record(
     z.string().trim().min(1).max(180),
     z.coerce.number().min(0).max(100_000),
   ).optional(),
@@ -270,7 +269,7 @@ const normalizeGiteIds = (value: unknown) => [
   ...new Set(fromJsonString<unknown[]>(value, []).filter((id): id is string => typeof id === "string" && Boolean(id))),
 ];
 
-const normalizeInterventionPrices = (value: unknown) => Object.fromEntries(
+const normalizeGitePrices = (value: unknown) => Object.fromEntries(
   Object.entries(fromJsonString<Record<string, unknown>>(value, {}))
     .map(([key, price]) => [key, Number(price)] as const)
     .filter(([key, price]) =>
@@ -366,7 +365,7 @@ const serializePeriod = (period: any) => {
     show_phones: period.show_phones,
     show_options: period.show_options,
     show_intervention_prices: period.show_intervention_prices,
-    intervention_prices: normalizeInterventionPrices(period.intervention_prices),
+    gite_prices: normalizeGitePrices(period.gite_prices),
     arrivals_only: period.arrivals_only,
     stay_nights: period.stay_nights ?? null,
     is_active: period.is_active,
@@ -429,7 +428,7 @@ const buildCreateData = (
     show_phones: payload.show_phones,
     show_options: payload.show_options,
     show_intervention_prices: payload.show_intervention_prices,
-    intervention_prices: encodeJsonField(payload.intervention_prices ?? {}),
+    gite_prices: encodeJsonField(payload.gite_prices ?? {}),
     arrivals_only: payload.arrivals_only,
     stay_nights: payload.stay_nights ?? null,
     share_nonce: identity.nonce,
@@ -684,8 +683,8 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.show_intervention_prices !== undefined
           ? { show_intervention_prices: payload.show_intervention_prices }
           : {}),
-        ...(payload.intervention_prices !== undefined
-          ? { intervention_prices: encodeJsonField(payload.intervention_prices) }
+        ...(payload.gite_prices !== undefined
+          ? { gite_prices: encodeJsonField(payload.gite_prices) }
           : {}),
         ...(payload.arrivals_only !== undefined ? { arrivals_only: payload.arrivals_only } : {}),
         ...(payload.stay_nights !== undefined ? { stay_nights: payload.stay_nights } : {}),
@@ -1009,7 +1008,6 @@ publicRouter.get("/:token", async (req, res, next) => {
           ordre: true,
           heure_arrivee_defaut: true,
           heure_depart_defaut: true,
-          prix_intervention: true,
         },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
@@ -1059,20 +1057,15 @@ publicRouter.get("/:token", async (req, res, next) => {
         show_phones: period.show_phones,
         show_options: period.show_options,
         show_intervention_prices: period.show_intervention_prices,
-        intervention_prices: period.show_intervention_prices
-          ? normalizeInterventionPrices(period.intervention_prices)
+        gite_prices: period.show_intervention_prices
+          ? normalizeGitePrices(period.gite_prices)
           : {},
         arrivals_only: period.arrivals_only,
         stay_nights: period.stay_nights ?? null,
         expires_at: period.expires_at?.toISOString() ?? null,
       },
       assignments: serializeAssignments(period),
-      gites: gites.map(({ prix_intervention: prixIntervention, ...gite }) => ({
-        ...gite,
-        ...(period.show_intervention_prices
-          ? { prix_intervention: toNumber(prixIntervention) }
-          : {}),
-      })),
+      gites,
       reservations: reservations.map((reservation) => ({
         ...reservation,
         telephone: period.show_phones ? reservation.telephone : null,
