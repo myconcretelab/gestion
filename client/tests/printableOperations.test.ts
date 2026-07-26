@@ -5,6 +5,7 @@ import {
   enumerateIsoDates,
   filterArrivalOperationRows,
   getAlreadyHandledArrivalRowKeys,
+  getInterventionPriceTotal,
   getDisplayedHandledArrivalRowKeys,
   getOperationsForDate,
   reservationOverlapsPeriod,
@@ -175,4 +176,44 @@ test("ne grise pas une rotation réalisée le même jour", () => {
   ];
 
   assert.deepEqual([...getAlreadyHandledArrivalRowKeys(rows)], []);
+});
+
+test("calcule le total sur toute la période même lorsque les lignes passées sont masquées", () => {
+  const rows = [
+    {
+      date: "2026-07-13",
+      giteId: "gite-1",
+      stays: [{ reservation, operations: [{ kind: "departure" as const, label: "Sortie" }] }],
+    },
+    {
+      date: "2026-07-15",
+      giteId: "gite-2",
+      stays: [{ reservation, operations: [{ kind: "arrival" as const, label: "Entrée" }] }],
+    },
+  ];
+  const visibleRows = rows.filter((row) => row.date >= "2026-07-14");
+  const prices = new Map([["gite-1", 42.5], ["gite-2", 55]]);
+
+  assert.equal(visibleRows.length, 1);
+  assert.equal(getInterventionPriceTotal(rows, new Set(), prices), 97.5);
+});
+
+test("ne facture pas deux fois une entrée déjà couverte par la sortie précédente", () => {
+  const rows = [
+    {
+      date: "2026-07-13",
+      giteId: "gite-1",
+      stays: [{ reservation, operations: [{ kind: "departure" as const, label: "Sortie" }] }],
+    },
+    {
+      date: "2026-07-15",
+      giteId: "gite-1",
+      stays: [{ reservation, operations: [{ kind: "arrival" as const, label: "Entrée" }] }],
+    },
+  ];
+
+  assert.equal(
+    getInterventionPriceTotal(rows, getAlreadyHandledArrivalRowKeys(rows), new Map([["gite-1", 42.5]])),
+    42.5,
+  );
 });

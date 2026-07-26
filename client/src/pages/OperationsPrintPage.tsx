@@ -10,12 +10,15 @@ import {
   diffUtcDays,
   enumerateIsoDates,
   filterArrivalOperationRows,
+  getBillableOperationRows,
   getDisplayedHandledArrivalRowKeys,
+  getInterventionPriceTotal,
   parseIsoDateUtc,
   reservationOverlapsPeriod,
   toIsoDateUtc,
   type StayOperation,
 } from "../utils/printableOperations";
+import { formatEuro } from "../utils/format";
 import type {
   Gite,
   PlanningRelayPeriod,
@@ -46,6 +49,7 @@ type PlanningRelayPeriodDraft = {
   show_comments: boolean;
   show_phones: boolean;
   show_options: boolean;
+  show_intervention_prices: boolean;
   arrivals_only: boolean;
   stay_nights: string;
   sms_configs: PlanningRelaySmsConfig[];
@@ -268,6 +272,7 @@ const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft
   show_comments: period.show_comments,
   show_phones: period.show_phones,
   show_options: period.show_options,
+  show_intervention_prices: period.show_intervention_prices,
   arrivals_only: period.arrivals_only,
   stay_nights: period.stay_nights ? String(period.stay_nights) : "",
   sms_configs: period.sms_configs ?? [],
@@ -392,6 +397,7 @@ const OperationsPrintPage = () => {
   const [showComments, setShowComments] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [showInterventionPrices, setShowInterventionPrices] = useState(false);
   const [arrivalsOnly, setArrivalsOnly] = useState(false);
   const [stayNightsFilter, setStayNightsFilter] = useState("");
   const [loading, setLoading] = useState(true);
@@ -558,6 +564,7 @@ const OperationsPrintPage = () => {
               show_comments: false,
               show_phones: false,
               show_options: false,
+              show_intervention_prices: false,
               arrivals_only: false,
             },
           });
@@ -597,9 +604,21 @@ const OperationsPrintPage = () => {
     () => getDisplayedHandledArrivalRowKeys(allOperationsByDate, arrivalsOnly),
     [allOperationsByDate, arrivalsOnly],
   );
-  const interventionCount = operationsByDate.filter(
-    (row) => !alreadyHandledArrivalRows.has(`${row.date}-${row.giteId}`),
-  ).length;
+  const billableOperationsByDate = useMemo(
+    () => getBillableOperationRows(operationsByDate, alreadyHandledArrivalRows),
+    [alreadyHandledArrivalRows, operationsByDate],
+  );
+  const interventionCount = billableOperationsByDate.length;
+  const interventionPriceByGiteId = useMemo(
+    () => new Map(gites.map((gite) => [gite.id, Number(gite.prix_intervention ?? 0)])),
+    [gites],
+  );
+  const interventionPriceTotal = useMemo(
+    () => getInterventionPriceTotal(operationsByDate, alreadyHandledArrivalRows, interventionPriceByGiteId),
+    [alreadyHandledArrivalRows, interventionPriceByGiteId, operationsByDate],
+  );
+  const operationsTableColumnCount =
+    4 + Number(showOptions) + Number(showComments || showPhones) + Number(showInterventionPrices);
   const activeSavedPeriod = useMemo(() => {
     const matchingPeriods = savedPeriods.filter((period) =>
       period.from === from &&
@@ -607,12 +626,13 @@ const OperationsPrintPage = () => {
       (period.stay_nights ?? null) === (stayNightsFilter ? Number(stayNightsFilter) : null) &&
       period.arrivals_only === arrivalsOnly &&
       period.show_options === showOptions &&
+      period.show_intervention_prices === showInterventionPrices &&
       period.gite_ids.length === selectedGiteIds.size &&
       period.gite_ids.every((id) => selectedGiteIds.has(id))
     );
     return matchingPeriods.find((period) => period.id === selectedSavedPeriodId)
       ?? (matchingPeriods.length === 1 ? matchingPeriods[0] : null);
-  }, [arrivalsOnly, from, savedPeriods, selectedGiteIds, selectedSavedPeriodId, showOptions, stayNightsFilter, to]);
+  }, [arrivalsOnly, from, savedPeriods, selectedGiteIds, selectedSavedPeriodId, showInterventionPrices, showOptions, stayNightsFilter, to]);
   const activeWorkers = useMemo(
     () => workers.filter((worker) => worker.is_active),
     [workers],
@@ -679,6 +699,7 @@ const OperationsPrintPage = () => {
           show_comments: showComments,
           show_phones: showPhones,
           show_options: showOptions,
+          show_intervention_prices: showInterventionPrices,
           arrivals_only: arrivalsOnly,
           stay_nights: stayNightsFilter ? Number(stayNightsFilter) : null,
         },
@@ -702,6 +723,7 @@ const OperationsPrintPage = () => {
     setShowComments(period.show_comments);
     setShowPhones(period.show_phones);
     setShowOptions(period.show_options);
+    setShowInterventionPrices(period.show_intervention_prices);
     setArrivalsOnly(period.arrivals_only);
     setStayNightsFilter(period.stay_nights ? String(period.stay_nights) : "");
   };
@@ -1095,6 +1117,7 @@ const OperationsPrintPage = () => {
           show_comments: draft.show_comments,
           show_phones: draft.show_phones,
           show_options: draft.show_options,
+          show_intervention_prices: draft.show_intervention_prices,
           arrivals_only: draft.arrivals_only,
           stay_nights: draft.stay_nights ? Number(draft.stay_nights) : null,
           sms_configs: draft.sms_configs.map((config) => ({
@@ -1342,6 +1365,7 @@ const OperationsPrintPage = () => {
             <label><input type="checkbox" checked={showTimeline} onChange={(event) => setShowTimeline(event.target.checked)} /> Tableau graphique</label>
             <label><input type="checkbox" checked={arrivalsOnly} onChange={(event) => setArrivalsOnly(event.target.checked)} /> Entrées uniquement</label>
             <label><input type="checkbox" checked={showOptions} onChange={(event) => setShowOptions(event.target.checked)} /> Afficher la colonne Options</label>
+            <label><input type="checkbox" checked={showInterventionPrices} onChange={(event) => setShowInterventionPrices(event.target.checked)} /> Afficher les prix par intervention</label>
             <label><input type="checkbox" checked={showComments} onChange={(event) => setShowComments(event.target.checked)} /> Commentaires</label>
             <label><input type="checkbox" checked={showPhones} onChange={(event) => setShowPhones(event.target.checked)} /> Téléphones</label>
           </div>
@@ -1470,6 +1494,14 @@ const OperationsPrintPage = () => {
                           onChange={(event) => updatePeriodDraft(period.id, { show_options: event.target.checked })}
                         />
                         Afficher la colonne Options
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.show_intervention_prices}
+                          onChange={(event) => updatePeriodDraft(period.id, { show_intervention_prices: event.target.checked })}
+                        />
+                        Afficher les prix par intervention
                       </label>
                       <label>
                         <input
@@ -2020,7 +2052,7 @@ const OperationsPrintPage = () => {
             {operationsByDate.length === 0 ? (
               <div className="operations-empty">Aucune entrée ni sortie sur cette période.</div>
             ) : (
-              <table className={`operations-table${showOptions ? "" : " operations-table--without-options"}`}>
+              <table className={`operations-table${showOptions ? "" : " operations-table--without-options"}${showInterventionPrices ? " operations-table--with-prices" : ""}`}>
                 <thead>
                   <tr>
                     <th className="operations-table__date-heading">Date</th>
@@ -2029,6 +2061,7 @@ const OperationsPrintPage = () => {
                     {showOptions ? <th className="operations-table__options-heading">Options</th> : null}
                     <th className="operations-table__stay-heading">Séjour</th>
                     {showComments || showPhones ? <th className="operations-table__information-heading">Informations</th> : null}
+                    {showInterventionPrices ? <th className="operations-table__price-heading">Prix</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -2096,10 +2129,29 @@ const OperationsPrintPage = () => {
                             })}
                           </td>
                         ) : null}
+                        {showInterventionPrices ? (
+                          <td className="operations-table__price-cell">
+                            {isAlreadyHandledArrival
+                              ? <span>Déjà inclus</span>
+                              : <strong>{formatEuro(interventionPriceByGiteId.get(giteId) ?? 0)}</strong>}
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
                 </tbody>
+                {showInterventionPrices ? (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={operationsTableColumnCount - 1}>
+                        <strong>Total de la période</strong>
+                      </td>
+                      <td className="operations-table__price-cell">
+                        <strong>{formatEuro(interventionPriceTotal)}</strong>
+                      </td>
+                    </tr>
+                  </tfoot>
+                ) : null}
               </table>
             )}
           </section>

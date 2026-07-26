@@ -148,3 +148,18 @@ export const getDisplayedHandledArrivalRowKeys = (
   rows: PrintableOperationRow[],
   arrivalsOnly: boolean,
 ) => arrivalsOnly ? new Set<string>() : getAlreadyHandledArrivalRowKeys(rows);
+
+export const getBillableOperationRows = (
+  rows: PrintableOperationRow[],
+  alreadyHandledRowKeys: ReadonlySet<string>,
+) => rows.filter((row) => !alreadyHandledRowKeys.has(`${row.date}-${row.giteId}`));
+
+export const getInterventionPriceTotal = (
+  rows: PrintableOperationRow[],
+  alreadyHandledRowKeys: ReadonlySet<string>,
+  priceByGiteId: ReadonlyMap<string, number>,
+) => getBillableOperationRows(rows, alreadyHandledRowKeys).reduce(
+  (totalInCents, row) =>
+    totalInCents + Math.round(Math.max(0, Number(priceByGiteId.get(row.giteId) ?? 0)) * 100),
+  0,
+) / 100;
