@@ -387,6 +387,7 @@ const OperationsPrintPage = () => {
   const [savingProgrammeTemplates, setSavingProgrammeTemplates] = useState(false);
   const [workerManagerIsOpen, setWorkerManagerIsOpen] = useState(false);
   const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
+  const [openPriceAccordionIds, setOpenPriceAccordionIds] = useState<Set<string>>(new Set());
   const [workers, setWorkers] = useState<PlanningRelayWorker[]>([]);
   const [workerDrafts, setWorkerDrafts] = useState<Record<string, PlanningRelayWorkerDraft>>({});
   const [newWorkerDraft, setNewWorkerDraft] = useState<PlanningRelayWorkerDraft>(EMPTY_WORKER_DRAFT);
@@ -753,6 +754,7 @@ const OperationsPrintPage = () => {
   const openPeriodEditor = (periodId: string) => {
     setFocusedPeriodId(periodId);
     setDrawerPeriodPickerId(null);
+    setOpenPriceAccordionIds(new Set());
     setPeriodManagerIsOpen(true);
   };
 
@@ -760,6 +762,7 @@ const OperationsPrintPage = () => {
     setPeriodManagerIsOpen(false);
     setFocusedPeriodId(null);
     setDrawerPeriodPickerId(null);
+    setOpenPriceAccordionIds(new Set());
   };
 
   const updateSavedPeriod = (updated: PlanningRelayPeriod) => {
@@ -1525,7 +1528,16 @@ const OperationsPrintPage = () => {
                         <input
                           type="checkbox"
                           checked={draft.show_intervention_prices}
-                          onChange={(event) => updatePeriodDraft(period.id, { show_intervention_prices: event.target.checked })}
+                          onChange={(event) => {
+                            const isChecked = event.target.checked;
+                            updatePeriodDraft(period.id, { show_intervention_prices: isChecked });
+                            setOpenPriceAccordionIds((current) => {
+                              const next = new Set(current);
+                              if (isChecked) next.add(period.id);
+                              else next.delete(period.id);
+                              return next;
+                            });
+                          }}
                         />
                         Afficher les prix par intervention
                       </label>
@@ -1539,52 +1551,72 @@ const OperationsPrintPage = () => {
                       </label>
                     </div>
 
-                    <section className="operations-period-gite-prices" aria-label={`Tarifs par gîte pour ${period.label}`}>
-                      <header>
-                        <div>
-                          <strong>Tarifs par gîte</strong>
-                          <span>Chaque tarif s’applique à toutes les interventions du gîte pendant cette période.</span>
-                        </div>
-                      </header>
-                      <div className="operations-period-gite-prices__grid">
-                        {period.gite_ids.map((giteId) => {
-                          const giteIndex = gites.findIndex((gite) => gite.id === giteId);
-                          const gite = giteIndex >= 0 ? gites[giteIndex] : null;
-                          const defaultPrice = defaultInterventionPriceByGiteId.get(giteId) ?? 0;
-                          return (
-                            <label key={giteId}>
-                              <span className="operations-period-gite-prices__gite">
-                                <i style={{ "--gite-color": getGiteColor(gite ?? { id: giteId, nom: "Gîte" }, Math.max(0, giteIndex)) } as CSSProperties} />
-                                {gite?.nom ?? "Gîte indisponible"}
-                              </span>
-                              <span className="operations-period-gite-prices__input">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="100000"
-                                  step="0.01"
-                                  inputMode="decimal"
-                                  aria-label={`Tarif des interventions pour ${gite?.nom ?? "ce gîte"}`}
-                                  value={draft.gite_prices[giteId] ?? defaultPrice}
-                                  onChange={(event) => {
-                                    const value = Number(event.target.value);
-                                    updatePeriodDraft(period.id, {
-                                      gite_prices: {
-                                        ...draft.gite_prices,
-                                        [giteId]: Number.isFinite(value)
-                                          ? Math.min(100_000, Math.max(0, value))
-                                          : 0,
-                                      },
-                                    });
-                                  }}
-                                />
-                                <span>€</span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </section>
+                    {draft.show_intervention_prices ? (
+                      <section className="operations-period-gite-prices" aria-label={`Tarifs par gîte pour ${period.label}`}>
+                        <button
+                          type="button"
+                          className="operations-period-gite-prices__trigger"
+                          aria-expanded={openPriceAccordionIds.has(period.id)}
+                          aria-controls={`period-gite-prices-${period.id}`}
+                          onClick={() => {
+                            setOpenPriceAccordionIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(period.id)) next.delete(period.id);
+                              else next.add(period.id);
+                              return next;
+                            });
+                          }}
+                        >
+                          <span>
+                            <strong>Tarifs par gîte</strong>
+                            <small>Chaque tarif s’applique à toutes les interventions du gîte pendant cette période.</small>
+                          </span>
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m7 10 5 5 5-5" />
+                          </svg>
+                        </button>
+                        {openPriceAccordionIds.has(period.id) ? (
+                          <div id={`period-gite-prices-${period.id}`} className="operations-period-gite-prices__grid">
+                            {period.gite_ids.map((giteId) => {
+                              const giteIndex = gites.findIndex((gite) => gite.id === giteId);
+                              const gite = giteIndex >= 0 ? gites[giteIndex] : null;
+                              const defaultPrice = defaultInterventionPriceByGiteId.get(giteId) ?? 0;
+                              return (
+                                <label key={giteId}>
+                                  <span className="operations-period-gite-prices__gite">
+                                    <i style={{ "--gite-color": getGiteColor(gite ?? { id: giteId, nom: "Gîte" }, Math.max(0, giteIndex)) } as CSSProperties} />
+                                    {gite?.nom ?? "Gîte indisponible"}
+                                  </span>
+                                  <span className="operations-period-gite-prices__input">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100000"
+                                      step="1"
+                                      inputMode="decimal"
+                                      aria-label={`Tarif des interventions pour ${gite?.nom ?? "ce gîte"}`}
+                                      value={draft.gite_prices[giteId] ?? defaultPrice}
+                                      onChange={(event) => {
+                                        const value = Number(event.target.value);
+                                        updatePeriodDraft(period.id, {
+                                          gite_prices: {
+                                            ...draft.gite_prices,
+                                            [giteId]: Number.isFinite(value)
+                                              ? Math.min(100_000, Math.max(0, value))
+                                              : 0,
+                                          },
+                                        });
+                                      }}
+                                    />
+                                    <span>€</span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </section>
+                    ) : null}
 
                     <div className="operations-sms-delivery">
                       {draft.sms_configs.map((config) => {
