@@ -14,7 +14,6 @@ import {
   getDisplayedHandledArrivalRowKeys,
   getInterventionPrice,
   getInterventionPriceTotal,
-  getOperationRowKey,
   parseIsoDateUtc,
   reservationOverlapsPeriod,
   toIsoDateUtc,
@@ -52,7 +51,7 @@ type PlanningRelayPeriodDraft = {
   show_phones: boolean;
   show_options: boolean;
   show_intervention_prices: boolean;
-  intervention_prices: Record<string, number>;
+  gite_prices: Record<string, number>;
   arrivals_only: boolean;
   stay_nights: string;
   sms_configs: PlanningRelaySmsConfig[];
@@ -276,7 +275,7 @@ const buildPeriodDraft = (period: PlanningRelayPeriod): PlanningRelayPeriodDraft
   show_phones: period.show_phones,
   show_options: period.show_options,
   show_intervention_prices: period.show_intervention_prices,
-  intervention_prices: period.intervention_prices ?? {},
+  gite_prices: period.gite_prices ?? {},
   arrivals_only: period.arrivals_only,
   stay_nights: period.stay_nights ? String(period.stay_nights) : "",
   sms_configs: period.sms_configs ?? [],
@@ -402,8 +401,6 @@ const OperationsPrintPage = () => {
   const [showPhones, setShowPhones] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showInterventionPrices, setShowInterventionPrices] = useState(false);
-  const [interventionPriceDrafts, setInterventionPriceDrafts] = useState<Record<string, string>>({});
-  const [savingInterventionPriceKey, setSavingInterventionPriceKey] = useState<string | null>(null);
   const [arrivalsOnly, setArrivalsOnly] = useState(false);
   const [stayNightsFilter, setStayNightsFilter] = useState("");
   const [loading, setLoading] = useState(true);
@@ -615,36 +612,6 @@ const OperationsPrintPage = () => {
     [alreadyHandledArrivalRows, operationsByDate],
   );
   const interventionCount = billableOperationsByDate.length;
-  const interventionPriceByGiteId = useMemo(
-    () => new Map(gites.map((gite) => [gite.id, Number(gite.prix_intervention ?? 0)])),
-    [gites],
-  );
-  const interventionPriceByOperationKey = useMemo(
-    () => new Map(
-      Object.entries(interventionPriceDrafts)
-        .map(([key, value]) => [key, Number(value)] as const)
-        .filter(([, value]) => Number.isFinite(value) && value >= 0),
-    ),
-    [interventionPriceDrafts],
-  );
-  const interventionPriceTotal = useMemo(
-    () => getInterventionPriceTotal(
-      operationsByDate,
-      alreadyHandledArrivalRows,
-      interventionPriceByGiteId,
-      interventionPriceByOperationKey,
-    ),
-    [alreadyHandledArrivalRows, interventionPriceByGiteId, interventionPriceByOperationKey, operationsByDate],
-  );
-  const resolvedInterventionPrices = useMemo(
-    () => Object.fromEntries(operationsByDate.map((row) => [
-      getOperationRowKey(row),
-      getInterventionPrice(row, interventionPriceByGiteId, interventionPriceByOperationKey),
-    ])),
-    [interventionPriceByGiteId, interventionPriceByOperationKey, operationsByDate],
-  );
-  const operationsTableColumnCount =
-    4 + Number(showOptions) + Number(showComments || showPhones) + Number(showInterventionPrices);
   const activeSavedPeriod = useMemo(() => {
     const matchingPeriods = savedPeriods.filter((period) =>
       period.from === from &&
@@ -659,6 +626,34 @@ const OperationsPrintPage = () => {
     return matchingPeriods.find((period) => period.id === selectedSavedPeriodId)
       ?? (matchingPeriods.length === 1 ? matchingPeriods[0] : null);
   }, [arrivalsOnly, from, savedPeriods, selectedGiteIds, selectedSavedPeriodId, showInterventionPrices, showOptions, stayNightsFilter, to]);
+  const defaultInterventionPriceByGiteId = useMemo(
+    () => new Map(gites.map((gite) => [gite.id, 0])),
+    [gites],
+  );
+  const interventionPriceByGiteId = useMemo(
+    () => new Map(gites.map((gite) => [
+      gite.id,
+      Number(activeSavedPeriod?.gite_prices?.[gite.id] ?? 0),
+    ])),
+    [activeSavedPeriod, gites],
+  );
+  const defaultGitePrices = useMemo(
+    () => Object.fromEntries([...selectedGiteIds].map((giteId) => [
+      giteId,
+      defaultInterventionPriceByGiteId.get(giteId) ?? 0,
+    ])),
+    [defaultInterventionPriceByGiteId, selectedGiteIds],
+  );
+  const interventionPriceTotal = useMemo(
+    () => getInterventionPriceTotal(
+      operationsByDate,
+      alreadyHandledArrivalRows,
+      interventionPriceByGiteId,
+    ),
+    [alreadyHandledArrivalRows, interventionPriceByGiteId, operationsByDate],
+  );
+  const operationsTableColumnCount =
+    4 + Number(showOptions) + Number(showComments || showPhones) + Number(showInterventionPrices);
   const activeWorkers = useMemo(
     () => workers.filter((worker) => worker.is_active),
     [workers],
@@ -726,16 +721,13 @@ const OperationsPrintPage = () => {
           show_phones: showPhones,
           show_options: showOptions,
           show_intervention_prices: showInterventionPrices,
-          intervention_prices: resolvedInterventionPrices,
+          gite_prices: defaultGitePrices,
           arrivals_only: arrivalsOnly,
           stay_nights: stayNightsFilter ? Number(stayNightsFilter) : null,
         },
       });
       setSavedPeriods((current) => [...current, period]);
       setSelectedSavedPeriodId(period.id);
-      setInterventionPriceDrafts(Object.fromEntries(
-        Object.entries(period.intervention_prices ?? {}).map(([key, value]) => [key, String(value)]),
-      ));
       setSavedPeriodsNotice("Période enregistrée.");
     } catch (caught) {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d’enregistrer la période."));
@@ -754,9 +746,6 @@ const OperationsPrintPage = () => {
     setShowPhones(period.show_phones);
     setShowOptions(period.show_options);
     setShowInterventionPrices(period.show_intervention_prices);
-    setInterventionPriceDrafts(Object.fromEntries(
-      Object.entries(period.intervention_prices ?? {}).map(([key, value]) => [key, String(value)]),
-    ));
     setArrivalsOnly(period.arrivals_only);
     setStayNightsFilter(period.stay_nights ? String(period.stay_nights) : "");
   };
@@ -1151,7 +1140,10 @@ const OperationsPrintPage = () => {
           show_phones: draft.show_phones,
           show_options: draft.show_options,
           show_intervention_prices: draft.show_intervention_prices,
-          intervention_prices: draft.intervention_prices,
+          gite_prices: Object.fromEntries(period.gite_ids.map((giteId) => [
+            giteId,
+            draft.gite_prices[giteId] ?? defaultInterventionPriceByGiteId.get(giteId) ?? 0,
+          ])),
           arrivals_only: draft.arrivals_only,
           stay_nights: draft.stay_nights ? Number(draft.stay_nights) : null,
           sms_configs: draft.sms_configs.map((config) => ({
@@ -1224,49 +1216,6 @@ const OperationsPrintPage = () => {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'envoyer le message test."));
     } finally {
       setTestingPeriodSmsId(null);
-    }
-  };
-
-  const saveInterventionPrice = async (
-    row: { date: string; giteId: string },
-    rawValue: string,
-  ) => {
-    const rowKey = getOperationRowKey(row);
-    const parsedValue = Number(rawValue);
-    const normalizedValue = Number.isFinite(parsedValue)
-      ? Math.min(100_000, Math.max(0, Math.round(parsedValue * 100) / 100))
-      : 0;
-    const nextDrafts = {
-      ...interventionPriceDrafts,
-      [rowKey]: String(normalizedValue),
-    };
-    setInterventionPriceDrafts(nextDrafts);
-
-    if (!activeSavedPeriod) return;
-
-    const nextPriceByOperationKey = new Map(
-      Object.entries(nextDrafts).map(([key, value]) => [key, Number(value)] as const),
-    );
-    const nextInterventionPrices = Object.fromEntries(operationsByDate.map((operationRow) => [
-      getOperationRowKey(operationRow),
-      getInterventionPrice(operationRow, interventionPriceByGiteId, nextPriceByOperationKey),
-    ]));
-
-    setSavingInterventionPriceKey(rowKey);
-    setSavedPeriodsError(null);
-    try {
-      updateSavedPeriod(await apiFetch<PlanningRelayPeriod>(
-        `/planning-relay-periods/${activeSavedPeriod.id}`,
-        {
-          method: "PATCH",
-          json: { intervention_prices: nextInterventionPrices },
-        },
-      ));
-      setSavedPeriodsNotice("Prix de l’intervention enregistré.");
-    } catch (caught) {
-      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d’enregistrer le prix de l’intervention."));
-    } finally {
-      setSavingInterventionPriceKey(null);
     }
   };
 
@@ -1589,6 +1538,53 @@ const OperationsPrintPage = () => {
                         Lien public actif
                       </label>
                     </div>
+
+                    <section className="operations-period-gite-prices" aria-label={`Tarifs par gîte pour ${period.label}`}>
+                      <header>
+                        <div>
+                          <strong>Tarifs par gîte</strong>
+                          <span>Chaque tarif s’applique à toutes les interventions du gîte pendant cette période.</span>
+                        </div>
+                      </header>
+                      <div className="operations-period-gite-prices__grid">
+                        {period.gite_ids.map((giteId) => {
+                          const giteIndex = gites.findIndex((gite) => gite.id === giteId);
+                          const gite = giteIndex >= 0 ? gites[giteIndex] : null;
+                          const defaultPrice = defaultInterventionPriceByGiteId.get(giteId) ?? 0;
+                          return (
+                            <label key={giteId}>
+                              <span className="operations-period-gite-prices__gite">
+                                <i style={{ "--gite-color": getGiteColor(gite ?? { id: giteId, nom: "Gîte" }, Math.max(0, giteIndex)) } as CSSProperties} />
+                                {gite?.nom ?? "Gîte indisponible"}
+                              </span>
+                              <span className="operations-period-gite-prices__input">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100000"
+                                  step="0.01"
+                                  inputMode="decimal"
+                                  aria-label={`Tarif des interventions pour ${gite?.nom ?? "ce gîte"}`}
+                                  value={draft.gite_prices[giteId] ?? defaultPrice}
+                                  onChange={(event) => {
+                                    const value = Number(event.target.value);
+                                    updatePeriodDraft(period.id, {
+                                      gite_prices: {
+                                        ...draft.gite_prices,
+                                        [giteId]: Number.isFinite(value)
+                                          ? Math.min(100_000, Math.max(0, value))
+                                          : 0,
+                                      },
+                                    });
+                                  }}
+                                />
+                                <span>€</span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
 
                     <div className="operations-sms-delivery">
                       {draft.sms_configs.map((config) => {
@@ -2149,13 +2145,6 @@ const OperationsPrintPage = () => {
                     const isRotation = hasArrival && hasDeparture;
                     const firstReservation = stays[0].reservation;
                     const isAlreadyHandledArrival = alreadyHandledArrivalRows.has(`${date}-${giteId}`);
-                    const operationRow = { date, giteId };
-                    const operationRowKey = getOperationRowKey(operationRow);
-                    const operationPrice = getInterventionPrice(
-                      operationRow,
-                      interventionPriceByGiteId,
-                      interventionPriceByOperationKey,
-                    );
                     return (
                       <tr
                         key={`${date}-${giteId}`}
@@ -2217,29 +2206,7 @@ const OperationsPrintPage = () => {
                           <td className="operations-table__price-cell">
                             {isAlreadyHandledArrival
                               ? <span>Déjà inclus</span>
-                              : (
-                                <div className="operations-table__price-editor">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="100000"
-                                    step="0.01"
-                                    inputMode="decimal"
-                                    aria-label={`Prix de l’intervention du ${formatOperationDate(date)} pour ${firstReservation.gite?.nom ?? "le gîte"}`}
-                                    value={interventionPriceDrafts[operationRowKey] ?? String(operationPrice)}
-                                    disabled={savingInterventionPriceKey === operationRowKey}
-                                    onChange={(event) => setInterventionPriceDrafts((current) => ({
-                                      ...current,
-                                      [operationRowKey]: event.target.value,
-                                    }))}
-                                    onBlur={(event) => void saveInterventionPrice(operationRow, event.target.value)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") event.currentTarget.blur();
-                                    }}
-                                  />
-                                  <span>€</span>
-                                </div>
-                              )}
+                              : <strong>{formatEuro(getInterventionPrice({ date, giteId }, interventionPriceByGiteId))}</strong>}
                           </td>
                         ) : null}
                       </tr>

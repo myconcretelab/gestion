@@ -20,9 +20,6 @@ export type PrintableOperationRow = {
   stays: PrintableOperationStay[];
 };
 
-export const getOperationRowKey = (row: Pick<PrintableOperationRow, "date" | "giteId">) =>
-  `${row.date}-${row.giteId}`;
-
 export const parseIsoDateUtc = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
@@ -160,13 +157,8 @@ export const getBillableOperationRows = (
 export const getInterventionPrice = (
   row: Pick<PrintableOperationRow, "date" | "giteId">,
   priceByGiteId: ReadonlyMap<string, number>,
-  priceByOperationKey: ReadonlyMap<string, number> = new Map(),
 ) => {
-  const rowKey = getOperationRowKey(row);
-  const value = priceByOperationKey.has(rowKey)
-    ? priceByOperationKey.get(rowKey)
-    : priceByGiteId.get(row.giteId);
-  const price = Number(value ?? 0);
+  const price = Number(priceByGiteId.get(row.giteId) ?? 0);
   return Number.isFinite(price) ? Math.max(0, Math.round(price * 100) / 100) : 0;
 };
 
@@ -174,9 +166,8 @@ export const getInterventionPriceTotal = (
   rows: PrintableOperationRow[],
   alreadyHandledRowKeys: ReadonlySet<string>,
   priceByGiteId: ReadonlyMap<string, number>,
-  priceByOperationKey: ReadonlyMap<string, number> = new Map(),
 ) => getBillableOperationRows(rows, alreadyHandledRowKeys).reduce(
   (totalInCents, row) =>
-    totalInCents + Math.round(getInterventionPrice(row, priceByGiteId, priceByOperationKey) * 100),
+    totalInCents + Math.round(getInterventionPrice(row, priceByGiteId) * 100),
   0,
 ) / 100;

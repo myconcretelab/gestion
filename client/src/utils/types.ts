@@ -127,7 +127,7 @@ export type PlanningRelayPeriod = {
   show_phones: boolean;
   show_options: boolean;
   show_intervention_prices: boolean;
-  intervention_prices: Record<string, number>;
+  gite_prices: Record<string, number>;
   arrivals_only: boolean;
   stay_nights: number | null;
   is_active: boolean;
@@ -228,7 +228,7 @@ export type PlanningRelaySmsPreview = {
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,
-    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "show_options" | "show_intervention_prices" | "intervention_prices" | "arrivals_only" | "stay_nights" | "expires_at"
+    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "show_options" | "show_intervention_prices" | "gite_prices" | "arrivals_only" | "stay_nights" | "expires_at"
   >;
   assignments: PlanningRelayAssignment[];
   gites: Gite[];
