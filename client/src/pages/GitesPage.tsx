@@ -81,6 +81,7 @@ const emptyForm = {
   cheque_menage_montant_defaut: 0,
   arrhes_taux_defaut: 0.2,
   electricity_price_per_kwh: 0,
+  prix_intervention: 0,
   frais_gestion: {
     version: 1,
     categories: [
@@ -1770,6 +1771,7 @@ const GitesPage = () => {
       cheque_menage_montant_defaut: selected.cheque_menage_montant_defaut ?? 0,
       arrhes_taux_defaut: selected.arrhes_taux_defaut ?? 0.2,
       electricity_price_per_kwh: selected.electricity_price_per_kwh ?? 0,
+      prix_intervention: selected.prix_intervention ?? 0,
       frais_gestion: normalizeExpenseManagement(selected.frais_gestion),
       prix_nuit_basse_saison: selected.prix_nuit_basse_saison ?? 0,
       prix_nuit_haute_saison: selected.prix_nuit_haute_saison ?? 0,
@@ -2159,6 +2161,7 @@ const GitesPage = () => {
         cheque_menage_montant_defaut: toNumberOrDefault(form.cheque_menage_montant_defaut),
         arrhes_taux_defaut: toNumberOrDefault(form.arrhes_taux_defaut, 0.2),
         electricity_price_per_kwh: toNumberOrDefault(form.electricity_price_per_kwh),
+        prix_intervention: toNumberOrDefault(form.prix_intervention),
         frais_gestion: normalizeExpenseManagement(form.frais_gestion, expenseCategories),
         prix_nuit_basse_saison: toNumberOrDefault(form.prix_nuit_basse_saison),
         prix_nuit_haute_saison: toNumberOrDefault(form.prix_nuit_haute_saison),
@@ -4226,6 +4229,19 @@ const GitesPage = () => {
         </div>
 
         <div id="gite-editor-tarifs" className="form-section gites-editor-section" hidden={activeEditorSection !== "sejour-tarifs"}>
+          <div className="section-subtitle">Planning relais</div>
+          <div className="grid-2">
+            <label className="field">
+              Prix par intervention
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.prix_intervention}
+                onChange={(e) => handleChange("prix_intervention", readNumberInput(e.target.value))}
+              />
+            </label>
+          </div>
           <div className="section-subtitle">Tarifs de nuit</div>
           <div className="grid-2">
             <label className="field">

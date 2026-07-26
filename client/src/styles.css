@@ -5892,12 +5892,25 @@ body {
 .operations-table__options-heading { width: 12%; }
 .operations-table__stay-heading { width: 22%; }
 .operations-table__information-heading { width: 26%; }
+.operations-table__price-heading { width: 10%; }
 
 .operations-table--without-options .operations-table__date-heading { width: 18%; }
 .operations-table--without-options .operations-table__gite-heading { width: 17%; }
 .operations-table--without-options .operations-table__type-heading { width: 10%; }
 .operations-table--without-options .operations-table__stay-heading { width: 24%; }
 .operations-table--without-options .operations-table__information-heading { width: 31%; }
+
+.operations-table--with-prices .operations-table__date-heading { width: 14%; }
+.operations-table--with-prices .operations-table__gite-heading { width: 13%; }
+.operations-table--with-prices .operations-table__type-heading { width: 8%; }
+.operations-table--with-prices .operations-table__options-heading { width: 11%; }
+.operations-table--with-prices .operations-table__stay-heading { width: 20%; }
+.operations-table--with-prices .operations-table__information-heading { width: 24%; }
+.operations-table--with-prices.operations-table--without-options .operations-table__date-heading { width: 16%; }
+.operations-table--with-prices.operations-table--without-options .operations-table__gite-heading { width: 15%; }
+.operations-table--with-prices.operations-table--without-options .operations-table__type-heading { width: 9%; }
+.operations-table--with-prices.operations-table--without-options .operations-table__stay-heading { width: 22%; }
+.operations-table--with-prices.operations-table--without-options .operations-table__information-heading { width: 28%; }
 
 .operations-table__stay-heading,
 .operations-table__information-heading,
@@ -5972,6 +5985,48 @@ body {
 
 .operations-table__options,
 .operations-table__options-heading { text-align: left; }
+
+.operations-table__price-heading,
+.operations-table__price-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.operations-table__price-cell span {
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.operations-table__empty-row td {
+  padding: 18px;
+  color: #475569;
+  text-align: center;
+}
+
+.operations-table tfoot tr {
+  border-left-color: transparent;
+}
+
+.operations-table tfoot td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  border-top: 2px solid var(--primary);
+  border-bottom: 0;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  vertical-align: middle;
+}
+
+.operations-table tfoot td:first-child {
+  text-align: right;
+}
+
+.operations-table tfoot td:first-child > span {
+  display: block;
+  margin-top: 1px;
+  color: #64748b;
+  font-size: 0.6rem;
+}
 
 .operations-stay-summaries,
 .operations-stay-information {
@@ -6191,6 +6246,26 @@ body {
     width: 22%;
   }
 
+  .public-relay-page .operations-table__price-heading {
+    width: 16%;
+  }
+
+  .public-relay-page .operations-table--with-prices .operations-table__date-heading {
+    width: 29%;
+  }
+
+  .public-relay-page .operations-table--with-prices .operations-table__gite-heading {
+    width: 21%;
+  }
+
+  .public-relay-page .operations-table--with-prices .operations-table__type-heading {
+    width: 18%;
+  }
+
+  .public-relay-page .operations-table--with-prices .operations-table__options-heading {
+    width: 16%;
+  }
+
   .public-relay-page .operations-table--without-options .operations-table__date-heading {
     width: 42%;
   }
@@ -6201,6 +6276,18 @@ body {
 
   .public-relay-page .operations-table--without-options .operations-table__type-heading {
     width: 30%;
+  }
+
+  .public-relay-page .operations-table--with-prices.operations-table--without-options .operations-table__date-heading {
+    width: 36%;
+  }
+
+  .public-relay-page .operations-table--with-prices.operations-table--without-options .operations-table__gite-heading {
+    width: 25%;
+  }
+
+  .public-relay-page .operations-table--with-prices.operations-table--without-options .operations-table__type-heading {
+    width: 23%;
   }
 
   .public-relay-page .operations-table th,

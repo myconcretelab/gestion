@@ -7,10 +7,13 @@ import {
   diffUtcDays,
   enumerateIsoDates,
   filterArrivalOperationRows,
+  getBillableOperationRows,
   getDisplayedHandledArrivalRowKeys,
+  getInterventionPriceTotal,
   parseIsoDateUtc,
   type StayOperation,
 } from "../utils/printableOperations";
+import { formatEuro } from "../utils/format";
 import type { PublicPlanningRelayResponse, Reservation } from "../utils/types";
 
 const formatDayHeader = (value: string) => {
@@ -139,11 +142,35 @@ const PublicPlanningRelayPage = () => {
       : [],
     [data, days],
   );
+  const allDisplayedOperationsByDate = useMemo(
+    () => data
+      ? filterArrivalOperationRows(allOperationsByDate, data.period.arrivals_only)
+      : [],
+    [allOperationsByDate, data],
+  );
   const alreadyHandledArrivalRows = useMemo(
     () => getDisplayedHandledArrivalRowKeys(allOperationsByDate, data?.period.arrivals_only ?? false),
     [allOperationsByDate, data?.period.arrivals_only],
   );
-  const interventionCount = operationsByDate.filter((row) => !alreadyHandledArrivalRows.has(`${row.date}-${row.giteId}`)).length;
+  const interventionCount = getBillableOperationRows(operationsByDate, alreadyHandledArrivalRows).length;
+  const interventionPriceByGiteId = useMemo(
+    () => new Map((data?.gites ?? []).map((gite) => [gite.id, Number(gite.prix_intervention ?? 0)])),
+    [data?.gites],
+  );
+  const interventionPriceTotal = useMemo(
+    () => getInterventionPriceTotal(
+      allDisplayedOperationsByDate,
+      alreadyHandledArrivalRows,
+      interventionPriceByGiteId,
+    ),
+    [allDisplayedOperationsByDate, alreadyHandledArrivalRows, interventionPriceByGiteId],
+  );
+  const operationsTableColumnCount = data
+    ? 4
+      + Number(data.period.show_options)
+      + Number(data.period.show_comments || data.period.show_phones)
+      + Number(data.period.show_intervention_prices)
+    : 4;
   const timelineColumns = { "--operations-day-count": Math.max(1, days.length) } as CSSProperties;
 
   if (loading) return <main className="public-relay-state">Chargement du planning…</main>;
@@ -245,8 +272,8 @@ const PublicPlanningRelayPage = () => {
 
         <section className="operations-table-section">
           <h3>Interventions à prévoir</h3>
-          {operationsByDate.length === 0 ? <div className="operations-empty">{hidePastDays ? "Aucune intervention à venir sur cette période." : "Aucune entrée ni sortie sur cette période."}</div> : (
-            <table className={`operations-table${period.show_options ? "" : " operations-table--without-options"}`}>
+          {operationsByDate.length === 0 && !period.show_intervention_prices ? <div className="operations-empty">{hidePastDays ? "Aucune intervention à venir sur cette période." : "Aucune entrée ni sortie sur cette période."}</div> : (
+            <table className={`operations-table${period.show_options ? "" : " operations-table--without-options"}${period.show_intervention_prices ? " operations-table--with-prices" : ""}`}>
               <thead><tr>
                 <th className="operations-table__date-heading">Date</th>
                 <th className="operations-table__gite-heading">Gîte</th>
@@ -254,8 +281,16 @@ const PublicPlanningRelayPage = () => {
                 {period.show_options ? <th className="operations-table__options-heading">Options</th> : null}
                 <th className="operations-table__stay-heading">Séjour</th>
                 {period.show_comments || period.show_phones ? <th className="operations-table__information-heading">Informations</th> : null}
+                {period.show_intervention_prices ? <th className="operations-table__price-heading">Prix</th> : null}
               </tr></thead>
               <tbody>
+                {operationsByDate.length === 0 ? (
+                  <tr className="operations-table__empty-row">
+                    <td colSpan={operationsTableColumnCount}>
+                      {hidePastDays ? "Aucune intervention à venir sur cette période." : "Aucune entrée ni sortie sur cette période."}
+                    </td>
+                  </tr>
+                ) : null}
                 {operationsByDate.map(({ date, giteId, stays }) => {
                   const operations = stays.flatMap((stay) => stay.operations);
                   const hasArrival = operations.some((operation) => operation.kind === "arrival");
@@ -291,10 +326,30 @@ const PublicPlanningRelayPage = () => {
                           })}
                         </td>
                       ) : null}
+                      {period.show_intervention_prices ? (
+                        <td className="operations-table__price-cell">
+                          {isAlreadyHandledArrival
+                            ? <span>Déjà inclus</span>
+                            : <strong>{formatEuro(interventionPriceByGiteId.get(giteId) ?? 0)}</strong>}
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
               </tbody>
+              {period.show_intervention_prices ? (
+                <tfoot>
+                  <tr>
+                    <td colSpan={operationsTableColumnCount - 1}>
+                      <strong>Total de la période</strong>
+                      {hidePastDays ? <span>Jours passés inclus</span> : null}
+                    </td>
+                    <td className="operations-table__price-cell">
+                      <strong>{formatEuro(interventionPriceTotal)}</strong>
+                    </td>
+                  </tr>
+                </tfoot>
+              ) : null}
             </table>
           )}
         </section>

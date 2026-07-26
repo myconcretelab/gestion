@@ -4,6 +4,7 @@ import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
+import { toNumber } from "../utils/money.js";
 import {
   buildPlanningRelayShortCode,
   generatePlanningRelayNonce,
@@ -85,6 +86,7 @@ const payloadSchema = z.object({
   show_comments: z.boolean(),
   show_phones: z.boolean(),
   show_options: z.boolean(),
+  show_intervention_prices: z.boolean(),
   arrivals_only: z.boolean(),
   stay_nights: z.number().int().min(1).max(365).nullable().optional(),
   expires_at: nullableIsoDateSchema.optional(),
@@ -350,6 +352,7 @@ const serializePeriod = (period: any) => {
     show_comments: period.show_comments,
     show_phones: period.show_phones,
     show_options: period.show_options,
+    show_intervention_prices: period.show_intervention_prices,
     arrivals_only: period.arrivals_only,
     stay_nights: period.stay_nights ?? null,
     is_active: period.is_active,
@@ -411,6 +414,7 @@ const buildCreateData = (
     show_comments: payload.show_comments,
     show_phones: payload.show_phones,
     show_options: payload.show_options,
+    show_intervention_prices: payload.show_intervention_prices,
     arrivals_only: payload.arrivals_only,
     stay_nights: payload.stay_nights ?? null,
     share_nonce: identity.nonce,
@@ -662,6 +666,9 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.show_comments !== undefined ? { show_comments: payload.show_comments } : {}),
         ...(payload.show_phones !== undefined ? { show_phones: payload.show_phones } : {}),
         ...(payload.show_options !== undefined ? { show_options: payload.show_options } : {}),
+        ...(payload.show_intervention_prices !== undefined
+          ? { show_intervention_prices: payload.show_intervention_prices }
+          : {}),
         ...(payload.arrivals_only !== undefined ? { arrivals_only: payload.arrivals_only } : {}),
         ...(payload.stay_nights !== undefined ? { stay_nights: payload.stay_nights } : {}),
         ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
@@ -984,6 +991,7 @@ publicRouter.get("/:token", async (req, res, next) => {
           ordre: true,
           heure_arrivee_defaut: true,
           heure_depart_defaut: true,
+          prix_intervention: true,
         },
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
@@ -1032,12 +1040,18 @@ publicRouter.get("/:token", async (req, res, next) => {
         show_comments: period.show_comments,
         show_phones: period.show_phones,
         show_options: period.show_options,
+        show_intervention_prices: period.show_intervention_prices,
         arrivals_only: period.arrivals_only,
         stay_nights: period.stay_nights ?? null,
         expires_at: period.expires_at?.toISOString() ?? null,
       },
       assignments: serializeAssignments(period),
-      gites,
+      gites: gites.map(({ prix_intervention: prixIntervention, ...gite }) => ({
+        ...gite,
+        ...(period.show_intervention_prices
+          ? { prix_intervention: toNumber(prixIntervention) }
+          : {}),
+      })),
       reservations: reservations.map((reservation) => ({
         ...reservation,
         telephone: period.show_phones ? reservation.telephone : null,

@@ -62,6 +62,7 @@ model Gite {
   cheque_menage_montant_defaut         Float  @default(0)
   arrhes_taux_defaut                   Float  @default(0.2)
   electricity_price_per_kwh            Float  @default(0)
+  prix_intervention                     Float  @default(0)
   frais_gestion                        String?
   prix_nuit_basse_saison               Float  @default(0)
   prix_nuit_haute_saison               Float  @default(0)
@@ -355,6 +356,7 @@ model PlanningRelayPeriod {
   show_comments    Boolean   @default(false)
   show_phones      Boolean   @default(false)
   show_options     Boolean   @default(false)
+  show_intervention_prices Boolean @default(false)
   arrivals_only    Boolean   @default(false)
   stay_nights      Int?
   is_active        Boolean   @default(true)

@@ -67,6 +67,7 @@ export type Gite = {
   cheque_menage_montant_defaut: number;
   arrhes_taux_defaut: number;
   electricity_price_per_kwh: number;
+  prix_intervention?: number;
   frais_gestion?: {
     version?: number;
     categories?: Array<{
@@ -125,6 +126,7 @@ export type PlanningRelayPeriod = {
   show_comments: boolean;
   show_phones: boolean;
   show_options: boolean;
+  show_intervention_prices: boolean;
   arrivals_only: boolean;
   stay_nights: number | null;
   is_active: boolean;
@@ -225,7 +227,7 @@ export type PlanningRelaySmsPreview = {
 export type PublicPlanningRelayResponse = {
   period: Pick<
     PlanningRelayPeriod,
-    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "show_options" | "arrivals_only" | "stay_nights" | "expires_at"
+    "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "show_options" | "show_intervention_prices" | "arrivals_only" | "stay_nights" | "expires_at"
   >;
   assignments: PlanningRelayAssignment[];
   gites: Gite[];
