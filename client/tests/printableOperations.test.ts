@@ -217,3 +217,27 @@ test("ne facture pas deux fois une entrée déjà couverte par la sortie précé
     42.5,
   );
 });
+
+test("applique un prix propre à chaque intervention avant le tarif par défaut du gîte", () => {
+  const rows = [
+    {
+      date: "2026-07-13",
+      giteId: "gite-1",
+      stays: [{ reservation, operations: [{ kind: "departure" as const, label: "Sortie" }] }],
+    },
+    {
+      date: "2026-07-15",
+      giteId: "gite-1",
+      stays: [{ reservation, operations: [{ kind: "arrival" as const, label: "Entrée" }] }],
+    },
+  ];
+  const pricesByIntervention = new Map([
+    ["2026-07-13-gite-1", 35],
+    ["2026-07-15-gite-1", 52.5],
+  ]);
+
+  assert.equal(
+    getInterventionPriceTotal(rows, new Set(), new Map([["gite-1", 42.5]]), pricesByIntervention),
+    87.5,
+  );
+});

@@ -87,6 +87,10 @@ const payloadSchema = z.object({
   show_phones: z.boolean(),
   show_options: z.boolean(),
   show_intervention_prices: z.boolean(),
+  intervention_prices: z.record(
+    z.string().trim().min(1).max(180),
+    z.coerce.number().min(0).max(100_000),
+  ).optional(),
   arrivals_only: z.boolean(),
   stay_nights: z.number().int().min(1).max(365).nullable().optional(),
   expires_at: nullableIsoDateSchema.optional(),
@@ -266,6 +270,15 @@ const normalizeGiteIds = (value: unknown) => [
   ...new Set(fromJsonString<unknown[]>(value, []).filter((id): id is string => typeof id === "string" && Boolean(id))),
 ];
 
+const normalizeInterventionPrices = (value: unknown) => Object.fromEntries(
+  Object.entries(fromJsonString<Record<string, unknown>>(value, {}))
+    .map(([key, price]) => [key, Number(price)] as const)
+    .filter(([key, price]) =>
+      Boolean(key.trim()) && Number.isFinite(price) && price >= 0 && price <= 100_000
+    )
+    .map(([key, price]) => [key, Math.round(price * 100) / 100]),
+);
+
 const serializeWorker = (worker: any) => ({
   id: worker.id,
   nom: worker.nom,
@@ -353,6 +366,7 @@ const serializePeriod = (period: any) => {
     show_phones: period.show_phones,
     show_options: period.show_options,
     show_intervention_prices: period.show_intervention_prices,
+    intervention_prices: normalizeInterventionPrices(period.intervention_prices),
     arrivals_only: period.arrivals_only,
     stay_nights: period.stay_nights ?? null,
     is_active: period.is_active,
@@ -415,6 +429,7 @@ const buildCreateData = (
     show_phones: payload.show_phones,
     show_options: payload.show_options,
     show_intervention_prices: payload.show_intervention_prices,
+    intervention_prices: encodeJsonField(payload.intervention_prices ?? {}),
     arrivals_only: payload.arrivals_only,
     stay_nights: payload.stay_nights ?? null,
     share_nonce: identity.nonce,
@@ -668,6 +683,9 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.show_options !== undefined ? { show_options: payload.show_options } : {}),
         ...(payload.show_intervention_prices !== undefined
           ? { show_intervention_prices: payload.show_intervention_prices }
+          : {}),
+        ...(payload.intervention_prices !== undefined
+          ? { intervention_prices: encodeJsonField(payload.intervention_prices) }
           : {}),
         ...(payload.arrivals_only !== undefined ? { arrivals_only: payload.arrivals_only } : {}),
         ...(payload.stay_nights !== undefined ? { stay_nights: payload.stay_nights } : {}),
@@ -1041,6 +1059,9 @@ publicRouter.get("/:token", async (req, res, next) => {
         show_phones: period.show_phones,
         show_options: period.show_options,
         show_intervention_prices: period.show_intervention_prices,
+        intervention_prices: period.show_intervention_prices
+          ? normalizeInterventionPrices(period.intervention_prices)
+          : {},
         arrivals_only: period.arrivals_only,
         stay_nights: period.stay_nights ?? null,
         expires_at: period.expires_at?.toISOString() ?? null,

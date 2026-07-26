@@ -357,6 +357,7 @@ model PlanningRelayPeriod {
   show_phones      Boolean   @default(false)
   show_options     Boolean   @default(false)
   show_intervention_prices Boolean @default(false)
+  intervention_prices Json @default("{}")
   arrivals_only    Boolean   @default(false)
   stay_nights      Int?
   is_active        Boolean   @default(true)

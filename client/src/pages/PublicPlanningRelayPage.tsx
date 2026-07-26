@@ -9,6 +9,7 @@ import {
   filterArrivalOperationRows,
   getBillableOperationRows,
   getDisplayedHandledArrivalRowKeys,
+  getInterventionPrice,
   getInterventionPriceTotal,
   parseIsoDateUtc,
   type StayOperation,
@@ -157,13 +158,18 @@ const PublicPlanningRelayPage = () => {
     () => new Map((data?.gites ?? []).map((gite) => [gite.id, Number(gite.prix_intervention ?? 0)])),
     [data?.gites],
   );
+  const interventionPriceByOperationKey = useMemo(
+    () => new Map(Object.entries(data?.period.intervention_prices ?? {})),
+    [data?.period.intervention_prices],
+  );
   const interventionPriceTotal = useMemo(
     () => getInterventionPriceTotal(
       allDisplayedOperationsByDate,
       alreadyHandledArrivalRows,
       interventionPriceByGiteId,
+      interventionPriceByOperationKey,
     ),
-    [allDisplayedOperationsByDate, alreadyHandledArrivalRows, interventionPriceByGiteId],
+    [allDisplayedOperationsByDate, alreadyHandledArrivalRows, interventionPriceByGiteId, interventionPriceByOperationKey],
   );
   const operationsTableColumnCount = data
     ? 4
@@ -330,7 +336,11 @@ const PublicPlanningRelayPage = () => {
                         <td className="operations-table__price-cell">
                           {isAlreadyHandledArrival
                             ? <span>Déjà inclus</span>
-                            : <strong>{formatEuro(interventionPriceByGiteId.get(giteId) ?? 0)}</strong>}
+                            : <strong>{formatEuro(getInterventionPrice(
+                                { date, giteId },
+                                interventionPriceByGiteId,
+                                interventionPriceByOperationKey,
+                              ))}</strong>}
                         </td>
                       ) : null}
                     </tr>
