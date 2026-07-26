@@ -347,12 +347,14 @@ const PublicPlanningRelayPage = () => {
               {period.show_intervention_prices ? (
                 <tfoot>
                   <tr>
-                    <td colSpan={operationsTableColumnCount - 1}>
-                      <strong>Total de la période</strong>
-                      {hidePastDays ? <span>Jours passés inclus</span> : null}
-                    </td>
-                    <td className="operations-table__price-cell">
-                      <strong>{formatEuro(interventionPriceTotal)}</strong>
+                    <td colSpan={operationsTableColumnCount} className="operations-table__total-cell">
+                      <div className="operations-table__total">
+                        <span className="operations-table__total-label">
+                          <strong>Total de la période</strong>
+                          {hidePastDays ? <small>Jours passés inclus</small> : null}
+                        </span>
+                        <strong className="operations-table__total-amount">{formatEuro(interventionPriceTotal)}</strong>
+                      </div>
                     </td>
                   </tr>
                 </tfoot>

@@ -2248,11 +2248,13 @@ const OperationsPrintPage = () => {
                 {showInterventionPrices ? (
                   <tfoot>
                     <tr>
-                      <td colSpan={operationsTableColumnCount - 1}>
-                        <strong>Total de la période</strong>
-                      </td>
-                      <td className="operations-table__price-cell">
-                        <strong>{formatEuro(interventionPriceTotal)}</strong>
+                      <td colSpan={operationsTableColumnCount} className="operations-table__total-cell">
+                        <div className="operations-table__total">
+                          <span className="operations-table__total-label">
+                            <strong>Total de la période</strong>
+                          </span>
+                          <strong className="operations-table__total-amount">{formatEuro(interventionPriceTotal)}</strong>
+                        </div>
                       </td>
                     </tr>
                   </tfoot>
