@@ -6128,7 +6128,7 @@ body {
   border-top: 2px solid var(--primary);
   border-bottom: 0;
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: #7f1d1d;
   vertical-align: middle;
 }
 
@@ -6153,7 +6153,7 @@ body {
 
 .operations-table__total-label small {
   margin-top: 1px;
-  color: #64748b;
+  color: #475569;
   font-size: 0.6rem;
   font-weight: 600;
 }
