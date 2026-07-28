@@ -1144,7 +1144,6 @@ const ReservationsPage = () => {
   const draftsRef = useRef<Record<string, ReservationDraft>>({});
   const reservationOptionsRef = useRef<Record<string, ContratOptions>>({});
   const saveTimers = useRef<Record<string, number>>({});
-  const inlineSourceSaveIdsRef = useRef<Set<string>>(new Set());
   const detailsCloseTimers = useRef<Record<string, number>>({});
   const savedRowFadeTimers = useRef<Record<string, number>>({});
   const liveEnergyLoadKeyRef = useRef("");
@@ -2698,70 +2697,9 @@ const ReservationsPage = () => {
     return hasReservationChanges(reservation, draft, currentOptions);
   };
 
-  const saveInlineReservationSource = async (
-    reservation: Reservation,
-    draft: ReservationDraft
-  ) => {
-    const rowId = reservation.id;
-    if (inlineSourceSaveIdsRef.current.has(rowId)) return;
-
-    if (draft.source_paiement === normalizeReservationSource(reservation.source_paiement)) {
-      clearRowFeedback(rowId);
-      setInlineCell((previous) =>
-        previous?.rowId === rowId && previous.field === "source_paiement" ? null : previous
-      );
-      clearDraft(rowId);
-      return;
-    }
-
-    inlineSourceSaveIdsRef.current.add(rowId);
-    setInlineCell((previous) =>
-      previous?.rowId === rowId && previous.field === "source_paiement" ? null : previous
-    );
-    setRowState((previous) => ({ ...previous, [rowId]: "saving" }));
-    setRowError((previous) => ({ ...previous, [rowId]: "" }));
-
-    try {
-      const updated = await apiFetch<Reservation>(`/reservations/${rowId}/source`, {
-        method: "PATCH",
-        json: { source_paiement: draft.source_paiement },
-      });
-      setReservations((previous) =>
-        previous.map((item) =>
-          item.id === rowId ? { ...item, source_paiement: updated.source_paiement } : item
-        )
-      );
-      clearDraft(rowId);
-      setRowState((previous) => ({ ...previous, [rowId]: "saved" }));
-      startSavedRowFade(rowId);
-      void loadStatistics();
-      window.setTimeout(() => {
-        setRowState((previous) =>
-          previous[rowId] === "saved" ? { ...previous, [rowId]: "idle" } : previous
-        );
-      }, 1200);
-    } catch (err) {
-      const message = isApiError(err)
-        ? err.message
-        : "Impossible de modifier la source de la réservation.";
-      setRowState((previous) => ({ ...previous, [rowId]: "error" }));
-      setRowError((previous) => ({ ...previous, [rowId]: message }));
-      flushSync(() => {
-        setInlineCell({ rowId, field: "source_paiement" });
-      });
-      focusInlineField(rowId, "source_paiement");
-    } finally {
-      inlineSourceSaveIdsRef.current.delete(rowId);
-    }
-  };
-
   const saveInlineField = async (reservation: Reservation, field: InlineEditableField, draftOverride?: ReservationDraft) => {
     const rowId = reservation.id;
     const draft = draftOverride ?? draftsRef.current[rowId] ?? toDraft(reservation);
-    if (field === "source_paiement") {
-      await saveInlineReservationSource(reservation, draft);
-      return;
-    }
     if (!hasInlineChanges(reservation, draft)) {
       clearRowFeedback(rowId);
       setInlineCell((previous) => (previous?.rowId === rowId && previous.field === field ? null : previous));
