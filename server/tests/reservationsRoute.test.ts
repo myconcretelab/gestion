@@ -28,13 +28,94 @@ const createMockResponse = (): MockResponse => {
   return response;
 };
 
-const getRouteHandler = (router: any, method: "get" | "post", routePath: string) => {
+const getRouteHandler = (router: any, method: "get" | "post" | "patch", routePath: string) => {
   const layer = router.stack.find(
     (item: any) => item.route?.path === routePath && item.route?.methods?.[method],
   );
   assert.ok(layer, `Route introuvable: ${method.toUpperCase()} ${routePath}`);
   return layer.route.stack[0].handle as (req: any, res: any, next: (err?: unknown) => void) => Promise<void>;
 };
+
+test("PATCH /reservations/:id/source met à jour toute la réservation regroupée", async () => {
+  const envBackup = {
+    DATABASE_URL: process.env.DATABASE_URL,
+  };
+  process.env.DATABASE_URL = "";
+
+  const prismaModule = await import("../src/db/prisma.ts");
+  const prisma = prismaModule.default as any;
+  const original = {
+    reservationFindUnique: prisma.reservation.findUnique,
+    reservationUpdateMany: prisma.reservation.updateMany,
+  };
+  let updatedWhere: unknown = null;
+  let updatedData: unknown = null;
+
+  try {
+    prisma.reservation.findUnique = async ({ include }: any) =>
+      include
+        ? {
+            id: "r1",
+            stay_group_id: "stay-1",
+            gite_id: "g1",
+            placeholder_id: null,
+            hote_nom: "Client direct",
+            date_entree: new Date("2026-07-25T00:00:00.000Z"),
+            date_sortie: new Date("2026-07-30T00:00:00.000Z"),
+            nb_nuits: 5,
+            nb_adultes: 2,
+            nb_enfants_2_17: 0,
+            prix_par_nuit: 75,
+            prix_total: 375,
+            source_paiement: "Virement",
+            commentaire: null,
+            frais_optionnels_montant: 0,
+            frais_optionnels_libelle: null,
+            frais_optionnels_declares: false,
+            options: "{}",
+            gite: { id: "g1", nom: "Gîte", prefixe_contrat: "G", ordre: 1 },
+            placeholder: null,
+          }
+        : { id: "r1", stay_group_id: "stay-1" };
+    prisma.reservation.updateMany = async ({ where, data }: any) => {
+      updatedWhere = where;
+      updatedData = data;
+      return { count: 2 };
+    };
+
+    const reservationsRouterModule = await import("../src/routes/reservations.ts");
+    const patchReservationSource = getRouteHandler(
+      reservationsRouterModule.default,
+      "patch",
+      "/:id/source",
+    );
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await patchReservationSource(
+      {
+        params: { id: "r1" },
+        query: {},
+        body: { source_paiement: "Virement" },
+      },
+      response,
+      (err) => {
+        nextError = err ?? null;
+      },
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(updatedWhere, { stay_group_id: "stay-1" });
+    assert.deepEqual(updatedData, { source_paiement: "Virement" });
+    assert.equal((response.body as any).source_paiement, "Virement");
+  } finally {
+    prisma.reservation.findUnique = original.reservationFindUnique;
+    prisma.reservation.updateMany = original.reservationUpdateMany;
+    if (envBackup.DATABASE_URL === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = envBackup.DATABASE_URL;
+  }
+});
 
 test("POST /reservations conserve un séjour qui chevauche deux années en une seule réservation", async () => {
   const envBackup = {

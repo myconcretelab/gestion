@@ -12,6 +12,10 @@ import {
 } from "../utils/paymentColors";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import { buildMobileReservationEditorHref } from "./shared/mobileReservationEditor";
+import {
+  RESERVATION_SOURCES,
+  isPlatformReservationSource,
+} from "./shared/reservationSources";
 import type { Gite, Reservation } from "../utils/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -591,6 +595,9 @@ const TodayPage = () => {
   const [notificationDayCount, setNotificationDayCount] = useState(1);
   const [notificationSliderValue, setNotificationSliderValue] = useState(1);
   const [mobileActionState, setMobileActionState] = useState<TodayMobileActionState>(null);
+  const [sourcePickerReservationId, setSourcePickerReservationId] = useState<string | null>(null);
+  const [sourceUpdating, setSourceUpdating] = useState(false);
+  const [sourceUpdateError, setSourceUpdateError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deferredLoading, setDeferredLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -742,9 +749,55 @@ const TodayPage = () => {
     [mobileActionState, reservations]
   );
 
+  const closeMobileReservationActions = () => {
+    setMobileActionState(null);
+    setSourcePickerReservationId(null);
+    setSourceUpdateError(null);
+  };
+
+  const updateMobileReservationSource = async (reservation: Reservation, source: string) => {
+    if (source === reservation.source_paiement) return;
+
+    setSourceUpdating(true);
+    setSourceUpdateError(null);
+    try {
+      const updated = await apiFetch<Reservation>(`/reservations/${reservation.id}/source`, {
+        method: "PATCH",
+        json: { source_paiement: source },
+      });
+      setPrimaryOverview((previous) =>
+        previous
+          ? {
+              ...previous,
+              reservations: previous.reservations.map((item) =>
+                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement } : item
+              ),
+            }
+          : previous
+      );
+      setDeferredOverview((previous) =>
+        previous
+          ? {
+              ...previous,
+              new_reservations: previous.new_reservations.map((item) =>
+                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement } : item
+              ),
+            }
+          : previous
+      );
+      setSourcePickerReservationId(null);
+    } catch (err) {
+      setSourceUpdateError(
+        isApiError(err) ? err.message : "Impossible de modifier la source de la réservation."
+      );
+    } finally {
+      setSourceUpdating(false);
+    }
+  };
+
   useEffect(() => {
     if (usesViewportScroll) return;
-    setMobileActionState(null);
+    closeMobileReservationActions();
   }, [usesViewportScroll]);
 
   const paymentColorMap = useMemo(
@@ -777,11 +830,11 @@ const TodayPage = () => {
 
   useEffect(() => {
     if (mobileActionState?.mode === "actions" && !mobileActionReservation) {
-      setMobileActionState(null);
+      closeMobileReservationActions();
       return;
     }
     if (mobileActionState?.mode === "rotation-choice" && !mobileActionEvent) {
-      setMobileActionState(null);
+      closeMobileReservationActions();
     }
   }, [mobileActionEvent, mobileActionReservation, mobileActionState]);
 
@@ -905,6 +958,8 @@ const TodayPage = () => {
   );
 
   const openMobileReservationEditPage = (reservation: Reservation) => {
+    setSourcePickerReservationId(null);
+    setSourceUpdateError(null);
     navigate(buildMobileReservationEditHref(reservation.id));
   };
 
@@ -914,6 +969,8 @@ const TodayPage = () => {
       return;
     }
 
+    setSourcePickerReservationId(null);
+    setSourceUpdateError(null);
     setMobileActionState((current) => {
       if (event.type === "both") {
         return current?.mode === "rotation-choice" && current.eventId === event.id ? null : { mode: "rotation-choice", eventId: event.id };
@@ -1593,13 +1650,15 @@ const TodayPage = () => {
           mode="rotation-choice"
           title={mobileActionEvent.giteName}
           subtitle={getEventDateLabel(mobileActionEvent.dateIso)}
-          onClose={() => setMobileActionState(null)}
+          onClose={closeMobileReservationActions}
           onSelectArrival={() => {
             if (!mobileActionEvent.arrivalReservation) return;
+            setSourcePickerReservationId(null);
             setMobileActionState({ mode: "actions", reservationId: mobileActionEvent.arrivalReservation.id });
           }}
           onSelectDeparture={() => {
             if (!mobileActionEvent.departureReservation) return;
+            setSourcePickerReservationId(null);
             setMobileActionState({ mode: "actions", reservationId: mobileActionEvent.departureReservation.id });
           }}
           arrivalLabel={`Arrivée · ${getReservationGuestName(mobileActionEvent.arrivalReservation)}`}
@@ -1620,17 +1679,42 @@ const TodayPage = () => {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: 0,
               }),
+              ...(!isPlatformReservationSource(mobileActionReservation.source_paiement)
+                ? {
+                    ariaLabel: "Modifier la source ou le moyen de paiement",
+                    onClick: () => {
+                      setSourceUpdateError(null);
+                      setSourcePickerReservationId((current) =>
+                        current === mobileActionReservation.id ? null : mobileActionReservation.id
+                      );
+                    },
+                  }
+                : {}),
             },
             ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
               ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
               : []),
           ]}
-          onClose={() => setMobileActionState(null)}
+          onClose={closeMobileReservationActions}
           onEdit={() => openMobileReservationEditPage(mobileActionReservation)}
           note={mobileActionReservation.commentaire}
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
           smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
           airbnbUrl={mobileActionReservation.airbnb_url}
+          sourcePicker={
+            sourcePickerReservationId === mobileActionReservation.id
+              ? {
+                  label: "Source ou moyen de paiement",
+                  value: mobileActionReservation.source_paiement || "A définir",
+                  options: RESERVATION_SOURCES,
+                  busy: sourceUpdating,
+                  error: sourceUpdateError,
+                  onChange: (source) => {
+                    void updateMobileReservationSource(mobileActionReservation, source);
+                  },
+                }
+              : undefined
+          }
         />
       ) : null}
     </div>

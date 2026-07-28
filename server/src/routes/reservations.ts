@@ -113,6 +113,9 @@ const reservationPayloadSchema = z.object({
   frais_optionnels_declares: z.boolean().optional().default(false),
   options: optionsSchema.optional().default({}),
 });
+const reservationSourcePayloadSchema = z.object({
+  source_paiement: z.preprocess(emptyStringToNull, z.string().trim().nullable()),
+});
 const integrationReservationPayloadSchema = reservationPayloadSchema.extend({
   origin_reference: z.string().trim().min(1),
 });
@@ -1899,6 +1902,42 @@ router.get("/:id", async (req, res, next) => {
     }
 
     return res.json(await hydrateReservationWithLinkedContract(reservation));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/source", async (req, res, next) => {
+  try {
+    const existing = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, stay_group_id: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Réservation introuvable" });
+    }
+
+    const payload = reservationSourcePayloadSchema.parse(req.body);
+    const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
+    await prisma.reservation.updateMany({
+      where: existing.stay_group_id
+        ? { stay_group_id: existing.stay_group_id }
+        : { id: existing.id },
+      data: { source_paiement },
+    });
+
+    const updated = await prisma.reservation.findUnique({
+      where: { id: existing.id },
+      include: {
+        gite: { select: reservationGiteSelect },
+        placeholder: { select: reservationPlaceholderSelect },
+      },
+    });
+    if (!updated) {
+      return res.status(404).json({ error: "Réservation introuvable" });
+    }
+
+    return res.json(await hydrateReservationWithLinkedContract(updated));
   } catch (err) {
     next(err);
   }
