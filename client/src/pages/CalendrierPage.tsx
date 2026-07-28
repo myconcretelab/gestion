@@ -20,6 +20,10 @@ import {
   buildCalendarReservationReturnHref,
   buildMobileReservationEditorHref,
 } from "./shared/mobileReservationEditor";
+import {
+  RESERVATION_SOURCES,
+  isPlatformReservationSource,
+} from "./shared/reservationSources";
 import type { Contrat, Gite, Reservation } from "../utils/types";
 
 const MONTHS = [
@@ -470,6 +474,9 @@ const CalendrierPage = () => {
   const [floatingPopoverLayout, setFloatingPopoverLayout] = useState<FloatingPopoverLayout>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
   const [mobileActionReservationId, setMobileActionReservationId] = useState<string | null>(null);
+  const [sourcePickerReservationId, setSourcePickerReservationId] = useState<string | null>(null);
+  const [sourceUpdating, setSourceUpdating] = useState(false);
+  const [sourceUpdateError, setSourceUpdateError] = useState<string | null>(null);
   const [balanceStatusUpdatingByContractId, setBalanceStatusUpdatingByContractId] = useState<Record<string, boolean>>({});
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [loading, setLoading] = useState(true);
@@ -495,6 +502,12 @@ const CalendrierPage = () => {
     kind: "date",
     value: todayIso,
   });
+
+  const closeMobileReservationActions = () => {
+    setMobileActionReservationId(null);
+    setSourcePickerReservationId(null);
+    setSourceUpdateError(null);
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -652,7 +665,7 @@ const CalendrierPage = () => {
   useEffect(() => {
     setHoveredReservation(null);
     setSelectedDateRange(null);
-    setMobileActionReservationId(null);
+    closeMobileReservationActions();
   }, [selectedGiteId, year]);
 
   const markLinkedContractBalancePaid = useCallback(async (reservation: CalendarReservation) => {
@@ -700,6 +713,42 @@ const CalendrierPage = () => {
       });
     }
   }, []);
+
+  const updateMobileReservationSource = async (
+    reservation: CalendarReservation,
+    source: string
+  ) => {
+    if (source === reservation.source_paiement) return;
+
+    setSourceUpdating(true);
+    setSourceUpdateError(null);
+    try {
+      const updated = await apiFetch<Reservation>(`/reservations/${reservation.id}/source`, {
+        method: "PATCH",
+        json: { source_paiement: source },
+      });
+      setReservations((previous) =>
+        previous.map((item) =>
+          item.id === updated.id ? { ...item, source_paiement: updated.source_paiement } : item
+        )
+      );
+      setReservationDetailsById((previous) => ({
+        ...previous,
+        [reservation.id]: {
+          ...previous[reservation.id],
+          source_paiement: updated.source_paiement,
+        },
+      }));
+      setSourcePickerReservationId(null);
+      setError(null);
+    } catch (err) {
+      setSourceUpdateError(
+        isApiError(err) ? err.message : "Impossible de modifier la source de la réservation."
+      );
+    } finally {
+      setSourceUpdating(false);
+    }
+  };
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
   const calendarGiteTabItems = useMemo(() => gites.map((gite) => ({ id: gite.id, label: gite.nom })), [gites]);
@@ -932,7 +981,7 @@ const CalendrierPage = () => {
 
   useEffect(() => {
     if (mobileActionReservationId && !mobileActionReservation) {
-      setMobileActionReservationId(null);
+      closeMobileReservationActions();
     }
   }, [mobileActionReservation, mobileActionReservationId]);
 
@@ -1072,7 +1121,7 @@ const CalendrierPage = () => {
       const targetYear = options?.year ?? reservationStartDate.getUTCFullYear();
       const targetMonth = options?.monthNumber ?? reservationStartDate.getUTCMonth() + 1;
 
-      setMobileActionReservationId(null);
+      closeMobileReservationActions();
       setSelectedDateRange(null);
       navigate(
         buildMobileReservationEditorHref({
@@ -1094,6 +1143,8 @@ const CalendrierPage = () => {
     (reservation: CalendarReservation, options?: { monthNumber?: number; year?: number }) => {
       if (usesViewportScroll) {
         setSelectedDateRange(null);
+        setSourcePickerReservationId(null);
+        setSourceUpdateError(null);
         setMobileActionReservationId((current) => (current === reservation.id ? null : reservation.id));
         return;
       }
@@ -1920,12 +1971,23 @@ const CalendrierPage = () => {
                 maximumFractionDigits: 0,
                 }
               ),
+              ...(!isPlatformReservationSource(mobileActionReservation.source_paiement)
+                ? {
+                    ariaLabel: "Modifier la source ou le moyen de paiement",
+                    onClick: () => {
+                      setSourceUpdateError(null);
+                      setSourcePickerReservationId((current) =>
+                        current === mobileActionReservation.id ? null : mobileActionReservation.id
+                      );
+                    },
+                  }
+                : {}),
             },
             ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
               ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
               : []),
           ]}
-          onClose={() => setMobileActionReservationId(null)}
+          onClose={closeMobileReservationActions}
           onEdit={() =>
             openMobileReservationEditPage(mobileActionReservation, {
               monthNumber: activeMonthIndex + 1,
@@ -1968,6 +2030,20 @@ const CalendrierPage = () => {
           phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
           smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
           airbnbUrl={mobileActionReservation.airbnb_url}
+          sourcePicker={
+            sourcePickerReservationId === mobileActionReservation.id
+              ? {
+                  label: "Source ou moyen de paiement",
+                  value: mobileActionReservation.source_paiement || "A définir",
+                  options: RESERVATION_SOURCES,
+                  busy: sourceUpdating,
+                  error: sourceUpdateError,
+                  onChange: (source) => {
+                    void updateMobileReservationSource(mobileActionReservation, source);
+                  },
+                }
+              : undefined
+          }
         />
       ) : null}
     </div>

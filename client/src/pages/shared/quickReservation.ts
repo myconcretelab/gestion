@@ -6,6 +6,12 @@ import {
 } from "../../utils/reservationOptions";
 import { buildSmsHref } from "../../utils/sms";
 import type { Gite, Reservation } from "../../utils/types";
+import {
+  DEFAULT_RESERVATION_SOURCE,
+  RESERVATION_SOURCES,
+} from "./reservationSources";
+
+export { DEFAULT_RESERVATION_SOURCE, RESERVATION_SOURCES } from "./reservationSources";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,19 +60,6 @@ export const DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS: QuickReservationSmsSnippet[
     text: "Si besoin, l'option draps est possible à 15€ par lit.",
   },
 ];
-
-export const RESERVATION_SOURCES = [
-  "Abritel",
-  "Airbnb",
-  "Chèque",
-  "Espèces",
-  "HomeExchange",
-  "Virement",
-  "A définir",
-  "Gites de France",
-] as const;
-
-export const DEFAULT_RESERVATION_SOURCE = "A définir";
 
 export const normalizeIsoDate = (value: string) => value.slice(0, 10);
 

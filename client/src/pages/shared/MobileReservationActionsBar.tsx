@@ -10,6 +10,8 @@ type MobileReservationActionsBarProps = {
   details?: Array<{
     label: string;
     value: string;
+    onClick?: () => void;
+    ariaLabel?: string;
   }>;
   note?: string | null;
   mode?: MobileReservationActionsBarMode;
@@ -28,6 +30,14 @@ type MobileReservationActionsBarProps = {
     hint?: string;
     onClick?: () => void;
     disabled?: boolean;
+  };
+  sourcePicker?: {
+    label: string;
+    value: string;
+    options: readonly string[];
+    busy?: boolean;
+    error?: string | null;
+    onChange: (value: string) => void;
   };
 };
 
@@ -148,6 +158,7 @@ const MobileReservationActionsBar = ({
   arrivalLabel = "Arrivée",
   departureLabel = "Départ",
   highlightedCard,
+  sourcePicker,
 }: MobileReservationActionsBarProps) => {
   if (!open) return null;
 
@@ -163,13 +174,56 @@ const MobileReservationActionsBar = ({
             {subtitle ? <span className="mobile-reservation-actions__subtitle">{subtitle}</span> : null}
             {details?.length ? (
               <div className="mobile-reservation-actions__details">
-                {details.map((detail) => (
-                  <div key={`${detail.label}-${detail.value}`} className="mobile-reservation-actions__detail">
-                    <span className="mobile-reservation-actions__detail-label">{detail.label}</span>
-                    <strong className="mobile-reservation-actions__detail-value">{detail.value}</strong>
-                  </div>
-                ))}
+                {details.map((detail) => {
+                  const content = (
+                    <>
+                      <span className="mobile-reservation-actions__detail-label">{detail.label}</span>
+                      <strong className="mobile-reservation-actions__detail-value">{detail.value}</strong>
+                    </>
+                  );
+
+                  return detail.onClick ? (
+                    <div
+                      key={`${detail.label}-${detail.value}`}
+                      className="mobile-reservation-actions__detail"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={detail.ariaLabel}
+                      onClick={detail.onClick}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        detail.onClick?.();
+                      }}
+                    >
+                      {content}
+                    </div>
+                  ) : (
+                    <div key={`${detail.label}-${detail.value}`} className="mobile-reservation-actions__detail">
+                      {content}
+                    </div>
+                  );
+                })}
               </div>
+            ) : null}
+            {sourcePicker ? (
+              <label className="mobile-reservation-actions__source-picker">
+                <span>{sourcePicker.label}</span>
+                <select
+                  value={sourcePicker.value}
+                  autoFocus
+                  disabled={sourcePicker.busy}
+                  onChange={(event) => sourcePicker.onChange(event.target.value)}
+                >
+                  {sourcePicker.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                {sourcePicker.busy ? <small>Enregistrement...</small> : null}
+                {sourcePicker.error ? <small role="alert">{sourcePicker.error}</small> : null}
+              </label>
             ) : null}
             {highlightedCard ? (
               highlightedCard.onClick && !highlightedCard.disabled ? (
