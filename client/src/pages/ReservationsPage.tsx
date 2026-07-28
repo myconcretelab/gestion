@@ -182,6 +182,7 @@ type InlineEditableField =
 type InlineCell = {
   rowId: string;
   field: InlineEditableField;
+  occurrenceId: string;
 };
 
 type CommentDialogState = {
@@ -2628,7 +2629,14 @@ const ReservationsPage = () => {
     });
   };
 
-  const isInlineFieldActive = (rowId: string, field: InlineEditableField) => inlineCell?.rowId === rowId && inlineCell.field === field;
+  const isInlineFieldActive = (
+    rowId: string,
+    field: InlineEditableField,
+    occurrenceId: string
+  ) =>
+    inlineCell?.rowId === rowId &&
+    inlineCell.field === field &&
+    inlineCell.occurrenceId === occurrenceId;
 
   const openNativePicker = (element: HTMLInputElement | HTMLSelectElement) => {
     const picker = element as (HTMLInputElement | HTMLSelectElement) & { showPicker?: () => void };
@@ -2668,10 +2676,14 @@ const ReservationsPage = () => {
     }
   };
 
-  const openInlineField = (reservation: Reservation, field: InlineEditableField) => {
+  const openInlineField = (
+    reservation: Reservation,
+    field: InlineEditableField,
+    occurrenceId: string
+  ) => {
     if (editingRows[reservation.id]) return;
     flushSync(() => {
-      setInlineCell({ rowId: reservation.id, field });
+      setInlineCell({ rowId: reservation.id, field, occurrenceId });
       setDrafts((previous) => ({
         ...previous,
         [reservation.id]: previous[reservation.id] ?? toDraft(reservation),
@@ -2699,6 +2711,8 @@ const ReservationsPage = () => {
 
   const saveInlineField = async (reservation: Reservation, field: InlineEditableField, draftOverride?: ReservationDraft) => {
     const rowId = reservation.id;
+    const occurrenceId =
+      inlineCell?.rowId === rowId ? inlineCell.occurrenceId : `${rowId}:default`;
     const draft = draftOverride ?? draftsRef.current[rowId] ?? toDraft(reservation);
     if (!hasInlineChanges(reservation, draft)) {
       clearRowFeedback(rowId);
@@ -2716,7 +2730,7 @@ const ReservationsPage = () => {
       clearDraft(rowId);
       return;
     }
-    setInlineCell({ rowId, field });
+    setInlineCell({ rowId, field, occurrenceId });
     focusInlineField(rowId, field, { openPicker: INLINE_PICKER_FIELDS.includes(field) });
   };
 
@@ -2772,7 +2786,8 @@ const ReservationsPage = () => {
   const handleInlineKeyDown = (
     event: KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
     reservation: Reservation,
-    field: InlineEditableField
+    field: InlineEditableField,
+    occurrenceId: string
   ) => {
     if (event.key === "Tab") {
       const currentIndex = INLINE_EDITABLE_FIELDS.indexOf(field);
@@ -2782,7 +2797,7 @@ const ReservationsPage = () => {
         if (nextField) {
           event.preventDefault();
           flushSync(() => {
-            setInlineCell({ rowId: reservation.id, field: nextField });
+            setInlineCell({ rowId: reservation.id, field: nextField, occurrenceId });
             setDrafts((previous) => ({
               ...previous,
               [reservation.id]: previous[reservation.id] ?? toDraft(reservation),
@@ -2805,8 +2820,12 @@ const ReservationsPage = () => {
     }
   };
 
-  const handleInlineBlur = (reservation: Reservation, field: InlineEditableField) => {
-    if (!isInlineFieldActive(reservation.id, field)) return;
+  const handleInlineBlur = (
+    reservation: Reservation,
+    field: InlineEditableField,
+    occurrenceId: string
+  ) => {
+    if (!isInlineFieldActive(reservation.id, field, occurrenceId)) return;
     saveInlineField(reservation, field).catch((err) => setError((err as Error).message));
   };
 
@@ -5189,6 +5208,7 @@ const ReservationsPage = () => {
                         groupKey === UNASSIGNED_TAB
                           ? "Non attribuées"
                           : (giteById.get(groupKey)?.nom ?? reservation.gite?.nom ?? "Gîte");
+                      const inlineOccurrenceId = `${monthIndex}:${rowIndex}:${reservation.id}`;
                       const isEditing = Boolean(editingRows[reservation.id]);
                       const draft = getRowDraft(reservation);
                       const rowSaveState = rowState[reservation.id] ?? "idle";
@@ -5705,7 +5725,7 @@ const ReservationsPage = () => {
                               ) : null}
                             </td>
                             <td className="reservations-host-cell">
-                              {isEditing || isInlineFieldActive(reservation.id, "hote_nom") ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "hote_nom", inlineOccurrenceId) ? (
                                 <input
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
@@ -5723,7 +5743,7 @@ const ReservationsPage = () => {
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "hote_nom");
+                                      handleInlineKeyDown(event, reservation, "hote_nom", inlineOccurrenceId);
                                       return;
                                     }
                                     handleGridKeyDown(event, {
@@ -5737,14 +5757,14 @@ const ReservationsPage = () => {
                                     });
                                   }}
                                   onBlur={() => {
-                                    if (!isEditing) handleInlineBlur(reservation, "hote_nom");
+                                    if (!isEditing) handleInlineBlur(reservation, "hote_nom", inlineOccurrenceId);
                                   }}
                                 />
                               ) : (
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger"
-                                  onClick={() => openInlineField(reservation, "hote_nom")}
+                                  onClick={() => openInlineField(reservation, "hote_nom", inlineOccurrenceId)}
                                   title="Modifier l'hôte"
                                 >
                                   <span className="reservations-host-inline">
@@ -5773,7 +5793,7 @@ const ReservationsPage = () => {
                               )}
                             </td>
                             <td className="reservations-col-date">
-                              {isEditing || isInlineFieldActive(reservation.id, "date_entree") ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "date_entree", inlineOccurrenceId) ? (
                                 <input
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
@@ -5789,7 +5809,7 @@ const ReservationsPage = () => {
                                     if (!isEditing) {
                                       updateInlineField(reservation, (prev) => recalcDraft({ ...prev, date_entree: nextValue }));
                                       if (nextValue) {
-                                        openInlineField(reservation, "date_sortie");
+                                        openInlineField(reservation, "date_sortie", inlineOccurrenceId);
                                       }
                                       return;
                                     }
@@ -5800,7 +5820,7 @@ const ReservationsPage = () => {
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "date_entree");
+                                      handleInlineKeyDown(event, reservation, "date_entree", inlineOccurrenceId);
                                       return;
                                     }
                                     handleGridKeyDown(event, {
@@ -5814,14 +5834,14 @@ const ReservationsPage = () => {
                                     });
                                   }}
                                   onBlur={() => {
-                                    if (!isEditing) handleInlineBlur(reservation, "date_entree");
+                                    if (!isEditing) handleInlineBlur(reservation, "date_entree", inlineOccurrenceId);
                                   }}
                                 />
                               ) : (
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger"
-                                  onClick={() => openInlineField(reservation, "date_entree")}
+                                  onClick={() => openInlineField(reservation, "date_entree", inlineOccurrenceId)}
                                   title="Modifier la date d'entrée"
                                 >
                                   {formatDate(reservation.date_entree)}
@@ -5829,7 +5849,7 @@ const ReservationsPage = () => {
                               )}
                             </td>
                             <td className="reservations-col-date reservations-col-sortie">
-                              {isEditing || isInlineFieldActive(reservation.id, "date_sortie") ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "date_sortie", inlineOccurrenceId) ? (
                                 <input
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
@@ -5845,7 +5865,7 @@ const ReservationsPage = () => {
                                     if (!isEditing) {
                                       updateInlineField(reservation, (prev) => recalcDraft({ ...prev, date_sortie: nextValue }));
                                       if (nextValue) {
-                                        openInlineField(reservation, "prix_par_nuit");
+                                        openInlineField(reservation, "prix_par_nuit", inlineOccurrenceId);
                                       }
                                       return;
                                     }
@@ -5856,7 +5876,7 @@ const ReservationsPage = () => {
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "date_sortie");
+                                      handleInlineKeyDown(event, reservation, "date_sortie", inlineOccurrenceId);
                                       return;
                                     }
                                     handleGridKeyDown(event, {
@@ -5870,14 +5890,14 @@ const ReservationsPage = () => {
                                     });
                                   }}
                                   onBlur={() => {
-                                    if (!isEditing) handleInlineBlur(reservation, "date_sortie");
+                                    if (!isEditing) handleInlineBlur(reservation, "date_sortie", inlineOccurrenceId);
                                   }}
                                 />
                               ) : (
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger"
-                                  onClick={() => openInlineField(reservation, "date_sortie")}
+                                  onClick={() => openInlineField(reservation, "date_sortie", inlineOccurrenceId)}
                                   title="Modifier la date de sortie"
                                 >
                                   {formatDate(reservation.date_sortie)}
@@ -5892,7 +5912,7 @@ const ReservationsPage = () => {
                               </div>
                             </td>
                             <td className="reservations-col-adults">
-                              {isEditing || isInlineFieldActive(reservation.id, "nb_adultes") ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "nb_adultes", inlineOccurrenceId) ? (
                                 <input
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
@@ -5918,7 +5938,7 @@ const ReservationsPage = () => {
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "nb_adultes");
+                                      handleInlineKeyDown(event, reservation, "nb_adultes", inlineOccurrenceId);
                                       return;
                                     }
                                     handleGridKeyDown(event, {
@@ -5932,14 +5952,14 @@ const ReservationsPage = () => {
                                     });
                                   }}
                                   onBlur={() => {
-                                    if (!isEditing) handleInlineBlur(reservation, "nb_adultes");
+                                    if (!isEditing) handleInlineBlur(reservation, "nb_adultes", inlineOccurrenceId);
                                   }}
                                 />
                               ) : (
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger"
-                                  onClick={() => openInlineField(reservation, "nb_adultes")}
+                                  onClick={() => openInlineField(reservation, "nb_adultes", inlineOccurrenceId)}
                                   title="Modifier le nombre d'adultes"
                                 >
                                   {reservation.nb_adultes}
@@ -5947,7 +5967,7 @@ const ReservationsPage = () => {
                               )}
                             </td>
                             <td className="reservations-col-nightly">
-                              {isEditing || isInlineFieldActive(reservation.id, "prix_par_nuit") ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "prix_par_nuit", inlineOccurrenceId) ? (
                                 <div className="reservations-nightly-field">
                                   <input
                                     data-grid-month={monthIndex}
@@ -5986,7 +6006,7 @@ const ReservationsPage = () => {
                                     }}
                                     onKeyDown={(event) => {
                                       if (!isEditing) {
-                                        handleInlineKeyDown(event, reservation, "prix_par_nuit");
+                                        handleInlineKeyDown(event, reservation, "prix_par_nuit", inlineOccurrenceId);
                                         return;
                                       }
                                       handleGridKeyDown(event, {
@@ -6000,7 +6020,7 @@ const ReservationsPage = () => {
                                       });
                                     }}
                                     onBlur={() => {
-                                      if (!isEditing) handleInlineBlur(reservation, "prix_par_nuit");
+                                      if (!isEditing) handleInlineBlur(reservation, "prix_par_nuit", inlineOccurrenceId);
                                     }}
                                   />
                                   {nightlySuggestions.length > 0 ? (
@@ -6039,7 +6059,7 @@ const ReservationsPage = () => {
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger"
-                                  onClick={() => openInlineField(reservation, "prix_par_nuit")}
+                                  onClick={() => openInlineField(reservation, "prix_par_nuit", inlineOccurrenceId)}
                                   title="Modifier le prix par nuit"
                                 >
                                   {formatEuro(reservation.prix_par_nuit)}
@@ -6047,7 +6067,7 @@ const ReservationsPage = () => {
                               )}
                             </td>
                             <td>
-                              {isEditing || isInlineFieldActive(reservation.id, "prix_total") ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "prix_total", inlineOccurrenceId) ? (
                                 <input
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
@@ -6084,7 +6104,7 @@ const ReservationsPage = () => {
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "prix_total");
+                                      handleInlineKeyDown(event, reservation, "prix_total", inlineOccurrenceId);
                                       return;
                                     }
                                     handleGridKeyDown(event, {
@@ -6098,14 +6118,14 @@ const ReservationsPage = () => {
                                     });
                                   }}
                                   onBlur={() => {
-                                    if (!isEditing) handleInlineBlur(reservation, "prix_total");
+                                    if (!isEditing) handleInlineBlur(reservation, "prix_total", inlineOccurrenceId);
                                   }}
                                 />
                               ) : (
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger reservations-total-value"
-                                  onClick={() => openInlineField(reservation, "prix_total")}
+                                  onClick={() => openInlineField(reservation, "prix_total", inlineOccurrenceId)}
                                   title="Modifier le total"
                                 >
                                   <span className="reservations-total-value__amount">
@@ -6185,7 +6205,7 @@ const ReservationsPage = () => {
                               </button>
                             </td>
                             <td>
-                              {isEditing || isInlineFieldActive(reservation.id, "source_paiement") ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "source_paiement", inlineOccurrenceId) ? (
                                 <select
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
@@ -6213,12 +6233,12 @@ const ReservationsPage = () => {
                                   }}
                                   onBlur={() => {
                                     if (!isEditing) {
-                                      handleInlineBlur(reservation, "source_paiement");
+                                      handleInlineBlur(reservation, "source_paiement", inlineOccurrenceId);
                                     }
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "source_paiement");
+                                      handleInlineKeyDown(event, reservation, "source_paiement", inlineOccurrenceId);
                                       return;
                                     }
                                     handleGridKeyDown(event, {
@@ -6242,7 +6262,7 @@ const ReservationsPage = () => {
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger"
-                                  onClick={() => openInlineField(reservation, "source_paiement")}
+                                  onClick={() => openInlineField(reservation, "source_paiement", inlineOccurrenceId)}
                                   title="Modifier la source"
                                 >
                                   <span className="reservations-source-inline-label">
@@ -6254,7 +6274,7 @@ const ReservationsPage = () => {
                             </td>
                             <td className="reservations-comment-cell">
                               {((isEditing && !isDetailsExpanded && !isDetailsClosing) ||
-                                isInlineFieldActive(reservation.id, "commentaire")) ? (
+                                isInlineFieldActive(reservation.id, "commentaire", inlineOccurrenceId)) ? (
                                 <div className="reservations-comment-field reservations-comment-field--editing">
                                   <div className="reservations-comment-popover reservations-comment-popover--editing">
                                     <textarea
@@ -6301,7 +6321,7 @@ const ReservationsPage = () => {
                                         }
                                       }}
                                       onBlur={() => {
-                                        if (!isEditing) handleInlineBlur(reservation, "commentaire");
+                                        if (!isEditing) handleInlineBlur(reservation, "commentaire", inlineOccurrenceId);
                                       }}
                                     />
                                   </div>
