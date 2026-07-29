@@ -40,7 +40,7 @@ type TodayPrimaryOverviewPayload = {
 };
 
 type TodayRevenueAverageMetric = {
-  id: "current_month" | "previous_month" | "last_24_months";
+  id: "current_month" | "next_month" | "previous_month" | "last_24_months";
   label: string;
   month_count: number;
   gross_revenue: number;
@@ -584,6 +584,7 @@ const getEventIcon = (type: TodayEventType) => {
 
 const getRevenueAverageIcon = (id: TodayRevenueAverageMetric["id"]) => {
   if (id === "current_month") return "●";
+  if (id === "next_month") return "◑";
   if (id === "previous_month") return "◐";
   return "↔";
 };

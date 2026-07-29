@@ -32,7 +32,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_ACTIVITY_LIMIT = 36;
 
 type TodayRevenueAverageMetric = {
-  id: "current_month" | "previous_month" | "last_24_months";
+  id: "current_month" | "next_month" | "previous_month" | "last_24_months";
   label: string;
   month_count: number;
   gross_revenue: number;
@@ -138,6 +138,7 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
   const currentMonthStart = getUtcMonthStart(today);
   const previousMonthStart = getUtcMonthStart(today, -1);
   const nextMonthStart = getUtcMonthStart(today, 1);
+  const followingMonthStart = getUtcMonthStart(today, 2);
   const last24MonthsStart = getUtcMonthStart(today, -23);
   const periods = [
     {
@@ -145,6 +146,12 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
       label: formatMonthName(currentMonthStart),
       month_count: 1,
       monthKeys: new Set(listMonthKeys(currentMonthStart, 1)),
+    },
+    {
+      id: "next_month" as const,
+      label: formatMonthName(nextMonthStart),
+      month_count: 1,
+      monthKeys: new Set(listMonthKeys(nextMonthStart, 1)),
     },
     {
       id: "previous_month" as const,
@@ -167,7 +174,7 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
     prisma.reservation.findMany({
       where: {
         gite_id: { not: null },
-        date_entree: { lt: nextMonthStart },
+        date_entree: { lt: followingMonthStart },
         date_sortie: { gte: last24MonthsStart },
       },
       select: {
