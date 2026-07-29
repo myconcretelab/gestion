@@ -1287,7 +1287,11 @@ const TodayPage = () => {
                     });
                   }}
                 >
-                  <div className="today-revenue-mini__item">
+                  <div
+                    className={`today-revenue-mini__item${
+                      metric.id === "current_month" ? " today-revenue-mini__item--current" : ""
+                    }`}
+                  >
                     <span>
                       <i aria-hidden="true">{getRevenueAverageIcon(metric.id)}</i>
                       {metric.label}

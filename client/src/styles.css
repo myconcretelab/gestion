@@ -316,6 +316,12 @@ body.app-scroll-locked {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.today-revenue-mini__item--current {
+  border-color: rgba(100, 116, 139, 0.34);
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
 .today-revenue-mini__explainer {
   display: block;
   width: 100%;
