@@ -142,6 +142,12 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
   const last24MonthsStart = getUtcMonthStart(today, -23);
   const periods = [
     {
+      id: "previous_month" as const,
+      label: formatMonthName(previousMonthStart),
+      month_count: 1,
+      monthKeys: new Set(listMonthKeys(previousMonthStart, 1)),
+    },
+    {
       id: "current_month" as const,
       label: formatMonthName(currentMonthStart),
       month_count: 1,
@@ -152,12 +158,6 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
       label: formatMonthName(nextMonthStart),
       month_count: 1,
       monthKeys: new Set(listMonthKeys(nextMonthStart, 1)),
-    },
-    {
-      id: "previous_month" as const,
-      label: formatMonthName(previousMonthStart),
-      month_count: 1,
-      monthKeys: new Set(listMonthKeys(previousMonthStart, 1)),
     },
     {
       id: "last_24_months" as const,
