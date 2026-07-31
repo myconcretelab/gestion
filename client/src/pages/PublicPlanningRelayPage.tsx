@@ -88,6 +88,7 @@ const PublicPlanningRelayPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hidePastDays, setHidePastDays] = useState(true);
+  const [showTimeline, setShowTimeline] = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!token) return;
@@ -200,7 +201,7 @@ const PublicPlanningRelayPage = () => {
           <p>Mis à jour le {new Date(data.generated_at).toLocaleString("fr-FR")}</p>
         </div>
         <div className="public-relay-toolbar__actions">
-          <label className="public-relay-past-days-toggle">
+          <label className="public-relay-toolbar__toggle">
             <span>Masquer les jours passés</span>
             <span className="public-relay-switch">
               <input
@@ -211,6 +212,19 @@ const PublicPlanningRelayPage = () => {
               <span aria-hidden="true" />
             </span>
           </label>
+          {period.show_timeline ? (
+            <label className="public-relay-toolbar__toggle">
+              <span>Afficher le graphique</span>
+              <span className="public-relay-switch">
+                <input
+                  type="checkbox"
+                  checked={showTimeline}
+                  onChange={(event) => setShowTimeline(event.target.checked)}
+                />
+                <span aria-hidden="true" />
+              </span>
+            </label>
+          ) : null}
           <button type="button" onClick={() => window.print()}>Imprimer</button>
         </div>
       </header>
@@ -228,7 +242,7 @@ const PublicPlanningRelayPage = () => {
           </div>
         </header>
 
-        {period.show_timeline && days.length > 0 ? (
+        {period.show_timeline && showTimeline && days.length > 0 ? (
           <>
             <section className="operations-timeline" aria-label="Occupation graphique" style={timelineColumns}>
               <div className="operations-timeline__header">
