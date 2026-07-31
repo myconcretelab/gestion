@@ -4542,7 +4542,7 @@ body {
   gap: 14px;
 }
 
-.public-relay-past-days-toggle {
+.public-relay-toolbar__toggle {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -4552,7 +4552,7 @@ body {
   cursor: pointer;
 }
 
-.public-relay-past-days-toggle > span:first-child {
+.public-relay-toolbar__toggle > span:first-child {
   color: inherit;
   font-size: inherit;
   font-weight: inherit;
