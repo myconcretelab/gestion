@@ -1607,9 +1607,10 @@ const CalendrierPage = () => {
                               const isSelectable = canStartSelection || canEndSelection;
                               const isSelected =
                                 selectedRangeForMonth !== null &&
+                                day.isCurrentMonth &&
                                 day.isoDate >= selectedRangeForMonth.startIso &&
                                 day.isoDate <= selectedRangeForMonth.endIso;
-                              const isSelectionEnd = selectedRangeForMonth?.endIso === day.isoDate;
+                              const isSelectionEnd = day.isCurrentMonth && selectedRangeForMonth?.endIso === day.isoDate;
 
                               return (
                                 <article
