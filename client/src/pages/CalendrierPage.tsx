@@ -1001,11 +1001,13 @@ const CalendrierPage = () => {
     return map;
   }, [calendarMonths]);
 
-  const isSelectableDateRange = useCallback(
-    (monthIndex: number, startIso: string, endIso: string) => {
-      const selectableDates = selectableDateSetsByMonth.get(monthIndex);
-      if (!selectableDates?.size) return false;
+  const selectableDates = useMemo(
+    () => new Set([...selectableDateSetsByMonth.values()].flatMap((dates) => [...dates])),
+    [selectableDateSetsByMonth]
+  );
 
+  const isSelectableDateRange = useCallback(
+    (startIso: string, endIso: string) => {
       const startDate = parseIsoDate(startIso);
       const endDate = parseIsoDate(endIso);
       if (endDate.getTime() < startDate.getTime()) return false;
@@ -1016,16 +1018,16 @@ const CalendrierPage = () => {
 
       return true;
     },
-    [selectableDateSetsByMonth]
+    [selectableDates]
   );
 
   const toggleDateSelection = useCallback(
     (monthIndex: number, isoDate: string) => {
-      const selectableDates = selectableDateSetsByMonth.get(monthIndex);
-      const canStartSelection = Boolean(selectableDates?.has(isoDate));
+      const selectableDatesForMonth = selectableDateSetsByMonth.get(monthIndex);
+      const canStartSelection = Boolean(selectableDatesForMonth?.has(isoDate));
 
       setSelectedDateRange((current) => {
-        if (!current || current.monthIndex !== monthIndex) {
+        if (!current) {
           if (!canStartSelection) return current;
           return { monthIndex, startIso: isoDate, endIso: isoDate };
         }
@@ -1042,13 +1044,13 @@ const CalendrierPage = () => {
         const nextStartIso = isoDate < current.startIso ? isoDate : current.startIso;
         const nextEndIso = isoDate > current.endIso ? isoDate : current.endIso;
 
-        if (!isSelectableDateRange(monthIndex, nextStartIso, nextEndIso)) {
+        if (!isSelectableDateRange(nextStartIso, nextEndIso)) {
           if (!canStartSelection) return current;
           return { monthIndex, startIso: isoDate, endIso: isoDate };
         }
 
         return {
-          monthIndex,
+          monthIndex: parseIsoDate(nextStartIso).getUTCMonth(),
           startIso: nextStartIso,
           endIso: nextEndIso,
         };
@@ -1546,8 +1548,7 @@ const CalendrierPage = () => {
             <div className="calendar-months">
               {calendarMonths.map((monthData) => {
                 const shouldRenderSegments = renderedMonthIndexes.has(monthData.index);
-                const selectedRangeForMonth =
-                  selectedDateRange?.monthIndex === monthData.index ? selectedDateRange : null;
+                const selectedRangeForMonth = selectedDateRange;
                 const isSelectedGiteMonthLeader = topOccupationGiteIdByMonth.get(monthData.monthNumber) === selectedGiteId;
 
                 return (
@@ -1602,7 +1603,7 @@ const CalendrierPage = () => {
                                 day.isCurrentMonth &&
                                 !day.isPast &&
                                 day.isoDate > selectedRangeForMonth.startIso &&
-                                isSelectableDateRange(monthData.index, selectedRangeForMonth.startIso, day.isoDate);
+                                isSelectableDateRange(selectedRangeForMonth.startIso, day.isoDate);
                               const isSelectable = canStartSelection || canEndSelection;
                               const isSelected =
                                 selectedRangeForMonth !== null &&
