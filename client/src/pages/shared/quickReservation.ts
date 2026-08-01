@@ -28,6 +28,7 @@ export type QuickReservationDraft = {
   option_depart_tardif: boolean;
   option_draps: number;
   option_serviettes: number;
+  option_chiens: number;
 };
 
 export type QuickReservationErrorField = keyof QuickReservationDraft | null;
@@ -111,6 +112,7 @@ export const buildNewQuickReservationDraft = (params: {
   option_depart_tardif: false,
   option_draps: 0,
   option_serviettes: 0,
+  option_chiens: 0,
 });
 
 export const buildQuickReservationDraftFromReservation = (params: {
@@ -142,6 +144,9 @@ export const buildQuickReservationDraftFromReservation = (params: {
           gite
         )
       : 0,
+    option_chiens: reservation.options?.chiens?.enabled
+      ? clampQuickReservationOptionCount(toNonNegativeInt(reservation.options?.chiens?.nb, 1), gite)
+      : 0,
   };
 };
 
@@ -161,7 +166,7 @@ export const updateQuickReservationDraftField = (params: {
     return { ...current, nb_adultes: clampQuickReservationAdults(Number(value), gite) };
   }
 
-  if (field === "option_draps" || field === "option_serviettes") {
+  if (field === "option_draps" || field === "option_serviettes" || field === "option_chiens") {
     return { ...current, [field]: clampQuickReservationOptionCount(Number(value), gite) };
   }
 
@@ -301,6 +306,7 @@ export const computeQuickReservationDerivedState = (params: {
         departTardifEnabled: draft.option_depart_tardif,
         drapsCount: draft.option_draps,
         serviettesCount: draft.option_serviettes,
+        chiensCount: draft.option_chiens,
       })
     : null;
   const optionsPreview = computeReservationOptionsPreview(options, {
@@ -442,6 +448,7 @@ export const buildQuickReservationSavePayload = (params: {
     departTardifEnabled: draft.option_depart_tardif,
     drapsCount: draft.option_draps,
     serviettesCount: draft.option_serviettes,
+    chiensCount: draft.option_chiens,
   });
   const optionsPreview = computeReservationOptionsPreview(options, {
     nights,

@@ -44,10 +44,12 @@ export const buildQuickReservationOptions = (params: {
   departTardifEnabled: boolean;
   drapsCount: number;
   serviettesCount: number;
+  chiensCount: number;
 }) => {
   const baseOptions = mergeReservationOptions(params.baseOptions);
   const drapsCount = toNonNegativeInt(params.drapsCount, 0);
   const serviettesCount = toNonNegativeInt(params.serviettesCount, 0);
+  const chiensCount = toNonNegativeInt(params.chiensCount, 0);
 
   return {
     ...baseOptions,
@@ -68,6 +70,11 @@ export const buildQuickReservationOptions = (params: {
     depart_tardif: {
       ...baseOptions.depart_tardif,
       enabled: params.departTardifEnabled,
+    },
+    chiens: {
+      ...baseOptions.chiens,
+      enabled: chiensCount > 0,
+      nb: chiensCount,
     },
   } satisfies ContratOptions;
 };
