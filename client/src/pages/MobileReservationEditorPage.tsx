@@ -255,7 +255,8 @@ const MobileReservationEditorPage = () => {
       quickReservationErrorField === "option_menage" ||
       quickReservationErrorField === "option_depart_tardif" ||
       quickReservationErrorField === "option_draps" ||
-      quickReservationErrorField === "option_serviettes"
+      quickReservationErrorField === "option_serviettes" ||
+      quickReservationErrorField === "option_chiens"
     ) {
       setOptionsExpanded(true);
     }
@@ -303,11 +304,12 @@ const MobileReservationEditorPage = () => {
     Number(quickReservationDraft?.option_menage ? 1 : 0) +
     Number(quickReservationDraft?.option_depart_tardif ? 1 : 0) +
     Number((quickReservationDraft?.option_draps ?? 0) > 0 ? 1 : 0) +
-    Number((quickReservationDraft?.option_serviettes ?? 0) > 0 ? 1 : 0);
+    Number((quickReservationDraft?.option_serviettes ?? 0) > 0 ? 1 : 0) +
+    Number((quickReservationDraft?.option_chiens ?? 0) > 0 ? 1 : 0);
   const optionsToggleSummary =
     activeOptionCount > 0
       ? `${activeOptionCount} activée${activeOptionCount > 1 ? "s" : ""} · ${formatEuro(quickReservationOptionsPreview.total)}`
-      : "Ménage, départ tardif, linge";
+      : "Ménage, départ tardif, linge, chiens";
   const smsSelectionCount = quickReservationSmsSelection.length;
   const smsToggleSummary =
     smsSelectionCount > 0
@@ -911,6 +913,27 @@ const MobileReservationEditorPage = () => {
                       />
                       <span className="calendar-quick-create-sheet__range-meta">
                         {formatEuro(Number(selectedGite.options_linge_toilette_par_personne ?? 0))} / personne
+                      </span>
+                    </label>
+
+                    <label className="calendar-quick-create-sheet__range-field">
+                      <div className="calendar-quick-create-sheet__range-head">
+                        <span className="calendar-quick-create-sheet__toggle-title">Chiens</span>
+                        <span className="calendar-quick-create-sheet__range-value">
+                          {quickReservationDraft.option_chiens} · {formatEuro(quickReservationOptionsPreview.byKey.chiens)}
+                        </span>
+                      </div>
+                      <input
+                        data-reservation-field="option_chiens"
+                        type="range"
+                        min={0}
+                        max={quickReservationOptionCountMax}
+                        step={1}
+                        value={quickReservationDraft.option_chiens}
+                        onChange={(event) => handleQuickReservationFieldChange("option_chiens", Number(event.target.value))}
+                      />
+                      <span className="calendar-quick-create-sheet__range-meta">
+                        {formatEuro(Number(selectedGite.options_chiens_forfait ?? 0))} / nuit / chien
                       </span>
                     </label>
                   </div>
