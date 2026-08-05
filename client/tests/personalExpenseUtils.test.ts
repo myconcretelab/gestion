@@ -95,6 +95,15 @@ test("les frais personnels de l'année en cours sont proratisés à la date cour
   assert.equal(report.monthlyAverage, 234.98);
   assert.equal(report.byManager[0].total, 571.68);
   assert.equal(report.byCategory[0].total, 571.68);
+  assert.deepEqual(
+    report.byMonth.slice(0, 4).map((month) => [month.recurring, month.paid, month.planned, month.total]),
+    [
+      [201.92, 0, 0, 201.92],
+      [192.05, 50, 0, 242.05],
+      [97.71, 0, 30, 127.71],
+      [0, 0, 0, 0],
+    ]
+  );
 });
 
 test("une année historique utilise les douze mois complets", () => {

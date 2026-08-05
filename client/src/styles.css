@@ -10317,6 +10317,57 @@ button.warning {
   min-width: 220px;
 }
 
+.personal-expenses-section-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  overflow-x: auto;
+}
+
+.personal-expenses-section-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1 0 auto;
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
+  box-shadow: none;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.personal-expenses-section-tabs button:hover {
+  background: #f8fafc;
+}
+
+.personal-expenses-section-tabs button.active {
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.personal-expenses-section-tabs button span {
+  display: inline-grid;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.personal-expenses-section-tabs button.active span {
+  background: var(--primary);
+  color: #fff;
+}
+
 .personal-expenses-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -10553,6 +10604,12 @@ button.warning {
   .personal-expenses-tabs > * {
     flex: 1;
     text-align: center;
+  }
+
+  .personal-expenses-section-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: visible;
   }
 
   .personal-expenses-list > article {
