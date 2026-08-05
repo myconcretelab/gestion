@@ -10504,28 +10504,35 @@ button.warning {
   font-size: 0.74rem;
 }
 
-.personal-expenses-list .personal-expenses-recurring-amounts {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-width: 250px;
+.personal-expenses-list > article.personal-expenses-recurring-row {
+  grid-template-columns: minmax(220px, 1fr) minmax(95px, auto) minmax(95px, auto) auto auto;
+  grid-template-areas: "description monthly annual status actions";
 }
 
-.personal-expenses-recurring-amounts > span {
-  display: grid;
-  gap: 2px;
-  min-width: 104px;
+.personal-expenses-recurring-description {
+  grid-area: description;
 }
 
-.personal-expenses-recurring-amounts strong {
+.personal-expenses-recurring-amount--monthly {
+  grid-area: monthly;
+}
+
+.personal-expenses-recurring-amount--annual {
+  grid-area: annual;
+}
+
+.personal-expenses-recurring-amount strong {
   color: #111827;
   font-size: 0.92rem;
   white-space: nowrap;
 }
 
-.personal-expenses-recurring-amounts small {
-  color: #64748b;
-  font-size: 0.72rem;
+.personal-expenses-recurring-row > .personal-expenses-status {
+  grid-area: status;
+}
+
+.personal-expenses-recurring-row > .personal-expenses-row-actions {
+  grid-area: actions;
 }
 
 .personal-expenses-status {
@@ -10644,9 +10651,12 @@ button.warning {
     grid-column: 1 / -1;
   }
 
-  .personal-expenses-list .personal-expenses-recurring-amounts {
-    grid-column: 1 / -1;
-    min-width: 0;
+  .personal-expenses-list > article.personal-expenses-recurring-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "description description description"
+      "monthly annual status"
+      "actions actions actions";
   }
 
   .personal-expenses-row-actions {

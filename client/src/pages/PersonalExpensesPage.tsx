@@ -341,41 +341,41 @@ const PersonalExpensesPage = () => {
       </section>
       </> : null}
 
-      {activeTab === "recurring" ? <section className="card personal-expenses-editor" id="personal-recurring-form">
+      {activeTab === "recurring" ? <section className="card personal-expenses-editor">
         <div className="personal-expenses-section-heading">
           <div><h2>Frais récurrents</h2><p>Abonnements, assurances et autres charges mensuelles ou annuelles.</p></div>
           {editingRecurringId ? <button type="button" className="button-secondary" onClick={resetRecurring}>Annuler la modification</button> : null}
         </div>
-        {(payload?.managers.length ?? 0) === 0 ? <div className="note">Ajoutez d'abord une personne dans la gestion des gîtes.</div> : (
-          <div className="personal-expenses-form-grid">
-            <label className="field">Personne<select value={recurringDraft.gestionnaire_id} onChange={(e) => setRecurringDraft((d) => ({ ...d, gestionnaire_id: e.target.value }))}>{payload?.managers.map((m) => <option key={m.id} value={m.id}>{managerName(m)}</option>)}</select></label>
-            <label className="field">Libellé<input value={recurringDraft.label} onChange={(e) => setRecurringDraft((d) => ({ ...d, label: e.target.value }))} placeholder="Ex. Mutuelle" /></label>
-            <label className="field">Catégorie<select value={recurringDraft.category_id} onChange={(e) => setRecurringDraft((d) => ({ ...d, category_id: e.target.value }))}>{payload?.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-            <label className="field">Fréquence<select value={recurringDraft.frequency} onChange={(e) => setRecurringDraft((d) => ({ ...d, frequency: e.target.value as RecurringDraft["frequency"] }))}><option value="monthly">Mensuelle</option><option value="annual">Annuelle</option></select></label>
-            <label className="field">Montant<input type="number" min="0.01" step="0.01" value={recurringDraft.amount} onChange={(e) => setRecurringDraft((d) => ({ ...d, amount: e.target.value }))} /></label>
-            <label className="field">Début<input type="date" value={recurringDraft.start_date} onChange={(e) => setRecurringDraft((d) => ({ ...d, start_date: e.target.value }))} /></label>
-            <label className="field">Fin facultative<input type="date" value={recurringDraft.end_date} onChange={(e) => setRecurringDraft((d) => ({ ...d, end_date: e.target.value }))} /></label>
-            <label className="field personal-expenses-form-grid__notes">Notes<input value={recurringDraft.notes} onChange={(e) => setRecurringDraft((d) => ({ ...d, notes: e.target.value }))} /></label>
-            <label className="personal-expenses-active"><input type="checkbox" checked={recurringDraft.is_active} onChange={(e) => setRecurringDraft((d) => ({ ...d, is_active: e.target.checked }))} />Actif</label>
-            <button type="button" disabled={busy || !recurringDraft.label || !recurringDraft.amount || !recurringDraft.gestionnaire_id || !recurringDraft.category_id} onClick={() => void saveRecurring()}>{editingRecurringId ? "Mettre à jour" : "Ajouter le frais"}</button>
-          </div>
-        )}
         <div className="personal-expenses-list">
           {recurringVisible.map((expense) => {
             const equivalents = getRecurringExpenseEquivalents(expense);
             return (
-              <article key={expense.id} style={{ "--expense-color": expense.category.color } as CSSProperties}>
-                <div><strong>{expense.label}</strong><span>{managerName(expense.gestionnaire)} · {expense.category.name}</span></div>
-                <div className="personal-expenses-recurring-amounts">
-                  <span><strong>{formatEuro(equivalents.monthly)}</strong><small>/ mois</small></span>
-                  <span><strong>{formatEuro(equivalents.annual)}</strong><small>/ an</small></span>
-                </div>
+              <article className="personal-expenses-recurring-row" key={expense.id} style={{ "--expense-color": expense.category.color } as CSSProperties}>
+                <div className="personal-expenses-recurring-description"><strong>{expense.label}</strong><span>{managerName(expense.gestionnaire)} · {expense.category.name}</span></div>
+                <div className="personal-expenses-recurring-amount personal-expenses-recurring-amount--monthly"><strong>{formatEuro(equivalents.monthly)}</strong><span>/ mois</span></div>
+                <div className="personal-expenses-recurring-amount personal-expenses-recurring-amount--annual"><strong>{formatEuro(equivalents.annual)}</strong><span>/ an</span></div>
                 <span className={`personal-expenses-status ${expense.is_active ? "is-paid" : "is-inactive"}`}>{expense.is_active ? "Actif" : "Inactif"}</span>
                 <div className="personal-expenses-row-actions"><button type="button" className="table-action" onClick={() => editRecurring(expense)}>Modifier</button><button type="button" className="table-action table-action--danger" onClick={() => { if (window.confirm(`Supprimer « ${expense.label} » ?`)) void runMutation(() => apiFetch(`/personal-expenses/recurring/${expense.id}`, { method: "DELETE" }), "Frais supprimé."); }}>Supprimer</button></div>
               </article>
             );
           })}
           {recurringVisible.length === 0 ? <div className="stats-empty-chart">Aucun frais récurrent.</div> : null}
+        </div>
+        <div id="personal-recurring-form">
+          {(payload?.managers.length ?? 0) === 0 ? <div className="note">Ajoutez d'abord une personne dans la gestion des gîtes.</div> : (
+            <div className="personal-expenses-form-grid">
+              <label className="field">Personne<select value={recurringDraft.gestionnaire_id} onChange={(e) => setRecurringDraft((d) => ({ ...d, gestionnaire_id: e.target.value }))}>{payload?.managers.map((m) => <option key={m.id} value={m.id}>{managerName(m)}</option>)}</select></label>
+              <label className="field">Libellé<input value={recurringDraft.label} onChange={(e) => setRecurringDraft((d) => ({ ...d, label: e.target.value }))} placeholder="Ex. Mutuelle" /></label>
+              <label className="field">Catégorie<select value={recurringDraft.category_id} onChange={(e) => setRecurringDraft((d) => ({ ...d, category_id: e.target.value }))}>{payload?.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+              <label className="field">Fréquence<select value={recurringDraft.frequency} onChange={(e) => setRecurringDraft((d) => ({ ...d, frequency: e.target.value as RecurringDraft["frequency"] }))}><option value="monthly">Mensuelle</option><option value="annual">Annuelle</option></select></label>
+              <label className="field">Montant<input type="number" min="0.01" step="0.01" value={recurringDraft.amount} onChange={(e) => setRecurringDraft((d) => ({ ...d, amount: e.target.value }))} /></label>
+              <label className="field">Début<input type="date" value={recurringDraft.start_date} onChange={(e) => setRecurringDraft((d) => ({ ...d, start_date: e.target.value }))} /></label>
+              <label className="field">Fin facultative<input type="date" value={recurringDraft.end_date} onChange={(e) => setRecurringDraft((d) => ({ ...d, end_date: e.target.value }))} /></label>
+              <label className="field personal-expenses-form-grid__notes">Notes<input value={recurringDraft.notes} onChange={(e) => setRecurringDraft((d) => ({ ...d, notes: e.target.value }))} /></label>
+              <label className="personal-expenses-active"><input type="checkbox" checked={recurringDraft.is_active} onChange={(e) => setRecurringDraft((d) => ({ ...d, is_active: e.target.checked }))} />Actif</label>
+              <button type="button" disabled={busy || !recurringDraft.label || !recurringDraft.amount || !recurringDraft.gestionnaire_id || !recurringDraft.category_id} onClick={() => void saveRecurring()}>{editingRecurringId ? "Mettre à jour" : "Ajouter le frais"}</button>
+            </div>
+          )}
         </div>
       </section> : null}
 
