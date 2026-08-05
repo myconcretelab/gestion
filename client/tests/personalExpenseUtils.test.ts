@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computePersonalExpenseReport,
+  getRecurringExpenseEquivalents,
   getRecurringExpenseAmountForYear,
   type PersonalExpensePayload,
 } from "../src/pages/personalExpenses/personalExpenseUtils.ts";
@@ -80,6 +81,17 @@ const payload: PersonalExpensePayload = {
     },
   ],
 };
+
+test("affiche les équivalents mensuel et annuel des frais récurrents", () => {
+  assert.deepEqual(
+    getRecurringExpenseEquivalents({ amount: 30.9, frequency: "monthly" }),
+    { monthly: 30.9, annual: 370.8 }
+  );
+  assert.deepEqual(
+    getRecurringExpenseEquivalents({ amount: 809.35, frequency: "annual" }),
+    { monthly: 67.45, annual: 809.35 }
+  );
+});
 
 test("les frais personnels de l'année en cours sont proratisés à la date courante", () => {
   const now = new Date("2026-03-15T12:00:00.000Z");
