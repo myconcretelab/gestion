@@ -33,6 +33,10 @@ type EntryDraft = {
   notes: string;
 };
 
+type PersonalExpenseTab = "overview" | "recurring" | "entries" | "categories";
+
+const MONTH_NAMES = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const yearStartIso = () => `${new Date().getUTCFullYear()}-01-01`;
 const emptyRecurring = (): RecurringDraft => ({
@@ -63,6 +67,7 @@ const PersonalExpensesPage = () => {
   const [payload, setPayload] = useState<PersonalExpensePayload | null>(null);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedManager, setSelectedManager] = useState<string | "all">("all");
+  const [activeTab, setActiveTab] = useState<PersonalExpenseTab>("overview");
   const [recurringDraft, setRecurringDraft] = useState<RecurringDraft>(emptyRecurring);
   const [entryDraft, setEntryDraft] = useState<EntryDraft>(emptyEntry);
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
@@ -272,6 +277,14 @@ const PersonalExpensesPage = () => {
         {message ? <div className="stats-import-alert stats-import-alert--success">{message}</div> : null}
       </section>
 
+      <nav className="card personal-expenses-section-tabs" aria-label="Sections des frais personnels">
+        <button type="button" className={activeTab === "overview" ? "active" : ""} onClick={() => setActiveTab("overview")}>Vue d'ensemble</button>
+        <button type="button" className={activeTab === "recurring" ? "active" : ""} onClick={() => setActiveTab("recurring")}>Récurrents <span>{recurringVisible.length}</span></button>
+        <button type="button" className={activeTab === "entries" ? "active" : ""} onClick={() => setActiveTab("entries")}>Ponctuels <span>{entriesVisible.length}</span></button>
+        <button type="button" className={activeTab === "categories" ? "active" : ""} onClick={() => setActiveTab("categories")}>Catégories <span>{payload?.categories.length ?? 0}</span></button>
+      </nav>
+
+      {activeTab === "overview" ? <>
       <section className="personal-expenses-kpis">
         <article className="card"><span>Frais récurrents</span><strong>{formatEuro(report?.recurring ?? 0)}</strong></article>
         <article className="card"><span>Ponctuels payés</span><strong>{formatEuro(report?.paid ?? 0)}</strong></article>
@@ -284,18 +297,19 @@ const PersonalExpensesPage = () => {
 
       <section className="personal-expenses-charts">
         <article className="card personal-expenses-chart">
-          <h2>Frais par personne</h2>
-          <p>Récurrents et ponctuels sur la période.</p>
-          {(report?.byManager.some((row) => row.total > 0)) ? (
+          <h2>Évolution mensuelle</h2>
+          <p>Récurrents, dépenses payées et dépenses prévues mois par mois.</p>
+          {(report?.byMonth.some((row) => row.total > 0)) ? (
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={report.byManager} margin={{ top: 15, right: 10, left: 5, bottom: 5 }}>
+              <BarChart data={report.byMonth} margin={{ top: 15, right: 10, left: 5, bottom: 5 }}>
                 <CartesianGrid vertical={false} stroke="#eef2f7" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="month" tickFormatter={(value) => MONTH_NAMES[Number(value) - 1]} tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(value) => formatEuro(Number(value))} />
                 <Legend />
                 <Bar dataKey="recurring" name="Récurrents" stackId="expenses" fill="#2D8CFF" isAnimationActive={false} />
-                <Bar dataKey="occasional" name="Ponctuels" stackId="expenses" fill="#F5A623" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="paid" name="Payés" stackId="expenses" fill="#43B77D" isAnimationActive={false} />
+                <Bar dataKey="planned" name="Prévus" stackId="expenses" fill="#F5A623" radius={[5, 5, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           ) : <div className="stats-empty-chart">Aucun frais sur cette période.</div>}
@@ -324,8 +338,9 @@ const PersonalExpensesPage = () => {
           ) : <div className="stats-empty-chart">Aucune catégorie utilisée.</div>}
         </article>
       </section>
+      </> : null}
 
-      <section className="card personal-expenses-editor" id="personal-recurring-form">
+      {activeTab === "recurring" ? <section className="card personal-expenses-editor" id="personal-recurring-form">
         <div className="personal-expenses-section-heading">
           <div><h2>Frais récurrents</h2><p>Abonnements, assurances et autres charges mensuelles ou annuelles.</p></div>
           {editingRecurringId ? <button type="button" className="button-secondary" onClick={resetRecurring}>Annuler la modification</button> : null}
@@ -355,9 +370,9 @@ const PersonalExpensesPage = () => {
           ))}
           {recurringVisible.length === 0 ? <div className="stats-empty-chart">Aucun frais récurrent.</div> : null}
         </div>
-      </section>
+      </section> : null}
 
-      <section className="card personal-expenses-editor" id="personal-entry-form">
+      {activeTab === "entries" ? <section className="card personal-expenses-editor" id="personal-entry-form">
         <div className="personal-expenses-section-heading">
           <div><h2>Dépenses ponctuelles</h2><p>Enregistrez une dépense payée ou prévue à une date précise.</p></div>
           {editingEntryId ? <button type="button" className="button-secondary" onClick={resetEntry}>Annuler la modification</button> : null}
@@ -383,9 +398,9 @@ const PersonalExpensesPage = () => {
           ))}
           {entriesVisible.length === 0 ? <div className="stats-empty-chart">Aucune dépense ponctuelle pour {selectedYear}.</div> : null}
         </div>
-      </section>
+      </section> : null}
 
-      <section className="card personal-expenses-editor">
+      {activeTab === "categories" ? <section className="card personal-expenses-editor">
         <div className="personal-expenses-section-heading"><div><h2>Catégories</h2><p>Les catégories sont communes aux rapports et pourront être réutilisées lors de la migration des frais des gîtes.</p></div></div>
         <div className="personal-expenses-category-editor">
           {payload?.categories.map((category) => (
@@ -401,7 +416,7 @@ const PersonalExpensesPage = () => {
           <input value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="Nouvelle catégorie" />
           <button type="button" disabled={busy || !newCategoryName.trim()} onClick={() => void runMutation(() => apiFetch("/personal-expenses/categories", { method: "POST", json: { name: newCategoryName, color: newCategoryColor } }), "Catégorie ajoutée.").then((success) => { if (success) setNewCategoryName(""); })}>Ajouter</button>
         </div>
-      </section>
+      </section> : null}
     </div>
   );
 };
