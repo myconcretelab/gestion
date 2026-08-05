@@ -128,6 +128,7 @@ test("le rapport de frais consolide les charges fixes, dynamiques et le résulta
     ...parsed,
     selectedYear: 2026,
     selectedMonth: "",
+    now: new Date("2026-12-31T12:00:00.000Z"),
   });
 
   assert.equal(annual.fixed, 1200);
@@ -146,8 +147,94 @@ test("le rapport de frais consolide les charges fixes, dynamiques et le résulta
     ...parsed,
     selectedYear: 2026,
     selectedMonth: 5,
+    now: new Date("2026-12-31T12:00:00.000Z"),
   });
   assert.equal(monthly.fixed, 100);
   assert.equal(monthly.expenses, 113.2);
   assert.equal(monthly.monthlyAverage, 113.2);
+});
+
+test("l'année en cours est arrêtée au jour courant et les frais fixes sont proratisés", () => {
+  const currentPayload: StatisticsPayload = {
+    ...payload,
+    gites: payload.gites.map((gite) => ({
+      ...gite,
+      frais_gestion: {
+        expenses: [
+          {
+            id: "electricite",
+            label: "Électricité",
+            category_id: "energie",
+            monthly_amount: 100,
+            annual_amount: 1200,
+          },
+        ],
+      },
+    })),
+    entriesByGite: {
+      g1: [
+        ...payload.entriesByGite.g1,
+        {
+          ...payload.entriesByGite.g1[0],
+          reservationId: "res-en-cours",
+          debut: "2026-08-04",
+          fin: "2026-08-08",
+          mois: 8,
+          nuits: 4,
+          revenus: 400,
+          fraisOptionnelsTotal: 40,
+          fraisOptionnelsDeclares: 40,
+        },
+        {
+          ...payload.entriesByGite.g1[0],
+          reservationId: "res-future",
+          debut: "2026-09-10",
+          fin: "2026-09-15",
+          mois: 9,
+          nuits: 5,
+          revenus: 500,
+          fraisOptionnelsTotal: 0,
+          fraisOptionnelsDeclares: 0,
+        },
+      ],
+    },
+    expenseSettings: {
+      categories: [
+        { id: "energie", name: "Énergie", color: "#2D8CFF" },
+        { id: "taxes", name: "Taxes", color: "#F5A623" },
+      ],
+      dynamic_expenses: [
+        {
+          id: "urssaf",
+          label: "Urssaf",
+          category_id: "taxes",
+          basis: "urssaf_revenue",
+          rate: 0.06,
+          enabled: true,
+        },
+      ],
+    },
+  };
+  const parsed = parseStatisticsPayload(currentPayload);
+  const now = new Date("2026-08-05T12:00:00.000Z");
+
+  assert.deepEqual(computeGlobalStats(parsed.entriesByGite, 2026, "", now), {
+    totalReservations: 2,
+    totalNights: 4,
+    totalCA: 470,
+  });
+
+  const report = computeExpenseReport({
+    ...parsed,
+    selectedYear: 2026,
+    selectedMonth: "",
+    now,
+  });
+  assert.equal(report.fixed, 713.42);
+  assert.equal(report.dynamic, 26.4);
+  assert.equal(report.expenses, 739.82);
+  assert.equal(report.revenue, 470);
+  assert.equal(report.net, -269.82);
+  assert.equal(report.monthCount, (217 / 365) * 12);
+  assert.equal(report.monthlyAverage, 103.7);
 });

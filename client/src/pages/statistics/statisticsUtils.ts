@@ -170,8 +170,55 @@ const entryMatch = (entry: ParsedStatisticsEntry, year: PeriodYear, month: Perio
   return year === "all" ? true : entryYear === year;
 };
 
+const getElapsedEntryFactor = (
+  entry: ParsedStatisticsEntry,
+  year: PeriodYear,
+  month: PeriodMonth,
+  now = new Date()
+) => {
+  if (!entryMatch(entry, year, month)) return 0;
+
+  const currentYear = now.getUTCFullYear();
+  const entryYear = entry.debutDate.getUTCFullYear();
+  if (entryYear < currentYear) return 1;
+  if (entryYear > currentYear) return 0;
+
+  const nights = Math.max(0, Number(entry.nuits) || 0);
+  const cutoff = Date.UTC(currentYear, now.getUTCMonth(), now.getUTCDate() + 1);
+  if (nights === 0) return entry.debutDate.getTime() < cutoff ? 1 : 0;
+
+  const elapsedNights = Math.max(
+    0,
+    Math.min(nights, Math.round((cutoff - entry.debutDate.getTime()) / DAY_MS))
+  );
+  return elapsedNights / nights;
+};
+
+const scaleEntry = (entry: ParsedStatisticsEntry, factor: number): ParsedStatisticsEntry => {
+  if (factor >= 1) return entry;
+  return {
+    ...entry,
+    nuits: Math.round((Number(entry.nuits) || 0) * factor),
+    revenus: Math.round((Number(entry.revenus) || 0) * factor * 100) / 100,
+    fraisOptionnelsTotal: Math.round((Number(entry.fraisOptionnelsTotal) || 0) * factor * 100) / 100,
+    fraisOptionnelsDeclares: Math.round((Number(entry.fraisOptionnelsDeclares) || 0) * factor * 100) / 100,
+  };
+};
+
+const getEntriesByPeriod = (
+  entries: ParsedStatisticsEntry[],
+  year: PeriodYear,
+  month: PeriodMonth,
+  options?: { includeHomeExchange?: boolean; now?: Date }
+) =>
+  entries.flatMap((entry) => {
+    if (!options?.includeHomeExchange && isHomeExchange(entry)) return [];
+    const factor = getElapsedEntryFactor(entry, year, month, options?.now);
+    return factor > 0 ? [scaleEntry(entry, factor)] : [];
+  });
+
 const filterByPeriod = (entries: ParsedStatisticsEntry[], year: PeriodYear, month: PeriodMonth) =>
-  entries.filter((entry) => entryMatch(entry, year, month) && !isHomeExchange(entry));
+  getEntriesByPeriod(entries, year, month);
 
 const getActivityStartTime = (activityStart: ActivityStart) => {
   if (!activityStart) return null;
@@ -253,27 +300,55 @@ const normalizeExpenseAmount = (value: unknown) => {
 
 const roundExpenseMoney = (value: number) => Math.round(value * 100) / 100;
 
-const getExpensePeriodMonthCount = (
+const getYearPeriodMonthCount = (year: number, month: PeriodMonth, now: Date) => {
+  const currentYear = now.getUTCFullYear();
+  if (year < currentYear) return month ? 1 : 12;
+  if (year > currentYear) return 0;
+
+  if (month) {
+    const selectedMonthIndex = Number(month) - 1;
+    if (selectedMonthIndex < now.getUTCMonth()) return 1;
+    if (selectedMonthIndex > now.getUTCMonth()) return 0;
+    const daysInMonth = new Date(Date.UTC(year, selectedMonthIndex + 1, 0)).getUTCDate();
+    return Math.min(1, now.getUTCDate() / daysInMonth);
+  }
+
+  const yearStart = Date.UTC(year, 0, 1);
+  const nextDay = Date.UTC(year, now.getUTCMonth(), now.getUTCDate() + 1);
+  const nextYear = Date.UTC(year + 1, 0, 1);
+  return ((nextDay - yearStart) / (nextYear - yearStart)) * 12;
+};
+
+export const getStatisticsPeriodMonthCount = (
   selectedYear: PeriodYear,
   selectedMonth: PeriodMonth,
-  availableYears: number[]
+  availableYears: number[],
+  now = new Date()
 ) => {
-  const yearCount = selectedYear === "all" ? Math.max(1, new Set(availableYears).size) : 1;
-  return selectedMonth ? yearCount : yearCount * 12;
+  const years = selectedYear === "all"
+    ? [...new Set(availableYears.length ? availableYears : [now.getUTCFullYear()])]
+    : [selectedYear];
+  return years.reduce((sum, year) => sum + getYearPeriodMonthCount(year, selectedMonth, now), 0);
 };
 
 const getFixedExpenseAmount = (
   expense: Partial<StatisticsExpenseLine>,
   selectedYear: PeriodYear,
   selectedMonth: PeriodMonth,
-  availableYears: number[]
+  availableYears: number[],
+  now: Date
 ) => {
   const monthly = normalizeExpenseAmount(expense.monthly_amount);
   const annual = normalizeExpenseAmount(expense.annual_amount);
   const normalizedMonthly = monthly || annual / 12;
   const normalizedAnnual = annual || normalizedMonthly * 12;
-  const yearCount = selectedYear === "all" ? Math.max(1, new Set(availableYears).size) : 1;
-  return selectedMonth ? normalizedMonthly * yearCount : normalizedAnnual * yearCount;
+  const years = selectedYear === "all"
+    ? [...new Set(availableYears.length ? availableYears : [now.getUTCFullYear()])]
+    : [selectedYear];
+  return years.reduce((sum, year) => {
+    const monthCount = getYearPeriodMonthCount(year, selectedMonth, now);
+    return sum + (selectedMonth ? normalizedMonthly * monthCount : normalizedAnnual * (monthCount / 12));
+  }, 0);
 };
 
 export const computeExpenseReport = (params: {
@@ -283,8 +358,10 @@ export const computeExpenseReport = (params: {
   selectedYear: PeriodYear;
   selectedMonth: PeriodMonth;
   availableYears: number[];
+  now?: Date;
 }): ExpenseReport => {
   const { entriesByGite, gites, selectedYear, selectedMonth, availableYears } = params;
+  const now = params.now ?? new Date();
   const categories = params.expenseSettings.categories.length
     ? params.expenseSettings.categories
     : DEFAULT_EXPENSE_SETTINGS.categories;
@@ -299,7 +376,7 @@ export const computeExpenseReport = (params: {
     let fixed = 0;
 
     for (const expense of configuredExpenses) {
-      const amount = getFixedExpenseAmount(expense, selectedYear, selectedMonth, availableYears);
+      const amount = getFixedExpenseAmount(expense, selectedYear, selectedMonth, availableYears, now);
       fixed += amount;
       const categoryId = categoryTotals.has(expense.category_id) ? expense.category_id : fallbackCategoryId;
       const category = categoryTotals.get(categoryId) ?? { amount: 0, lineCount: 0 };
@@ -308,8 +385,11 @@ export const computeExpenseReport = (params: {
       categoryTotals.set(categoryId, category);
     }
 
-    const periodEntries = (entriesByGite[gite.id] ?? []).filter((entry) =>
-      entryMatch(entry, selectedYear, selectedMonth)
+    const periodEntries = getEntriesByPeriod(
+      entriesByGite[gite.id] ?? [],
+      selectedYear,
+      selectedMonth,
+      { includeHomeExchange: true, now }
     );
     const urssafBase = periodEntries.reduce((sum, entry) => sum + getEntryUrssafBase(entry), 0);
     let dynamic = 0;
@@ -323,7 +403,7 @@ export const computeExpenseReport = (params: {
       categoryTotals.set(categoryId, category);
     }
 
-    const revenue = computeGiteStats(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth).totalCA;
+    const revenue = computeGiteStats(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth, now).totalCA;
     fixed = roundExpenseMoney(fixed);
     dynamic = roundExpenseMoney(dynamic);
     const expenses = roundExpenseMoney(fixed + dynamic);
@@ -343,7 +423,7 @@ export const computeExpenseReport = (params: {
   const dynamic = roundExpenseMoney(rowsByGite.reduce((sum, row) => sum + row.dynamic, 0));
   const expenses = roundExpenseMoney(fixed + dynamic);
   const revenue = roundExpenseMoney(rowsByGite.reduce((sum, row) => sum + row.revenue, 0));
-  const monthCount = getExpensePeriodMonthCount(selectedYear, selectedMonth, availableYears);
+  const monthCount = getStatisticsPeriodMonthCount(selectedYear, selectedMonth, availableYears, now);
 
   return {
     fixed,
@@ -368,14 +448,15 @@ export const computeExpenseReport = (params: {
 export const computeGlobalStats = (
   entriesByGite: Record<string, ParsedStatisticsEntry[]>,
   year: PeriodYear,
-  month: PeriodMonth
+  month: PeriodMonth,
+  now = new Date()
 ) => {
   let totalReservations = 0;
   let totalNights = 0;
   let totalCA = 0;
 
   for (const entries of Object.values(entriesByGite)) {
-    const filtered = filterByPeriod(entries, year, month);
+    const filtered = getEntriesByPeriod(entries, year, month, { now });
     totalReservations += filtered.length;
     totalNights += filtered.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
     totalCA += filtered.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
@@ -384,8 +465,13 @@ export const computeGlobalStats = (
   return { totalReservations, totalNights, totalCA };
 };
 
-export const computeGiteStats = (entries: ParsedStatisticsEntry[], year: PeriodYear, month: PeriodMonth) => {
-  const filtered = filterByPeriod(entries, year, month);
+export const computeGiteStats = (
+  entries: ParsedStatisticsEntry[],
+  year: PeriodYear,
+  month: PeriodMonth,
+  now = new Date()
+) => {
+  const filtered = getEntriesByPeriod(entries, year, month, { now });
   const reservations = filtered.length;
   const totalNights = filtered.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
   const totalCA = filtered.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
@@ -625,7 +711,8 @@ export const computeUrssafByManager = (
   entriesByGite: Record<string, ParsedStatisticsEntry[]>,
   gites: StatisticsGite[],
   selectedYear: PeriodYear,
-  selectedMonth: PeriodMonth
+  selectedMonth: PeriodMonth,
+  now = new Date()
 ) => {
   const byManager: Record<string, UrssafManagerAmount> = {};
 
@@ -642,8 +729,11 @@ export const computeUrssafByManager = (
 
   for (const gite of gites) {
     if (!gite.gestionnaire?.id) continue;
-    for (const entry of entriesByGite[gite.id] ?? []) {
-      if (!entryMatch(entry, selectedYear, selectedMonth)) continue;
+    const entries = getEntriesByPeriod(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth, {
+      includeHomeExchange: true,
+      now,
+    });
+    for (const entry of entries) {
       byManager[gite.gestionnaire.id].amount += getEntryUrssafBase(entry);
     }
   }
@@ -657,7 +747,8 @@ export const computeGuestNightsByGite = (
   gites: StatisticsGite[],
   selectedYear: PeriodYear,
   selectedMonth: PeriodMonth,
-  excludedSources: string[]
+  excludedSources: string[],
+  now = new Date()
 ) => {
   const excludedSourceKeys = new Set(excludedSources.map((source) => normalizeLabel(source)).filter(Boolean));
   const byGite: Record<string, GuestNightGiteAmount> = {};
@@ -672,8 +763,11 @@ export const computeGuestNightsByGite = (
   }
 
   for (const gite of gites) {
-    for (const entry of entriesByGite[gite.id] ?? []) {
-      if (!entryMatch(entry, selectedYear, selectedMonth)) continue;
+    const entries = getEntriesByPeriod(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth, {
+      includeHomeExchange: true,
+      now,
+    });
+    for (const entry of entries) {
       if (excludedSourceKeys.has(normalizeLabel(entry.paiement))) continue;
       byGite[gite.id].guestNights += Math.max(0, Number(entry.nuits || 0)) * Math.max(0, Number(entry.adultes || 0));
     }
@@ -688,14 +782,18 @@ export const computeChequeVirementNightsByGite = (
   entriesByGite: Record<string, ParsedStatisticsEntry[]>,
   gites: StatisticsGite[],
   selectedYear: PeriodYear,
-  selectedMonth: PeriodMonth
+  selectedMonth: PeriodMonth,
+  now = new Date()
 ) => {
   const nights: Record<string, number> = {};
 
   for (const gite of gites) {
     let sum = 0;
-    for (const entry of entriesByGite[gite.id] ?? []) {
-      if (!entryMatch(entry, selectedYear, selectedMonth)) continue;
+    const entries = getEntriesByPeriod(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth, {
+      includeHomeExchange: true,
+      now,
+    });
+    for (const entry of entries) {
       const payment = normalizeLabel(entry.paiement);
       if (payment.includes("virement") || payment.includes("cheque")) {
         sum += (entry.nuits || 0) * (entry.adultes || 0);

@@ -86,6 +86,23 @@ const getPeriodLabel = (year: PeriodYear, month: PeriodMonth) => {
   return year === "all" ? "Toutes les années" : String(year);
 };
 
+const getReportPeriodLabel = (year: PeriodYear, month: PeriodMonth) => {
+  const label = getPeriodLabel(year, month);
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+  const includesCurrentOpenPeriod =
+    year === "all" || (year === currentYear && (!month || Number(month) === currentMonth));
+  if (!includesCurrentOpenPeriod) return label;
+  const dateLabel = now.toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: year === "all" ? "numeric" : undefined,
+    timeZone: "UTC",
+  });
+  return `${label} · au ${dateLabel}`;
+};
+
 const getChartTitle = (selectedItem: ChartSelection, giteById: Map<string, StatisticsGite>, year: number) => {
   if (selectedItem === "Tous") return `Chiffre d'affaire ${year}`;
   if (typeof selectedItem === "string") return `Chiffre d'affaire ${giteById.get(selectedItem)?.nom ?? "Gîte"} ${year}`;
@@ -592,7 +609,9 @@ const StatisticsPage = () => {
             <p>Chiffre d'affaire brut</p>
             <strong>{formatEuro(globalStats.totalCA)}</strong>
             {selectedYear !== "all" && !selectedMonth ? (
-              <span className="stats-monthly-average">Moyenne par mois : {formatEuro(globalStats.totalCA / 12)}</span>
+              <span className="stats-monthly-average">
+                Moyenne par mois : {formatEuro(globalStats.totalCA / Math.max(expenseReport?.monthCount ?? 12, 1))}
+              </span>
             ) : null}
             {showStats ? renderTrend(globalStats.totalCA, averageCA, true) : null}
           </article>
@@ -615,7 +634,7 @@ const StatisticsPage = () => {
       {expenseReport ? (
         <ExpenseReport
           report={expenseReport}
-          periodLabel={getPeriodLabel(selectedYear, selectedMonth)}
+          periodLabel={getReportPeriodLabel(selectedYear, selectedMonth)}
           dynamicLabel={dynamicExpenseLabel}
         />
       ) : null}
@@ -685,7 +704,7 @@ const StatisticsPage = () => {
                   <strong>{formatEuro(stats.totalCA)}</strong>
                   {selectedYear !== "all" && !selectedMonth ? (
                     <span className="stats-monthly-average stats-monthly-average--compact">
-                      {formatEuro(stats.totalCA / 12)} / mois
+                      {formatEuro(stats.totalCA / Math.max(expenseReport?.monthCount ?? 12, 1))} / mois
                     </span>
                   ) : null}
                   {showStats ? renderTrend(stats.totalCA, avgCAByGite, true) : null}
