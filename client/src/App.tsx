@@ -17,6 +17,7 @@ const BookingRequestsPage = lazy(() => import("./pages/BookingRequestsPage"));
 const MobileReservationEditorPage = lazy(() => import("./pages/MobileReservationEditorPage"));
 const CalendrierPage = lazy(() => import("./pages/CalendrierPage"));
 const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
+const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
@@ -272,6 +273,9 @@ const App = () => {
   const isStatsSection =
     location.pathname === "/statistiques" ||
     location.pathname.startsWith("/statistiques/");
+  const isExpensesSection =
+    location.pathname === "/frais-personnels" ||
+    location.pathname.startsWith("/frais-personnels/");
   const isSeasonRatesSection =
     location.pathname === "/tarifs" ||
     location.pathname.startsWith("/tarifs/");
@@ -322,6 +326,12 @@ const App = () => {
       to: "/gites",
       label: "Gîtes",
       isActive: location.pathname === "/gites" || location.pathname.startsWith("/gites/"),
+      desktopOverflow: true,
+    },
+    {
+      to: "/frais-personnels",
+      label: "Frais personnels",
+      isActive: isExpensesSection,
       desktopOverflow: true,
     },
     {
@@ -823,6 +833,7 @@ const App = () => {
             <Route path="/calendrier" element={<CalendrierPage />} />
             <Route path="/planning-relais" element={<OperationsPrintPage />} />
             <Route path="/statistiques" element={<StatisticsPage />} />
+            <Route path="/frais-personnels" element={<PersonalExpensesPage />} />
             <Route path="/tarifs" element={<SeasonRatesPage />} />
             <Route path="/parametres/*" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
           </Routes>

@@ -50,7 +50,11 @@ router.delete("/:id", async (req, res, next) => {
   try {
     const manager = await prisma.gestionnaire.findUnique({
       where: { id: req.params.id },
-      include: { _count: { select: { gites: true } } },
+      include: {
+        _count: {
+          select: { gites: true, expense_recurring_rules: true, expense_entries: true },
+        },
+      },
     });
 
     if (!manager) return res.status(404).json({ error: "Gestionnaire introuvable." });
@@ -58,6 +62,10 @@ router.delete("/:id", async (req, res, next) => {
       return res
         .status(409)
         .json({ error: `Ce gestionnaire est associé à ${manager._count.gites} gîte(s).` });
+    }
+    const expenseCount = manager._count.expense_recurring_rules + manager._count.expense_entries;
+    if (expenseCount > 0) {
+      return res.status(409).json({ error: `Ce gestionnaire possède ${expenseCount} frais personnel(s).` });
     }
 
     await prisma.gestionnaire.delete({ where: { id: req.params.id } });
