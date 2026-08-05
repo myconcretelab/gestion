@@ -8,6 +8,7 @@ export type StatisticsGite = {
   proprietaires_noms: string;
   gestionnaire_id: string | null;
   date_debut_activite?: Date | null;
+  frais_gestion?: unknown;
   gestionnaire: {
     id: string;
     prenom: string;
@@ -49,6 +50,19 @@ export type StatisticsPayload = {
   gites: StatisticsGite[];
   entriesByGite: Record<string, StatisticsEntry[]>;
   availableYears: number[];
+  expenseSettings?: StatisticsExpenseSettings;
+};
+
+export type StatisticsExpenseSettings = {
+  categories: Array<{ id: string; name: string; color: string }>;
+  dynamic_expenses: Array<{
+    id: string;
+    label: string;
+    category_id: string;
+    basis: "urssaf_revenue";
+    rate: number;
+    enabled: boolean;
+  }>;
 };
 
 export type StatisticsReservationSegment = {
@@ -184,6 +198,7 @@ export const buildStatisticsPayload = (params: {
   reservations: StatisticsReservation[];
   selectedYear?: number | null;
   availableYears?: number[];
+  expenseSettings?: StatisticsExpenseSettings;
 }): StatisticsPayload => {
   const gites = [...params.gites].sort(
     (left, right) => left.ordre - right.ordre || left.nom.localeCompare(right.nom, "fr")
@@ -241,5 +256,6 @@ export const buildStatisticsPayload = (params: {
     gites,
     entriesByGite,
     availableYears: [...new Set(params.availableYears ?? years)].sort((a, b) => b - a),
+    expenseSettings: params.expenseSettings,
   };
 };

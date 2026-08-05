@@ -8,11 +8,47 @@ export type StatisticsGite = {
   proprietaires_noms: string;
   gestionnaire_id?: string | null;
   date_debut_activite?: string | null;
+  frais_gestion?: StatisticsExpenseManagement | null;
   gestionnaire?: {
     id: string;
     prenom: string;
     nom: string;
   } | null;
+};
+
+export type StatisticsExpenseCategory = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+export type StatisticsExpenseLine = {
+  id: string;
+  label: string;
+  category_id: string;
+  monthly_amount: number;
+  annual_amount: number;
+  notes?: string;
+};
+
+export type StatisticsExpenseManagement = {
+  version?: number;
+  categories?: StatisticsExpenseCategory[];
+  expenses?: StatisticsExpenseLine[];
+};
+
+export type StatisticsDynamicExpenseRule = {
+  id: string;
+  label: string;
+  category_id: string;
+  basis: "urssaf_revenue";
+  rate: number;
+  enabled: boolean;
+};
+
+export type StatisticsExpenseSettings = {
+  categories: StatisticsExpenseCategory[];
+  dynamic_expenses: StatisticsDynamicExpenseRule[];
 };
 
 export type StatisticsEntry = {
@@ -35,6 +71,7 @@ export type StatisticsPayload = {
   gites: StatisticsGite[];
   entriesByGite: Record<string, StatisticsEntry[]>;
   availableYears: number[];
+  expenseSettings?: StatisticsExpenseSettings;
 };
 
 export type UrssafManagerAmount = {
@@ -58,6 +95,36 @@ export type ParsedStatisticsPayload = {
   gites: StatisticsGite[];
   entriesByGite: Record<string, ParsedStatisticsEntry[]>;
   availableYears: number[];
+  expenseSettings: StatisticsExpenseSettings;
+};
+
+export type ExpenseReportGiteRow = {
+  id: string;
+  name: string;
+  revenue: number;
+  fixed: number;
+  dynamic: number;
+  expenses: number;
+  net: number;
+  expenseRate: number;
+};
+
+export type ExpenseReportCategoryRow = StatisticsExpenseCategory & {
+  amount: number;
+  lineCount: number;
+};
+
+export type ExpenseReport = {
+  fixed: number;
+  dynamic: number;
+  expenses: number;
+  revenue: number;
+  net: number;
+  monthlyAverage: number;
+  expenseRate: number;
+  monthCount: number;
+  rowsByGite: ExpenseReportGiteRow[];
+  rowsByCategory: ExpenseReportCategoryRow[];
 };
 
 type PeriodYear = number | "all";
@@ -67,6 +134,16 @@ type ActivityStart = string | Date | null | undefined;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const URSSAF_PAYMENTS = ["Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"];
+
+const DEFAULT_EXPENSE_SETTINGS: StatisticsExpenseSettings = {
+  categories: [
+    { id: "energie", name: "Énergie", color: "#2D8CFF" },
+    { id: "entretien", name: "Entretien", color: "#43B77D" },
+    { id: "taxes", name: "Taxes", color: "#F5A623" },
+    { id: "assurance", name: "Assurance", color: "#7E5BEF" },
+  ],
+  dynamic_expenses: [],
+};
 
 const normalizeLabel = (value: string) =>
   value
@@ -165,6 +242,126 @@ export const parseStatisticsPayload = (payload: StatisticsPayload): ParsedStatis
     gites: payload.gites ?? [],
     entriesByGite,
     availableYears: payload.availableYears ?? [],
+    expenseSettings: payload.expenseSettings ?? DEFAULT_EXPENSE_SETTINGS,
+  };
+};
+
+const normalizeExpenseAmount = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 0;
+};
+
+const roundExpenseMoney = (value: number) => Math.round(value * 100) / 100;
+
+const getExpensePeriodMonthCount = (
+  selectedYear: PeriodYear,
+  selectedMonth: PeriodMonth,
+  availableYears: number[]
+) => {
+  const yearCount = selectedYear === "all" ? Math.max(1, new Set(availableYears).size) : 1;
+  return selectedMonth ? yearCount : yearCount * 12;
+};
+
+const getFixedExpenseAmount = (
+  expense: Partial<StatisticsExpenseLine>,
+  selectedYear: PeriodYear,
+  selectedMonth: PeriodMonth,
+  availableYears: number[]
+) => {
+  const monthly = normalizeExpenseAmount(expense.monthly_amount);
+  const annual = normalizeExpenseAmount(expense.annual_amount);
+  const normalizedMonthly = monthly || annual / 12;
+  const normalizedAnnual = annual || normalizedMonthly * 12;
+  const yearCount = selectedYear === "all" ? Math.max(1, new Set(availableYears).size) : 1;
+  return selectedMonth ? normalizedMonthly * yearCount : normalizedAnnual * yearCount;
+};
+
+export const computeExpenseReport = (params: {
+  entriesByGite: Record<string, ParsedStatisticsEntry[]>;
+  gites: StatisticsGite[];
+  expenseSettings: StatisticsExpenseSettings;
+  selectedYear: PeriodYear;
+  selectedMonth: PeriodMonth;
+  availableYears: number[];
+}): ExpenseReport => {
+  const { entriesByGite, gites, selectedYear, selectedMonth, availableYears } = params;
+  const categories = params.expenseSettings.categories.length
+    ? params.expenseSettings.categories
+    : DEFAULT_EXPENSE_SETTINGS.categories;
+  const dynamicRules = params.expenseSettings.dynamic_expenses.filter((rule) => rule.enabled);
+  const fallbackCategoryId = categories[0]?.id ?? "other";
+  const categoryTotals = new Map(categories.map((category) => [category.id, { amount: 0, lineCount: 0 }]));
+
+  const rowsByGite = gites.map((gite) => {
+    const configuredExpenses = Array.isArray(gite.frais_gestion?.expenses)
+      ? gite.frais_gestion.expenses
+      : [];
+    let fixed = 0;
+
+    for (const expense of configuredExpenses) {
+      const amount = getFixedExpenseAmount(expense, selectedYear, selectedMonth, availableYears);
+      fixed += amount;
+      const categoryId = categoryTotals.has(expense.category_id) ? expense.category_id : fallbackCategoryId;
+      const category = categoryTotals.get(categoryId) ?? { amount: 0, lineCount: 0 };
+      category.amount += amount;
+      category.lineCount += 1;
+      categoryTotals.set(categoryId, category);
+    }
+
+    const periodEntries = (entriesByGite[gite.id] ?? []).filter((entry) =>
+      entryMatch(entry, selectedYear, selectedMonth)
+    );
+    const urssafBase = periodEntries.reduce((sum, entry) => sum + getEntryUrssafBase(entry), 0);
+    let dynamic = 0;
+    for (const rule of dynamicRules) {
+      const amount = urssafBase * Math.max(0, Number(rule.rate) || 0);
+      dynamic += amount;
+      const categoryId = categoryTotals.has(rule.category_id) ? rule.category_id : fallbackCategoryId;
+      const category = categoryTotals.get(categoryId) ?? { amount: 0, lineCount: 0 };
+      category.amount += amount;
+      category.lineCount += 1;
+      categoryTotals.set(categoryId, category);
+    }
+
+    const revenue = computeGiteStats(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth).totalCA;
+    fixed = roundExpenseMoney(fixed);
+    dynamic = roundExpenseMoney(dynamic);
+    const expenses = roundExpenseMoney(fixed + dynamic);
+    return {
+      id: gite.id,
+      name: gite.nom,
+      revenue,
+      fixed,
+      dynamic,
+      expenses,
+      net: roundExpenseMoney(revenue - expenses),
+      expenseRate: revenue > 0 ? expenses / revenue : 0,
+    };
+  });
+
+  const fixed = roundExpenseMoney(rowsByGite.reduce((sum, row) => sum + row.fixed, 0));
+  const dynamic = roundExpenseMoney(rowsByGite.reduce((sum, row) => sum + row.dynamic, 0));
+  const expenses = roundExpenseMoney(fixed + dynamic);
+  const revenue = roundExpenseMoney(rowsByGite.reduce((sum, row) => sum + row.revenue, 0));
+  const monthCount = getExpensePeriodMonthCount(selectedYear, selectedMonth, availableYears);
+
+  return {
+    fixed,
+    dynamic,
+    expenses,
+    revenue,
+    net: roundExpenseMoney(revenue - expenses),
+    monthlyAverage: monthCount > 0 ? roundExpenseMoney(expenses / monthCount) : 0,
+    expenseRate: revenue > 0 ? expenses / revenue : 0,
+    monthCount,
+    rowsByGite: rowsByGite.sort((left, right) => right.expenses - left.expenses || left.name.localeCompare(right.name, "fr")),
+    rowsByCategory: categories
+      .map((category) => {
+        const totals = categoryTotals.get(category.id) ?? { amount: 0, lineCount: 0 };
+        return { ...category, ...totals, amount: roundExpenseMoney(totals.amount) };
+      })
+      .filter((category) => category.amount > 0 || category.lineCount > 0)
+      .sort((left, right) => right.amount - left.amount || left.name.localeCompare(right.name, "fr")),
   };
 };
 

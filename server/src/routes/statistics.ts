@@ -7,6 +7,8 @@ import {
 } from "../services/legacyRevenueDatabaseImport.js";
 import { readLegacyRevenueWorkbook } from "../services/legacyRevenueImport.js";
 import { buildStatisticsPayload } from "../services/statistics.js";
+import { readGiteExpenseCategorySettings } from "../services/giteExpenseCategorySettings.js";
+import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 
 const router = Router();
@@ -79,6 +81,7 @@ router.get("/", async (req, res, next) => {
           proprietaires_noms: true,
           gestionnaire_id: true,
           date_debut_activite: true,
+          frais_gestion: true,
           gestionnaire: {
             select: {
               id: true,
@@ -122,9 +125,13 @@ router.get("/", async (req, res, next) => {
         },
       }),
     ]);
+    const hydratedGites = gites.map((gite) => ({
+      ...gite,
+      frais_gestion: fromJsonString(gite.frais_gestion, { version: 1, categories: [], expenses: [] }),
+    }));
     const reservations = rawReservations.map(hydrateStatisticsReservation);
     const availableYears = new Set<number>();
-    for (const gite of gites) {
+    for (const gite of hydratedGites) {
       if (gite.date_debut_activite) {
         availableYears.add(gite.date_debut_activite.getUTCFullYear());
       }
@@ -139,10 +146,11 @@ router.get("/", async (req, res, next) => {
 
     res.json(
       buildStatisticsPayload({
-        gites,
+        gites: hydratedGites,
         reservations,
         selectedYear,
         availableYears: [...availableYears],
+        expenseSettings: readGiteExpenseCategorySettings(),
       })
     );
   } catch (err) {

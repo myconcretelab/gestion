@@ -9,6 +9,7 @@ import {
   computeAveragePrice,
   computeAverageReservations,
   computeChequeVirementNightsByGite,
+  computeExpenseReport,
   computeOccupation,
   computeGiteStats,
   computeGlobalStats,
@@ -24,6 +25,7 @@ import {
   type StatisticsPayload,
 } from "./statistics/statisticsUtils";
 import GlobalRevenueChart, { type RevenueChartGroup } from "./statistics/components/GlobalRevenueChart";
+import ExpenseReport from "./statistics/components/ExpenseReport";
 import OccupationGauge from "./statistics/components/OccupationGauge";
 import PaymentPieChart from "./statistics/components/PaymentPieChart";
 import StatSwitch from "./statistics/components/StatSwitch";
@@ -305,6 +307,30 @@ const StatisticsPage = () => {
   const averageReservations = useMemo(() => computeAverageReservations(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
   const averageNights = useMemo(() => computeAverageNights(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
   const averageCA = useMemo(() => computeAverageCA(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
+  const expenseReport = useMemo(
+    () =>
+      dataset
+        ? computeExpenseReport({
+            entriesByGite,
+            gites,
+            expenseSettings: dataset.expenseSettings,
+            selectedYear,
+            selectedMonth,
+            availableYears,
+          })
+        : null,
+    [availableYears, dataset, entriesByGite, gites, selectedMonth, selectedYear]
+  );
+  const expenseRowsByGite = useMemo(
+    () => new Map(expenseReport?.rowsByGite.map((row) => [row.id, row]) ?? []),
+    [expenseReport]
+  );
+  const dynamicExpenseLabel = useMemo(() => {
+    const labels = dataset?.expenseSettings.dynamic_expenses
+      .filter((rule) => rule.enabled)
+      .map((rule) => rule.label) ?? [];
+    return labels.join(", ") || "Frais dynamiques";
+  }, [dataset?.expenseSettings.dynamic_expenses]);
 
   const urssafByManager = useMemo(
     () => computeUrssafByManager(entriesByGite, gites, selectedYear, selectedMonth),
@@ -565,6 +591,9 @@ const StatisticsPage = () => {
           <article>
             <p>Chiffre d'affaire brut</p>
             <strong>{formatEuro(globalStats.totalCA)}</strong>
+            {selectedYear !== "all" && !selectedMonth ? (
+              <span className="stats-monthly-average">Moyenne par mois : {formatEuro(globalStats.totalCA / 12)}</span>
+            ) : null}
             {showStats ? renderTrend(globalStats.totalCA, averageCA, true) : null}
           </article>
         </div>
@@ -583,12 +612,21 @@ const StatisticsPage = () => {
         </div>
       </section>
 
+      {expenseReport ? (
+        <ExpenseReport
+          report={expenseReport}
+          periodLabel={getPeriodLabel(selectedYear, selectedMonth)}
+          dynamicLabel={dynamicExpenseLabel}
+        />
+      ) : null}
+
       <section className="stats-gites-grid">
         {gites.map((gite, index) => {
           const giteColor = getGiteColor(gite, index);
           const entries = entriesByGite[gite.id] ?? [];
           const stats = computeGiteStats(entries, selectedYear, selectedMonth);
-          if (stats.reservations === 0) return null;
+          const expenseRow = expenseRowsByGite.get(gite.id);
+          if (stats.reservations === 0 && !expenseRow?.expenses) return null;
           const avgReservations = computeAverageReservations(
             entries,
             selectedYear,
@@ -645,7 +683,22 @@ const StatisticsPage = () => {
                 <div>
                   <p>CA brut</p>
                   <strong>{formatEuro(stats.totalCA)}</strong>
+                  {selectedYear !== "all" && !selectedMonth ? (
+                    <span className="stats-monthly-average stats-monthly-average--compact">
+                      {formatEuro(stats.totalCA / 12)} / mois
+                    </span>
+                  ) : null}
                   {showStats ? renderTrend(stats.totalCA, avgCAByGite, true) : null}
+                </div>
+                <div>
+                  <p>Frais</p>
+                  <strong>{formatEuro(expenseRow?.expenses ?? 0)}</strong>
+                </div>
+                <div>
+                  <p>Résultat après frais</p>
+                  <strong className={(expenseRow?.net ?? 0) < 0 ? "stats-value-negative" : "stats-value-positive"}>
+                    {formatEuro(expenseRow?.net ?? stats.totalCA)}
+                  </strong>
                 </div>
                 <div>
                   <p>Durée moy.</p>
