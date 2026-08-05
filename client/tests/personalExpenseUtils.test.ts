@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   computePersonalExpenseReport,
   getRecurringExpenseEquivalents,
+  getRecurringExpenseAmountForMonth,
   getRecurringExpenseAmountForYear,
   type PersonalExpensePayload,
 } from "../src/pages/personalExpenses/personalExpenseUtils.ts";
@@ -94,6 +95,25 @@ test("affiche les équivalents mensuel et annuel des frais récurrents", () => {
   );
 });
 
+test("mensualise un frais annuel à parts égales sans perdre de centimes", () => {
+  const expense = { ...payload.recurring[1], amount: 809.35 };
+  const now = new Date("2026-12-31T12:00:00.000Z");
+  assert.equal(getRecurringExpenseAmountForMonth(expense, 2026, 1, now), 67.45);
+  assert.equal(getRecurringExpenseAmountForMonth(expense, 2026, 2, now), 67.45);
+  assert.equal(getRecurringExpenseAmountForYear(expense, 2026, now), 809.35);
+
+  const report = computePersonalExpenseReport({
+    payload: { ...payload, recurring: [expense], entries: [] },
+    year: 2026,
+    managerId: "all",
+    now,
+  });
+  assert.deepEqual(report.byMonth.map((month) => month.recurring), [
+    67.45, 67.45, 67.45, 67.45, 67.45, 67.45,
+    67.45, 67.45, 67.45, 67.45, 67.45, 67.4,
+  ]);
+});
+
 test("consolide les revenus des gîtes avec les frais gîtes et personnels", () => {
   const report = computeConsolidatedFinancialReport({
     gitePeriod: { revenue: 10_000, expenses: 3_000 },
@@ -103,9 +123,12 @@ test("consolide les revenus des gîtes avec les frais gîtes et personnels", () 
     ],
     personalPeriod: {
       total: 1_200,
+      recurring: 900,
+      paid: 200,
+      planned: 100,
       byMonth: [
-        { month: 1, total: 500, isFuture: false },
-        { month: 2, total: 700, isFuture: false },
+        { month: 1, total: 500, recurring: 400, paid: 100, planned: 0, isFuture: false },
+        { month: 2, total: 700, recurring: 500, paid: 100, planned: 100, isFuture: false },
       ],
     },
   });
@@ -113,6 +136,10 @@ test("consolide les revenus des gîtes avec les frais gîtes et personnels", () 
   assert.equal(report.totalExpenses, 4_200);
   assert.equal(report.net, 5_800);
   assert.equal(report.expenseRate, 0.42);
+  assert.deepEqual(
+    [report.personalRecurring, report.personalPaid, report.personalPlanned],
+    [900, 200, 100]
+  );
   assert.deepEqual(report.months.map((month) => [month.totalExpenses, month.net]), [
     [1_500, 2_500],
     [2_700, 3_300],
@@ -122,23 +149,23 @@ test("consolide les revenus des gîtes avec les frais gîtes et personnels", () 
 test("les frais personnels de l'année en cours sont proratisés à la date courante", () => {
   const now = new Date("2026-03-15T12:00:00.000Z");
   assert.equal(getRecurringExpenseAmountForYear(payload.recurring[0], 2026, now), 248.39);
-  assert.equal(getRecurringExpenseAmountForYear(payload.recurring[1], 2026, now), 243.29);
+  assert.equal(getRecurringExpenseAmountForYear(payload.recurring[1], 2026, now), 248.39);
 
   const report = computePersonalExpenseReport({ payload, year: 2026, managerId: "all", now });
-  assert.equal(report.recurring, 491.68);
+  assert.equal(report.recurring, 496.78);
   assert.equal(report.paid, 50);
   assert.equal(report.planned, 30);
-  assert.equal(report.total, 571.68);
-  assert.equal(report.elapsedMonths, (74 / 365) * 12);
-  assert.equal(report.monthlyAverage, 234.98);
-  assert.equal(report.byManager[0].total, 571.68);
-  assert.equal(report.byCategory[0].total, 571.68);
+  assert.equal(report.total, 576.78);
+  assert.equal(report.elapsedMonths, 2 + (15 / 31));
+  assert.equal(report.monthlyAverage, 232.21);
+  assert.equal(report.byManager[0].total, 576.78);
+  assert.equal(report.byCategory[0].total, 576.78);
   assert.deepEqual(
     report.byMonth.slice(0, 4).map((month) => [month.recurring, month.paid, month.planned, month.total]),
     [
-      [201.92, 0, 0, 201.92],
-      [192.05, 50, 0, 242.05],
-      [97.71, 0, 30, 127.71],
+      [200, 0, 0, 200],
+      [200, 50, 0, 250],
+      [96.78, 0, 30, 126.78],
       [0, 0, 0, 0],
     ]
   );

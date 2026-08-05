@@ -5,9 +5,15 @@ type GiteFinancialPeriod = {
 
 type PersonalFinancialPeriod = {
   total: number;
+  recurring: number;
+  paid: number;
+  planned: number;
   byMonth: Array<{
     month: number;
     total: number;
+    recurring: number;
+    paid: number;
+    planned: number;
     isFuture: boolean;
   }>;
 };
@@ -17,6 +23,9 @@ export type ConsolidatedFinancialMonth = {
   revenue: number;
   giteExpenses: number;
   personalExpenses: number;
+  personalRecurring: number;
+  personalPaid: number;
+  personalPlanned: number;
   totalExpenses: number;
   net: number;
   isFuture: boolean;
@@ -26,6 +35,9 @@ export type ConsolidatedFinancialReport = {
   revenue: number;
   giteExpenses: number;
   personalExpenses: number;
+  personalRecurring: number;
+  personalPaid: number;
+  personalPlanned: number;
   totalExpenses: number;
   net: number;
   expenseRate: number;
@@ -42,6 +54,9 @@ export const computeConsolidatedFinancialReport = (params: {
   const revenue = round2(params.gitePeriod.revenue);
   const giteExpenses = round2(params.gitePeriod.expenses);
   const personalExpenses = round2(params.personalPeriod.total);
+  const personalRecurring = round2(params.personalPeriod.recurring);
+  const personalPaid = round2(params.personalPeriod.paid);
+  const personalPlanned = round2(params.personalPeriod.planned);
   const totalExpenses = round2(giteExpenses + personalExpenses);
 
   const months = params.personalPeriod.byMonth.map((personalMonth, index) => {
@@ -49,12 +64,18 @@ export const computeConsolidatedFinancialReport = (params: {
     const monthRevenue = round2(giteMonth.revenue);
     const monthGiteExpenses = round2(giteMonth.expenses);
     const monthPersonalExpenses = round2(personalMonth.total);
+    const monthPersonalRecurring = round2(personalMonth.recurring);
+    const monthPersonalPaid = round2(personalMonth.paid);
+    const monthPersonalPlanned = round2(personalMonth.planned);
     const monthTotalExpenses = round2(monthGiteExpenses + monthPersonalExpenses);
     return {
       month: personalMonth.month,
       revenue: monthRevenue,
       giteExpenses: monthGiteExpenses,
       personalExpenses: monthPersonalExpenses,
+      personalRecurring: monthPersonalRecurring,
+      personalPaid: monthPersonalPaid,
+      personalPlanned: monthPersonalPlanned,
       totalExpenses: monthTotalExpenses,
       net: round2(monthRevenue - monthTotalExpenses),
       isFuture: personalMonth.isFuture,
@@ -65,6 +86,9 @@ export const computeConsolidatedFinancialReport = (params: {
     revenue,
     giteExpenses,
     personalExpenses,
+    personalRecurring,
+    personalPaid,
+    personalPlanned,
     totalExpenses,
     net: round2(revenue - totalExpenses),
     expenseRate: revenue > 0 ? totalExpenses / revenue : 0,
