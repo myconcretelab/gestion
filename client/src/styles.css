@@ -14439,6 +14439,16 @@ button.warning {
   color: #43b77d;
 }
 
+.stats-monthly-average {
+  color: #6b7280;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.stats-monthly-average--compact {
+  font-size: 0.7rem;
+}
+
 .stats-trend {
   font-size: 0.8rem;
   font-weight: 700;
@@ -14707,6 +14717,242 @@ button.warning {
 
 .stats-gite-metrics strong {
   font-size: 0.95rem;
+}
+
+.stats-value-positive,
+.stats-expense-table .is-positive {
+  color: #15803d;
+}
+
+.stats-value-negative,
+.stats-expense-table .is-negative {
+  color: #b91c1c;
+}
+
+.stats-expense-report {
+  display: grid;
+  gap: 22px;
+  overflow: hidden;
+}
+
+.stats-expense-report__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.stats-expense-report__header > div {
+  display: grid;
+  gap: 5px;
+}
+
+.stats-expense-report__eyebrow {
+  margin: 0;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stats-expense-report__header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.35rem;
+}
+
+.stats-expense-report__header p:last-child {
+  max-width: 720px;
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.stats-expense-report__period {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, #e5e7eb);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.stats-expense-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stats-expense-kpis article {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.stats-expense-kpis span,
+.stats-expense-kpis small {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.stats-expense-kpis strong {
+  color: #111827;
+  font-size: 1.3rem;
+  line-height: 1.15;
+}
+
+.stats-expense-kpis .is-positive strong {
+  color: #15803d;
+}
+
+.stats-expense-kpis .is-negative strong {
+  color: #b91c1c;
+}
+
+.stats-expense-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.8fr);
+  gap: 14px;
+}
+
+.stats-expense-chart-panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fcfcfd;
+}
+
+.stats-expense-chart-panel__heading {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.stats-expense-chart-panel__heading h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 0.92rem;
+}
+
+.stats-expense-chart-panel__heading span {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.stats-expense-category-chart__pie {
+  position: relative;
+}
+
+.stats-expense-category-chart__pie > strong {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #475569;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.stats-expense-category-legend {
+  display: grid;
+  gap: 8px;
+}
+
+.stats-expense-category-legend > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 0.76rem;
+}
+
+.stats-expense-category-legend__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--expense-category-color);
+}
+
+.stats-expense-category-legend strong {
+  color: #111827;
+  font-size: 0.76rem;
+}
+
+.stats-expense-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.stats-expense-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.stats-expense-table th,
+.stats-expense-table td {
+  padding: 11px 13px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.stats-expense-table th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.stats-expense-table td {
+  color: #374151;
+  font-size: 0.8rem;
+}
+
+.stats-expense-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.stats-expense-table td:last-child {
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-expense-table td:last-child small {
+  color: #64748b;
+  font-weight: 750;
+}
+
+.stats-expense-rate {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--primary-soft);
+}
+
+.stats-expense-rate span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
 }
 
 .stats-gite-bottom {
@@ -15178,6 +15424,16 @@ button.warning {
   .stats-global-cards {
     grid-template-columns: 1fr;
     gap: 18px;
+  }
+  .stats-expense-report__header {
+    flex-direction: column;
+  }
+  .stats-expense-kpis,
+  .stats-expense-charts {
+    grid-template-columns: 1fr;
+  }
+  .stats-expense-report__period {
+    align-self: flex-start;
   }
   .stats-tax-track-wrap {
     grid-template-columns: 1fr;
