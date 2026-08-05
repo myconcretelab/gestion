@@ -6,6 +6,7 @@ import {
   getRecurringExpenseAmountForYear,
   type PersonalExpensePayload,
 } from "../src/pages/personalExpenses/personalExpenseUtils.ts";
+import { computeConsolidatedFinancialReport } from "../src/pages/personalExpenses/consolidatedFinancialUtils.ts";
 
 const manager = { id: "manager-1", prenom: "Camille", nom: "Martin" };
 const category = { id: "category-1", name: "Assurance", color: "#2D8CFF", scope: "personal", ordre: 0 };
@@ -91,6 +92,31 @@ test("affiche les équivalents mensuel et annuel des frais récurrents", () => {
     getRecurringExpenseEquivalents({ amount: 809.35, frequency: "annual" }),
     { monthly: 67.45, annual: 809.35 }
   );
+});
+
+test("consolide les revenus des gîtes avec les frais gîtes et personnels", () => {
+  const report = computeConsolidatedFinancialReport({
+    gitePeriod: { revenue: 10_000, expenses: 3_000 },
+    giteMonths: [
+      { revenue: 4_000, expenses: 1_000 },
+      { revenue: 6_000, expenses: 2_000 },
+    ],
+    personalPeriod: {
+      total: 1_200,
+      byMonth: [
+        { month: 1, total: 500, isFuture: false },
+        { month: 2, total: 700, isFuture: false },
+      ],
+    },
+  });
+
+  assert.equal(report.totalExpenses, 4_200);
+  assert.equal(report.net, 5_800);
+  assert.equal(report.expenseRate, 0.42);
+  assert.deepEqual(report.months.map((month) => [month.totalExpenses, month.net]), [
+    [1_500, 2_500],
+    [2_700, 3_300],
+  ]);
 });
 
 test("les frais personnels de l'année en cours sont proratisés à la date courante", () => {
