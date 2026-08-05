@@ -91,6 +91,8 @@ model Gite {
   wordpress_photo_sync_job             WordPressWebhookJob?
   counters                             ContratCounter[]
   facture_counters                     FactureCounter[]
+  expense_recurring_rules              ExpenseRecurringRule[]
+  expense_entries                      ExpenseEntry[]
 
   @@unique([public_slug], map: "gites_public_slug_key")
   @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
@@ -153,9 +155,80 @@ model Gestionnaire {
 
   gites               Gite[]
   urssaf_declarations UrssafDeclaration[]
+  expense_recurring_rules ExpenseRecurringRule[]
+  expense_entries         ExpenseEntry[]
 
   @@unique([prenom, nom])
   @@map("gestionnaires")
+}
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  name      String
+  color     String
+  scope     String   @default("both")
+  ordre     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recurring_rules ExpenseRecurringRule[]
+  entries         ExpenseEntry[]
+
+  @@unique([scope, name], map: "expense_categories_scope_name_key")
+  @@index([scope, ordre], map: "expense_categories_scope_order_idx")
+  @@map("expense_categories")
+}
+
+model ExpenseRecurringRule {
+  id              String   @id @default(cuid())
+  scope           String   @default("personal")
+  label           String
+  frequency       String   @default("monthly")
+  amount          Float    @default(0)
+  start_date      DateTime
+  end_date        DateTime?
+  notes           String   @default("")
+  is_active       Boolean  @default(true)
+  category_id     String
+  gestionnaire_id String?
+  gite_id         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category     ExpenseCategory @relation(fields: [category_id], references: [id], onDelete: Restrict)
+  gestionnaire Gestionnaire?   @relation(fields: [gestionnaire_id], references: [id], onDelete: Cascade)
+  gite         Gite?           @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@index([scope, start_date], map: "expense_recurring_rules_scope_start_idx")
+  @@index([gestionnaire_id], map: "expense_recurring_rules_manager_idx")
+  @@index([gite_id], map: "expense_recurring_rules_gite_idx")
+  @@index([category_id], map: "expense_recurring_rules_category_idx")
+  @@map("expense_recurring_rules")
+}
+
+model ExpenseEntry {
+  id              String   @id @default(cuid())
+  scope           String   @default("personal")
+  label           String
+  amount          Float    @default(0)
+  expense_date    DateTime
+  status          String   @default("paid")
+  notes           String   @default("")
+  category_id     String
+  gestionnaire_id String?
+  gite_id         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category     ExpenseCategory @relation(fields: [category_id], references: [id], onDelete: Restrict)
+  gestionnaire Gestionnaire?   @relation(fields: [gestionnaire_id], references: [id], onDelete: Cascade)
+  gite         Gite?           @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+
+  @@index([scope, expense_date], map: "expense_entries_scope_date_idx")
+  @@index([gestionnaire_id], map: "expense_entries_manager_idx")
+  @@index([gite_id], map: "expense_entries_gite_idx")
+  @@index([category_id], map: "expense_entries_category_idx")
+  @@map("expense_entries")
 }
 
 model UrssafDeclaration {
