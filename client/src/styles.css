@@ -10521,6 +10521,12 @@ button.warning {
   grid-area: annual;
 }
 
+.personal-expenses-list > article > div.personal-expenses-recurring-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
 .personal-expenses-recurring-amount strong {
   color: #111827;
   font-size: 0.92rem;
