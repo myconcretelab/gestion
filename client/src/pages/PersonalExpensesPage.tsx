@@ -4,6 +4,12 @@ import { Link } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import { formatEuro } from "../utils/format";
 import {
+  computeExpenseReport,
+  parseStatisticsPayload,
+  type ParsedStatisticsPayload,
+  type StatisticsPayload,
+} from "./statistics/statisticsUtils";
+import {
   computePersonalExpenseReport,
   getRecurringExpenseEquivalents,
   type ExpenseCategory,
@@ -11,6 +17,7 @@ import {
   type PersonalExpensePayload,
   type PersonalRecurringExpense,
 } from "./personalExpenses/personalExpenseUtils";
+import { computeConsolidatedFinancialReport } from "./personalExpenses/consolidatedFinancialUtils";
 
 type RecurringDraft = {
   gestionnaire_id: string;
@@ -62,10 +69,19 @@ const emptyEntry = (): EntryDraft => ({
 });
 const managerName = (manager: { prenom: string; nom: string }) => `${manager.prenom} ${manager.nom}`.trim();
 const dateOnly = (value: string) => value.slice(0, 10);
+const formatPercent = (value: number) => new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 }).format(value || 0);
+const formatEuroCompact = (value: number) => new Intl.NumberFormat("fr-FR", {
+  style: "currency",
+  currency: "EUR",
+  notation: "compact",
+  maximumFractionDigits: 1,
+}).format(value || 0);
 
 const PersonalExpensesPage = () => {
   const currentYear = new Date().getUTCFullYear();
   const [payload, setPayload] = useState<PersonalExpensePayload | null>(null);
+  const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [statisticsDatasetYear, setStatisticsDatasetYear] = useState<number | null>(null);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedManager, setSelectedManager] = useState<string | "all">("all");
   const [activeTab, setActiveTab] = useState<PersonalExpenseTab>("overview");
@@ -84,8 +100,13 @@ const PersonalExpensesPage = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiFetch<PersonalExpensePayload>("/personal-expenses");
+      const [data, statisticsPayload] = await Promise.all([
+        apiFetch<PersonalExpensePayload>("/personal-expenses"),
+        apiFetch<StatisticsPayload>(`/statistics?year=${selectedYear}`),
+      ]);
       setPayload(data);
+      setStatisticsDataset(parseStatisticsPayload(statisticsPayload));
+      setStatisticsDatasetYear(selectedYear);
       const managerId = data.managers[0]?.id ?? "";
       const categoryId = data.categories[0]?.id ?? "";
       setRecurringDraft((current) => ({
@@ -99,11 +120,11 @@ const PersonalExpensesPage = () => {
         category_id: current.category_id || categoryId,
       }));
     } catch (err) {
-      setError(isApiError(err) ? err.message : "Impossible de charger les frais personnels.");
+      setError(isApiError(err) ? err.message : "Impossible de charger les données financières.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedYear]);
 
   useEffect(() => {
     void loadData();
@@ -113,6 +134,43 @@ const PersonalExpensesPage = () => {
     () => payload ? computePersonalExpenseReport({ payload, year: selectedYear, managerId: selectedManager }) : null,
     [payload, selectedManager, selectedYear]
   );
+  const giteReport = useMemo(
+    () => statisticsDataset && statisticsDatasetYear === selectedYear ? computeExpenseReport({
+      entriesByGite: statisticsDataset.entriesByGite,
+      gites: statisticsDataset.gites,
+      expenseSettings: statisticsDataset.expenseSettings,
+      selectedYear,
+      selectedMonth: "",
+      availableYears: statisticsDataset.availableYears,
+    }) : null,
+    [selectedYear, statisticsDataset, statisticsDatasetYear]
+  );
+  const giteMonthlyReports = useMemo(
+    () => statisticsDataset && statisticsDatasetYear === selectedYear ? Array.from({ length: 12 }, (_, index) => computeExpenseReport({
+      entriesByGite: statisticsDataset.entriesByGite,
+      gites: statisticsDataset.gites,
+      expenseSettings: statisticsDataset.expenseSettings,
+      selectedYear,
+      selectedMonth: index + 1,
+      availableYears: statisticsDataset.availableYears,
+    })) : [],
+    [selectedYear, statisticsDataset, statisticsDatasetYear]
+  );
+  const consolidatedReport = useMemo(
+    () => report && giteReport ? computeConsolidatedFinancialReport({
+      gitePeriod: giteReport,
+      giteMonths: giteMonthlyReports,
+      personalPeriod: report,
+    }) : null,
+    [giteMonthlyReports, giteReport, report]
+  );
+  const consolidatedPeriodLabel = selectedYear === currentYear
+    ? `${selectedYear} · au ${new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "UTC" })}`
+    : String(selectedYear);
+  const expenseDistribution = consolidatedReport ? [
+    { name: "Frais des gîtes", value: consolidatedReport.giteExpenses, color: "#F5A623" },
+    { name: "Frais personnels", value: consolidatedReport.personalExpenses, color: "#FF5A64" },
+  ].filter((item) => item.value > 0) : [];
   const years = useMemo(() => {
     const values = new Set([currentYear, currentYear - 1, currentYear + 1]);
     for (const expense of payload?.recurring ?? []) {
@@ -120,8 +178,9 @@ const PersonalExpensesPage = () => {
       if (expense.end_date) values.add(new Date(expense.end_date).getUTCFullYear());
     }
     for (const entry of payload?.entries ?? []) values.add(new Date(entry.expense_date).getUTCFullYear());
+    for (const year of statisticsDataset?.availableYears ?? []) values.add(year);
     return [...values].sort((left, right) => right - left);
-  }, [currentYear, payload]);
+  }, [currentYear, payload, statisticsDataset?.availableYears]);
 
   const recurringVisible = useMemo(
     () => (payload?.recurring ?? []).filter((expense) => selectedManager === "all" || expense.gestionnaire_id === selectedManager),
@@ -296,48 +355,86 @@ const PersonalExpensesPage = () => {
         </article>
       </section>
 
-      <section className="personal-expenses-charts">
-        <article className="card personal-expenses-chart">
-          <h2>Évolution mensuelle</h2>
-          <p>Récurrents, dépenses payées et dépenses prévues mois par mois.</p>
-          {(report?.byMonth.some((row) => row.total > 0)) ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={report.byMonth} margin={{ top: 15, right: 10, left: 5, bottom: 5 }}>
-                <CartesianGrid vertical={false} stroke="#eef2f7" />
-                <XAxis dataKey="month" tickFormatter={(value) => MONTH_NAMES[Number(value) - 1]} tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(value) => formatEuro(Number(value))} />
-                <Legend />
-                <Bar dataKey="recurring" name="Récurrents" stackId="expenses" fill="#2D8CFF" isAnimationActive={false} />
-                <Bar dataKey="paid" name="Payés" stackId="expenses" fill="#43B77D" isAnimationActive={false} />
-                <Bar dataKey="planned" name="Prévus" stackId="expenses" fill="#F5A623" radius={[5, 5, 0, 0]} isAnimationActive={false} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <div className="stats-empty-chart">Aucun frais sur cette période.</div>}
-        </article>
-        <article className="card personal-expenses-chart personal-expenses-category-chart">
-          <h2>Répartition par catégorie</h2>
-          <p>{formatEuro(report?.total ?? 0)} au total.</p>
-          {(report?.byCategory.length ?? 0) > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={190}>
-                <PieChart>
-                  <Pie data={report?.byCategory} dataKey="total" nameKey="name" innerRadius={46} outerRadius={76} isAnimationActive={false}>
-                    {report?.byCategory.map((category) => <Cell key={category.id} fill={category.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(value) => formatEuro(Number(value))} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="personal-expenses-category-legend">
-                {report?.byCategory.map((category) => (
-                  <div key={category.id} style={{ "--category-color": category.color } as CSSProperties}>
-                    <span /><span>{category.name}</span><strong>{formatEuro(category.total)}</strong>
-                  </div>
+      <section className="card personal-expenses-financial-report">
+        <div className="personal-expenses-financial-report__header">
+          <div>
+            <p className="personal-expenses-eyebrow">Rapport consolidé</p>
+            <h2>Revenus et frais</h2>
+            <p>Revenus globaux des gîtes comparés aux frais des gîtes et aux frais personnels.</p>
+          </div>
+          <span>{consolidatedPeriodLabel}</span>
+        </div>
+
+        {consolidatedReport ? <>
+          <div className="personal-expenses-financial-kpis">
+            <article><span>Revenus des gîtes</span><strong>{formatEuro(consolidatedReport.revenue)}</strong></article>
+            <article><span>Frais des gîtes</span><strong>{formatEuro(consolidatedReport.giteExpenses)}</strong></article>
+            <article><span>Frais personnels</span><strong>{formatEuro(consolidatedReport.personalExpenses)}</strong></article>
+            <article className={consolidatedReport.net < 0 ? "is-negative" : "is-positive"}>
+              <span>Résultat consolidé</span><strong>{formatEuro(consolidatedReport.net)}</strong>
+              <small>{formatPercent(consolidatedReport.expenseRate)} du CA consacré aux frais</small>
+            </article>
+          </div>
+
+          <div className="personal-expenses-financial-charts">
+            <article className="personal-expenses-financial-panel">
+              <div><h3>Comparaison mensuelle</h3><span>Revenus face au cumul des frais</span></div>
+              {consolidatedReport.months.some((month) => month.revenue > 0 || month.totalExpenses > 0) ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={consolidatedReport.months} margin={{ top: 15, right: 10, left: 5, bottom: 5 }}>
+                    <CartesianGrid vertical={false} stroke="#eef2f7" />
+                    <XAxis dataKey="month" tickFormatter={(value) => MONTH_NAMES[Number(value) - 1]} tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(value) => formatEuroCompact(Number(value))} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(value) => formatEuro(Number(value))} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="revenue" name="Revenus gîtes" fill="#2D8CFF" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                    <Bar dataKey="giteExpenses" name="Frais gîtes" stackId="expenses" fill="#F5A623" isAnimationActive={false} />
+                    <Bar dataKey="personalExpenses" name="Frais personnels" stackId="expenses" fill="#FF5A64" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <div className="stats-empty-chart">Aucune donnée financière sur cette période.</div>}
+            </article>
+
+            <article className="personal-expenses-financial-panel personal-expenses-financial-split">
+              <div><h3>Répartition des frais</h3><span>{formatEuro(consolidatedReport.totalExpenses)} au total</span></div>
+              {expenseDistribution.length ? <>
+                <ResponsiveContainer width="100%" height={190}>
+                  <PieChart>
+                    <Pie data={expenseDistribution} dataKey="value" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2} isAnimationActive={false}>
+                      {expenseDistribution.map((item) => <Cell key={item.name} fill={item.color} />)}
+                    </Pie>
+                    <Tooltip formatter={(value) => formatEuro(Number(value))} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="personal-expenses-financial-legend">
+                  {expenseDistribution.map((item) => (
+                    <div key={item.name} style={{ "--financial-color": item.color } as CSSProperties}>
+                      <span /><span>{item.name}</span><strong>{formatEuro(item.value)}</strong>
+                    </div>
+                  ))}
+                </div>
+              </> : <div className="stats-empty-chart">Aucun frais sur cette période.</div>}
+            </article>
+          </div>
+
+          <div className="personal-expenses-financial-table-wrap">
+            <table className="personal-expenses-financial-table">
+              <thead><tr><th>Mois</th><th>Revenus des gîtes</th><th>Frais des gîtes</th><th>Frais personnels</th><th>Résultat</th></tr></thead>
+              <tbody>
+                {consolidatedReport.months.filter((month) => !month.isFuture).map((month) => (
+                  <tr key={month.month}>
+                    <td><strong>{MONTH_NAMES[month.month - 1]}</strong></td>
+                    <td>{formatEuro(month.revenue)}</td>
+                    <td>{formatEuro(month.giteExpenses)}</td>
+                    <td>{formatEuro(month.personalExpenses)}</td>
+                    <td className={month.net < 0 ? "is-negative" : "is-positive"}>{formatEuro(month.net)}</td>
+                  </tr>
                 ))}
-              </div>
-            </>
-          ) : <div className="stats-empty-chart">Aucune catégorie utilisée.</div>}
-        </article>
+              </tbody>
+              <tfoot><tr><th>Total</th><th>{formatEuro(consolidatedReport.revenue)}</th><th>{formatEuro(consolidatedReport.giteExpenses)}</th><th>{formatEuro(consolidatedReport.personalExpenses)}</th><th className={consolidatedReport.net < 0 ? "is-negative" : "is-positive"}>{formatEuro(consolidatedReport.net)}</th></tr></tfoot>
+            </table>
+          </div>
+        </> : <div className="stats-empty-chart">Chargement du rapport consolidé…</div>}
       </section>
       </> : null}
 

@@ -10438,6 +10438,189 @@ button.warning {
   background: var(--category-color);
 }
 
+.personal-expenses-financial-report {
+  display: grid;
+  gap: 18px;
+}
+
+.personal-expenses-financial-report__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.personal-expenses-financial-report__header > div {
+  display: grid;
+  gap: 5px;
+}
+
+.personal-expenses-financial-report__header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.25rem;
+}
+
+.personal-expenses-financial-report__header p:last-child {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.personal-expenses-financial-report__header > span {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, #e5e7eb);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.personal-expenses-financial-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.personal-expenses-financial-kpis article {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.personal-expenses-financial-kpis span,
+.personal-expenses-financial-kpis small {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.personal-expenses-financial-kpis strong {
+  color: #111827;
+  font-size: 1.18rem;
+}
+
+.personal-expenses-financial-kpis .is-positive {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.personal-expenses-financial-kpis .is-positive strong,
+.personal-expenses-financial-table .is-positive {
+  color: #15803d;
+}
+
+.personal-expenses-financial-kpis .is-negative {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.personal-expenses-financial-kpis .is-negative strong,
+.personal-expenses-financial-table .is-negative {
+  color: #dc2626;
+}
+
+.personal-expenses-financial-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.75fr);
+  gap: 12px;
+}
+
+.personal-expenses-financial-panel {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.personal-expenses-financial-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.personal-expenses-financial-panel h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 0.92rem;
+}
+
+.personal-expenses-financial-panel > div:first-child > span {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.personal-expenses-financial-legend {
+  display: grid;
+  gap: 8px;
+}
+
+.personal-expenses-financial-legend > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 0.76rem;
+}
+
+.personal-expenses-financial-legend > div > span:first-child {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--financial-color);
+}
+
+.personal-expenses-financial-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.personal-expenses-financial-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.personal-expenses-financial-table th,
+.personal-expenses-financial-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.personal-expenses-financial-table th:first-child,
+.personal-expenses-financial-table td:first-child {
+  text-align: left;
+}
+
+.personal-expenses-financial-table thead th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.personal-expenses-financial-table tfoot th {
+  border-bottom: 0;
+  background: #f8fafc;
+  color: #111827;
+}
+
+.personal-expenses-financial-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .personal-expenses-editor {
   display: grid;
   gap: 18px;
@@ -10609,24 +10792,32 @@ button.warning {
 
 @media (max-width: 900px) {
   .personal-expenses-kpis,
-  .personal-expenses-form-grid {
+  .personal-expenses-form-grid,
+  .personal-expenses-financial-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .personal-expenses-charts {
+  .personal-expenses-charts,
+  .personal-expenses-financial-charts {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 640px) {
   .personal-expenses-hero__heading,
-  .personal-expenses-section-heading {
+  .personal-expenses-section-heading,
+  .personal-expenses-financial-report__header {
     flex-direction: column;
   }
 
   .personal-expenses-kpis,
-  .personal-expenses-form-grid {
+  .personal-expenses-form-grid,
+  .personal-expenses-financial-kpis {
     grid-template-columns: 1fr;
+  }
+
+  .personal-expenses-financial-table {
+    min-width: 650px;
   }
 
   .personal-expenses-form-grid__notes {
