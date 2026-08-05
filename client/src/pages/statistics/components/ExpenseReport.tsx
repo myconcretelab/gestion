@@ -52,7 +52,7 @@ const ExpenseReport = ({ report, periodLabel, dynamicLabel }: ExpenseReportProps
           <p className="stats-expense-report__eyebrow">Rapport financier</p>
           <h2>Frais par gîte</h2>
           <p>
-            Frais récurrents configurés et {dynamicLabel.toLocaleLowerCase("fr-FR")} calculés sur {periodLabel}.
+            Frais récurrents proratisés et {dynamicLabel.toLocaleLowerCase("fr-FR")} calculés pour {periodLabel}.
           </p>
         </div>
         <span className="stats-expense-report__period">{periodLabel}</span>
