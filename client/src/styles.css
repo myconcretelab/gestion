@@ -10504,6 +10504,30 @@ button.warning {
   font-size: 0.74rem;
 }
 
+.personal-expenses-list .personal-expenses-recurring-amounts {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 250px;
+}
+
+.personal-expenses-recurring-amounts > span {
+  display: grid;
+  gap: 2px;
+  min-width: 104px;
+}
+
+.personal-expenses-recurring-amounts strong {
+  color: #111827;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.personal-expenses-recurring-amounts small {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
 .personal-expenses-status {
   justify-self: start;
   padding: 5px 8px;
@@ -10618,6 +10642,11 @@ button.warning {
 
   .personal-expenses-list > article > div:first-child {
     grid-column: 1 / -1;
+  }
+
+  .personal-expenses-list .personal-expenses-recurring-amounts {
+    grid-column: 1 / -1;
+    min-width: 0;
   }
 
   .personal-expenses-row-actions {

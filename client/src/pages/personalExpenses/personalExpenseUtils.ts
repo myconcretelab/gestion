@@ -57,6 +57,16 @@ export type PersonalExpenseReport = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const round2 = (value: number) => Math.round(value * 100) / 100;
+
+export const getRecurringExpenseEquivalents = (
+  expense: Pick<PersonalRecurringExpense, "amount" | "frequency">
+) => {
+  const amount = Math.max(0, Number(expense.amount) || 0);
+  return expense.frequency === "monthly"
+    ? { monthly: round2(amount), annual: round2(amount * 12) }
+    : { monthly: round2(amount / 12), annual: round2(amount) };
+};
+
 const utcDay = (value: string | Date) => {
   const date = value instanceof Date ? value : new Date(value);
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());

@@ -5,6 +5,7 @@ import { apiFetch, isApiError } from "../utils/api";
 import { formatEuro } from "../utils/format";
 import {
   computePersonalExpenseReport,
+  getRecurringExpenseEquivalents,
   type ExpenseCategory,
   type PersonalExpenseEntry,
   type PersonalExpensePayload,
@@ -360,14 +361,20 @@ const PersonalExpensesPage = () => {
           </div>
         )}
         <div className="personal-expenses-list">
-          {recurringVisible.map((expense) => (
-            <article key={expense.id} style={{ "--expense-color": expense.category.color } as CSSProperties}>
-              <div><strong>{expense.label}</strong><span>{managerName(expense.gestionnaire)} · {expense.category.name}</span></div>
-              <div><strong>{formatEuro(expense.amount)}</strong><span>{expense.frequency === "monthly" ? "/ mois" : "/ an"}</span></div>
-              <span className={`personal-expenses-status ${expense.is_active ? "is-paid" : "is-inactive"}`}>{expense.is_active ? "Actif" : "Inactif"}</span>
-              <div className="personal-expenses-row-actions"><button type="button" className="table-action" onClick={() => editRecurring(expense)}>Modifier</button><button type="button" className="table-action table-action--danger" onClick={() => { if (window.confirm(`Supprimer « ${expense.label} » ?`)) void runMutation(() => apiFetch(`/personal-expenses/recurring/${expense.id}`, { method: "DELETE" }), "Frais supprimé."); }}>Supprimer</button></div>
-            </article>
-          ))}
+          {recurringVisible.map((expense) => {
+            const equivalents = getRecurringExpenseEquivalents(expense);
+            return (
+              <article key={expense.id} style={{ "--expense-color": expense.category.color } as CSSProperties}>
+                <div><strong>{expense.label}</strong><span>{managerName(expense.gestionnaire)} · {expense.category.name}</span></div>
+                <div className="personal-expenses-recurring-amounts">
+                  <span><strong>{formatEuro(equivalents.monthly)}</strong><small>/ mois</small></span>
+                  <span><strong>{formatEuro(equivalents.annual)}</strong><small>/ an</small></span>
+                </div>
+                <span className={`personal-expenses-status ${expense.is_active ? "is-paid" : "is-inactive"}`}>{expense.is_active ? "Actif" : "Inactif"}</span>
+                <div className="personal-expenses-row-actions"><button type="button" className="table-action" onClick={() => editRecurring(expense)}>Modifier</button><button type="button" className="table-action table-action--danger" onClick={() => { if (window.confirm(`Supprimer « ${expense.label} » ?`)) void runMutation(() => apiFetch(`/personal-expenses/recurring/${expense.id}`, { method: "DELETE" }), "Frais supprimé."); }}>Supprimer</button></div>
+              </article>
+            );
+          })}
           {recurringVisible.length === 0 ? <div className="stats-empty-chart">Aucun frais récurrent.</div> : null}
         </div>
       </section> : null}
