@@ -169,7 +169,9 @@ const PersonalExpensesPage = () => {
     : String(selectedYear);
   const expenseDistribution = consolidatedReport ? [
     { name: "Frais des gîtes", value: consolidatedReport.giteExpenses, color: "#F5A623" },
-    { name: "Frais personnels", value: consolidatedReport.personalExpenses, color: "#FF5A64" },
+    { name: "Frais perso récurrents", value: consolidatedReport.personalRecurring, color: "#FF5A64" },
+    { name: "Ponctuels payés", value: consolidatedReport.personalPaid, color: "#43B77D" },
+    { name: "Ponctuels prévus", value: consolidatedReport.personalPlanned, color: "#7E5BEF" },
   ].filter((item) => item.value > 0) : [];
   const years = useMemo(() => {
     const values = new Set([currentYear, currentYear - 1, currentYear + 1]);
@@ -389,7 +391,9 @@ const PersonalExpensesPage = () => {
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="revenue" name="Revenus gîtes" fill="#2D8CFF" radius={[5, 5, 0, 0]} isAnimationActive={false} />
                     <Bar dataKey="giteExpenses" name="Frais gîtes" stackId="expenses" fill="#F5A623" isAnimationActive={false} />
-                    <Bar dataKey="personalExpenses" name="Frais personnels" stackId="expenses" fill="#FF5A64" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                    <Bar dataKey="personalRecurring" name="Frais perso récurrents" stackId="expenses" fill="#FF5A64" isAnimationActive={false} />
+                    <Bar dataKey="personalPaid" name="Ponctuels payés" stackId="expenses" fill="#43B77D" isAnimationActive={false} />
+                    <Bar dataKey="personalPlanned" name="Ponctuels prévus" stackId="expenses" fill="#7E5BEF" radius={[5, 5, 0, 0]} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : <div className="stats-empty-chart">Aucune donnée financière sur cette période.</div>}

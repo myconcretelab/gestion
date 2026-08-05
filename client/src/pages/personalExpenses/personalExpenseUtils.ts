@@ -83,36 +83,11 @@ const getYearPeriod = (year: number, now: Date) => {
 const overlapDays = (startA: number, endA: number, startB: number, endB: number) =>
   Math.max(0, Math.round((Math.min(endA, endB) - Math.max(startA, startB)) / DAY_MS));
 
-export const getRecurringExpenseAmountForYear = (
-  expense: PersonalRecurringExpense,
-  year: number,
-  now = new Date()
-) => {
-  if (!expense.is_active) return 0;
-  const period = getYearPeriod(year, now);
-  if (period.end <= period.start) return 0;
-  const activeStart = utcDay(expense.start_date);
-  const activeEnd = expense.end_date ? utcDay(expense.end_date) + DAY_MS : Number.POSITIVE_INFINITY;
-  if (activeStart >= period.end || activeEnd <= period.start) return 0;
-
-  if (expense.frequency === "annual") {
-    const daysInYear = Math.round((Date.UTC(year + 1, 0, 1) - Date.UTC(year, 0, 1)) / DAY_MS);
-    const days = overlapDays(period.start, period.end, activeStart, activeEnd);
-    return round2((Number(expense.amount) * days) / daysInYear);
-  }
-
-  let total = 0;
-  for (let month = 1; month <= 12; month += 1) {
-    total += getRecurringExpenseAmountForMonth(expense, year, month, now);
-  }
-  return round2(total);
-};
-
-export const getRecurringExpenseAmountForMonth = (
+const getRecurringExpenseRawAmountForMonth = (
   expense: PersonalRecurringExpense,
   year: number,
   month: number,
-  now = new Date()
+  now: Date
 ) => {
   if (!expense.is_active) return 0;
   const yearPeriod = getYearPeriod(year, now);
@@ -125,16 +100,32 @@ export const getRecurringExpenseAmountForMonth = (
   const activeEnd = expense.end_date ? utcDay(expense.end_date) + DAY_MS : Number.POSITIVE_INFINITY;
   if (activeStart >= periodEnd || activeEnd <= periodStart) return 0;
 
-  if (expense.frequency === "annual") {
-    const daysInYear = Math.round((Date.UTC(year + 1, 0, 1) - Date.UTC(year, 0, 1)) / DAY_MS);
-    const days = overlapDays(periodStart, periodEnd, activeStart, activeEnd);
-    return round2((Number(expense.amount) * days) / daysInYear);
-  }
-
   const daysInMonth = Math.round((monthEnd - monthStart) / DAY_MS);
   const days = overlapDays(periodStart, periodEnd, activeStart, activeEnd);
-  return round2((Number(expense.amount) * days) / daysInMonth);
+  const monthlyAmount = expense.frequency === "annual"
+    ? Number(expense.amount) / 12
+    : Number(expense.amount);
+  return (monthlyAmount * days) / daysInMonth;
 };
+
+export const getRecurringExpenseAmountForYear = (
+  expense: PersonalRecurringExpense,
+  year: number,
+  now = new Date()
+) => {
+  let total = 0;
+  for (let month = 1; month <= 12; month += 1) {
+    total += getRecurringExpenseRawAmountForMonth(expense, year, month, now);
+  }
+  return round2(total);
+};
+
+export const getRecurringExpenseAmountForMonth = (
+  expense: PersonalRecurringExpense,
+  year: number,
+  month: number,
+  now = new Date()
+) => round2(getRecurringExpenseRawAmountForMonth(expense, year, month, now));
 
 export const computePersonalExpenseReport = (params: {
   payload: PersonalExpensePayload;
@@ -145,9 +136,11 @@ export const computePersonalExpenseReport = (params: {
   const { payload, year, managerId } = params;
   const now = params.now ?? new Date();
   const period = getYearPeriod(year, now);
-  const elapsedMonths = period.end > period.start
-    ? ((period.end - period.start) / (Date.UTC(year + 1, 0, 1) - period.start)) * 12
-    : 0;
+  const elapsedMonths = year < now.getUTCFullYear()
+    ? 12
+    : year > now.getUTCFullYear()
+      ? 0
+      : now.getUTCMonth() + (now.getUTCDate() / new Date(Date.UTC(year, now.getUTCMonth() + 1, 0)).getUTCDate());
   const managers = payload.managers.filter((manager) => managerId === "all" || manager.id === managerId);
   const managerTotals = new Map(managers.map((manager) => [manager.id, {
     id: manager.id,
