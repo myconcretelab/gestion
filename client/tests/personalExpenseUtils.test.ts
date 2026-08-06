@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  computeRecurringMonthlyCategoryTotals,
   computePersonalExpenseReport,
   getRecurringExpenseEquivalents,
   getRecurringExpenseAmountForMonth,
@@ -126,6 +127,23 @@ test("limite le total annuel d'un frais récurrent à ses dates actives", () => 
   assert.equal(getRecurringExpenseAmountForFullYear(expense, 2026), 1558.07);
   assert.equal(getRecurringExpenseAmountForFullYear(expense, 2025), 0);
   assert.equal(getRecurringExpenseAmountForFullYear(expense, 2027), 0);
+});
+
+test("totalise les mensualités récurrentes par catégorie", () => {
+  const outsideYear = {
+    ...payload.recurring[0],
+    id: "outside-year",
+    amount: 500,
+    start_date: "2025-01-01T00:00:00.000Z",
+    end_date: "2025-12-31T00:00:00.000Z",
+  };
+  const result = computeRecurringMonthlyCategoryTotals([...payload.recurring, outsideYear], 2026);
+
+  assert.equal(result.monthlyTotal, 200);
+  assert.equal(result.expenseCount, 2);
+  assert.deepEqual(result.byCategory.map((category) => [category.name, category.monthlyTotal, category.expenseCount]), [
+    ["Assurance", 200, 2],
+  ]);
 });
 
 test("consolide les revenus des gîtes avec les frais gîtes et personnels", () => {
