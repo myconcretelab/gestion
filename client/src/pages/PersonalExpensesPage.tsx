@@ -18,7 +18,10 @@ import {
   type PersonalExpensePayload,
   type PersonalRecurringExpense,
 } from "./personalExpenses/personalExpenseUtils";
-import { computeConsolidatedFinancialReport } from "./personalExpenses/consolidatedFinancialUtils";
+import {
+  computeConsolidatedFinancialReport,
+  type ConsolidatedFinancialMonth,
+} from "./personalExpenses/consolidatedFinancialUtils";
 
 type RecurringDraft = {
   gestionnaire_id: string;
@@ -77,6 +80,41 @@ const formatEuroCompact = (value: number) => new Intl.NumberFormat("fr-FR", {
   notation: "compact",
   maximumFractionDigits: 1,
 }).format(value || 0);
+
+const FINANCIAL_TOOLTIP_ROWS = [
+  { key: "giteExpenses", label: "Frais gîtes", color: "#F5A623" },
+  { key: "personalRecurring", label: "Frais perso récurrents", color: "#FF5A64" },
+  { key: "personalPaid", label: "Ponctuels payés", color: "#43B77D" },
+  { key: "personalPlanned", label: "Ponctuels prévus", color: "#7E5BEF" },
+  { key: "revenue", label: "Revenus gîtes", color: "#2D8CFF" },
+] as const;
+
+type ConsolidatedMonthlyTooltipProps = {
+  active?: boolean;
+  payload?: Array<{ payload?: ConsolidatedFinancialMonth }>;
+};
+
+const ConsolidatedMonthlyTooltip = ({ active, payload }: ConsolidatedMonthlyTooltipProps) => {
+  const month = payload?.[0]?.payload;
+  if (!active || !month) return null;
+
+  return (
+    <div className="personal-expenses-monthly-tooltip">
+      <strong className="personal-expenses-monthly-tooltip__month">{MONTH_NAMES[month.month - 1]}</strong>
+      <div className="personal-expenses-monthly-tooltip__details">
+        {FINANCIAL_TOOLTIP_ROWS.map((row) => (
+          <div key={row.key} style={{ "--tooltip-color": row.color } as CSSProperties}>
+            <span>{row.label}</span><strong>{formatEuro(month[row.key])}</strong>
+          </div>
+        ))}
+      </div>
+      <div className={`personal-expenses-monthly-tooltip__result ${month.net < 0 ? "is-negative" : "is-positive"}`}>
+        <span>Résultat consolidé du mois</span>
+        <strong>{formatEuro(month.net)}</strong>
+      </div>
+    </div>
+  );
+};
 
 const PersonalExpensesPage = () => {
   const currentYear = new Date().getUTCFullYear();
@@ -388,7 +426,7 @@ const PersonalExpensesPage = () => {
                     <CartesianGrid vertical={false} stroke="#eef2f7" />
                     <XAxis dataKey="month" tickFormatter={(value) => MONTH_NAMES[Number(value) - 1]} tick={{ fontSize: 11 }} />
                     <YAxis tickFormatter={(value) => formatEuroCompact(Number(value))} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(value) => formatEuro(Number(value))} />
+                    <Tooltip content={<ConsolidatedMonthlyTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="revenue" name="Revenus gîtes" fill="#2D8CFF" radius={[5, 5, 0, 0]} isAnimationActive={false} />
                     <Bar dataKey="giteExpenses" name="Frais gîtes" stackId="expenses" fill="#F5A623" isAnimationActive={false} />
