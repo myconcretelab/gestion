@@ -120,6 +120,11 @@ export const getRecurringExpenseAmountForYear = (
   return round2(total);
 };
 
+export const getRecurringExpenseAmountForFullYear = (
+  expense: PersonalRecurringExpense,
+  year: number
+) => getRecurringExpenseAmountForYear(expense, year, new Date(Date.UTC(year + 1, 0, 1)));
+
 export const getRecurringExpenseAmountForMonth = (
   expense: PersonalRecurringExpense,
   year: number,

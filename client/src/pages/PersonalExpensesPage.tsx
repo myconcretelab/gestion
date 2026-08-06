@@ -12,6 +12,7 @@ import {
 import {
   computePersonalExpenseReport,
   getRecurringExpenseEquivalents,
+  getRecurringExpenseAmountForFullYear,
   type ExpenseCategory,
   type PersonalExpenseEntry,
   type PersonalExpensePayload,
@@ -450,11 +451,12 @@ const PersonalExpensesPage = () => {
         <div className="personal-expenses-list">
           {recurringVisible.map((expense) => {
             const equivalents = getRecurringExpenseEquivalents(expense);
+            const selectedYearTotal = getRecurringExpenseAmountForFullYear(expense, selectedYear);
             return (
               <article className="personal-expenses-recurring-row" key={expense.id} style={{ "--expense-color": expense.category.color } as CSSProperties}>
                 <div className="personal-expenses-recurring-description"><strong>{expense.label}</strong><span>{managerName(expense.gestionnaire)} · {expense.category.name}</span></div>
                 <div className="personal-expenses-recurring-amount personal-expenses-recurring-amount--monthly"><strong>{formatEuro(equivalents.monthly)}</strong><span>/ mois</span></div>
-                <div className="personal-expenses-recurring-amount personal-expenses-recurring-amount--annual"><strong>{formatEuro(equivalents.annual)}</strong><span>/ an</span></div>
+                <div className="personal-expenses-recurring-amount personal-expenses-recurring-amount--annual"><strong>{formatEuro(selectedYearTotal)}</strong><span>/ {selectedYear}</span></div>
                 <span className={`personal-expenses-status ${expense.is_active ? "is-paid" : "is-inactive"}`}>{expense.is_active ? "Actif" : "Inactif"}</span>
                 <div className="personal-expenses-row-actions"><button type="button" className="table-action" onClick={() => editRecurring(expense)}>Modifier</button><button type="button" className="table-action table-action--danger" onClick={() => { if (window.confirm(`Supprimer « ${expense.label} » ?`)) void runMutation(() => apiFetch(`/personal-expenses/recurring/${expense.id}`, { method: "DELETE" }), "Frais supprimé."); }}>Supprimer</button></div>
               </article>
