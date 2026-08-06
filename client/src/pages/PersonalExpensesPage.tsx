@@ -10,6 +10,7 @@ import {
   type StatisticsPayload,
 } from "./statistics/statisticsUtils";
 import {
+  computeRecurringMonthlyCategoryTotals,
   computePersonalExpenseReport,
   getRecurringExpenseEquivalents,
   getRecurringExpenseAmountForFullYear,
@@ -226,6 +227,10 @@ const PersonalExpensesPage = () => {
   const recurringVisible = useMemo(
     () => (payload?.recurring ?? []).filter((expense) => selectedManager === "all" || expense.gestionnaire_id === selectedManager),
     [payload?.recurring, selectedManager]
+  );
+  const recurringMonthlyTotals = useMemo(
+    () => computeRecurringMonthlyCategoryTotals(recurringVisible, selectedYear),
+    [recurringVisible, selectedYear]
   );
   const entriesVisible = useMemo(
     () => (payload?.entries ?? []).filter((entry) => {
@@ -486,6 +491,20 @@ const PersonalExpensesPage = () => {
         <div className="personal-expenses-section-heading">
           <div><h2>Frais récurrents</h2><p>Abonnements, assurances et autres charges mensuelles ou annuelles.</p></div>
           {editingRecurringId ? <button type="button" className="button-secondary" onClick={resetRecurring}>Annuler la modification</button> : null}
+        </div>
+        <div className="personal-expenses-recurring-summary">
+          <article className="personal-expenses-recurring-summary__total">
+            <span>Total mensuel</span>
+            <strong>{formatEuro(recurringMonthlyTotals.monthlyTotal)} <small>/ mois</small></strong>
+            <small>Toutes catégories · {recurringMonthlyTotals.expenseCount} frais actif{recurringMonthlyTotals.expenseCount !== 1 ? "s" : ""}</small>
+          </article>
+          {recurringMonthlyTotals.byCategory.map((category) => (
+            <article key={category.id} style={{ "--expense-color": category.color } as CSSProperties}>
+              <span>{category.name}</span>
+              <strong>{formatEuro(category.monthlyTotal)} <small>/ mois</small></strong>
+              <small>{category.expenseCount} frais actif{category.expenseCount > 1 ? "s" : ""}</small>
+            </article>
+          ))}
         </div>
         <div className="personal-expenses-list">
           {recurringVisible.map((expense) => {

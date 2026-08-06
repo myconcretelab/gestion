@@ -125,6 +125,43 @@ export const getRecurringExpenseAmountForFullYear = (
   year: number
 ) => getRecurringExpenseAmountForYear(expense, year, new Date(Date.UTC(year + 1, 0, 1)));
 
+export const computeRecurringMonthlyCategoryTotals = (
+  expenses: PersonalRecurringExpense[],
+  year: number
+) => {
+  const totals = new Map<string, {
+    id: string;
+    name: string;
+    color: string;
+    monthlyTotal: number;
+    expenseCount: number;
+  }>();
+
+  for (const expense of expenses) {
+    if (!expense.is_active || getRecurringExpenseAmountForFullYear(expense, year) <= 0) continue;
+    const current = totals.get(expense.category_id) ?? {
+      id: expense.category.id,
+      name: expense.category.name,
+      color: expense.category.color,
+      monthlyTotal: 0,
+      expenseCount: 0,
+    };
+    current.monthlyTotal += getRecurringExpenseEquivalents(expense).monthly;
+    current.expenseCount += 1;
+    totals.set(expense.category_id, current);
+  }
+
+  const byCategory = [...totals.values()]
+    .map((category) => ({ ...category, monthlyTotal: round2(category.monthlyTotal) }))
+    .sort((left, right) => right.monthlyTotal - left.monthlyTotal || left.name.localeCompare(right.name, "fr"));
+
+  return {
+    monthlyTotal: round2(byCategory.reduce((sum, category) => sum + category.monthlyTotal, 0)),
+    expenseCount: byCategory.reduce((sum, category) => sum + category.expenseCount, 0),
+    byCategory,
+  };
+};
+
 export const getRecurringExpenseAmountForMonth = (
   expense: PersonalRecurringExpense,
   year: number,
