@@ -316,6 +316,30 @@ const PersonalExpensesPage = () => {
     document.getElementById("personal-recurring-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
+  const toggleRecurringActive = async (expense: PersonalRecurringExpense) => {
+    const nextActive = !expense.is_active;
+    const success = await runMutation(
+      () => apiFetch(`/personal-expenses/recurring/${expense.id}`, {
+        method: "PUT",
+        json: {
+          gestionnaire_id: expense.gestionnaire_id,
+          category_id: expense.category_id,
+          label: expense.label,
+          frequency: expense.frequency,
+          amount: expense.amount,
+          start_date: dateOnly(expense.start_date),
+          end_date: expense.end_date ? dateOnly(expense.end_date) : null,
+          notes: expense.notes,
+          is_active: nextActive,
+        },
+      }),
+      nextActive ? "Frais récurrent activé." : "Frais récurrent désactivé."
+    );
+    if (success && editingRecurringId === expense.id) {
+      setRecurringDraft((current) => ({ ...current, is_active: nextActive }));
+    }
+  };
+
   const editEntry = (entry: PersonalExpenseEntry) => {
     setEditingEntryId(entry.id);
     setEntryDraft({
@@ -515,7 +539,16 @@ const PersonalExpensesPage = () => {
                 <div className="personal-expenses-recurring-description"><strong>{expense.label}</strong><span>{managerName(expense.gestionnaire)} · {expense.category.name}</span></div>
                 <div className="personal-expenses-recurring-amount personal-expenses-recurring-amount--monthly"><strong>{formatEuro(equivalents.monthly)}</strong><span>/ mois</span></div>
                 <div className="personal-expenses-recurring-amount personal-expenses-recurring-amount--annual"><strong>{formatEuro(selectedYearTotal)}</strong><span>/ {selectedYear}</span></div>
-                <span className={`personal-expenses-status ${expense.is_active ? "is-paid" : "is-inactive"}`}>{expense.is_active ? "Actif" : "Inactif"}</span>
+                <button
+                  type="button"
+                  className={`personal-expenses-status ${expense.is_active ? "is-paid" : "is-inactive"}`}
+                  aria-pressed={expense.is_active}
+                  title={expense.is_active ? "Désactiver ce frais" : "Activer ce frais"}
+                  disabled={busy}
+                  onClick={() => void toggleRecurringActive(expense)}
+                >
+                  {expense.is_active ? "Actif" : "Inactif"}
+                </button>
                 <div className="personal-expenses-row-actions"><button type="button" className="table-action" onClick={() => editRecurring(expense)}>Modifier</button><button type="button" className="table-action table-action--danger" onClick={() => { if (window.confirm(`Supprimer « ${expense.label} » ?`)) void runMutation(() => apiFetch(`/personal-expenses/recurring/${expense.id}`, { method: "DELETE" }), "Frais supprimé."); }}>Supprimer</button></div>
               </article>
             );
