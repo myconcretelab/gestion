@@ -408,11 +408,12 @@ const PersonalExpensesPage = () => {
 
         {consolidatedReport ? <>
           <div className="personal-expenses-financial-kpis">
-            <article><span>Revenus des gîtes</span><strong>{formatEuro(consolidatedReport.revenue)}</strong></article>
-            <article><span>Frais des gîtes</span><strong>{formatEuro(consolidatedReport.giteExpenses)}</strong></article>
-            <article><span>Frais personnels</span><strong>{formatEuro(consolidatedReport.personalExpenses)}</strong></article>
+            <article><span>Revenus des gîtes</span><strong>{formatEuro(consolidatedReport.revenue)}</strong><small>{formatEuro(consolidatedReport.revenueMonthlyAverage)} / mois en moyenne</small></article>
+            <article><span>Frais des gîtes</span><strong>{formatEuro(consolidatedReport.giteExpenses)}</strong><small>{formatEuro(consolidatedReport.giteExpensesMonthlyAverage)} / mois en moyenne</small></article>
+            <article><span>Frais personnels</span><strong>{formatEuro(consolidatedReport.personalExpenses)}</strong><small>{formatEuro(consolidatedReport.personalExpensesMonthlyAverage)} / mois en moyenne</small></article>
             <article className={consolidatedReport.net < 0 ? "is-negative" : "is-positive"}>
               <span>Résultat consolidé</span><strong>{formatEuro(consolidatedReport.net)}</strong>
+              <small>{formatEuro(consolidatedReport.netMonthlyAverage)} / mois en moyenne</small>
               <small>{formatPercent(consolidatedReport.expenseRate)} du CA consacré aux frais</small>
             </article>
           </div>

@@ -1,6 +1,7 @@
 type GiteFinancialPeriod = {
   revenue: number;
   expenses: number;
+  monthCount: number;
 };
 
 type PersonalFinancialPeriod = {
@@ -41,6 +42,11 @@ export type ConsolidatedFinancialReport = {
   totalExpenses: number;
   net: number;
   expenseRate: number;
+  monthCount: number;
+  revenueMonthlyAverage: number;
+  giteExpensesMonthlyAverage: number;
+  personalExpensesMonthlyAverage: number;
+  netMonthlyAverage: number;
   months: ConsolidatedFinancialMonth[];
 };
 
@@ -58,6 +64,7 @@ export const computeConsolidatedFinancialReport = (params: {
   const personalPaid = round2(params.personalPeriod.paid);
   const personalPlanned = round2(params.personalPeriod.planned);
   const totalExpenses = round2(giteExpenses + personalExpenses);
+  const monthCount = Math.max(0, Number(params.gitePeriod.monthCount) || 0);
 
   const months = params.personalPeriod.byMonth.map((personalMonth, index) => {
     const giteMonth = params.giteMonths[index] ?? { revenue: 0, expenses: 0 };
@@ -92,6 +99,11 @@ export const computeConsolidatedFinancialReport = (params: {
     totalExpenses,
     net: round2(revenue - totalExpenses),
     expenseRate: revenue > 0 ? totalExpenses / revenue : 0,
+    monthCount,
+    revenueMonthlyAverage: monthCount > 0 ? round2(revenue / monthCount) : 0,
+    giteExpensesMonthlyAverage: monthCount > 0 ? round2(giteExpenses / monthCount) : 0,
+    personalExpensesMonthlyAverage: monthCount > 0 ? round2(personalExpenses / monthCount) : 0,
+    netMonthlyAverage: monthCount > 0 ? round2((revenue - totalExpenses) / monthCount) : 0,
     months,
   };
 };
