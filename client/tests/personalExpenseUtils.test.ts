@@ -130,7 +130,7 @@ test("limite le total annuel d'un frais récurrent à ses dates actives", () => 
 
 test("consolide les revenus des gîtes avec les frais gîtes et personnels", () => {
   const report = computeConsolidatedFinancialReport({
-    gitePeriod: { revenue: 10_000, expenses: 3_000 },
+    gitePeriod: { revenue: 10_000, expenses: 3_000, monthCount: 2 },
     giteMonths: [
       { revenue: 4_000, expenses: 1_000 },
       { revenue: 6_000, expenses: 2_000 },
@@ -150,6 +150,10 @@ test("consolide les revenus des gîtes avec les frais gîtes et personnels", () 
   assert.equal(report.totalExpenses, 4_200);
   assert.equal(report.net, 5_800);
   assert.equal(report.expenseRate, 0.42);
+  assert.deepEqual(
+    [report.revenueMonthlyAverage, report.giteExpensesMonthlyAverage, report.personalExpensesMonthlyAverage, report.netMonthlyAverage],
+    [5_000, 1_500, 600, 2_900]
+  );
   assert.deepEqual(
     [report.personalRecurring, report.personalPaid, report.personalPlanned],
     [900, 200, 100]
