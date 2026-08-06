@@ -10832,8 +10832,31 @@ button.warning {
 .personal-expenses-status {
   justify-self: start;
   padding: 5px 8px;
+  border: 0;
   border-radius: 999px;
+  box-shadow: none;
+  font-size: 0.74rem;
   font-weight: 800;
+}
+
+button.personal-expenses-status {
+  transition: transform 140ms ease, filter 140ms ease, box-shadow 140ms ease;
+}
+
+button.personal-expenses-status:hover:not(:disabled) {
+  filter: brightness(0.97);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgb(15 23 42 / 10%);
+}
+
+button.personal-expenses-status:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+button.personal-expenses-status:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .personal-expenses-status.is-paid {
