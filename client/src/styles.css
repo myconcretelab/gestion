@@ -10558,6 +10558,68 @@ button.warning {
   font-size: 0.74rem;
 }
 
+.personal-expenses-monthly-tooltip {
+  min-width: 260px;
+  overflow: hidden;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 12px 28px rgb(15 23 42 / 16%);
+}
+
+.personal-expenses-monthly-tooltip__month {
+  display: block;
+  padding: 11px 13px 9px;
+  border-bottom: 1px solid #eef2f7;
+  color: #111827;
+  font-size: 0.92rem;
+}
+
+.personal-expenses-monthly-tooltip__details {
+  display: grid;
+  gap: 7px;
+  padding: 10px 13px;
+}
+
+.personal-expenses-monthly-tooltip__details > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  color: var(--tooltip-color);
+  font-size: 0.76rem;
+}
+
+.personal-expenses-monthly-tooltip__details strong {
+  white-space: nowrap;
+}
+
+.personal-expenses-monthly-tooltip__result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 13px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.personal-expenses-monthly-tooltip__result strong {
+  font-size: 0.96rem;
+  white-space: nowrap;
+}
+
+.personal-expenses-monthly-tooltip__result.is-positive {
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.personal-expenses-monthly-tooltip__result.is-negative {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
 .personal-expenses-financial-legend {
   display: grid;
   gap: 8px;
