@@ -4,6 +4,7 @@ import {
   computePersonalExpenseReport,
   getRecurringExpenseEquivalents,
   getRecurringExpenseAmountForMonth,
+  getRecurringExpenseAmountForFullYear,
   getRecurringExpenseAmountForYear,
   type PersonalExpensePayload,
 } from "../src/pages/personalExpenses/personalExpenseUtils.ts";
@@ -112,6 +113,19 @@ test("mensualise un frais annuel à parts égales sans perdre de centimes", () =
     67.45, 67.45, 67.45, 67.45, 67.45, 67.45,
     67.45, 67.45, 67.45, 67.45, 67.45, 67.4,
   ]);
+});
+
+test("limite le total annuel d'un frais récurrent à ses dates actives", () => {
+  const expense = {
+    ...payload.recurring[0],
+    amount: 766.67,
+    start_date: "2026-08-16T00:00:00.000Z",
+    end_date: "2026-10-16T00:00:00.000Z",
+  };
+
+  assert.equal(getRecurringExpenseAmountForFullYear(expense, 2026), 1558.07);
+  assert.equal(getRecurringExpenseAmountForFullYear(expense, 2025), 0);
+  assert.equal(getRecurringExpenseAmountForFullYear(expense, 2027), 0);
 });
 
 test("consolide les revenus des gîtes avec les frais gîtes et personnels", () => {
