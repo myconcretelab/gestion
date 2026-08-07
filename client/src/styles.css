@@ -10558,6 +10558,21 @@ button.warning {
   font-size: 0.74rem;
 }
 
+.personal-expenses-month-tick-label {
+  fill: #64748b;
+  font-size: 11px;
+}
+
+.personal-expenses-current-month-tick rect {
+  fill: var(--primary-soft);
+  stroke: var(--primary-strong);
+}
+
+.personal-expenses-current-month-tick .personal-expenses-month-tick-label {
+  fill: var(--primary);
+  font-weight: 700;
+}
+
 .personal-expenses-monthly-tooltip {
   min-width: 260px;
   overflow: hidden;
