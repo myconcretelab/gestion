@@ -4,12 +4,12 @@ import { apiFetch, isApiError } from "../utils/api";
 import type { Gestionnaire, Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
 import {
-  getEntryGrossCA,
   getEntryUrssafBase,
   parseStatisticsPayload,
   type ParsedStatisticsPayload,
   type StatisticsPayload,
 } from "./statistics/statisticsUtils";
+import { getNetAverageMonthlyRevenue } from "./statistics/revenueAverageUtils";
 
 type NumberInputValue = number | "";
 type PublicWebInfoForm = {
@@ -414,14 +414,6 @@ const normalizeExpenseManagement = (value: unknown, sharedCategories?: ExpenseCa
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(value);
 
-const normalizeExpenseRevenueLabel = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ");
-
 const getExpenseTotals = (data: ExpenseManagementData) => {
   const monthly = data.expenses.reduce((sum, expense) => sum + normalizeMoney(expense.monthly_amount), 0);
   const annual = data.expenses.reduce((sum, expense) => sum + normalizeMoney(expense.annual_amount), 0);
@@ -445,59 +437,6 @@ const getDynamicExpenseAmounts = (
     base,
     amount: rule.enabled ? normalizeMoney(base * rule.rate) : 0,
   }));
-};
-
-const getRevenueAveragePeriod = (now = new Date()) => {
-  const currentYear = now.getFullYear();
-  const previousYear = currentYear - 1;
-  const currentMonth = now.getMonth() + 1;
-  const completedCurrentYearMonths = Math.max(0, currentMonth - 1);
-  return {
-    previousYear,
-    currentYear,
-    completedCurrentYearMonths,
-    monthCount: 12 + completedCurrentYearMonths,
-  };
-};
-
-const getNetAverageMonthlyRevenue = (
-  dataset: ParsedStatisticsPayload | null,
-  giteId: string | null,
-  monthlyExpenses: number,
-  dynamicExpenseRules: DynamicExpenseRule[] = []
-) => {
-  const period = getRevenueAveragePeriod();
-  if (!dataset || !giteId || period.monthCount <= 0) {
-    return {
-      ...period,
-      grossRevenue: 0,
-      expenses: 0,
-      netAverage: 0,
-    };
-  }
-
-  const periodEntries = (dataset.entriesByGite[giteId] ?? [])
-    .filter((entry) => {
-      const year = entry.debutDate.getUTCFullYear();
-      const month = entry.debutDate.getUTCMonth() + 1;
-      if (normalizeExpenseRevenueLabel(entry.paiement) === "homeexchange") return false;
-      return year === period.previousYear || (year === period.currentYear && month <= period.completedCurrentYearMonths);
-    });
-  const grossRevenue = periodEntries.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
-  const dynamicExpenses = periodEntries.reduce((sum, entry) => {
-    const base = getEntryUrssafBase(entry);
-    return sum + dynamicExpenseRules
-      .filter((rule) => rule.enabled)
-      .reduce((ruleSum, rule) => ruleSum + base * rule.rate, 0);
-  }, 0);
-  const expenses = normalizeMoney(monthlyExpenses * period.monthCount + dynamicExpenses);
-
-  return {
-    ...period,
-    grossRevenue,
-    expenses,
-    netAverage: period.monthCount > 0 ? (grossRevenue - expenses) / period.monthCount : 0,
-  };
 };
 
 const getWordPressPhotoSyncDetail = (status: WordPressPhotoSyncStatus | null) => {
@@ -1615,6 +1554,7 @@ const GitesPage = () => {
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [revenueAverageDataset, setRevenueAverageDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(DEFAULT_EXPENSE_CATEGORIES);
   const [dynamicExpenseRules, setDynamicExpenseRules] = useState<DynamicExpenseRule[]>(DEFAULT_DYNAMIC_EXPENSE_RULES);
   const [expenseStatisticsYear, setExpenseStatisticsYear] = useState(() => new Date().getFullYear());
@@ -1678,17 +1618,19 @@ const GitesPage = () => {
   }, [activeEditorSection, searchParams, selectedId, setSearchParams]);
 
   const load = async () => {
-    const [gitesData, placeholdersData, gestionnairesData, statisticsData, expenseCategoryData] = await Promise.all([
+    const [gitesData, placeholdersData, gestionnairesData, statisticsData, revenueAverageData, expenseCategoryData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<Gestionnaire[]>("/managers"),
       apiFetch<StatisticsPayload>(`/statistics?year=${expenseStatisticsYear}`),
+      apiFetch<StatisticsPayload>("/statistics?year=all"),
       apiFetch<ExpenseCategorySettings>("/gites/expense-categories"),
     ]);
     setGites(gitesData);
     setPlaceholders(placeholdersData);
     setGestionnaires(gestionnairesData);
     setStatisticsDataset(parseStatisticsPayload(statisticsData));
+    setRevenueAverageDataset(parseStatisticsPayload(revenueAverageData));
     setExpenseCategories(normalizeExpenseManagement({ categories: expenseCategoryData.categories, expenses: [] }).categories);
     setDynamicExpenseRules(
       Array.isArray(expenseCategoryData.dynamic_expenses) && expenseCategoryData.dynamic_expenses.length > 0
@@ -1823,8 +1765,8 @@ const GitesPage = () => {
   );
   const expenseTotals = useMemo(() => getExpenseTotals(expenseManagement), [expenseManagement]);
   const netAverageMonthlyRevenue = useMemo(
-    () => getNetAverageMonthlyRevenue(statisticsDataset, selectedId, expenseTotals.monthly, dynamicExpenseRules),
-    [dynamicExpenseRules, expenseTotals.monthly, selectedId, statisticsDataset]
+    () => getNetAverageMonthlyRevenue(revenueAverageDataset, selectedId, expenseTotals.monthly, dynamicExpenseRules),
+    [dynamicExpenseRules, expenseTotals.monthly, revenueAverageDataset, selectedId]
   );
   const expenseTotalsByCategory = useMemo(() => {
     const totals = new Map<string, { monthly: number; annual: number }>();
