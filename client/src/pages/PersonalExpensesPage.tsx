@@ -95,6 +95,27 @@ type ConsolidatedMonthlyTooltipProps = {
   payload?: Array<{ payload?: ConsolidatedFinancialMonth }>;
 };
 
+type FinancialMonthTickProps = {
+  x?: number;
+  y?: number;
+  payload?: { value?: number | string };
+  currentMonth: number | null;
+};
+
+const FinancialMonthTick = ({ x = 0, y = 0, payload, currentMonth }: FinancialMonthTickProps) => {
+  const month = Number(payload?.value);
+  const isCurrent = month === currentMonth;
+
+  return (
+    <g transform={`translate(${x}, ${y})`} className={isCurrent ? "personal-expenses-current-month-tick" : undefined}>
+      {isCurrent ? <rect x={-21} y={6} width={42} height={24} rx={12}><title>Mois actuel</title></rect> : null}
+      <text className="personal-expenses-month-tick-label" x={0} y={18} textAnchor="middle" dominantBaseline="middle">
+        {MONTH_NAMES[month - 1]}
+      </text>
+    </g>
+  );
+};
+
 const ConsolidatedMonthlyTooltip = ({ active, payload }: ConsolidatedMonthlyTooltipProps) => {
   const month = payload?.[0]?.payload;
   if (!active || !month) return null;
@@ -119,6 +140,7 @@ const ConsolidatedMonthlyTooltip = ({ active, payload }: ConsolidatedMonthlyTool
 
 const PersonalExpensesPage = () => {
   const currentYear = new Date().getUTCFullYear();
+  const currentMonth = new Date().getUTCMonth() + 1;
   const [payload, setPayload] = useState<PersonalExpensePayload | null>(null);
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [statisticsDatasetYear, setStatisticsDatasetYear] = useState<number | null>(null);
@@ -487,7 +509,11 @@ const PersonalExpensesPage = () => {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={financialChartMonths} margin={{ top: 15, right: 10, left: 5, bottom: 5 }}>
                     <CartesianGrid vertical={false} stroke="#eef2f7" />
-                    <XAxis dataKey="month" tickFormatter={(value) => MONTH_NAMES[Number(value) - 1]} tick={{ fontSize: 11 }} />
+                    <XAxis
+                      dataKey="month"
+                      height={38}
+                      tick={<FinancialMonthTick currentMonth={selectedYear === currentYear ? currentMonth : null} />}
+                    />
                     <YAxis tickFormatter={(value) => formatEuroCompact(Number(value))} tick={{ fontSize: 11 }} />
                     <Tooltip content={<ConsolidatedMonthlyTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
