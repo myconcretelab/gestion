@@ -196,6 +196,31 @@ const PersonalExpensesPage = () => {
     })) : [],
     [selectedYear, statisticsDataset, statisticsDatasetYear]
   );
+  const financialChartNow = useMemo(
+    () => new Date(Date.UTC(selectedYear + 1, 0, 1)),
+    [selectedYear]
+  );
+  const personalChartReport = useMemo(
+    () => payload ? computePersonalExpenseReport({
+      payload,
+      year: selectedYear,
+      managerId: selectedManager,
+      now: financialChartNow,
+    }) : null,
+    [financialChartNow, payload, selectedManager, selectedYear]
+  );
+  const giteMonthlyChartReports = useMemo(
+    () => statisticsDataset && statisticsDatasetYear === selectedYear ? Array.from({ length: 12 }, (_, index) => computeExpenseReport({
+      entriesByGite: statisticsDataset.entriesByGite,
+      gites: statisticsDataset.gites,
+      expenseSettings: statisticsDataset.expenseSettings,
+      selectedYear,
+      selectedMonth: index + 1,
+      availableYears: statisticsDataset.availableYears,
+      now: financialChartNow,
+    })) : [],
+    [financialChartNow, selectedYear, statisticsDataset, statisticsDatasetYear]
+  );
   const consolidatedReport = useMemo(
     () => report && giteReport ? computeConsolidatedFinancialReport({
       gitePeriod: giteReport,
@@ -203,6 +228,14 @@ const PersonalExpensesPage = () => {
       personalPeriod: report,
     }) : null,
     [giteMonthlyReports, giteReport, report]
+  );
+  const financialChartMonths = useMemo(
+    () => giteReport && personalChartReport ? computeConsolidatedFinancialReport({
+      gitePeriod: giteReport,
+      giteMonths: giteMonthlyChartReports,
+      personalPeriod: personalChartReport,
+    }).months : [],
+    [giteMonthlyChartReports, giteReport, personalChartReport]
   );
   const consolidatedPeriodLabel = selectedYear === currentYear
     ? `${selectedYear} · au ${new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "UTC" })}`
@@ -450,9 +483,9 @@ const PersonalExpensesPage = () => {
           <div className="personal-expenses-financial-charts">
             <article className="personal-expenses-financial-panel">
               <div><h3>Comparaison mensuelle</h3><span>Revenus face au cumul des frais</span></div>
-              {consolidatedReport.months.some((month) => month.revenue > 0 || month.totalExpenses > 0) ? (
+              {financialChartMonths.some((month) => month.revenue > 0 || month.totalExpenses > 0) ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={consolidatedReport.months} margin={{ top: 15, right: 10, left: 5, bottom: 5 }}>
+                  <BarChart data={financialChartMonths} margin={{ top: 15, right: 10, left: 5, bottom: 5 }}>
                     <CartesianGrid vertical={false} stroke="#eef2f7" />
                     <XAxis dataKey="month" tickFormatter={(value) => MONTH_NAMES[Number(value) - 1]} tick={{ fontSize: 11 }} />
                     <YAxis tickFormatter={(value) => formatEuroCompact(Number(value))} tick={{ fontSize: 11 }} />
