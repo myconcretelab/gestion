@@ -170,7 +170,8 @@ router.get("/", async (req, res, next) => {
       intervenantExpenses: intervenantExpenses.map((expense) => ({
         id: expense.id,
         intervenant_id: expense.intervenant_id,
-        intervenant_nom: expense.intervenant.nom,
+        label: expense.label,
+        intervenant_nom: expense.intervenant?.nom ?? expense.intervenant_nom ?? null,
         scope: expense.scope === "gite" ? "gite" : "all_gites",
         gite_id: expense.gite_id ?? null,
         gite_nom: expense.gite?.nom ?? expense.gite_nom ?? null,

@@ -185,7 +185,9 @@ export type Intervenant = {
 
 export type IntervenantExpense = {
   id: string;
-  intervenant_id: string;
+  label: string;
+  intervenant_id: string | null;
+  intervenant_nom?: string | null;
   scope: "all_gites" | "gite";
   gite_id: string | null;
   gite_nom: string | null;

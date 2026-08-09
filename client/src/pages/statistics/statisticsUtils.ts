@@ -77,8 +77,9 @@ export type StatisticsPayload = {
 
 export type StatisticsIntervenantExpense = {
   id: string;
-  intervenant_id: string;
-  intervenant_nom: string;
+  label: string;
+  intervenant_id: string | null;
+  intervenant_nom: string | null;
   scope: "all_gites" | "gite";
   gite_id: string | null;
   gite_nom: string | null;
