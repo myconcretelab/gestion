@@ -481,7 +481,9 @@ model PlanningRelayWorker {
 
 model IntervenantExpense {
   id             String   @id @default(cuid())
-  intervenant_id String
+  intervenant_id String?
+  intervenant_nom String?
+  label          String   @default("Frais ponctuel")
   scope          String   @default("all_gites")
   gite_id        String?
   gite_nom       String?
@@ -492,7 +494,7 @@ model IntervenantExpense {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  intervenant PlanningRelayWorker @relation(fields: [intervenant_id], references: [id], onDelete: Cascade)
+  intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
   gite         Gite?               @relation(fields: [gite_id], references: [id], onDelete: SetNull)
 
   @@index([year, month], map: "intervenant_expenses_year_month_idx")

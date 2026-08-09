@@ -49,7 +49,9 @@ const intervenantExpensePatchSchema = intervenantExpenseFieldsSchema.partial();
 
 const serializeIntervenantExpense = (expense: any) => ({
   id: expense.id,
-  intervenant_id: expense.intervenant_id,
+  label: expense.label,
+  intervenant_id: expense.intervenant_id ?? null,
+  intervenant_nom: expense.intervenant_nom ?? null,
   scope: expense.scope === "gite" ? "gite" : "all_gites",
   gite_id: expense.gite_id ?? null,
   gite_nom: expense.gite?.nom ?? expense.gite_nom ?? null,
@@ -125,7 +127,7 @@ router.post("/:id/expenses", async (req, res, next) => {
     const payload = intervenantExpensePayloadSchema.parse(req.body ?? {});
     const intervenant = await prisma.planningRelayWorker.findUnique({
       where: { id: req.params.id },
-      select: { id: true },
+      select: { id: true, nom: true },
     });
     if (!intervenant) {
       return res.status(404).json({ error: "Intervenant introuvable." });
@@ -144,6 +146,7 @@ router.post("/:id/expenses", async (req, res, next) => {
     const expense = await prisma.intervenantExpense.create({
       data: {
         intervenant_id: intervenant.id,
+        intervenant_nom: intervenant.nom,
         scope: payload.scope,
         gite_id: gite?.id ?? null,
         gite_nom: gite?.nom ?? null,

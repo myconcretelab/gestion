@@ -584,6 +584,22 @@ router.put("/expense-categories", async (req, res, next) => {
   }
 });
 
+router.put("/:id/expenses", async (req, res, next) => {
+  try {
+    const fraisGestion = expenseManagementSchema.parse(req.body?.frais_gestion ?? {});
+    const existing = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!existing) return res.status(404).json({ error: "Gîte introuvable." });
+    const normalized = normalizeExpenseManagement(fraisGestion);
+    await prisma.gite.update({
+      where: { id: existing.id },
+      data: { frais_gestion: encodeJsonField(normalized) },
+    });
+    res.json({ frais_gestion: normalized });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/", async (_req, res, next) => {
   try {
     const gites = await prisma.gite.findMany({

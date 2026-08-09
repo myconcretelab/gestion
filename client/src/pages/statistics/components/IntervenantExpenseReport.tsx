@@ -26,7 +26,7 @@ const IntervenantExpenseReport = ({
       <div className="stats-intervenant-expenses__header">
         <div>
           <p className="stats-expense-report__eyebrow">Suivi informatif</p>
-          <h2>Frais des intervenants</h2>
+          <h2>Frais ponctuels professionnels</h2>
           <p>
             Frais ponctuels enregistrés pour {periodLabel.toLocaleLowerCase("fr-FR")}.
             Ils ne sont pas inclus dans les frais ni les résultats des gîtes.
@@ -40,7 +40,7 @@ const IntervenantExpenseReport = ({
 
       {expenses.length === 0 ? (
         <div className="stats-empty-chart">
-          Aucun frais d’intervenant sur cette période.
+          Aucun frais ponctuel professionnel sur cette période.
         </div>
       ) : (
         <div className="stats-intervenant-expenses__table-wrap">
@@ -48,6 +48,7 @@ const IntervenantExpenseReport = ({
             <thead>
               <tr>
                 <th>Mois</th>
+                <th>Frais</th>
                 <th>Intervenant</th>
                 <th>Portée</th>
                 <th>Note</th>
@@ -60,7 +61,8 @@ const IntervenantExpenseReport = ({
                   <td className="stats-intervenant-expenses__month">
                     {formatExpenseMonth(expense.year, expense.month)}
                   </td>
-                  <td><strong>{expense.intervenant_nom}</strong></td>
+                  <td><strong>{expense.label}</strong></td>
+                  <td>{expense.intervenant_nom || "—"}</td>
                   <td>
                     <span className="stats-intervenant-expenses__scope">
                       {expense.scope === "gite"

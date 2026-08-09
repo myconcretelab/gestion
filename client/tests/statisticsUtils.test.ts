@@ -154,12 +154,13 @@ test("le rapport de frais consolide les charges fixes, dynamiques et le résulta
   assert.equal(monthly.monthlyAverage, 113.2);
 });
 
-test("les frais ponctuels des intervenants restent informatifs et hors des totaux des gîtes", () => {
+test("les frais ponctuels professionnels restent informatifs et hors des totaux des gîtes", () => {
   const parsed = parseStatisticsPayload({
     ...payload,
     intervenantExpenses: [
       {
         id: "expense-christine",
+        label: "Renfort",
         intervenant_id: "christine",
         intervenant_nom: "Christine",
         scope: "all_gites",
@@ -172,6 +173,7 @@ test("les frais ponctuels des intervenants restent informatifs et hors des totau
       },
       {
         id: "expense-edouard",
+        label: "Petit matériel",
         intervenant_id: "edouard",
         intervenant_nom: "Édouard",
         scope: "gite",

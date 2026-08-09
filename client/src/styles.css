@@ -10001,97 +10001,216 @@ a.button-link {
   font-weight: 600;
 }
 
-.settings-intervenant-expense-create {
+.professional-expenses-page {
+  display: grid;
+  gap: 20px;
+}
+
+.professional-expenses-hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--primary-soft), #fff 65%);
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, #e5e7eb);
+}
+
+.professional-expenses-hero > div {
+  display: grid;
+  gap: 6px;
+}
+
+.professional-expenses-hero span {
+  color: var(--primary-strong);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.professional-expenses-hero h1,
+.professional-expenses-hero p,
+.professional-expenses-gite h2,
+.professional-one-off-create h2 {
+  margin: 0;
+}
+
+.professional-expenses-hero p {
+  max-width: 720px;
+  color: #64748b;
+}
+
+.professional-expenses-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 5px;
+  border-radius: 12px;
+  background: #f1f5f9;
+}
+
+.professional-expenses-tabs button {
+  flex: 0 0 auto;
+  background: transparent;
+  color: #475569;
+  box-shadow: none;
+}
+
+.professional-expenses-tabs button.is-active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.professional-expenses-overview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  align-items: end;
-  padding: 16px;
-  border: 1px solid #dcdcde;
-  border-radius: 8px;
-  background: #f6f7f7;
+  gap: 14px;
 }
 
-.settings-intervenant-expense-create__notes {
-  grid-column: span 3;
+.professional-expenses-overview > article:not(.professional-expenses-breakdown) {
+  display: grid;
+  gap: 6px;
 }
 
-.settings-intervenant-expense-create > button {
-  justify-self: start;
+.professional-expenses-overview article span,
+.professional-expenses-overview article small {
+  color: #64748b;
 }
 
-.settings-intervenant-expense-empty {
-  margin-top: 18px;
+.professional-expenses-overview article strong {
+  font-size: 1.45rem;
 }
 
-.settings-intervenant-expense-list {
+.professional-expenses-breakdown {
+  grid-column: 1 / -1;
   display: grid;
   gap: 10px;
-  margin-top: 18px;
 }
 
-.settings-intervenant-expense-item {
+.professional-expenses-breakdown h2 {
+  margin: 0 0 6px;
+}
+
+.professional-expenses-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.professional-expenses-list {
   display: grid;
-  grid-template-columns: 1.15fr repeat(3, minmax(120px, 0.8fr)) 1.2fr auto;
+  gap: 16px;
+}
+
+.professional-expenses-gite {
+  display: grid;
+  gap: 14px;
+}
+
+.professional-expenses-gite > header,
+.professional-expenses-gite > footer,
+.professional-one-off-item > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  align-items: end;
-  padding: 14px;
-  border: 1px solid #dcdcde;
-  border-radius: 8px;
-  background: #fff;
+  flex-wrap: wrap;
 }
 
-.settings-intervenant-expense-item__identity {
+.professional-expenses-gite > header span {
+  color: var(--primary-strong);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.professional-recurring-line {
   display: grid;
-  align-self: center;
+  grid-template-columns: 1.2fr 0.9fr 0.7fr 0.7fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.professional-recurring-line label {
+  display: grid;
   gap: 4px;
 }
 
-.settings-intervenant-expense-item__identity strong {
-  color: #1d2327;
+.professional-recurring-line label span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
-.settings-intervenant-expense-item__identity span {
-  color: #646970;
-  font-size: 0.8rem;
-  text-transform: capitalize;
+.professional-one-off-create,
+.professional-one-off-item {
+  display: grid;
+  gap: 16px;
 }
 
-.settings-intervenant-expense-item__actions {
-  flex-wrap: nowrap;
+.professional-one-off-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.settings-intervenant-expense-item__actions button {
-  padding-inline: 13px;
+.professional-categories {
+  display: grid;
+  gap: 10px;
 }
 
-@media (max-width: 1180px) {
-  .settings-intervenant-expense-item {
+.professional-categories > div {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.professional-categories input[type="color"] {
+  width: 50px;
+  height: 42px;
+  padding: 3px;
+}
+
+.professional-rule {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 160px;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+@media (max-width: 1100px) {
+  .professional-expenses-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .settings-intervenant-expense-item__identity,
-  .settings-intervenant-expense-item__notes,
-  .settings-intervenant-expense-item__actions {
-    grid-column: span 2;
+  .professional-recurring-line,
+  .professional-rule {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 720px) {
-  .settings-intervenant-expense-create,
-  .settings-intervenant-expense-item {
+  .professional-expenses-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .professional-expenses-overview,
+  .professional-one-off-grid,
+  .professional-recurring-line,
+  .professional-rule {
     grid-template-columns: 1fr;
-  }
-
-  .settings-intervenant-expense-create__notes,
-  .settings-intervenant-expense-item__identity,
-  .settings-intervenant-expense-item__notes,
-  .settings-intervenant-expense-item__actions {
-    grid-column: auto;
-  }
-
-  .settings-intervenant-expense-item__actions {
-    flex-wrap: wrap;
   }
 }
 
