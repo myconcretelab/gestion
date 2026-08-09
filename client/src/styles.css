@@ -10279,7 +10279,10 @@ a.button-link {
 
 .professional-expenses-gite {
   display: grid;
-  gap: 14px;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  border-top: 4px solid var(--gite-expense-color);
 }
 
 .professional-expenses-gite > header,
@@ -10291,32 +10294,161 @@ a.button-link {
   flex-wrap: wrap;
 }
 
-.professional-expenses-gite > header span {
-  color: var(--primary);
+.professional-expenses-gite > header {
+  padding: 18px 20px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gite-expense-color) 9%, #fff), #fff 58%);
+}
+
+.professional-expenses-gite__identity {
+  display: grid;
+  gap: 3px;
+}
+
+.professional-expenses-gite__identity > span {
+  color: var(--gite-expense-color);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 850;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.professional-expenses-gite__identity h2 {
+  color: #111827;
+  font-size: 1.35rem;
+}
+
+.professional-expenses-gite__identity small {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.professional-expenses-gite__totals {
+  display: flex;
+  gap: 9px;
+}
+
+.professional-expenses-gite__totals > div {
+  min-width: 120px;
+  display: grid;
+  gap: 2px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--gite-expense-color) 22%, #e5e7eb);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 82%);
+}
+
+.professional-expenses-gite__totals span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.professional-expenses-gite__totals strong {
+  color: #111827;
+  font-size: 0.96rem;
+}
+
+.professional-recurring-list {
+  display: grid;
+  gap: 10px;
+  padding: 16px 20px;
+}
+
+.professional-recurring-empty {
+  padding: 24px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  color: #64748b;
+  text-align: center;
 }
 
 .professional-recurring-line {
   display: grid;
-  grid-template-columns: 1.2fr 0.9fr 0.7fr 0.7fr 1fr auto;
+  grid-template-columns: minmax(150px, 1.35fr) minmax(130px, 1fr) minmax(105px, 0.65fr) minmax(105px, 0.65fr) minmax(130px, 1fr) auto;
   gap: 10px;
   align-items: end;
-  padding: 12px;
+  min-width: 0;
+  padding: 12px 12px 12px 15px;
   border: 1px solid #e5e7eb;
+  border-left: 4px solid var(--recurring-category-color);
   border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 14px rgb(15 23 42 / 4%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.professional-recurring-line:hover {
+  border-color: color-mix(in srgb, var(--recurring-category-color) 35%, #e5e7eb);
+  box-shadow: 0 9px 20px rgb(15 23 42 / 7%);
+  transform: translateY(-1px);
 }
 
 .professional-recurring-line label {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .professional-recurring-line label span {
   color: #64748b;
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 750;
+}
+
+.professional-recurring-line input,
+.professional-recurring-line select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border-color: #dbe2ea;
+  background: #fff;
+  font-size: 0.82rem;
+}
+
+.professional-recurring-line input:focus,
+.professional-recurring-line select:focus {
+  border-color: var(--recurring-category-color);
+  outline: 2px solid color-mix(in srgb, var(--recurring-category-color) 18%, transparent);
+}
+
+.professional-recurring-money {
+  position: relative;
+}
+
+.professional-recurring-money input {
+  padding-right: 28px;
+  font-weight: 750;
+}
+
+.professional-recurring-money i {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.professional-recurring-delete {
+  min-height: 38px;
+  padding-inline: 11px;
+}
+
+.professional-expenses-gite > footer {
+  padding: 13px 20px;
+  border-top: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.professional-expenses-gite .professional-recurring-save {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
 }
 
 .professional-one-off-create,

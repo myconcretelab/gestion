@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch, formatApiErrorMessage } from "../utils/api";
 import { formatEuro } from "../utils/format";
+import { getGiteColor } from "../utils/giteColors";
 import type { Gite, Intervenant } from "../utils/types";
 import { computeProfessionalExpenseOverview } from "./professionalExpenses/professionalExpenseUtils";
 
@@ -344,18 +345,27 @@ const ProfessionalExpensesPage = () => {
         </section>
       </div> : null}
 
-      {section === "recurring" ? <section className="professional-expenses-list">{gites.map((gite) => {
+      {section === "recurring" ? <section className="professional-expenses-list">{gites.map((gite, giteIndex) => {
         const management = recurringDrafts[gite.id];
-        return <article key={gite.id} className="card professional-expenses-gite"><header><div><span>Gîte</span><h2>{gite.nom}</h2></div><strong>{formatEuro(management.expenses.reduce((sum, line) => sum + line.annual_amount, 0))} / an</strong></header>
-          {management.expenses.map((line) => <div key={line.id} className="professional-recurring-line">
-            <input aria-label="Libellé" placeholder="Assurance, énergie..." value={line.label} onChange={(event) => patchRecurring(gite.id, line.id, { label: event.target.value })} />
-            <select aria-label="Catégorie" value={line.category_id} onChange={(event) => patchRecurring(gite.id, line.id, { category_id: event.target.value })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
-            <label><span>€/mois</span><input type="number" min="0" step="0.01" value={line.monthly_amount} onChange={(event) => { const monthly = normalizeMoney(event.target.value); patchRecurring(gite.id, line.id, { monthly_amount: monthly, annual_amount: normalizeMoney(monthly * 12) }); }} /></label>
-            <label><span>€/an</span><input type="number" min="0" step="0.01" value={line.annual_amount} onChange={(event) => { const annual = normalizeMoney(event.target.value); patchRecurring(gite.id, line.id, { annual_amount: annual, monthly_amount: normalizeMoney(annual / 12) }); }} /></label>
-            <input aria-label="Notes" placeholder="Notes" value={line.notes} onChange={(event) => patchRecurring(gite.id, line.id, { notes: event.target.value })} />
-            <button type="button" className="danger" onClick={() => updateRecurring(gite.id, (current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== line.id) }))}>Supprimer</button>
-          </div>)}
-          <footer><button type="button" className="secondary" onClick={() => addRecurring(gite.id)}>Ajouter une ligne</button><button type="button" onClick={() => void saveRecurring(gite.id)} disabled={savingId === gite.id}>{savingId === gite.id ? "Enregistrement..." : "Enregistrer ce gîte"}</button></footer>
+        const monthlyTotal = management.expenses.reduce((sum, line) => sum + line.monthly_amount, 0);
+        const annualTotal = management.expenses.reduce((sum, line) => sum + line.annual_amount, 0);
+        return <article key={gite.id} className="card professional-expenses-gite" style={{ "--gite-expense-color": getGiteColor(gite, giteIndex) } as CSSProperties}>
+          <header><div className="professional-expenses-gite__identity"><span>Gîte</span><h2>{gite.nom}</h2><small>{management.expenses.length} frais récurrent(s)</small></div><div className="professional-expenses-gite__totals"><div><span>Mensuel</span><strong>{formatEuro(monthlyTotal)}</strong></div><div><span>Annuel</span><strong>{formatEuro(annualTotal)}</strong></div></div></header>
+          <div className="professional-recurring-list">
+            {management.expenses.length === 0 ? <div className="professional-recurring-empty">Aucun frais récurrent configuré pour ce gîte.</div> : null}
+            {management.expenses.map((line) => {
+              const category = categories.find((item) => item.id === line.category_id);
+              return <div key={line.id} className="professional-recurring-line" style={{ "--recurring-category-color": category?.color ?? "#94a3b8" } as CSSProperties}>
+                <label><span>Libellé</span><input placeholder="Assurance, énergie..." value={line.label} onChange={(event) => patchRecurring(gite.id, line.id, { label: event.target.value })} /></label>
+                <label><span>Catégorie</span><select value={line.category_id} onChange={(event) => patchRecurring(gite.id, line.id, { category_id: event.target.value })}>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                <label><span>Mensuel</span><div className="professional-recurring-money"><input aria-label="Montant mensuel" type="number" min="0" step="0.01" inputMode="decimal" value={line.monthly_amount} onChange={(event) => { const monthly = normalizeMoney(event.target.value); patchRecurring(gite.id, line.id, { monthly_amount: monthly, annual_amount: normalizeMoney(monthly * 12) }); }} /><i>€</i></div></label>
+                <label><span>Annuel</span><div className="professional-recurring-money"><input aria-label="Montant annuel" type="number" min="0" step="0.01" inputMode="decimal" value={line.annual_amount} onChange={(event) => { const annual = normalizeMoney(event.target.value); patchRecurring(gite.id, line.id, { annual_amount: annual, monthly_amount: normalizeMoney(annual / 12) }); }} /><i>€</i></div></label>
+                <label><span>Notes</span><input placeholder="Facultatif" value={line.notes} onChange={(event) => patchRecurring(gite.id, line.id, { notes: event.target.value })} /></label>
+                <button type="button" className="table-action table-action--danger professional-recurring-delete" onClick={() => updateRecurring(gite.id, (current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== line.id) }))}>Supprimer</button>
+              </div>;
+            })}
+          </div>
+          <footer><button type="button" className="table-action table-action--neutral" onClick={() => addRecurring(gite.id)}>+ Ajouter un frais</button><button type="button" className="table-action professional-recurring-save" onClick={() => void saveRecurring(gite.id)} disabled={savingId === gite.id}>{savingId === gite.id ? "Enregistrement..." : "Enregistrer ce gîte"}</button></footer>
         </article>;
       })}</section> : null}
 
