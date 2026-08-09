@@ -23,7 +23,13 @@ import {
   type PumpAutomationConfig,
   type PumpAutomationSourceType,
 } from "../utils/pumpSources";
-import type { Gestionnaire, Gite, IcalSource, Intervenant } from "../utils/types";
+import type {
+  Gestionnaire,
+  Gite,
+  IcalSource,
+  Intervenant,
+  IntervenantExpense,
+} from "../utils/types";
 
 type IcalPreviewItem = {
   id: string;
@@ -471,6 +477,27 @@ type IntervenantDraft = {
   is_active: boolean;
 };
 
+type IntervenantExpenseDraft = {
+  month: string;
+  amount: string;
+  gite_id: string;
+  notes: string;
+};
+
+type NewIntervenantExpenseDraft = IntervenantExpenseDraft & {
+  intervenant_id: string;
+};
+
+const currentMonthValue = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const formatExpenseMonth = (year: number, month: number) =>
+  new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(
+    new Date(Date.UTC(year, month - 1, 1)),
+  );
+
 const EMPTY_INTERVENANT_DRAFT: IntervenantDraft = {
   nom: "",
   telephone: "",
@@ -502,6 +529,27 @@ const buildIntervenantPayload = (draft: IntervenantDraft) => ({
   },
   is_active: draft.is_active,
 });
+
+const buildIntervenantExpenseDraft = (
+  expense: IntervenantExpense,
+): IntervenantExpenseDraft => ({
+  month: `${expense.year}-${String(expense.month).padStart(2, "0")}`,
+  amount: String(expense.amount),
+  gite_id: expense.scope === "gite" ? expense.gite_id ?? "" : "",
+  notes: expense.notes,
+});
+
+const buildIntervenantExpensePayload = (draft: IntervenantExpenseDraft) => {
+  const [year, month] = draft.month.split("-").map(Number);
+  return {
+    year,
+    month,
+    amount: Number(draft.amount.replace(",", ".")),
+    scope: draft.gite_id ? "gite" : "all_gites",
+    gite_id: draft.gite_id || null,
+    notes: draft.notes.trim(),
+  };
+};
 
 type DocumentEmailTextTemplate = {
   subject: string;
@@ -1734,6 +1782,24 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const [intervenantNotice, setIntervenantNotice] = useState<string | null>(
     null,
   );
+  const [newIntervenantExpenseDraft, setNewIntervenantExpenseDraft] =
+    useState<NewIntervenantExpenseDraft>({
+      intervenant_id: "",
+      month: currentMonthValue(),
+      amount: "",
+      gite_id: "",
+      notes: "",
+    });
+  const [intervenantExpenseDrafts, setIntervenantExpenseDrafts] = useState<
+    Record<string, IntervenantExpenseDraft>
+  >({});
+  const [creatingIntervenantExpense, setCreatingIntervenantExpense] =
+    useState(false);
+  const [savingIntervenantExpenseId, setSavingIntervenantExpenseId] = useState<
+    string | null
+  >(null);
+  const [deletingIntervenantExpenseId, setDeletingIntervenantExpenseId] =
+    useState<string | null>(null);
 
   const [loadingSources, setLoadingSources] = useState(true);
   const [icalExports, setIcalExports] = useState<IcalExportFeed[]>([]);
@@ -2027,6 +2093,23 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         0,
       ),
     [gestionnaires],
+  );
+  const intervenantExpenses = useMemo(
+    () =>
+      intervenants
+        .flatMap((intervenant) =>
+          (intervenant.expenses ?? []).map((expense) => ({
+            ...expense,
+            intervenant_nom: intervenant.nom,
+          })),
+        )
+        .sort(
+          (left, right) =>
+            right.year - left.year ||
+            right.month - left.month ||
+            left.intervenant_nom.localeCompare(right.intervenant_nom, "fr"),
+        ),
+    [intervenants],
   );
   const selectedPumpCount = useMemo(
     () => Object.values(pumpSelections).filter(Boolean).length,
@@ -2344,6 +2427,24 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         ]),
       ),
     );
+    setIntervenantExpenseDrafts(
+      Object.fromEntries(
+        data.flatMap((intervenant) =>
+          (intervenant.expenses ?? []).map((expense) => [
+            expense.id,
+            buildIntervenantExpenseDraft(expense),
+          ]),
+        ),
+      ),
+    );
+    setNewIntervenantExpenseDraft((current) => ({
+      ...current,
+      intervenant_id:
+        current.intervenant_id &&
+        data.some((item) => item.id === current.intervenant_id)
+          ? current.intervenant_id
+          : data.find((item) => item.is_active)?.id ?? data[0]?.id ?? "",
+    }));
   };
 
   const loadSources = async () => {
@@ -3106,7 +3207,11 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         case "settings-intervenants":
           setLoadingIntervenants(true);
           try {
-            await loadIntervenants();
+            const [, gitesData] = await Promise.all([
+              loadIntervenants(),
+              apiFetch<Gite[]>("/gites"),
+            ]);
+            setGites(gitesData);
           } catch (error: any) {
             setIntervenantError(
               error?.message ?? "Impossible de charger les intervenants.",
@@ -4296,7 +4401,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const removeIntervenant = async (intervenant: Intervenant) => {
     if (
       !confirm(
-        `Supprimer l'intervenant « ${intervenant.nom} » ? Il sera retiré des plannings qui l'utilisent.`,
+        `Supprimer l'intervenant « ${intervenant.nom} » ? Il sera retiré des plannings et ses frais ponctuels seront supprimés.`,
       )
     ) {
       return;
@@ -4315,6 +4420,128 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
       );
     } finally {
       setDeletingIntervenantId(null);
+    }
+  };
+
+  const updateIntervenantExpenseDraft = (
+    expenseId: string,
+    patch: Partial<IntervenantExpenseDraft>,
+  ) => {
+    setIntervenantExpenseDrafts((current) => ({
+      ...current,
+      [expenseId]: { ...current[expenseId], ...patch },
+    }));
+  };
+
+  const validateIntervenantExpenseDraft = (
+    draft: IntervenantExpenseDraft,
+  ) => {
+    if (!/^\d{4}-\d{2}$/.test(draft.month)) {
+      setIntervenantError("Choisissez un mois valide.");
+      return false;
+    }
+    const amount = Number(draft.amount.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setIntervenantError("Le montant doit être supérieur à zéro.");
+      return false;
+    }
+    return true;
+  };
+
+  const createIntervenantExpense = async () => {
+    const intervenant = intervenants.find(
+      (item) => item.id === newIntervenantExpenseDraft.intervenant_id,
+    );
+    if (!intervenant) {
+      setIntervenantError("Choisissez un intervenant.");
+      return;
+    }
+    if (!validateIntervenantExpenseDraft(newIntervenantExpenseDraft)) return;
+
+    setCreatingIntervenantExpense(true);
+    setIntervenantError(null);
+    setIntervenantNotice(null);
+    try {
+      await apiFetch<IntervenantExpense>(
+        `/intervenants/${intervenant.id}/expenses`,
+        {
+          method: "POST",
+          json: buildIntervenantExpensePayload(newIntervenantExpenseDraft),
+        },
+      );
+      setNewIntervenantExpenseDraft((current) => ({
+        intervenant_id: current.intervenant_id,
+        month: current.month,
+        amount: "",
+        gite_id: "",
+        notes: "",
+      }));
+      await loadIntervenants();
+      setIntervenantNotice("Frais ponctuel enregistré.");
+    } catch (error: any) {
+      setIntervenantError(
+        error.message ?? "Impossible d'enregistrer ce frais.",
+      );
+    } finally {
+      setCreatingIntervenantExpense(false);
+    }
+  };
+
+  const saveIntervenantExpense = async (
+    expense: IntervenantExpense & { intervenant_nom: string },
+  ) => {
+    const draft = intervenantExpenseDrafts[expense.id];
+    if (!draft || !validateIntervenantExpenseDraft(draft)) return;
+
+    setSavingIntervenantExpenseId(expense.id);
+    setIntervenantError(null);
+    setIntervenantNotice(null);
+    try {
+      await apiFetch<IntervenantExpense>(
+        `/intervenants/${expense.intervenant_id}/expenses/${expense.id}`,
+        {
+          method: "PATCH",
+          json: buildIntervenantExpensePayload(draft),
+        },
+      );
+      await loadIntervenants();
+      setIntervenantNotice("Frais ponctuel mis à jour.");
+    } catch (error: any) {
+      setIntervenantError(
+        error.message ?? "Impossible de modifier ce frais.",
+      );
+    } finally {
+      setSavingIntervenantExpenseId(null);
+    }
+  };
+
+  const removeIntervenantExpense = async (
+    expense: IntervenantExpense & { intervenant_nom: string },
+  ) => {
+    if (
+      !confirm(
+        `Supprimer ce frais de ${expense.intervenant_nom} pour ${expense.month}/${expense.year} ?`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingIntervenantExpenseId(expense.id);
+    setIntervenantError(null);
+    setIntervenantNotice(null);
+    try {
+      await apiFetch(
+        `/intervenants/${expense.intervenant_id}/expenses/${expense.id}`,
+        { method: "DELETE" },
+      );
+      await loadIntervenants();
+      setIntervenantNotice("Frais ponctuel supprimé.");
+    } catch (error: any) {
+      setIntervenantError(
+        error.message ?? "Impossible de supprimer ce frais.",
+      );
+    } finally {
+      setDeletingIntervenantExpenseId(null);
     }
   };
 
@@ -6518,6 +6745,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                     </>
                   )}
                 </div>
+
               </div>
             </section>
           ) : null}
@@ -9230,6 +9458,170 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                   {isDeleting ? "Suppression..." : "Supprimer"}
                                 </button>
                               </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="card settings-card settings-card--blue settings-card--span-12">
+                  <div className="settings-managers-header">
+                    <div>
+                      <div className="settings-card__tag">Suivi mensuel</div>
+                      <div className="section-title">Frais ponctuels des intervenants</div>
+                    </div>
+                    <div className="field-hint">
+                      Affichés dans les statistiques, sans effet sur les totaux des gîtes.
+                    </div>
+                  </div>
+
+                  <div className="settings-intervenant-expense-create">
+                    <label className="field">
+                      Intervenant
+                      <select
+                        value={newIntervenantExpenseDraft.intervenant_id}
+                        onChange={(event) => setNewIntervenantExpenseDraft((current) => ({ ...current, intervenant_id: event.target.value }))}
+                        disabled={creatingIntervenantExpense}
+                      >
+                        <option value="">Choisir</option>
+                        {intervenants.map((intervenant) => (
+                          <option key={intervenant.id} value={intervenant.id}>
+                            {intervenant.nom}{intervenant.is_active ? "" : " (inactif)"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      Mois
+                      <input
+                        type="month"
+                        value={newIntervenantExpenseDraft.month}
+                        onChange={(event) => setNewIntervenantExpenseDraft((current) => ({ ...current, month: event.target.value }))}
+                        disabled={creatingIntervenantExpense}
+                      />
+                    </label>
+                    <label className="field">
+                      Montant (€)
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={newIntervenantExpenseDraft.amount}
+                        onChange={(event) => setNewIntervenantExpenseDraft((current) => ({ ...current, amount: event.target.value }))}
+                        placeholder="50,00"
+                        disabled={creatingIntervenantExpense}
+                      />
+                    </label>
+                    <label className="field">
+                      Portée
+                      <select
+                        value={newIntervenantExpenseDraft.gite_id}
+                        onChange={(event) => setNewIntervenantExpenseDraft((current) => ({ ...current, gite_id: event.target.value }))}
+                        disabled={creatingIntervenantExpense}
+                      >
+                        <option value="">Tous les gîtes (global)</option>
+                        {gites.map((gite) => (
+                          <option key={gite.id} value={gite.id}>{gite.nom}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field settings-intervenant-expense-create__notes">
+                      Note (facultative)
+                      <input
+                        value={newIntervenantExpenseDraft.notes}
+                        onChange={(event) => setNewIntervenantExpenseDraft((current) => ({ ...current, notes: event.target.value }))}
+                        placeholder="Ex. intervention exceptionnelle"
+                        disabled={creatingIntervenantExpense}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void createIntervenantExpense()}
+                      disabled={creatingIntervenantExpense || intervenants.length === 0}
+                    >
+                      {creatingIntervenantExpense ? "Ajout..." : "Ajouter le frais"}
+                    </button>
+                  </div>
+                  {intervenantNotice ? (
+                    <div className="note note--success">{intervenantNotice}</div>
+                  ) : null}
+                  {intervenantError ? (
+                    <div className="note">{intervenantError}</div>
+                  ) : null}
+
+                  {intervenantExpenses.length === 0 ? (
+                    <div className="field-hint settings-intervenant-expense-empty">
+                      Aucun frais ponctuel enregistré.
+                    </div>
+                  ) : (
+                    <div className="settings-intervenant-expense-list">
+                      {intervenantExpenses.map((expense) => {
+                        const draft = intervenantExpenseDrafts[expense.id] ?? buildIntervenantExpenseDraft(expense);
+                        const isSaving = savingIntervenantExpenseId === expense.id;
+                        const isDeleting = deletingIntervenantExpenseId === expense.id;
+                        return (
+                          <article key={expense.id} className="settings-intervenant-expense-item">
+                            <div className="settings-intervenant-expense-item__identity">
+                              <strong>{expense.intervenant_nom}</strong>
+                              <span>{formatExpenseMonth(expense.year, expense.month)}</span>
+                            </div>
+                            <label className="field">
+                              Mois
+                              <input
+                                type="month"
+                                value={draft.month}
+                                onChange={(event) => updateIntervenantExpenseDraft(expense.id, { month: event.target.value })}
+                              />
+                            </label>
+                            <label className="field">
+                              Montant (€)
+                              <input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                inputMode="decimal"
+                                value={draft.amount}
+                                onChange={(event) => updateIntervenantExpenseDraft(expense.id, { amount: event.target.value })}
+                              />
+                            </label>
+                            <label className="field">
+                              Portée
+                              <select
+                                value={draft.gite_id}
+                                onChange={(event) => updateIntervenantExpenseDraft(expense.id, { gite_id: event.target.value })}
+                              >
+                                <option value="">Tous les gîtes</option>
+                                {gites.map((gite) => (
+                                  <option key={gite.id} value={gite.id}>{gite.nom}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="field settings-intervenant-expense-item__notes">
+                              Note
+                              <input
+                                value={draft.notes}
+                                onChange={(event) => updateIntervenantExpenseDraft(expense.id, { notes: event.target.value })}
+                              />
+                            </label>
+                            <div className="actions settings-intervenant-expense-item__actions">
+                              <button
+                                type="button"
+                                onClick={() => void saveIntervenantExpense(expense)}
+                                disabled={isSaving || isDeleting}
+                              >
+                                {isSaving ? "Enregistrement..." : "Enregistrer"}
+                              </button>
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => void removeIntervenantExpense(expense)}
+                                disabled={isSaving || isDeleting}
+                              >
+                                {isDeleting ? "Suppression..." : "Supprimer"}
+                              </button>
                             </div>
                           </article>
                         );

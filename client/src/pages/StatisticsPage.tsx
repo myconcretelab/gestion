@@ -26,6 +26,7 @@ import {
 } from "./statistics/statisticsUtils";
 import GlobalRevenueChart, { type RevenueChartGroup } from "./statistics/components/GlobalRevenueChart";
 import ExpenseReport from "./statistics/components/ExpenseReport";
+import IntervenantExpenseReport from "./statistics/components/IntervenantExpenseReport";
 import OccupationGauge from "./statistics/components/OccupationGauge";
 import PaymentPieChart from "./statistics/components/PaymentPieChart";
 import StatSwitch from "./statistics/components/StatSwitch";
@@ -348,6 +349,14 @@ const StatisticsPage = () => {
       .map((rule) => rule.label) ?? [];
     return labels.join(", ") || "Frais dynamiques";
   }, [dataset?.expenseSettings.dynamic_expenses]);
+  const intervenantExpenses = useMemo(
+    () =>
+      (dataset?.intervenantExpenses ?? []).filter((expense) => {
+        if (selectedYear !== "all" && expense.year !== selectedYear) return false;
+        return !selectedMonth || expense.month === Number(selectedMonth);
+      }),
+    [dataset?.intervenantExpenses, selectedMonth, selectedYear],
+  );
 
   const urssafByManager = useMemo(
     () => computeUrssafByManager(entriesByGite, gites, selectedYear, selectedMonth),
@@ -638,6 +647,11 @@ const StatisticsPage = () => {
           dynamicLabel={dynamicExpenseLabel}
         />
       ) : null}
+
+      <IntervenantExpenseReport
+        expenses={intervenantExpenses}
+        periodLabel={getReportPeriodLabel(selectedYear, selectedMonth)}
+      />
 
       <section className="stats-gites-grid">
         {gites.map((gite, index) => {

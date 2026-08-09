@@ -178,6 +178,21 @@ export type Intervenant = {
   adresse: string | null;
   message_channel_addresses: Record<string, string>;
   is_active: boolean;
+  expenses?: IntervenantExpense[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type IntervenantExpense = {
+  id: string;
+  intervenant_id: string;
+  scope: "all_gites" | "gite";
+  gite_id: string | null;
+  gite_nom: string | null;
+  year: number;
+  month: number;
+  amount: number;
+  notes: string;
   created_at: string;
   updated_at: string;
 };
