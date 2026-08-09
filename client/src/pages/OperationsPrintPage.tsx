@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { DayPicker, type DateRange } from "@daypicker/react";
 import { fr } from "@daypicker/react/locale";
+import { Link } from "react-router-dom";
 import "@daypicker/react/style.css";
 import { apiFetch, formatApiErrorMessage, isAbortError } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
@@ -22,13 +23,13 @@ import {
 import { formatEuro } from "../utils/format";
 import type {
   Gite,
+  Intervenant,
   PlanningRelayPeriod,
   PlanningRelayMessageChannelStatus,
   PlanningRelaySmsConfig,
   PlanningRelaySmsProgrammeTemplate,
   PlanningRelaySmsPreview,
   PlanningRelaySmsTestResult,
-  PlanningRelayWorker,
   Reservation,
 } from "../utils/types";
 
@@ -55,24 +56,6 @@ type PlanningRelayPeriodDraft = {
   arrivals_only: boolean;
   stay_nights: string;
   sms_configs: PlanningRelaySmsConfig[];
-};
-
-type PlanningRelayWorkerDraft = {
-  nom: string;
-  telephone: string;
-  email: string;
-  adresse: string;
-  telegram_chat_id: string;
-  is_active: boolean;
-};
-
-const EMPTY_WORKER_DRAFT: PlanningRelayWorkerDraft = {
-  nom: "",
-  telephone: "",
-  email: "",
-  adresse: "",
-  telegram_chat_id: "",
-  is_active: true,
 };
 
 const readLegacySavedPeriods = (): LegacySavedPeriod[] => {
@@ -153,7 +136,7 @@ const getSmsWorkerIds = (config: PlanningRelaySmsConfig) =>
 const getRecipientChannel = (
   config: PlanningRelaySmsConfig,
   workerId: string,
-  worker?: PlanningRelayWorker,
+  worker?: Intervenant,
 ) => {
   const configuredChannel = config.recipient_channels?.[workerId] ?? config.channel ?? "sms";
   if (!worker || getWorkerChannelAddress(worker, configuredChannel)) {
@@ -163,14 +146,14 @@ const getRecipientChannel = (
 };
 
 const getWorkerChannelAddress = (
-  worker: PlanningRelayWorker,
+  worker: Intervenant,
   channel: PlanningRelaySmsConfig["channel"],
 ) =>
   channel === "sms"
     ? worker.message_channel_addresses?.sms || worker.telephone
     : worker.message_channel_addresses?.telegram || "";
 
-const getWorkerSupportedChannels = (worker: PlanningRelayWorker) =>
+const getWorkerSupportedChannels = (worker: Intervenant) =>
   (["sms", "telegram"] as const).filter((channel) =>
     Boolean(getWorkerChannelAddress(worker, channel))
   );
@@ -319,15 +302,6 @@ const createSmsConfig = (programmeTemplates = DEFAULT_PROGRAMME_TEMPLATES): Plan
   last_attempt_for_date: null,
 });
 
-const buildWorkerDraft = (worker: PlanningRelayWorker): PlanningRelayWorkerDraft => ({
-  nom: worker.nom,
-  telephone: worker.telephone,
-  email: worker.email ?? "",
-  adresse: worker.adresse ?? "",
-  telegram_chat_id: worker.message_channel_addresses?.telegram ?? "",
-  is_active: worker.is_active,
-});
-
 const formatGiteTime = (value?: string) => {
   if (!value) return "—";
   const [hours, minutes] = value.split(":");
@@ -385,17 +359,11 @@ const OperationsPrintPage = () => {
   const [programmeTemplateDrafts, setProgrammeTemplateDrafts] = useState<PlanningRelaySmsProgrammeTemplate[]>([]);
   const [programmeTemplateError, setProgrammeTemplateError] = useState<string | null>(null);
   const [savingProgrammeTemplates, setSavingProgrammeTemplates] = useState(false);
-  const [workerManagerIsOpen, setWorkerManagerIsOpen] = useState(false);
   const [periodDrafts, setPeriodDrafts] = useState<Record<string, PlanningRelayPeriodDraft>>({});
   const [openPriceAccordionIds, setOpenPriceAccordionIds] = useState<Set<string>>(new Set());
-  const [workers, setWorkers] = useState<PlanningRelayWorker[]>([]);
-  const [workerDrafts, setWorkerDrafts] = useState<Record<string, PlanningRelayWorkerDraft>>({});
-  const [newWorkerDraft, setNewWorkerDraft] = useState<PlanningRelayWorkerDraft>(EMPTY_WORKER_DRAFT);
+  const [workers, setWorkers] = useState<Intervenant[]>([]);
   const [savingPeriodDetailsId, setSavingPeriodDetailsId] = useState<string | null>(null);
   const [testingPeriodSmsId, setTestingPeriodSmsId] = useState<string | null>(null);
-  const [savingWorkerId, setSavingWorkerId] = useState<string | null>(null);
-  const [deletingWorkerId, setDeletingWorkerId] = useState<string | null>(null);
-  const [creatingWorker, setCreatingWorker] = useState(false);
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -429,7 +397,7 @@ const OperationsPrintPage = () => {
 
   const refreshWorkers = useCallback(async () => {
     try {
-      const nextWorkers = await apiFetch<PlanningRelayWorker[]>("/planning-relay-periods/workers");
+      const nextWorkers = await apiFetch<Intervenant[]>("/intervenants");
       setWorkers(nextWorkers);
       setSavedPeriodsError(null);
     } catch (caught) {
@@ -476,16 +444,6 @@ const OperationsPrintPage = () => {
       return next;
     });
   }, [savedPeriods]);
-
-  useEffect(() => {
-    setWorkerDrafts((current) => {
-      const next: Record<string, PlanningRelayWorkerDraft> = {};
-      for (const worker of workers) {
-        next[worker.id] = current[worker.id] ?? buildWorkerDraft(worker);
-      }
-      return next;
-    });
-  }, [workers]);
 
   useEffect(() => {
     if (!periodPickerIsOpen) return;
@@ -988,110 +946,6 @@ const OperationsPrintPage = () => {
     updatePeriodDraft(periodId, { sms_configs: [...draft.sms_configs, createSmsConfig(availableProgrammeTemplates)] });
   };
 
-  const updateWorkerDraft = (workerId: string, patch: Partial<PlanningRelayWorkerDraft>) => {
-    setWorkerDrafts((current) => {
-      const worker = workers.find((item) => item.id === workerId);
-      const existing = current[workerId] ?? (worker ? buildWorkerDraft(worker) : null);
-      if (!existing) return current;
-      return { ...current, [workerId]: { ...existing, ...patch } };
-    });
-  };
-
-  const createWorker = async () => {
-    if (creatingWorker) return;
-    if (!newWorkerDraft.nom.trim() || !newWorkerDraft.telephone.trim()) {
-      setSavedPeriodsError("Le nom et le téléphone de l'intervenant sont obligatoires.");
-      return;
-    }
-
-    setCreatingWorker(true);
-    setSavedPeriodsError(null);
-    setSavedPeriodsNotice(null);
-    try {
-      const worker = await apiFetch<PlanningRelayWorker>("/planning-relay-periods/workers", {
-        method: "POST",
-        json: {
-          nom: newWorkerDraft.nom.trim(),
-          telephone: newWorkerDraft.telephone.trim(),
-          email: newWorkerDraft.email.trim() || null,
-          adresse: newWorkerDraft.adresse.trim() || null,
-          message_channel_addresses: {
-            sms: newWorkerDraft.telephone.trim(),
-            ...(newWorkerDraft.telegram_chat_id.trim()
-              ? { telegram: newWorkerDraft.telegram_chat_id.trim() }
-              : {}),
-          },
-          is_active: newWorkerDraft.is_active,
-        },
-      });
-      setWorkers((current) => [...current, worker].sort((left, right) =>
-        Number(right.is_active) - Number(left.is_active) || left.nom.localeCompare(right.nom, "fr")
-      ));
-      setNewWorkerDraft(EMPTY_WORKER_DRAFT);
-      setSavedPeriodsNotice("Intervenant ajouté.");
-    } catch (caught) {
-      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'ajouter l'intervenant."));
-    } finally {
-      setCreatingWorker(false);
-    }
-  };
-
-  const saveWorker = async (worker: PlanningRelayWorker) => {
-    const draft = workerDrafts[worker.id] ?? buildWorkerDraft(worker);
-    if (!draft.nom.trim() || !draft.telephone.trim()) {
-      setSavedPeriodsError("Le nom et le téléphone de l'intervenant sont obligatoires.");
-      return;
-    }
-
-    setSavingWorkerId(worker.id);
-    setSavedPeriodsError(null);
-    setSavedPeriodsNotice(null);
-    try {
-      const updated = await apiFetch<PlanningRelayWorker>(`/planning-relay-periods/workers/${worker.id}`, {
-        method: "PATCH",
-        json: {
-          nom: draft.nom.trim(),
-          telephone: draft.telephone.trim(),
-          email: draft.email.trim() || null,
-          adresse: draft.adresse.trim() || null,
-          message_channel_addresses: {
-            sms: draft.telephone.trim(),
-            ...(draft.telegram_chat_id.trim()
-              ? { telegram: draft.telegram_chat_id.trim() }
-              : {}),
-          },
-          is_active: draft.is_active,
-        },
-      });
-      setWorkers((current) => current.map((item) => item.id === updated.id ? updated : item).sort((left, right) =>
-        Number(right.is_active) - Number(left.is_active) || left.nom.localeCompare(right.nom, "fr")
-      ));
-      setWorkerDrafts((current) => ({ ...current, [updated.id]: buildWorkerDraft(updated) }));
-      setSavedPeriodsNotice("Intervenant enregistré.");
-    } catch (caught) {
-      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible d'enregistrer l'intervenant."));
-    } finally {
-      setSavingWorkerId(null);
-    }
-  };
-
-  const deleteWorker = async (worker: PlanningRelayWorker) => {
-    if (!window.confirm(`Supprimer l'intervenant « ${worker.nom} » ? Il sera retiré des périodes qui l’utilisent.`)) return;
-    setDeletingWorkerId(worker.id);
-    setSavedPeriodsError(null);
-    setSavedPeriodsNotice(null);
-    try {
-      await apiFetch(`/planning-relay-periods/workers/${worker.id}`, { method: "DELETE" });
-      setWorkers((current) => current.filter((item) => item.id !== worker.id));
-      await refreshSavedPeriods();
-      setSavedPeriodsNotice("Intervenant supprimé.");
-    } catch (caught) {
-      setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de supprimer l'intervenant."));
-    } finally {
-      setDeletingWorkerId(null);
-    }
-  };
-
   const savePeriodDetails = async (period: PlanningRelayPeriod, draftOverride?: PlanningRelayPeriodDraft) => {
     const draft = draftOverride ?? periodDrafts[period.id] ?? buildPeriodDraft(period);
     if (!draft.label.trim()) {
@@ -1354,9 +1208,9 @@ const OperationsPrintPage = () => {
                 </div>
               ) : null}
               <p>Chaque période peut envoyer son programme à plusieurs intervenants via le canal choisi.</p>
-              <button type="button" className="secondary" onClick={() => setWorkerManagerIsOpen(true)}>
+              <Link className="secondary button-link" to="/parametres/intervenants">
                 Gérer les intervenants
-              </button>
+              </Link>
             </div>
             <div className="operations-programme-mini">
               <div>
@@ -1906,176 +1760,6 @@ const OperationsPrintPage = () => {
               </button>
             </footer>
           </section>
-        </div>
-      ) : null}
-
-      {workerManagerIsOpen ? (
-        <div className="operations-period-drawer no-print" role="dialog" aria-modal="true" aria-labelledby="operations-worker-drawer-title">
-          <button
-            type="button"
-            className="operations-period-drawer__backdrop"
-            aria-label="Fermer la gestion des intervenants"
-            onClick={() => setWorkerManagerIsOpen(false)}
-          />
-          <aside className="operations-period-drawer__panel">
-            <header className="operations-period-drawer__header">
-              <div>
-                <div className="operations-controls__eyebrow">Planning relais</div>
-                <h2 id="operations-worker-drawer-title">Intervenants</h2>
-              </div>
-              <button type="button" className="operations-period-drawer__close" onClick={() => setWorkerManagerIsOpen(false)} aria-label="Fermer">
-                ×
-              </button>
-            </header>
-            <div className="operations-period-drawer__content">
-              <section className="operations-period-detail operations-worker-detail">
-                <div className="operations-period-detail__title">
-                  <div>
-                    <strong>Nouvel intervenant</strong>
-                    <span>Disponible ensuite dans chaque ligne d'intervention</span>
-                  </div>
-                </div>
-                <div className="operations-period-detail__grid">
-                  <label className="field">
-                    <span>Nom</span>
-                    <input
-                      value={newWorkerDraft.nom}
-                      onChange={(event) => setNewWorkerDraft((current) => ({ ...current, nom: event.target.value }))}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Téléphone</span>
-                    <input
-                      type="tel"
-                      inputMode="tel"
-                      value={newWorkerDraft.telephone}
-                      onChange={(event) => setNewWorkerDraft((current) => ({ ...current, telephone: event.target.value }))}
-                      placeholder="06 00 00 00 00"
-                    />
-                  </label>
-                </div>
-                <div className="operations-period-detail__grid">
-                  <label className="field">
-                    <span>Identifiant de chat Telegram</span>
-                    <input
-                      value={newWorkerDraft.telegram_chat_id}
-                      onChange={(event) => setNewWorkerDraft((current) => ({ ...current, telegram_chat_id: event.target.value }))}
-                      placeholder="Ex. 123456789"
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Email</span>
-                    <input
-                      type="email"
-                      value={newWorkerDraft.email}
-                      onChange={(event) => setNewWorkerDraft((current) => ({ ...current, email: event.target.value }))}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Adresse</span>
-                    <input
-                      value={newWorkerDraft.adresse}
-                      onChange={(event) => setNewWorkerDraft((current) => ({ ...current, adresse: event.target.value }))}
-                    />
-                  </label>
-                </div>
-                <div className="operations-period-detail__toggles">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={newWorkerDraft.is_active}
-                      onChange={(event) => setNewWorkerDraft((current) => ({ ...current, is_active: event.target.checked }))}
-                    />
-                    Actif
-                  </label>
-                </div>
-                <div className="operations-period-detail__actions">
-                  <button type="button" onClick={() => void createWorker()} disabled={creatingWorker}>
-                    {creatingWorker ? "Ajout…" : "Ajouter"}
-                  </button>
-                </div>
-              </section>
-
-              {workers.length === 0 ? (
-                <div className="operations-empty">Aucun intervenant enregistré.</div>
-              ) : workers.map((worker) => {
-                const draft = workerDrafts[worker.id] ?? buildWorkerDraft(worker);
-                const isSaving = savingWorkerId === worker.id;
-                const isDeleting = deletingWorkerId === worker.id;
-                return (
-                  <section key={worker.id} className={`operations-period-detail operations-worker-detail${worker.is_active ? "" : " is-disabled"}`}>
-                    <div className="operations-period-detail__title">
-                      <div>
-                        <strong>{worker.nom}</strong>
-                        <span>{worker.telephone}</span>
-                      </div>
-                    </div>
-                    <div className="operations-period-detail__grid">
-                      <label className="field">
-                        <span>Identifiant de chat Telegram</span>
-                        <input
-                          value={draft.telegram_chat_id}
-                          onChange={(event) => updateWorkerDraft(worker.id, { telegram_chat_id: event.target.value })}
-                          placeholder="Ex. 123456789"
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Nom</span>
-                        <input
-                          value={draft.nom}
-                          onChange={(event) => updateWorkerDraft(worker.id, { nom: event.target.value })}
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Téléphone</span>
-                        <input
-                          type="tel"
-                          inputMode="tel"
-                          value={draft.telephone}
-                          onChange={(event) => updateWorkerDraft(worker.id, { telephone: event.target.value })}
-                        />
-                      </label>
-                    </div>
-                    <div className="operations-period-detail__grid">
-                      <label className="field">
-                        <span>Email</span>
-                        <input
-                          type="email"
-                          value={draft.email}
-                          onChange={(event) => updateWorkerDraft(worker.id, { email: event.target.value })}
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Adresse</span>
-                        <input
-                          value={draft.adresse}
-                          onChange={(event) => updateWorkerDraft(worker.id, { adresse: event.target.value })}
-                        />
-                      </label>
-                    </div>
-                    <div className="operations-period-detail__toggles">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={draft.is_active}
-                          onChange={(event) => updateWorkerDraft(worker.id, { is_active: event.target.checked })}
-                        />
-                        Actif
-                      </label>
-                    </div>
-                    <div className="operations-period-detail__actions">
-                      <button type="button" onClick={() => void saveWorker(worker)} disabled={isSaving}>
-                        {isSaving ? "Enregistrement…" : "Enregistrer"}
-                      </button>
-                      <button type="button" className="danger" onClick={() => void deleteWorker(worker)} disabled={isDeleting}>
-                        {isDeleting ? "Suppression…" : "Supprimer"}
-                      </button>
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          </aside>
         </div>
       ) : null}
 
