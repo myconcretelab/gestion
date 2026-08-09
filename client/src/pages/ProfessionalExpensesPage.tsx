@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch, formatApiErrorMessage } from "../utils/api";
 import { formatEuro } from "../utils/format";
 import type { Gite, Intervenant } from "../utils/types";
+import { computeProfessionalExpenseOverview } from "./professionalExpenses/professionalExpenseUtils";
 
 type Category = { id: string; name: string; color: string };
 type RecurringLine = {
@@ -51,6 +53,17 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: "assurance", name: "Assurance", color: "#7e5bef" },
 ];
 const COLORS = ["#2d8cff", "#43b77d", "#f5a623", "#7e5bef", "#fe5c73", "#14b8a6"];
+const MONTH_NAMES = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+const formatEuroCompact = (value: number) => new Intl.NumberFormat("fr-FR", {
+  style: "currency",
+  currency: "EUR",
+  notation: "compact",
+  maximumFractionDigits: 1,
+}).format(value || 0);
+const formatPercent = (value: number) => new Intl.NumberFormat("fr-FR", {
+  style: "percent",
+  maximumFractionDigits: 1,
+}).format(value || 0);
 const localId = (prefix: string) => globalThis.crypto?.randomUUID?.() ?? `${prefix}-${Date.now()}`;
 const monthValue = () => {
   const now = new Date();
@@ -141,22 +154,19 @@ const ProfessionalExpensesPage = () => {
 
   useEffect(() => { void load(); }, []);
 
-  const recurringTotals = useMemo(() => Object.values(recurringDrafts).reduce(
-    (totals, management) => {
-      for (const line of management.expenses) {
-        totals.monthly += normalizeMoney(line.monthly_amount);
-        totals.annual += normalizeMoney(line.annual_amount);
-      }
-      return totals;
-    },
-    { monthly: 0, annual: 0 },
-  ), [recurringDrafts]);
   const filteredOneOff = useMemo(
     () => oneOffExpenses.filter((expense) => expense.year === year),
     [oneOffExpenses, year],
   );
-  const oneOffTotal = filteredOneOff.reduce((sum, expense) => sum + expense.amount, 0);
-  const years = [...new Set([new Date().getFullYear(), ...oneOffExpenses.map((expense) => expense.year)])].sort((a, b) => b - a);
+  const overviewReport = useMemo(() => computeProfessionalExpenseOverview({
+    year,
+    categories,
+    gites,
+    recurringByGite: recurringDrafts,
+    oneOffExpenses,
+  }), [categories, gites, oneOffExpenses, recurringDrafts, year]);
+  const currentYear = new Date().getFullYear();
+  const years = [...new Set([currentYear - 1, currentYear, currentYear + 1, ...oneOffExpenses.map((expense) => expense.year)])].sort((a, b) => b - a);
 
   const updateRecurring = (giteId: string, updater: (current: ExpenseManagement) => ExpenseManagement) =>
     setRecurringDrafts((current) => ({ ...current, [giteId]: updater(current[giteId]) }));
@@ -241,16 +251,82 @@ const ProfessionalExpensesPage = () => {
       {notice ? <div className="note note--success">{notice}</div> : null}
       {error ? <div className="note">{error}</div> : null}
 
-      {section === "overview" ? <section className="professional-expenses-overview">
-        <article className="card"><span>Budget récurrent mensuel</span><strong>{formatEuro(recurringTotals.monthly)}</strong><small>Somme configurée pour les gîtes</small></article>
-        <article className="card"><span>Budget récurrent annuel</span><strong>{formatEuro(recurringTotals.annual)}</strong><small>Hors règles dynamiques</small></article>
-        <article className="card"><span>Frais ponctuels {year}</span><strong>{formatEuro(oneOffTotal)}</strong><small>{filteredOneOff.length} dépense(s), informatives dans les statistiques</small></article>
-        <article className="card"><span>Règles automatiques</span><strong>{rules.filter((rule) => rule.enabled).length}</strong><small>règle(s) active(s)</small></article>
-        <div className="card professional-expenses-breakdown"><h2>Répartition des frais ponctuels</h2>{gites.map((gite) => {
-          const total = filteredOneOff.filter((expense) => expense.gite_id === gite.id).reduce((sum, expense) => sum + expense.amount, 0);
-          return <div key={gite.id}><span>{gite.nom}</span><strong>{formatEuro(total)}</strong></div>;
-        })}<div><span>Frais globaux</span><strong>{formatEuro(filteredOneOff.filter((expense) => expense.scope === "all_gites").reduce((sum, expense) => sum + expense.amount, 0))}</strong></div></div>
-      </section> : null}
+      {section === "overview" ? <div className="professional-expenses-dashboard">
+        <section className="professional-expenses-overview">
+          <article className="card"><span>Frais récurrents</span><strong>{formatEuro(overviewReport.recurringAnnual)}</strong><small>{formatEuro(overviewReport.recurringMonthly)} / mois</small></article>
+          <article className="card"><span>Frais ponctuels {year}</span><strong>{formatEuro(overviewReport.oneOffTotal)}</strong><small>{filteredOneOff.length} dépense(s) enregistrée(s)</small></article>
+          <article className="card professional-expenses-overview__total"><span>Total professionnel</span><strong>{formatEuro(overviewReport.total)}</strong><small>Récurrents + ponctuels</small></article>
+          <article className="card"><span>Moyenne mensuelle</span><strong>{formatEuro(overviewReport.monthlyAverage)}</strong><small>{rules.filter((rule) => rule.enabled).length} règle(s) automatique(s) active(s)</small></article>
+        </section>
+
+        <section className="card professional-expenses-report">
+          <header className="professional-expenses-report__header">
+            <div><span>Rapport annuel</span><h2>Analyse des frais professionnels</h2><p>Lecture consolidée des frais récurrents et ponctuels, sans impact sur les résultats financiers des gîtes.</p></div>
+            <strong>{year}</strong>
+          </header>
+
+          <div className="professional-expenses-charts">
+            <article className="professional-expenses-panel">
+              <header><h3>Évolution mensuelle</h3><span>Budget récurrent et dépenses ponctuelles</span></header>
+              {overviewReport.total > 0 ? <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={overviewReport.months} margin={{ top: 15, right: 8, left: 4, bottom: 2 }}>
+                  <CartesianGrid vertical={false} stroke="#eef2f7" />
+                  <XAxis dataKey="month" tickFormatter={(month) => MONTH_NAMES[Number(month) - 1]} tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={(value) => formatEuroCompact(Number(value))} tick={{ fontSize: 11 }} />
+                  <Tooltip labelFormatter={(month) => MONTH_NAMES[Number(month) - 1]} formatter={(value) => formatEuro(Number(value))} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="recurring" name="Frais récurrents" stackId="fees" fill="#2D8CFF" isAnimationActive={false} />
+                  <Bar dataKey="oneOff" name="Frais ponctuels" stackId="fees" fill="#43B77D" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer> : <div className="stats-empty-chart">Aucun frais à représenter pour {year}.</div>}
+            </article>
+
+            <article className="professional-expenses-panel professional-expenses-panel--distribution">
+              <header><h3>Répartition des frais</h3><span>Par catégorie récurrente et frais ponctuels</span></header>
+              {overviewReport.distribution.length ? <>
+                <ResponsiveContainer width="100%" height={190}>
+                  <PieChart>
+                    <Pie data={overviewReport.distribution} dataKey="total" nameKey="name" innerRadius={48} outerRadius={78} paddingAngle={2} isAnimationActive={false}>
+                      {overviewReport.distribution.map((item) => <Cell key={item.id} fill={item.color} />)}
+                    </Pie>
+                    <Tooltip formatter={(value) => formatEuro(Number(value))} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="professional-expenses-legend">
+                  {overviewReport.distribution.map((item) => <div key={item.id} style={{ "--expense-color": item.color } as CSSProperties}>
+                    <span /><span>{item.name}</span><strong>{formatEuro(item.total)}</strong>
+                  </div>)}
+                </div>
+              </> : <div className="stats-empty-chart">Aucune répartition disponible.</div>}
+            </article>
+          </div>
+
+          <div className="professional-expenses-reports">
+            <article className="professional-expenses-table-card">
+              <header><h3>Rapport par gîte</h3><span>Les frais globaux restent séparés</span></header>
+              <div className="professional-expenses-table-wrap"><table>
+                <thead><tr><th>Périmètre</th><th>Récurrents</th><th>Ponctuels</th><th>Total</th><th>Part</th></tr></thead>
+                <tbody>{overviewReport.scopes.map((scope) => <tr key={scope.id}>
+                  <td><strong>{scope.name}</strong></td><td>{formatEuro(scope.recurring)}</td><td>{formatEuro(scope.oneOff)}</td><td><strong>{formatEuro(scope.total)}</strong></td>
+                  <td><div className="professional-expenses-share"><span style={{ width: `${Math.max(scope.share * 100, 2)}%` }} /><strong>{formatPercent(scope.share)}</strong></div></td>
+                </tr>)}</tbody>
+                <tfoot><tr><th>Total</th><th>{formatEuro(overviewReport.recurringAnnual)}</th><th>{formatEuro(overviewReport.oneOffTotal)}</th><th>{formatEuro(overviewReport.total)}</th><th>{overviewReport.total > 0 ? "100 %" : "—"}</th></tr></tfoot>
+              </table></div>
+            </article>
+
+            <article className="professional-expenses-table-card">
+              <header><h3>Rapport mensuel</h3><span>Détail du budget sur {year}</span></header>
+              <div className="professional-expenses-table-wrap"><table>
+                <thead><tr><th>Mois</th><th>Récurrents</th><th>Ponctuels</th><th>Total</th></tr></thead>
+                <tbody>{overviewReport.months.map((month) => <tr key={month.month} className={month.oneOff > 0 ? "has-one-off" : ""}>
+                  <td><strong>{MONTH_NAMES[month.month - 1]}</strong></td><td>{formatEuro(month.recurring)}</td><td>{formatEuro(month.oneOff)}</td><td><strong>{formatEuro(month.total)}</strong></td>
+                </tr>)}</tbody>
+                <tfoot><tr><th>Total</th><th>{formatEuro(overviewReport.recurringAnnual)}</th><th>{formatEuro(overviewReport.oneOffTotal)}</th><th>{formatEuro(overviewReport.total)}</th></tr></tfoot>
+              </table></div>
+            </article>
+          </div>
+        </section>
+      </div> : null}
 
       {section === "recurring" ? <section className="professional-expenses-list">{gites.map((gite) => {
         const management = recurringDrafts[gite.id];

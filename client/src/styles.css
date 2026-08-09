@@ -10023,7 +10023,7 @@ a.button-link {
 }
 
 .professional-expenses-hero span {
-  color: var(--primary-strong);
+  color: var(--primary);
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -10069,36 +10069,207 @@ a.button-link {
   gap: 14px;
 }
 
-.professional-expenses-overview > article:not(.professional-expenses-breakdown) {
+.professional-expenses-dashboard,
+.professional-expenses-report {
+  display: grid;
+  gap: 18px;
+}
+
+.professional-expenses-overview > article {
   display: grid;
   gap: 6px;
+  padding: 18px;
 }
 
 .professional-expenses-overview article span,
 .professional-expenses-overview article small {
   color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 750;
 }
 
 .professional-expenses-overview article strong {
   font-size: 1.45rem;
 }
 
-.professional-expenses-breakdown {
-  grid-column: 1 / -1;
-  display: grid;
-  gap: 10px;
+.professional-expenses-overview__total {
+  border-color: color-mix(in srgb, var(--primary) 35%, #e5e7eb);
+  background: linear-gradient(145deg, var(--primary-soft), #fff 72%);
 }
 
-.professional-expenses-breakdown h2 {
-  margin: 0 0 6px;
+.professional-expenses-overview__total strong {
+  color: var(--primary);
 }
 
-.professional-expenses-breakdown > div {
+.professional-expenses-report__header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0;
+  gap: 18px;
+}
+
+.professional-expenses-report__header > div,
+.professional-expenses-panel > header,
+.professional-expenses-table-card > header {
+  display: grid;
+  gap: 4px;
+}
+
+.professional-expenses-report__header span {
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.professional-expenses-report__header h2,
+.professional-expenses-report__header p,
+.professional-expenses-panel h3,
+.professional-expenses-table-card h3 {
+  margin: 0;
+}
+
+.professional-expenses-report__header h2 {
+  color: #111827;
+  font-size: 1.25rem;
+}
+
+.professional-expenses-report__header p,
+.professional-expenses-panel header span,
+.professional-expenses-table-card header span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.professional-expenses-report__header > strong {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, #e5e7eb);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.78rem;
+}
+
+.professional-expenses-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.75fr);
+  gap: 12px;
+}
+
+.professional-expenses-panel,
+.professional-expenses-table-card {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.professional-expenses-panel h3,
+.professional-expenses-table-card h3 {
+  color: #111827;
+  font-size: 0.94rem;
+}
+
+.professional-expenses-legend {
+  display: grid;
+  gap: 8px;
+}
+
+.professional-expenses-legend > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 0.76rem;
+}
+
+.professional-expenses-legend > div > span:first-child {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--expense-color);
+}
+
+.professional-expenses-reports {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.professional-expenses-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+}
+
+.professional-expenses-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.professional-expenses-table-wrap th,
+.professional-expenses-table-wrap td {
+  padding: 9px 10px;
   border-bottom: 1px solid #eef2f7;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.professional-expenses-table-wrap th:first-child,
+.professional-expenses-table-wrap td:first-child {
+  text-align: left;
+}
+
+.professional-expenses-table-wrap thead th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.professional-expenses-table-wrap tbody tr.has-one-off td {
+  background: color-mix(in srgb, #43b77d 6%, #fff);
+}
+
+.professional-expenses-table-wrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.professional-expenses-table-wrap tfoot th {
+  border-top: 1px solid #dbe2ea;
+  border-bottom: 0;
+  background: #f8fafc;
+  color: #111827;
+}
+
+.professional-expenses-share {
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.professional-expenses-share > span {
+  display: block;
+  max-width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.professional-expenses-share > strong {
+  min-width: 40px;
+  color: #475569;
+  font-size: 0.7rem;
 }
 
 .professional-expenses-list {
@@ -10122,7 +10293,7 @@ a.button-link {
 }
 
 .professional-expenses-gite > header span {
-  color: var(--primary-strong);
+  color: var(--primary);
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -10194,6 +10365,11 @@ a.button-link {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .professional-expenses-charts,
+  .professional-expenses-reports {
+    grid-template-columns: 1fr;
+  }
+
   .professional-recurring-line,
   .professional-rule {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -10211,6 +10387,15 @@ a.button-link {
   .professional-recurring-line,
   .professional-rule {
     grid-template-columns: 1fr;
+  }
+
+  .professional-expenses-report__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .professional-expenses-report__header > strong {
+    align-self: flex-start;
   }
 }
 
