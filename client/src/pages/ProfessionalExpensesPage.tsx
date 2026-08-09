@@ -64,6 +64,11 @@ const formatPercent = (value: number) => new Intl.NumberFormat("fr-FR", {
   style: "percent",
   maximumFractionDigits: 1,
 }).format(value || 0);
+const formatExpenseMonth = (year: number, month: number) => new Intl.DateTimeFormat("fr-FR", {
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+}).format(new Date(Date.UTC(year, month - 1, 1)));
 const localId = (prefix: string) => globalThis.crypto?.randomUUID?.() ?? `${prefix}-${Date.now()}`;
 const monthValue = () => {
   const now = new Date();
@@ -124,6 +129,7 @@ const ProfessionalExpensesPage = () => {
   const [year, setYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [editingOneOffId, setEditingOneOffId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -214,16 +220,26 @@ const ProfessionalExpensesPage = () => {
     setSavingId(expense.id); setError(null); setNotice(null);
     try {
       await apiFetch(`/professional-expenses/one-off/${expense.id}`, { method: "PATCH", json: buildOneOffPayload(draft) });
-      await load(); setNotice("Frais ponctuel modifié.");
+      await load(); setEditingOneOffId(null); setNotice("Frais ponctuel modifié.");
     } catch (caught) { setError(formatApiErrorMessage(caught, "Modification impossible.")); }
     finally { setSavingId(null); }
   };
   const deleteOneOff = async (expense: OneOffExpense) => {
     if (!confirm(`Supprimer « ${expense.label} » ?`)) return;
     setSavingId(expense.id);
-    try { await apiFetch(`/professional-expenses/one-off/${expense.id}`, { method: "DELETE" }); await load(); setNotice("Frais supprimé."); }
+    try { await apiFetch(`/professional-expenses/one-off/${expense.id}`, { method: "DELETE" }); await load(); setEditingOneOffId((current) => current === expense.id ? null : current); setNotice("Frais supprimé."); }
     catch (caught) { setError(formatApiErrorMessage(caught, "Suppression impossible.")); }
     finally { setSavingId(null); }
+  };
+  const editOneOff = (expense: OneOffExpense) => {
+    setOneOffDrafts((current) => ({ ...current, [expense.id]: draftFromOneOff(expense) }));
+    setEditingOneOffId(expense.id);
+    setError(null);
+    setNotice(null);
+  };
+  const cancelOneOffEdit = (expense: OneOffExpense) => {
+    setOneOffDrafts((current) => ({ ...current, [expense.id]: draftFromOneOff(expense) }));
+    setEditingOneOffId(null);
   };
   const saveRules = async () => {
     setSavingId("rules"); setError(null); setNotice(null);
@@ -352,15 +368,32 @@ const ProfessionalExpensesPage = () => {
           <label className="field">Intervenant (facultatif)<select value={newOneOff.intervenant_id} onChange={(event) => setNewOneOff((current) => ({ ...current, intervenant_id: event.target.value }))}><option value="">Aucun</option>{intervenants.map((item) => <option key={item.id} value={item.id}>{item.nom}</option>)}</select></label>
           <label className="field">Note<input value={newOneOff.notes} onChange={(event) => setNewOneOff((current) => ({ ...current, notes: event.target.value }))} /></label>
         </div><button type="button" onClick={() => void createOneOff()} disabled={savingId === "new-one-off"}>{savingId === "new-one-off" ? "Ajout..." : "Ajouter le frais"}</button></article>
-        {filteredOneOff.length === 0 ? <div className="card">Aucun frais ponctuel enregistré pour {year}.</div> : null}
-        {filteredOneOff.map((expense) => { const draft = oneOffDrafts[expense.id]; return <article key={expense.id} className="card professional-one-off-item"><div className="professional-one-off-grid">
-          <label className="field">Libellé<input value={draft.label} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, label: event.target.value } }))} /></label>
-          <label className="field">Mois<input type="month" value={draft.month} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, month: event.target.value } }))} /></label>
-          <label className="field">Montant (€)<input type="number" min="0.01" step="0.01" value={draft.amount} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, amount: event.target.value } }))} /></label>
-          <label className="field">Portée<select value={draft.gite_id} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, gite_id: event.target.value } }))}><option value="">Tous les gîtes</option>{gites.map((gite) => <option key={gite.id} value={gite.id}>{gite.nom}</option>)}</select></label>
-          <label className="field">Intervenant<select value={draft.intervenant_id} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, intervenant_id: event.target.value } }))}><option value="">Aucun</option>{intervenants.map((item) => <option key={item.id} value={item.id}>{item.nom}</option>)}</select></label>
-          <label className="field">Note<input value={draft.notes} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, notes: event.target.value } }))} /></label>
-        </div><footer><button type="button" onClick={() => void saveOneOff(expense)} disabled={savingId === expense.id}>Enregistrer</button><button type="button" className="danger" onClick={() => void deleteOneOff(expense)} disabled={savingId === expense.id}>Supprimer</button></footer></article>; })}
+        <article className="card professional-one-off-table-card">
+          <header><div><h2>Frais ponctuels de {year}</h2><span>{filteredOneOff.length} dépense(s)</span></div><strong>{formatEuro(filteredOneOff.reduce((sum, expense) => sum + expense.amount, 0))}</strong></header>
+          {filteredOneOff.length === 0 ? <div className="stats-empty-chart">Aucun frais ponctuel enregistré pour {year}.</div> : <div className="professional-one-off-table-wrap"><table className="professional-one-off-table">
+            <thead><tr><th>Libellé</th><th>Mois</th><th>Portée</th><th>Intervenant</th><th>Note</th><th>Montant</th><th>Actions</th></tr></thead>
+            <tbody>{filteredOneOff.map((expense) => {
+              const draft = oneOffDrafts[expense.id] ?? draftFromOneOff(expense);
+              const editing = editingOneOffId === expense.id;
+              const busy = savingId === expense.id;
+              return <tr key={expense.id} className={editing ? "is-editing" : ""}>
+                <td data-label="Libellé">{editing ? <input aria-label="Libellé" value={draft.label} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, label: event.target.value } }))} /> : <strong>{expense.label}</strong>}</td>
+                <td data-label="Mois">{editing ? <input aria-label="Mois" type="month" value={draft.month} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, month: event.target.value } }))} /> : <span className="professional-one-off-month">{formatExpenseMonth(expense.year, expense.month)}</span>}</td>
+                <td data-label="Portée">{editing ? <select aria-label="Portée" value={draft.gite_id} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, gite_id: event.target.value } }))}><option value="">Tous les gîtes</option>{gites.map((gite) => <option key={gite.id} value={gite.id}>{gite.nom}</option>)}</select> : <span className="professional-one-off-scope">{expense.scope === "gite" ? expense.gite_nom || "Gîte supprimé" : "Tous les gîtes"}</span>}</td>
+                <td data-label="Intervenant">{editing ? <select aria-label="Intervenant" value={draft.intervenant_id} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, intervenant_id: event.target.value } }))}><option value="">Aucun</option>{intervenants.map((item) => <option key={item.id} value={item.id}>{item.nom}</option>)}</select> : expense.intervenant_nom || "—"}</td>
+                <td data-label="Note" className="professional-one-off-note">{editing ? <input aria-label="Note" value={draft.notes} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, notes: event.target.value } }))} /> : expense.notes || "—"}</td>
+                <td data-label="Montant" className="professional-one-off-amount">{editing ? <input aria-label="Montant" type="number" min="0.01" step="0.01" value={draft.amount} onChange={(event) => setOneOffDrafts((current) => ({ ...current, [expense.id]: { ...draft, amount: event.target.value } }))} /> : <strong>{formatEuro(expense.amount)}</strong>}</td>
+                <td data-label="Actions" className="professional-one-off-actions">{editing ? <div className="table-actions">
+                  <button type="button" className="table-action professional-one-off-save" onClick={() => void saveOneOff(expense)} disabled={busy}>{busy ? "Enregistrement..." : "Enregistrer"}</button>
+                  <button type="button" className="table-action table-action--neutral" onClick={() => cancelOneOffEdit(expense)} disabled={busy}>Annuler</button>
+                </div> : <div className="table-actions">
+                  <button type="button" className="table-action table-action--neutral" onClick={() => editOneOff(expense)} disabled={savingId !== null}>Modifier</button>
+                  <button type="button" className="table-action table-action--danger" onClick={() => void deleteOneOff(expense)} disabled={savingId !== null}>Supprimer</button>
+                </div>}</td>
+              </tr>;
+            })}</tbody>
+          </table></div>}
+        </article>
       </section> : null}
 
       {section === "rules" ? <section className="professional-expenses-list"><article className="card"><h2>Catégories</h2><div className="professional-categories">{categories.map((category) => <div key={category.id}><input type="color" value={category.color} onChange={(event) => setCategories((current) => current.map((item) => item.id === category.id ? { ...item, color: event.target.value } : item))} /><input value={category.name} onChange={(event) => setCategories((current) => current.map((item) => item.id === category.id ? { ...item, name: event.target.value } : item))} /></div>)}<button type="button" className="secondary" onClick={() => setCategories((current) => [...current, { id: localId("cat"), name: "Nouvelle catégorie", color: COLORS[current.length % COLORS.length] }])}>Ajouter une catégorie</button></div></article>
