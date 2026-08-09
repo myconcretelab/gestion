@@ -9944,6 +9944,63 @@ button.secondary {
   box-shadow: none;
 }
 
+a.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: var(--chip);
+  color: #111827;
+  font-weight: 600;
+  line-height: normal;
+  text-decoration: none;
+}
+
+.settings-intervenant-form,
+.settings-intervenants-list {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-intervenant-item {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #dcdcde;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.settings-intervenant-item.is-disabled {
+  background: #f6f7f7;
+  opacity: 0.82;
+}
+
+.settings-intervenant-item__header,
+.settings-intervenant-item__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-intervenant-item__header strong {
+  color: #1d2327;
+  font-size: 1rem;
+}
+
+.settings-intervenant-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #3c434a;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
 .smartlife-rule-save-button {
   min-width: 132px;
 }

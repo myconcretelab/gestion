@@ -170,7 +170,7 @@ export type PlanningRelaySmsProgrammeTemplate = {
   template: string;
 };
 
-export type PlanningRelayWorker = {
+export type Intervenant = {
   id: string;
   nom: string;
   telephone: string;
@@ -181,6 +181,9 @@ export type PlanningRelayWorker = {
   created_at: string;
   updated_at: string;
 };
+
+/** @deprecated Utiliser Intervenant pour le référentiel global. */
+export type PlanningRelayWorker = Intervenant;
 
 export type PlanningRelayAssignment = {
   id: string;
