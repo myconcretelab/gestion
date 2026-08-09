@@ -24,6 +24,43 @@ const intervenantPayloadSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
+const intervenantExpenseFieldsSchema = z.object({
+  scope: z.enum(["all_gites", "gite"]),
+  gite_id: z.preprocess(
+    (value) => value === "" || value === undefined ? null : value,
+    z.string().trim().min(1).nullable(),
+  ).optional(),
+  year: z.coerce.number().int().min(2000).max(3000),
+  month: z.coerce.number().int().min(1).max(12),
+  amount: z.coerce.number().positive().max(1_000_000),
+  notes: z.string().trim().max(500).default(""),
+});
+
+const intervenantExpensePayloadSchema = intervenantExpenseFieldsSchema.superRefine((payload, context) => {
+  if (payload.scope === "gite" && !payload.gite_id) {
+    context.addIssue({
+      code: "custom",
+      message: "Choisissez un gîte.",
+      path: ["gite_id"],
+    });
+  }
+});
+const intervenantExpensePatchSchema = intervenantExpenseFieldsSchema.partial();
+
+const serializeIntervenantExpense = (expense: any) => ({
+  id: expense.id,
+  intervenant_id: expense.intervenant_id,
+  scope: expense.scope === "gite" ? "gite" : "all_gites",
+  gite_id: expense.gite_id ?? null,
+  gite_nom: expense.gite?.nom ?? expense.gite_nom ?? null,
+  year: expense.year,
+  month: expense.month,
+  amount: Number(expense.amount),
+  notes: expense.notes ?? "",
+  created_at: expense.createdAt.toISOString(),
+  updated_at: expense.updatedAt.toISOString(),
+});
+
 const serializeIntervenant = (intervenant: any) => ({
   id: intervenant.id,
   nom: intervenant.nom,
@@ -38,6 +75,9 @@ const serializeIntervenant = (intervenant: any) => ({
     sms: intervenant.telephone,
   },
   is_active: Boolean(intervenant.is_active),
+  expenses: Array.isArray(intervenant.expenses)
+    ? intervenant.expenses.map(serializeIntervenantExpense)
+    : [],
   created_at: intervenant.createdAt.toISOString(),
   updated_at: intervenant.updatedAt.toISOString(),
 });
@@ -46,6 +86,12 @@ router.get("/", async (_req, res, next) => {
   try {
     const intervenants = await prisma.planningRelayWorker.findMany({
       orderBy: [{ is_active: "desc" }, { nom: "asc" }, { createdAt: "asc" }],
+      include: {
+        expenses: {
+          include: { gite: { select: { id: true, nom: true } } },
+          orderBy: [{ year: "desc" }, { month: "desc" }, { createdAt: "desc" }],
+        },
+      },
     });
     return res.json(intervenants.map(serializeIntervenant));
   } catch (error) {
@@ -69,6 +115,115 @@ router.post("/", async (req, res, next) => {
       },
     });
     return res.status(201).json(serializeIntervenant(intervenant));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/:id/expenses", async (req, res, next) => {
+  try {
+    const payload = intervenantExpensePayloadSchema.parse(req.body ?? {});
+    const intervenant = await prisma.planningRelayWorker.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!intervenant) {
+      return res.status(404).json({ error: "Intervenant introuvable." });
+    }
+
+    const gite = payload.scope === "gite" && payload.gite_id
+      ? await prisma.gite.findUnique({
+          where: { id: payload.gite_id },
+          select: { id: true, nom: true },
+        })
+      : null;
+    if (payload.scope === "gite" && !gite) {
+      return res.status(404).json({ error: "Gîte introuvable." });
+    }
+
+    const expense = await prisma.intervenantExpense.create({
+      data: {
+        intervenant_id: intervenant.id,
+        scope: payload.scope,
+        gite_id: gite?.id ?? null,
+        gite_nom: gite?.nom ?? null,
+        year: payload.year,
+        month: payload.month,
+        amount: payload.amount,
+        notes: payload.notes,
+      },
+      include: { gite: { select: { id: true, nom: true } } },
+    });
+    return res.status(201).json(serializeIntervenantExpense(expense));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch("/:id/expenses/:expenseId", async (req, res, next) => {
+  try {
+    const payload = intervenantExpensePatchSchema.parse(req.body ?? {});
+    const current = await prisma.intervenantExpense.findFirst({
+      where: {
+        id: req.params.expenseId,
+        intervenant_id: req.params.id,
+      },
+    });
+    if (!current) {
+      return res.status(404).json({ error: "Frais d'intervenant introuvable." });
+    }
+
+    const scope = payload.scope ?? (current.scope === "gite" ? "gite" : "all_gites");
+    const requestedGiteId = payload.gite_id !== undefined
+      ? payload.gite_id
+      : current.gite_id;
+    if (scope === "gite" && !requestedGiteId) {
+      return res.status(400).json({ error: "Choisissez un gîte." });
+    }
+
+    const gite = scope === "gite" && requestedGiteId
+      ? await prisma.gite.findUnique({
+          where: { id: requestedGiteId },
+          select: { id: true, nom: true },
+        })
+      : null;
+    if (scope === "gite" && !gite) {
+      return res.status(404).json({ error: "Gîte introuvable." });
+    }
+
+    const expense = await prisma.intervenantExpense.update({
+      where: { id: current.id },
+      data: {
+        scope,
+        gite_id: gite?.id ?? null,
+        gite_nom: gite?.nom ?? null,
+        ...(payload.year !== undefined ? { year: payload.year } : {}),
+        ...(payload.month !== undefined ? { month: payload.month } : {}),
+        ...(payload.amount !== undefined ? { amount: payload.amount } : {}),
+        ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
+      },
+      include: { gite: { select: { id: true, nom: true } } },
+    });
+    return res.json(serializeIntervenantExpense(expense));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.delete("/:id/expenses/:expenseId", async (req, res, next) => {
+  try {
+    const expense = await prisma.intervenantExpense.findFirst({
+      where: {
+        id: req.params.expenseId,
+        intervenant_id: req.params.id,
+      },
+      select: { id: true },
+    });
+    if (!expense) {
+      return res.status(404).json({ error: "Frais d'intervenant introuvable." });
+    }
+    await prisma.intervenantExpense.delete({ where: { id: expense.id } });
+    return res.status(204).end();
   } catch (error) {
     return next(error);
   }

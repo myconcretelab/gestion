@@ -71,7 +71,7 @@ router.get("/", async (req, res, next) => {
     const periodStart = selectedYear ? new Date(Date.UTC(selectedYear, 0, 1)) : null;
     const periodEnd = selectedYear ? new Date(Date.UTC(selectedYear + 1, 0, 1)) : null;
 
-    const [gites, rawReservations, reservationYearRows] = await Promise.all([
+    const [gites, rawReservations, reservationYearRows, intervenantExpenses] = await Promise.all([
       prisma.gite.findMany({
         select: {
           id: true,
@@ -124,6 +124,18 @@ router.get("/", async (req, res, next) => {
           date_sortie: true,
         },
       }),
+      prisma.intervenantExpense.findMany({
+        where: selectedYear ? { year: selectedYear } : undefined,
+        include: {
+          intervenant: { select: { id: true, nom: true } },
+          gite: { select: { id: true, nom: true } },
+        },
+        orderBy: [
+          { year: "desc" },
+          { month: "desc" },
+          { intervenant: { nom: "asc" } },
+        ],
+      }),
     ]);
     const hydratedGites = gites.map((gite) => ({
       ...gite,
@@ -143,16 +155,31 @@ router.get("/", async (req, res, next) => {
         availableYears.add(year);
       }
     }
+    for (const expense of intervenantExpenses) {
+      availableYears.add(expense.year);
+    }
 
-    res.json(
-      buildStatisticsPayload({
+    res.json({
+      ...buildStatisticsPayload({
         gites: hydratedGites,
         reservations,
         selectedYear,
         availableYears: [...availableYears],
         expenseSettings: readGiteExpenseCategorySettings(),
-      })
-    );
+      }),
+      intervenantExpenses: intervenantExpenses.map((expense) => ({
+        id: expense.id,
+        intervenant_id: expense.intervenant_id,
+        intervenant_nom: expense.intervenant.nom,
+        scope: expense.scope === "gite" ? "gite" : "all_gites",
+        gite_id: expense.gite_id ?? null,
+        gite_nom: expense.gite?.nom ?? expense.gite_nom ?? null,
+        year: expense.year,
+        month: expense.month,
+        amount: Number(expense.amount),
+        notes: expense.notes,
+      })),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ error: "Année invalide.", details: err.flatten() });

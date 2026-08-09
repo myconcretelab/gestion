@@ -93,6 +93,7 @@ model Gite {
   facture_counters                     FactureCounter[]
   expense_recurring_rules              ExpenseRecurringRule[]
   expense_entries                      ExpenseEntry[]
+  intervenant_expenses                 IntervenantExpense[]
 
   @@unique([public_slug], map: "gites_public_slug_key")
   @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
@@ -472,9 +473,32 @@ model PlanningRelayWorker {
 
   assignments PlanningRelayAssignment[]
   sms_periods PlanningRelayPeriod[] @relation("PlanningRelayPeriodSmsWorker")
+  expenses    IntervenantExpense[]
 
   @@index([is_active, nom], map: "planning_relay_workers_active_nom_idx")
   @@map("planning_relay_workers")
+}
+
+model IntervenantExpense {
+  id             String   @id @default(cuid())
+  intervenant_id String
+  scope          String   @default("all_gites")
+  gite_id        String?
+  gite_nom       String?
+  year           Int
+  month          Int
+  amount         Decimal  @db.Decimal(10,2)
+  notes          String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  intervenant PlanningRelayWorker @relation(fields: [intervenant_id], references: [id], onDelete: Cascade)
+  gite         Gite?               @relation(fields: [gite_id], references: [id], onDelete: SetNull)
+
+  @@index([year, month], map: "intervenant_expenses_year_month_idx")
+  @@index([intervenant_id, year, month], map: "intervenant_expenses_intervenant_period_idx")
+  @@index([gite_id], map: "intervenant_expenses_gite_idx")
+  @@map("intervenant_expenses")
 }
 
 model PlanningRelayAssignment {

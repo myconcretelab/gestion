@@ -10001,6 +10001,100 @@ a.button-link {
   font-weight: 600;
 }
 
+.settings-intervenant-expense-create {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+  border: 1px solid #dcdcde;
+  border-radius: 8px;
+  background: #f6f7f7;
+}
+
+.settings-intervenant-expense-create__notes {
+  grid-column: span 3;
+}
+
+.settings-intervenant-expense-create > button {
+  justify-self: start;
+}
+
+.settings-intervenant-expense-empty {
+  margin-top: 18px;
+}
+
+.settings-intervenant-expense-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.settings-intervenant-expense-item {
+  display: grid;
+  grid-template-columns: 1.15fr repeat(3, minmax(120px, 0.8fr)) 1.2fr auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #dcdcde;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.settings-intervenant-expense-item__identity {
+  display: grid;
+  align-self: center;
+  gap: 4px;
+}
+
+.settings-intervenant-expense-item__identity strong {
+  color: #1d2327;
+}
+
+.settings-intervenant-expense-item__identity span {
+  color: #646970;
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.settings-intervenant-expense-item__actions {
+  flex-wrap: nowrap;
+}
+
+.settings-intervenant-expense-item__actions button {
+  padding-inline: 13px;
+}
+
+@media (max-width: 1180px) {
+  .settings-intervenant-expense-item {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-intervenant-expense-item__identity,
+  .settings-intervenant-expense-item__notes,
+  .settings-intervenant-expense-item__actions {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .settings-intervenant-expense-create,
+  .settings-intervenant-expense-item {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-intervenant-expense-create__notes,
+  .settings-intervenant-expense-item__identity,
+  .settings-intervenant-expense-item__notes,
+  .settings-intervenant-expense-item__actions {
+    grid-column: auto;
+  }
+
+  .settings-intervenant-expense-item__actions {
+    flex-wrap: wrap;
+  }
+}
+
 .smartlife-rule-save-button {
   min-width: 132px;
 }
@@ -15616,6 +15710,86 @@ button.personal-expenses-status:disabled {
   font-weight: 800;
 }
 
+.stats-intervenant-expenses {
+  display: grid;
+  gap: 18px;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--primary) 22%, #e5e7eb);
+}
+
+.stats-intervenant-expenses__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.stats-intervenant-expenses__header > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.stats-intervenant-expenses__header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.35rem;
+}
+
+.stats-intervenant-expenses__header p:last-child {
+  max-width: 760px;
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.stats-intervenant-expenses__total {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 3px;
+  min-width: 150px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  text-align: right;
+}
+
+.stats-intervenant-expenses__total span {
+  color: var(--primary-strong);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stats-intervenant-expenses__total strong {
+  color: #111827;
+  font-size: 1.25rem;
+}
+
+.stats-intervenant-expenses__table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.stats-intervenant-expenses__table-wrap .stats-expense-table {
+  min-width: 760px;
+}
+
+.stats-intervenant-expenses__month {
+  text-transform: capitalize;
+}
+
+.stats-intervenant-expenses__scope {
+  display: inline-flex;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
 .stats-expense-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -16262,6 +16436,12 @@ button.personal-expenses-status:disabled {
   }
   .stats-expense-report__header {
     flex-direction: column;
+  }
+  .stats-intervenant-expenses__header {
+    flex-direction: column;
+  }
+  .stats-intervenant-expenses__total {
+    text-align: left;
   }
   .stats-expense-kpis,
   .stats-expense-charts {

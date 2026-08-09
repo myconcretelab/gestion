@@ -72,6 +72,20 @@ export type StatisticsPayload = {
   entriesByGite: Record<string, StatisticsEntry[]>;
   availableYears: number[];
   expenseSettings?: StatisticsExpenseSettings;
+  intervenantExpenses?: StatisticsIntervenantExpense[];
+};
+
+export type StatisticsIntervenantExpense = {
+  id: string;
+  intervenant_id: string;
+  intervenant_nom: string;
+  scope: "all_gites" | "gite";
+  gite_id: string | null;
+  gite_nom: string | null;
+  year: number;
+  month: number;
+  amount: number;
+  notes: string;
 };
 
 export type UrssafManagerAmount = {
@@ -96,6 +110,7 @@ export type ParsedStatisticsPayload = {
   entriesByGite: Record<string, ParsedStatisticsEntry[]>;
   availableYears: number[];
   expenseSettings: StatisticsExpenseSettings;
+  intervenantExpenses: StatisticsIntervenantExpense[];
 };
 
 export type ExpenseReportGiteRow = {
@@ -290,6 +305,10 @@ export const parseStatisticsPayload = (payload: StatisticsPayload): ParsedStatis
     entriesByGite,
     availableYears: payload.availableYears ?? [],
     expenseSettings: payload.expenseSettings ?? DEFAULT_EXPENSE_SETTINGS,
+    intervenantExpenses: (payload.intervenantExpenses ?? []).map((expense) => ({
+      ...expense,
+      amount: Number(expense.amount) || 0,
+    })),
   };
 };
 

@@ -154,6 +154,51 @@ test("le rapport de frais consolide les charges fixes, dynamiques et le résulta
   assert.equal(monthly.monthlyAverage, 113.2);
 });
 
+test("les frais ponctuels des intervenants restent informatifs et hors des totaux des gîtes", () => {
+  const parsed = parseStatisticsPayload({
+    ...payload,
+    intervenantExpenses: [
+      {
+        id: "expense-christine",
+        intervenant_id: "christine",
+        intervenant_nom: "Christine",
+        scope: "all_gites",
+        gite_id: null,
+        gite_nom: null,
+        year: 2026,
+        month: 7,
+        amount: 50,
+        notes: "Renfort juillet",
+      },
+      {
+        id: "expense-edouard",
+        intervenant_id: "edouard",
+        intervenant_nom: "Édouard",
+        scope: "gite",
+        gite_id: "g1",
+        gite_nom: "La Grée",
+        year: 2026,
+        month: 8,
+        amount: 3,
+        notes: "",
+      },
+    ],
+  });
+
+  assert.equal(parsed.intervenantExpenses.length, 2);
+  assert.equal(parsed.intervenantExpenses[0].amount, 50);
+
+  const report = computeExpenseReport({
+    ...parsed,
+    selectedYear: 2026,
+    selectedMonth: "",
+    now: new Date("2026-12-31T12:00:00.000Z"),
+  });
+  assert.equal(report.expenses, 0);
+  assert.equal(report.rowsByGite[0].expenses, 0);
+  assert.equal(report.net, 250);
+});
+
 test("l'année en cours est arrêtée au jour courant et les frais fixes sont proratisés", () => {
   const currentPayload: StatisticsPayload = {
     ...payload,
