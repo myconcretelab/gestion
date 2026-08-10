@@ -10401,16 +10401,6 @@ a.button-link {
 .professional-recurring-line select {
   width: 100%;
   min-width: 0;
-  padding: 9px 10px;
-  border-color: #dbe2ea;
-  background: #fff;
-  font-size: 0.82rem;
-}
-
-.professional-recurring-line input:focus,
-.professional-recurring-line select:focus {
-  border-color: var(--recurring-category-color);
-  outline: 2px solid color-mix(in srgb, var(--recurring-category-color) 18%, transparent);
 }
 
 .professional-recurring-money {
@@ -12683,14 +12673,44 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table input,
-.reservations-table select {
+.reservations-table select,
+.reservation-control {
   width: 100%;
   min-width: 78px;
+  box-sizing: border-box;
   border: 1px solid #d1d5db;
   border-radius: 8px;
   padding: 7px 8px;
-  font-size: 0.82rem;
   background: #ffffff;
+  font-size: 0.82rem;
+}
+
+.reservation-control {
+  min-height: 38px;
+  color: #0f172a;
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.reservation-control:hover {
+  border-color: #b8c2d0;
+  background: #fdfefe;
+}
+
+.reservation-control:focus {
+  border-color: var(--reservation-control-accent, var(--primary));
+  background: #ffffff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--reservation-control-accent, var(--primary)) 16%, transparent);
+  outline: none;
+}
+
+.reservation-control:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 .reservations-source-inline-trigger {
