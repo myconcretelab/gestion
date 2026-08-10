@@ -375,6 +375,10 @@ const normalizeReservationSource = (value: string | null | undefined) => {
   return SOURCE_BY_NORMALIZED_KEY[normalizeTextKey(trimmed)] ?? DEFAULT_RESERVATION_SOURCE;
 };
 
+const needsReservationCompletion = (reservation: Reservation) =>
+  round2(Number(reservation.prix_total ?? 0)) === 0 &&
+  normalizeTextKey(reservation.source_paiement ?? "") !== "homeexchange";
+
 const URSSAF_MONTHLY_SOURCE_KEY_SET = new Set(URSSAF_MONTHLY_SOURCES.map((source) => normalizeTextKey(source)));
 
 const getEditableHostName = (value: string | null | undefined) => {
@@ -1693,7 +1697,7 @@ const ReservationsPage = () => {
   const zeroTotalCountByGite = useMemo(() => {
     const counts = new Map<string, number>();
     reservations.forEach((reservation) => {
-      if (!reservation.gite_id || round2(Number(reservation.prix_total ?? 0)) !== 0) return;
+      if (!reservation.gite_id || !needsReservationCompletion(reservation)) return;
       counts.set(reservation.gite_id, (counts.get(reservation.gite_id) ?? 0) + 1);
     });
     return counts;
@@ -3554,7 +3558,7 @@ const ReservationsPage = () => {
       const amount = round2(undeclaredManagers.reduce((sum, manager) => sum + manager.amount, 0));
       if (amount <= 0) continue;
       const zeroTotalReservationsCount = (reservationsByMonth.get(monthIndex) ?? []).reduce((count, reservation) => {
-        return round2(Number(reservation.prix_total ?? 0)) === 0 ? count + 1 : count;
+        return needsReservationCompletion(reservation) ? count + 1 : count;
       }, 0);
 
       items.push({
@@ -3991,7 +3995,7 @@ const ReservationsPage = () => {
     let zeroTotalReservationsCount = 0;
 
     list.forEach((item) => {
-      if (round2(Number(item.prix_total ?? 0)) === 0) {
+      if (needsReservationCompletion(item)) {
         zeroTotalReservationsCount += 1;
       }
     });
