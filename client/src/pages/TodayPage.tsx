@@ -1342,19 +1342,6 @@ const TodayPage = () => {
                       <span>Frais perso ponctuels</span>
                       <strong>{formatEuro(metric.personal_occasional_expenses)}</strong>
                     </div>
-                    {(metric.expense_details ?? []).length > 0 ? (
-                      <>
-                        <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
-                          Dépenses par gîte
-                        </div>
-                        {(metric.expense_details ?? []).map((detail) => (
-                          <div className="reservations-summary-popover__row" key={detail.gite_id}>
-                            <span>{detail.gite_name}</span>
-                            <strong>{formatEuro(detail.period_expenses)}</strong>
-                          </div>
-                        ))}
-                      </>
-                    ) : null}
                     {(metric.personal_expense_details ?? []).filter((detail) => detail.kind === "recurring").length > 0 ? (
                       <>
                         <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
