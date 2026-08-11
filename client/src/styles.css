@@ -366,6 +366,20 @@ body.app-scroll-locked {
   border-top: 1px solid #eef2f7;
 }
 
+.today-revenue-mini__expense-label {
+  display: grid;
+  min-width: 0;
+}
+
+.today-revenue-mini__expense-label small {
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 0.66rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .today-revenue-mini__item span {
   display: flex;
   align-items: center;

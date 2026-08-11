@@ -44,12 +44,24 @@ type TodayRevenueAverageMetric = {
   label: string;
   month_count: number;
   gross_revenue: number;
+  gite_expenses: number;
+  personal_recurring_expenses: number;
+  personal_occasional_expenses: number;
   expenses: number;
   net_average_monthly_revenue: number;
   expense_details?: Array<{
     gite_id: string;
     gite_name: string;
     monthly_expenses: number;
+    period_expenses: number;
+  }>;
+  personal_expense_details?: Array<{
+    id: string;
+    kind: "recurring" | "occasional";
+    label: string;
+    category_name: string;
+    manager_name: string;
+    status: "paid" | "planned" | null;
     period_expenses: number;
   }>;
 };
@@ -1312,8 +1324,23 @@ const TodayPage = () => {
                       <strong>{formatEuro(metric.gross_revenue)}</strong>
                     </div>
                     <div className="reservations-summary-popover__row">
-                      <span>Dépenses</span>
+                      <span>Dépenses totales</span>
                       <strong>{formatEuro(metric.expenses)}</strong>
+                    </div>
+                    <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
+                      Répartition des dépenses
+                    </div>
+                    <div className="reservations-summary-popover__row">
+                      <span>Frais des gîtes</span>
+                      <strong>{formatEuro(metric.gite_expenses)}</strong>
+                    </div>
+                    <div className="reservations-summary-popover__row">
+                      <span>Frais perso récurrents</span>
+                      <strong>{formatEuro(metric.personal_recurring_expenses)}</strong>
+                    </div>
+                    <div className="reservations-summary-popover__row">
+                      <span>Frais perso ponctuels</span>
+                      <strong>{formatEuro(metric.personal_occasional_expenses)}</strong>
                     </div>
                     {(metric.expense_details ?? []).length > 0 ? (
                       <>
@@ -1326,6 +1353,50 @@ const TodayPage = () => {
                             <strong>{formatEuro(detail.period_expenses)}</strong>
                           </div>
                         ))}
+                      </>
+                    ) : null}
+                    {(metric.personal_expense_details ?? []).filter((detail) => detail.kind === "recurring").length > 0 ? (
+                      <>
+                        <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
+                          Frais perso récurrents
+                        </div>
+                        {(metric.personal_expense_details ?? [])
+                          .filter((detail) => detail.kind === "recurring")
+                          .map((detail) => (
+                            <div className="reservations-summary-popover__row" key={`recurring-${detail.id}`}>
+                              <span className="today-revenue-mini__expense-label">
+                                {detail.label}
+                                <small>{[detail.category_name, detail.manager_name].filter(Boolean).join(" · ")}</small>
+                              </span>
+                              <strong>{formatEuro(detail.period_expenses)}</strong>
+                            </div>
+                          ))}
+                      </>
+                    ) : null}
+                    {(metric.personal_expense_details ?? []).filter((detail) => detail.kind === "occasional").length > 0 ? (
+                      <>
+                        <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
+                          Frais perso ponctuels
+                        </div>
+                        {(metric.personal_expense_details ?? [])
+                          .filter((detail) => detail.kind === "occasional")
+                          .map((detail) => (
+                            <div className="reservations-summary-popover__row" key={`occasional-${detail.id}`}>
+                              <span className="today-revenue-mini__expense-label">
+                                {detail.label}
+                                <small>
+                                  {[
+                                    detail.status === "planned" ? "Prévu" : "Payé",
+                                    detail.category_name,
+                                    detail.manager_name,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </small>
+                              </span>
+                              <strong>{formatEuro(detail.period_expenses)}</strong>
+                            </div>
+                          ))}
                       </>
                     ) : null}
                     <div className="reservations-summary-popover__note">
