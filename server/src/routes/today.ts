@@ -36,12 +36,24 @@ type TodayRevenueAverageMetric = {
   label: string;
   month_count: number;
   gross_revenue: number;
+  gite_expenses: number;
+  personal_recurring_expenses: number;
+  personal_occasional_expenses: number;
   expenses: number;
   net_average_monthly_revenue: number;
   expense_details: Array<{
     gite_id: string;
     gite_name: string;
     monthly_expenses: number;
+    period_expenses: number;
+  }>;
+  personal_expense_details: Array<{
+    id: string;
+    kind: "recurring" | "occasional";
+    label: string;
+    category_name: string;
+    manager_name: string;
+    status: "paid" | "planned" | null;
     period_expenses: number;
   }>;
 };
@@ -121,6 +133,28 @@ const listMonthKeys = (startInclusive: Date, monthCount: number) =>
     return getMonthKey(date.getUTCFullYear(), date.getUTCMonth() + 1);
   });
 
+const getRecurringExpenseAmountForMonth = (
+  expense: {
+    frequency: string;
+    amount: number;
+    start_date: Date;
+    end_date: Date | null;
+  },
+  monthStart: Date
+) => {
+  const monthEnd = getUtcMonthStart(monthStart, 1);
+  const activeStart = expense.start_date.getTime();
+  const activeEnd = expense.end_date ? expense.end_date.getTime() + DAY_MS : Number.POSITIVE_INFINITY;
+  const overlapStart = Math.max(monthStart.getTime(), activeStart);
+  const overlapEnd = Math.min(monthEnd.getTime(), activeEnd);
+  if (overlapEnd <= overlapStart) return 0;
+
+  const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / DAY_MS);
+  const activeDays = Math.round((overlapEnd - overlapStart) / DAY_MS);
+  const monthlyAmount = expense.frequency === "annual" ? toNumber(expense.amount) / 12 : toNumber(expense.amount);
+  return round2((Math.max(0, monthlyAmount) * activeDays) / daysInMonth);
+};
+
 const getGiteMonthlyExpenses = (value: unknown) => {
   const parsed = fromJsonString<any>(value, null);
   const expenses = Array.isArray(parsed?.expenses) ? parsed.expenses : [];
@@ -145,28 +179,32 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
       id: "previous_month" as const,
       label: formatMonthName(previousMonthStart),
       month_count: 1,
+      monthStarts: [previousMonthStart],
       monthKeys: new Set(listMonthKeys(previousMonthStart, 1)),
     },
     {
       id: "current_month" as const,
       label: formatMonthName(currentMonthStart),
       month_count: 1,
+      monthStarts: [currentMonthStart],
       monthKeys: new Set(listMonthKeys(currentMonthStart, 1)),
     },
     {
       id: "next_month" as const,
       label: formatMonthName(nextMonthStart),
       month_count: 1,
+      monthStarts: [nextMonthStart],
       monthKeys: new Set(listMonthKeys(nextMonthStart, 1)),
     },
     {
       id: "last_24_months" as const,
       label: "2 ans",
       month_count: 24,
+      monthStarts: Array.from({ length: 24 }, (_, index) => getUtcMonthStart(last24MonthsStart, index)),
       monthKeys: new Set(listMonthKeys(last24MonthsStart, 24)),
     },
   ];
-  const [gites, reservations] = await Promise.all([
+  const [gites, reservations, personalRecurringExpenses, personalOccasionalExpenses] = await Promise.all([
     prisma.gite.findMany({
       select: { id: true, nom: true, ordre: true, frais_gestion: true },
       orderBy: [{ ordre: "asc" }, { nom: "asc" }],
@@ -190,6 +228,41 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
         frais_optionnels_montant: true,
         frais_optionnels_declares: true,
       },
+    }),
+    prisma.expenseRecurringRule.findMany({
+      where: {
+        scope: "personal",
+        is_active: true,
+        start_date: { lt: followingMonthStart },
+        OR: [{ end_date: null }, { end_date: { gte: last24MonthsStart } }],
+      },
+      select: {
+        id: true,
+        label: true,
+        frequency: true,
+        amount: true,
+        start_date: true,
+        end_date: true,
+        category: { select: { name: true } },
+        gestionnaire: { select: { prenom: true, nom: true } },
+      },
+      orderBy: [{ label: "asc" }],
+    }),
+    prisma.expenseEntry.findMany({
+      where: {
+        scope: "personal",
+        expense_date: { gte: last24MonthsStart, lt: followingMonthStart },
+      },
+      select: {
+        id: true,
+        label: true,
+        amount: true,
+        expense_date: true,
+        status: true,
+        category: { select: { name: true } },
+        gestionnaire: { select: { prenom: true, nom: true } },
+      },
+      orderBy: [{ expense_date: "asc" }, { label: "asc" }],
     }),
   ]);
   const monthlyExpensesByGite = gites.map((gite) => ({
@@ -218,12 +291,50 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
 
   return periods.map((period) => {
     const grossRevenue = round2([...period.monthKeys].reduce((sum, key) => sum + (grossRevenueByMonth.get(key) ?? 0), 0));
-    const expenses = round2(totalMonthlyExpenses * period.month_count);
+    const giteExpenses = round2(totalMonthlyExpenses * period.month_count);
+    const recurringDetails = personalRecurringExpenses
+      .map((expense) => ({
+        id: expense.id,
+        kind: "recurring" as const,
+        label: expense.label,
+        category_name: expense.category.name,
+        manager_name: [expense.gestionnaire?.prenom, expense.gestionnaire?.nom].filter(Boolean).join(" "),
+        status: null,
+        period_expenses: round2(
+          period.monthStarts.reduce(
+            (sum, monthStart) => sum + getRecurringExpenseAmountForMonth(expense, monthStart),
+            0
+          )
+        ),
+      }))
+      .filter((expense) => expense.period_expenses > 0);
+    const occasionalDetails = personalOccasionalExpenses
+      .filter((expense) => period.monthKeys.has(getMonthKey(expense.expense_date.getUTCFullYear(), expense.expense_date.getUTCMonth() + 1)))
+      .map((expense) => ({
+        id: expense.id,
+        kind: "occasional" as const,
+        label: expense.label,
+        category_name: expense.category.name,
+        manager_name: [expense.gestionnaire?.prenom, expense.gestionnaire?.nom].filter(Boolean).join(" "),
+        status: expense.status === "planned" ? ("planned" as const) : ("paid" as const),
+        period_expenses: round2(Math.max(0, toNumber(expense.amount))),
+      }))
+      .filter((expense) => expense.period_expenses > 0);
+    const personalRecurringExpensesTotal = round2(
+      recurringDetails.reduce((sum, expense) => sum + expense.period_expenses, 0)
+    );
+    const personalOccasionalExpensesTotal = round2(
+      occasionalDetails.reduce((sum, expense) => sum + expense.period_expenses, 0)
+    );
+    const expenses = round2(giteExpenses + personalRecurringExpensesTotal + personalOccasionalExpensesTotal);
     return {
       id: period.id,
       label: period.label,
       month_count: period.month_count,
       gross_revenue: grossRevenue,
+      gite_expenses: giteExpenses,
+      personal_recurring_expenses: personalRecurringExpensesTotal,
+      personal_occasional_expenses: personalOccasionalExpensesTotal,
       expenses,
       net_average_monthly_revenue: period.month_count > 0 ? round2((grossRevenue - expenses) / period.month_count) : 0,
       expense_details: monthlyExpensesByGite
@@ -232,6 +343,7 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
           ...gite,
           period_expenses: round2(gite.monthly_expenses * period.month_count),
         })),
+      personal_expense_details: [...recurringDetails, ...occasionalDetails],
     };
   });
 };
