@@ -1338,10 +1338,12 @@ const TodayPage = () => {
                       <span>Frais perso récurrents</span>
                       <strong>{formatEuro(metric.personal_recurring_expenses)}</strong>
                     </div>
-                    <div className="reservations-summary-popover__row">
-                      <span>Frais perso ponctuels</span>
-                      <strong>{formatEuro(metric.personal_occasional_expenses)}</strong>
-                    </div>
+                    {metric.id !== "last_24_months" ? (
+                      <div className="reservations-summary-popover__row">
+                        <span>Frais perso ponctuels</span>
+                        <strong>{formatEuro(metric.personal_occasional_expenses)}</strong>
+                      </div>
+                    ) : null}
                     {(metric.personal_expense_details ?? []).filter((detail) => detail.kind === "recurring").length > 0 ? (
                       <>
                         <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
@@ -1387,8 +1389,8 @@ const TodayPage = () => {
                       </>
                     ) : null}
                     <div className="reservations-summary-popover__note">
-                      {metric.month_count > 1
-                        ? `Moyenne nette mensuelle : (revenus − dépenses) ÷ ${metric.month_count} mois.`
+                      {metric.id === "last_24_months"
+                        ? `Moyenne nette mensuelle hors frais perso ponctuels : (revenus − dépenses) ÷ ${metric.month_count} mois.`
                         : "Montant net : revenus − dépenses."}
                     </div>
                   </span>

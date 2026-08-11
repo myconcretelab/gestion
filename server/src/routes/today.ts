@@ -251,7 +251,7 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
     prisma.expenseEntry.findMany({
       where: {
         scope: "personal",
-        expense_date: { gte: last24MonthsStart, lt: followingMonthStart },
+        expense_date: { gte: previousMonthStart, lt: followingMonthStart },
       },
       select: {
         id: true,
@@ -308,18 +308,20 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
         ),
       }))
       .filter((expense) => expense.period_expenses > 0);
-    const occasionalDetails = personalOccasionalExpenses
-      .filter((expense) => period.monthKeys.has(getMonthKey(expense.expense_date.getUTCFullYear(), expense.expense_date.getUTCMonth() + 1)))
-      .map((expense) => ({
-        id: expense.id,
-        kind: "occasional" as const,
-        label: expense.label,
-        category_name: expense.category.name,
-        manager_name: [expense.gestionnaire?.prenom, expense.gestionnaire?.nom].filter(Boolean).join(" "),
-        status: expense.status === "planned" ? ("planned" as const) : ("paid" as const),
-        period_expenses: round2(Math.max(0, toNumber(expense.amount))),
-      }))
-      .filter((expense) => expense.period_expenses > 0);
+    const occasionalDetails = period.id === "last_24_months"
+      ? []
+      : personalOccasionalExpenses
+          .filter((expense) => period.monthKeys.has(getMonthKey(expense.expense_date.getUTCFullYear(), expense.expense_date.getUTCMonth() + 1)))
+          .map((expense) => ({
+            id: expense.id,
+            kind: "occasional" as const,
+            label: expense.label,
+            category_name: expense.category.name,
+            manager_name: [expense.gestionnaire?.prenom, expense.gestionnaire?.nom].filter(Boolean).join(" "),
+            status: expense.status === "planned" ? ("planned" as const) : ("paid" as const),
+            period_expenses: round2(Math.max(0, toNumber(expense.amount))),
+          }))
+          .filter((expense) => expense.period_expenses > 0);
     const personalRecurringExpensesTotal = round2(
       recurringDetails.reduce((sum, expense) => sum + expense.period_expenses, 0)
     );
