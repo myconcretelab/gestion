@@ -122,6 +122,46 @@ test("computeSeasonQuote refuse un séjour avec trou tarifaire", async () => {
   );
 });
 
+test("computeSeasonQuote adapte le minimum à la disponibilité restante", async () => {
+  const quote = await computeSeasonQuote({
+    gite: {
+      id: "g1",
+      capacite_max: 4,
+      nb_adultes_max: 4,
+      nb_enfants_max: 0,
+      taxe_sejour_par_personne_par_nuit: 0,
+      options_draps_par_lit: 0,
+      options_linge_toilette_par_personne: 0,
+      options_menage_forfait: 0,
+      options_depart_tardif_forfait: 0,
+      options_chiens_forfait: 0,
+      arrhes_taux_defaut: 0.2,
+      regle_animaux_acceptes: false,
+      regle_bois_premiere_flambee: false,
+      regle_tiers_personnes_info: false,
+    },
+    dateEntree: new Date("2026-10-27T00:00:00.000Z"),
+    dateSortie: new Date("2026-10-31T00:00:00.000Z"),
+    nbAdultes: 2,
+    nbEnfants: 0,
+    availableNights: 4,
+    seasonRates: [
+      {
+        id: "s1",
+        gite_id: "g1",
+        date_debut: new Date("2026-10-01T00:00:00.000Z"),
+        date_fin: new Date("2026-11-01T00:00:00.000Z"),
+        prix_par_nuit: 80,
+        min_nuits: 6,
+        ordre: 0,
+      },
+    ],
+  });
+
+  assert.equal(quote.nb_nuits, 4);
+  assert.equal(quote.required_min_nights, 4);
+});
+
 test("POST /booking-requests/:id/approve crée une réservation booked avec les enfants", async () => {
   const originals = {
     bookingRequestUpdateMany: prisma.bookingRequest.updateMany,
