@@ -506,16 +506,17 @@ const getAvailableNightsUntilNextBlock = async (params: {
 }) => {
   await expireStaleBookingRequests();
 
-  const [nextReservation, nextBookingRequest] = await Promise.all([
-    prisma.reservation.findFirst({
+  const [nextReservations, nextBookingRequests] = await Promise.all([
+    prisma.reservation.findMany({
       where: {
         gite_id: params.giteId,
         date_entree: { gte: params.dateSortie },
       },
       orderBy: { date_entree: "asc" },
       select: { date_entree: true },
+      take: 1,
     }),
-    prisma.bookingRequest.findFirst({
+    prisma.bookingRequest.findMany({
       where: {
         gite_id: params.giteId,
         status: "pending",
@@ -525,10 +526,11 @@ const getAvailableNightsUntilNextBlock = async (params: {
       },
       orderBy: { date_entree: "asc" },
       select: { date_entree: true },
+      take: 1,
     }),
   ]);
 
-  const nextBlockedDate = [nextReservation?.date_entree, nextBookingRequest?.date_entree]
+  const nextBlockedDate = [nextReservations[0]?.date_entree, nextBookingRequests[0]?.date_entree]
     .filter((date): date is Date => Boolean(date))
     .sort((left, right) => left.getTime() - right.getTime())[0];
 
