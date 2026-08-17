@@ -360,6 +360,7 @@ export const computeSeasonQuote = async (params: {
   nbEnfants: number;
   options?: OptionsInput | null;
   seasonRates?: SeasonRateRow[];
+  availableNights?: number;
 }) => {
   const nbNuits = Math.round((params.dateSortie.getTime() - params.dateEntree.getTime()) / DAY_MS);
   if (nbNuits <= 0) {
@@ -411,7 +412,11 @@ export const computeSeasonQuote = async (params: {
     };
   });
 
-  const required_min_nights = nightlyBreakdown.reduce((max, item) => Math.max(max, item.min_nuits), 1);
+  const configuredMinimumNights = nightlyBreakdown.reduce((max, item) => Math.max(max, item.min_nuits), 1);
+  const availableNights = Math.max(0, Number(params.availableNights) || 0);
+  const required_min_nights = availableNights > 0
+    ? Math.min(configuredMinimumNights, availableNights)
+    : configuredMinimumNights;
   if (nbNuits < required_min_nights) {
     throw new BookedValidationError({
       code: "min_nights",
@@ -458,13 +463,20 @@ export const computeBookedQuote = async (params: {
   nbAdultes: number;
   nbEnfants: number;
   options?: OptionsInput | null;
+  excludeBookingRequestId?: string;
 }) => {
-  const [seasonRates, calendarPeriods] = await Promise.all([
+  const [seasonRates, calendarPeriods, availableNights] = await Promise.all([
     loadSeasonRatesForGite(params.gite.id),
     getBookedCalendarPeriodsForRange({
       from: formatBookedDateInput(params.dateEntree),
       to: formatBookedDateInput(params.dateSortie),
       zone: "B",
+    }),
+    getAvailableNightsUntilNextBlock({
+      giteId: params.gite.id,
+      dateEntree: params.dateEntree,
+      dateSortie: params.dateSortie,
+      excludeBookingRequestId: params.excludeBookingRequestId,
     }),
   ]);
 
@@ -475,6 +487,7 @@ export const computeBookedQuote = async (params: {
     nbAdultes: params.nbAdultes,
     nbEnfants: params.nbEnfants,
     options: params.options,
+    availableNights,
     seasonRates: buildQuoteSeasonRates({
       gite: params.gite,
       dateEntree: params.dateEntree,
@@ -483,6 +496,44 @@ export const computeBookedQuote = async (params: {
       calendarPeriods,
     }),
   });
+};
+
+const getAvailableNightsUntilNextBlock = async (params: {
+  giteId: string;
+  dateEntree: Date;
+  dateSortie: Date;
+  excludeBookingRequestId?: string;
+}) => {
+  await expireStaleBookingRequests();
+
+  const [nextReservation, nextBookingRequest] = await Promise.all([
+    prisma.reservation.findFirst({
+      where: {
+        gite_id: params.giteId,
+        date_entree: { gte: params.dateSortie },
+      },
+      orderBy: { date_entree: "asc" },
+      select: { date_entree: true },
+    }),
+    prisma.bookingRequest.findFirst({
+      where: {
+        gite_id: params.giteId,
+        status: "pending",
+        hold_expires_at: { gt: new Date() },
+        date_entree: { gte: params.dateSortie },
+        ...(params.excludeBookingRequestId ? { NOT: { id: params.excludeBookingRequestId } } : {}),
+      },
+      orderBy: { date_entree: "asc" },
+      select: { date_entree: true },
+    }),
+  ]);
+
+  const nextBlockedDate = [nextReservation?.date_entree, nextBookingRequest?.date_entree]
+    .filter((date): date is Date => Boolean(date))
+    .sort((left, right) => left.getTime() - right.getTime())[0];
+
+  if (!nextBlockedDate) return undefined;
+  return Math.max(0, Math.round((nextBlockedDate.getTime() - params.dateEntree.getTime()) / DAY_MS));
 };
 
 export const loadBookedConflicts = async (params: {

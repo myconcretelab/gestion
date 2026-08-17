@@ -215,6 +215,7 @@ router.post("/:id/dates", async (req, res, next) => {
       nbAdultes: bookingRequest.nb_adultes,
       nbEnfants: bookingRequest.nb_enfants_2_17,
       options,
+      excludeBookingRequestId: bookingRequest.id,
     });
 
     const updated = await prisma.bookingRequest.update({
