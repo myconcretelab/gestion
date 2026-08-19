@@ -14,6 +14,7 @@ const FactureFormPage = lazy(() => import("./pages/FactureFormPage"));
 const FactureDetailPage = lazy(() => import("./pages/FactureDetailPage"));
 const ReservationsPage = lazy(() => import("./pages/ReservationsPage"));
 const BookingRequestsPage = lazy(() => import("./pages/BookingRequestsPage"));
+const BookingRequestDetailPage = lazy(() => import("./pages/BookingRequestDetailPage"));
 const MobileReservationEditorPage = lazy(() => import("./pages/MobileReservationEditorPage"));
 const CalendrierPage = lazy(() => import("./pages/CalendrierPage"));
 const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
@@ -830,6 +831,7 @@ const App = () => {
             <Route path="/aujourdhui" element={<TodayPage />} />
             <Route path="/gites" element={<GitesPage />} />
             <Route path="/demandes" element={<BookingRequestsPage />} />
+            <Route path="/demandes/:requestId" element={<BookingRequestDetailPage />} />
             <Route path="/contrats" element={<ContratsListPage />} />
             <Route path="/contrats/nouveau" element={<ContratFormPage />} />
             <Route path="/contrats/:id/edition" element={<ContratFormPage />} />
