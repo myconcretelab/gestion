@@ -19,6 +19,8 @@ import {
 import { buildNewReservations } from "../services/dailyReservationEmail.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
+import { extractAirbnbConfirmationCode } from "../utils/airbnbReservationIdentity.js";
+import { isUnknownHostName } from "../utils/reservationText.js";
 import {
   buildOverviewReservationsWhere,
   buildRecentAppActivity,
@@ -554,17 +556,7 @@ router.post("/ical-conflicts/:id/resolve", async (req, res, next) => {
       return res.json({ ok: true, conflict: updated });
     }
 
-    const reservation = await prisma.reservation.findUnique({
-      where: { id: conflict.reservation_id },
-      select: {
-        id: true,
-        gite_id: true,
-        placeholder_id: true,
-        hote_nom: true,
-        date_entree: true,
-        date_sortie: true,
-      },
-    });
+    const reservation = await prisma.reservation.findUnique({ where: { id: conflict.reservation_id } });
 
     if (action === "delete_reservation" || (action === "apply_ical" && conflict.type === "deleted")) {
       if (reservation) {
@@ -587,9 +579,10 @@ router.post("/ical-conflicts/:id/resolve", async (req, res, next) => {
       if (!conflict.incoming_snapshot) {
         return res.status(400).json({ error: "Le conflit iCal ne contient pas de version entrante à appliquer." });
       }
+      const incomingSnapshot = conflict.incoming_snapshot;
 
-      const nextCheckIn = parseIsoDate(conflict.incoming_snapshot.date_entree);
-      const nextCheckOut = parseIsoDate(conflict.incoming_snapshot.date_sortie);
+      const nextCheckIn = parseIsoDate(incomingSnapshot.date_entree);
+      const nextCheckOut = parseIsoDate(incomingSnapshot.date_sortie);
       if (!nextCheckIn || !nextCheckOut || nextCheckOut.getTime() <= nextCheckIn.getTime()) {
         return res.status(400).json({ error: "Les dates iCal à appliquer sont invalides." });
       }
@@ -601,29 +594,81 @@ router.post("/ical-conflicts/:id/resolve", async (req, res, next) => {
           date_sortie: { gt: nextCheckIn },
           NOT: { id: reservation.id },
         },
-        select: {
-          id: true,
-          hote_nom: true,
-          date_entree: true,
-          date_sortie: true,
-        },
         orderBy: { date_entree: "asc" },
       });
-      if (overlapConflicts.length > 0) {
-        return res.status(409).json(buildOverlapConflictPayload(overlapConflicts));
+
+      const incomingConfirmationCode = extractAirbnbConfirmationCode(
+        incomingSnapshot.airbnb_url,
+        incomingSnapshot.description,
+        incomingSnapshot.origin_reference,
+      );
+      const duplicateReservations = incomingConfirmationCode
+        ? overlapConflicts.filter(
+            (item) =>
+              extractAirbnbConfirmationCode(item.airbnb_url, item.origin_reference) === incomingConfirmationCode,
+          )
+        : [];
+      const duplicateIds = new Set(duplicateReservations.map((item) => item.id));
+      const unrelatedOverlaps = overlapConflicts.filter((item) => !duplicateIds.has(item.id));
+      if (unrelatedOverlaps.length > 0 || (overlapConflicts.length > 0 && duplicateReservations.length === 0)) {
+        return res.status(409).json(buildOverlapConflictPayload(unrelatedOverlaps.length > 0 ? unrelatedOverlaps : overlapConflicts));
       }
 
       const nbNuits = Math.max(1, Math.round((nextCheckOut.getTime() - nextCheckIn.getTime()) / DAY_MS));
-      await prisma.reservation.update({
-        where: { id: reservation.id },
-        data: {
-          hote_nom: conflict.incoming_snapshot.hote_nom ?? reservation.hote_nom,
-          date_entree: nextCheckIn,
-          date_sortie: nextCheckOut,
-          nb_nuits: nbNuits,
-          source_paiement: conflict.incoming_snapshot.final_source ?? conflict.incoming_snapshot.source_paiement ?? undefined,
-          airbnb_url: conflict.incoming_snapshot.airbnb_url,
-        },
+      const enrichedDuplicate = duplicateReservations.find((item) => !isUnknownHostName(item.hote_nom)) ?? duplicateReservations[0];
+      await prisma.$transaction(async (tx) => {
+        if (duplicateReservations.length > 0) {
+          const duplicateReservationIds = duplicateReservations.map((item) => item.id);
+          await Promise.all([
+            tx.contrat.updateMany({
+              where: { reservation_id: { in: duplicateReservationIds } },
+              data: { reservation_id: reservation.id },
+            }),
+            tx.facture.updateMany({
+              where: { reservation_id: { in: duplicateReservationIds } },
+              data: { reservation_id: reservation.id },
+            }),
+            tx.bookingRequest.updateMany({
+              where: { approved_reservation_id: { in: duplicateReservationIds } },
+              data: { approved_reservation_id: reservation.id },
+            }),
+            tx.reservation.updateMany({
+              where: { stay_group_id: { in: duplicateReservationIds } },
+              data: { stay_group_id: reservation.stay_group_id ?? reservation.id },
+            }),
+          ]);
+          await tx.reservation.deleteMany({ where: { id: { in: duplicateReservationIds } } });
+        }
+
+        await tx.reservation.update({
+          where: { id: reservation.id },
+          data: {
+            hote_nom:
+              isUnknownHostName(reservation.hote_nom) && enrichedDuplicate && !isUnknownHostName(enrichedDuplicate.hote_nom)
+                ? enrichedDuplicate.hote_nom
+                : reservation.hote_nom,
+            telephone: reservation.telephone || enrichedDuplicate?.telephone || undefined,
+            email: reservation.email || enrichedDuplicate?.email || undefined,
+            date_entree: nextCheckIn,
+            date_sortie: nextCheckOut,
+            nb_nuits: nbNuits,
+            prix_par_nuit:
+              Number(reservation.prix_par_nuit) > 0
+                ? reservation.prix_par_nuit
+                : enrichedDuplicate?.prix_par_nuit ?? reservation.prix_par_nuit,
+            prix_total:
+              Number(reservation.prix_total) > 0
+                ? reservation.prix_total
+                : enrichedDuplicate?.prix_total ?? reservation.prix_total,
+            source_paiement:
+              incomingSnapshot.final_source ??
+              incomingSnapshot.source_paiement ??
+              reservation.source_paiement ??
+              enrichedDuplicate?.source_paiement,
+            commentaire: reservation.commentaire || enrichedDuplicate?.commentaire || undefined,
+            airbnb_url: incomingSnapshot.airbnb_url ?? reservation.airbnb_url ?? enrichedDuplicate?.airbnb_url,
+          },
+        });
       });
 
       const updated = updateIcalConflictRecord(conflict.id, (record) => ({
@@ -633,7 +678,11 @@ router.post("/ical-conflicts/:id/resolve", async (req, res, next) => {
         updated_at: new Date().toISOString(),
         resolution_action: "apply_ical",
       }));
-      return res.json({ ok: true, conflict: updated });
+      return res.json({
+        ok: true,
+        conflict: updated,
+        merged_reservation_ids: duplicateReservations.map((item) => item.id),
+      });
     }
 
     return res.status(400).json({ error: "Action de résolution non gérée pour ce conflit." });

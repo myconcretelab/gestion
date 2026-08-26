@@ -74,8 +74,8 @@ const addDays = (value: string, daysToAdd: number) => {
   return utcDate.toISOString().slice(0, 10);
 };
 
-const getReservationKey = (listingId: string | null, confirmationCode: string | null, checkIn: string | null, checkOut: string | null) =>
-  [listingId || "unknown", confirmationCode || "unknown", checkIn || "unknown", checkOut || "unknown"].join("|");
+const getReservationKey = (listingId: string | null, confirmationCode: string | null) =>
+  [listingId || "unknown", confirmationCode || "unknown"].join("|");
 
 const getBlockedReservationKey = (listingId: string | null, checkIn: string | null, checkOut: string | null, note: string | null) =>
   [listingId || "unknown", "blocked", checkIn || "unknown", checkOut || "unknown", note || "no-note"].join("|");
@@ -156,7 +156,7 @@ const collectReservations = (
       const listing = (listingId && listingById.get(listingId)) || {};
       const guestName = formatGuestName(reservation.guestInfo);
       const nextReservation: PumpLatestReservation = {
-        id: getReservationKey(listingId, reservation.confirmationCode, reservation.startDate, reservation.endDate),
+        id: getReservationKey(listingId, reservation.confirmationCode),
         type: "airbnb",
         source: "airbnb",
         confirmationCode: reservation.confirmationCode,

@@ -2,6 +2,11 @@ import { env } from "../config/env.js";
 import type { ParsedImportedReservation } from "./reservationImports.js";
 import { normalizeImportedComment, normalizeImportedHostName } from "../utils/reservationText.js";
 import {
+  buildAirbnbPumpReference,
+  extractAirbnbConfirmationCode,
+  normalizeAirbnbConfirmationCode,
+} from "../utils/airbnbReservationIdentity.js";
+import {
   getLocalPumpLatestReservations,
   getLocalPumpRefreshStatus,
   triggerLocalPumpRefresh,
@@ -9,6 +14,8 @@ import {
 
 type PumpLatestReservation = {
   id?: string;
+  confirmationCode?: string | null;
+  confirmation_code?: string | null;
   listingId?: string | null;
   listing_id?: string | null;
   type?: string | null;
@@ -113,13 +120,18 @@ export const normalizePumpReservation = (reservation: PumpLatestReservation): Pa
   const normalizedComment = normalizeImportedComment(
     reservation.comment ?? reservation.commentaire ?? reservation.note
   );
+  const confirmationCode =
+    normalizeAirbnbConfirmationCode(reservation.confirmationCode ?? reservation.confirmation_code) ??
+    extractAirbnbConfirmationCode(reservation.id);
 
   return {
-    id:
-      normalizeString(reservation.id) ??
+    id: confirmationCode && listingId
+      ? buildAirbnbPumpReference(listingId, confirmationCode)
+      : normalizeString(reservation.id) ??
       ["pump", listingId, checkIn, checkOut, normalizedName, normalizedComment]
         .map((part) => String(part ?? ""))
         .join("|"),
+    confirmationCode,
     listingId,
     type: reservation.type === "airbnb" ? "airbnb" : "personal",
     checkIn,

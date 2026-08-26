@@ -13,6 +13,7 @@ import {
   type ImportedReservationType,
 } from "../utils/importedReservationSource.js";
 import { buildReservationOriginData, type ReservationOriginSystem } from "../utils/reservationOrigin.js";
+import { buildAirbnbReservationUrl, extractAirbnbConfirmationCode } from "../utils/airbnbReservationIdentity.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SOURCE = "A définir";
@@ -32,9 +33,10 @@ export type ReservationImportPreviewItem = {
   hote_nom: string | null;
   prix_total: number | null;
   commentaire: string | null;
+  confirmation_code: string | null;
   existing_id: string | null;
   conflict_id: string | null;
-  update_fields: Array<"hote_nom" | "source_paiement" | "commentaire" | "prix_total">;
+  update_fields: Array<"hote_nom" | "source_paiement" | "commentaire" | "prix_total" | "airbnb_url" | "dates">;
 };
 
 export type ReservationImportPreview = {
@@ -57,6 +59,7 @@ export type ReservationImportResult = ReservationImportPreview & {
 
 export type ParsedImportedReservation = {
   id: string;
+  confirmationCode?: string | null;
   listingId: string;
   type: ImportedReservationType;
   checkIn: string;
@@ -183,10 +186,26 @@ const buildUpdateData = (existing: any, item: ReservationImportPreviewItem) => {
     data.commentaire = normalizedComment;
   }
 
+  if (item.confirmation_code && !extractAirbnbConfirmationCode(existing.airbnb_url)) {
+    data.airbnb_url = buildAirbnbReservationUrl(item.confirmation_code);
+  }
+
   const existingTotal = Number(existing.prix_total ?? 0);
   if (item.prix_total && Number.isFinite(item.prix_total) && item.prix_total > 0 && (!Number.isFinite(existingTotal) || existingTotal <= 0)) {
     data.prix_total = round2(item.prix_total);
     data.prix_par_nuit = item.nights > 0 ? round2(item.prix_total / item.nights) : 0;
+  }
+
+  const dateEntree = parseIsoDateToUtc(item.check_in);
+  const dateSortie = parseIsoDateToUtc(item.check_out);
+  if (
+    dateEntree &&
+    dateSortie &&
+    (existing.date_entree?.getTime() !== dateEntree.getTime() || existing.date_sortie?.getTime() !== dateSortie.getTime())
+  ) {
+    data.date_entree = dateEntree;
+    data.date_sortie = dateSortie;
+    data.nb_nuits = Math.max(1, Math.round((dateSortie.getTime() - dateEntree.getTime()) / DAY_MS));
   }
 
   return data;
@@ -206,6 +225,7 @@ export const buildReservationsPreview = async (
     });
     const normalizedHostName = normalizeImportedHostName(reservation.name);
     const normalizedComment = normalizeImportedComment(reservation.comment);
+    const confirmationCode = reservation.confirmationCode ?? extractAirbnbConfirmationCode(reservation.id);
 
     if (!mapped) {
       preview.push({
@@ -221,6 +241,7 @@ export const buildReservationsPreview = async (
         hote_nom: normalizedHostName,
         prix_total: reservation.payout,
         commentaire: normalizedComment,
+        confirmation_code: confirmationCode,
         existing_id: null,
         conflict_id: null,
         update_fields: [],
@@ -245,9 +266,97 @@ export const buildReservationsPreview = async (
         hote_nom: normalizedHostName,
         prix_total: reservation.payout,
         commentaire: normalizedComment,
+        confirmation_code: confirmationCode,
         existing_id: null,
         conflict_id: null,
         update_fields: [],
+      });
+      continue;
+    }
+
+    const identityMatches = confirmationCode
+      ? await prisma.reservation.findMany({
+          where: {
+            gite_id: mapped.gite_id,
+            OR: [
+              { airbnb_url: { contains: confirmationCode } },
+              { origin_reference: { contains: confirmationCode } },
+            ],
+          },
+          select: {
+            id: true,
+            hote_nom: true,
+            source_paiement: true,
+            commentaire: true,
+            prix_total: true,
+            airbnb_url: true,
+            date_entree: true,
+            date_sortie: true,
+          },
+          orderBy: { createdAt: "asc" },
+        })
+      : [];
+    const identityMatch = identityMatches.length === 1 ? identityMatches[0] : null;
+
+    if (identityMatch) {
+      const overlap = await prisma.reservation.findFirst({
+        where: {
+          gite_id: mapped.gite_id,
+          date_entree: { lt: dateSortie },
+          date_sortie: { gt: dateEntree },
+          NOT: { id: identityMatch.id },
+        },
+        select: { id: true },
+      });
+
+      if (overlap) {
+        preview.push({
+          id: reservation.id,
+          listing_id: reservation.listingId,
+          gite_id: mapped.gite_id,
+          gite_nom: mapped.gite_nom,
+          source_type: sourceType,
+          status: "conflict",
+          check_in: reservation.checkIn,
+          check_out: reservation.checkOut,
+          nights: reservation.nights,
+          hote_nom: normalizedHostName,
+          prix_total: reservation.payout,
+          commentaire: normalizedComment,
+          confirmation_code: confirmationCode,
+          existing_id: identityMatch.id,
+          conflict_id: overlap.id,
+          update_fields: [],
+        });
+        continue;
+      }
+
+      const identityItem: ReservationImportPreviewItem = {
+        id: reservation.id,
+        listing_id: reservation.listingId,
+        gite_id: mapped.gite_id,
+        gite_nom: mapped.gite_nom,
+        source_type: sourceType,
+        status: "existing",
+        check_in: reservation.checkIn,
+        check_out: reservation.checkOut,
+        nights: reservation.nights,
+        hote_nom: normalizedHostName,
+        prix_total: reservation.payout,
+        commentaire: normalizedComment,
+        confirmation_code: confirmationCode,
+        existing_id: identityMatch.id,
+        conflict_id: null,
+        update_fields: [],
+      };
+      const updateData = buildUpdateData(identityMatch, identityItem);
+      const updateFields = Object.keys(updateData)
+        .map((field) => (["date_entree", "date_sortie", "nb_nuits"].includes(field) ? "dates" : field))
+        .filter((field, index, fields) => fields.indexOf(field) === index) as ReservationImportPreviewItem["update_fields"];
+      preview.push({
+        ...identityItem,
+        status: updateFields.length > 0 ? "existing_updatable" : "existing",
+        update_fields: updateFields,
       });
       continue;
     }
@@ -264,6 +373,9 @@ export const buildReservationsPreview = async (
         source_paiement: true,
         commentaire: true,
         prix_total: true,
+        airbnb_url: true,
+        date_entree: true,
+        date_sortie: true,
       },
     });
 
@@ -281,6 +393,7 @@ export const buildReservationsPreview = async (
         hote_nom: normalizedHostName,
         prix_total: reservation.payout,
         commentaire: normalizedComment,
+        confirmation_code: confirmationCode,
         existing_id: exact.id,
         conflict_id: null,
         update_fields: [],
@@ -300,6 +413,7 @@ export const buildReservationsPreview = async (
         hote_nom: normalizedHostName,
         prix_total: reservation.payout,
         commentaire: normalizedComment,
+        confirmation_code: confirmationCode,
         existing_id: exact.id,
         conflict_id: null,
         update_fields: updateFields,
@@ -330,6 +444,7 @@ export const buildReservationsPreview = async (
         hote_nom: normalizedHostName,
         prix_total: reservation.payout,
         commentaire: normalizedComment,
+        confirmation_code: confirmationCode,
         existing_id: null,
         conflict_id: conflict.id,
         update_fields: [],
@@ -350,6 +465,7 @@ export const buildReservationsPreview = async (
       hote_nom: normalizedHostName,
       prix_total: reservation.payout,
       commentaire: normalizedComment,
+      confirmation_code: confirmationCode,
       existing_id: null,
       conflict_id: null,
       update_fields: [],
@@ -446,6 +562,7 @@ export const importPreviewReservations = async (
           prix_par_nuit: prixParNuit,
           prix_total: prixTotal,
           source_paiement: item.source_type,
+          airbnb_url: item.confirmation_code ? buildAirbnbReservationUrl(item.confirmation_code) : null,
           commentaire: normalizeImportedComment(item.commentaire),
           frais_optionnels_montant: 0,
           frais_optionnels_libelle: null,
@@ -473,6 +590,9 @@ export const importPreviewReservations = async (
           source_paiement: true,
           commentaire: true,
           prix_total: true,
+          airbnb_url: true,
+          date_entree: true,
+          date_sortie: true,
         },
       });
       if (!existing) continue;

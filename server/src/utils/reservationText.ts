@@ -11,6 +11,10 @@ const COMMENT_PLACEHOLDER_KEYS = new Set([
   normalizeReservationTextKey("Reserved"),
   normalizeReservationTextKey("Airbnb (Not available)"),
 ]);
+const HOST_PLACEHOLDER_KEYS = new Set([
+  ...COMMENT_PLACEHOLDER_KEYS,
+  normalizeReservationTextKey("Hôte à compléter"),
+]);
 
 export const isUnknownHostName = (value: string | null | undefined) => {
   if (typeof value !== "string") {
@@ -23,7 +27,12 @@ export const isUnknownHostName = (value: string | null | undefined) => {
   }
 
   const normalized = normalizeReservationTextKey(trimmed);
-  return normalized.length === 0 || normalized.includes("hoteinconnu") || normalized.includes("hostunknown");
+  return (
+    normalized.length === 0 ||
+    normalized.includes("hoteinconnu") ||
+    normalized.includes("hostunknown") ||
+    HOST_PLACEHOLDER_KEYS.has(normalized)
+  );
 };
 
 export const normalizeImportedHostName = (value: unknown) => {
