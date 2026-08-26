@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
 import { apiFetch, isApiError } from "../utils/api";
+import { dispatchAppNotice } from "../utils/appNotices";
 import { formatEuro } from "../utils/format";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -615,6 +616,7 @@ const TodayPage = () => {
   const [deferredLoading, setDeferredLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
+  const [icalConflictErrors, setIcalConflictErrors] = useState<Record<string, string>>({});
   const [openRevenueMetricId, setOpenRevenueMetricId] = useState<TodayRevenueAverageMetric["id"] | null>(null);
   const [trashNow, setTrashNow] = useState(() => new Date());
   const primaryRequestIdRef = useRef(0);
@@ -1028,11 +1030,29 @@ const TodayPage = () => {
     action: "keep_reservation" | "apply_ical" | "delete_reservation"
   ) => {
     setResolvingConflictId(conflict.id);
+    setIcalConflictErrors((current) => {
+      if (!current[conflict.id]) return current;
+      const next = { ...current };
+      delete next[conflict.id];
+      return next;
+    });
     try {
       setError(null);
       await apiFetch(`/today/ical-conflicts/${encodeURIComponent(conflict.id)}/resolve`, {
         method: "POST",
         json: { action },
+      });
+      dispatchAppNotice({
+        label: "Conflit iCal résolu",
+        message:
+          action === "keep_reservation"
+            ? "La réservation actuelle a été conservée."
+            : action === "apply_ical"
+              ? "La version iCal a été appliquée."
+              : "La réservation a été supprimée.",
+        tone: "success",
+        timeoutMs: 4200,
+        role: "status",
       });
       await loadData({ preserveContent: true });
     } catch (err) {
@@ -1044,7 +1064,14 @@ const TodayPage = () => {
           message = `${message} ${suffix}`;
         }
       }
-      setError(message);
+      setIcalConflictErrors((current) => ({ ...current, [conflict.id]: message }));
+      dispatchAppNotice({
+        label: action === "apply_ical" ? "iCal non appliqué" : "Conflit iCal non résolu",
+        message,
+        tone: "error",
+        timeoutMs: 8000,
+        role: "alert",
+      });
     } finally {
       setResolvingConflictId(null);
     }
@@ -1605,6 +1632,11 @@ const TodayPage = () => {
                       Ouvrir
                     </button>
                   </div>
+                  {icalConflictErrors[conflict.id] ? (
+                    <div className="today-conflict-card__error" role="alert">
+                      {icalConflictErrors[conflict.id]}
+                    </div>
+                  ) : null}
                 </article>
               );
             })}
