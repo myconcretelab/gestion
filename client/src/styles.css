@@ -647,6 +647,17 @@ body.app-scroll-locked {
   gap: 10px;
 }
 
+.today-conflict-card__error {
+  padding: 11px 13px;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
 .today-notification-card {
   --today-notification-accent: #d1d5db;
   display: grid;
