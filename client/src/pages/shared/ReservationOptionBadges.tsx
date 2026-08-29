@@ -8,7 +8,8 @@ type ReservationOptionBadgesProps = {
 };
 
 const getOrbitPosition = (index: number, count: number) => {
-  const angle = -90 + (index * 360) / Math.max(count, 1);
+  const angleStep = Math.min(45, 360 / Math.max(count, 1));
+  const angle = 45 - index * angleStep;
   const angleInRadians = (angle * Math.PI) / 180;
   const radius = 28;
   return {
