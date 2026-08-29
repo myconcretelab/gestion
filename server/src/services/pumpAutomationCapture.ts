@@ -1024,9 +1024,11 @@ export class PumpPlaywrightSession {
     await this.context.storageState({ path: this.storageStatePath });
   }
 
-  async close() {
+  async close(options: { saveState?: boolean } = {}) {
     try {
-      await this.saveStorageState();
+      if (options.saveState !== false) {
+        await this.saveStorageState();
+      }
       await this.page?.close().catch(() => undefined);
       await this.context?.close().catch(() => undefined);
       await this.browser?.close().catch(() => undefined);
