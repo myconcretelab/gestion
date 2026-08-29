@@ -824,7 +824,8 @@ body.app-scroll-locked {
 
 .today-timeline__viewport {
   overflow-x: auto;
-  padding-bottom: 4px;
+  margin-inline: -14px;
+  padding: 0 14px 4px;
   scrollbar-width: thin;
 }
 
@@ -924,6 +925,10 @@ body.app-scroll-locked {
 .today-timeline__rail {
   position: relative;
   min-height: 74px;
+}
+
+.today-timeline__rail--has-options {
+  min-height: 98px;
 }
 
 .today-timeline__axis {
@@ -1055,6 +1060,60 @@ body.app-scroll-locked {
 
 .today-timeline__marker--pulse {
   animation: today-pulse 2.4s infinite;
+}
+
+.reservation-option-badges {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reservation-option-badge {
+  --reservation-option-color: #64748b;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.94);
+  background: var(--reservation-option-color);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.2);
+}
+
+.reservation-option-badge--muted {
+  background: #9ca3af;
+  color: #f8fafc;
+  box-shadow: 0 2px 6px rgba(71, 85, 105, 0.18);
+}
+
+.reservation-option-badges--orbit {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: block;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.reservation-option-badges--orbit .reservation-option-badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 21px;
+  height: 21px;
+  transform: translate(
+    calc(var(--reservation-option-x) - 50%),
+    calc(var(--reservation-option-y) - 50%)
+  );
+  font-size: 0.62rem;
+  border-width: 2px;
+  box-shadow: 0 3px 9px rgba(15, 23, 42, 0.24);
 }
 
 .today-events-grid {
@@ -3595,12 +3654,23 @@ body.app-scroll-locked {
 
 .mobile-reservation-actions__choice {
   min-height: 46px;
-  padding: 0 12px;
+  padding: 10px 12px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   font-size: 0.84rem;
   font-weight: 700;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.mobile-reservation-actions__choice .reservation-option-badges {
+  justify-content: center;
+}
+
+.mobile-reservation-actions__copy > .reservation-option-badges {
+  margin-top: 2px;
 }
 
 @media (min-width: 1201px) {
@@ -17211,6 +17281,10 @@ button.personal-expenses-status:disabled {
 
   .today-timeline__rail {
     min-height: 58px;
+  }
+
+  .today-timeline__rail--has-options {
+    min-height: 96px;
   }
 
   .today-timeline__marker {

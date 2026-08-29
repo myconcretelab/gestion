@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import type { ReservationOptionBadge } from "../../utils/reservationOptionBadges";
 import ReservationContractIcon from "./ReservationContractIcon";
+import ReservationOptionBadges from "./ReservationOptionBadges";
 
 export type MobileReservationActionsBarMode = "actions" | "rotation-choice";
 
@@ -24,6 +26,9 @@ type MobileReservationActionsBarProps = {
   onSelectDeparture?: () => void;
   arrivalLabel?: string;
   departureLabel?: string;
+  optionBadges?: ReservationOptionBadge[];
+  arrivalOptionBadges?: ReservationOptionBadge[];
+  departureOptionBadges?: ReservationOptionBadge[];
   highlightedCard?: {
     label: string;
     value: string;
@@ -157,6 +162,9 @@ const MobileReservationActionsBar = ({
   onSelectDeparture,
   arrivalLabel = "Arrivée",
   departureLabel = "Départ",
+  optionBadges = [],
+  arrivalOptionBadges = [],
+  departureOptionBadges = [],
   highlightedCard,
   sourcePicker,
 }: MobileReservationActionsBarProps) => {
@@ -172,6 +180,7 @@ const MobileReservationActionsBar = ({
           <div className="mobile-reservation-actions__copy">
             <strong>{title}</strong>
             {subtitle ? <span className="mobile-reservation-actions__subtitle">{subtitle}</span> : null}
+            <ReservationOptionBadges badges={optionBadges} />
             {details?.length ? (
               <div className="mobile-reservation-actions__details">
                 {details.map((detail) => {
@@ -273,10 +282,12 @@ const MobileReservationActionsBar = ({
         {mode === "rotation-choice" ? (
           <div className="mobile-reservation-actions__choices">
             <button type="button" className="mobile-reservation-actions__choice" onClick={onSelectArrival}>
-              {arrivalLabel}
+              <span>{arrivalLabel}</span>
+              <ReservationOptionBadges badges={arrivalOptionBadges} />
             </button>
             <button type="button" className="mobile-reservation-actions__choice" onClick={onSelectDeparture}>
-              {departureLabel}
+              <span>{departureLabel}</span>
+              <ReservationOptionBadges badges={departureOptionBadges} />
             </button>
           </div>
         ) : (

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import { useNavigate } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
+import ReservationOptionBadges from "./shared/ReservationOptionBadges";
 import { apiFetch, isApiError } from "../utils/api";
 import { dispatchAppNotice } from "../utils/appNotices";
 import { formatEuro } from "../utils/format";
@@ -12,6 +13,7 @@ import {
   getPaymentColorFromMap,
 } from "../utils/paymentColors";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
+import { getReservationOptionBadges, type ReservationOptionBadge } from "../utils/reservationOptionBadges";
 import { buildMobileReservationEditorHref } from "./shared/mobileReservationEditor";
 import {
   RESERVATION_SOURCES,
@@ -480,6 +482,19 @@ const getEventSummaryLabel = (event: TodayEvent) => {
   if (event.type === "arrival") return getReservationGuestName(event.arrivalReservation);
   if (event.type === "depart") return getReservationGuestName(event.departureReservation);
   return "Départ + arrivée";
+};
+
+const getEventOptionBadges = (event: TodayEvent): ReservationOptionBadge[] => {
+  const arrivalBadges = getReservationOptionBadges(event.arrivalReservation?.options);
+  const departureBadges = getReservationOptionBadges(event.departureReservation?.options);
+
+  if (event.type === "arrival") return arrivalBadges;
+  if (event.type === "depart") return departureBadges;
+
+  return [
+    ...arrivalBadges,
+    ...departureBadges.map((badge) => ({ ...badge, muted: true })),
+  ];
 };
 
 const buildReservationFocusHref = (event: TodayEvent) => {
@@ -1154,7 +1169,13 @@ const TodayPage = () => {
             <div className="today-timeline__rows">
               {timelineRows.map((row) => (
                 <div key={row.gite.id} className="today-timeline__row">
-                  <div className="today-timeline__rail">
+                  <div
+                    className={`today-timeline__rail${
+                      row.markers.some((marker) => getEventOptionBadges(marker.event).length > 0)
+                        ? " today-timeline__rail--has-options"
+                        : ""
+                    }`}
+                  >
                     <div className="today-timeline__axis" />
 
                     {days.map((day, index) => (
@@ -1204,6 +1225,7 @@ const TodayPage = () => {
                       const prefix =
                         marker.event.gitePrefix.trim().slice(0, 2).toUpperCase() ||
                         marker.event.giteName.trim().slice(0, 1).toUpperCase();
+                      const optionBadges = getEventOptionBadges(marker.event);
 
                       return (
                         <button
@@ -1222,10 +1244,17 @@ const TodayPage = () => {
                         }}
                           onClick={() => openMobileActionForEvent(marker.event)}
                           title={`${getMarkerVariantLabel(marker.event.type)} · ${marker.event.giteName} · Ouvrir la réservation`}
-                          aria-label={`${getMarkerVariantLabel(marker.event.type)} ${marker.event.giteName}, ouvrir la réservation dans le listing`}
+                          aria-label={`${getMarkerVariantLabel(marker.event.type)} ${marker.event.giteName}, ouvrir la réservation${
+                            optionBadges.length > 0
+                              ? `, options : ${optionBadges
+                                  .map((badge) => `${badge.label}${badge.muted ? " au départ" : ""}`)
+                                  .join(", ")}`
+                              : ""
+                          }`}
                         >
                           <span className="today-timeline__marker-prefix">{prefix}</span>
                           <span className="today-timeline__marker-icon">{getEventIcon(marker.event.type)}</span>
+                          <ReservationOptionBadges badges={optionBadges} layout="orbit" />
                         </button>
                       );
                     })}
@@ -1760,6 +1789,8 @@ const TodayPage = () => {
           }}
           arrivalLabel={`Arrivée · ${getReservationGuestName(mobileActionEvent.arrivalReservation)}`}
           departureLabel={`Départ · ${getReservationGuestName(mobileActionEvent.departureReservation)}`}
+          arrivalOptionBadges={getReservationOptionBadges(mobileActionEvent.arrivalReservation?.options)}
+          departureOptionBadges={getReservationOptionBadges(mobileActionEvent.departureReservation?.options)}
         />
       ) : null}
 
@@ -1768,6 +1799,7 @@ const TodayPage = () => {
           open
           title={getReservationGuestName(mobileActionReservation)}
           subtitle={`${formatShortDate(mobileActionReservation.date_entree)} → ${formatShortDate(mobileActionReservation.date_sortie)}`}
+          optionBadges={getReservationOptionBadges(mobileActionReservation.options)}
           details={[
             { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
             {

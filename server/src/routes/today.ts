@@ -352,8 +352,8 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
   });
 };
 
-const loadOverviewReservations = (today: Date, endExclusive: Date) =>
-  prisma.reservation.findMany({
+const loadOverviewReservations = async (today: Date, endExclusive: Date) => {
+  const reservations = await prisma.reservation.findMany({
     where: buildOverviewReservationsWhere(today, endExclusive),
     include: {
       gite: {
@@ -368,6 +368,12 @@ const loadOverviewReservations = (today: Date, endExclusive: Date) =>
     },
     orderBy: [{ date_entree: "asc" }, { createdAt: "asc" }],
   });
+
+  return reservations.map((reservation) => ({
+    ...reservation,
+    options: fromJsonString(reservation.options, {}),
+  }));
+};
 
 const loadOverviewLiveEnergyByReservationId = async (today: Date, endExclusive: Date) => {
   const smartlifeConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
