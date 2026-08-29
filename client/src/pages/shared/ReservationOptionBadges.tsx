@@ -10,7 +10,7 @@ type ReservationOptionBadgesProps = {
 const getOrbitPosition = (index: number, count: number) => {
   const angle = -90 + (index * 360) / Math.max(count, 1);
   const angleInRadians = (angle * Math.PI) / 180;
-  const radius = 36;
+  const radius = 28;
   return {
     "--reservation-option-x": `${Math.cos(angleInRadians) * radius}px`,
     "--reservation-option-y": `${Math.sin(angleInRadians) * radius}px`,
