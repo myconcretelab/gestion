@@ -9,6 +9,7 @@ import {
   generatePumpSessionId,
   logError,
   logInfo,
+  logWarn,
   persistCapturedSession,
 } from "./pumpAutomationCapture.js";
 import {
@@ -61,6 +62,10 @@ type StoredSessionRecord = {
   lastError?: string | null;
 };
 
+type StoredSessionRegistry = {
+  sessions: Record<string, StoredSessionRecord>;
+};
+
 type ActiveSessionState = {
   sessionId: string;
   playwright: PumpPlaywrightSession;
@@ -75,7 +80,20 @@ type ActiveSessionState = {
 };
 
 const SESSION_RETENTION_MS = 10 * 60 * 1_000;
+const SESSION_EXECUTION_TIMEOUT_MS = 8 * 60 * 1_000;
 const FINISHED_STATUSES = new Set(["completed", "failed", "stopped"]);
+const IN_PROGRESS_STATUSES = new Set([
+  "queued",
+  "pending",
+  "starting",
+  "started",
+  "running",
+  "processing",
+  "refreshing",
+  "in_progress",
+]);
+const ORPHANED_SESSION_ERROR =
+  "Session Pump interrompue par un redémarrage du serveur avant sa finalisation.";
 const sessionsRoot = path.join(resolveDataDir(), "pump", "sessions");
 const storageStatesRoot = path.join(resolveDataDir(), "pump", "storageStates");
 const registryPath = path.join(sessionsRoot, "index.json");
@@ -116,7 +134,7 @@ const ensurePumpDirectories = () => {
   }
 };
 
-const readRegistry = (): { sessions: Record<string, StoredSessionRecord> } => {
+const readRegistry = (): StoredSessionRegistry => {
   ensurePumpDirectories();
   try {
     return JSON.parse(fs.readFileSync(registryPath, "utf-8")) as { sessions: Record<string, StoredSessionRecord> };
@@ -125,7 +143,7 @@ const readRegistry = (): { sessions: Record<string, StoredSessionRecord> } => {
   }
 };
 
-const writeRegistry = (registry: { sessions: Record<string, StoredSessionRecord> }) => {
+const writeRegistry = (registry: StoredSessionRegistry) => {
   ensurePumpDirectories();
   fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), "utf-8");
 };
@@ -153,6 +171,80 @@ const listSessions = (limit = 20) =>
       return rightDate - leftDate;
     })
     .slice(0, limit);
+
+export const isPumpAutomationSessionInProgress = (status: string | null | undefined) =>
+  IN_PROGRESS_STATUSES.has(String(status ?? "").trim().toLowerCase());
+
+export const recoverOrphanedPumpSessionRecords = (
+  registry: StoredSessionRegistry,
+  activeSessionIds: ReadonlySet<string>,
+  recoveredAt = new Date()
+) => {
+  const recoveredSessionIds: string[] = [];
+  const recoveredAtIso = recoveredAt.toISOString();
+  const sessions = Object.fromEntries(
+    Object.entries(registry.sessions).map(([sessionId, session]) => {
+      if (!isPumpAutomationSessionInProgress(session.status) || activeSessionIds.has(sessionId)) {
+        return [sessionId, session];
+      }
+
+      recoveredSessionIds.push(sessionId);
+      return [
+        sessionId,
+        {
+          ...session,
+          status: "failed",
+          updatedAt: recoveredAtIso,
+          lastError: ORPHANED_SESSION_ERROR,
+        },
+      ];
+    })
+  );
+
+  return {
+    registry: { sessions },
+    recoveredSessionIds,
+  };
+};
+
+const recoverOrphanedPumpSessions = () => {
+  const current = readRegistry();
+  const recovered = recoverOrphanedPumpSessionRecords(current, new Set(activeSessions.keys()));
+  if (recovered.recoveredSessionIds.length === 0) return;
+
+  writeRegistry(recovered.registry);
+  logWarn("Recovered orphaned Pump sessions after server restart.", {
+    sessionIds: recovered.recoveredSessionIds,
+  });
+};
+
+export const runPumpTaskWithTimeout = async <T>(
+  task: () => Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+  onTimeout?: () => void | Promise<void>
+) => {
+  let timeout: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      try {
+        const cleanup = onTimeout?.();
+        if (cleanup && typeof cleanup.catch === "function") {
+          void cleanup.catch(() => undefined);
+        }
+      } catch {
+        // Timeout cleanup is best-effort; the timeout must still reject.
+      }
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([task(), timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+};
 
 const getPumpPassword = () => env.PUMP_SESSION_PASSWORD || "";
 
@@ -220,6 +312,9 @@ const scheduleSessionCleanup = (sessionId: string) => {
     activeSessions.delete(sessionId);
   }, SESSION_RETENTION_MS);
 };
+
+const findActivePumpSession = () =>
+  [...activeSessions.values()].find((session) => isPumpAutomationSessionInProgress(session.status)) ?? null;
 
 const setSessionStatus = (session: ActiveSessionState, status: string, data: { error?: string | null } = {}) => {
   session.status = status;
@@ -298,27 +393,39 @@ const executeSession = async (sessionId: string, password: string) => {
     logInfo("Local Pump session started.", { sessionId });
     setSessionStatus(sessionData, "running");
 
-    await playwright.initialize();
-    networkCapture.page = playwright.getPage();
-    await networkCapture.start();
+    await runPumpTaskWithTimeout(
+      async () => {
+        await playwright.initialize();
+        logInfo("Pump browser initialized.", { sessionId });
+        networkCapture.page = playwright.getPage();
+        await networkCapture.start();
 
-    networkCapture.setContext("before-login");
-    await playwright.navigate(playwright.config.baseUrl);
+        networkCapture.setContext("before-login");
+        await playwright.navigate(playwright.config.baseUrl);
+        logInfo("Pump page loaded.", { sessionId });
 
-    networkCapture.setContext("login");
-    await playwright.performLogin(password);
+        networkCapture.setContext("login");
+        await playwright.performLogin(password);
+        logInfo("Pump authentication checked.", { sessionId });
 
-    networkCapture.setContext("before-scroll");
-    await playwright.waitBeforeAction();
+        networkCapture.setContext("before-scroll");
+        await playwright.waitBeforeAction();
 
-    networkCapture.setContext("during-scroll");
-    await playwright.performScrollSequence();
+        networkCapture.setContext("during-scroll");
+        await playwright.performScrollSequence();
+        logInfo("Pump calendar scroll completed.", { sessionId });
 
-    networkCapture.setContext("after-scroll");
-    await networkCapture.waitForSettled();
+        networkCapture.setContext("after-scroll");
+        await networkCapture.waitForSettled();
+      },
+      SESSION_EXECUTION_TIMEOUT_MS,
+      `Timeout global de la capture Pump après ${Math.round(SESSION_EXECUTION_TIMEOUT_MS / 60_000)} minutes.`,
+      () => playwright.close({ saveState: false })
+    );
 
     sessionData.results = persistCapturedSession(saver, networkCapture, [], Date.now() - startedAt);
     setSessionStatus(sessionData, "completed");
+    logInfo("Local Pump session completed.", { sessionId });
   } catch (error) {
     if (error instanceof PumpAuthRateLimitError) {
       registerPumpAuthRateLimit(error.sourceLabel, error.rateLimitMessage);
@@ -344,7 +451,9 @@ const executeSession = async (sessionId: string, password: string) => {
 };
 
 const findLatestFinishedSession = () =>
-  listSessions(100).find((session) => FINISHED_STATUSES.has(session.status) && session.storageDir) || null;
+  listSessions(100).find(
+    (session) => FINISHED_STATUSES.has(session.status) && session.storageDir && fs.existsSync(session.storageDir)
+  ) || null;
 
 const findLatestRefreshSession = () => {
   if (latestRefreshSessionId) {
@@ -481,6 +590,22 @@ export const testPumpAutomationScrollTarget = async (override?: Partial<PumpAuto
 
 export const triggerLocalPumpRefresh = async () => {
   ensurePumpDirectories();
+  recoverOrphanedPumpSessions();
+  const activeSession = findActivePumpSession();
+  if (activeSession) {
+    latestRefreshSessionId = activeSession.sessionId;
+    logInfo("Pump refresh already running; reusing active session.", {
+      sessionId: activeSession.sessionId,
+    });
+    return {
+      success: true,
+      sessionId: activeSession.sessionId,
+      status: activeSession.status,
+      reused: true,
+      message: "Un refresh Pump est déjà en cours.",
+    };
+  }
+
   const config = buildEffectiveConfig();
   assertPumpBrowserAutomationAllowed(config);
   const password = getPumpPassword();
@@ -524,6 +649,7 @@ export const triggerLocalPumpRefresh = async () => {
 
 export const getLocalPumpRefreshStatus = async (): Promise<PumpStatusResponse> => {
   ensurePumpDirectories();
+  recoverOrphanedPumpSessions();
   const latestSession = findLatestRefreshSession();
   if (!latestSession) {
     return {
