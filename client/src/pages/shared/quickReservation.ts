@@ -75,12 +75,38 @@ export const isIsoDateString = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(Str
 
 export const parseOptionalIsoDate = (value: string) => (isIsoDateString(value) ? parseIsoDate(value) : null);
 
+const formatFrenchInternationalNationalNumber = (value: string) =>
+  [value.slice(0, 1), ...(value.slice(1).match(/.{1,2}/g) ?? [])].filter(Boolean).join(" ");
+
 export const formatQuickReservationPhone = (value: string) => {
-  const digits = value.replace(/\D/g, "").slice(0, 10);
+  const hasInternationalPrefix = String(value).trimStart().startsWith("+");
+  const digits = String(value).replace(/\D/g, "");
+
+  if (hasInternationalPrefix) {
+    if (!digits) return "+";
+
+    if (digits.startsWith("33")) {
+      const nationalNumber = digits.slice(2);
+      if (!nationalNumber) return "+33";
+
+      return `+33 ${formatFrenchInternationalNationalNumber(nationalNumber)}`;
+    }
+
+    return `+${digits}`;
+  }
+
+  if (digits.startsWith("0033")) {
+    const nationalNumber = digits.slice(4);
+    return nationalNumber ? `00 33 ${formatFrenchInternationalNationalNumber(nationalNumber)}` : "00 33";
+  }
+
   return digits.replace(/(\d{2})(?=\d)/g, "$1 ").trim();
 };
 
-export const getQuickReservationSmsPhoneDigits = (value: string) => value.replace(/\D/g, "");
+export const getQuickReservationSmsPhoneDigits = (value: string) => {
+  const digits = value.replace(/\D/g, "");
+  return value.trimStart().startsWith("+") && digits ? `+${digits}` : digits;
+};
 
 export const getQuickReservationAdultsMax = (gite: Gite | null) => Math.max(1, Math.trunc(Number(gite?.capacite_max ?? 1)) || 1);
 
