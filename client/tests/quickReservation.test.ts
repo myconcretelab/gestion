@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { computeQuickReservationDerivedState, type QuickReservationDraft } from "../src/pages/shared/quickReservation";
+import {
+  computeQuickReservationDerivedState,
+  formatQuickReservationPhone,
+  getQuickReservationSmsPhoneDigits,
+  type QuickReservationDraft,
+} from "../src/pages/shared/quickReservation";
 import type { Gite } from "../src/utils/types";
 
 const gite = {
@@ -31,6 +36,7 @@ const draft: QuickReservationDraft = {
   option_depart_tardif: false,
   option_draps: 2,
   option_serviettes: 2,
+  option_chiens: 0,
 };
 
 test("computeQuickReservationDerivedState formule les options du SMS en français naturel", () => {
@@ -47,4 +53,25 @@ test("computeQuickReservationDerivedState formule les options du SMS en françai
     /Options choisies : ménage \(60€\), draps pour 2 lits \(30€\), serviettes pour 2 personnes \(10€\)\./
   );
   assert.match(result.smsText, /Merci beaucoup,/);
+});
+
+test("conserve un numéro français international dans l'éditeur et le lien SMS", () => {
+  const formattedPhone = formatQuickReservationPhone("+33 6 12 34 56 78");
+  assert.equal(formattedPhone, "+33 6 12 34 56 78");
+  assert.equal(getQuickReservationSmsPhoneDigits(formattedPhone), "+33612345678");
+
+  const result = computeQuickReservationDerivedState({
+    draft: { ...draft, telephone: formattedPhone },
+    editingReservation: null,
+    gite,
+    smsSnippets: [],
+    smsSelection: [],
+  });
+
+  assert.match(result.smsHref ?? "", /^sms:\+33612345678\?body=/);
+});
+
+test("ne tronque pas les numéros saisis au-delà de dix chiffres", () => {
+  assert.equal(formatQuickReservationPhone("0033 6 12 34 56 78"), "00 33 6 12 34 56 78");
+  assert.equal(getQuickReservationSmsPhoneDigits("0033 6 12 34 56 78"), "0033612345678");
 });
