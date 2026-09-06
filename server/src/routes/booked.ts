@@ -1,3 +1,4 @@
+import { localizeGite, resolveGiteLanguage } from "../services/giteTranslations.js";
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
@@ -193,7 +194,7 @@ router.get("/gites/:id/config", async (req, res, next) => {
 
 router.get("/gites/:id/content", async (req, res, next) => {
   try {
-    const gite = await prisma.gite.findUnique({
+    const source = await prisma.gite.findUnique({
       where: { id: req.params.id },
       select: {
         id: true,
@@ -201,6 +202,9 @@ router.get("/gites/:id/content", async (req, res, next) => {
         prefixe_contrat: true,
         adresse_ligne1: true,
         adresse_ligne2: true,
+        public_translations: true,
+        public_seo_title: true,
+        public_seo_description: true,
         public_title: true,
         public_summary: true,
         public_description: true,
@@ -237,11 +241,17 @@ router.get("/gites/:id/content", async (req, res, next) => {
         },
       },
     });
-    if (!gite) {
+    if (!source) {
       return res.status(404).json({ error: "Gîte introuvable." });
     }
 
+    const language = resolveGiteLanguage(req.query?.lang);
+    const gite = localizeGite(source, language);
+    const units = { fr: [" / lit", " / personne", " / nuit"], en: [" / bed", " / person", " / night"], es: [" / cama", " / persona", " / noche"] }[language];
     res.json({
+      language,
+      public_seo_title: gite.public_seo_title,
+      public_seo_description: gite.public_seo_description,
       id: gite.id,
       nom: gite.nom,
       prefixe_contrat: gite.prefixe_contrat,
@@ -258,11 +268,11 @@ router.get("/gites/:id/content", async (req, res, next) => {
         min_nuits_vacances_scolaires: String(gite.min_nuits_vacances_scolaires ?? 1),
         min_nuits_juillet_aout: String(gite.min_nuits_juillet_aout ?? 1),
         adresse_complete: formatAddress(gite),
-        service_draps_par_lit: formatEuro(gite.options_draps_par_lit, " / lit"),
-        service_linge_toilette_par_personne: formatEuro(gite.options_linge_toilette_par_personne, " / personne"),
+        service_draps_par_lit: formatEuro(gite.options_draps_par_lit, units[0]),
+        service_linge_toilette_par_personne: formatEuro(gite.options_linge_toilette_par_personne, units[1]),
         service_menage_forfait: formatEuro(gite.options_menage_forfait),
         service_depart_tardif_forfait: formatEuro(gite.options_depart_tardif_forfait),
-        service_chiens_par_nuit: formatEuro(gite.options_chiens_forfait, " / nuit"),
+        service_chiens_par_nuit: formatEuro(gite.options_chiens_forfait, units[2]),
         horaire_arrivee: formatTime(gite.heure_arrivee_defaut),
         horaire_depart: formatTime(gite.heure_depart_defaut),
       },

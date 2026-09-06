@@ -42,6 +42,7 @@ const emptyForm = {
   proprietaires_noms: "",
   proprietaires_adresse: "",
   site_web: "",
+  public_translations: {} as NonNullable<Gite["public_translations"]>,
   public_slug: "",
   public_title: "",
   public_summary: "",
@@ -1541,6 +1542,7 @@ const GitesPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [gites, setGites] = useState<Gite[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get("gite") || null);
+  const [translationLanguage, setTranslationLanguage] = useState<"en" | "es">("en");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1673,6 +1675,7 @@ const GitesPage = () => {
       proprietaires_noms: selected.proprietaires_noms,
       proprietaires_adresse: selected.proprietaires_adresse,
       site_web: selected.site_web ?? "",
+      public_translations: selected.public_translations ?? {},
       public_slug: selected.public_slug ?? "",
       public_title: selected.public_title ?? "",
       public_summary: selected.public_summary ?? "",
@@ -3211,6 +3214,58 @@ const GitesPage = () => {
               />
             </label>
           </div>
+        </div>
+
+        <div className="form-section gites-editor-section" hidden={activeEditorSection !== "web-presentation"}>
+          <div className="section-subtitle">Traductions du site</div>
+          <p>Les champs ci-dessus sont en français. Complétez les traductions ci-dessous ; un champ vide utilise le français. Conservez les variables entre doubles accolades.</p>
+          <div className="gites-editor-tabs" role="tablist" aria-label="Langue de traduction">
+            {([['en', 'English'], ['es', 'Español']] as const).map(([lang, label]) => (
+              <button key={lang} type="button" role="tab" aria-selected={translationLanguage === lang}
+                className={`gites-editor-tabs__item${translationLanguage === lang ? " gites-editor-tabs__item--active" : ""}`}
+                onClick={() => setTranslationLanguage(lang)}>{label}</button>
+            ))}
+          </div>
+          <div className="grid-2" lang={translationLanguage}>
+            {([['public_title', 'Titre public', 140], ['public_summary', 'Accroche courte', 500],
+              ['public_description', 'Description longue', undefined], ['public_technical_description', 'Description technique', undefined],
+              ['public_seo_title', 'Titre SEO', 70], ['public_seo_description', 'Description SEO', 180],
+              ['caracteristiques', 'Caractéristiques', undefined]] as const).map(([key, label, maxLength]) => (
+              <label className="field" key={key}>{label}
+                <textarea rows={key.includes('description') ? 4 : 2} maxLength={maxLength}
+                  placeholder={String(form[key] || '')}
+                  value={form.public_translations[translationLanguage]?.[key] ?? ''}
+                  onChange={(event) => setForm(current => ({...current, public_translations: {...current.public_translations,
+                    [translationLanguage]: {...current.public_translations[translationLanguage], [key]: event.target.value}}}))} />
+              </label>
+            ))}
+          </div>
+          {selected?.photos?.length ? <details>
+            <summary>Légendes et textes alternatifs des photos</summary>
+            {selected.photos.map(photo => <div className="grid-2" key={photo.id}>
+              {(['title', 'alt'] as const).map(key => <label className="field" key={key}>
+                {key === 'title' ? 'Légende' : 'Texte alternatif'} — {photo.title || photo.id}
+                <input placeholder={photo[key] || ''} value={form.public_translations[translationLanguage]?.photos?.[photo.id]?.[key] || ''}
+                  onChange={event => setForm(current => {
+                    const translation = current.public_translations[translationLanguage] || {};
+                    return {...current, public_translations: {...current.public_translations, [translationLanguage]: {...translation,
+                      photos: {...translation.photos, [photo.id]: {...translation.photos?.[photo.id], [key]: event.target.value}}}}};
+                  })} />
+              </label>)}
+            </div>)}
+          </details> : null}
+          <div className="section-subtitle">Pièces, équipements et informations</div>
+          <p>Initialisez cette traduction depuis le français, puis traduisez les titres, listes et notes. Les identifiants des rubriques sont conservés pour les blocs WordPress.</p>
+          <button type="button" className="table-action table-action--neutral"
+            disabled={Boolean(form.public_translations[translationLanguage]?.public_structured_content?.length)}
+            onClick={() => setForm(current => ({...current, public_translations: {...current.public_translations,
+              [translationLanguage]: {...current.public_translations[translationLanguage], public_structured_content:
+                JSON.parse(current.public_structured_content || '[]')}}}))}>Initialiser depuis le français</button>
+          {form.public_translations[translationLanguage]?.public_structured_content?.length > 0 && (
+            <StructuredContentEditor value={JSON.stringify(form.public_translations[translationLanguage]?.public_structured_content)}
+              onChange={value => setForm(current => ({...current, public_translations: {...current.public_translations,
+                [translationLanguage]: {...current.public_translations[translationLanguage], public_structured_content: JSON.parse(value || '[]')}}}))} />
+          )}
         </div>
 
         <div id="gite-editor-site-seo" className="form-section gites-editor-section" hidden={activeEditorSection !== "web-presentation"}>
