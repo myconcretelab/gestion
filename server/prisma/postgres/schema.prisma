@@ -27,6 +27,7 @@ model Gite {
   proprietaires_adresse                String
   site_web                             String?
   public_slug                          String?
+  public_translations                  Json?
   public_title                         String?
   public_summary                       String?
   public_description                   String?

@@ -300,3 +300,25 @@ Le classeur contient des données personnelles: gardez-le hors du dépôt et hor
 - Auth serveur via mot de passe hashé + session cookie. `BASIC_AUTH_PASSWORD` ne sert plus que de bootstrap initial optionnel.
 - Le mot de passe serveur et la durée d'expiration de session se changent ensuite dans **Paramètres**.
 - Auth machine-à-machine possible via `Authorization: Bearer <INTEGRATION_API_TOKEN>`.
+
+### Contenus des gîtes en français, anglais et espagnol
+
+Dans **Gîtes → Présentation web → Traductions du site**, renseigner les versions anglaise et espagnole des textes, du SEO, des rubriques et des métadonnées photo. Les champs historiques restent la référence française. Un texte absent utilise le français. Les noms contractuels, slugs, prix, capacités, adresses et photos restent communs.
+
+Les API `GET /api/public/gites`, `GET /api/public/gites/:slug` et `GET /api/booked/gites/:id/content` acceptent `?lang=fr|en|es` (locales régionales également reconnues). Sans paramètre ou pour une langue inconnue, elles utilisent le français. Le champ `language` indique la langue demandée résolue ; des champs individuels peuvent utiliser le repli français. Les traductions brutes sont uniquement accessibles dans l’API de gestion authentifiée. Les exports/imports et duplications de gîtes conservent les traductions.
+
+Les rubriques traduites sont associées par leurs identifiants ; les nouveaux groupes français restent visibles. Les types et quantités de lits viennent toujours de la référence française. Après une modification des listes françaises, vérifier la traduction correspondante : leurs éléments sont associés par position. Les ajouts et changements de structure se font dans les onglets français.
+
+Booked 0.3.97 sélectionne la langue de la page via Polylang, WPML ou la locale WordPress. Ses requêtes de contenu et de galerie transmettent la langue explicitement ; les caches de contenu sont séparés par langue. Le français reste compatible avec les anciennes versions du plugin. Prévoir les traductions des pages, menus et autres textes WordPress indépendamment des données des gîtes.
+
+Déploiement : appliquer les migrations SQLite ou PostgreSQL habituelles, régénérer Prisma, construire et redémarrer l’application avant de mettre Booked à jour. Une colonne nullable `public_translations` est ajoutée sans modifier les contenus existants.
+
+Pour importer un premier lot préparé depuis les contenus publiés :
+
+```sh
+cd server
+npx tsx scripts/import-gite-translations.ts /chemin/traductions.json
+npx tsx scripts/import-gite-translations.ts /chemin/traductions.json --apply
+```
+
+Le fichier est un tableau de `{ id, source_updated_at, public_translations: { en: {...}, es: {...} } }`. L’import valide les champs, refuse les sources modifiées ou les traductions déjà présentes, et écrit tout le lot dans une transaction. Sans `--apply`, il effectue seulement la validation.

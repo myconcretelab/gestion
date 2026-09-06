@@ -1,3 +1,4 @@
+import { giteTranslationsSchema } from "../services/giteTranslations.js";
 import { Router } from "express";
 import { z } from "zod";
 import path from "path";
@@ -116,6 +117,7 @@ const expenseCategorySettingsSchema = z.object({
 });
 
 const giteSchemaShape = {
+  public_translations: giteTranslationsSchema,
   nom: z.string().trim().min(1),
   prefixe_contrat: z.string().trim().min(2),
   adresse_ligne1: z.string().trim().min(1),
@@ -367,6 +369,7 @@ type GiteImportInput = z.infer<typeof giteImportItemSchema>;
 
 const toGitePersistenceData = (payload: GiteInput) => ({
   ...payload,
+  ...(payload.public_translations !== undefined ? { public_translations: encodeJsonField(payload.public_translations) } : {}),
   date_debut_activite: payload.date_debut_activite
     ? new Date(`${payload.date_debut_activite}T00:00:00.000Z`)
     : null,
@@ -452,6 +455,7 @@ const hydrateGite = (gite: any) => {
     min_nuits_vacances_scolaires: normalizeMinNights(rest.min_nuits_vacances_scolaires),
     min_nuits_juillet_aout: normalizeMinNights(rest.min_nuits_juillet_aout),
     prix_nuit_liste,
+    public_translations: fromJsonString<unknown>(rest.public_translations, {}),
     public_structured_content: fromJsonString<unknown>(rest.public_structured_content, null),
     public_equipment: fromJsonString<unknown>(rest.public_equipment, null),
     public_rooms: fromJsonString<unknown>(rest.public_rooms, null),
@@ -1312,6 +1316,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         proprietaires_adresse: existing.proprietaires_adresse,
         site_web: existing.site_web,
         public_slug: null,
+        public_translations: encodeJsonField(existing.public_translations),
         public_title: existing.public_title,
         public_summary: existing.public_summary,
         public_description: existing.public_description,

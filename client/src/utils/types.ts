@@ -17,6 +17,7 @@ export type Gite = {
   adresse_ligne1: string;
   adresse_ligne2?: string | null;
   public_slug?: string | null;
+  public_translations?: Partial<Record<"en" | "es", Record<string, any>>> | null;
   public_title?: string | null;
   public_summary?: string | null;
   public_description?: string | null;
