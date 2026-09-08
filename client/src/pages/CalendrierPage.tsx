@@ -1458,21 +1458,21 @@ const CalendrierPage = () => {
 
           <div className="calendar-hero__actions">
             {usesViewportScroll ? (
-              <label className="calendar-pill-select">
-                <span>Gîte</span>
-                <select
-                  value={selectedGiteId}
-                  onChange={(event) => {
-                    setSelectedGiteId(event.target.value);
-                  }}
-                >
-                  {gites.map((gite) => (
-                    <option key={gite.id} value={gite.id}>
-                      {gite.nom}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="calendar-gite-buttons" role="group" aria-label="Sélection du gîte">
+                {gites.map((gite) => (
+                  <button
+                    type="button"
+                    key={gite.id}
+                    className="calendar-gite-button"
+                    aria-label={gite.nom}
+                    aria-pressed={selectedGiteId === gite.id}
+                    title={gite.nom}
+                    onClick={() => setSelectedGiteId(gite.id)}
+                  >
+                    {gite.nom.trim().split(/\s+/).map((word) => Array.from(word)[0]).join("").toLocaleUpperCase("fr-FR")}
+                  </button>
+                ))}
+              </div>
             ) : (
               <GiteTabs
                 activeId={selectedGiteId}
