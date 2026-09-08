@@ -1490,7 +1490,6 @@ body.app-scroll-locked {
   flex: 0 0 auto;
 }
 
-.calendar-pill-select,
 .calendar-year-switch,
 .calendar-today-button {
   min-height: 52px;
@@ -1500,48 +1499,38 @@ body.app-scroll-locked {
   box-shadow: none;
 }
 
-.calendar-pill-select {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 18px;
+/* Compact gîte selection for the mobile calendar. */
+.calendar-gite-buttons {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.calendar-gite-button {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid #ececec;
+  border-radius: 999px;
+  background: #f5f5f5;
   color: #202124;
+  box-shadow: none;
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
-.calendar-pill-select span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.calendar-gite-button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-strong);
 }
 
-.calendar-pill-select select {
-  min-width: 180px;
-  padding: 0 34px 0 4px;
-  border: none;
-  background: transparent;
-  font-size: 1rem;
-  font-weight: 600;
-  color: inherit;
-  appearance: none;
-  cursor: pointer;
-}
-
-.calendar-pill-select::after {
-  content: "";
-  position: absolute;
-  right: 18px;
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: rotate(45deg) translateY(-2px);
-  pointer-events: none;
+.calendar-gite-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .calendar-year-switch {
@@ -3708,24 +3697,9 @@ body.app-scroll-locked {
     gap: 10px;
   }
 
-  .calendar-pill-select,
   .calendar-year-switch,
   .calendar-today-button {
     min-height: 46px;
-  }
-
-  .calendar-pill-select {
-    padding: 0 14px;
-  }
-
-  .calendar-pill-select select {
-    min-width: 160px;
-    padding: 0 30px 0 2px;
-    font-size: 0.95rem;
-  }
-
-  .calendar-pill-select::after {
-    right: 14px;
   }
 
   .calendar-year-switch {
@@ -3976,25 +3950,11 @@ body.app-scroll-locked {
     gap: 10px;
   }
 
-  .calendar-pill-select {
-    grid-column: auto;
-    min-height: 42px;
-    min-width: 0;
-    padding: 0 12px;
-  }
-
   .calendar-year-switch,
   .calendar-today-button {
     min-height: 42px;
     width: auto;
     justify-content: center;
-  }
-
-  .calendar-pill-select select {
-    min-width: 0;
-    width: 100%;
-    text-align: left;
-    font-size: 0.9rem;
   }
 
   .calendar-year-switch {
