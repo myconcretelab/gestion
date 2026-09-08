@@ -1,3 +1,4 @@
+import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
@@ -17,7 +18,6 @@ import { getReservationOptionBadges, type ReservationOptionBadge } from "../util
 import { buildMobileReservationEditorHref } from "./shared/mobileReservationEditor";
 import {
   RESERVATION_SOURCES,
-  isPlatformReservationSource,
 } from "./shared/reservationSources";
 import type { Gite, Reservation } from "../utils/types";
 
@@ -231,13 +231,6 @@ const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
 const addUtcDays = (value: Date, days: number) => new Date(value.getTime() + days * DAY_MS);
 const diffUtcDays = (left: Date, right: Date) => Math.round((left.getTime() - right.getTime()) / DAY_MS);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const formatShortDate = (value: string) =>
-  parseIsoDate(value).toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
-const formatStayNights = (nights: number) => `${nights} nuit${nights > 1 ? "s" : ""}`;
 const formatDateTimeFr = (value: string) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -248,19 +241,7 @@ const formatDateTimeFr = (value: string) => {
     minute: "2-digit",
   });
 };
-const getReservationDisplayedEnergyCost = (reservation: Reservation | null | undefined) => {
-  if (!reservation) return null;
 
-  const hasLiveEnergyData =
-    (reservation.energy_live_consumption_kwh ?? 0) > 0 ||
-    (reservation.energy_live_cost_eur ?? 0) > 0;
-  if (hasLiveEnergyData) {
-    return reservation.energy_live_cost_eur ?? 0;
-  }
-
-  const hasSavedEnergyData = reservation.energy_consumption_kwh > 0 || reservation.energy_cost_eur > 0;
-  return hasSavedEnergyData ? reservation.energy_cost_eur : null;
-};
 const formatLongDate = (value: string) =>
   parseIsoDate(value).toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -1795,41 +1776,16 @@ const TodayPage = () => {
       ) : null}
 
       {usesViewportScroll && mobileActionReservation ? (
-        <MobileReservationActionsBar
+        <MobileReservationInfoDrawer
           open
           title={getReservationGuestName(mobileActionReservation)}
-          subtitle={`${formatShortDate(mobileActionReservation.date_entree)} → ${formatShortDate(mobileActionReservation.date_sortie)}`}
-          optionBadges={getReservationOptionBadges(mobileActionReservation.options)}
-          details={[
-            { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
-            {
-              label: "Total",
-              value: formatEuro(mobileActionReservation.prix_total, {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              }),
-              ...(!isPlatformReservationSource(mobileActionReservation.source_paiement)
-                ? {
-                    ariaLabel: "Modifier la source ou le moyen de paiement",
-                    onClick: () => {
-                      setSourceUpdateError(null);
-                      setSourcePickerReservationId((current) =>
-                        current === mobileActionReservation.id ? null : mobileActionReservation.id
-                      );
-                    },
-                  }
-                : {}),
-            },
-            ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
-              ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
-              : []),
-          ]}
+          reservation={mobileActionReservation}
+          onToggleSource={() => {
+            setSourceUpdateError(null);
+            setSourcePickerReservationId((current) => current === mobileActionReservation.id ? null : mobileActionReservation.id);
+          }}
           onClose={closeMobileReservationActions}
           onEdit={() => openMobileReservationEditPage(mobileActionReservation)}
-          note={mobileActionReservation.commentaire}
-          phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
-          smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
-          airbnbUrl={mobileActionReservation.airbnb_url}
           sourcePicker={
             sourcePickerReservationId === mobileActionReservation.id
               ? {

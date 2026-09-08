@@ -1,3 +1,4 @@
+import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -11,9 +12,7 @@ import {
   getPaymentTextColorFromMap,
 } from "../utils/paymentColors";
 import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
-import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import { getReservationMonthlyAmountsForMonth } from "../utils/reservationMonthlyAmounts";
-import MobileReservationActionsBar from "./shared/MobileReservationActionsBar";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
 import GiteTabs from "./shared/GiteTabs";
 import {
@@ -22,7 +21,6 @@ import {
 } from "./shared/mobileReservationEditor";
 import {
   RESERVATION_SOURCES,
-  isPlatformReservationSource,
 } from "./shared/reservationSources";
 import type { Contrat, Gite, Reservation } from "../utils/types";
 
@@ -143,6 +141,7 @@ type CalendarReservation = Pick<
   Partial<
     Pick<
       Reservation,
+      | "options"
       | "telephone"
       | "commentaire"
       | "airbnb_url"
@@ -204,23 +203,10 @@ const formatShortDate = (value: string) =>
     timeZone: "UTC",
   });
 
-const formatStayNights = (nights: number) => `${nights} nuit${nights > 1 ? "s" : ""}`;
 const hasLinkedContract = (reservation: CalendarReservation | null | undefined) =>
   Boolean(reservation?.linked_contract || reservation?.has_linked_contract);
 
-const getReservationDisplayedEnergyCost = (reservation: CalendarReservation | null | undefined) => {
-  if (!reservation) return null;
 
-  const hasLiveEnergyData =
-    (reservation.energy_live_consumption_kwh ?? 0) > 0 ||
-    (reservation.energy_live_cost_eur ?? 0) > 0;
-  if (hasLiveEnergyData) {
-    return reservation.energy_live_cost_eur ?? 0;
-  }
-
-  const hasSavedEnergyData = (reservation.energy_consumption_kwh ?? 0) > 0 || (reservation.energy_cost_eur ?? 0) > 0;
-  return hasSavedEnergyData ? (reservation.energy_cost_eur ?? 0) : null;
-};
 
 const formatLongDate = (value: string) =>
   parseIsoDate(value).toLocaleDateString("fr-FR", {
@@ -1469,7 +1455,7 @@ const CalendrierPage = () => {
                     title={gite.nom}
                     onClick={() => setSelectedGiteId(gite.id)}
                   >
-                    {gite.nom.trim().split(/\s+/).map((word) => Array.from(word)[0]).join("").toLocaleUpperCase("fr-FR")}
+                    {gite.prefixe_contrat.trim().slice(0, 2).toUpperCase() || gite.nom.trim().slice(0, 1).toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -1954,41 +1940,15 @@ const CalendrierPage = () => {
         : null}
 
       {usesViewportScroll && mobileActionReservation ? (
-        <MobileReservationActionsBar
+        <MobileReservationInfoDrawer
           open
           title={getReservationDisplayLabel(mobileActionReservation)}
-          subtitle={`${formatShortDate(mobileActionReservation.date_entree)} → ${formatShortDate(mobileActionReservation.date_sortie)}`}
-          details={[
-            { label: "Durée", value: formatStayNights(mobileActionReservation.nb_nuits) },
-            {
-              label: "Total",
-              value: formatEuro(
-                getReservationMonthlyAmountsForMonth(
-                  mobileActionReservation,
-                  year,
-                  activeMonthIndex + 1
-                ).total,
-                {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-                }
-              ),
-              ...(!isPlatformReservationSource(mobileActionReservation.source_paiement)
-                ? {
-                    ariaLabel: "Modifier la source ou le moyen de paiement",
-                    onClick: () => {
-                      setSourceUpdateError(null);
-                      setSourcePickerReservationId((current) =>
-                        current === mobileActionReservation.id ? null : mobileActionReservation.id
-                      );
-                    },
-                  }
-                : {}),
-            },
-            ...(getReservationDisplayedEnergyCost(mobileActionReservation) !== null
-              ? [{ label: "Conso", value: formatEuro(getReservationDisplayedEnergyCost(mobileActionReservation) ?? 0) }]
-              : []),
-          ]}
+          reservation={mobileActionReservation}
+          total={getReservationMonthlyAmountsForMonth(mobileActionReservation, year, activeMonthIndex + 1).total}
+          onToggleSource={() => {
+            setSourceUpdateError(null);
+            setSourcePickerReservationId((current) => current === mobileActionReservation.id ? null : mobileActionReservation.id);
+          }}
           onClose={closeMobileReservationActions}
           onEdit={() =>
             openMobileReservationEditPage(mobileActionReservation, {
@@ -1996,7 +1956,6 @@ const CalendrierPage = () => {
               year,
             })
           }
-          note={mobileActionReservation.commentaire}
           highlightedCard={
             mobileActionReservation.linked_contract
               ? {
@@ -2029,9 +1988,6 @@ const CalendrierPage = () => {
                   }
               : undefined
           }
-          phoneHref={buildTelephoneHref(mobileActionReservation.telephone)}
-          smsHref={buildSmsHref(mobileActionReservation.telephone ?? "")}
-          airbnbUrl={mobileActionReservation.airbnb_url}
           sourcePicker={
             sourcePickerReservationId === mobileActionReservation.id
               ? {
