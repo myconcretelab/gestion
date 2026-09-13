@@ -340,6 +340,12 @@
         font-style: italic;
       }
 
+      .invoice-item-meta {
+        margin-top: 0.7mm;
+        color: var(--ink-soft);
+        font-size: 8.4pt;
+      }
+
       .invoice-row-taxe-sejour td {
         color: var(--ink-soft);
         font-style: italic;
@@ -704,16 +710,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>{{locationLineLabel}}</td>
-              <td>{{montantBase}}</td>
-            </tr>
-            <tr class="invoice-row-taxe-sejour">
-              <td>Dont taxe de séjour</td>
-              <td>{{taxeSejour}}</td>
-            </tr>
-            {{{remiseRowHtml}}}
-            {{{optionsRowsHtml}}}
+            {{{invoiceRowsHtml}}}
           </tbody>
         </table>
 

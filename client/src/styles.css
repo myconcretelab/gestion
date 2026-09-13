@@ -15409,6 +15409,97 @@ button.personal-expenses-status:disabled {
   padding-top: 4px;
 }
 
+.invoice-reservations {
+  display: grid;
+  gap: 16px;
+}
+
+.invoice-reservations__header,
+.invoice-reservation-card,
+.invoice-reservation-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.invoice-reservations__header {
+  justify-content: space-between;
+}
+
+.invoice-reservations__selected,
+.invoice-reservation-picker,
+.invoice-reservation-picker__list {
+  display: grid;
+  gap: 10px;
+}
+
+.invoice-reservations__total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--primary-strong);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.invoice-reservation-card,
+.invoice-reservation-choice {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.invoice-reservation-card > div,
+.invoice-reservation-choice > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.invoice-reservation-choice {
+  cursor: pointer;
+}
+
+.invoice-reservation-choice:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.invoice-reservation-choice--disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.invoice-reservation-choice small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.invoice-reservation-picker__list {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.invoice-single-reservation-only {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .invoice-reservations__header,
+  .invoice-reservation-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .invoice-reservations__header button,
+  .invoice-reservation-card button {
+    width: 100%;
+  }
+}
+
 .invoice-extra-fees__header,
 .invoice-extra-fees__row {
   display: flex;
