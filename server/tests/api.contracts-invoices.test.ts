@@ -602,6 +602,88 @@ test("creation facture complete une reservation existante plutot que d'en creer 
   }
 });
 
+test("creation facture regroupe plusieurs reservations et fige leurs montants", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "invoice-multi-test-"));
+  const envBackup = {
+    DATA_DIR: process.env.DATA_DIR,
+    SKIP_PDF_GENERATION: process.env.SKIP_PDF_GENERATION,
+  };
+  process.env.DATA_DIR = tempDir;
+  process.env.SKIP_PDF_GENERATION = "1";
+
+  const prismaModule = await import("../src/db/prisma.ts");
+  const prisma = prismaModule.default as any;
+  const original = {
+    giteFindUnique: prisma.gite.findUnique,
+    reservationFindMany: prisma.reservation.findMany,
+    factureFindMany: prisma.facture.findMany,
+    factureCounterUpsert: prisma.factureCounter.upsert,
+    factureCreate: prisma.facture.create,
+  };
+
+  try {
+    const gite = {
+      id: "g1",
+      nom: "Gîte un",
+      prefixe_contrat: "G1",
+      capacite_max: 4,
+      nb_adultes_max: 4,
+      nb_adultes_habituel: 2,
+      arrhes_taux_defaut: 0.2,
+      taxe_sejour_par_personne_par_nuit: 1,
+      options_draps_par_lit: 0,
+      options_linge_toilette_par_personne: 0,
+      options_menage_forfait: 0,
+      options_depart_tardif_forfait: 0,
+      options_chiens_forfait: 0,
+      regle_animaux_acceptes: false,
+      regle_bois_premiere_flambee: false,
+      regle_tiers_personnes_info: false,
+    };
+    const reservations = [
+      { id: "r1", gite_id: "g1", gite, hote_nom: "Alice", date_entree: new Date("2026-10-01"), date_sortie: new Date("2026-10-04"), nb_nuits: 3, nb_adultes: 2, nb_enfants_2_17: 0, prix_total: 300, remise_montant: 20, frais_optionnels_montant: 30 },
+      { id: "r2", gite_id: "g1", gite, hote_nom: "Bob", date_entree: new Date("2026-11-01"), date_sortie: new Date("2026-11-03"), nb_nuits: 2, nb_adultes: 1, nb_enfants_2_17: 1, prix_total: 200, remise_montant: 0, frais_optionnels_montant: 0 },
+    ];
+    let createdData: any = null;
+    prisma.gite.findUnique = async () => gite;
+    prisma.reservation.findMany = async () => reservations;
+    prisma.facture.findMany = async () => [];
+    prisma.factureCounter.upsert = async () => ({ lastNumber: 1 });
+    prisma.facture.create = async ({ data }: any) => {
+      createdData = data;
+      return { id: "invoice-multi", ...data, gite };
+    };
+
+    const invoicesRouterModule = await import("../src/routes/invoices.ts");
+    const invoicePost = getRouteHandler(invoicesRouterModule.default, "post", "/");
+    const response = createMockResponse();
+    let routedError: unknown = null;
+    await invoicePost({ body: {
+      gite_id: "g1", locataire_nom: "Entreprise", locataire_adresse: "", locataire_tel: "",
+      nb_adultes: 1, nb_enfants_2_17: 0, date_debut: "2026-10-01", heure_arrivee: "17:00",
+      date_fin: "2026-10-04", heure_depart: "12:00", prix_par_nuit: 100, remise_montant: 0,
+      options: {}, arrhes_montant: 50, arrhes_date_limite: "2026-09-20", caution_montant: 0,
+      cheque_menage_montant: 0, reservation_ids: ["r1", "r2"],
+    } }, response, (error) => { routedError = error; });
+
+    assert.equal(routedError, null);
+    assert.equal(response.statusCode, 201);
+    assert.equal(createdData.nb_nuits, 5);
+    assert.equal(createdData.solde_montant, 460);
+    assert.equal(createdData.reservation_id, "r1");
+    assert.deepEqual(JSON.parse(createdData.reservation_items).map((item: any) => item.montant), [310, 200]);
+  } finally {
+    prisma.gite.findUnique = original.giteFindUnique;
+    prisma.reservation.findMany = original.reservationFindMany;
+    prisma.facture.findMany = original.factureFindMany;
+    prisma.factureCounter.upsert = original.factureCounterUpsert;
+    prisma.facture.create = original.factureCreate;
+    restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
+    restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("API contrats conserve les dates de suivi lors des bascules de statuts", async () => {
   const prismaModule = await import("../src/db/prisma.ts");
   const prisma = prismaModule.default as any;

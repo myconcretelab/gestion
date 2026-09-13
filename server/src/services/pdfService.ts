@@ -110,6 +110,7 @@ export type InvoiceRenderInput = {
   prix_par_nuit: NumericLike;
   remise_montant: NumericLike;
   frais_supplementaires?: InvoiceExtraFeeInput[] | string | null;
+  reservation_items?: InvoiceReservationItemInput[] | string | null;
   arrhes_montant: NumericLike;
   arrhes_date_limite: Date;
   solde_montant: NumericLike;
@@ -121,6 +122,19 @@ export type InvoiceRenderInput = {
   clauses?: Record<string, unknown> | string | null;
   statut_paiement?: "non_reglee" | "reglee";
   notes?: string | null;
+};
+
+type InvoiceReservationItemInput = {
+  reservation_id: string;
+  gite_id: string;
+  gite_nom: string;
+  hote_nom: string;
+  date_debut: string;
+  date_fin: string;
+  nb_nuits: number;
+  nb_adultes: number;
+  nb_enfants_2_17: number;
+  montant: NumericLike;
 };
 
 type InvoiceExtraFeeInput = {
@@ -1239,6 +1253,12 @@ const buildInvoiceHtml = async (params: {
     params.invoice.frais_supplementaires ?? [],
     []
   );
+  const reservationItems = parseJsonField<InvoiceReservationItemInput[]>(
+    params.invoice.reservation_items ?? [],
+    []
+  );
+  const isMultiReservation = reservationItems.length >= 2;
+  const reservationGiteCount = new Set(reservationItems.map((item) => item.gite_id)).size;
   const statutPaiement = params.invoice.statut_paiement ?? "non_reglee";
   const remiseMontantValue = toNumber(params.invoice.remise_montant);
   const remiseReasonRaw = clauses["remise_raison"];
@@ -1265,6 +1285,15 @@ const buildInvoiceHtml = async (params: {
     "enfant"
   )}`;
   const locationLineLabel = `Location ${nightsLabel} x ${formatEuro(toNumber(params.invoice.prix_par_nuit))}`;
+  const reservationRowsHtml = reservationItems
+    .map((item) => {
+      const occupancy = `${formatCountLabel(item.nb_adultes, "adulte")}, ${formatCountLabel(item.nb_enfants_2_17, "enfant")}`;
+      return `<tr><td><strong>${escapeHtml(item.gite_nom)}</strong> · ${escapeHtml(item.hote_nom)}<div class="invoice-item-meta">Du ${escapeHtml(formatDate(new Date(item.date_debut)))} au ${escapeHtml(formatDate(new Date(item.date_fin)))} · ${escapeHtml(formatCountLabel(item.nb_nuits, "nuit"))} · ${escapeHtml(occupancy)}</div></td><td>${formatEuro(toNumber(item.montant))}</td></tr>`;
+    })
+    .join("");
+  const invoiceRowsHtml = isMultiReservation
+    ? reservationRowsHtml
+    : `<tr><td>${escapeHtml(locationLineLabel)}</td><td>${formatEuro(params.totals.montantBase)}</td></tr><tr class="invoice-row-taxe-sejour"><td>Dont taxe de séjour</td><td>${formatEuro(params.totals.taxeSejourCalculee)}</td></tr>${remiseRowHtml}${optionsRowsHtml}`;
   const metaGridClass = statutPaiement === "reglee" ? "meta-grid--single" : "";
   const echeanceMetaHtml =
     statutPaiement === "reglee"
@@ -1279,7 +1308,11 @@ const buildInvoiceHtml = async (params: {
     emissionDate: formatDate(new Date()),
     metaGridClass,
     echeanceMetaHtml,
-    giteName: params.gite.nom,
+    giteName: isMultiReservation
+      ? reservationGiteCount === 1
+        ? reservationItems[0].gite_nom
+        : `${reservationGiteCount} gîtes`
+      : params.gite.nom,
     giteAdresse: [params.gite.adresse_ligne1, params.gite.adresse_ligne2].filter(Boolean).join(" - "),
     proprietairesNoms: params.gite.proprietaires_noms,
     proprietairesAdresse: params.gite.proprietaires_adresse,
@@ -1289,12 +1322,11 @@ const buildInvoiceHtml = async (params: {
     clientTelLineHtml,
     periodStart: formatOptionalDate(params.invoice.date_debut),
     periodEnd: formatOptionalDate(params.invoice.date_fin),
-    nightsLabel,
-    occupancyLabel,
-    locationLineLabel,
-    montantBase: formatEuro(params.totals.montantBase),
-    remiseRowHtml,
-    optionsRowsHtml: `${optionsRowsHtml}${extraFeesRowsHtml}`,
+    nightsLabel: isMultiReservation ? `${reservationItems.length} réservations · ${nightsLabel}` : nightsLabel,
+    occupancyLabel: isMultiReservation
+      ? `${reservationGiteCount} gîte${reservationGiteCount > 1 ? "s" : ""}`
+      : occupancyLabel,
+    invoiceRowsHtml: `${invoiceRowsHtml}${extraFeesRowsHtml}`,
     taxeSejour: formatEuro(params.totals.taxeSejourCalculee),
     totalGlobal: formatEuro(params.totals.totalGlobal),
     acompteRowHtml,

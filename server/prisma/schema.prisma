@@ -375,6 +375,7 @@ model Facture {
   prix_par_nuit          Float
   remise_montant         Float @default(0)
   frais_supplementaires  String @default("[]")
+  reservation_items      String @default("[]")
   taxe_sejour_calculee   Float?
   options                String
   arrhes_montant         Float

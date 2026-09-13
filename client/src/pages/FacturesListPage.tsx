@@ -355,10 +355,15 @@ const FacturesListPage = () => {
               return (
                 <tr key={facture.id}>
                   <td>
-                    {formatDate(facture.date_debut)} -{" "}
-                    {formatDate(facture.date_fin)}
+                    {facture.reservation_items?.length >= 2
+                      ? `${facture.reservation_items.length} réservations`
+                      : <>{formatDate(facture.date_debut)} - {formatDate(facture.date_fin)}</>}
                   </td>
-                  <td>{facture.gite?.nom ?? ""}</td>
+                  <td>
+                    {facture.reservation_items?.length >= 2
+                      ? `${new Set(facture.reservation_items.map((item) => item.gite_id)).size} gîtes`
+                      : facture.gite?.nom ?? ""}
+                  </td>
                   <td>{facture.locataire_nom}</td>
                   <td>{formatEuro(totalMontant)}</td>
                   <td>

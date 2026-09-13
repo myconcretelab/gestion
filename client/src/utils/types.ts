@@ -554,6 +554,7 @@ export type Facture = {
   prix_par_nuit: number;
   remise_montant: number;
   frais_supplementaires: InvoiceExtraFee[];
+  reservation_items: InvoiceReservationItem[];
   taxe_sejour_calculee?: number;
   options: ContratOptions;
   arrhes_montant: number;
@@ -570,4 +571,17 @@ export type Facture = {
   notes?: string | null;
   reservation_id?: string | null;
   gite?: Gite;
+};
+
+export type InvoiceReservationItem = {
+  reservation_id: string;
+  gite_id: string;
+  gite_nom: string;
+  hote_nom: string;
+  date_debut: string;
+  date_fin: string;
+  nb_nuits: number;
+  nb_adultes: number;
+  nb_enfants_2_17: number;
+  montant: number;
 };

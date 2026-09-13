@@ -47,6 +47,19 @@ const invoiceExtraFeeSchema = z.object({
 type InvoiceExtraFeeInput = z.infer<typeof invoiceExtraFeeSchema>;
 type InvoiceExtraFee = { libelle: string; montant: number };
 
+export type InvoiceReservationItem = {
+  reservation_id: string;
+  gite_id: string;
+  gite_nom: string;
+  hote_nom: string;
+  date_debut: string;
+  date_fin: string;
+  nb_nuits: number;
+  nb_adultes: number;
+  nb_enfants_2_17: number;
+  montant: number;
+};
+
 const normalizeInvoiceExtraFees = (fees: InvoiceExtraFeeInput[] | null | undefined): InvoiceExtraFee[] =>
   (fees ?? [])
     .map((fee) => ({
@@ -94,6 +107,7 @@ const invoiceSchema = z.object({
   notes: z.string().optional().nullable(),
   statut_paiement: z.enum(["non_reglee", "reglee"]).optional(),
   reservation_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
+  reservation_ids: z.array(z.string().trim().min(1)).max(50).optional().default([]),
 });
 
 const paymentStatusSchema = z.object({
@@ -132,6 +146,7 @@ const previewSchema = z.object({
   clauses: z.record(z.any()).optional(),
   notes: z.string().optional().nullable(),
   statut_paiement: z.enum(["non_reglee", "reglee"]).optional(),
+  reservation_ids: z.array(z.string().trim().min(1)).max(50).optional().default([]),
 });
 
 const hydrateInvoiceMoneyFields = (invoice: any) => ({
@@ -151,6 +166,7 @@ const hydrateInvoiceMoneyFields = (invoice: any) => ({
 const hydrateInvoice = (contrat: any) => ({
   ...hydrateInvoiceMoneyFields(contrat),
   frais_supplementaires: fromJsonString<InvoiceExtraFee[]>(contrat.frais_supplementaires, []),
+  reservation_items: fromJsonString<InvoiceReservationItem[]>(contrat.reservation_items, []),
   options: fromJsonString<OptionsInput>(contrat.options, {}),
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
@@ -170,6 +186,7 @@ const toInvoiceRenderInput = (contrat: any): InvoiceRenderInput => ({
   prix_par_nuit: contrat.prix_par_nuit,
   remise_montant: contrat.remise_montant,
   frais_supplementaires: fromJsonString<InvoiceExtraFee[]>(contrat.frais_supplementaires, []),
+  reservation_items: fromJsonString<InvoiceReservationItem[]>(contrat.reservation_items, []),
   arrhes_montant: contrat.arrhes_montant,
   arrhes_date_limite: contrat.arrhes_date_limite,
   solde_montant: contrat.solde_montant,
@@ -205,7 +222,13 @@ const regenerateStoredInvoicePdf = async (contrat: any) => {
   const fraisSupplementaires = normalizeInvoiceExtraFees(
     fromJsonString<InvoiceExtraFeeInput[]>(contrat.frais_supplementaires, [])
   );
-  const totals = addInvoiceExtraFeesToTotals(totalsBase, fraisSupplementaires);
+  const reservationItems = fromJsonString<InvoiceReservationItem[]>(contrat.reservation_items, []);
+  const totals = applyReservationItemsToTotals(
+    totalsBase,
+    reservationItems,
+    toNumber(contrat.arrhes_montant),
+    fraisSupplementaires
+  );
 
   const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
     contrat.numero_facture,
@@ -229,6 +252,7 @@ const regenerateStoredInvoicePdf = async (contrat: any) => {
     solde_montant: totals.solde,
     options,
     frais_supplementaires: fraisSupplementaires,
+    reservation_items: reservationItems,
   };
   await generateInvoicePdf({
     invoice: invoiceForPdf,
@@ -279,6 +303,87 @@ const resolveLinkedReservation = async (reservationId: string | null | undefined
   return { id: reservation.id } as const;
 };
 
+const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise<InvoiceReservationItem[]> => {
+  const ids = [...new Set(reservationIds)];
+  if (ids.length < 2) return [];
+  const reservations = await prisma.reservation.findMany({
+    where: { id: { in: ids } },
+    include: { gite: { select: { id: true, nom: true } } },
+  });
+  if (reservations.length !== ids.length) {
+    throw new z.ZodError([{ code: "custom", path: ["reservation_ids"], message: "Une réservation sélectionnée est introuvable." }]);
+  }
+  const byId = new Map(reservations.map((reservation) => [reservation.id, reservation]));
+  return ids.map((id) => {
+    const reservation = byId.get(id)!;
+    if (!reservation.gite_id || !reservation.gite) {
+      throw new z.ZodError([{ code: "custom", path: ["reservation_ids"], message: "Toutes les réservations doivent être rattachées à un gîte." }]);
+    }
+    return {
+      reservation_id: reservation.id,
+      gite_id: reservation.gite_id,
+      gite_nom: reservation.gite.nom,
+      hote_nom: reservation.hote_nom,
+      date_debut: reservation.date_entree.toISOString(),
+      date_fin: reservation.date_sortie.toISOString(),
+      nb_nuits: reservation.nb_nuits,
+      nb_adultes: reservation.nb_adultes,
+      nb_enfants_2_17: reservation.nb_enfants_2_17,
+      montant: round2(
+        toNumber(reservation.prix_total) -
+          toNumber(reservation.remise_montant) +
+          toNumber(reservation.frais_optionnels_montant)
+      ),
+    };
+  });
+};
+
+const ensureReservationsCanBeInvoiced = async (reservationIds: string[], excludedInvoiceId?: string) => {
+  if (reservationIds.length < 2) return;
+  const invoices = await prisma.facture.findMany({
+    select: { id: true, numero_facture: true, reservation_id: true, reservation_items: true },
+  });
+  const requested = new Set(reservationIds);
+  const conflict = invoices.find((invoice) => {
+    if (invoice.id === excludedInvoiceId) return false;
+    const linkedIds = new Set([
+      ...(invoice.reservation_id ? [invoice.reservation_id] : []),
+      ...fromJsonString<InvoiceReservationItem[]>(invoice.reservation_items, []).map((item) => item.reservation_id),
+    ]);
+    return [...requested].some((id) => linkedIds.has(id));
+  });
+  if (conflict) {
+    throw new z.ZodError([{
+      code: "custom",
+      path: ["reservation_ids"],
+      message: `Une réservation sélectionnée est déjà incluse dans la facture ${conflict.numero_facture}.`,
+    }]);
+  }
+};
+
+const applyReservationItemsToTotals = (
+  totals: ContractTotals,
+  items: InvoiceReservationItem[],
+  arrhesMontant: number,
+  extraFees: InvoiceExtraFee[]
+): ContractTotals => {
+  if (items.length < 2) return addInvoiceExtraFeesToTotals(totals, extraFees);
+  const reservationsTotal = round2(items.reduce((sum, item) => sum + item.montant, 0));
+  const feesTotal = getInvoiceExtraFeesTotal(extraFees);
+  const totalGlobal = round2(reservationsTotal + feesTotal);
+  return {
+    ...totals,
+    nbNuits: items.reduce((sum, item) => sum + item.nb_nuits, 0),
+    montantBase: reservationsTotal,
+    totalSansOptions: reservationsTotal,
+    optionsTotal: 0,
+    taxeSejourCalculee: 0,
+    totalGlobal,
+    solde: round2(totalGlobal - arrhesMontant),
+    optionsDetail: { draps: 0, linge: 0, menage: 0, departTardif: 0, chiens: 0 },
+  };
+};
+
 type PreviewContext = {
   gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
   totals: ReturnType<typeof computeTotals>;
@@ -289,6 +394,7 @@ type PreviewError = { error: { status: number; message: string } };
 
 const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | PreviewError> => {
   const data = previewSchema.parse(payload);
+  const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
   const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
   if (!gite) return { error: { status: 404, message: "Gîte introuvable" } };
 
@@ -336,7 +442,7 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
     gite,
   });
   const fraisSupplementaires = normalizeInvoiceExtraFees(data.frais_supplementaires);
-  const totals = addInvoiceExtraFeesToTotals(totalsBase, fraisSupplementaires);
+  const totals = applyReservationItemsToTotals(totalsBase, reservationItems, arrhesMontant, fraisSupplementaires);
 
   const arrhesDateLimite = data.arrhes_date_limite ? parseDate(data.arrhes_date_limite) : addDays(new Date(), 15);
   if (data.arrhes_date_limite) ensureValidDate(arrhesDateLimite, "arrhes_date_limite");
@@ -355,6 +461,7 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
     prix_par_nuit: data.prix_par_nuit ?? 0,
     remise_montant: data.remise_montant ?? 0,
     frais_supplementaires: fraisSupplementaires,
+    reservation_items: reservationItems,
     arrhes_montant: arrhesMontant,
     arrhes_date_limite: arrhesDateLimite,
     solde_montant: totals.solde,
@@ -436,21 +543,29 @@ router.get("/:id", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const data = invoiceSchema.parse(req.body);
+    const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
+    await ensureReservationsCanBeInvoiced(data.reservation_ids);
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
-    const occupancyError = validateDocumentOccupancy({
+    const occupancyError = reservationItems.length < 2 ? validateDocumentOccupancy({
       gite,
       nbAdultes: data.nb_adultes,
       nbEnfants: data.nb_enfants_2_17,
-    });
+    }) : null;
     if (occupancyError) throw occupancyError;
-    const linkedReservation = await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id);
+    const linkedReservation = reservationItems.length < 2
+      ? await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id)
+      : null;
     if (linkedReservation && "error" in linkedReservation) {
       return res.status(400).json({ error: linkedReservation.error });
     }
 
-    const dateDebut = parseDate(data.date_debut);
-    const dateFin = parseDate(data.date_fin);
+    let dateDebut = parseDate(data.date_debut);
+    let dateFin = parseDate(data.date_fin);
+    if (reservationItems.length >= 2) {
+      dateDebut = new Date(Math.min(...reservationItems.map((item) => new Date(item.date_debut).getTime())));
+      dateFin = new Date(Math.max(...reservationItems.map((item) => new Date(item.date_fin).getTime())));
+    }
     ensureValidDate(dateDebut, "date_debut");
     ensureValidDate(dateFin, "date_fin");
     if (dateFin <= dateDebut) {
@@ -490,7 +605,7 @@ router.post("/", async (req, res, next) => {
       gite,
     });
     const fraisSupplementaires = normalizeInvoiceExtraFees(data.frais_supplementaires);
-    const invoiceTotals = addInvoiceExtraFeesToTotals(totals, fraisSupplementaires);
+    const invoiceTotals = applyReservationItemsToTotals(totals, reservationItems, arrhesMontant, fraisSupplementaires);
 
     const numeroFacture = await generateInvoiceNumber(
       data.gite_id,
@@ -503,7 +618,7 @@ router.post("/", async (req, res, next) => {
       dateDebut
     );
 
-    const reservationId = await syncReservationFromDocument({
+    const reservationId = reservationItems.length >= 2 ? reservationItems[0].reservation_id : await syncReservationFromDocument({
       explicitReservationId: data.reservation_id ?? null,
       giteId: data.gite_id,
       locataireNom: data.locataire_nom,
@@ -539,14 +654,15 @@ router.post("/", async (req, res, next) => {
         heure_arrivee: data.heure_arrivee,
         date_fin: dateFin,
         heure_depart: data.heure_depart,
-        nb_nuits: totals.nbNuits,
+        nb_nuits: invoiceTotals.nbNuits,
         prix_par_nuit: data.prix_par_nuit,
         remise_montant: data.remise_montant ?? 0,
-        taxe_sejour_calculee: totals.taxeSejourCalculee,
+        taxe_sejour_calculee: invoiceTotals.taxeSejourCalculee,
         options: encodeJsonField(options),
         arrhes_montant: arrhesMontant,
         arrhes_date_limite: parseDate(data.arrhes_date_limite),
         frais_supplementaires: encodeJsonField(fraisSupplementaires),
+        reservation_items: encodeJsonField(reservationItems),
         solde_montant: invoiceTotals.solde,
         caution_montant: data.caution_montant,
         cheque_menage_montant: data.cheque_menage_montant,
@@ -578,24 +694,32 @@ router.post("/", async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const data = invoiceSchema.parse(req.body);
+    const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
+    await ensureReservationsCanBeInvoiced(data.reservation_ids, req.params.id);
     const existing = await prisma.facture.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Facture introuvable" });
 
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
-    const occupancyError = validateDocumentOccupancy({
+    const occupancyError = reservationItems.length < 2 ? validateDocumentOccupancy({
       gite,
       nbAdultes: data.nb_adultes,
       nbEnfants: data.nb_enfants_2_17,
-    });
+    }) : null;
     if (occupancyError) throw occupancyError;
-    const linkedReservation = await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id);
+    const linkedReservation = reservationItems.length < 2
+      ? await resolveLinkedReservation(data.reservation_id ?? null, data.gite_id)
+      : null;
     if (linkedReservation && "error" in linkedReservation) {
       return res.status(400).json({ error: linkedReservation.error });
     }
 
-    const dateDebut = parseDate(data.date_debut);
-    const dateFin = parseDate(data.date_fin);
+    let dateDebut = parseDate(data.date_debut);
+    let dateFin = parseDate(data.date_fin);
+    if (reservationItems.length >= 2) {
+      dateDebut = new Date(Math.min(...reservationItems.map((item) => new Date(item.date_debut).getTime())));
+      dateFin = new Date(Math.max(...reservationItems.map((item) => new Date(item.date_fin).getTime())));
+    }
     ensureValidDate(dateDebut, "date_debut");
     ensureValidDate(dateFin, "date_fin");
     if (dateFin <= dateDebut) {
@@ -621,14 +745,14 @@ router.put("/:id", async (req, res, next) => {
       gite,
     });
     const fraisSupplementaires = normalizeInvoiceExtraFees(data.frais_supplementaires);
-    const invoiceTotals = addInvoiceExtraFeesToTotals(totals, fraisSupplementaires);
+    const invoiceTotals = applyReservationItemsToTotals(totals, reservationItems, arrhesMontant, fraisSupplementaires);
 
     const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
       existing.numero_facture,
       dateDebut
     );
 
-    const reservationId = await syncReservationFromDocument({
+    const reservationId = reservationItems.length >= 2 ? reservationItems[0].reservation_id : await syncReservationFromDocument({
       explicitReservationId: data.reservation_id ?? null,
       existingReservationId: existing.reservation_id ?? null,
       giteId: data.gite_id,
@@ -665,14 +789,15 @@ router.put("/:id", async (req, res, next) => {
         heure_arrivee: data.heure_arrivee,
         date_fin: dateFin,
         heure_depart: data.heure_depart,
-        nb_nuits: totals.nbNuits,
+        nb_nuits: invoiceTotals.nbNuits,
         prix_par_nuit: data.prix_par_nuit,
         remise_montant: data.remise_montant ?? 0,
-        taxe_sejour_calculee: totals.taxeSejourCalculee,
+        taxe_sejour_calculee: invoiceTotals.taxeSejourCalculee,
         options: encodeJsonField(options),
         arrhes_montant: arrhesMontant,
         arrhes_date_limite: parseDate(data.arrhes_date_limite),
         frais_supplementaires: encodeJsonField(fraisSupplementaires),
+        reservation_items: encodeJsonField(reservationItems),
         solde_montant: invoiceTotals.solde,
         caution_montant: data.caution_montant,
         cheque_menage_montant: data.cheque_menage_montant,

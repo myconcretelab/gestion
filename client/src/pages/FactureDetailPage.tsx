@@ -230,7 +230,11 @@ const FactureDetailPage = () => {
             </div>
             <div className="detail-item">
               <span className="detail-label">Gîte</span>
-              <span className="detail-value">{facture.gite?.nom ?? "—"}</span>
+              <span className="detail-value">
+                {facture.reservation_items?.length >= 2
+                  ? `${new Set(facture.reservation_items.map((item) => item.gite_id)).size} gîtes`
+                  : facture.gite?.nom ?? "—"}
+              </span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Période</span>
@@ -252,6 +256,18 @@ const FactureDetailPage = () => {
               </span>
             </div>
           </div>
+
+          {facture.reservation_items?.length >= 2 && (
+            <div className="detail-block">
+              <div className="detail-label">Réservations incluses</div>
+              {facture.reservation_items.map((item) => (
+                <div className="detail-item" key={item.reservation_id}>
+                  <span className="detail-value">{item.gite_nom} · {item.hote_nom}</span>
+                  <span className="detail-value">{formatDate(item.date_debut)} — {formatDate(item.date_fin)} · {formatEuro(item.montant)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div
             className={`arrhes-card ${isPaid ? "arrhes-card--paid" : "arrhes-card--pending"}`}

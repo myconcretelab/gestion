@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Facture, ContratOptions, Reservation } from "../utils/types";
-import { formatEuro } from "../utils/format";
+import { formatDate, formatEuro } from "../utils/format";
 import {
   addDays,
   defaultOptions,
@@ -130,10 +130,103 @@ const FactureFormPage = () => {
   const [sourceReservationLabel, setSourceReservationLabel] = useState<string | null>(null);
   const [prefilledReservationGiteId, setPrefilledReservationGiteId] = useState<string | null>(null);
   const [linkedReservationId, setLinkedReservationId] = useState<string | null>(null);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [existingInvoices, setExistingInvoices] = useState<Facture[]>([]);
+  const [selectedReservationIds, setSelectedReservationIds] = useState<string[]>([]);
+  const [reservationSearch, setReservationSearch] = useState("");
+  const [reservationPickerOpen, setReservationPickerOpen] = useState(false);
   const gites = useDocumentGites({
     setSelectedGiteId: setGiteId,
     setError,
   });
+  const isMultiReservation = selectedReservationIds.length >= 2;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.all([
+      apiFetch<Reservation[]>("/reservations/invoice-options", { signal: controller.signal }),
+      apiFetch<Facture[]>("/invoices", { signal: controller.signal }),
+    ])
+      .then(([reservationData, invoiceData]) => {
+        setReservations(reservationData);
+        setExistingInvoices(invoiceData);
+      })
+      .catch((err) => {
+        if (!isAbortError(err)) setError(err instanceof Error ? err.message : "Erreur lors du chargement des réservations.");
+      });
+    return () => controller.abort();
+  }, []);
+
+  const invoiceByReservationId = useMemo(() => {
+    const links = new Map<string, Facture>();
+    existingInvoices.forEach((invoice) => {
+      if (invoice.id === id) return;
+      if (invoice.reservation_id) links.set(invoice.reservation_id, invoice);
+      invoice.reservation_items?.forEach((item) => links.set(item.reservation_id, invoice));
+    });
+    return links;
+  }, [existingInvoices, id]);
+
+  const filteredReservations = useMemo(() => {
+    const query = reservationSearch.trim().toLocaleLowerCase("fr");
+    return reservations
+      .filter((reservation) => reservation.gite_id)
+      .filter((reservation) => {
+        if (!query) return true;
+        return [reservation.hote_nom, reservation.gite?.nom, reservation.date_entree, reservation.date_sortie]
+          .filter(Boolean)
+          .some((value) => String(value).toLocaleLowerCase("fr").includes(query));
+      })
+      .slice(0, 80);
+  }, [reservations, reservationSearch]);
+
+  const selectedReservations = useMemo(
+    () => selectedReservationIds.map((reservationId) => reservations.find((item) => item.id === reservationId)).filter((item): item is Reservation => Boolean(item)),
+    [reservations, selectedReservationIds]
+  );
+  const selectedReservationsTotal = useMemo(
+    () => selectedReservations.reduce(
+      (sum, reservation) => sum + Number(reservation.prix_total ?? 0) - Number(reservation.remise_montant ?? 0) + Number(reservation.frais_optionnels_montant ?? 0),
+      0
+    ),
+    [selectedReservations]
+  );
+  const selectedReservationsNights = useMemo(
+    () => selectedReservations.reduce((sum, reservation) => sum + Number(reservation.nb_nuits ?? 0), 0),
+    [selectedReservations]
+  );
+
+  const applyReservationSelection = (ids: string[]) => {
+    const selected = ids.map((reservationId) => reservations.find((item) => item.id === reservationId)).filter((item): item is Reservation => Boolean(item));
+    setSelectedReservationIds(ids);
+    setLinkedReservationId(ids[0] ?? null);
+    if (!selected.length) return;
+
+    const first = selected[0];
+    const prefill = buildReservationDocumentPrefill(first);
+    setGiteId(prefill.giteId);
+    if (ids.length === 1 || !locataireNom.trim()) {
+      setLocataireNom(prefill.locataireNom);
+      setLocataireTel(prefill.locataireTel);
+      setLocataireEmail(prefill.locataireEmail);
+    }
+    setDateDebut(selected.map((item) => toDateInputValue(item.date_entree)).sort()[0]);
+    setDateFin(selected.map((item) => toDateInputValue(item.date_sortie)).sort().at(-1) ?? prefill.dateFin);
+    setNbAdultes(ids.length === 1 ? prefill.nbAdultes : 1);
+    setNbEnfants(ids.length === 1 ? prefill.nbEnfants : 0);
+    setPrixParNuit(prefill.prixParNuit);
+    setRemiseMode("euro");
+    setRemiseValue(ids.length === 1 ? prefill.remiseValue : "");
+    setOptions(ids.length === 1 ? prefill.options : defaultOptions);
+    setArrhesAuto(false);
+  };
+
+  const toggleReservation = (reservationId: string) => {
+    const next = selectedReservationIds.includes(reservationId)
+      ? selectedReservationIds.filter((id) => id !== reservationId)
+      : [...selectedReservationIds, reservationId];
+    applyReservationSelection(next);
+  };
 
   const minDateFin = useMemo(() => {
     if (!dateDebut) return undefined;
@@ -179,6 +272,13 @@ const FactureFormPage = () => {
         setSourceReservationLabel(null);
         setPrefilledReservationGiteId(null);
         setLinkedReservationId(data.reservation_id ?? null);
+        setSelectedReservationIds(
+          data.reservation_items?.length
+            ? data.reservation_items.map((item) => item.reservation_id)
+            : data.reservation_id
+              ? [data.reservation_id]
+              : []
+        );
       })
       .catch((err) => {
         if (!active || isAbortError(err)) return;
@@ -264,6 +364,7 @@ const FactureFormPage = () => {
     setPrefilledReservationGiteId(null);
     setLoadingFromReservation(false);
     setLinkedReservationId(null);
+    setSelectedReservationIds([]);
     setLocataireEmail("");
     setFraisSupplementaires([]);
   }, [isEdit, fromContractId, fromReservationId]);
@@ -283,6 +384,7 @@ const FactureFormPage = () => {
         if (!active) return;
         const prefill = buildReservationDocumentPrefill(data);
         setLinkedReservationId(prefill.linkedReservationId);
+        setSelectedReservationIds([prefill.linkedReservationId]);
         setSourceReservationLabel(data.hote_nom);
         setPrefilledReservationGiteId(prefill.giteId);
         setGiteId(prefill.giteId);
@@ -485,6 +587,7 @@ const FactureFormPage = () => {
       clauses: clausesPayload,
       statut_paiement: statutArrhes,
       reservation_id: linkedReservationId,
+      reservation_ids: selectedReservationIds,
     };
 
     return payload;
@@ -509,6 +612,7 @@ const FactureFormPage = () => {
     statutArrhes,
     arrhesMontant,
     linkedReservationId,
+    selectedReservationIds,
   ]);
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
@@ -599,6 +703,7 @@ const FactureFormPage = () => {
             Gîte
             <select
               value={giteId}
+              disabled={isMultiReservation}
               onChange={(e) => {
                 clearFieldError("gite_id");
                 setGiteId(e.target.value);
@@ -660,13 +765,98 @@ const FactureFormPage = () => {
         </div>
       </div>
 
+      <div className="card invoice-reservations">
+        <div className="invoice-reservations__header">
+          <div>
+            <div className="section-title">Réservations incluses</div>
+            <div className="field-hint">
+              {selectedReservationIds.length
+                ? `${selectedReservationIds.length} réservation${selectedReservationIds.length > 1 ? "s" : ""} liée${selectedReservationIds.length > 1 ? "s" : ""} à la facture.`
+                : "Vous pouvez créer une facture libre ou sélectionner une ou plusieurs réservations."}
+            </div>
+          </div>
+          <button type="button" className="secondary" onClick={() => setReservationPickerOpen((open) => !open)}>
+            {reservationPickerOpen ? "Fermer" : "Ajouter une réservation"}
+          </button>
+        </div>
+
+        {selectedReservations.length > 0 && (
+          <div className="invoice-reservations__selected">
+            {selectedReservations.map((reservation) => {
+              const amount = Number(reservation.prix_total ?? 0) - Number(reservation.remise_montant ?? 0) + Number(reservation.frais_optionnels_montant ?? 0);
+              return (
+                <div className="invoice-reservation-card" key={reservation.id}>
+                  <div>
+                    <strong>{reservation.gite?.nom ?? "Gîte"} · {reservation.hote_nom}</strong>
+                    <div className="field-hint">
+                      {formatDate(reservation.date_entree)} — {formatDate(reservation.date_sortie)} · {reservation.nb_nuits} nuit{reservation.nb_nuits > 1 ? "s" : ""}
+                    </div>
+                  </div>
+                  <strong>{formatEuro(amount)}</strong>
+                  <button type="button" className="secondary" onClick={() => toggleReservation(reservation.id)}>
+                    Retirer de la facture
+                  </button>
+                </div>
+              );
+            })}
+            {isMultiReservation && (
+              <div className="invoice-reservations__total">
+                <span>Total des {selectedReservations.length} réservations</span>
+                <strong>{formatEuro(selectedReservationsTotal)}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isMultiReservation && (
+          <div className="note note--success">
+            Les séjours, leurs dates et leurs montants sont repris automatiquement. Les coordonnées ci-dessus désignent le destinataire de la facture.
+          </div>
+        )}
+
+        {reservationPickerOpen && (
+          <div className="invoice-reservation-picker">
+            <label className="field">
+              Rechercher par client, gîte ou date
+              <input value={reservationSearch} onChange={(event) => setReservationSearch(event.target.value)} autoFocus />
+            </label>
+            <div className="invoice-reservation-picker__list">
+              {filteredReservations.map((reservation) => {
+                const linkedInvoice = invoiceByReservationId.get(reservation.id);
+                return (
+                <label className={`invoice-reservation-choice${linkedInvoice ? " invoice-reservation-choice--disabled" : ""}`} key={reservation.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedReservationIds.includes(reservation.id)}
+                    disabled={Boolean(linkedInvoice)}
+                    onChange={() => toggleReservation(reservation.id)}
+                  />
+                  <span>
+                    <strong>{reservation.hote_nom}</strong>
+                    <small>{reservation.gite?.nom ?? "Sans gîte"} · {formatDate(reservation.date_entree)} — {formatDate(reservation.date_sortie)}</small>
+                    {linkedInvoice && <small>Déjà incluse dans la facture {linkedInvoice.numero_facture}</small>}
+                  </span>
+                  <strong>{formatEuro(Number(reservation.prix_total ?? 0) - Number(reservation.remise_montant ?? 0) + Number(reservation.frais_optionnels_montant ?? 0))}</strong>
+                </label>
+                );
+              })}
+              {!filteredReservations.length && <div className="field-hint">Aucune réservation trouvée.</div>}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="card">
         <div className="section-title">Période</div>
         <div className="field-group">
           <div className="field-group__header">
             <div className="field-group__label">Dates</div>
             <div className={`nights-chip${nbNuitsSelection ? "" : " nights-chip--muted"}`}>
-              {nbNuitsSelection ? `${nbNuitsSelection} nuit${nbNuitsSelection > 1 ? "s" : ""}` : "Durée à définir"}
+              {isMultiReservation
+                ? `${selectedReservationsNights} nuit${selectedReservationsNights > 1 ? "s" : ""} au total`
+                : nbNuitsSelection
+                  ? `${nbNuitsSelection} nuit${nbNuitsSelection > 1 ? "s" : ""}`
+                  : "Durée à définir"}
             </div>
           </div>
           <div className="field-row">
@@ -674,6 +864,7 @@ const FactureFormPage = () => {
               Début
               <input
                 type="date"
+                disabled={isMultiReservation}
                 value={dateDebut}
                 onChange={(e) => {
                   clearFieldError("date_debut");
@@ -686,6 +877,7 @@ const FactureFormPage = () => {
               Fin
               <input
                 type="date"
+                disabled={isMultiReservation}
                 value={dateFin}
                 min={minDateFin}
                 onChange={(e) => {
@@ -702,7 +894,7 @@ const FactureFormPage = () => {
       <div className="card">
         <div className="section-title">Tarif & Paiement</div>
         <div className="grid-2">
-          <div className="field-group">
+          <div className={`field-group${isMultiReservation ? " invoice-single-reservation-only" : ""}`}>
             <div className="field-group__label">Tarif séjour</div>
             <label className={getFieldClassName("prix_par_nuit")}>
               Prix par nuit
@@ -875,6 +1067,7 @@ const FactureFormPage = () => {
                     <input
                       type="checkbox"
                       checked={arrhesAuto}
+                      disabled={isMultiReservation}
                       onChange={(e) => setArrhesAuto(e.target.checked)}
                     />
                     <span className="slider" />
@@ -882,7 +1075,9 @@ const FactureFormPage = () => {
                 </div>
               </div>
               <div className="field-hint">
-                Acompte auto ({Math.round(arrhesRate * 100)}% du séjour): {formatEuro(arrhesAutoValue)}
+                {isMultiReservation
+                  ? `Total des réservations : ${formatEuro(selectedReservationsTotal)}`
+                  : `Acompte auto (${Math.round(arrhesRate * 100)}% du séjour): ${formatEuro(arrhesAutoValue)}`}
               </div>
               {renderFieldError("arrhes_montant")}
             </div>
@@ -890,7 +1085,7 @@ const FactureFormPage = () => {
         </div>
       </div>
 
-      <div className="card">
+      <div className={`card${isMultiReservation ? " invoice-single-reservation-only" : ""}`}>
         <div className="section-title">Options</div>
         <div className="option-grid">
           <div className="option-card option-card--rules">

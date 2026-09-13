@@ -1566,6 +1566,59 @@ router.get("/airbnb-calendar-refresh/:jobId", async (req, res, next) => {
   }
 });
 
+router.get("/invoice-options", async (_req, res, next) => {
+  try {
+    const select = {
+      id: true,
+      gite_id: true,
+      stay_group_id: true,
+      hote_nom: true,
+      telephone: true,
+      email: true,
+      date_entree: true,
+      date_sortie: true,
+      nb_nuits: true,
+      nb_adultes: true,
+      nb_enfants_2_17: true,
+      prix_par_nuit: true,
+      prix_total: true,
+      remise_montant: true,
+      frais_optionnels_montant: true,
+      options: true,
+      createdAt: true,
+      gite: { select: reservationGiteSelect },
+    } as const;
+    const reservations = await prisma.reservation.findMany({
+      select,
+      orderBy: [{ date_entree: "desc" }, { createdAt: "desc" }],
+    });
+    const grouped = await coalesceGroupedReservationRows(reservations, { select });
+    res.json(grouped.map((reservation) => {
+      const hydrated = hydrateReservation(reservation);
+      return {
+        id: hydrated.id,
+        gite_id: hydrated.gite_id,
+        hote_nom: hydrated.hote_nom,
+        telephone: hydrated.telephone,
+        email: hydrated.email,
+        date_entree: hydrated.date_entree,
+        date_sortie: hydrated.date_sortie,
+        nb_nuits: hydrated.nb_nuits,
+        nb_adultes: hydrated.nb_adultes,
+        nb_enfants_2_17: hydrated.nb_enfants_2_17,
+        prix_par_nuit: hydrated.prix_par_nuit,
+        prix_total: hydrated.prix_total,
+        remise_montant: hydrated.remise_montant,
+        frais_optionnels_montant: hydrated.frais_optionnels_montant,
+        options: hydrated.options,
+        gite: hydrated.gite,
+      };
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/", async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
