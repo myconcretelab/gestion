@@ -671,7 +671,11 @@ test("creation facture regroupe plusieurs reservations et fige leurs montants", 
     assert.equal(createdData.nb_nuits, 5);
     assert.equal(createdData.solde_montant, 460);
     assert.equal(createdData.reservation_id, "r1");
-    assert.deepEqual(JSON.parse(createdData.reservation_items).map((item: any) => item.montant), [310, 200]);
+    const reservationItems =
+      typeof createdData.reservation_items === "string"
+        ? JSON.parse(createdData.reservation_items)
+        : createdData.reservation_items;
+    assert.deepEqual(reservationItems.map((item: any) => item.montant), [310, 200]);
   } finally {
     prisma.gite.findUnique = original.giteFindUnique;
     prisma.reservation.findMany = original.reservationFindMany;
