@@ -203,6 +203,21 @@ test("GET /reservations/calendar charge un payload primaire filtre par chevauche
     assert.equal((response.body as any).gites[0].id, "gite-1");
     assert.equal((response.body as any).reservations[0].has_linked_contract, true);
     assert.equal(typeof (response.body as any).source_colors, "object");
+
+    await get(
+      {
+        body: {},
+        params: {},
+        query: { year: "2026", months: "18" },
+        headers: {},
+      },
+      createMockResponse(),
+      (err) => {
+        nextError = err ?? null;
+      }
+    );
+    assert.equal(nextError, null);
+    assert.equal(capturedReservationArgs?.where?.date_entree?.lt?.toISOString(), "2027-07-01T00:00:00.000Z");
   } finally {
     prisma.gite.findMany = originals.giteFindMany;
     prisma.reservation.findMany = originals.reservationFindMany;

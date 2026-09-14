@@ -1547,6 +1547,22 @@ body.app-scroll-locked {
   color: #202124;
 }
 
+.calendar-year-switch__select {
+  min-width: 74px;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #202124;
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: none;
+}
+
 .calendar-year-switch__button {
   box-shadow: none;
 }
@@ -3958,7 +3974,13 @@ body.app-scroll-locked {
   }
 
   .calendar-year-switch {
-    display: none;
+    display: inline-flex;
+    border-color: color-mix(in srgb, var(--primary) 42%, #ececec 58%);
+    background: var(--primary-soft);
+  }
+
+  .calendar-year-switch__select {
+    color: #202124;
   }
 
   .calendar-today-button {
