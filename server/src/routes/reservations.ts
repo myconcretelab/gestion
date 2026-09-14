@@ -1727,8 +1727,10 @@ router.get("/calendar", async (req, res, next) => {
     }
 
     const year = Number(yearRaw);
+    const monthsRaw = typeof req.query.months === "string" ? Number.parseInt(req.query.months, 10) : 12;
+    const months = Number.isInteger(monthsRaw) ? Math.min(Math.max(monthsRaw, 12), 18) : 12;
     const from = makeUtcDate(year, 1, 1);
-    const to = makeUtcDate(year + 1, 1, 1);
+    const to = makeUtcDate(year + Math.floor(months / 12), (months % 12) + 1, 1);
 
     const [gites, reservationRows] = await Promise.all([
       prisma.gite.findMany({
