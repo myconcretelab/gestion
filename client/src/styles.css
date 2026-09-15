@@ -17675,6 +17675,41 @@ button.personal-expenses-status:disabled {
 }
 
 @media (max-width: 430px) {
+  .calendar-hero__actions {
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .calendar-gite-buttons {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .calendar-gite-button {
+    min-width: 38px;
+    min-height: 42px;
+    padding: 0 6px;
+  }
+
+  .calendar-year-switch {
+    min-height: 38px;
+    gap: 0;
+    padding: 1px;
+  }
+
+  .calendar-year-switch__select {
+    width: 50px;
+    min-width: 50px;
+    min-height: 34px;
+    padding: 0 2px;
+    font-size: 0.84rem;
+  }
+
+  .calendar-year-switch__button {
+    width: 32px;
+    height: 34px;
+  }
+
   .calendar-quick-create-sheet__section-toggle {
     padding: 13px 14px;
   }
