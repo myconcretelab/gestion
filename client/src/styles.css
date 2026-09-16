@@ -19464,26 +19464,41 @@ button.personal-expenses-status:disabled {
   }
 }
 
-.gite-cleaning-check { margin-top: 12px; width: 100%; }
-.gite-cleaning-check__button {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px;
-  border: 1px dashed var(--primary); border-radius: 16px; background: var(--surface, #fff);
-  color: var(--ink); text-align: left; cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease;
+.mobile-reservation-actions__copy:has(.gite-cleaning-check) { flex: 1; }
+.gite-cleaning-check { position: relative; justify-self: start; max-width: 100%; }
+.gite-cleaning-check__controls { display: flex; align-items: center; gap: 2px; }
+.gite-cleaning-check__info,
+.gite-cleaning-check__toggle {
+  display: grid; place-items: center; min-height: 44px; margin: 0; padding: 0;
+  border: 0; border-radius: 10px; background: transparent; box-shadow: none; cursor: pointer;
 }
-.gite-cleaning-check__button.is-checked { background: var(--primary-soft); border-style: solid; }
-.gite-cleaning-check__button:disabled { opacity: .65; cursor: wait; }
-.gite-cleaning-check__button:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
-.gite-cleaning-check__seal { display: grid; place-items: center; flex: 0 0 40px; height: 40px; border-radius: 50%; background: var(--primary-soft); }
-.gite-cleaning-check__seal svg { width: 30px; height: 30px; color: var(--primary); }
-.gite-cleaning-check__copy { display: grid; gap: 3px; flex: 1; min-width: 0; }
-.gite-cleaning-check__copy small { font-size: 9px; letter-spacing: .09em; }
-.gite-cleaning-check__copy strong { font-size: 13px; }
-.gite-cleaning-check__copy > span { font-size: 10px; }
-.gite-cleaning-check__switch { flex: 0 0 32px; height: 20px; border: 1px solid var(--primary); border-radius: 20px; padding: 2px; }
-.gite-cleaning-check__switch > span { display: block; width: 14px; height: 14px; background: var(--primary); border-radius: 50%; transition: transform 160ms ease; }
-.is-checked .gite-cleaning-check__switch > span { transform: translateX(12px); }
-.gite-cleaning-check > small { display: block; margin-top: 6px; font-size: 11px; }
+.gite-cleaning-check__info { width: 44px; color: rgba(255, 255, 255, .65); }
+.gite-cleaning-check__info svg { width: 25px; height: 25px; }
+.gite-cleaning-check__info.is-checked { color: var(--primary); }
+.gite-cleaning-check__info:hover,
+.gite-cleaning-check__info[aria-expanded="true"] { background: rgba(255, 255, 255, .08); }
+.gite-cleaning-check__toggle { width: 56px; }
+.gite-cleaning-check__toggle:disabled { opacity: .5; cursor: wait; }
+.gite-cleaning-check__info:focus-visible,
+.gite-cleaning-check__toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.gite-cleaning-check__track {
+  display: block; box-sizing: border-box; width: 48px; height: 28px; padding: 3px;
+  border-radius: 28px; background: rgba(255, 255, 255, .24); transition: background 160ms ease;
+}
+.gite-cleaning-check__track > span {
+  display: block; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: transform 160ms ease;
+}
+.is-checked .gite-cleaning-check__track { background: var(--primary); }
+.is-checked .gite-cleaning-check__track > span { transform: translateX(20px); }
+.gite-cleaning-check__details {
+  position: absolute; z-index: 1; bottom: calc(100% + 4px); left: 0;
+  display: grid; gap: 5px; width: 230px; max-width: calc(100vw - 64px); padding: 12px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--ink);
+  box-shadow: var(--shadow-strong); font-size: 12px; line-height: 1.5;
+}
+.mobile-reservation-actions__copy .gite-cleaning-check__details strong { font-size: 12px; }
+.gite-cleaning-check > small { display: block; margin-top: 4px; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) {
-  .gite-cleaning-check__button, .gite-cleaning-check__switch > span { transition: none; }
+  .gite-cleaning-check__track, .gite-cleaning-check__track > span { transition: none; }
 }
