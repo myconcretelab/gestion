@@ -3,6 +3,7 @@ import {
   mergeReservationOptions,
   toNonNegativeInt,
   type ReservationServiceOptionKey,
+  type NormalizedReservationOptions,
 } from "../../utils/reservationOptions";
 import type { ContratOptions, Gite } from "../../utils/types";
 
@@ -41,7 +42,7 @@ const ReservationOptionsEditor = ({
   const defaultGuestCount = Math.max(1, toNonNegativeInt(guestCount, 1));
   const isDrawerLayout = layout === "drawer";
 
-  const commit = (updater: (previous: ContratOptions) => ContratOptions) => {
+  const commit = (updater: (previous: NormalizedReservationOptions) => ContratOptions) => {
     onChange(mergeReservationOptions(updater(normalizedOptions)));
   };
 

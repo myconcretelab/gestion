@@ -96,7 +96,7 @@ const getMinNightOptions = (gites: EditorGite[], currentValues: Array<number | n
       getDefaultMinNights(gite, "july_august"),
       getDefaultMinNights(gite, "bridge"),
     ]),
-    ...currentValues.filter((value): value is number => Number.isInteger(value) && value > 0)
+    ...currentValues.filter((value): value is number => typeof value === "number" && Number.isInteger(value) && value > 0)
   );
   return Array.from({ length: configuredMax }, (_, index) => index + 1);
 };
@@ -108,7 +108,7 @@ const getPriceOptions = (gite: EditorGite, currentValue: number | null | undefin
     Number(gite.prix_nuit_haute_saison ?? 0),
     currentValue,
   ]
-    .filter((value): value is number => Number.isFinite(value) && value >= 0)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0)
     .filter((value, index, values) => values.indexOf(value) === index)
     .sort((left, right) => left - right);
 
