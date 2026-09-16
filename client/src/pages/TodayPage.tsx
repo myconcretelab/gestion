@@ -414,7 +414,7 @@ const buildTodayEvents = (reservations: Reservation[], todayIso: string, lastVis
   });
 
   return [...grouped.values()]
-    .map((entry) => {
+    .map((entry): TodayEvent | null => {
       const arrivalReservation = entry.arrivals[0] ?? null;
       const departureReservation = entry.departures[0] ?? null;
       const primaryReservation = arrivalReservation ?? departureReservation;
@@ -781,7 +781,7 @@ const TodayPage = () => {
           ? {
               ...previous,
               reservations: previous.reservations.map((item) =>
-                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement } : item
+                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement ?? null } : item
               ),
             }
           : previous
@@ -791,7 +791,7 @@ const TodayPage = () => {
           ? {
               ...previous,
               new_reservations: previous.new_reservations.map((item) =>
-                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement } : item
+                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement ?? null } : item
               ),
             }
           : previous

@@ -1690,8 +1690,8 @@ const GitesPage = () => {
       public_practical_info: formatJsonField(selected.public_practical_info),
       public_location_info: formatJsonField(selected.public_location_info),
       public_web_info: normalizePublicWebInfoForm(selected.public_web_info),
-      public_latitude: selected.public_latitude ?? "",
-      public_longitude: selected.public_longitude ?? "",
+      public_latitude: String(selected.public_latitude ?? ""),
+      public_longitude: String(selected.public_longitude ?? ""),
       email: selected.email ?? "",
       caracteristiques: selected.caracteristiques ?? "",
       airbnb_listing_id: selected.airbnb_listing_id ?? "",
@@ -4338,7 +4338,7 @@ const GitesPage = () => {
         </div>
 
         <div className="actions" style={{ marginTop: 16 }} hidden={activeEditorSection === "gestion-frais-statistiques"}>
-          <button type="button" onClick={save} disabled={loading}>
+          <button type="button" onClick={() => void save()} disabled={loading}>
             {loading ? "Enregistrement..." : "Enregistrer"}
           </button>
           {selected && (

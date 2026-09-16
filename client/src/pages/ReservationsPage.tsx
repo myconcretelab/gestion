@@ -1071,7 +1071,7 @@ const copyRoundedAmount = (value: number) => {
 };
 
 const scheduleLazyTask = (callback: () => void) => {
-  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
     const id = window.requestIdleCallback(() => callback(), { timeout: 1200 });
     return () => window.cancelIdleCallback(id);
   }
@@ -2290,12 +2290,12 @@ const ReservationsPage = () => {
     };
   }, [activeTab, gites.length, month]);
 
-  const pageStyle = useMemo(
+  const pageStyle = useMemo<CSSProperties & Record<`--${string}`, string>>(
     () =>
       ({
         "--reservations-sticky-top": `${stickyOffsets.topbar}px`,
         "--reservations-month-head-top": `${stickyOffsets.topbar + stickyOffsets.tabs}px`,
-      }) satisfies CSSProperties,
+      }) satisfies CSSProperties & Record<`--${string}`, string>,
     [stickyOffsets.tabs, stickyOffsets.topbar]
   );
 
@@ -3347,7 +3347,7 @@ const ReservationsPage = () => {
       return;
     }
 
-    const saved = await persistExistingRow(reservation.id, draft, optionDraft);
+    const saved = await persistExistingRow(reservation.id, draft, { optionsOverride: optionDraft });
     if (!saved) return;
     closeEditModeWithAnimation(reservation.id, { highlightSaved: true });
   };
@@ -4492,7 +4492,7 @@ const ReservationsPage = () => {
   };
 
   const reservationTabItems: GiteTabItem[] = [
-    ...gites.map((gite) => {
+    ...gites.map((gite): GiteTabItem => {
       const recentImportedCount = recentImportedCountByTab.get(gite.id) ?? 0;
       const recentImportedLabel = recentImportedCount > 0 ? getRecentImportedTabLabel(recentImportedCount) : null;
       const zeroTotalCount = zeroTotalCountByGite.get(gite.id) ?? 0;

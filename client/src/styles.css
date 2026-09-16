@@ -6841,6 +6841,11 @@ body {
   background: rgba(12, 74, 44, 0.94);
 }
 
+.app-sync-notice--warning {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
 .app-sync-notice--error {
   background: rgba(127, 29, 29, 0.95);
 }

@@ -3,7 +3,7 @@ export const APP_NOTICE_EVENT = "app-notice";
 export type AppNotice = {
   label: string;
   message: string;
-  tone: "neutral" | "success" | "error";
+  tone: "neutral" | "success" | "warning" | "error";
   timeoutMs?: number | null;
   role?: "status" | "alert";
 };

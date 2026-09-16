@@ -92,7 +92,7 @@ const GlobalRevenueChart = ({ groups, avgMode, onAvgModeChange }: GlobalRevenueC
                       strokeWidth={entry.isFuture ? 1 : undefined}
                     />
                   ))}
-                  <LabelList dataKey="ca" position="top" formatter={(value: number) => formatEUR0(value)} />
+                  <LabelList dataKey="ca" position="top" formatter={(value) => typeof value === "number" ? formatEUR0(value) : ""} />
                 </Bar>
               </ComposedChart>
             </ResponsiveContainer>

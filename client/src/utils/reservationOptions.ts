@@ -2,6 +2,8 @@ import type { ContratOptions, Gite } from "./types";
 
 export type ReservationServiceOptionKey = "draps" | "linge_toilette" | "menage" | "depart_tardif" | "chiens";
 
+export type NormalizedReservationOptions = ContratOptions & Required<Pick<ContratOptions, ReservationServiceOptionKey>>;
+
 export type ReservationOptionsPreview = {
   total: number;
   label: string;
@@ -21,7 +23,7 @@ const resolveChiensTarif = (params: { options: ContratOptions; gite: Gite | null
     ? round2(Math.max(0, Number(params.options.chiens.prix_unitaire ?? 0)))
     : round2(Number(params.gite?.options_chiens_forfait ?? 0));
 
-export const mergeReservationOptions = (value?: ContratOptions | null): ContratOptions => ({
+export const mergeReservationOptions = (value?: ContratOptions | null): NormalizedReservationOptions => ({
   draps: { enabled: false, nb_lits: 0, offert: false, declared: false, ...(value?.draps ?? {}) },
   linge_toilette: { enabled: false, nb_personnes: 0, offert: false, declared: false, ...(value?.linge_toilette ?? {}) },
   menage: { enabled: false, offert: false, declared: false, ...(value?.menage ?? {}) },

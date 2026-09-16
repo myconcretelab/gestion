@@ -1,7 +1,8 @@
+import type { NormalizedReservationOptions } from "../../utils/reservationOptions";
 import { isApiError } from "../../utils/api";
 import type { ContratOptions, Gite } from "../../utils/types";
 
-export const defaultOptions: ContratOptions = {
+export const defaultOptions: NormalizedReservationOptions = {
   draps: { enabled: false, nb_lits: 0, offert: false, declared: false },
   linge_toilette: { enabled: false, nb_personnes: 0, offert: false, declared: false },
   menage: { enabled: false, offert: false, declared: false },
@@ -66,7 +67,7 @@ export const toDateInputValue = (value?: string | null) => {
   return value.includes("T") ? value.split("T")[0] : value;
 };
 
-export const mergeOptions = (value?: ContratOptions | null): ContratOptions => ({
+export const mergeOptions = (value?: ContratOptions | null): NormalizedReservationOptions => ({
   ...defaultOptions,
   ...(value ?? {}),
   draps: { ...defaultOptions.draps, ...(value?.draps ?? {}) },
@@ -84,7 +85,9 @@ export const extractValidationFieldErrors = <T extends string>(
   const result: Partial<Record<T, string>> = {};
   if (!isApiError(error)) return result;
 
-  const rawFieldErrors = error.payload.details?.fieldErrors;
+  const details = error.payload.details;
+  const rawFieldErrors = details && typeof details === "object" && "fieldErrors" in details
+    ? details.fieldErrors : undefined;
   if (rawFieldErrors && typeof rawFieldErrors === "object") {
     for (const [field, messages] of Object.entries(rawFieldErrors)) {
       if (!allowedFields.has(field as T) || !Array.isArray(messages)) continue;
