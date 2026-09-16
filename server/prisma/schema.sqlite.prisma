@@ -13,6 +13,7 @@ datasource db {
 }
 
 model Gite {
+  cleaning_checked_at                  DateTime?
   id                                   String   @id @default(cuid())
   ordre                                Int      @default(0)
   nom                                  String

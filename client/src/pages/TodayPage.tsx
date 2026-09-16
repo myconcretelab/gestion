@@ -1780,6 +1780,7 @@ const TodayPage = () => {
           open
           title={getReservationGuestName(mobileActionReservation)}
           reservation={mobileActionReservation}
+          giteId={mobileActionReservation.gite_id ?? null}
           onToggleSource={() => {
             setSourceUpdateError(null);
             setSourcePickerReservationId((current) => current === mobileActionReservation.id ? null : mobileActionReservation.id);

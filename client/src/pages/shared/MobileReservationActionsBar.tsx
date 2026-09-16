@@ -16,6 +16,7 @@ type MobileReservationActionsBarProps = {
     ariaLabel?: string;
   }>;
   note?: string | null;
+  cleaningCheck?: ReactNode;
   mode?: MobileReservationActionsBarMode;
   onClose: () => void;
   onEdit?: () => void;
@@ -152,6 +153,7 @@ const MobileReservationActionsBar = ({
   subtitle,
   details,
   note,
+  cleaningCheck,
   mode = "actions",
   onClose,
   onEdit,
@@ -215,6 +217,7 @@ const MobileReservationActionsBar = ({
                 })}
               </div>
             ) : null}
+            {cleaningCheck}
             {sourcePicker ? (
               <label className="mobile-reservation-actions__source-picker">
                 <span>{sourcePicker.label}</span>

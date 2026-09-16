@@ -324,6 +324,8 @@ const telegramNotificationSettingsSchema = z.object({
   chat_ids: z
     .array(z.string().trim().min(1))
     .default([]),
+  notify_gite_checked: z.boolean().optional(),
+  gite_check_mentions: z.array(z.string().trim().regex(/^@?[a-zA-Z][a-zA-Z0-9_]{4,31}$/, "Pseudo Telegram invalide.")).optional(),
   notify_booking_request_created: z.boolean().default(true),
   notify_contract_return_overdue: z.boolean().default(true),
   notify_invoice_payment_overdue: z.boolean().default(true),
