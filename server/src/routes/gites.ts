@@ -1,3 +1,4 @@
+import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
 import { giteTranslationsSchema } from "../services/giteTranslations.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -1264,6 +1265,39 @@ router.get("/:id/photos/:photoId/file/:encodedPath", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+router.get("/:id/cleaning-check", async (req, res, next) => {
+  try {
+    const gite = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { cleaning_checked_at: true } });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
+    res.json(gite);
+  } catch (error) { next(error); }
+});
+
+router.put("/:id/cleaning-check", async (req, res, next) => {
+  try {
+    const { checked } = z.object({ checked: z.boolean() }).parse(req.body);
+    const gite = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { nom: true } });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
+    const checkedAt = checked ? new Date() : null;
+    // Conditional update prevents duplicate notifications from simultaneous checks.
+    const changed = await prisma.gite.updateMany({
+      where: { id: req.params.id, cleaning_checked_at: checked ? null : { not: null } },
+      data: { cleaning_checked_at: checkedAt },
+    });
+    let notificationWarning: string | null = null;
+    if (changed.count && checkedAt) {
+      try {
+        const result = await notifyGiteCheckedOnTelegram(gite.nom, checkedAt);
+        if (!result.sent_count) notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
+      } catch {
+        notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
+      }
+    }
+    const state = await prisma.gite.findUnique({ where: { id: req.params.id }, select: { cleaning_checked_at: true } });
+    res.json({ ...state, notification_warning: notificationWarning });
+  } catch (error) { next(error); }
 });
 
 router.get("/:id", async (req, res, next) => {

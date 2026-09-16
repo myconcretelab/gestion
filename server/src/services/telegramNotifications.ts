@@ -8,6 +8,8 @@ export type TelegramNotificationConfig = {
   enabled: boolean;
   bot_token: string;
   chat_ids: string[];
+  notify_gite_checked: boolean;
+  gite_check_mentions: string[];
   notify_booking_request_created: boolean;
   notify_contract_return_overdue: boolean;
   notify_invoice_payment_overdue: boolean;
@@ -87,6 +89,8 @@ export const buildDefaultTelegramNotificationConfig =
     enabled: false,
     bot_token: "",
     chat_ids: [],
+    notify_gite_checked: true,
+    gite_check_mentions: [],
     notify_booking_request_created: true,
     notify_contract_return_overdue: true,
     notify_invoice_payment_overdue: true,
@@ -102,6 +106,11 @@ export const normalizeTelegramNotificationConfig = (
       ? input.bot_token.trim()
       : fallback.bot_token,
   chat_ids: normalizeChatIds(input?.chat_ids, fallback.chat_ids),
+  notify_gite_checked: toBoolean(input?.notify_gite_checked, fallback.notify_gite_checked),
+  gite_check_mentions: normalizeChatIds(input?.gite_check_mentions, fallback.gite_check_mentions)
+    .map((name) => name.replace(/^@/, ""))
+    .filter((name) => /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(name))
+    .map((name) => `@${name}`),
   notify_booking_request_created: toBoolean(
     input?.notify_booking_request_created,
     fallback.notify_booking_request_created,
@@ -165,6 +174,8 @@ export const buildTelegramNotificationState = (
     enabled: config.enabled,
     bot_token: "",
     chat_ids: config.chat_ids,
+    notify_gite_checked: config.notify_gite_checked,
+    gite_check_mentions: config.gite_check_mentions,
     notify_booking_request_created: config.notify_booking_request_created,
     notify_contract_return_overdue: config.notify_contract_return_overdue,
     notify_invoice_payment_overdue: config.notify_invoice_payment_overdue,
@@ -239,4 +250,18 @@ export const notifyBookingRequestCreatedOnTelegram = async (
   }
 
   return sendTelegramMessage(buildBookingRequestCreatedMessage(payload), config);
+};
+
+export const buildGiteCheckedMessage = (name: string, checkedAt: Date, mentions: string[] = []) => [
+  "✅ <b>Gîte checké · ménage vérifié</b>",
+  `<b>Gîte</b> : ${escapeHtml(name)}`,
+  `<b>Contrôle</b> : ${escapeHtml(formatDateTimeFr(checkedAt))}`,
+  "Le gîte est OK !",
+  mentions.map(escapeHtml).join(" "),
+].filter(Boolean).join("\n");
+
+export const notifyGiteCheckedOnTelegram = async (name: string, checkedAt: Date) => {
+  const config = readTelegramNotificationConfig();
+  if (!config.notify_gite_checked) return { sent_count: 0, skipped_reason: "event_disabled" };
+  return sendTelegramMessage(buildGiteCheckedMessage(name, checkedAt, config.gite_check_mentions), config);
 };

@@ -19458,3 +19458,27 @@ button.personal-expenses-status:disabled {
     border-radius: 20px;
   }
 }
+
+.gite-cleaning-check { margin-top: 12px; width: 100%; }
+.gite-cleaning-check__button {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px;
+  border: 1px dashed var(--primary); border-radius: 16px; background: var(--surface, #fff);
+  color: var(--ink); text-align: left; cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.gite-cleaning-check__button.is-checked { background: var(--primary-soft); border-style: solid; }
+.gite-cleaning-check__button:disabled { opacity: .65; cursor: wait; }
+.gite-cleaning-check__button:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+.gite-cleaning-check__seal { display: grid; place-items: center; flex: 0 0 40px; height: 40px; border-radius: 50%; background: var(--primary-soft); }
+.gite-cleaning-check__seal svg { width: 30px; height: 30px; color: var(--primary); }
+.gite-cleaning-check__copy { display: grid; gap: 3px; flex: 1; min-width: 0; }
+.gite-cleaning-check__copy small { font-size: 9px; letter-spacing: .09em; }
+.gite-cleaning-check__copy strong { font-size: 13px; }
+.gite-cleaning-check__copy > span { font-size: 10px; }
+.gite-cleaning-check__switch { flex: 0 0 32px; height: 20px; border: 1px solid var(--primary); border-radius: 20px; padding: 2px; }
+.gite-cleaning-check__switch > span { display: block; width: 14px; height: 14px; background: var(--primary); border-radius: 50%; transition: transform 160ms ease; }
+.is-checked .gite-cleaning-check__switch > span { transform: translateX(12px); }
+.gite-cleaning-check > small { display: block; margin-top: 6px; font-size: 11px; }
+@media (prefers-reduced-motion: reduce) {
+  .gite-cleaning-check__button, .gite-cleaning-check__switch > span { transition: none; }
+}

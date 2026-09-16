@@ -531,6 +531,8 @@ type TelegramNotificationConfig = {
   enabled: boolean;
   bot_token: string;
   chat_ids: string[];
+  notify_gite_checked: boolean;
+  gite_check_mentions: string[];
   notify_booking_request_created: boolean;
   notify_contract_return_overdue: boolean;
   notify_invoice_payment_overdue: boolean;
@@ -973,6 +975,8 @@ const DEFAULT_TELEGRAM_NOTIFICATION_CONFIG: TelegramNotificationConfig = {
   enabled: false,
   bot_token: "",
   chat_ids: [],
+  notify_gite_checked: true,
+  gite_check_mentions: [],
   notify_booking_request_created: true,
   notify_contract_return_overdue: true,
   notify_invoice_payment_overdue: true,
@@ -2513,6 +2517,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         enabled: Boolean(data?.config?.enabled),
         bot_token: "",
         chat_ids: chatIds,
+        notify_gite_checked: data?.config?.notify_gite_checked !== false,
+        gite_check_mentions: data?.config?.gite_check_mentions ?? [],
         notify_booking_request_created:
           data?.config?.notify_booking_request_created !== false,
         notify_contract_return_overdue:
@@ -3518,6 +3524,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
             enabled: telegramNotificationDraft.enabled,
             bot_token: telegramNotificationDraft.bot_token.trim(),
             chat_ids: deduplicatedChatIds,
+            notify_gite_checked: telegramNotificationDraft.notify_gite_checked,
+            gite_check_mentions: telegramNotificationDraft.gite_check_mentions.map((name) => name.trim()).filter(Boolean),
             notify_booking_request_created:
               telegramNotificationDraft.notify_booking_request_created,
             notify_contract_return_overdue:
@@ -6432,6 +6440,23 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                             }
                             autoComplete="off"
                           />
+                        </label>
+                        <label className="field">
+                          Contrôle du ménage des gîtes
+                          <select value={telegramNotificationDraft.notify_gite_checked ? "1" : "0"}
+                            disabled={savingTelegramNotification || testingTelegramNotification}
+                            onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, notify_gite_checked: event.target.value === "1" }))}>
+                            <option value="1">Notifier quand un gîte est checké</option>
+                            <option value="0">Ne pas notifier</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          Personnes à mentionner lors du contrôle
+                          <textarea rows={3} placeholder="@prenom, @autre_personne"
+                            value={telegramNotificationDraft.gite_check_mentions.join(",")}
+                            disabled={savingTelegramNotification || testingTelegramNotification}
+                            onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, gite_check_mentions: event.target.value.split(/[,;\n]/) }))} />
+                          <span className="field-hint">Pseudos Telegram, séparés par des virgules. Le message est envoyé dans les mêmes chats que les nouvelles réservations. Laissez vide pour ne mentionner personne.</span>
                         </label>
                         <label className="field">
                           Chat IDs
