@@ -22,6 +22,7 @@ export default function AppearanceSettings() {
     return () => window.removeEventListener("storage", sync);
   }, []);
   const update = (value: Partial<Appearance>) => { setDraft(current => ({ ...current, ...value })); setNotice(""); };
+  const selectedTemplate = TEMPLATES.find(template => template.id === draft.template)!;
   const changed = JSON.stringify(draft) !== JSON.stringify(saved);
   return <section className="settings-cluster template-manager" aria-labelledby="template-title">
     <div className="settings-cluster__header"><div className="settings-cluster__eyebrow">Votre espace, votre style</div><h2 id="template-title">Templates d’apparence</h2><p>Choisissez une ambiance et réglez ses finitions. Ce choix est enregistré uniquement dans ce navigateur.</p></div>
@@ -32,9 +33,9 @@ export default function AppearanceSettings() {
       </button>)}
     </div>
     <div className={`template-preview template-preview--${draft.template}`} style={{ "--wood-shade": draft.wood / 180, "--copper-light": `${78 - draft.copper * 0.22}%` } as CSSProperties}>
-      <div className="template-preview__panel"><div className="template-preview__heading"><div><span className="template-preview__eyebrow">Aperçu · {draft.template === "retro" ? "Collection atelier / 01" : "Collection classique"}</span><h3>Les beaux séjours</h3><p>Votre quotidien, avec un supplément de caractère.</p></div><span className="template-preview__led" aria-hidden="true" /></div>
+      <div className="template-preview__panel"><div className="template-preview__heading"><div><span className="template-preview__eyebrow">Aperçu · {selectedTemplate.name}</span><h3>Les beaux séjours</h3><p>Votre quotidien, avec un supplément de caractère.</p></div><span className="template-preview__led" aria-hidden="true" /></div>
         <div className="template-preview__stats"><div><small>Réservations</small><strong>24</strong></div><div><small>Occupation</small><strong>86 <small>%</small></strong></div><div><small>Prochaine arrivée</small><strong>14:00</strong></div></div>
-        {draft.template === "retro" ? <div className="retro-controls"><Dial label="Profondeur du bois" value={draft.wood} onChange={wood => update({ wood })} /><Dial label="Patine du cuivre" value={draft.copper} onChange={copper => update({ copper })} /><p>Tournez l’ambiance à votre goût.<br />Réglages accessibles avec les curseurs ou les flèches du clavier.</p></div> : <p className="template-preview__caption">Des surfaces claires et des accents corail.</p>}
+        {draft.template === "retro" ? <div className="retro-controls"><Dial label="Profondeur du bois" value={draft.wood} onChange={wood => update({ wood })} /><Dial label="Patine du cuivre" value={draft.copper} onChange={copper => update({ copper })} /><p>Tournez l’ambiance à votre goût.<br />Réglages accessibles avec les curseurs ou les flèches du clavier.</p></div> : <p className="template-preview__caption">{selectedTemplate.description}</p>}
       </div>
     </div>
     <div className="template-actions"><button type="button" onClick={() => { const persisted = saveAppearance(draft); setSaved({ ...draft }); setNotice(persisted ? "Template appliqué et enregistré." : "Template appliqué pour cette session. Le navigateur ne permet pas de l’enregistrer."); }}>Appliquer le template</button><button type="button" className="secondary" disabled={!changed} onClick={() => { setDraft({ ...saved }); applyAppearance(saved); setNotice(""); }}>Annuler les modifications</button><button type="button" className="secondary" onClick={() => { setDraft({ ...DEFAULT_APPEARANCE }); setNotice("Réglages par défaut prêts à être appliqués."); }}>Réinitialiser</button></div>

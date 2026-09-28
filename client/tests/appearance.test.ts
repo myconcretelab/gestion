@@ -11,3 +11,8 @@ test("retro settings clamp finite values and preserve valid choices", () => {
   assert.deepEqual(normalizeAppearance({ template: "retro", wood: -20, copper: 150 }), { template: "retro", wood: 0, copper: 100 });
   assert.deepEqual(normalizeAppearance({ template: "retro", wood: 45.4, copper: 72 }), { template: "retro", wood: 45, copper: 72 });
 });
+test("new collections survive normalization without losing retro settings", () => {
+  for (const template of ["midnight", "garden"] as const) {
+    assert.deepEqual(normalizeAppearance({ template, wood: 85, copper: 42 }), { template, wood: 85, copper: 42 });
+  }
+});

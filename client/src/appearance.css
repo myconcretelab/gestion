@@ -78,3 +78,85 @@ html[data-template=retro] .app .calendar-page { --calendar-accent: var(--primary
 }
 html[data-template=retro] .app .settings-sidebar__link--active { border-color: var(--primary); }
 html[data-template=retro] .app .brand-logo { background: #fff8ed; border-radius: 5px; padding: 4px 8px; }
+
+/* New collections use a dark or botanical frame around legible light workspaces. */
+.template-swatch--midnight,
+.template-preview--midnight {
+  background: radial-gradient(ellipse at top right, #344c79, transparent 65%), #111c32;
+}
+.template-swatch--midnight .template-swatch__panel,
+.template-preview--midnight .template-preview__panel {
+  background: #f1f5fc;
+  color: #172844;
+  border: 1px solid #bac9e2;
+  box-shadow: 0 12px 30px #050e2466;
+}
+.template-swatch--midnight .template-swatch__line { background: #345eac; }
+.template-swatch--midnight .template-swatch__knobs i { background: #dbe6fa; border-radius: 50%; }
+.template-preview--midnight .template-preview__eyebrow { color: #345eac; }
+.template-preview--midnight .template-preview__stats { border-color: #c1cee4; }
+.template-preview--midnight .template-preview__stats strong { color: #345eac; }
+.template-swatch--garden,
+.template-preview--garden {
+  background: radial-gradient(ellipse at top right, #d9e3c1, transparent 65%), #81967b;
+}
+.template-swatch--garden .template-swatch__panel,
+.template-preview--garden .template-preview__panel {
+  background: #fffdf4;
+  color: #2f4435;
+  border: 1px solid #e3e7ce;
+  border-radius: 24px 6px 24px 6px;
+  box-shadow: 0 12px 30px #273f3226;
+}
+.template-swatch--garden .template-swatch__line { background: #476a4b; }
+.template-swatch--garden .template-swatch__knobs i { background: #dbe6d1; border-radius: 12px 3px; }
+.template-preview--garden h3 { font-family: Georgia, serif; }
+.template-preview--garden .template-preview__eyebrow { color: #476a4b; }
+.template-preview--garden .template-preview__stats { border-color: #d3dcc7; }
+.template-preview--garden .template-preview__stats strong { color: #476a4b; }
+html[data-template=midnight] .app {
+  --primary: #345eac; --primary-soft: #e0eaff; --primary-strong: #345eac40;
+  --accent-dark: #254981; --ink: #172844; --muted: #576780;
+  --card: #f8faff; --border: #cdd7e8; --chip: #e5ebf6;
+  --field-bg: #fff; --field-border: #bac9e2; --subtle: #edf2fa;
+  --nav: #17253e; --nav-ink: #edf3ff; --workspace-bg: #f1f5fc;
+  --shadow: 0 10px 28px #06152e1a;
+  background: radial-gradient(ellipse at top right, #344c79, transparent 65%), #111c32;
+}
+html[data-template=garden] .app {
+  --primary: #476a4b; --primary-soft: #e1ecd9; --primary-strong: #476a4b40;
+  --accent-dark: #334f36; --ink: #2f4435; --muted: #60705e;
+  --card: #fffdf4; --border: #d3dcc7; --chip: #e7ecde;
+  --field-bg: #fffef8; --field-border: #bfccb4; --subtle: #f0f3e7;
+  --nav: #eef2e4; --nav-ink: #2f4435; --workspace-bg: #f8f8ef;
+  --shadow: 0 10px 28px #273f3214;
+  background: radial-gradient(ellipse at top right, #d9e3c1, transparent 65%), #81967b;
+}
+html:is([data-template=midnight], [data-template=garden]) .app {
+  --accent: var(--primary); --accent-soft: var(--primary-soft);
+  color: var(--ink);
+}
+html:is([data-template=midnight], [data-template=garden]) .app .topbar {
+  background: var(--nav); color: var(--nav-ink);
+  border-bottom: 1px solid var(--primary-strong); box-shadow: var(--shadow);
+}
+html:is([data-template=midnight], [data-template=garden]) .app .content {
+  background: var(--workspace-bg); border: 1px solid var(--border);
+  width: calc(100% - 40px); margin-block: 24px; border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+html:is([data-template=midnight], [data-template=garden]) .app .card { background: var(--card); border-color: var(--border); }
+html:is([data-template=midnight], [data-template=garden]) .app :is(.nav a.active, .overflow-nav a.active, .settings-sidebar__link--active, .topbar-mobile-links__item--active, .topbar-menu-button--active) {
+  color: var(--primary); background: var(--primary-soft); border-color: var(--primary); border-radius: 6px;
+}
+html:is([data-template=midnight], [data-template=garden]) .app :is(input, select, textarea) { border-color: var(--field-border); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-page { --calendar-accent: var(--primary); --calendar-accent-soft: var(--primary-soft); --calendar-accent-strong: var(--primary-strong); }
+html[data-template=midnight] .app .topbar :is(.nav a:not(.active), .topbar-mobile-links__item:not(.topbar-mobile-links__item--active), .topbar-menu-button:not(.topbar-menu-button--active)) { color: var(--nav-ink); }
+html[data-template=midnight] .app .brand-logo { background: #f1f5fc; border-radius: 5px; padding: 4px 8px; }
+@media (max-width: 680px) {
+  html:is([data-template=midnight], [data-template=garden]) .app .content { width: calc(100% - 16px); margin-block: 10px; padding-inline: 14px; border-radius: 12px; }
+}
+@media print {
+  html:is([data-template=midnight], [data-template=garden]) .app { background: white; }
+  html:is([data-template=midnight], [data-template=garden]) .app .content { background: white; border: 0; box-shadow: none; width: 100%; margin: 0; }
+}
