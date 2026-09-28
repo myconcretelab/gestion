@@ -1,0 +1,80 @@
+/* Keep appearance separate from document/PDF styles and public pages. */
+.template-manager { --wood-texture: url('/textures/retro-wood.webp'); --brushed-copper: repeating-linear-gradient(0deg, #ffffff12 0px, #ffffff12 1px, #4623090a 1px, #4623090a 3px), linear-gradient(115deg, #a96e48, hsl(28 46% var(--copper-light, 65%)) 38%, #c28a62 70%, #95603d); }
+.template-manager h2 { margin: 0; font-size: clamp(1.5rem, 3vw, 2rem); }
+.template-manager p { line-height: 1.65; margin: 4px 0; }
+.template-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+button.template-option { display: flex; flex-direction: column; gap: 14px; padding: 12px; border: 2px solid var(--border); border-radius: 14px; background: var(--card); color: var(--ink); text-align: left; box-shadow: none; }
+button.template-option.is-selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-strong); }
+.template-option__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; font-size: 1rem; }
+.template-status { background: var(--primary-soft); color: var(--primary); padding: 5px 8px; border-radius: 20px; font-size: .7rem; }
+.template-option__description { font-weight: 400; font-size: .85rem; line-height: 1.6; color: var(--muted); }
+.template-swatch { display: grid; place-items: center; width: 100%; height: 136px; border-radius: 7px; background: #edf0f3; }
+.template-swatch__panel { width: 74%; padding: 18px; border-radius: 6px; background: white; box-shadow: 0 6px 12px #0002; }
+.template-swatch__line { display: block; height: 5px; width: 60%; background: #ff5a5f; border-radius: 4px; margin-bottom: 15px; }
+.template-swatch__knobs { display: flex; gap: 12px; }
+.template-swatch__knobs i { width: 27px; height: 27px; border-radius: 5px; background: #f2f2f2; }
+.template-swatch--retro { background: linear-gradient(#24140633, #24140633), var(--wood-texture) center / 160% auto; }
+.template-swatch--retro .template-swatch__panel { background: var(--brushed-copper); border: 1px solid #e7b589; }
+.template-swatch--retro .template-swatch__line { background: #503824; }
+.template-swatch--retro .template-swatch__knobs i { border-radius: 50%; background: conic-gradient(#23221f, #65615a, #171714, #55514a, #23221f); border: 2px solid #bc9169; box-shadow: 1px 3px 3px #0006; }
+.template-preview { padding: 25px; background: #edf0f3; border-radius: 16px; }
+.template-preview__panel { padding: 28px; background: white; border-radius: 9px; color: #24221f; box-shadow: 0 8px 20px #0002; }
+.template-preview__heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.template-preview__eyebrow { font-size: .65rem; letter-spacing: .18em; font-weight: 700; text-transform: uppercase; }
+.template-preview h3 { font-size: clamp(1.8rem, 4vw, 2.8rem); margin: 12px 0 8px; font-weight: 500; }
+.template-preview__heading p { font-size: .85rem; }
+.template-preview__stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; margin: 24px 0; padding: 20px 0; border-block: 1px solid #34271640; }
+.template-preview__stats > div { display: grid; gap: 10px; }
+.template-preview__stats small { font-size: .7rem; }
+.template-preview__stats strong { font-size: clamp(1.3rem, 3vw, 2rem); font-variant-numeric: tabular-nums; }
+.template-preview--retro { background: linear-gradient(rgb(20 10 0 / var(--wood-shade)), rgb(20 10 0 / var(--wood-shade))), var(--wood-texture) center / 160% auto; box-shadow: inset 0 0 0 2px #2d1b10, inset 0 3px 7px #0009, 0 12px 22px #28140525; }
+.template-preview--retro .template-preview__panel { position: relative; background: var(--brushed-copper); border: 1px solid #ecc6a0; border-radius: 5px; box-shadow: 0 5px 12px #0009, inset 0 0 0 2px #74482a66; }
+.template-preview--retro .template-preview__panel::before, .template-preview--retro .template-preview__panel::after { content: '−'; position: absolute; top: 8px; left: 8px; border-radius: 50%; width: 10px; height: 10px; line-height: 8px; text-align: center; color: #4e3425; background: linear-gradient(125deg, #deb98e, #7c5639); box-shadow: 0 1px 2px #0007; font-size: 11px; }
+.template-preview--retro .template-preview__panel::after { left: auto; right: 8px; }
+.template-preview--retro h3 { font-family: Georgia, serif; }
+.template-preview--retro .template-preview__led { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: #c9e29c; border: 2px solid #524e2e; box-shadow: 0 0 8px #dcf5a9; }
+.retro-controls { display: flex; align-items: center; gap: 30px; flex-wrap: wrap; }
+.retro-controls > p { flex: 1; min-width: 120px; font-size: .75rem; }
+.retro-dial { display: grid; justify-items: center; gap: 12px; width: 146px; }
+.retro-dial__face { position: relative; display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%; background: repeating-conic-gradient(from -135deg, #513822 0 2deg, transparent 2deg 27deg); }
+.retro-dial__face > span { position: relative; width: 59px; height: 59px; border: 3px solid #c99b71; border-radius: 50%; background: conic-gradient(#33312b, #777269, #262520, #151511, #656056, #33312b); box-shadow: 2px 5px 5px #0006, inset 0 0 0 2px #171612; transform: rotate(var(--rotation)); }
+.retro-dial__face > span::after { content: ''; position: absolute; left: calc(50% - 1px); top: 5px; width: 2px; height: 13px; background: #f5dbac; }
+.retro-dial__label { width: 100%; display: flex; justify-content: space-between; font-size: .65rem; gap: 6px; }
+.retro-dial input[type=range] { width: 100%; padding: 0; min-height: 24px; accent-color: #74462c; cursor: pointer; box-shadow: none; }
+.template-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.template-actions button:disabled { opacity: .45; cursor: default; }
+.template-feedback { font-size: .85rem; color: var(--muted); min-height: 1.6em; }
+.template-manager :focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
+/* Scope retro tokens to the private application, preserving PDFs and shared planning. */
+html[data-template=retro] .app {
+  --primary: #88451f; --primary-soft: #f1d9bd; --primary-strong: #88451f40;
+  --accent: var(--primary); --accent-soft: var(--primary-soft); --accent-dark: #693417;
+  --ink: #30271e; --muted: #6c6053; --card: #fffaf1; --border: #d9c9b3;
+  --chip: #ece1d1; --field-bg: #fffdf7; --field-border: #cbb99f; --subtle: #f3eadc;
+  --shadow: 0 8px 22px #2816051a; --nav-ink: #30271e;
+  --brushed-copper: repeating-linear-gradient(0deg, #ffffff12 0px, #ffffff12 1px, #4623090a 1px, #4623090a 3px), linear-gradient(115deg, #a96e48, hsl(28 46% var(--copper-light)) 38%, #c28a62 70%, #95603d);
+  background: linear-gradient(rgb(20 10 0 / var(--wood-shade)), rgb(20 10 0 / var(--wood-shade))), url('/textures/retro-wood.webp') center top / 160% auto;
+  color: var(--ink);
+}
+html[data-template=retro] .app .topbar { background: var(--brushed-copper); border-bottom: 3px solid #684128; box-shadow: 0 4px 12px #1f110855; }
+html[data-template=retro] .app .content { background: #f6efe3; border-inline: 1px solid #a88765; box-shadow: 0 0 25px #1b100b66; width: calc(100% - 40px); margin-block: 24px; border-radius: 10px; }
+html[data-template=retro] .app .card { background: var(--card); border-color: var(--border); }
+html[data-template=retro] .app :is(.nav a.active, .overflow-nav a.active, .settings-sidebar__link--active, .topbar-mobile-links__item--active) { color: var(--primary); background: var(--primary-soft); border-radius: 6px; }
+html[data-template=retro] .app :is(input, select, textarea) { border-color: var(--field-border); }
+html[data-template=retro] .app .calendar-page { --calendar-accent: var(--primary); --calendar-accent-soft: var(--primary-soft); --calendar-accent-strong: var(--primary-strong); }
+@media (max-width: 680px) {
+  .template-grid { grid-template-columns: 1fr; }
+  .template-preview { padding: 14px; }
+  .template-preview__panel { padding: 22px 16px; }
+  .template-preview__stats { gap: 8px; }
+  .retro-controls { justify-content: center; gap: 22px 14px; }
+  .retro-dial { width: 125px; }
+  .retro-controls > p { flex-basis: 100%; text-align: center; }
+  html[data-template=retro] .app .content { width: calc(100% - 16px); margin-block: 10px; padding-inline: 14px; }
+}
+@media print {
+  html[data-template=retro] .app { background: white; }
+  html[data-template=retro] .app .content { background: white; border: 0; box-shadow: none; width: 100%; margin: 0; }
+}
+html[data-template=retro] .app .settings-sidebar__link--active { border-color: var(--primary); }
+html[data-template=retro] .app .brand-logo { background: #fff8ed; border-radius: 5px; padding: 4px 8px; }
