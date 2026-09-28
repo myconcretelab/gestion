@@ -13,10 +13,12 @@ import {
   parseBookedDateInput,
   type BookingQuote,
 } from "../services/booked.js";
-import { sendBookingRequestApprovedEmail, sendBookingRequestRejectedEmail } from "../services/bookingRequestEmail.js";
+import { buildBookingRequestApprovedSms, sendBookingRequestApprovedEmail, sendBookingRequestRejectedEmail } from "../services/bookingRequestEmail.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { buildReservationOriginData } from "../utils/reservationOrigin.js";
 import { round2 } from "../utils/money.js";
+import { sendOvhSms } from "../services/ovhSms.js";
+import { notifyBookingRequestApprovedOnTelegram } from "../services/telegramNotifications.js";
 import type { OptionsInput } from "../services/contractCalculator.js";
 
 const router = Router();
@@ -343,13 +345,31 @@ router.post("/:id/approve", async (req, res, next) => {
       });
     });
 
+    const approvedPayload = toBookingRequestPayload(updated);
+    let emailSent = false;
     try {
-      await sendBookingRequestApprovedEmail(toBookingRequestPayload(updated), email);
+      emailSent = await sendBookingRequestApprovedEmail(approvedPayload, email);
     } catch (emailError) {
       console.error("[booked] booking request approval email failed:", emailError);
     }
+    if (emailSent && updated.telephone?.trim()) {
+      try {
+        await sendOvhSms({
+          recipient: updated.telephone,
+          message: buildBookingRequestApprovedSms(approvedPayload),
+        });
+      } catch (smsError) {
+        console.error("[booked] booking request approval SMS failed:", smsError);
+      }
+    }
 
-    return res.json(toBookingRequestPayload(updated));
+    try {
+      await notifyBookingRequestApprovedOnTelegram(approvedPayload);
+    } catch (telegramError) {
+      console.error("[booked] booking request approval Telegram notification failed:", telegramError);
+    }
+
+    return res.json(approvedPayload);
   } catch (error) {
     const mapped = mapBookedError(error);
     if (mapped) {

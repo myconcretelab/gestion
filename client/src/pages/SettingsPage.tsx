@@ -521,6 +521,7 @@ type DocumentEmailTextSettings = {
   };
   facture: DocumentEmailTextTemplate;
   bookingRequestApproved: DocumentEmailTextTemplate & {
+    smsBody: string;
     activitiesList: string;
     guideUrl: string;
     destinationUrl: string;
@@ -534,6 +535,7 @@ type TelegramNotificationConfig = {
   notify_gite_checked: boolean;
   gite_check_mentions: string[];
   notify_booking_request_created: boolean;
+  notify_booking_request_approved: boolean;
   notify_contract_return_overdue: boolean;
   notify_invoice_payment_overdue: boolean;
 };
@@ -923,6 +925,7 @@ const DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS: DocumentEmailTextSettings = {
     ].join("\n"),
   },
   bookingRequestApproved: {
+    smsBody: "Bonjour {{clientName}}, votre réservation au {{giteName}} du {{dateEntree}} au {{dateSortie}} est approuvée. Plus d’informations dans votre email. Les Gîtes de Brocéliande",
     subject: "Votre réservation est acceptée · {{giteName}}",
     body: [
       "{{greeting}}",
@@ -930,6 +933,8 @@ const DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS: DocumentEmailTextSettings = {
       "Merci pour votre demande de réservation {{giteReference}}. Nous avons le plaisir de vous confirmer que votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.",
       "",
       "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.",
+      "",
+      "{{optionsSummary}}",
       "",
       "{{beddingReminder}}",
       "",
@@ -978,6 +983,7 @@ const DEFAULT_TELEGRAM_NOTIFICATION_CONFIG: TelegramNotificationConfig = {
   notify_gite_checked: true,
   gite_check_mentions: [],
   notify_booking_request_created: true,
+  notify_booking_request_approved: true,
   notify_contract_return_overdue: true,
   notify_invoice_payment_overdue: true,
 };
@@ -2474,6 +2480,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
             .trim() || DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.facture.body,
       },
       bookingRequestApproved: {
+        smsBody: String(data?.bookingRequestApproved?.smsBody ?? "").trim() ||
+          DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.bookingRequestApproved.smsBody,
         subject:
           String(data?.bookingRequestApproved?.subject ?? "").trim() ||
           DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS.bookingRequestApproved.subject,
@@ -2521,6 +2529,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         gite_check_mentions: data?.config?.gite_check_mentions ?? [],
         notify_booking_request_created:
           data?.config?.notify_booking_request_created !== false,
+        notify_booking_request_approved:
+          data?.config?.notify_booking_request_approved !== false,
         notify_contract_return_overdue:
           data?.config?.notify_contract_return_overdue !== false,
         notify_invoice_payment_overdue:
@@ -3465,6 +3475,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
               body: documentEmailTextDraft.facture.body.trim(),
             },
             bookingRequestApproved: {
+              smsBody: documentEmailTextDraft.bookingRequestApproved.smsBody.trim(),
               subject:
                 documentEmailTextDraft.bookingRequestApproved.subject.trim(),
               body: documentEmailTextDraft.bookingRequestApproved.body.trim(),
@@ -3528,6 +3539,8 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
             gite_check_mentions: telegramNotificationDraft.gite_check_mentions.map((name) => name.trim()).filter(Boolean),
             notify_booking_request_created:
               telegramNotificationDraft.notify_booking_request_created,
+            notify_booking_request_approved:
+              telegramNotificationDraft.notify_booking_request_approved,
             notify_contract_return_overdue:
               telegramNotificationDraft.notify_contract_return_overdue,
             notify_invoice_payment_overdue:
@@ -6171,6 +6184,27 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                           />
                         </label>
                         <label className="field">
+                          SMS d’approbation
+                          <textarea
+                            rows={4}
+                            maxLength={1000}
+                            value={documentEmailTextDraft.bookingRequestApproved.smsBody}
+                            onChange={(event) => {
+                              setDocumentEmailTextError(null);
+                              setDocumentEmailTextNotice(null);
+                              setDocumentEmailTextDraft((previous) => ({
+                                ...previous,
+                                bookingRequestApproved: {
+                                  ...previous.bookingRequestApproved,
+                                  smsBody: event.target.value,
+                                },
+                              }));
+                            }}
+                            disabled={savingDocumentEmailTexts}
+                          />
+                          <small>Envoyé après l’email si un numéro est renseigné. Variables : <code>{"{{clientName}}"}</code>, <code>{"{{giteName}}"}</code>, <code>{"{{dateEntree}}"}</code>, <code>{"{{dateSortie}}"}</code>.</small>
+                        </label>
+                        <label className="field">
                           Activités suggérées
                           <textarea
                             rows={8}
@@ -6353,6 +6387,27 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                               savingTelegramNotification ||
                               testingTelegramNotification
                             }
+                          >
+                            <option value="1">Notifier</option>
+                            <option value="0">Ignorer</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="grid-2" style={{ marginTop: 16 }}>
+                        <label className="field">
+                          Demandes Booked approuvées
+                          <select
+                            value={telegramNotificationDraft.notify_booking_request_approved ? "1" : "0"}
+                            onChange={(event) => {
+                              setTelegramNotificationError(null);
+                              setTelegramNotificationNotice(null);
+                              setTelegramNotificationDraft((previous) => ({
+                                ...previous,
+                                notify_booking_request_approved: event.target.value === "1",
+                              }));
+                            }}
+                            disabled={savingTelegramNotification || testingTelegramNotification}
                           >
                             <option value="1">Notifier</option>
                             <option value="0">Ignorer</option>

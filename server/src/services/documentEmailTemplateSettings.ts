@@ -14,6 +14,7 @@ export type DocumentEmailTemplate = {
   activities?: string[];
   guideUrl?: string;
   destinationUrl?: string;
+  smsBody?: string;
 };
 
 export type DocumentEmailTemplateSettings = Record<
@@ -33,11 +34,12 @@ export type ContractDocumentEmailTextTemplate = DocumentEmailTextTemplate & {
 };
 
 export type InvoiceDocumentEmailTextTemplate = DocumentEmailTextTemplate;
+export type ApprovedBookingDocumentEmailTextTemplate = ContractDocumentEmailTextTemplate & { smsBody: string };
 
 export type DocumentEmailTextSettings = {
   contrat: ContractDocumentEmailTextTemplate;
   facture: InvoiceDocumentEmailTextTemplate;
-  bookingRequestApproved: ContractDocumentEmailTextTemplate;
+  bookingRequestApproved: ApprovedBookingDocumentEmailTextTemplate;
 };
 
 const SETTINGS_FILE = path.join(
@@ -112,6 +114,7 @@ const normalizeTemplate = (
   guideUrl: String(input?.guideUrl ?? "").trim() || fallback.guideUrl,
   destinationUrl:
     String(input?.destinationUrl ?? "").trim() || fallback.destinationUrl,
+  smsBody: String(input?.smsBody ?? "").trim() || fallback.smsBody,
 });
 
 const normalizeSettings = (
@@ -132,7 +135,17 @@ const normalizeSettings = (
       ...facture,
       bodyLines: normalizeInvoiceBodyLines(facture.bodyLines),
     },
-    bookingRequestApproved,
+    bookingRequestApproved: {
+      ...bookingRequestApproved,
+      bodyLines: bookingRequestApproved.bodyLines.some((line) => line.includes("{{optionsSummary}}"))
+        ? bookingRequestApproved.bodyLines
+        : (() => {
+            const lines = [...bookingRequestApproved.bodyLines];
+            const recapIndex = lines.findIndex((line) => line.includes("Récapitulatif :"));
+            lines.splice(recapIndex < 0 ? lines.length : recapIndex + 1, 0, "", "{{optionsSummary}}");
+            return lines;
+          })(),
+    },
   };
 };
 
@@ -206,6 +219,7 @@ export const mergeDocumentEmailTemplateSettings = (
             .filter(Boolean),
           guideUrl: patch.bookingRequestApproved.guideUrl.trim(),
           destinationUrl: patch.bookingRequestApproved.destinationUrl.trim(),
+          smsBody: patch.bookingRequestApproved.smsBody.trim(),
         }
       : current.bookingRequestApproved,
   });
@@ -232,5 +246,6 @@ export const buildDocumentEmailTextSettingsResponse = (
     ),
     guideUrl: settings.bookingRequestApproved.guideUrl ?? "",
     destinationUrl: settings.bookingRequestApproved.destinationUrl ?? "",
+    smsBody: settings.bookingRequestApproved.smsBody ?? "",
   },
 });

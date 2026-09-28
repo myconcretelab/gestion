@@ -70,6 +70,19 @@ const buildTravellersSummary = (payload: BookingRequestEmailPayload) => {
   return parts.join(", ");
 };
 
+const buildOptionsSummary = (payload: BookingRequestEmailPayload) => {
+  const options = payload.options;
+  const prices = payload.pricing_snapshot.options_detail;
+  const priced = (amount?: number) => typeof amount === "number" ? ` : ${formatPrice(amount)}` : "";
+  const details: string[] = [];
+  if (options?.draps?.enabled) details.push(`Draps (${options.draps.nb_lits ?? 0} lit(s))${priced(prices?.draps)}`);
+  if (options?.linge_toilette?.enabled) details.push(`Linge de toilette (${options.linge_toilette.nb_personnes ?? 0} personne(s))${priced(prices?.linge)}`);
+  if (options?.menage?.enabled) details.push(`Ménage${priced(prices?.menage)}`);
+  if (options?.depart_tardif?.enabled) details.push(`Départ tardif${priced(prices?.depart_tardif)}`);
+  if (options?.chiens?.enabled) details.push(`Chiens (${options.chiens.nb ?? 0})${priced(prices?.chiens)}`);
+  return details.length ? `Options choisies :\n${details.join("\n")}` : "Options choisies : aucune.";
+};
+
 const buildBeddingReminder = (options?: OptionsInput | null) => {
   if (options?.draps?.enabled) {
     return "L'option draps est bien notée pour votre séjour.";
@@ -163,6 +176,7 @@ const buildApprovedTemplateValues = (payload: BookingRequestEmailPayload) => {
       taxeSejour: formatPrice(payload.pricing_snapshot.taxe_sejour),
       totalGlobal: formatPrice(payload.pricing_snapshot.total_global),
       beddingReminder: buildBeddingReminder(payload.options),
+      optionsSummary: buildOptionsSummary(payload),
       activitiesList: (template.activities ?? []).join("\n\n"),
       guideUrl: template.guideUrl ?? "",
       destinationUrl: template.destinationUrl ?? "",
@@ -170,7 +184,7 @@ const buildApprovedTemplateValues = (payload: BookingRequestEmailPayload) => {
   };
 };
 
-const buildBookingRequestApprovedMessage = (
+export const buildBookingRequestApprovedMessage = (
   payload: BookingRequestEmailPayload,
   customMessage?: BookingRequestDecisionEmailContent,
 ) => {
@@ -252,7 +266,7 @@ export const sendBookingRequestApprovedEmail = async (
   customMessage?: BookingRequestDecisionEmailContent,
 ) => {
   const message = buildBookingRequestApprovedMessage(payload, customMessage);
-  if (!message.recipient) return;
+  if (!message.recipient) return false;
   await sendSmtpMail({
     to: message.recipient,
     replyTo: resolveReplyTo(payload.gite.email),
@@ -260,6 +274,7 @@ export const sendBookingRequestApprovedEmail = async (
     text: message.text,
     html: message.html,
   });
+  return true;
 };
 
 export const sendBookingRequestRejectedEmail = async (payload: BookingRequestEmailPayload, decisionNote?: string | null) => {
@@ -278,4 +293,9 @@ export const sendBookingRequestRejectedEmail = async (payload: BookingRequestEma
       .filter(Boolean)
       .join("\n"),
   });
+};
+
+export const buildBookingRequestApprovedSms = (payload: BookingRequestEmailPayload) => {
+  const { template, values } = buildApprovedTemplateValues(payload);
+  return renderBodyLines((template.smsBody ?? "").split("\n"), values);
 };

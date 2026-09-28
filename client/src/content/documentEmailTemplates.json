@@ -68,6 +68,8 @@
       "",
       "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.",
       "",
+      "{{optionsSummary}}",
+      "",
       "{{beddingReminder}}",
       "",
       "Si vous voulez des idées d'activités pour votre escapade mauronnaise, voici ce que je peux vous conseiller :",
@@ -97,6 +99,7 @@
       "En balades : la fontaine de Barenton, le Val sans Retour, le lac au Duc et l'étang de Trémelin."
     ],
     "guideUrl": "https://broceliande.guide/Secrets-de-Broceliande",
-    "destinationUrl": "https://destination-broceliande.com/"
+    "destinationUrl": "https://destination-broceliande.com/",
+    "smsBody": "Bonjour {{clientName}}, votre réservation au {{giteName}} du {{dateEntree}} au {{dateSortie}} est approuvée. Plus d’informations dans votre email. Les Gîtes de Brocéliande"
   }
 }

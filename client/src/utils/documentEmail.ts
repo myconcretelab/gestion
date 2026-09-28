@@ -212,6 +212,19 @@ const buildTravellersSummary = (params: {
   return parts.join(", ");
 };
 
+const buildBookingOptionsSummary = (request: BookingRequest) => {
+  const options = request.options;
+  const prices = request.pricing_snapshot.options_detail;
+  const priced = (amount?: number) => typeof amount === "number" ? ` : ${formatEuroText(amount)}` : "";
+  const details: string[] = [];
+  if (options?.draps?.enabled) details.push(`Draps (${options.draps.nb_lits ?? 0} lit(s))${priced(prices?.draps)}`);
+  if (options?.linge_toilette?.enabled) details.push(`Linge de toilette (${options.linge_toilette.nb_personnes ?? 0} personne(s))${priced(prices?.linge)}`);
+  if (options?.menage?.enabled) details.push(`Ménage${priced(prices?.menage)}`);
+  if (options?.depart_tardif?.enabled) details.push(`Départ tardif${priced(prices?.depart_tardif)}`);
+  if (options?.chiens?.enabled) details.push(`Chiens (${options.chiens.nb ?? 0})${priced(prices?.chiens)}`);
+  return details.length ? `Options choisies :\n${details.join("\n")}` : "Options choisies : aucune.";
+};
+
 const buildBeddingReminder = (options?: ContratOptions | null) => {
   if (options?.draps?.enabled) {
     return "L'option draps est bien notée pour votre séjour.";
@@ -436,6 +449,7 @@ export const buildBookingRequestApprovedEmailDraft = (
     taxeSejour: formatEuroText(request.pricing_snapshot.taxe_sejour),
     totalGlobal: formatEuroText(request.pricing_snapshot.total_global),
     beddingReminder: buildBeddingReminder(request.options),
+    optionsSummary: buildBookingOptionsSummary(request),
     activitiesList: (template.activities ?? []).join("\n\n"),
     guideUrl: template.guideUrl ?? "",
     destinationUrl: template.destinationUrl ?? "",
