@@ -810,3 +810,370 @@ html[data-template=retro] .app .calendar-reservation {
     box-shadow: none;
   }
 }
+
+/* Midnight and Garden are full interface systems, not simple color swaps. */
+html[data-template=midnight] .app {
+  --theme-shell: radial-gradient(circle at 82% 0%, #314b7a 0, transparent 34%), linear-gradient(145deg, #101a2f, #07101f 72%);
+  --theme-panel: linear-gradient(145deg, rgb(31 48 79 / 94%), rgb(17 29 51 / 97%));
+  --theme-panel-strong: linear-gradient(145deg, #182b4b, #0b1629);
+  --theme-surface: #f2f6fd;
+  --theme-surface-alt: #e5edf9;
+  --theme-border: #6f8fbd;
+  --theme-border-soft: #b9c9e2;
+  --theme-text: #172844;
+  --theme-on-panel: #edf4ff;
+  --theme-muted: #61728d;
+  --theme-shadow: 0 16px 36px #02091873;
+  --theme-glow: 0 0 0 1px #91b9ff38, 0 0 22px #477adf2e;
+  --theme-radius: 16px;
+  --theme-timeline: linear-gradient(145deg, #0a1426, #142744);
+  --theme-weekdays: linear-gradient(180deg, #223b64, #122440);
+}
+
+html[data-template=garden] .app {
+  --theme-shell: radial-gradient(circle at 90% 5%, #dce7c6 0, transparent 30%), linear-gradient(145deg, #8da187, #657c69 74%);
+  --theme-panel: linear-gradient(145deg, rgb(248 248 235 / 97%), rgb(226 234 213 / 97%));
+  --theme-panel-strong: linear-gradient(145deg, #6f876e, #435f4d);
+  --theme-surface: #fffdf4;
+  --theme-surface-alt: #eef2e3;
+  --theme-border: #6d896d;
+  --theme-border-soft: #c2cfb4;
+  --theme-text: #2d4433;
+  --theme-on-panel: #f7f7e9;
+  --theme-muted: #647462;
+  --theme-shadow: 0 16px 34px #24382b38;
+  --theme-glow: 0 0 0 1px #f8ffe399, 0 10px 24px #29422e24;
+  --theme-radius: 22px 7px 22px 7px;
+  --theme-timeline: linear-gradient(145deg, #e8eddb, #d0ddc5);
+  --theme-weekdays: linear-gradient(180deg, #58715c, #3d5747);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app {
+  background: var(--theme-shell);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .topbar {
+  min-height: 64px;
+  background: var(--theme-panel-strong);
+  border-bottom: 2px solid var(--theme-border);
+  box-shadow: inset 0 -1px #fff2, 0 8px 24px #07101e55;
+}
+
+html[data-template=garden] .app .topbar {
+  background: radial-gradient(circle at 18% 0%, #a9ba96 0 2%, transparent 27%), linear-gradient(145deg, #eff2e2, #cad8bb);
+  color: var(--theme-text);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .brand-logo {
+  height: 40px;
+  padding: 4px 9px;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  box-shadow: var(--theme-glow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.nav a, .topbar-mobile-links__item, .topbar-menu-button) {
+  padding: 7px 10px;
+  border-radius: 9px;
+}
+
+html[data-template=midnight] .app :is(.nav a, .topbar-mobile-links__item, .topbar-menu-button) { color: #dce9ff; }
+html[data-template=garden] .app :is(.nav a, .topbar-mobile-links__item, .topbar-menu-button) { color: #304936; }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.nav a.active, .overflow-nav a.active, .settings-sidebar__link--active, .topbar-mobile-links__item--active, .topbar-menu-button--active) {
+  color: var(--theme-on-panel);
+  background: var(--theme-panel-strong);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-glow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .nav a::after { display: none; }
+
+html:is([data-template=midnight], [data-template=garden]) .app .topbar-menu-button__icon {
+  padding: 4px 6px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: var(--theme-panel-strong);
+  color: var(--theme-on-panel);
+  box-shadow: var(--theme-glow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .overflow-nav {
+  padding: 10px;
+  background: var(--theme-panel-strong);
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  box-shadow: var(--theme-shadow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .overflow-nav a { color: var(--theme-on-panel); }
+
+html:is([data-template=midnight], [data-template=garden]) .app .content {
+  box-sizing: border-box;
+  padding: 24px;
+  background: var(--theme-panel);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius);
+  box-shadow: var(--theme-shadow), inset 0 1px #fff3;
+}
+
+html[data-template=midnight] .app .content { backdrop-filter: blur(16px); }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(h1, h2, .section-title, .today-hero__title) { color: var(--theme-text); }
+html[data-template=garden] .app :is(h1, h2, h3, .section-title, .today-hero__title) { font-family: Georgia, "Times New Roman", serif; }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.card, .settings-card, .rule-card, .summary-item, .stats-global-cards article, .stats-gite-card, .stats-expense-chart-panel) {
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border-soft);
+  border-radius: var(--theme-radius);
+  box-shadow: var(--theme-glow);
+}
+
+html[data-template=midnight] .app :is(.card, .settings-card, .stats-gite-card) { background: linear-gradient(145deg, #f7faff, #e8effa); }
+html[data-template=garden] .app :is(.card, .settings-card, .stats-gite-card) { background: radial-gradient(circle at 100% 0%, #e3ecd4, transparent 28%), var(--theme-surface); }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(button:not(.today-timeline__marker):not(.today-timeline__tick-button), a.button-link, .table-action, .reservations-tab) {
+  color: var(--theme-on-panel);
+  background: var(--theme-panel-strong);
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  box-shadow: inset 0 1px #fff3, 0 4px 10px #10203a30;
+}
+
+html[data-template=garden] .app :is(button:not(.today-timeline__marker):not(.today-timeline__tick-button), a.button-link, .table-action, .reservations-tab) { border-radius: 14px 5px; }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(button.secondary, .table-action--neutral) {
+  color: var(--theme-text);
+  background: var(--theme-surface-alt);
+  border-color: var(--theme-border-soft);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(input:not([type="range"]), select, textarea) {
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  box-shadow: inset 0 2px 5px #162b4720;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app input[type="range"] { accent-color: var(--primary); }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.badge, .today-event-card__pill, .reservation-option-badge, .today-activity__source-chip) {
+  color: var(--theme-text);
+  background: var(--theme-surface-alt);
+  border: 1px solid var(--theme-border-soft);
+  box-shadow: inset 0 1px #fff8;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.table, .reservations-table, .stats-expense-table) {
+  overflow: hidden;
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 12px;
+  box-shadow: var(--theme-glow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.table, .reservations-table, .stats-expense-table) th {
+  color: var(--theme-on-panel);
+  background: var(--theme-panel-strong);
+  border-color: var(--theme-border);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.table, .reservations-table, .stats-expense-table) td { border-color: var(--theme-border-soft); }
+html:is([data-template=midnight], [data-template=garden]) .app :is(.table, .reservations-table, .stats-expense-table) tbody tr:nth-child(even) td { background: var(--theme-surface-alt); }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.today-calendar-card, .today-utility-strip, .today-notifications-card, .today-events-card, .today-activity) {
+  box-sizing: border-box;
+  color: var(--theme-text);
+  background: var(--theme-panel);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--theme-radius);
+  box-shadow: var(--theme-shadow), inset 0 1px #fff3;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .today-calendar-card { width: 100%; min-width: 0; padding: 22px; overflow: hidden; }
+html:is([data-template=midnight], [data-template=garden]) .app .today-section-head { padding-bottom: 14px; border-bottom: 1px solid var(--theme-border-soft); }
+html:is([data-template=midnight], [data-template=garden]) .app .today-section-head :is(.section-title, strong) { color: var(--theme-text); }
+
+html:is([data-template=midnight], [data-template=garden]) .app .today-timeline__viewport {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 16px 14px 10px;
+  background: var(--theme-timeline);
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  box-shadow: inset 0 5px 15px #07101d55;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .today-timeline__content { box-sizing: border-box; }
+html[data-template=midnight] .app .today-timeline__day { color: #b9cae4; }
+html[data-template=midnight] .app .today-timeline__day strong { color: #eff5ff; }
+html[data-template=garden] .app .today-timeline__day { color: #63745f; }
+html[data-template=garden] .app .today-timeline__day strong { color: #2f4937; }
+
+html:is([data-template=midnight], [data-template=garden]) .app .today-timeline__day--today {
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-glow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .today-timeline__day--today :is(span, strong) { color: var(--theme-text); }
+html:is([data-template=midnight], [data-template=garden]) .app .today-timeline__axis { height: 4px; background: var(--theme-border); box-shadow: inset 0 1px #0005; }
+html:is([data-template=midnight], [data-template=garden]) .app .today-timeline__marker { border: 4px solid var(--theme-surface); outline: 2px solid var(--theme-border); box-shadow: 0 8px 18px #08122170; }
+
+html:is([data-template=midnight], [data-template=garden]) .app .today-utility-strip { padding: 12px; gap: 12px; backdrop-filter: none; }
+html:is([data-template=midnight], [data-template=garden]) .app .today-utility-strip__block {
+  padding: 16px;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 12px;
+  box-shadow: var(--theme-glow);
+}
+
+html[data-template=garden] .app .today-utility-strip__block { border-radius: 18px 6px; }
+html:is([data-template=midnight], [data-template=garden]) .app :is(.today-utility-strip__label, .today-utility-strip__detail, .today-utility-strip__detail strong) { color: var(--theme-text); }
+html:is([data-template=midnight], [data-template=garden]) .app .today-revenue-mini__item { background: var(--theme-surface-alt); border-color: var(--theme-border-soft); }
+html:is([data-template=midnight], [data-template=garden]) .app .today-revenue-mini__item :is(span, strong) { color: var(--theme-text); }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.today-notification-card, .today-event-card, .today-conflict-card, .today-activity-compact__card, .today-events-empty, .today-activity__empty, .today-notifications-empty) {
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 12px;
+  box-shadow: var(--theme-glow);
+}
+
+html[data-template=garden] .app :is(.today-notification-card, .today-event-card, .today-conflict-card, .today-activity-compact__card) { border-radius: 18px 6px; }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.settings-sidebar__panel, .settings-content) {
+  box-sizing: border-box;
+  padding: 20px;
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border-soft);
+  border-radius: var(--theme-radius);
+  box-shadow: var(--theme-glow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .settings-sidebar__link { padding-inline: 10px; border-bottom: 1px solid var(--theme-border-soft); }
+html:is([data-template=midnight], [data-template=garden]) .app button.template-option { color: var(--theme-text); background: var(--theme-surface-alt); border-color: var(--theme-border-soft); box-shadow: var(--theme-glow); }
+html:is([data-template=midnight], [data-template=garden]) .app .template-option__description { color: var(--theme-muted); }
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.calendar-page, .calendar-layout, .calendar-board, .calendar-board__scroll, .calendar-months, .calendar-month-section) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-hero {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+  box-shadow: var(--theme-shadow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-board {
+  padding: 10px;
+  background: var(--theme-panel-strong);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow);
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-board__scroll {
+  overflow-x: hidden;
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 10px;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app :is(.calendar-months, .calendar-month-section, .calendar-month-section--active, .calendar-weeks) { background: var(--theme-surface); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-month-section + .calendar-month-section { border-color: var(--theme-border-soft); }
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-weekdays {
+  color: var(--theme-on-panel);
+  background: var(--theme-weekdays);
+  border-bottom: 1px solid var(--theme-border);
+  backdrop-filter: none;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-weekdays__item { color: var(--theme-on-panel); }
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-month-section__header {
+  color: var(--theme-text);
+  background: var(--theme-surface-alt);
+  border-bottom: 1px solid var(--theme-border-soft);
+  backdrop-filter: none;
+}
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-month-section__header h2 { color: var(--theme-text); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-month-section__eyebrow { color: var(--theme-muted); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-month-section__summary { color: var(--theme-on-panel); background: var(--theme-panel-strong); border: 1px solid var(--theme-border); box-shadow: var(--theme-glow); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-month-section__summary :is(span, strong) { color: var(--theme-on-panel); }
+
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-day { background: var(--theme-surface); border-color: var(--theme-border-soft); box-shadow: inset 0 0 7px #10233e0e; }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-day--past { background: var(--theme-surface-alt); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-day--school-holiday { background: color-mix(in srgb, #fff1a8 45%, var(--theme-surface) 55%); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-day--occupied::before { background: var(--theme-surface); border-color: var(--theme-border-soft); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-day--past.calendar-day--occupied::before { background: var(--theme-surface-alt); border-color: var(--theme-border-soft); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-day__number { color: var(--theme-muted); }
+html:is([data-template=midnight], [data-template=garden]) .app .calendar-day--today .calendar-day__number { color: var(--theme-on-panel); background: var(--theme-panel-strong); box-shadow: var(--theme-glow); }
+
+/* Restore the original viewport-sticky stack for every themed calendar. */
+@media (max-width: 760px) {
+  html[data-template=retro] .app .calendar-page,
+  html[data-template=retro] .app .calendar-board,
+  html:is([data-template=midnight], [data-template=garden]) .app :is(.calendar-page, .calendar-board) { overflow: visible; }
+
+  html:is([data-template=retro], [data-template=midnight], [data-template=garden]) .app .calendar-hero {
+    position: sticky;
+    top: var(--calendar-mobile-topbar-offset);
+    z-index: 18;
+  }
+
+  html:is([data-template=retro], [data-template=midnight], [data-template=garden]) .app .calendar-weekdays {
+    position: sticky;
+    top: var(--calendar-mobile-sticky-offset);
+    z-index: 6;
+  }
+
+  html:is([data-template=retro], [data-template=midnight], [data-template=garden]) .app .calendar-month-section__header {
+    position: sticky;
+    top: calc(var(--calendar-mobile-sticky-offset) + var(--calendar-mobile-weekdays-height));
+    z-index: 5;
+  }
+
+  html[data-template=retro] .app .calendar-weeks { padding-top: 16px; }
+
+  html:is([data-template=midnight], [data-template=garden]) .app .content { width: calc(100% - 12px); margin-block: 10px; padding: 10px; }
+  html:is([data-template=midnight], [data-template=garden]) .app .topbar { gap: 6px; padding-inline: 10px; }
+  html:is([data-template=midnight], [data-template=garden]) .app .brand-logo { width: auto; height: 34px; max-width: 92px; padding: 3px 5px; }
+  html:is([data-template=midnight], [data-template=garden]) .app .topbar-mobile-links { gap: 6px; min-width: 0; }
+  html:is([data-template=midnight], [data-template=garden]) .app .topbar-mobile-links__item { padding: 6px 5px; font-size: .77rem; }
+  html:is([data-template=midnight], [data-template=garden]) .app .today-calendar-card { padding: 14px 10px; }
+  html:is([data-template=midnight], [data-template=garden]) .app .today-timeline__viewport { padding-inline: 10px; }
+  html:is([data-template=midnight], [data-template=garden]) .app .today-utility-strip { padding: 8px; }
+  html:is([data-template=midnight], [data-template=garden]) .app :is(.settings-sidebar__panel, .settings-content) { padding: 14px; }
+  html:is([data-template=midnight], [data-template=garden]) .app .calendar-board { padding: 7px; }
+  html:is([data-template=midnight], [data-template=garden]) .app .calendar-board__scroll { overflow: visible; }
+}
+
+@media print {
+  html:is([data-template=midnight], [data-template=garden]) .app,
+  html:is([data-template=midnight], [data-template=garden]) .app :is(.content, .card, .today-calendar-card, .today-utility-strip, .calendar-board) {
+    color: #111;
+    background: white;
+    border-color: #bbb;
+    box-shadow: none;
+  }
+}
