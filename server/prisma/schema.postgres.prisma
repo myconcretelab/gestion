@@ -13,7 +13,6 @@ datasource db {
 }
 
 model Gite {
-  cleaning_checked_at                  DateTime?
   id                                   String   @id @default(cuid())
   ordre                                Int      @default(0)
   nom                                  String
@@ -556,6 +555,7 @@ model Reservation {
   prix_total                Decimal                  @db.Decimal(10,2)
   source_paiement           String?
   commentaire               String?
+  cleaning_checked_at       DateTime?
   remise_montant            Decimal                  @default(0) @db.Decimal(10,2)
   commission_channel_mode   String?                  @default("euro")
   commission_channel_value  Decimal                  @default(0) @db.Decimal(10,2)

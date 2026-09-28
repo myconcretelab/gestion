@@ -36,8 +36,45 @@ import {
   getReservationOriginSystem,
   shouldExportReservationToIcal,
 } from "../utils/reservationOrigin.js";
+import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
 
 const router = Router();
+
+router.get("/:id/cleaning-check", async (req, res, next) => {
+  try {
+    const reservation = await prisma.reservation.findUnique({ where: { id: req.params.id }, select: { cleaning_checked_at: true } });
+    if (!reservation) return res.status(404).json({ error: "Réservation introuvable." });
+    res.json(reservation);
+  } catch (error) { next(error); }
+});
+
+router.put("/:id/cleaning-check", async (req, res, next) => {
+  try {
+    const { checked } = z.object({ checked: z.boolean() }).parse(req.body);
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      select: { gite: { select: { nom: true } } },
+    });
+    if (!reservation) return res.status(404).json({ error: "Réservation introuvable." });
+    const checkedAt = checked ? new Date() : null;
+    // Conditional update prevents duplicate notifications from simultaneous checks.
+    const changed = await prisma.reservation.updateMany({
+      where: { id: req.params.id, cleaning_checked_at: checked ? null : { not: null } },
+      data: { cleaning_checked_at: checkedAt },
+    });
+    let notificationWarning: string | null = null;
+    if (changed.count && checkedAt) {
+      try {
+        const result = await notifyGiteCheckedOnTelegram(reservation.gite?.nom ?? "Gîte", checkedAt);
+        if (!result.sent_count) notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
+      } catch {
+        notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
+      }
+    }
+    const state = await prisma.reservation.findUnique({ where: { id: req.params.id }, select: { cleaning_checked_at: true } });
+    res.json({ ...state, notification_warning: notificationWarning });
+  } catch (error) { next(error); }
+});
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const reservationGiteSelect = {
