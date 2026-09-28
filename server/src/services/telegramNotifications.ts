@@ -3,6 +3,7 @@ import path from "node:path";
 import { env } from "../config/env.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
 import { telegramMessageChannel } from "./messageChannels/telegram.js";
+import type { OptionsInput } from "./contractCalculator.js";
 
 export type TelegramNotificationConfig = {
   enabled: boolean;
@@ -11,6 +12,7 @@ export type TelegramNotificationConfig = {
   notify_gite_checked: boolean;
   gite_check_mentions: string[];
   notify_booking_request_created: boolean;
+  notify_booking_request_approved: boolean;
   notify_contract_return_overdue: boolean;
   notify_invoice_payment_overdue: boolean;
 };
@@ -38,6 +40,7 @@ type BookingRequestTelegramPayload = {
     email?: string | null;
   };
   pricing_snapshot: BookingQuote;
+  options?: OptionsInput | null;
 };
 
 const SETTINGS_FILE = path.join(
@@ -92,6 +95,7 @@ export const buildDefaultTelegramNotificationConfig =
     notify_gite_checked: true,
     gite_check_mentions: [],
     notify_booking_request_created: true,
+    notify_booking_request_approved: true,
     notify_contract_return_overdue: true,
     notify_invoice_payment_overdue: true,
   });
@@ -114,6 +118,10 @@ export const normalizeTelegramNotificationConfig = (
   notify_booking_request_created: toBoolean(
     input?.notify_booking_request_created,
     fallback.notify_booking_request_created,
+  ),
+  notify_booking_request_approved: toBoolean(
+    input?.notify_booking_request_approved,
+    fallback.notify_booking_request_approved,
   ),
   notify_contract_return_overdue: toBoolean(
     input?.notify_contract_return_overdue,
@@ -177,6 +185,7 @@ export const buildTelegramNotificationState = (
     notify_gite_checked: config.notify_gite_checked,
     gite_check_mentions: config.gite_check_mentions,
     notify_booking_request_created: config.notify_booking_request_created,
+    notify_booking_request_approved: config.notify_booking_request_approved,
     notify_contract_return_overdue: config.notify_contract_return_overdue,
     notify_invoice_payment_overdue: config.notify_invoice_payment_overdue,
   },
@@ -217,7 +226,7 @@ export const sendTelegramMessage = async (
   };
 };
 
-const buildBookingRequestCreatedMessage = (
+export const buildBookingRequestCreatedMessage = (
   payload: BookingRequestTelegramPayload,
 ) =>
   [
@@ -226,6 +235,7 @@ const buildBookingRequestCreatedMessage = (
     `<b>Gîte</b>: ${escapeHtml(payload.gite.nom)}`,
     `<b>Séjour</b>: du ${escapeHtml(formatBookedDateInput(payload.date_entree))} au ${escapeHtml(formatBookedDateInput(payload.date_sortie))} (${payload.pricing_snapshot.nb_nuits} nuit(s))`,
     `<b>Voyageurs</b>: ${payload.nb_adultes} adulte(s), ${payload.nb_enfants_2_17} enfant(s)`,
+    `<b>Options</b>: ${buildBookingOptionsSummary(payload)}`,
     `<b>Total estimatif</b>: ${escapeHtml(formatPrice(payload.pricing_snapshot.total_global))}`,
     `<b>Blocage jusqu'au</b>: ${escapeHtml(formatDateTimeFr(payload.hold_expires_at))}`,
     "",
@@ -250,6 +260,38 @@ export const notifyBookingRequestCreatedOnTelegram = async (
   }
 
   return sendTelegramMessage(buildBookingRequestCreatedMessage(payload), config);
+};
+
+const buildBookingOptionsSummary = (payload: BookingRequestTelegramPayload) => {
+  const details: string[] = [];
+  const options = payload.options;
+  const prices = payload.pricing_snapshot.options_detail;
+  const priced = (amount?: number) => typeof amount === "number" ? ` : ${formatPrice(amount)}` : "";
+  if (options?.draps?.enabled) details.push(`Draps (${options.draps.nb_lits ?? 0} lit(s))${priced(prices?.draps)}`);
+  if (options?.linge_toilette?.enabled) details.push(`Linge de toilette (${options.linge_toilette.nb_personnes ?? 0} personne(s))${priced(prices?.linge)}`);
+  if (options?.menage?.enabled) details.push(`Ménage${priced(prices?.menage)}`);
+  if (options?.depart_tardif?.enabled) details.push(`Départ tardif${priced(prices?.depart_tardif)}`);
+  if (options?.chiens?.enabled) details.push(`Chiens (${options.chiens.nb ?? 0})${priced(prices?.chiens)}`);
+  return details.length ? details.map(escapeHtml).join(" ; ") : "aucune";
+};
+
+export const buildBookingRequestApprovedTelegramMessage = (payload: BookingRequestTelegramPayload) => {
+  return [
+    "✅ <b>Demande Booked approuvée</b>",
+    "",
+    `<b>Gîte</b>: ${escapeHtml(payload.gite.nom)}`,
+    `<b>Séjour</b>: du ${escapeHtml(formatBookedDateInput(payload.date_entree))} au ${escapeHtml(formatBookedDateInput(payload.date_sortie))}`,
+    `<b>Client</b>: ${escapeHtml(payload.hote_nom)}`,
+    `<b>Options</b>: ${buildBookingOptionsSummary(payload)}`,
+    `<b>Total</b>: ${escapeHtml(formatPrice(payload.pricing_snapshot.total_global))}`,
+    `Demande #${escapeHtml(payload.id)}`,
+  ].join("\n");
+};
+
+export const notifyBookingRequestApprovedOnTelegram = async (payload: BookingRequestTelegramPayload) => {
+  const config = readTelegramNotificationConfig();
+  if (!config.notify_booking_request_approved) return { sent_count: 0, skipped_reason: "event_disabled" as const };
+  return sendTelegramMessage(buildBookingRequestApprovedTelegramMessage(payload), config);
 };
 
 export const buildGiteCheckedMessage = (name: string, checkedAt: Date, mentions: string[] = []) => [

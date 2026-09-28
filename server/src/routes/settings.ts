@@ -299,6 +299,7 @@ const documentEmailTextSettingsSchema = z.object({
   }),
   facture: documentEmailTextTemplateSchema,
   bookingRequestApproved: documentEmailTextTemplateSchema.extend({
+    smsBody: z.string().trim().min(1).max(1_000),
     activitiesList: z.string().max(20_000).default(""),
     guideUrl: z.string().trim().max(2_000).default(""),
     destinationUrl: z.string().trim().max(2_000).default(""),
@@ -327,6 +328,7 @@ const telegramNotificationSettingsSchema = z.object({
   notify_gite_checked: z.boolean().optional(),
   gite_check_mentions: z.array(z.string().trim().regex(/^@?[a-zA-Z][a-zA-Z0-9_]{4,31}$/, "Pseudo Telegram invalide.")).optional(),
   notify_booking_request_created: z.boolean().default(true),
+  notify_booking_request_approved: z.boolean().default(true),
   notify_contract_return_overdue: z.boolean().default(true),
   notify_invoice_payment_overdue: z.boolean().default(true),
 });
