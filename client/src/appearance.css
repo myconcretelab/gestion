@@ -360,6 +360,10 @@ html[data-template=retro] .app .today-page { gap: 18px; }
 
 html[data-template=retro] .app .today-calendar-card {
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: 24px 22px 28px;
   background: var(--retro-copper);
   border: 1px solid #e8bd91;
@@ -416,6 +420,10 @@ html[data-template=retro] .app .today-calendar-occupation__copy strong { color: 
 html[data-template=retro] .app .stats-occupation-gauge-item strong { color: currentColor; font-family: "Courier New", monospace; }
 
 html[data-template=retro] .app .today-timeline__viewport {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   padding: 18px 16px 10px;
   background: linear-gradient(#241b14ee, #120e0bdd), var(--retro-wood);
@@ -423,6 +431,8 @@ html[data-template=retro] .app .today-timeline__viewport {
   border-radius: 6px;
   box-shadow: inset 0 5px 15px #000b, 0 1px #edbd8d88;
 }
+
+html[data-template=retro] .app .today-timeline__content { box-sizing: border-box; }
 
 html[data-template=retro] .app .today-timeline__day {
   color: #cbb797;
@@ -650,6 +660,127 @@ html[data-template=retro] .app .settings-sidebar__link {
 
 html[data-template=retro] .app .settings-sidebar__link--active { color: #f4e7ce; }
 
+/* Keep the monthly calendar on one continuous inset surface. */
+html[data-template=retro] .app :is(.calendar-page, .calendar-layout, .calendar-board, .calendar-board__scroll, .calendar-months, .calendar-month-section) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+html[data-template=retro] .app .calendar-hero {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  background: var(--retro-copper);
+  border-color: #e5b88c;
+}
+
+html[data-template=retro] .app .calendar-board {
+  padding: 10px;
+  overflow: hidden;
+  background: var(--retro-wood);
+  border: 2px solid #4b2a1a;
+  box-shadow: inset 0 0 0 1px #c08a5b66, inset 0 0 18px #0009, 0 8px 18px #160a0777;
+}
+
+html[data-template=retro] .app .calendar-board__scroll {
+  overflow-x: hidden;
+  color: #34261d;
+  background: var(--retro-ivory);
+  border: 2px solid #70472f;
+  border-radius: 4px;
+  box-shadow: inset 0 0 15px #6f42211c;
+}
+
+html[data-template=retro] .app .calendar-months,
+html[data-template=retro] .app .calendar-month-section,
+html[data-template=retro] .app .calendar-month-section--active {
+  background: var(--retro-ivory);
+}
+
+html[data-template=retro] .app .calendar-month-section + .calendar-month-section { border-color: #b99972; }
+
+html[data-template=retro] .app .calendar-weekdays {
+  box-sizing: border-box;
+  width: 100%;
+  color: #eee0c7;
+  background: linear-gradient(#3b352e, #1c1916);
+  border-bottom: 2px solid #9b704b;
+  box-shadow: inset 0 -2px 5px #0008;
+  backdrop-filter: none;
+}
+
+html[data-template=retro] .app .calendar-weekdays__item { color: #e7d8bd; font-family: "Courier New", monospace; }
+
+html[data-template=retro] .app .calendar-month-section__header {
+  box-sizing: border-box;
+  width: 100%;
+  color: #35251b;
+  background: #f1e3cb;
+  border-bottom: 1px solid #b89670;
+  backdrop-filter: none;
+}
+
+html[data-template=retro] .app .calendar-month-section__header h2 {
+  color: #332219;
+  text-shadow: none;
+}
+
+html[data-template=retro] .app .calendar-month-section__eyebrow { color: #715743; }
+
+html[data-template=retro] .app .calendar-month-section__summary {
+  color: #eee4d0;
+  background: linear-gradient(#393b35, #191b18);
+  border: 2px solid #81583a;
+  border-radius: 4px;
+  box-shadow: inset 0 2px 5px #000a, 0 1px #e9b77c66;
+}
+
+html[data-template=retro] .app .calendar-month-section__summary span,
+html[data-template=retro] .app .calendar-month-section__summary strong { color: #eee4d0; font-family: "Courier New", monospace; }
+
+html[data-template=retro] .app .calendar-weeks {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--retro-ivory);
+}
+
+html[data-template=retro] .app .calendar-week,
+html[data-template=retro] .app :is(.calendar-week__days, .calendar-week__segments),
+html[data-template=retro] .app .calendar-day {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+html[data-template=retro] .app .calendar-day {
+  background: #fffaf0;
+  border-color: #c9ae88;
+  box-shadow: inset 0 0 7px #70421d12;
+}
+
+html[data-template=retro] .app .calendar-day--past { background: #eadcc4; border-color: #c6ad89; }
+html[data-template=retro] .app .calendar-day--school-holiday { background: #fff3c9; border-color: #dbc77b; }
+html[data-template=retro] .app .calendar-day--occupied::before { background: #fffaf0; border-color: #c9ae88; }
+html[data-template=retro] .app .calendar-day--past.calendar-day--occupied::before { background: #eadcc4; border-color: #c6ad89; }
+html[data-template=retro] .app .calendar-day--occupied.calendar-day--school-holiday::before { background: #fff3c9; border-color: #dbc77b; }
+html[data-template=retro] .app .calendar-day--past.calendar-day--occupied.calendar-day--school-holiday::before { background: #eee1b9; border-color: #d1c189; }
+
+html[data-template=retro] .app .calendar-day__number { color: #614a37; }
+html[data-template=retro] .app .calendar-day--past .calendar-day__number { color: #8e7b67; }
+html[data-template=retro] .app .calendar-day--today .calendar-day__number {
+  color: #f7e8cf;
+  background: linear-gradient(#565048, #211e1a);
+  border: 1px solid #0f0d0b;
+  box-shadow: inset 0 1px #fff3, 0 2px 5px #2a160b66;
+}
+
+html[data-template=retro] .app .calendar-reservation {
+  border-color: #3b271b;
+  box-shadow: inset 0 1px #fff5, inset 0 -2px #0003, 0 3px 7px #39201355;
+}
+
 @media (max-width: 680px) {
   html[data-template=retro] .app .topbar { min-height: 54px; padding-inline: 10px; }
   html[data-template=retro] .app .brand-logo { height: 32px; padding: 2px 5px; }
@@ -660,6 +791,14 @@ html[data-template=retro] .app .settings-sidebar__link--active { color: #f4e7ce;
   html[data-template=retro] .app .today-utility-strip { padding: 8px; }
   html[data-template=retro] .app :is(.today-notifications-card, .today-events-card, .today-activity) { padding: 12px; }
   html[data-template=retro] .app .settings-content { padding: 14px; }
+  html[data-template=retro] .app .calendar-page { overflow: hidden; }
+  html[data-template=retro] .app .calendar-hero { padding: 10px; }
+  html[data-template=retro] .app .calendar-board { padding: 7px; overflow: hidden; border-radius: 7px; }
+  html[data-template=retro] .app .calendar-board__scroll { overflow: visible; border-radius: 3px; }
+  html[data-template=retro] .app .calendar-weekdays { padding-inline: 10px; }
+  html[data-template=retro] .app .calendar-month-section__header { padding-inline: 10px; }
+  html[data-template=retro] .app .calendar-week { padding-inline: 8px; }
+  html[data-template=retro] .app .calendar-week__segments { left: 8px; right: 8px; }
 }
 
 @media print {
