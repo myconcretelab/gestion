@@ -3,7 +3,7 @@ import { apiFetch } from "../../utils/api";
 
 type CheckState = { cleaning_checked_at: string | null; notification_warning?: string | null };
 
-const GiteCleaningCheck = ({ giteId }: { giteId: string }) => {
+const GiteCleaningCheck = ({ reservationId }: { reservationId: string }) => {
   const [state, setState] = useState<CheckState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +30,7 @@ const GiteCleaningCheck = ({ giteId }: { giteId: string }) => {
       document.removeEventListener("keydown", dismissOnEscape);
     };
   }, [showDetails]);
-  const endpoint = `/gites/${encodeURIComponent(giteId)}/cleaning-check`;
+  const endpoint = `/reservations/${encodeURIComponent(reservationId)}/cleaning-check`;
 
   useEffect(() => {
     const controller = new AbortController();
