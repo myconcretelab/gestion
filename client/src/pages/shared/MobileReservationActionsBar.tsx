@@ -217,7 +217,6 @@ const MobileReservationActionsBar = ({
                 })}
               </div>
             ) : null}
-            {cleaningCheck}
             {sourcePicker ? (
               <label className="mobile-reservation-actions__source-picker">
                 <span>{sourcePicker.label}</span>
@@ -272,14 +271,17 @@ const MobileReservationActionsBar = ({
             ) : null}
             {normalizedNote ? <p className="mobile-reservation-actions__note">{normalizedNote}</p> : null}
           </div>
-          <button
-            type="button"
-            className="mobile-reservation-actions__close"
-            aria-label="Fermer la barre d'actions"
-            onClick={onClose}
-          >
-            <CloseIcon />
-          </button>
+          <div className="mobile-reservation-actions__aside">
+            {cleaningCheck}
+            <button
+              type="button"
+              className="mobile-reservation-actions__close"
+              aria-label="Fermer la barre d'actions"
+              onClick={onClose}
+            >
+              <CloseIcon />
+            </button>
+          </div>
         </div>
 
         {mode === "rotation-choice" ? (
