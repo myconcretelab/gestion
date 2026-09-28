@@ -160,3 +160,514 @@ html[data-template=midnight] .app .brand-logo { background: #f1f5fc; border-radi
   html:is([data-template=midnight], [data-template=garden]) .app { background: white; }
   html:is([data-template=midnight], [data-template=garden]) .app .content { background: white; border: 0; box-shadow: none; width: 100%; margin: 0; }
 }
+
+/* Atelier retro: the application becomes a complete vintage control console. */
+html[data-template=retro] .app {
+  --retro-wood: linear-gradient(rgb(28 12 3 / var(--wood-shade)), rgb(28 12 3 / var(--wood-shade))), url('/textures/retro-wood.webp') center / 1300px auto;
+  --retro-copper: repeating-linear-gradient(0deg, #fff1 0 1px, #2d14040a 1px 3px), linear-gradient(115deg, #9c613d, hsl(28 46% var(--copper-light)) 38%, #c68b61 72%, #8d5534);
+  --retro-copper-dark: repeating-linear-gradient(0deg, #fff1 0 1px, #1d0e060f 1px 3px), linear-gradient(125deg, #7c492e, #b87950 50%, #6b3d27);
+  --retro-ivory: #f7eedc;
+  --retro-ink: #2d2017;
+  --retro-bezel: #211b16;
+  --retro-gold: #c99a66;
+  --retro-line: #6f432b;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+}
+
+html[data-template=retro] .app .topbar {
+  min-height: 68px;
+  padding-block: 8px;
+  background: var(--retro-copper);
+  border-top: 1px solid #efc39e;
+  border-bottom: 5px solid #4b2b1b;
+  box-shadow: inset 0 2px #fff4, inset 0 -2px #49281799, 0 8px 22px #170b0666;
+}
+
+html[data-template=retro] .app .brand-logo {
+  height: 40px;
+  padding: 4px 10px;
+  background: #261c17;
+  border: 1px solid #d4a46e;
+  border-radius: 4px;
+  filter: sepia(.35) contrast(.92);
+  box-shadow: inset 0 0 0 1px #0008, 0 3px 7px #32190d77;
+}
+
+html[data-template=retro] .app :is(.nav a, .topbar-mobile-links__item, .topbar-menu-button) {
+  color: #302017;
+  text-shadow: 0 1px #f5c7a0aa;
+}
+
+html[data-template=retro] .app .nav a {
+  padding: 8px 11px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: .79rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+html[data-template=retro] .app :is(.nav a.active, .overflow-nav a.active, .settings-sidebar__link--active, .topbar-mobile-links__item--active) {
+  color: #f8e9cf;
+  background: linear-gradient(#4a4037, #1e1b18);
+  border: 1px solid #0d0c0a;
+  border-radius: 4px;
+  box-shadow: inset 0 1px #fff3, 0 2px 4px #2e160b88;
+  text-shadow: 0 1px #000;
+}
+
+html[data-template=retro] .app .nav a::after { display: none; }
+
+html[data-template=retro] .app .topbar-menu-button__icon {
+  padding: 4px 7px;
+  color: #f7e8ce;
+  background: linear-gradient(#4b423a, #1c1916);
+  border: 1px solid #0e0c0a;
+  border-radius: 4px;
+  box-shadow: inset 0 1px #fff3, 0 2px 4px #2c160b88;
+}
+
+html[data-template=retro] .app .pump-indicator__dot {
+  border: 2px solid #443426;
+  box-shadow: inset 0 0 2px #fff8, 0 0 8px currentColor;
+}
+
+html[data-template=retro] .app .overflow-nav {
+  padding: 9px;
+  background: var(--retro-wood);
+  border: 2px solid #5b351f;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px #c18d6255, 0 12px 30px #160a05aa;
+}
+
+html[data-template=retro] .app .overflow-nav a {
+  color: #f2dfc0;
+  border-bottom: 1px solid #c4905b44;
+  text-shadow: 0 1px #000;
+}
+
+html[data-template=retro] .app .content {
+  box-sizing: border-box;
+  padding: 22px;
+  background: var(--retro-wood);
+  border: 5px solid #4a2817;
+  outline: 1px solid #ba865c;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 2px #1c0e08aa, inset 0 0 30px #0d060566, 0 16px 36px #160a0577;
+}
+
+html[data-template=retro] .app :is(h1, h2, .section-title, .today-hero__title) {
+  color: #f3dfbf;
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -.01em;
+  text-shadow: 0 2px 2px #140a06;
+}
+
+html[data-template=retro] .app :is(.section-title, .settings-cluster__eyebrow, .today-utility-strip__label, .today-kpi__label) {
+  text-transform: uppercase;
+  letter-spacing: .14em;
+}
+
+html[data-template=retro] .app :is(.card, .settings-card, .rule-card, .summary-item, .stats-global-cards article, .stats-gite-card, .stats-expense-chart-panel) {
+  background: var(--retro-copper);
+  color: var(--retro-ink);
+  border: 1px solid #e5b88c;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px #72452966, inset 0 1px #fff5, 0 7px 16px #1b0d0770;
+}
+
+html[data-template=retro] .app :is(.card, .settings-card) :is(.section-title, h2, h3, strong) { color: var(--retro-ink); }
+
+html[data-template=retro] .app :is(.card, .settings-card) :is(.section-title, h2, h3) { text-shadow: none; }
+
+html[data-template=retro] .app :is(button:not(.today-timeline__marker):not(.today-timeline__tick-button), a.button-link, .table-action, .reservations-tab) {
+  border: 1px solid #17130f;
+  border-radius: 5px;
+  background: linear-gradient(#595149, #211e1a);
+  color: #f8e8cf;
+  box-shadow: inset 0 1px #fff3, inset 0 -2px #0008, 0 3px 5px #2c160b66;
+  text-shadow: 0 1px #000;
+}
+
+html[data-template=retro] .app :is(button:not(.today-timeline__marker):not(.today-timeline__tick-button), a.button-link, .table-action, .reservations-tab):hover {
+  background: linear-gradient(#6c6258, #292520);
+  transform: translateY(-1px);
+}
+
+html[data-template=retro] .app :is(button.secondary, .table-action--neutral) {
+  color: #39271c;
+  background: linear-gradient(#f0d5b5, #bc8b60);
+  border-color: #70452b;
+  text-shadow: 0 1px #fff8;
+}
+
+html[data-template=retro] .app :is(.reservations-tab--active, .calendar-gite-button[aria-pressed="true"]) {
+  color: #f7efdd;
+  background: linear-gradient(#9f613d, #5f3724);
+  border-color: #dfae7d;
+  box-shadow: inset 0 0 0 1px #3f2418, 0 0 0 2px #bf8c5f, 0 4px 8px #24120a88;
+}
+
+html[data-template=retro] .app :is(input:not([type="range"]), select, textarea) {
+  color: #efe7d2;
+  background: linear-gradient(#383b35, #171a17);
+  border: 2px solid #8f633f;
+  border-radius: 4px;
+  box-shadow: inset 0 2px 5px #000b, 0 1px #f1bf8955;
+  font-family: "Courier New", monospace;
+}
+
+html[data-template=retro] .app :is(input:not([type="range"]), select, textarea)::placeholder { color: #b8ab96; }
+
+html[data-template=retro] .app :is(input[type="checkbox"], input[type="radio"]) { accent-color: #8c4d2b; }
+
+html[data-template=retro] .app input[type="range"] { accent-color: #6d3d27; }
+
+html[data-template=retro] .app .field { color: #4b3425; }
+
+html[data-template=retro] .app :is(.badge, .today-event-card__pill, .reservation-option-badge, .today-activity__source-chip) {
+  color: #34251c;
+  background: linear-gradient(#f3ddbd, #c49567);
+  border: 1px solid #875a38;
+  border-radius: 4px;
+  box-shadow: inset 0 1px #fff8;
+}
+
+html[data-template=retro] .app :is(.table, .reservations-table, .stats-expense-table) {
+  overflow: hidden;
+  color: #35271e;
+  background: #f5ead5;
+  border: 2px solid #71472f;
+  border-radius: 5px;
+  box-shadow: inset 0 0 10px #70411f22;
+}
+
+html[data-template=retro] .app :is(.table, .reservations-table, .stats-expense-table) th {
+  color: #f4e5cd;
+  background: var(--retro-copper-dark);
+  border-color: #70452c;
+  font-family: "Courier New", monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+html[data-template=retro] .app :is(.table, .reservations-table, .stats-expense-table) td { border-color: #cdb48f; }
+html[data-template=retro] .app :is(.table, .reservations-table, .stats-expense-table) tbody tr:nth-child(even) td { background: #eadbc3; }
+
+/* The operational dashboard is arranged like the face of a vintage receiver. */
+html[data-template=retro] .app .today-page { gap: 18px; }
+
+html[data-template=retro] .app .today-calendar-card {
+  position: relative;
+  padding: 24px 22px 28px;
+  background: var(--retro-copper);
+  border: 1px solid #e8bd91;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 3px #70432a66, inset 0 1px #fff6, 0 8px 20px #160a0788;
+}
+
+html[data-template=retro] .app .today-calendar-card::before,
+html[data-template=retro] .app .today-calendar-card::after,
+html[data-template=retro] .app .today-utility-strip__block::before,
+html[data-template=retro] .app .today-utility-strip__block::after {
+  content: "−";
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 12px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  color: #3f2a1e;
+  background: linear-gradient(135deg, #e0b382, #6f452b);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px #0008;
+  font: 11px/1 Arial, sans-serif;
+}
+
+html[data-template=retro] .app .today-calendar-card::after,
+html[data-template=retro] .app .today-utility-strip__block::after { right: 8px; left: auto; }
+
+html[data-template=retro] .app .today-section-head {
+  padding: 0 16px 14px;
+  border-bottom: 1px solid #71442c88;
+}
+
+html[data-template=retro] .app .today-section-head .section-title { font-size: 1.3rem; }
+html[data-template=retro] .app .today-section-head .field-hint { color: #523929; }
+
+html[data-template=retro] .app :is(.today-calendar-card, .today-notifications-card, .today-events-card, .today-activity, .today-utility-strip__block) :is(h1, h2, h3, .section-title) {
+  color: var(--retro-ink);
+  text-shadow: none;
+}
+
+html[data-template=retro] .app .today-calendar-occupation {
+  padding: 7px 10px;
+  color: #e9dfc9;
+  background: linear-gradient(#373932, #161815);
+  border: 2px solid #81583b;
+  border-radius: 4px;
+  box-shadow: inset 0 2px 5px #000b;
+}
+
+html[data-template=retro] .app .today-calendar-occupation__copy strong { color: #e9dfc9; font-family: "Courier New", monospace; }
+html[data-template=retro] .app .stats-occupation-gauge-item strong { color: currentColor; font-family: "Courier New", monospace; }
+
+html[data-template=retro] .app .today-timeline__viewport {
+  margin: 0;
+  padding: 18px 16px 10px;
+  background: linear-gradient(#241b14ee, #120e0bdd), var(--retro-wood);
+  border: 3px solid #4c2a19;
+  border-radius: 6px;
+  box-shadow: inset 0 5px 15px #000b, 0 1px #edbd8d88;
+}
+
+html[data-template=retro] .app .today-timeline__day {
+  color: #cbb797;
+  padding: 7px 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-family: "Courier New", monospace;
+}
+
+html[data-template=retro] .app .today-timeline__day strong { color: #f1dfbe; }
+
+html[data-template=retro] .app .today-timeline__day--today {
+  color: #281c14;
+  background: linear-gradient(#ecd6b5, #bd8d61);
+  border-color: #e4b881;
+  box-shadow: inset 0 0 0 1px #6c4128, 0 0 8px #e8b67677;
+}
+
+html[data-template=retro] .app .today-timeline__day--today strong { color: #281c14; }
+
+html[data-template=retro] .app .today-timeline__weekend-band--visible {
+  background: linear-gradient(#c8915b18, #e5bd8114);
+  border-inline: 1px solid #cc985535;
+  border-radius: 4px;
+}
+
+html[data-template=retro] .app .today-timeline__weekend-band--today,
+html[data-template=retro] .app .today-timeline__weekend-band--visible.today-timeline__weekend-band--today {
+  box-shadow: inset 0 0 0 1px #d6a46d88;
+}
+
+html[data-template=retro] .app .today-timeline__axis {
+  height: 5px;
+  background: linear-gradient(#0d0b09, #5f5143 45%, #17130f 55%, #080706);
+  border-radius: 999px;
+  box-shadow: 0 1px #c1956544;
+}
+
+html[data-template=retro] .app .today-timeline__tick::after {
+  width: 7px;
+  height: 7px;
+  background: radial-gradient(circle at 38% 30%, #e3bc87, #715039 55%, #1a1511 60%);
+  border: 1px solid #0e0b09;
+  box-shadow: 0 1px 2px #000;
+}
+
+html[data-template=retro] .app .today-timeline__stay {
+  height: 7px;
+  border: 1px solid #160f0b;
+  box-shadow: inset 0 1px #fff5, 0 2px 4px #000a;
+}
+
+html[data-template=retro] .app .today-timeline__marker {
+  width: 58px;
+  height: 58px;
+  border: 5px solid #26211c;
+  outline: 2px solid #bd8c60;
+  box-shadow: inset 0 3px 6px #fff5, inset 0 -6px 10px #0007, 0 7px 12px #000a;
+  text-shadow: 0 1px 2px #000;
+}
+
+html[data-template=retro] .app .today-timeline__marker::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  width: 2px;
+  height: 8px;
+  background: #f9e0b8;
+  box-shadow: 0 1px #000;
+}
+
+html[data-template=retro] .app .today-timeline__marker:hover,
+html[data-template=retro] .app .today-timeline__marker:focus-visible {
+  box-shadow: inset 0 3px 6px #fff5, inset 0 -6px 10px #0007, 0 0 0 3px #e0ad7544, 0 9px 15px #000c;
+}
+
+html[data-template=retro] .app .today-utility-strip {
+  position: sticky;
+  padding: 12px;
+  gap: 12px;
+  background: var(--retro-wood);
+  border: 4px solid #4b2918;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px #bc865b66, inset 0 0 18px #0008, 0 10px 24px #160b0677;
+  backdrop-filter: none;
+}
+
+html[data-template=retro] .app .today-utility-strip__block {
+  position: relative;
+  padding: 20px 18px 14px;
+  background: var(--retro-copper);
+  border: 1px solid #e7b98c;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px #70442b66, inset 0 1px #fff5, 0 4px 9px #0007;
+}
+
+html[data-template=retro] .app .today-utility-strip__label { color: #3b291d; font-family: "Courier New", monospace; }
+html[data-template=retro] .app .today-utility-strip__detail { color: #503729; }
+html[data-template=retro] .app .today-utility-strip__detail strong { color: #291d16; }
+
+html[data-template=retro] .app .today-trash-chip {
+  border: 3px solid #27221c;
+  border-radius: 6px;
+  box-shadow: inset 0 2px #fff6, inset 0 -3px #0005, 0 4px 7px #0005;
+  text-shadow: 0 1px #fff6;
+}
+
+html[data-template=retro] .app .today-revenue-mini__item {
+  color: #eaddc6;
+  background: linear-gradient(#34362f, #161815);
+  border: 2px solid #7b5538;
+  border-radius: 3px;
+  box-shadow: inset 0 2px 5px #000b, 0 1px #f0b87a55;
+}
+
+html[data-template=retro] .app .today-revenue-mini__item span { color: #bdb19c; }
+html[data-template=retro] .app .today-revenue-mini__item span i { color: #e4d4b7; background: #171915; }
+html[data-template=retro] .app .today-revenue-mini__item strong { color: #efe5cf; font-family: "Courier New", monospace; }
+html[data-template=retro] .app .today-revenue-mini__item--current { border-color: #dfac73; box-shadow: inset 0 2px 5px #000b, 0 0 8px #e4ac6866; }
+
+html[data-template=retro] .app .today-utility-strip__slider {
+  height: 7px;
+  border-radius: 999px;
+  background: #1a1713;
+  box-shadow: inset 0 2px 4px #000, 0 1px #e6b37b66;
+}
+
+html[data-template=retro] .app .today-utility-strip__slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border: 3px solid #c69664;
+  border-radius: 50%;
+  background: conic-gradient(#22201c, #686158, #171512, #4d4841, #22201c);
+  box-shadow: 0 3px 5px #0009;
+}
+
+html[data-template=retro] .app :is(.today-notifications-card, .today-events-card, .today-activity) {
+  padding: 20px;
+  background: var(--retro-copper);
+  border: 1px solid #e5b689;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px #71442b66, 0 7px 16px #1a0d0770;
+}
+
+html[data-template=retro] .app :is(.today-notification-card, .today-event-card, .today-conflict-card, .today-activity-compact__card, .today-events-empty, .today-activity__empty, .today-notifications-empty) {
+  background: var(--retro-ivory);
+  border: 2px solid #71482f;
+  border-radius: 4px;
+  box-shadow: inset 0 0 12px #6d3f1f1f, 0 3px 7px #2c160b55;
+}
+
+html[data-template=retro] .app .today-event-card::before {
+  width: 6px;
+  border-radius: 0;
+  box-shadow: 2px 0 #3c251777;
+}
+
+html[data-template=retro] .app .today-event-card__toggle {
+  border: 4px solid #28221c;
+  border-radius: 50%;
+  outline: 2px solid #bd8b5e;
+  box-shadow: inset 0 2px #fff5, inset 0 -5px #0005, 0 4px 7px #0007;
+}
+
+html[data-template=retro] .app .today-event-card__comment {
+  background: #e9d7b9;
+  border: 1px solid #b7956c;
+  border-radius: 3px;
+}
+
+html[data-template=retro] .app .today-activity__action-label {
+  border: 1px solid #6d482f;
+  border-radius: 3px;
+  background: #e8d3b1;
+  color: #39281d;
+}
+
+html[data-template=retro] .app .settings-sidebar__panel {
+  padding: 16px;
+  background: var(--retro-copper);
+  border: 1px solid #e7b98d;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px #70442b66, 0 5px 12px #1a0d0770;
+}
+
+html[data-template=retro] .app .settings-content {
+  box-sizing: border-box;
+  padding: 22px;
+  color: var(--retro-ink);
+  background: var(--retro-copper);
+  border: 1px solid #e7b98d;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px #70442b66, inset 0 1px #fff5, 0 5px 12px #1a0d0770;
+}
+
+html[data-template=retro] .app :is(.settings-content, .settings-sidebar__panel) :is(h1, h2, h3, .section-title) {
+  color: var(--retro-ink);
+  text-shadow: none;
+}
+
+html[data-template=retro] .app .settings-content :is(.settings-cluster__eyebrow, .settings-cluster__text, .field-hint, p) { color: #533b2c; }
+
+html[data-template=retro] .app button.template-option {
+  color: #f3e5ce;
+  background: linear-gradient(#3b342d, #211d19);
+  border-color: #17130f;
+  box-shadow: inset 0 1px #fff2, 0 4px 8px #2b160b77;
+  text-shadow: none;
+}
+
+html[data-template=retro] .app button.template-option.is-selected {
+  border-color: #d9a36c;
+  box-shadow: inset 0 1px #fff2, 0 0 0 2px #70442b, 0 5px 10px #2b160b99;
+}
+
+html[data-template=retro] .app .template-option__description { color: #c9bba5; }
+html[data-template=retro] .app .template-status { color: #4d3020; background: #eed5b0; }
+
+html[data-template=retro] .app .settings-sidebar__link {
+  padding-inline: 10px;
+  color: #493326;
+  border-bottom: 1px solid #74472d3d;
+}
+
+html[data-template=retro] .app .settings-sidebar__link--active { color: #f4e7ce; }
+
+@media (max-width: 680px) {
+  html[data-template=retro] .app .topbar { min-height: 54px; padding-inline: 10px; }
+  html[data-template=retro] .app .brand-logo { height: 32px; padding: 2px 5px; }
+  html[data-template=retro] .app .content { width: calc(100% - 12px); padding: 10px; border-width: 3px; }
+  html[data-template=retro] .app .today-calendar-card { padding: 20px 10px 16px; }
+  html[data-template=retro] .app .today-section-head { padding-inline: 10px; }
+  html[data-template=retro] .app .today-timeline__viewport { padding-inline: 10px; }
+  html[data-template=retro] .app .today-utility-strip { padding: 8px; }
+  html[data-template=retro] .app :is(.today-notifications-card, .today-events-card, .today-activity) { padding: 12px; }
+  html[data-template=retro] .app .settings-content { padding: 14px; }
+}
+
+@media print {
+  html[data-template=retro] .app .content,
+  html[data-template=retro] .app :is(.card, .today-calendar-card, .today-utility-strip, .today-notifications-card, .today-events-card, .today-activity) {
+    color: #111;
+    background: white;
+    border-color: #bbb;
+    box-shadow: none;
+  }
+}
