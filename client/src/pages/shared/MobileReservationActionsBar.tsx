@@ -284,13 +284,13 @@ const MobileReservationActionsBar = ({
 
         {mode === "rotation-choice" ? (
           <div className="mobile-reservation-actions__choices">
-            <button type="button" className="mobile-reservation-actions__choice" onClick={onSelectArrival}>
-              <span>{arrivalLabel}</span>
-              <ReservationOptionBadges badges={arrivalOptionBadges} />
-            </button>
             <button type="button" className="mobile-reservation-actions__choice" onClick={onSelectDeparture}>
               <span>{departureLabel}</span>
               <ReservationOptionBadges badges={departureOptionBadges} />
+            </button>
+            <button type="button" className="mobile-reservation-actions__choice" onClick={onSelectArrival}>
+              <span>{arrivalLabel}</span>
+              <ReservationOptionBadges badges={arrivalOptionBadges} />
             </button>
           </div>
         ) : (
