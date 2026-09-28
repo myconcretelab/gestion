@@ -253,10 +253,8 @@ export const notifyBookingRequestCreatedOnTelegram = async (
 };
 
 export const buildGiteCheckedMessage = (name: string, checkedAt: Date, mentions: string[] = []) => [
-  "✅ <b>Gîte checké · ménage vérifié</b>",
-  `<b>Gîte</b> : ${escapeHtml(name)}`,
-  `<b>Contrôle</b> : ${escapeHtml(formatDateTimeFr(checkedAt))}`,
-  "Le gîte est OK !",
+  `✅ <b>Gîte ${escapeHtml(name)} checké !</b>`,
+  escapeHtml(formatDateTimeFr(checkedAt)),
   mentions.map(escapeHtml).join(" "),
 ].filter(Boolean).join("\n");
 

@@ -19472,25 +19472,25 @@ button.personal-expenses-status:disabled {
   display: grid; place-items: center; min-height: 44px; margin: 0; padding: 0;
   border: 0; border-radius: 10px; background: transparent; box-shadow: none; cursor: pointer;
 }
-.gite-cleaning-check__info { width: 44px; color: rgba(255, 255, 255, .65); }
+.gite-cleaning-check__info { width: 36px; color: rgba(255, 255, 255, .65); }
 .gite-cleaning-check__info svg { width: 25px; height: 25px; }
 .gite-cleaning-check__info.is-checked { color: var(--primary); }
 .gite-cleaning-check__info:hover,
 .gite-cleaning-check__info[aria-expanded="true"] { background: rgba(255, 255, 255, .08); }
-.gite-cleaning-check__toggle { width: 56px; }
+.gite-cleaning-check__toggle { width: 48px; }
 .gite-cleaning-check__toggle:disabled { opacity: .5; cursor: wait; }
 .gite-cleaning-check__info:focus-visible,
 .gite-cleaning-check__toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .gite-cleaning-check__track {
-  display: block; box-sizing: border-box; width: 48px; height: 28px; padding: 3px;
+  display: block; box-sizing: border-box; width: 40px; height: 28px; padding: 3px;
   border-radius: 28px; background: rgba(255, 255, 255, .24); transition: background 160ms ease;
 }
 .gite-cleaning-check__track > span {
-  display: block; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+  display: block; width: 18px; height: 18px; border-radius: 50%; background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: transform 160ms ease;
 }
 .is-checked .gite-cleaning-check__track { background: var(--primary); }
-.is-checked .gite-cleaning-check__track > span { transform: translateX(20px); }
+.is-checked .gite-cleaning-check__track > span { transform: translateX(16px); }
 .gite-cleaning-check__details {
   position: absolute; z-index: 1; bottom: calc(100% + 4px); right: 0;
   display: grid; gap: 5px; width: 230px; max-width: calc(100vw - 64px); padding: 12px;

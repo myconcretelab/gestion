@@ -42,9 +42,8 @@ test("contrôle de ménage par réservation : persistance, doublons, annulation 
     assert.ok(results.every((result) => !result.error && result.body.cleaning_checked_at));
     assert.equal(messages.length, 1);
     assert.equal(messages[0].chat_id, "chat-reservations");
-    assert.match(messages[0].text, /Gîte &amp; Jardin/);
+    assert.match(messages[0].text, /Gîte &amp; Jardin checké !/);
     assert.match(messages[0].text, /@camille/);
-    assert.match(messages[0].text, /Le gîte est OK/);
     await call("put", { checked: false });
     assert.equal((await call("get")).body.cleaning_checked_at, null);
     assert.equal(messages.length, 1);
@@ -58,6 +57,7 @@ test("contrôle de ménage par réservation : persistance, doublons, annulation 
     telegram.writeTelegramNotificationConfig({ ...telegram.buildDefaultTelegramNotificationConfig(), notify_gite_checked: false });
     assert.match((await call("put", { checked: true })).body.notification_warning, /non envoyée/);
     const message = telegram.buildGiteCheckedMessage("Maison", new Date("2026-09-16T10:45:00Z"));
+    assert.match(message, /Maison checké !/);
     assert.match(message, /12:45/);
   } finally {
     prisma.reservation.findUnique = originalFind;
