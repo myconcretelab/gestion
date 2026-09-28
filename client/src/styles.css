@@ -232,7 +232,7 @@ body.app-scroll-locked {
   top: 12px;
   z-index: 4;
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(220px, 0.8fr) minmax(240px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 12px;
   padding: 16px;
   border-radius: 26px;
@@ -301,6 +301,7 @@ body.app-scroll-locked {
 }
 
 .today-revenue-mini {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
@@ -322,7 +323,8 @@ body.app-scroll-locked {
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
-.today-revenue-mini__explainer {
+.reservations-summary-explainer.today-revenue-mini__explainer {
+  position: static;
   display: block;
   width: 100%;
   min-width: 0;
@@ -341,7 +343,7 @@ body.app-scroll-locked {
   bottom: calc(100% + 8px);
   left: 0;
   box-sizing: border-box;
-  width: min(280px, calc(100vw - 32px));
+  width: min(280px, 100%);
   min-width: 0;
   max-height: min(360px, calc(100vh - 32px));
   overflow: auto;
@@ -3346,6 +3348,7 @@ body.app-scroll-locked {
 .mobile-reservation-actions__panel {
   pointer-events: auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 12px;
   border-radius: 22px;
@@ -3357,6 +3360,7 @@ body.app-scroll-locked {
 
 .mobile-reservation-actions__header {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -3364,7 +3368,10 @@ body.app-scroll-locked {
 
 .mobile-reservation-actions__copy {
   min-width: 0;
+  flex: 1;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
   gap: 6px;
 }
 
