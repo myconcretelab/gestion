@@ -30,6 +30,8 @@ import type {
   Intervenant,
 } from "../utils/types";
 
+import AppearanceSettings from "./AppearanceSettings";
+
 type IcalPreviewItem = {
   id: string;
   gite_nom: string;
@@ -307,6 +309,7 @@ type PumpSessionRenewalResult = {
 };
 
 const SETTINGS_SECTIONS = [
+  { id: "settings-appearance", label: "Templates d’apparence" },
   { id: "settings-import-log", label: "Journal des imports" },
   { id: "settings-sms", label: "SMS" },
   { id: "settings-email-texts", label: "Emails" },
@@ -329,6 +332,7 @@ type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
 const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "settings-security";
 
 const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
+  "settings-appearance": "apparence",
   "settings-import-log": "journal-imports",
   "settings-sms": "sms",
   "settings-email-texts": "emails",
@@ -5400,6 +5404,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
         </aside>
 
         <div className="settings-content">
+          {activeSettingsSection === "settings-appearance" ? <AppearanceSettings /> : null}
           {activeSettingsSection === "settings-security" ? (
             <section
               id="settings-security"
