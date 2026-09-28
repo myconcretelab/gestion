@@ -19464,8 +19464,8 @@ button.personal-expenses-status:disabled {
   }
 }
 
-.mobile-reservation-actions__copy:has(.gite-cleaning-check) { flex: 1; }
-.gite-cleaning-check { position: relative; justify-self: start; max-width: 100%; }
+.mobile-reservation-actions__aside { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.gite-cleaning-check { position: relative; max-width: 100%; }
 .gite-cleaning-check__controls { display: flex; align-items: center; gap: 2px; }
 .gite-cleaning-check__info,
 .gite-cleaning-check__toggle {
@@ -19492,12 +19492,11 @@ button.personal-expenses-status:disabled {
 .is-checked .gite-cleaning-check__track { background: var(--primary); }
 .is-checked .gite-cleaning-check__track > span { transform: translateX(20px); }
 .gite-cleaning-check__details {
-  position: absolute; z-index: 1; bottom: calc(100% + 4px); left: 0;
+  position: absolute; z-index: 1; bottom: calc(100% + 4px); right: 0;
   display: grid; gap: 5px; width: 230px; max-width: calc(100vw - 64px); padding: 12px;
   border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--ink);
   box-shadow: var(--shadow-strong); font-size: 12px; line-height: 1.5;
 }
-.mobile-reservation-actions__copy .gite-cleaning-check__details strong { font-size: 12px; }
 .gite-cleaning-check > small { display: block; margin-top: 4px; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) {
   .gite-cleaning-check__track, .gite-cleaning-check__track > span { transition: none; }
