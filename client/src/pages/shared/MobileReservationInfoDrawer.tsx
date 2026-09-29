@@ -1,4 +1,4 @@
-import GiteCleaningCheck from "./GiteCleaningCheck";
+import GiteCleaningCheck, { type CleaningCheckOccurrence } from "./GiteCleaningCheck";
 import type { ComponentProps } from "react";
 import { formatEuro } from "../../utils/format";
 import { getReservationOptionBadges } from "../../utils/reservationOptionBadges";
@@ -15,6 +15,7 @@ type Props = Pick<ComponentProps<typeof MobileReservationActionsBar>,
   "open" | "title" | "onClose" | "onEdit" | "highlightedCard" | "sourcePicker"> & {
   reservation: ReservationInfo;
   giteId: string | null;
+  cleaningCheckOccurrence?: CleaningCheckOccurrence;
   total?: number;
   onToggleSource: () => void;
 };
@@ -23,7 +24,7 @@ const formatShortDate = (value: string) => new Date(value).toLocaleDateString("f
   day: "numeric", month: "short", timeZone: "UTC",
 });
 
-const MobileReservationInfoDrawer = ({ reservation, giteId, total, onToggleSource, ...props }: Props) => {
+const MobileReservationInfoDrawer = ({ reservation, giteId, cleaningCheckOccurrence = "arrival", total, onToggleSource, ...props }: Props) => {
   const hasLiveEnergy = (reservation.energy_live_consumption_kwh ?? 0) > 0 || (reservation.energy_live_cost_eur ?? 0) > 0;
   const hasSavedEnergy = (reservation.energy_consumption_kwh ?? 0) > 0 || (reservation.energy_cost_eur ?? 0) > 0;
   const energyCost = hasLiveEnergy ? reservation.energy_live_cost_eur ?? 0
@@ -46,7 +47,13 @@ const MobileReservationInfoDrawer = ({ reservation, giteId, total, onToggleSourc
         },
         ...(energyCost !== null ? [{ label: "Conso", value: formatEuro(energyCost) }] : []),
       ]}
-      cleaningCheck={props.open && giteId ? <GiteCleaningCheck key={reservation.id} reservationId={reservation.id} /> : null}
+      cleaningCheck={props.open && giteId ? (
+        <GiteCleaningCheck
+          key={`${reservation.id}:${cleaningCheckOccurrence}`}
+          reservationId={reservation.id}
+          occurrence={cleaningCheckOccurrence}
+        />
+      ) : null}
       note={reservation.commentaire}
       phoneHref={buildTelephoneHref(reservation.telephone)}
       smsHref={buildSmsHref(reservation.telephone ?? "")}

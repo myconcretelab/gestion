@@ -197,6 +197,7 @@ type TodayMobileActionState =
   | {
       mode: "actions";
       reservationId: string;
+      cleaningCheckOccurrence: "arrival" | "departure";
     }
   | {
       mode: "rotation-choice";
@@ -987,9 +988,12 @@ const TodayPage = () => {
         return current?.mode === "rotation-choice" && current.eventId === event.id ? null : { mode: "rotation-choice", eventId: event.id };
       }
 
-      return current?.mode === "actions" && current.reservationId === event.primaryReservation.id
+      const cleaningCheckOccurrence = event.type === "arrival" ? "arrival" : "departure";
+      return current?.mode === "actions"
+        && current.reservationId === event.primaryReservation.id
+        && current.cleaningCheckOccurrence === cleaningCheckOccurrence
         ? null
-        : { mode: "actions", reservationId: event.primaryReservation.id };
+        : { mode: "actions", reservationId: event.primaryReservation.id, cleaningCheckOccurrence };
     });
   };
 
@@ -1761,12 +1765,20 @@ const TodayPage = () => {
           onSelectArrival={() => {
             if (!mobileActionEvent.arrivalReservation) return;
             setSourcePickerReservationId(null);
-            setMobileActionState({ mode: "actions", reservationId: mobileActionEvent.arrivalReservation.id });
+            setMobileActionState({
+              mode: "actions",
+              reservationId: mobileActionEvent.arrivalReservation.id,
+              cleaningCheckOccurrence: "arrival",
+            });
           }}
           onSelectDeparture={() => {
             if (!mobileActionEvent.departureReservation) return;
             setSourcePickerReservationId(null);
-            setMobileActionState({ mode: "actions", reservationId: mobileActionEvent.departureReservation.id });
+            setMobileActionState({
+              mode: "actions",
+              reservationId: mobileActionEvent.departureReservation.id,
+              cleaningCheckOccurrence: "departure",
+            });
           }}
           arrivalLabel={`Arrivée · ${getReservationGuestName(mobileActionEvent.arrivalReservation)}`}
           departureLabel={`Départ · ${getReservationGuestName(mobileActionEvent.departureReservation)}`}
@@ -1781,6 +1793,7 @@ const TodayPage = () => {
           title={getReservationGuestName(mobileActionReservation)}
           reservation={mobileActionReservation}
           giteId={mobileActionReservation.gite_id ?? null}
+          cleaningCheckOccurrence={mobileActionState?.mode === "actions" ? mobileActionState.cleaningCheckOccurrence : "arrival"}
           onToggleSource={() => {
             setSourceUpdateError(null);
             setSourcePickerReservationId((current) => current === mobileActionReservation.id ? null : mobileActionReservation.id);

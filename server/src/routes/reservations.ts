@@ -40,17 +40,32 @@ import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.j
 
 const router = Router();
 
+const cleaningCheckOccurrenceSchema = z.enum(["arrival", "departure"]);
+type CleaningCheckOccurrence = z.infer<typeof cleaningCheckOccurrenceSchema>;
+
+const cleaningCheckValue = (
+  reservation: { arrival_cleaning_checked_at: Date | null; departure_cleaning_checked_at: Date | null },
+  occurrence: CleaningCheckOccurrence
+) => occurrence === "arrival" ? reservation.arrival_cleaning_checked_at : reservation.departure_cleaning_checked_at;
+
 router.get("/:id/cleaning-check", async (req, res, next) => {
   try {
-    const reservation = await prisma.reservation.findUnique({ where: { id: req.params.id }, select: { cleaning_checked_at: true } });
+    const occurrence = cleaningCheckOccurrenceSchema.default("arrival").parse(req.query.occurrence);
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      select: { arrival_cleaning_checked_at: true, departure_cleaning_checked_at: true },
+    });
     if (!reservation) return res.status(404).json({ error: "Réservation introuvable." });
-    res.json(reservation);
+    res.json({ occurrence, cleaning_checked_at: cleaningCheckValue(reservation, occurrence) });
   } catch (error) { next(error); }
 });
 
 router.put("/:id/cleaning-check", async (req, res, next) => {
   try {
-    const { checked } = z.object({ checked: z.boolean() }).parse(req.body);
+    const { checked, occurrence } = z.object({
+      checked: z.boolean(),
+      occurrence: cleaningCheckOccurrenceSchema.default("arrival"),
+    }).parse(req.body);
     const reservation = await prisma.reservation.findUnique({
       where: { id: req.params.id },
       select: { gite: { select: { nom: true } } },
@@ -59,8 +74,12 @@ router.put("/:id/cleaning-check", async (req, res, next) => {
     const checkedAt = checked ? new Date() : null;
     // Conditional update prevents duplicate notifications from simultaneous checks.
     const changed = await prisma.reservation.updateMany({
-      where: { id: req.params.id, cleaning_checked_at: checked ? null : { not: null } },
-      data: { cleaning_checked_at: checkedAt },
+      where: occurrence === "arrival"
+        ? { id: req.params.id, arrival_cleaning_checked_at: checked ? null : { not: null } }
+        : { id: req.params.id, departure_cleaning_checked_at: checked ? null : { not: null } },
+      data: occurrence === "arrival"
+        ? { arrival_cleaning_checked_at: checkedAt }
+        : { departure_cleaning_checked_at: checkedAt },
     });
     let notificationWarning: string | null = null;
     if (changed.count && checkedAt) {
@@ -71,8 +90,15 @@ router.put("/:id/cleaning-check", async (req, res, next) => {
         notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
       }
     }
-    const state = await prisma.reservation.findUnique({ where: { id: req.params.id }, select: { cleaning_checked_at: true } });
-    res.json({ ...state, notification_warning: notificationWarning });
+    const state = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      select: { arrival_cleaning_checked_at: true, departure_cleaning_checked_at: true },
+    });
+    res.json({
+      occurrence,
+      cleaning_checked_at: state ? cleaningCheckValue(state, occurrence) : null,
+      notification_warning: notificationWarning,
+    });
   } catch (error) { next(error); }
 });
 

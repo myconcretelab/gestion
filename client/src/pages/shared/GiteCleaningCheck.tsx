@@ -2,8 +2,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import { apiFetch } from "../../utils/api";
 
 type CheckState = { cleaning_checked_at: string | null; notification_warning?: string | null };
+export type CleaningCheckOccurrence = "arrival" | "departure";
 
-const GiteCleaningCheck = ({ reservationId }: { reservationId: string }) => {
+const GiteCleaningCheck = ({ reservationId, occurrence }: { reservationId: string; occurrence: CleaningCheckOccurrence }) => {
   const [state, setState] = useState<CheckState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +31,7 @@ const GiteCleaningCheck = ({ reservationId }: { reservationId: string }) => {
       document.removeEventListener("keydown", dismissOnEscape);
     };
   }, [showDetails]);
-  const endpoint = `/reservations/${encodeURIComponent(reservationId)}/cleaning-check`;
+  const endpoint = `/reservations/${encodeURIComponent(reservationId)}/cleaning-check?occurrence=${occurrence}`;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -47,7 +48,7 @@ const GiteCleaningCheck = ({ reservationId }: { reservationId: string }) => {
     setError(null);
     try {
       setState(await apiFetch<CheckState>(endpoint, {
-        method: "PUT", json: { checked: !state.cleaning_checked_at },
+        method: "PUT", json: { checked: !state.cleaning_checked_at, occurrence },
       }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d’enregistrer le contrôle.");
@@ -80,6 +81,7 @@ const GiteCleaningCheck = ({ reservationId }: { reservationId: string }) => {
       {showDetails ? (
         <div id={detailsId} className="gite-cleaning-check__details" role="status">
           <strong>{checked ? "Ménage vérifié" : state ? "Pas checké" : "Contrôle du ménage"}</strong>
+          <span>{occurrence === "arrival" ? "Pour l’entrée" : "Pour la sortie"}</span>
           {state?.cleaning_checked_at ? (
             <span>Le <time dateTime={state.cleaning_checked_at}>{new Date(state.cleaning_checked_at).toLocaleString("fr-FR", {
               timeZone: "Europe/Paris", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
