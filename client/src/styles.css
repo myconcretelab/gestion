@@ -18679,6 +18679,36 @@ button.personal-expenses-status:disabled {
   white-space: pre-wrap;
 }
 
+.booking-request-detail-page__internal-note {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, #e2e8f0);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-soft) 45%, #ffffff);
+}
+
+.booking-request-detail-page__internal-note .field {
+  width: 100%;
+}
+
+.booking-request-detail-page__internal-note textarea {
+  min-height: 96px;
+}
+
+.booking-request-detail-page__internal-note--saved p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.booking-request-detail-page__internal-note--saved small {
+  color: #64748b;
+}
+
 .booking-request-detail-page__decision-note {
   margin-top: 16px;
 }

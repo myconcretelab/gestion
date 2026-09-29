@@ -459,6 +459,7 @@ export type BookingRequest = {
   nb_enfants_2_17: number;
   options: ContratOptions;
   message_client?: string | null;
+  internal_note?: string | null;
   pricing_snapshot: BookingQuote;
   status: BookingRequestStatus;
   hold_expires_at: string;

@@ -44,12 +44,14 @@ const BookingRequestDetailPage = () => {
   const backTarget = locationState?.from?.startsWith("/demandes") ? locationState.from : "/demandes";
   const [request, setRequest] = useState<BookingRequest | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
+  const [internalNote, setInternalNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submittingAction, setSubmittingAction] = useState<"approve" | "approve-email" | "reject" | "refresh" | null>(null);
   const [dateEditor, setDateEditor] = useState<{ date_entree: string; date_sortie: string } | null>(null);
   const [savingDates, setSavingDates] = useState(false);
+  const [savingInternalNote, setSavingInternalNote] = useState(false);
   const [emailComposer, setEmailComposer] = useState<ApprovalEmailComposerState | null>(null);
   const phoneHref = buildPhoneHref(request?.telephone);
   const gitePhoto = request?.gite?.photos?.[0] ?? null;
@@ -63,6 +65,7 @@ const BookingRequestDetailPage = () => {
       .then((loadedRequest) => {
         setRequest(loadedRequest);
         setDecisionNote(loadedRequest.decision_note ?? "");
+        setInternalNote(loadedRequest.internal_note ?? "");
       })
       .catch((fetchError) => {
         if (isAbortError(fetchError)) return;
@@ -83,7 +86,7 @@ const BookingRequestDetailPage = () => {
     try {
       const updated = await apiFetch<BookingRequest>(`/booking-requests/${request.id}/approve`, {
         method: "POST",
-        json: { decision_note: decisionNote, ...(email ? { email } : {}) },
+        json: { decision_note: decisionNote, internal_note: internalNote, ...(email ? { email } : {}) },
       });
       setRequest(updated);
       setEmailComposer(null);
@@ -107,7 +110,7 @@ const BookingRequestDetailPage = () => {
     try {
       const updated = await apiFetch<BookingRequest>(`/booking-requests/${request.id}/reject`, {
         method: "POST",
-        json: { decision_note: decisionNote },
+        json: { decision_note: decisionNote, internal_note: internalNote },
       });
       setRequest(updated);
       setNotice("Demande rejetée.");
@@ -122,6 +125,30 @@ const BookingRequestDetailPage = () => {
     }
   };
 
+  const saveInternalNote = async () => {
+    if (!request || request.status === "approved") return;
+    setSavingInternalNote(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await apiFetch<BookingRequest>(`/booking-requests/${request.id}/internal-note`, {
+        method: "POST",
+        json: { internal_note: internalNote },
+      });
+      setRequest(updated);
+      setInternalNote(updated.internal_note ?? "");
+      setNotice("Notes internes enregistrées.");
+    } catch (actionError) {
+      setError(
+        isApiError(actionError) || actionError instanceof Error
+          ? actionError.message
+          : "Enregistrement des notes internes impossible.",
+      );
+    } finally {
+      setSavingInternalNote(false);
+    }
+  };
+
   const refreshRequest = async () => {
     if (!request || request.status !== "expired") return;
     setSubmittingAction("refresh");
@@ -133,6 +160,7 @@ const BookingRequestDetailPage = () => {
       });
       setRequest(updated);
       setDecisionNote("");
+      setInternalNote(updated.internal_note ?? "");
       setNotice("Demande réactivée pour 24 heures. Les disponibilités et le tarif ont été vérifiés.");
     } catch (actionError) {
       setError(
@@ -322,6 +350,39 @@ const BookingRequestDetailPage = () => {
                     <p>{request.message_client}</p>
                   </div>
                 ) : null}
+
+                {request.status === "approved" ? (
+                  <div className="booking-request-detail-page__internal-note booking-request-detail-page__internal-note--saved">
+                    <strong>Notes internes</strong>
+                    <p>{request.internal_note || "Aucune note interne attachée à la réservation."}</p>
+                    <small>Pour la modifier, ouvrez la réservation créée.</small>
+                  </div>
+                ) : (
+                  <div className="booking-request-detail-page__internal-note">
+                    <label className="field">
+                      Notes internes
+                      <textarea
+                        rows={4}
+                        value={internalNote}
+                        onChange={(event) => setInternalNote(event.target.value)}
+                        placeholder="Informations utiles pour le suivi de la réservation"
+                      />
+                      <small>Cette note sera attachée à la réservation lors de l’approbation.</small>
+                    </label>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => void saveInternalNote()}
+                      disabled={
+                        savingInternalNote ||
+                        Boolean(submittingAction) ||
+                        internalNote.trim() === String(request.internal_note ?? "").trim()
+                      }
+                    >
+                      {savingInternalNote ? "Enregistrement…" : "Enregistrer les notes"}
+                    </button>
+                  </div>
+                )}
 
                 {request.status === "pending" ? (
                   <label className="field booking-request-detail-page__decision-note">

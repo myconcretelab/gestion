@@ -27,6 +27,7 @@ const router = Router();
 
 const decisionSchema = z.object({
   decision_note: z.string().trim().optional().default(""),
+  internal_note: z.string().trim().max(20_000).optional(),
   email: z
     .object({
       recipient: z.string().trim().email().optional(),
@@ -34,6 +35,10 @@ const decisionSchema = z.object({
       body: z.string().trim().min(1).max(20_000).optional(),
     })
     .optional(),
+});
+
+const internalNoteSchema = z.object({
+  internal_note: z.string().trim().max(20_000).optional().default(""),
 });
 
 const dateUpdateSchema = z.object({
@@ -95,6 +100,16 @@ const buildOptionalFeesLabel = (options: OptionsInput) => {
   if (options.depart_tardif?.enabled) labels.push("Départ tardif");
   if (options.chiens?.enabled) labels.push("Chiens");
   return labels.join(" · ") || null;
+};
+
+const buildReservationComment = (internalNote?: string | null, clientMessage?: string | null) => {
+  const trimmedInternalNote = String(internalNote ?? "").trim();
+  const trimmedClientMessage = String(clientMessage ?? "").trim();
+  const parts = [
+    trimmedInternalNote,
+    trimmedClientMessage ? `Message du client : ${trimmedClientMessage}` : "",
+  ].filter(Boolean);
+  return parts.join("\n\n") || null;
 };
 
 const mapBookedError = (error: unknown) => {
@@ -298,16 +313,48 @@ router.post("/:id/refresh", async (req, res, next) => {
   }
 });
 
+router.post("/:id/internal-note", async (req, res, next) => {
+  try {
+    const { internal_note } = internalNoteSchema.parse(req.body ?? {});
+    const bookingRequest = await loadBookingRequest(req.params.id);
+    if (!bookingRequest) {
+      return res.status(404).json({ error: "Demande introuvable." });
+    }
+    if (bookingRequest.status === "approved") {
+      throw new BookedValidationError({
+        code: "invalid_status",
+        message: "La réservation est déjà créée. Modifiez sa note depuis la page Réservations.",
+        statusCode: 409,
+      });
+    }
+
+    const updated = await prisma.bookingRequest.update({
+      where: { id: bookingRequest.id },
+      data: { internal_note: internal_note || null },
+      include: bookingRequestInclude,
+    });
+    return res.json(toBookingRequestPayload(updated));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    next(error);
+  }
+});
+
 router.post("/:id/approve", async (req, res, next) => {
   try {
     await expireStaleBookingRequests();
-    const { decision_note, email } = decisionSchema.parse(req.body ?? {});
+    const { decision_note, internal_note, email } = decisionSchema.parse(req.body ?? {});
     const bookingRequest = await loadBookingRequest(req.params.id);
     if (!bookingRequest) {
       return res.status(404).json({ error: "Demande introuvable." });
     }
 
     ensureBookingRequestPending(bookingRequest);
+    const resolvedInternalNote =
+      internal_note === undefined ? String(bookingRequest.internal_note ?? "").trim() : internal_note;
 
     await assertBookedAvailability({
       giteId: bookingRequest.gite_id,
@@ -347,7 +394,7 @@ router.post("/:id/approve", async (req, res, next) => {
           prix_par_nuit: averageNightly,
           prix_total: pricingSnapshot.montant_hebergement,
           source_paiement: "A définir",
-          commentaire: bookingRequest.message_client ?? null,
+          commentaire: buildReservationComment(resolvedInternalNote, bookingRequest.message_client),
           remise_montant: 0,
           commission_channel_mode: "euro",
           commission_channel_value: 0,
@@ -364,6 +411,7 @@ router.post("/:id/approve", async (req, res, next) => {
           status: "approved",
           decided_at: new Date(),
           decision_note: decision_note || null,
+          internal_note: resolvedInternalNote || null,
           approved_reservation_id: reservation.id,
         },
         include: bookingRequestInclude,
@@ -407,13 +455,15 @@ router.post("/:id/approve", async (req, res, next) => {
 router.post("/:id/reject", async (req, res, next) => {
   try {
     await expireStaleBookingRequests();
-    const { decision_note } = decisionSchema.parse(req.body ?? {});
+    const { decision_note, internal_note } = decisionSchema.parse(req.body ?? {});
     const bookingRequest = await loadBookingRequest(req.params.id);
     if (!bookingRequest) {
       return res.status(404).json({ error: "Demande introuvable." });
     }
 
     ensureBookingRequestPending(bookingRequest);
+    const resolvedInternalNote =
+      internal_note === undefined ? String(bookingRequest.internal_note ?? "").trim() : internal_note;
 
     const updated = await prisma.bookingRequest.update({
       where: { id: bookingRequest.id },
@@ -421,6 +471,7 @@ router.post("/:id/reject", async (req, res, next) => {
         status: "rejected",
         decided_at: new Date(),
         decision_note: decision_note || null,
+        internal_note: resolvedInternalNote || null,
       },
       include: bookingRequestInclude,
     });

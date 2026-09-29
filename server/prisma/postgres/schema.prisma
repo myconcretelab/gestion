@@ -596,6 +596,7 @@ model BookingRequest {
   nb_enfants_2_17        Int          @default(0)
   options                Json         @default("{}")
   message_client         String?
+  internal_note          String?
   pricing_snapshot       Json
   status                 String       @default("pending")
   hold_expires_at        DateTime
