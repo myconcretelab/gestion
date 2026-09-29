@@ -192,6 +192,7 @@ test("POST /booking-requests/:id/approve crée une réservation booked avec les 
       nb_enfants_2_17: 2,
       options: JSON.stringify({ menage: { enabled: true } }),
       message_client: "bonjour",
+      internal_note: null,
       pricing_snapshot: JSON.stringify({
         nb_nuits: 4,
         montant_hebergement: 520,
@@ -231,6 +232,7 @@ test("POST /booking-requests/:id/approve crée une réservation booked avec les 
             nb_enfants_2_17: 2,
             options: JSON.stringify({ menage: { enabled: true } }),
             message_client: "bonjour",
+            internal_note: data.internal_note,
             pricing_snapshot: JSON.stringify({
               nb_nuits: 4,
               montant_hebergement: 520,
@@ -262,7 +264,7 @@ test("POST /booking-requests/:id/approve crée une réservation booked avec les 
     await approve(
       {
         params: { id: "br1" },
-        body: { decision_note: "OK" },
+        body: { decision_note: "OK", internal_note: "Prévoir un lit bébé" },
       },
       response,
       (error) => {
@@ -275,6 +277,10 @@ test("POST /booking-requests/:id/approve crée une réservation booked avec les 
     assert.equal(createdReservationData.origin_system, "booked");
     assert.equal(createdReservationData.nb_enfants_2_17, 2);
     assert.equal(createdReservationData.prix_total, 520);
+    assert.equal(
+      createdReservationData.commentaire,
+      "Prévoir un lit bébé\n\nMessage du client : bonjour",
+    );
   } finally {
     prisma.bookingRequest.updateMany = originals.bookingRequestUpdateMany;
     prisma.bookingRequest.findUnique = originals.bookingRequestFindUnique;
@@ -282,6 +288,65 @@ test("POST /booking-requests/:id/approve crée une réservation booked avec les 
     prisma.bookingRequest.update = originals.bookingRequestUpdate;
     prisma.reservation.findMany = originals.reservationFindMany;
     prisma.$transaction = originals.$transaction;
+  }
+});
+
+test("POST /booking-requests/:id/internal-note sauvegarde la note sur la demande", async () => {
+  const originals = {
+    bookingRequestFindUnique: prisma.bookingRequest.findUnique,
+    bookingRequestUpdate: prisma.bookingRequest.update,
+  };
+  let updateData: any = null;
+  const pendingRequest = {
+    id: "br-note",
+    gite_id: "g1",
+    approved_reservation_id: null,
+    hote_nom: "Client Booked",
+    telephone: null,
+    email: null,
+    date_entree: new Date("2026-09-10T00:00:00.000Z"),
+    date_sortie: new Date("2026-09-12T00:00:00.000Z"),
+    nb_nuits: 2,
+    nb_adultes: 2,
+    nb_enfants_2_17: 0,
+    options: "{}",
+    message_client: null,
+    internal_note: null,
+    pricing_snapshot: JSON.stringify({ nb_nuits: 2, montant_hebergement: 200 }),
+    status: "pending",
+    hold_expires_at: new Date(Date.now() + 60_000),
+    decided_at: null,
+    decision_note: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    gite: { id: "g1", nom: "La Grée", email: "owner@example.com", photos: [] },
+    approved_reservation: null,
+  };
+
+  try {
+    prisma.bookingRequest.findUnique = async () => pendingRequest as any;
+    prisma.bookingRequest.update = async ({ data }: any) => {
+      updateData = data;
+      return { ...pendingRequest, ...data } as any;
+    };
+
+    const saveInternalNote = getRouteHandler(bookedRouter, "post", "/:id/internal-note");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await saveInternalNote(
+      { params: { id: pendingRequest.id }, body: { internal_note: "Arrivée tardive" } },
+      response,
+      (error) => { nextError = error ?? null; },
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal(updateData.internal_note, "Arrivée tardive");
+    assert.equal((response.body as any).internal_note, "Arrivée tardive");
+  } finally {
+    prisma.bookingRequest.findUnique = originals.bookingRequestFindUnique;
+    prisma.bookingRequest.update = originals.bookingRequestUpdate;
   }
 });
 
