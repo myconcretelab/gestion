@@ -182,6 +182,7 @@ const ContratDetailPage = () => {
         documentUrl,
         locataireNom: contrat.locataire_nom,
         giteNom: contrat.gite?.nom,
+        giteNameWithPreposition: contrat.gite?.nom_avec_preposition,
         dateDebut: contrat.date_debut,
         heureArrivee: contrat.heure_arrivee,
         dateFin: contrat.date_fin,

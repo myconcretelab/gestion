@@ -3,9 +3,11 @@ import { sendSmtpMail } from "./mailer.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
 import { readDocumentEmailTemplateSettings } from "./documentEmailTemplateSettings.js";
 import type { OptionsInput } from "./contractCalculator.js";
+import { buildGiteNameWithPreposition } from "../utils/giteName.js";
 
 type BookingRequestEmailGite = {
   nom: string;
+  nom_avec_preposition?: string | null;
   email?: string | null;
 };
 
@@ -156,12 +158,14 @@ const buildHtmlFromText = (text: string) => {
 const buildApprovedTemplateValues = (payload: BookingRequestEmailPayload) => {
   const template = readDocumentEmailTemplateSettings().bookingRequestApproved;
   const giteName = String(payload.gite.nom ?? "").trim();
+  const giteNameWithPreposition = buildGiteNameWithPreposition(payload.gite);
   return {
     template,
     values: {
       greeting: buildGreeting(payload.hote_nom),
       clientName: payload.hote_nom.trim(),
       giteName,
+      giteNameWithPreposition,
       giteReference: giteName ? `au ${giteName}` : "dans notre gîte",
       stayDuration: formatStayDuration(payload.pricing_snapshot.nb_nuits),
       dateEntree: formatBookedDateInput(payload.date_entree),

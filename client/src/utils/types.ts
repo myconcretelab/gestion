@@ -13,6 +13,7 @@ export type Gite = {
   id: string;
   ordre?: number;
   nom: string;
+  nom_avec_preposition?: string | null;
   prefixe_contrat: string;
   adresse_ligne1: string;
   adresse_ligne2?: string | null;
@@ -465,7 +466,7 @@ export type BookingRequest = {
   decision_note?: string | null;
   createdAt?: string;
   updatedAt?: string;
-  gite?: Pick<Gite, "id" | "nom" | "email">;
+  gite?: Pick<Gite, "id" | "nom" | "nom_avec_preposition" | "email">;
   approved_reservation?: Pick<Reservation, "id" | "hote_nom" | "date_entree" | "date_sortie"> | null;
 };
 

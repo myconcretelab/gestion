@@ -155,6 +155,7 @@ const FacturesListPage = () => {
         documentUrl,
         locataireNom: facture.locataire_nom,
         giteNom: facture.gite?.nom,
+        giteNameWithPreposition: facture.gite?.nom_avec_preposition,
         deliveryMode: "attachment",
       };
       const draft = buildDocumentEmailDraft(draftParams, templateSettings);

@@ -17,6 +17,7 @@ model Gite {
   id                                   String   @id @default(cuid())
   ordre                                Int      @default(0)
   nom                                  String
+  nom_avec_preposition                 String?
   prefixe_contrat                      String
   adresse_ligne1                       String
   adresse_ligne2                       String?

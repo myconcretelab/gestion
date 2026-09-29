@@ -10,6 +10,7 @@ import {
   type StatisticsPayload,
 } from "./statistics/statisticsUtils";
 import { getNetAverageMonthlyRevenue } from "./statistics/revenueAverageUtils";
+import { buildGiteNameWithPreposition } from "../utils/giteName";
 
 type NumberInputValue = number | "";
 type PublicWebInfoForm = {
@@ -32,6 +33,7 @@ const emptyPublicWebInfo = (): PublicWebInfoForm => ({
 
 const emptyForm = {
   nom: "",
+  nom_avec_preposition: "",
   prefixe_contrat: "",
   adresse_ligne1: "",
   adresse_ligne2: "",
@@ -1665,6 +1667,7 @@ const GitesPage = () => {
     }
     setForm({
       nom: selected.nom,
+      nom_avec_preposition: selected.nom_avec_preposition ?? "",
       prefixe_contrat: selected.prefixe_contrat,
       adresse_ligne1: selected.adresse_ligne1,
       adresse_ligne2: selected.adresse_ligne2 ?? "",
@@ -2974,6 +2977,17 @@ const GitesPage = () => {
             <label className="field">
               Nom
               <input value={form.nom} onChange={(e) => handleChange("nom", e.target.value)} />
+            </label>
+            <label className="field">
+              Nom avec préposition
+              <input
+                value={form.nom_avec_preposition}
+                onChange={(e) => handleChange("nom_avec_preposition", e.target.value)}
+                placeholder={buildGiteNameWithPreposition({ nom: form.nom }) || "de la Grée"}
+              />
+              <small>
+                Utilisé par la variable {"{{giteNameWithPreposition}}"} dans les emails. Laissez vide pour le calcul automatique.
+              </small>
             </label>
             <label className="field">
               Préfixe contrat

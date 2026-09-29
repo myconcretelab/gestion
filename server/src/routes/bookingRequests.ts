@@ -100,6 +100,7 @@ const loadBookingRequest = async (id: string) =>
         select: {
           id: true,
           nom: true,
+          nom_avec_preposition: true,
           email: true,
         },
       },
@@ -146,6 +147,7 @@ router.get("/", async (req, res, next) => {
           select: {
             id: true,
             nom: true,
+            nom_avec_preposition: true,
             email: true,
           },
         },
@@ -233,6 +235,7 @@ router.post("/:id/dates", async (req, res, next) => {
           select: {
             id: true,
             nom: true,
+            nom_avec_preposition: true,
             email: true,
           },
         },
@@ -330,6 +333,7 @@ router.post("/:id/approve", async (req, res, next) => {
             select: {
               id: true,
               nom: true,
+              nom_avec_preposition: true,
               email: true,
             },
           },
@@ -402,6 +406,7 @@ router.post("/:id/reject", async (req, res, next) => {
           select: {
             id: true,
             nom: true,
+            nom_avec_preposition: true,
             email: true,
           },
         },
