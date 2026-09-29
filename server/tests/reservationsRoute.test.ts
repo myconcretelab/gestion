@@ -36,6 +36,43 @@ const getRouteHandler = (router: any, method: "get" | "post" | "patch", routePat
   return layer.route.stack[0].handle as (req: any, res: any, next: (err?: unknown) => void) => Promise<void>;
 };
 
+test("GET /reservations/recent-imports/count inclut les réservations Booked", async () => {
+  const prismaModule = await import("../src/db/prisma.ts");
+  const prisma = prismaModule.default as any;
+  const originalCount = prisma.reservation.count;
+  let countWhere: any = null;
+
+  try {
+    prisma.reservation.count = async ({ where }: any) => {
+      countWhere = where;
+      return 4;
+    };
+
+    const reservationsRouterModule = await import("../src/routes/reservations.ts");
+    const countRecent = getRouteHandler(
+      reservationsRouterModule.default,
+      "get",
+      "/recent-imports/count",
+    );
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await countRecent(
+      { params: {}, query: {} },
+      response,
+      (err) => { nextError = err ?? null; },
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.equal((response.body as any).count, 4);
+    assert.deepEqual(countWhere.origin_system, { in: ["ical", "pump", "booked"] });
+    assert.ok(countWhere.createdAt.gte instanceof Date);
+  } finally {
+    prisma.reservation.count = originalCount;
+  }
+});
+
 test("PATCH /reservations/:id/source met à jour toute la réservation regroupée", async () => {
   const envBackup = {
     DATABASE_URL: process.env.DATABASE_URL,

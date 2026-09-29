@@ -4,6 +4,8 @@ import { apiFetch, isAbortError, isApiError } from "../utils/api";
 import { formatDate, formatEuro } from "../utils/format";
 import type { BookingRequest } from "../utils/types";
 import { buildPhoneHref, formatPhoneForDisplay } from "../utils/phone";
+import { dispatchBookingRequestsChanged } from "../utils/bookingRequestsBadge";
+import { dispatchRecentImportedReservationsCreated } from "../utils/recentImportsBadge";
 import {
   buildBookingRequestApprovedEmailDraft,
   buildDocumentEmailTemplateSettings,
@@ -90,6 +92,8 @@ const BookingRequestDetailPage = () => {
         json: { decision_note: decisionNote, internal_note: internalNote, ...(email ? { email } : {}) },
       });
       setRequest(updated);
+      dispatchBookingRequestsChanged();
+      dispatchRecentImportedReservationsCreated(1);
       setEmailComposer(null);
       setNotice(email || request.email ? "Demande approuvée et email envoyé." : "Demande approuvée.");
     } catch (actionError) {
@@ -114,6 +118,7 @@ const BookingRequestDetailPage = () => {
         json: { decision_note: decisionNote, internal_note: internalNote },
       });
       setRequest(updated);
+      dispatchBookingRequestsChanged();
       setNotice("Demande rejetée.");
     } catch (actionError) {
       setError(
@@ -162,6 +167,7 @@ const BookingRequestDetailPage = () => {
       setRequest(updated);
       setDecisionNote("");
       setInternalNote(updated.internal_note ?? "");
+      dispatchBookingRequestsChanged();
       setNotice("Demande réactivée pour 24 heures. Les disponibilités et le tarif ont été vérifiés.");
     } catch (actionError) {
       setError(

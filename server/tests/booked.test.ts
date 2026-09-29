@@ -162,6 +162,40 @@ test("computeSeasonQuote adapte le minimum à la disponibilité restante", async
   assert.equal(quote.required_min_nights, 4);
 });
 
+test("GET /booking-requests/pending/count compte les demandes à traiter", async () => {
+  const originals = {
+    bookingRequestUpdateMany: prisma.bookingRequest.updateMany,
+    bookingRequestCount: prisma.bookingRequest.count,
+  };
+  let countWhere: unknown = null;
+
+  try {
+    prisma.bookingRequest.updateMany = async () => ({ count: 0 } as any);
+    prisma.bookingRequest.count = async ({ where }: any) => {
+      countWhere = where;
+      return 3;
+    };
+
+    const countPending = getRouteHandler(bookedRouter, "get", "/pending/count");
+    const response = createMockResponse();
+    let nextError: unknown = null;
+
+    await countPending(
+      { params: {}, query: {} },
+      response,
+      (error) => { nextError = error ?? null; },
+    );
+
+    assert.equal(nextError, null);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { count: 3 });
+    assert.deepEqual(countWhere, { status: "pending" });
+  } finally {
+    prisma.bookingRequest.updateMany = originals.bookingRequestUpdateMany;
+    prisma.bookingRequest.count = originals.bookingRequestCount;
+  }
+});
+
 test("POST /booking-requests/:id/approve crée une réservation booked avec les enfants", async () => {
   const originals = {
     bookingRequestUpdateMany: prisma.bookingRequest.updateMany,

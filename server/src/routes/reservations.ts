@@ -1579,7 +1579,7 @@ router.get("/recent-imports/count", async (_req, res, next) => {
     const since = new Date(Date.now() - DAY_MS);
     const count = await prisma.reservation.count({
       where: {
-        origin_system: { in: ["ical", "pump"] },
+        origin_system: { in: ["ical", "pump", "booked"] },
         createdAt: { gte: since },
       },
     });

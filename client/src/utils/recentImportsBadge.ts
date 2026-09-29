@@ -1,7 +1,7 @@
 export const RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT = "recent-imported-reservations-created";
 export const RECENT_IMPORTED_RESERVATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-const RECENT_IMPORTED_RESERVATION_ORIGINS = new Set(["ical", "pump"]);
+const RECENT_IMPORTED_RESERVATION_ORIGINS = new Set(["ical", "pump", "booked"]);
 
 type RecentImportedReservationsCreatedDetail = {
   createdCount: number;
