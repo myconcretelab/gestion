@@ -6530,8 +6530,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                 ...previous,
                                 chat_ids: event.target.value
                                   .split(/[\n,;]+/)
-                                  .map((item) => item.trim())
-                                  .filter(Boolean),
+                                  .map((item) => item.trim()),
                               }));
                             }}
                             disabled={
