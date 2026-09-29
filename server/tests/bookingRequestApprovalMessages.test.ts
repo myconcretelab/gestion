@@ -58,6 +58,8 @@ test("email, aperçu et Telegram indiquent les options et leurs montants", () =>
   for (const text of [serverEmail.text, clientEmail.body]) {
     assert.match(text, /Draps \(2 lit\(s\)\) : 24/);
     assert.match(text, /Ménage : 60/);
+    assert.doesNotMatch(text, /Petit rappel : les draps ne sont pas inclus/);
+    assert.doesNotMatch(text, /L'option draps est bien notée/);
   }
   const createdTelegram = buildBookingRequestCreatedMessage(payload as any);
   assert.match(createdTelegram, /Draps \(2 lit\(s\)\) : 24/);
@@ -66,6 +68,32 @@ test("email, aperçu et Telegram indiquent les options et leurs montants", () =>
   assert.match(telegram, /Ménage : 60/);
   assert.match(telegram, /Camille &lt;Test&gt;/);
   assert.match(telegram, /La Grée &amp; Co/);
+});
+
+test("le rappel des draps reste affiché quand l'option n'est pas choisie", () => {
+  fs.mkdirSync(env.DATA_DIR, { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(buildDefaultDocumentEmailTemplateSettings()), "utf-8");
+  const requestWithoutBedding = { ...payload, options: { menage: { enabled: true } } };
+  const serverEmail = buildBookingRequestApprovedMessage(requestWithoutBedding as any);
+  const clientEmail = buildBookingRequestApprovedEmailDraft(
+    requestWithoutBedding as unknown as BookingRequest,
+    buildDocumentEmailTemplateSettings({
+      contrat: { subject: "", body: "", activitiesList: "", guideUrl: "", destinationUrl: "" },
+      facture: { subject: "", body: "" },
+      bookingRequestApproved: {
+        subject: serverEmail.subject,
+        body: readDocumentEmailTemplateSettings().bookingRequestApproved.bodyLines.join("\n"),
+        activitiesList: "",
+        guideUrl: "",
+        destinationUrl: "",
+        smsBody: "",
+      },
+    }),
+  );
+
+  for (const text of [serverEmail.text, clientEmail.body]) {
+    assert.match(text, /Petit rappel : les draps ne sont pas inclus/);
+  }
 });
 
 test("les anciennes demandes sans détail des prix restent notifiables", () => {
