@@ -229,7 +229,7 @@ const buildBookingOptionsSummary = (request: BookingRequest) => {
 
 const buildBeddingReminder = (options?: ContratOptions | null) => {
   if (options?.draps?.enabled) {
-    return "L'option draps est bien notée pour votre séjour.";
+    return "";
   }
   return "Petit rappel : les draps ne sont pas inclus, pensez donc à les prévoir si besoin.";
 };
