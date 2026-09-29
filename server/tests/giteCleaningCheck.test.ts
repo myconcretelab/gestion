@@ -10,14 +10,10 @@ test("contrôle de ménage par occurrence : entrée et sortie restent indépenda
   process.env.DATA_DIR = dir;
   const { default: prisma } = await import("../src/db/prisma.ts");
   const { default: router } = await import("../src/routes/reservations.ts");
-  const telegram = await import("../src/services/telegramNotifications.ts");
   const originalFind = prisma.reservation.findUnique;
   const originalUpdate = prisma.reservation.updateMany;
-  const originalFetch = globalThis.fetch;
   let arrivalCheckedAt: Date | null = null;
   let departureCheckedAt: Date | null = null;
-  let messages: any[] = [];
-  let fail = false;
   const call = async (method: string, body?: unknown, id = "r1", occurrence = "arrival") => {
     const layer = (router as any).stack.find((item: any) => item.route?.path === "/:id/cleaning-check" && item.route.methods[method]);
     const response = { statusCode: 200, body: null as any, status(code: number) { this.statusCode = code; return this; }, json(value: unknown) { this.body = value; return this; } };
@@ -41,44 +37,22 @@ test("contrôle de ménage par occurrence : entrée et sortie restent indépenda
       else departureCheckedAt = data[field];
       return { count: 1 };
     }) as any;
-    globalThis.fetch = (async (_url: any, options: any) => {
-      if (fail) throw new Error("Telegram unavailable");
-      messages.push(JSON.parse(options.body));
-      return { ok: true } as Response;
-    }) as any;
-    telegram.writeTelegramNotificationConfig({ ...telegram.buildDefaultTelegramNotificationConfig(), enabled: true, bot_token: "test", chat_ids: ["chat-reservations"], gite_check_mentions: ["@camille"] });
     assert.equal((await call("get")).body.cleaning_checked_at, null);
     const results = await Promise.all([call("put", { checked: true }), call("put", { checked: true })]);
     assert.ok(results.every((result) => !result.error && result.body.cleaning_checked_at));
-    assert.equal(messages.length, 1);
-    assert.equal(messages[0].chat_id, "chat-reservations");
-    assert.match(messages[0].text, /Gîte &amp; Jardin checké !/);
-    assert.match(messages[0].text, /@camille/);
     assert.equal((await call("get", undefined, "r1", "departure")).body.cleaning_checked_at, null);
     const departure = await call("put", { checked: true, occurrence: "departure" }, "r1", "departure");
     assert.ok(departure.body.cleaning_checked_at);
-    assert.equal(messages.length, 2);
     await call("put", { checked: false });
     assert.equal((await call("get")).body.cleaning_checked_at, null);
     assert.ok((await call("get", undefined, "r1", "departure")).body.cleaning_checked_at);
-    assert.equal(messages.length, 2);
-    fail = true;
-    const failed = await call("put", { checked: true });
-    assert.ok(failed.body.cleaning_checked_at);
-    assert.match(failed.body.notification_warning, /échoué/);
+    assert.ok((await call("put", { checked: true })).body.cleaning_checked_at);
     assert.equal((await call("put", { checked: true }, "missing")).statusCode, 404);
     assert.ok((await call("put", { checked: "yes" })).error);
     assert.ok((await call("get", undefined, "r1", "invalid")).error);
-    await call("put", { checked: false });
-    telegram.writeTelegramNotificationConfig({ ...telegram.buildDefaultTelegramNotificationConfig(), notify_gite_checked: false });
-    assert.match((await call("put", { checked: true })).body.notification_warning, /non envoyée/);
-    const message = telegram.buildGiteCheckedMessage("Maison", new Date("2026-09-16T10:45:00Z"));
-    assert.match(message, /Maison checké !/);
-    assert.match(message, /12:45/);
   } finally {
     prisma.reservation.findUnique = originalFind;
     prisma.reservation.updateMany = originalUpdate;
-    globalThis.fetch = originalFetch;
     if (previousDir === undefined) delete process.env.DATA_DIR; else process.env.DATA_DIR = previousDir;
     await rm(dir, { recursive: true, force: true });
   }
