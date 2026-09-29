@@ -2179,7 +2179,7 @@ const ReservationsPage = () => {
   }, [month]);
 
   const getRecentImportedTabLabel = (count: number) =>
-    `${count} nouvelle${count > 1 ? "s" : ""} réservation${count > 1 ? "s" : ""} importée${count > 1 ? "s" : ""} récemment`;
+    `${count} nouvelle${count > 1 ? "s" : ""} réservation${count > 1 ? "s" : ""} récemment`;
 
   useEffect(() => {
     setMonthExpandedByIndex({});

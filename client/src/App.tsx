@@ -3,6 +3,7 @@ import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom"
 import { apiFetch, ApiError, isAbortError } from "./utils/api";
 import { AUTH_REQUIRED_EVENT, type ServerAuthSession } from "./utils/auth";
 import { APP_NOTICE_EVENT, type AppNotice } from "./utils/appNotices";
+import { BOOKING_REQUESTS_CHANGED_EVENT } from "./utils/bookingRequestsBadge";
 import { RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT } from "./utils/recentImportsBadge";
 
 const GitesPage = lazy(() => import("./pages/GitesPage"));
@@ -37,6 +38,10 @@ const MenuIcon = () => (
 type RecentImportedReservationsCountPayload = {
   count: number;
   since: string;
+};
+
+type PendingBookingRequestsCountPayload = {
+  count: number;
 };
 
 type IcalAutoSyncResultSummary = {
@@ -247,6 +252,7 @@ const App = () => {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [recentImportedReservationsCount, setRecentImportedReservationsCount] = useState(0);
+  const [pendingBookingRequestsCount, setPendingBookingRequestsCount] = useState(0);
   const [appNotice, setAppNotice] = useState<(AppNotice & { id: number }) | null>(null);
   const [pumpHealthNotice, setPumpHealthNotice] = useState<PumpHealthNotice | null>(null);
   const isAuthenticated = authSession?.authenticated ?? false;
@@ -303,7 +309,6 @@ const App = () => {
       to: "/demandes",
       label: "Demandes",
       isActive: isBookingRequestsSection,
-      desktopOverflow: true,
     },
     {
       to: "/calendrier",
@@ -326,6 +331,7 @@ const App = () => {
       to: "/factures",
       label: "Factures",
       isActive: isFacturesSection,
+      desktopOverflow: true,
     },
     {
       to: "/gites",
@@ -370,8 +376,12 @@ const App = () => {
   const mobileOverflowItems = navItems.filter((item) => !item.mobilePrimary);
   const reservationBadgeLabel =
     recentImportedReservationsCount > 0
-      ? `${recentImportedReservationsCount} création${recentImportedReservationsCount > 1 ? "s" : ""} importée${recentImportedReservationsCount > 1 ? "s" : ""} via iCal ou Pump sur les dernières 24 heures`
+      ? `${recentImportedReservationsCount} nouvelle${recentImportedReservationsCount > 1 ? "s" : ""} réservation${recentImportedReservationsCount > 1 ? "s" : ""} sur les dernières 24 heures`
         : null;
+  const bookingRequestsBadgeLabel =
+    pendingBookingRequestsCount > 0
+      ? `${pendingBookingRequestsCount} demande${pendingBookingRequestsCount > 1 ? "s" : ""} à traiter`
+      : null;
 
   const pushAppNotice = useCallback((notice: AppNotice) => {
     setAppNotice({
@@ -453,6 +463,20 @@ const App = () => {
     }
   }, []);
 
+  const loadPendingBookingRequestsCount = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const payload = await apiFetch<PendingBookingRequestsCountPayload>("/booking-requests/pending/count", {
+        signal,
+      });
+      setPendingBookingRequestsCount(Math.max(0, Number(payload.count) || 0));
+    } catch (error) {
+      if (!isAbortError(error)) {
+        setPendingBookingRequestsCount(0);
+        console.error(error);
+      }
+    }
+  }, []);
+
   const loadPumpHealth = useCallback(async (signal?: AbortSignal) => {
     try {
       const payload = await apiFetch<PumpHealthNotice>("/settings/pump/health", { signal });
@@ -524,9 +548,11 @@ const App = () => {
     if (authLoading || !isAuthenticated) return;
     const controller = new AbortController();
     void loadRecentImportedReservationsCount(controller.signal);
+    void loadPendingBookingRequestsCount(controller.signal);
     void loadPumpHealth(controller.signal);
     const pollId = window.setInterval(() => {
       void loadPumpHealth();
+      void loadPendingBookingRequestsCount();
     }, 60_000);
 
     const handleRecentImportedReservationsCreated = (event: Event) => {
@@ -540,6 +566,10 @@ const App = () => {
       RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT,
       handleRecentImportedReservationsCreated as EventListener
     );
+    const handleBookingRequestsChanged = () => {
+      void loadPendingBookingRequestsCount();
+    };
+    window.addEventListener(BOOKING_REQUESTS_CHANGED_EVENT, handleBookingRequestsChanged);
 
     return () => {
       controller.abort();
@@ -548,8 +578,9 @@ const App = () => {
         RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT,
         handleRecentImportedReservationsCreated as EventListener
       );
+      window.removeEventListener(BOOKING_REQUESTS_CHANGED_EVENT, handleBookingRequestsChanged);
     };
-  }, [authLoading, isAuthenticated, loadPumpHealth, loadRecentImportedReservationsCount]);
+  }, [authLoading, isAuthenticated, loadPendingBookingRequestsCount, loadPumpHealth, loadRecentImportedReservationsCount]);
 
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
@@ -653,7 +684,7 @@ const App = () => {
   }, []);
 
   const renderNavLabel = (item: { to: string; label: string; mobileLabel?: string }) => (
-    <span className={`nav-item-label${item.to === "/reservations" ? " nav-item-label--with-badge" : ""}`}>
+    <span className={`nav-item-label${item.to === "/reservations" || item.to === "/demandes" ? " nav-item-label--with-badge" : ""}`}>
       <span className="nav__label">{item.mobileLabel ?? item.label}</span>
       {item.to === "/reservations" && recentImportedReservationsCount > 0 ? (
         <span
@@ -662,6 +693,15 @@ const App = () => {
           title={reservationBadgeLabel ?? undefined}
         >
           {recentImportedReservationsCount}
+        </span>
+      ) : null}
+      {item.to === "/demandes" && pendingBookingRequestsCount > 0 ? (
+        <span
+          className="nav-badge nav-badge--reservation"
+          aria-label={bookingRequestsBadgeLabel ?? undefined}
+          title={bookingRequestsBadgeLabel ?? undefined}
+        >
+          {pendingBookingRequestsCount}
         </span>
       ) : null}
     </span>

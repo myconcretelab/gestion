@@ -175,6 +175,16 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+router.get("/pending/count", async (_req, res, next) => {
+  try {
+    await expireStaleBookingRequests();
+    const count = await prisma.bookingRequest.count({ where: { status: "pending" } });
+    res.json({ count });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     await expireStaleBookingRequests();
