@@ -10,6 +10,7 @@ import {
   type DocumentEmailTextSettings,
 } from "../utils/documentEmail";
 import {
+  buildApprovedReservationHref,
   formatBookingRequestCreatedAt,
   getRequestTimelineLabel,
   getRequestTimelineValue,
@@ -398,8 +399,10 @@ const BookingRequestDetailPage = () => {
                   <div className="booking-requests-page__decision">
                     <strong>Note de décision</strong>
                     <p>{request.decision_note || "Aucune note enregistrée."}</p>
-                    {request.approved_reservation?.id ? (
-                      <Link to="/reservations" className="button-secondary">Voir la réservation créée</Link>
+                    {request.approved_reservation?.id || request.approved_reservation_id ? (
+                      <Link to={buildApprovedReservationHref(request)} className="button-secondary">
+                        Voir la réservation créée
+                      </Link>
                     ) : null}
                   </div>
                 )}

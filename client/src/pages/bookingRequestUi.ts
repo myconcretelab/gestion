@@ -55,3 +55,16 @@ export const getRequestTimelineLabel = (request: BookingRequest) => {
 
 export const getRequestTimelineValue = (request: BookingRequest) =>
   new Date(request.decided_at ?? request.hold_expires_at).toLocaleString("fr-FR");
+
+export const buildApprovedReservationHref = (request: BookingRequest) => {
+  const reservationId = request.approved_reservation?.id ?? request.approved_reservation_id;
+  if (!reservationId) return "/reservations";
+
+  const params = new URLSearchParams({ focus: reservationId });
+  if (request.gite_id) params.set("tab", request.gite_id);
+  const dateEntree = request.approved_reservation?.date_entree ?? request.date_entree;
+  const year = Number.parseInt(String(dateEntree ?? "").slice(0, 4), 10);
+  if (Number.isFinite(year) && year > 0) params.set("year", String(year));
+
+  return `/reservations?${params.toString()}#reservation-${encodeURIComponent(reservationId)}`;
+};
