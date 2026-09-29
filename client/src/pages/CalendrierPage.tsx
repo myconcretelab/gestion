@@ -1996,6 +1996,7 @@ const CalendrierPage = () => {
           title={getReservationDisplayLabel(mobileActionReservation)}
           reservation={mobileActionReservation}
           giteId={mobileActionReservation.gite_id ?? null}
+          cleaningCheckOccurrence={mobileActionReservation.date_sortie.slice(0, 10) === todayIso ? "departure" : "arrival"}
           total={getReservationMonthlyAmountsForMonth(
             mobileActionReservation,
             visibleMonth?.year ?? year,
