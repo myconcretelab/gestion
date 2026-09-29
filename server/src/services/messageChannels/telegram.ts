@@ -68,6 +68,14 @@ export const telegramMessageChannel: MessageChannel = {
         deliveries: [],
       };
     }
+    if (process.env.NODE_ENV === "test") {
+      return {
+        channel: "telegram",
+        sent_count: 0,
+        skipped_reason: "test_environment",
+        deliveries: [],
+      };
+    }
     if (!options.bot_token.trim()) {
       return {
         channel: "telegram",
