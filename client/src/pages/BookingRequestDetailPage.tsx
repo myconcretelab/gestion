@@ -47,11 +47,12 @@ const BookingRequestDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [submittingAction, setSubmittingAction] = useState<"approve" | "approve-email" | "reject" | null>(null);
+  const [submittingAction, setSubmittingAction] = useState<"approve" | "approve-email" | "reject" | "refresh" | null>(null);
   const [dateEditor, setDateEditor] = useState<{ date_entree: string; date_sortie: string } | null>(null);
   const [savingDates, setSavingDates] = useState(false);
   const [emailComposer, setEmailComposer] = useState<ApprovalEmailComposerState | null>(null);
   const phoneHref = buildPhoneHref(request?.telephone);
+  const gitePhoto = request?.gite?.photos?.[0] ?? null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -115,6 +116,29 @@ const BookingRequestDetailPage = () => {
         isApiError(actionError) || actionError instanceof Error
           ? actionError.message
           : "Action impossible.",
+      );
+    } finally {
+      setSubmittingAction(null);
+    }
+  };
+
+  const refreshRequest = async () => {
+    if (!request || request.status !== "expired") return;
+    setSubmittingAction("refresh");
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await apiFetch<BookingRequest>(`/booking-requests/${request.id}/refresh`, {
+        method: "POST",
+      });
+      setRequest(updated);
+      setDecisionNote("");
+      setNotice("Demande réactivée pour 24 heures. Les disponibilités et le tarif ont été vérifiés.");
+    } catch (actionError) {
+      setError(
+        isApiError(actionError) || actionError instanceof Error
+          ? actionError.message
+          : "Réactivation impossible.",
       );
     } finally {
       setSubmittingAction(null);
@@ -203,10 +227,23 @@ const BookingRequestDetailPage = () => {
         {request ? (
           <>
             <div className="booking-request-detail-page__heading">
-              <div>
-                <span className="booking-request-detail-page__eyebrow">Demande de réservation</span>
-                <h1>{request.hote_nom || "Client sans nom"}</h1>
-                <p>{request.gite?.nom ?? request.gite_id}</p>
+              <div className="booking-request-detail-page__gite-hero">
+                {gitePhoto ? (
+                  <img
+                    className="booking-request-detail-page__gite-photo"
+                    src={gitePhoto.url}
+                    alt={gitePhoto.alt || gitePhoto.title || request.gite?.nom || "Photo du gîte"}
+                  />
+                ) : (
+                  <div className="booking-request-detail-page__gite-photo booking-request-detail-page__gite-photo--placeholder" aria-hidden="true">
+                    {(request.gite?.nom ?? "G").trim().slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <span className="booking-request-detail-page__eyebrow">Demande de réservation</span>
+                  <h1>{request.gite?.nom ?? request.gite_id}</h1>
+                  <p>Client : <strong>{request.hote_nom || "Client sans nom"}</strong></p>
+                </div>
               </div>
               <span className={`badge badge--${request.status}`}>{requestStatusLabels[request.status]}</span>
             </div>
@@ -327,6 +364,15 @@ const BookingRequestDetailPage = () => {
                 <button type="button" className="button-secondary" onClick={() => void rejectRequest()} disabled={Boolean(submittingAction)}>
                   {submittingAction === "reject" ? "Refus…" : "Rejeter"}
                 </button>
+              </div>
+            ) : request.status === "expired" ? (
+              <div className="actions booking-request-detail-page__actions">
+                <button type="button" onClick={() => void refreshRequest()} disabled={Boolean(submittingAction)}>
+                  {submittingAction === "refresh" ? "Vérification…" : "Réactiver la demande"}
+                </button>
+                <span className="booking-request-detail-page__refresh-hint">
+                  Vérifie les disponibilités, recalcule le tarif et bloque les dates pendant 24 heures.
+                </span>
               </div>
             ) : null}
           </>

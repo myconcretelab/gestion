@@ -18452,16 +18452,45 @@ button.personal-expenses-status:disabled {
 
 .booking-request-detail-page__heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 18px;
+}
+
+.booking-request-detail-page__gite-hero {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 16px;
+}
+
+.booking-request-detail-page__gite-photo {
+  width: 104px;
+  height: 82px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
+}
+
+.booking-request-detail-page__gite-photo--placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 2rem;
+  font-weight: 850;
 }
 
 .booking-request-detail-page__heading p {
   margin: 5px 0 0;
   color: #475569;
   font-weight: 700;
+}
+
+.booking-request-detail-page__heading p strong {
+  color: #1e293b;
 }
 
 .booking-request-detail-page__eyebrow {
@@ -18658,6 +18687,14 @@ button.personal-expenses-status:disabled {
   margin-top: 20px;
   padding-top: 18px;
   border-top: 1px solid #e2e8f0;
+}
+
+.booking-request-detail-page__refresh-hint {
+  align-self: center;
+  max-width: 480px;
+  color: #64748b;
+  font-size: 0.88rem;
+  line-height: 1.4;
 }
 
 .season-rates-editor {
@@ -19429,6 +19466,17 @@ button.personal-expenses-status:disabled {
 
   .booking-request-detail-page__heading {
     gap: 10px;
+    align-items: flex-start;
+  }
+
+  .booking-request-detail-page__gite-hero {
+    align-items: flex-start;
+  }
+
+  .booking-request-detail-page__gite-photo {
+    width: 76px;
+    height: 68px;
+    border-radius: 11px;
   }
 
   .booking-request-detail-page__content-grid {

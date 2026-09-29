@@ -466,7 +466,7 @@ export type BookingRequest = {
   decision_note?: string | null;
   createdAt?: string;
   updatedAt?: string;
-  gite?: Pick<Gite, "id" | "nom" | "nom_avec_preposition" | "email">;
+  gite?: Pick<Gite, "id" | "nom" | "nom_avec_preposition" | "email" | "photos">;
   approved_reservation?: Pick<Reservation, "id" | "hote_nom" | "date_entree" | "date_sortie"> | null;
 };
 

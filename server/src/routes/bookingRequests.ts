@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
@@ -9,6 +10,7 @@ import {
   encodeBookingRequestPricingSnapshot,
   ensureBookingRequestPending,
   expireStaleBookingRequests,
+  getBookingRequestHoldExpiresAt,
   hydrateBookingRequest,
   parseBookedDateInput,
   type BookingQuote,
@@ -62,6 +64,29 @@ const quoteGiteSelect = {
   regle_tiers_personnes_info: true,
 } as const;
 
+const bookingRequestGiteSelect = {
+  id: true,
+  nom: true,
+  nom_avec_preposition: true,
+  email: true,
+  photos: {
+    orderBy: [{ is_primary: "desc" }, { ordre: "asc" }, { createdAt: "asc" }],
+    take: 1,
+  },
+} satisfies Prisma.GiteSelect;
+
+const bookingRequestInclude = {
+  gite: { select: bookingRequestGiteSelect },
+  approved_reservation: {
+    select: {
+      id: true,
+      hote_nom: true,
+      date_entree: true,
+      date_sortie: true,
+    },
+  },
+} satisfies Prisma.BookingRequestInclude;
+
 const buildOptionalFeesLabel = (options: OptionsInput) => {
   const labels: string[] = [];
   if (options.draps?.enabled) labels.push("Draps");
@@ -95,24 +120,7 @@ const toBookingRequestPayload = (bookingRequest: any) => hydrateBookingRequest({
 const loadBookingRequest = async (id: string) =>
   prisma.bookingRequest.findUnique({
     where: { id },
-    include: {
-      gite: {
-        select: {
-          id: true,
-          nom: true,
-          nom_avec_preposition: true,
-          email: true,
-        },
-      },
-      approved_reservation: {
-        select: {
-          id: true,
-          hote_nom: true,
-          date_entree: true,
-          date_sortie: true,
-        },
-      },
-    },
+    include: bookingRequestInclude,
   });
 
 router.get("/", async (req, res, next) => {
@@ -142,24 +150,7 @@ router.get("/", async (req, res, next) => {
 
     const requests = await prisma.bookingRequest.findMany({
       where,
-      include: {
-        gite: {
-          select: {
-            id: true,
-            nom: true,
-            nom_avec_preposition: true,
-            email: true,
-          },
-        },
-        approved_reservation: {
-          select: {
-            id: true,
-            hote_nom: true,
-            date_entree: true,
-            date_sortie: true,
-          },
-        },
-      },
+      include: bookingRequestInclude,
       orderBy: [{ createdAt: "desc" }],
     });
 
@@ -230,24 +221,71 @@ router.post("/:id/dates", async (req, res, next) => {
         nb_nuits: pricingSnapshot.nb_nuits,
         pricing_snapshot: encodeBookingRequestPricingSnapshot(pricingSnapshot),
       },
-      include: {
-        gite: {
-          select: {
-            id: true,
-            nom: true,
-            nom_avec_preposition: true,
-            email: true,
-          },
-        },
-        approved_reservation: {
-          select: {
-            id: true,
-            hote_nom: true,
-            date_entree: true,
-            date_sortie: true,
-          },
-        },
+      include: bookingRequestInclude,
+    });
+
+    return res.json(toBookingRequestPayload(updated));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
+    }
+    next(error);
+  }
+});
+
+router.post("/:id/refresh", async (req, res, next) => {
+  try {
+    await expireStaleBookingRequests();
+    const bookingRequest = await loadBookingRequest(req.params.id);
+    if (!bookingRequest) {
+      return res.status(404).json({ error: "Demande introuvable." });
+    }
+    if (bookingRequest.status !== "expired") {
+      throw new BookedValidationError({
+        code: "invalid_status",
+        message: "Seule une demande expirée peut être réactivée.",
+        statusCode: 409,
+      });
+    }
+
+    await assertBookedAvailability({
+      giteId: bookingRequest.gite_id,
+      dateEntree: bookingRequest.date_entree,
+      dateSortie: bookingRequest.date_sortie,
+      excludeBookingRequestId: bookingRequest.id,
+    });
+
+    const gite = await prisma.gite.findUnique({
+      where: { id: bookingRequest.gite_id },
+      select: quoteGiteSelect,
+    });
+    if (!gite) {
+      return res.status(404).json({ error: "Gîte introuvable." });
+    }
+
+    const options = fromJsonString<OptionsInput>(bookingRequest.options, {});
+    const pricingSnapshot = await computeBookedQuote({
+      gite,
+      dateEntree: bookingRequest.date_entree,
+      dateSortie: bookingRequest.date_sortie,
+      nbAdultes: bookingRequest.nb_adultes,
+      nbEnfants: bookingRequest.nb_enfants_2_17,
+      options,
+      excludeBookingRequestId: bookingRequest.id,
+    });
+
+    const updated = await prisma.bookingRequest.update({
+      where: { id: bookingRequest.id },
+      data: {
+        status: "pending",
+        hold_expires_at: getBookingRequestHoldExpiresAt(),
+        decided_at: null,
+        decision_note: null,
+        nb_nuits: pricingSnapshot.nb_nuits,
+        pricing_snapshot: encodeBookingRequestPricingSnapshot(pricingSnapshot),
       },
+      include: bookingRequestInclude,
     });
 
     return res.json(toBookingRequestPayload(updated));
@@ -328,24 +366,7 @@ router.post("/:id/approve", async (req, res, next) => {
           decision_note: decision_note || null,
           approved_reservation_id: reservation.id,
         },
-        include: {
-          gite: {
-            select: {
-              id: true,
-              nom: true,
-              nom_avec_preposition: true,
-              email: true,
-            },
-          },
-          approved_reservation: {
-            select: {
-              id: true,
-              hote_nom: true,
-              date_entree: true,
-              date_sortie: true,
-            },
-          },
-        },
+        include: bookingRequestInclude,
       });
     });
 
@@ -401,24 +422,7 @@ router.post("/:id/reject", async (req, res, next) => {
         decided_at: new Date(),
         decision_note: decision_note || null,
       },
-      include: {
-        gite: {
-          select: {
-            id: true,
-            nom: true,
-            nom_avec_preposition: true,
-            email: true,
-          },
-        },
-        approved_reservation: {
-          select: {
-            id: true,
-            hote_nom: true,
-            date_entree: true,
-            date_sortie: true,
-          },
-        },
-      },
+      include: bookingRequestInclude,
     });
 
     try {
