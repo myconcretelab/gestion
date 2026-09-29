@@ -3,6 +3,7 @@ import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import { formatDate } from "../utils/format";
 import type { BookingRequest, BookingRequestStatus, Gite } from "../utils/types";
+import { formatPhoneForDisplay } from "../utils/phone";
 import { formatBookingRequestCreatedAt, requestStatusLabels } from "./bookingRequestUi";
 
 type RequestGroup = {
@@ -190,7 +191,7 @@ const BookingRequestsPage = () => {
                     >
                       <span className="booking-requests-page__item-person">
                         <strong>{request.hote_nom || "Client sans nom"}</strong>
-                        <span>{request.gite?.nom ?? request.gite_id} · {request.telephone || request.email || "Contact absent"}</span>
+                        <span>{request.gite?.nom ?? request.gite_id} · {formatPhoneForDisplay(request.telephone) || request.email || "Contact absent"}</span>
                       </span>
                       <span className="booking-requests-page__item-stay">
                         <strong>{formatDate(request.date_entree)} → {formatDate(request.date_sortie)}</strong>

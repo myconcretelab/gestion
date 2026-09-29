@@ -114,6 +114,29 @@ test("buildInvoiceEmailMessage construit un email de facture exploitable", () =>
   assert.match(message.html, /Facture Liberté GT-2026-01|agréable séjour au Liberté/);
 });
 
+test("les modèles peuvent utiliser le nom du gîte avec sa préposition", () => {
+  const settings = buildDefaultDocumentEmailTemplateSettings();
+  settings.facture.subject = "Séjour {{giteNameWithPreposition}}";
+  settings.facture.bodyLines = ["Votre location {{giteNameWithPreposition}}."];
+  writeDocumentEmailTemplateSettings(settings);
+
+  const automatic = buildInvoiceEmailMessage({
+    numero_facture: "LIB-2026-01",
+    locataire_nom: "Client",
+    gite: { nom: "Le Liberté" },
+  });
+  assert.equal(automatic.subject, "Séjour du Liberté");
+  assert.equal(automatic.text, "Votre location du Liberté.");
+
+  const customized = buildInvoiceEmailMessage({
+    numero_facture: "GRE-2026-01",
+    locataire_nom: "Client",
+    gite: { nom: "La Grée", nom_avec_preposition: "près de la Grée" },
+  });
+  assert.equal(customized.subject, "Séjour près de la Grée");
+  assert.equal(customized.text, "Votre location près de la Grée.");
+});
+
 test("buildContractEmailMessage peut preparer un email avec PDF sans mention explicite de piece jointe", () => {
   const message = buildContractEmailMessage(
     {

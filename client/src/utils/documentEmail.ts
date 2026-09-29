@@ -1,5 +1,6 @@
 import templates from "../content/documentEmailTemplates.json";
 import type { BookingRequest, ContratOptions } from "./types";
+import { buildGiteNameWithPreposition } from "./giteName";
 
 type BuildMailtoHrefParams = {
   recipient?: string | null;
@@ -13,6 +14,7 @@ type BuildDocumentMailtoHrefBaseParams = {
   documentUrl: string;
   locataireNom: string;
   giteNom?: string | null;
+  giteNameWithPreposition?: string | null;
   deliveryMode?: DocumentEmailDeliveryMode;
 };
 
@@ -355,6 +357,10 @@ export const buildDocumentMailtoHref = (
   const deliveryMode = resolveDeliveryMode(params.deliveryMode);
   const safeDocumentNumber = documentNumber.trim();
   const safeGiteNom = String(giteNom ?? "").trim();
+  const safeGiteNameWithPreposition = buildGiteNameWithPreposition({
+    nom: safeGiteNom,
+    nom_avec_preposition: params.giteNameWithPreposition,
+  });
   const safeLocataireNom = locataireNom.trim();
   const greeting = safeLocataireNom
     ? `Bonjour ${safeLocataireNom},`
@@ -363,6 +369,7 @@ export const buildDocumentMailtoHref = (
     greeting,
     documentUrl: documentUrl.trim(),
     giteName: safeGiteNom,
+    giteNameWithPreposition: safeGiteNameWithPreposition,
     documentNumber: safeDocumentNumber,
     locataireNom: safeLocataireNom,
     giteSentence: safeGiteNom ? ` au ${safeGiteNom}.` : ".",
@@ -424,12 +431,14 @@ export const buildBookingRequestApprovedEmailDraft = (
     ...(templateSettings?.bookingRequestApproved ?? {}),
   };
   const giteName = String(request.gite?.nom ?? "").trim();
+  const giteNameWithPreposition = buildGiteNameWithPreposition(request.gite);
   const templateValues: Record<string, string> = {
     greeting: request.hote_nom.trim()
       ? `Bonjour ${request.hote_nom.trim()},`
       : "Bonjour,",
     clientName: request.hote_nom.trim(),
     giteName,
+    giteNameWithPreposition,
     giteReference: giteName ? `au ${giteName}` : "dans notre gîte",
     stayDuration: formatStayDuration(request.nb_nuits),
     dateEntree: String(request.date_entree ?? "").slice(0, 10),

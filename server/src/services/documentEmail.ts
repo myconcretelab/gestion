@@ -5,9 +5,11 @@ import {
   type DocumentEmailTemplate,
 } from "./documentEmailTemplateSettings.js";
 import { sendSmtpMail } from "./mailer.js";
+import { buildGiteNameWithPreposition } from "../utils/giteName.js";
 
 type DocumentGite = {
   nom?: string | null;
+  nom_avec_preposition?: string | null;
   email?: string | null;
 };
 
@@ -302,12 +304,14 @@ export const buildContractEmailMessage = (
 ): BuiltEmailMessage => {
   const template = readDocumentEmailTemplateSettings().contrat;
   const giteName = String(contract.gite?.nom ?? "").trim();
+  const giteNameWithPreposition = buildGiteNameWithPreposition(contract.gite);
   const deliveryMode = resolveDeliveryMode(options?.deliveryMode ?? "download_link");
   const documentUrl = String(options?.documentUrl ?? "").trim();
   const templateValues: Record<string, string> = {
     greeting: buildGreeting(contract.locataire_nom),
     documentUrl,
     giteName,
+    giteNameWithPreposition,
     documentNumber: contract.numero_contrat.trim(),
     locataireNom: contract.locataire_nom.trim(),
     giteReference: giteName ? `au ${giteName}` : "dans notre gîte",
@@ -353,12 +357,14 @@ export const buildInvoiceEmailMessage = (
 ): BuiltEmailMessage => {
   const template = readDocumentEmailTemplateSettings().facture;
   const giteName = String(invoice.gite?.nom ?? "").trim();
+  const giteNameWithPreposition = buildGiteNameWithPreposition(invoice.gite);
   const deliveryMode = resolveDeliveryMode(options?.deliveryMode ?? "download_link");
   const documentUrl = String(options?.documentUrl ?? "").trim();
   const templateValues: Record<string, string> = {
     greeting: buildGreeting(invoice.locataire_nom),
     documentUrl,
     giteName,
+    giteNameWithPreposition,
     documentNumber: invoice.numero_facture.trim(),
     locataireNom: invoice.locataire_nom.trim(),
     giteSentence: giteName ? ` au ${giteName}.` : ".",

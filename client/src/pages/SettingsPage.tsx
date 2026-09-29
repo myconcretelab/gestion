@@ -5968,7 +5968,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                 <div className="section-title">Textes d'emails</div>
                 <div className="field-hint">
                   Variables disponibles selon le type: {"{{greeting}}"},{" "}
-                  {"{{documentUrl}}"}, {"{{giteName}}"}, {"{{documentNumber}}"},{" "}
+                  {"{{documentUrl}}"}, {"{{giteName}}"}, {"{{giteNameWithPreposition}}"}, {"{{documentNumber}}"},{" "}
                   {"{{locataireNom}}"}, {"{{giteSentence}}"},{" "}
                   {"{{giteReference}}"}, {"{{stayDuration}}"},{" "}
                   {"{{dateDebutLong}}"}, {"{{heureArrivee}}"},{" "}
@@ -6207,7 +6207,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                             }}
                             disabled={savingDocumentEmailTexts}
                           />
-                          <small>Envoyé après l’email si un numéro est renseigné. Variables : <code>{"{{clientName}}"}</code>, <code>{"{{giteName}}"}</code>, <code>{"{{dateEntree}}"}</code>, <code>{"{{dateSortie}}"}</code>.</small>
+                          <small>Envoyé après l’email si un numéro est renseigné. Variables : <code>{"{{clientName}}"}</code>, <code>{"{{giteName}}"}</code>, <code>{"{{giteNameWithPreposition}}"}</code>, <code>{"{{dateEntree}}"}</code>, <code>{"{{dateSortie}}"}</code>.</small>
                         </label>
                         <label className="field">
                           Activités suggérées

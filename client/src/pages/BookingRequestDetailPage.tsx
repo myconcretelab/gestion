@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { apiFetch, isAbortError, isApiError } from "../utils/api";
 import { formatDate, formatEuro } from "../utils/format";
 import type { BookingRequest } from "../utils/types";
+import { buildPhoneHref, formatPhoneForDisplay } from "../utils/phone";
 import {
   buildBookingRequestApprovedEmailDraft,
   buildDocumentEmailTemplateSettings,
@@ -50,6 +51,7 @@ const BookingRequestDetailPage = () => {
   const [dateEditor, setDateEditor] = useState<{ date_entree: string; date_sortie: string } | null>(null);
   const [savingDates, setSavingDates] = useState(false);
   const [emailComposer, setEmailComposer] = useState<ApprovalEmailComposerState | null>(null);
+  const phoneHref = buildPhoneHref(request?.telephone);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -235,7 +237,13 @@ const BookingRequestDetailPage = () => {
                 ) : null}
               </div>
               <div><strong>Voyageurs</strong><br />{request.nb_adultes} adulte(s), {request.nb_enfants_2_17} enfant(s)</div>
-              <div><strong>Contact</strong><br />{request.telephone || "Téléphone absent"}<br />{request.email || "Email absent"}</div>
+              <div>
+                <strong>Contact</strong><br />
+                {phoneHref ? (
+                  <a className="detail-link" href={phoneHref}>{formatPhoneForDisplay(request.telephone)}</a>
+                ) : "Téléphone absent"}
+                <br />{request.email || "Email absent"}
+              </div>
               <div><strong>Demande reçue</strong><br />{formatBookingRequestCreatedAt(request.createdAt)}</div>
               <div><strong>{getRequestTimelineLabel(request)}</strong><br />{getRequestTimelineValue(request)}</div>
             </div>

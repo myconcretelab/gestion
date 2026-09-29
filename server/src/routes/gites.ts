@@ -119,6 +119,7 @@ const expenseCategorySettingsSchema = z.object({
 const giteSchemaShape = {
   public_translations: giteTranslationsSchema,
   nom: z.string().trim().min(1),
+  nom_avec_preposition: z.preprocess(emptyStringToNull, z.string().trim().max(160).nullable()).optional(),
   prefixe_contrat: z.string().trim().min(2),
   adresse_ligne1: z.string().trim().min(1),
   adresse_ligne2: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
