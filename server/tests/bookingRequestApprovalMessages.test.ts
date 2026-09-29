@@ -96,6 +96,42 @@ test("le rappel des draps reste affiché quand l'option n'est pas choisie", () =
   }
 });
 
+test("le résumé des options reste vide quand aucune option n'est choisie", () => {
+  fs.mkdirSync(env.DATA_DIR, { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(buildDefaultDocumentEmailTemplateSettings()), "utf-8");
+  const requestWithoutOptions = {
+    ...payload,
+    options: {},
+    pricing_snapshot: {
+      ...quote,
+      total_options: 0,
+      total_global: quote.montant_hebergement + quote.taxe_sejour,
+      options_detail: { draps: 0, linge: 0, menage: 0, depart_tardif: 0, chiens: 0 },
+    },
+  };
+  const serverEmail = buildBookingRequestApprovedMessage(requestWithoutOptions as any);
+  const clientEmail = buildBookingRequestApprovedEmailDraft(
+    requestWithoutOptions as unknown as BookingRequest,
+    buildDocumentEmailTemplateSettings({
+      contrat: { subject: "", body: "", activitiesList: "", guideUrl: "", destinationUrl: "" },
+      facture: { subject: "", body: "" },
+      bookingRequestApproved: {
+        subject: serverEmail.subject,
+        body: readDocumentEmailTemplateSettings().bookingRequestApproved.bodyLines.join("\n"),
+        activitiesList: "",
+        guideUrl: "",
+        destinationUrl: "",
+        smsBody: "",
+      },
+    }),
+  );
+
+  for (const text of [serverEmail.text, clientEmail.body]) {
+    assert.doesNotMatch(text, /Options choisies/);
+    assert.match(text, /Petit rappel : les draps ne sont pas inclus/);
+  }
+});
+
 test("les anciennes demandes sans détail des prix restent notifiables", () => {
   const legacy = { ...payload, pricing_snapshot: { ...quote, options_detail: undefined } };
   assert.match(buildBookingRequestApprovedMessage(legacy as any).text, /Draps \(2 lit\(s\)\)/);

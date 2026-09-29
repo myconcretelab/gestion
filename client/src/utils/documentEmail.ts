@@ -224,7 +224,7 @@ const buildBookingOptionsSummary = (request: BookingRequest) => {
   if (options?.menage?.enabled) details.push(`Ménage${priced(prices?.menage)}`);
   if (options?.depart_tardif?.enabled) details.push(`Départ tardif${priced(prices?.depart_tardif)}`);
   if (options?.chiens?.enabled) details.push(`Chiens (${options.chiens.nb ?? 0})${priced(prices?.chiens)}`);
-  return details.length ? `Options choisies :\n${details.join("\n")}` : "Options choisies : aucune.";
+  return details.length ? `Options choisies :\n${details.join("\n")}` : "";
 };
 
 const buildBeddingReminder = (options?: ContratOptions | null) => {

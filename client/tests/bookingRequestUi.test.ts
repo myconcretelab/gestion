@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatBookingRequestCreatedAt } from "../src/pages/bookingRequestUi";
+import { buildApprovedReservationHref, formatBookingRequestCreatedAt } from "../src/pages/bookingRequestUi";
 
 const now = new Date(2026, 7, 19, 18, 30);
 
@@ -28,4 +28,17 @@ test("falls back to an absolute date for older booking requests", () => {
 
 test("handles a missing creation date", () => {
   assert.equal(formatBookingRequestCreatedAt(undefined, now), "Date inconnue");
+});
+
+test("builds a link that focuses the approved reservation", () => {
+  const href = buildApprovedReservationHref({
+    approved_reservation_id: "reservation-123",
+    gite_id: "gite-456",
+    date_entree: "2027-04-12",
+  } as any);
+
+  assert.equal(
+    href,
+    "/reservations?focus=reservation-123&tab=gite-456&year=2027#reservation-reservation-123",
+  );
 });
