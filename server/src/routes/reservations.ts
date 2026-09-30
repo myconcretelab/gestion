@@ -125,6 +125,7 @@ const reservationLinkedContractSelect = {
   heure_depart: true,
   statut_paiement_arrhes: true,
   statut_paiement_solde: true,
+  arrhes_montant: true,
   solde_montant: true,
 } as const;
 const calendarReservationSelect = {
@@ -840,6 +841,7 @@ const hydrateReservationLinkedContract = (contract: any) => ({
       : null,
   statut_paiement_arrhes: contract.statut_paiement_arrhes,
   statut_paiement_solde: contract.statut_paiement_solde,
+  arrhes_montant: toNumber(contract.arrhes_montant),
   solde_montant: getRemainingDueAmount(
     contract.solde_montant,
     contract.statut_paiement_solde,
@@ -857,6 +859,7 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
       heure_depart: string | null;
       statut_paiement_arrhes: string;
       statut_paiement_solde: string;
+      arrhes_montant: number;
       solde_montant: number;
     }>;
   }
@@ -871,6 +874,7 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
         heure_depart: string | null;
         statut_paiement_arrhes: string;
         statut_paiement_solde: string;
+        arrhes_montant: number;
         solde_montant: number;
       }>
     >(Prisma.sql`
@@ -882,6 +886,7 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
         "heure_depart",
         "statut_paiement_arrhes",
         "statut_paiement_solde",
+        "arrhes_montant",
         "solde_montant"
       FROM "contrats"
       WHERE "reservation_id" IN (${Prisma.join(uniqueReservationIds)})
