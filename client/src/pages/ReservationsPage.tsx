@@ -45,6 +45,8 @@ import {
   getReservationEnergyAverageDailyCost,
 } from "../utils/reservationEnergy";
 import { getReservationMonthlyAmountsForMonth } from "../utils/reservationMonthlyAmounts";
+import { getReservationRemainingDueAmount } from "../utils/reservationBalance";
+import { getReservationsLocationPeriod } from "../utils/reservationNavigation";
 import {
   computeSeasonalReservationPrice,
   getGiteNightlyPriceSuggestions,
@@ -1088,6 +1090,15 @@ const matchesMobileInlineBreakpoint = () =>
 const ReservationsPage = () => {
   const currentYear = new Date().getUTCFullYear();
   const location = useLocation();
+  const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const requestedFocusReservationId = locationParams.get("focus");
+  const requestedTab = locationParams.get("tab");
+  const requestedYear = locationParams.get("year");
+  const requestedMonth = locationParams.get("month");
+  const requestedCreateEntry = locationParams.get("entry");
+  const requestedCreateExit = locationParams.get("exit");
+  const requestedCreateMode = locationParams.get("create");
+  const initialLocationPeriod = getReservationsLocationPeriod(location.search, currentYear);
   const [gites, setGites] = useState<Gite[]>([]);
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -1096,9 +1107,9 @@ const ReservationsPage = () => {
   >([]);
   const [monthlyEnergyEligibleGiteIds, setMonthlyEnergyEligibleGiteIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>("");
-  const [year, setYear] = useState<number>(currentYear);
+  const [year, setYear] = useState<number>(initialLocationPeriod.year);
   const [availableYears, setAvailableYears] = useState<number[]>([currentYear]);
-  const [month, setMonth] = useState<number | 0>(0);
+  const [month, setMonth] = useState<number | 0>(initialLocationPeriod.month);
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -1163,15 +1174,7 @@ const ReservationsPage = () => {
   const handledCalendarInsertRef = useRef<string | null>(null);
   const appliedLocationYearMonthKeyRef = useRef<string | null>(null);
   const appliedLocationTabKeyRef = useRef<string | null>(null);
-
-  const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const requestedFocusReservationId = locationParams.get("focus");
-  const requestedTab = locationParams.get("tab");
-  const requestedYear = locationParams.get("year");
-  const requestedMonth = locationParams.get("month");
-  const requestedCreateEntry = locationParams.get("entry");
-  const requestedCreateExit = locationParams.get("exit");
-  const requestedCreateMode = locationParams.get("create");
+  const loadSequenceRef = useRef(0);
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
   const currentTime = new Date(currentTimeMs);
   const currentPeriod = useMemo(() => {
@@ -1360,6 +1363,7 @@ const ReservationsPage = () => {
   }, [reservations]);
 
   const load = async () => {
+    const loadSequence = ++loadSequenceRef.current;
     const params = new URLSearchParams();
     params.set("year", String(year));
     if (month) params.set("month", String(month));
@@ -1394,6 +1398,8 @@ const ReservationsPage = () => {
         available_sources: [],
       })),
     ]);
+
+    if (loadSequence !== loadSequenceRef.current) return;
 
     setGites(gitesData);
     setPlaceholders(placeholdersData);
@@ -5249,6 +5255,9 @@ const ReservationsPage = () => {
                       const linkedContract = reservation.linked_contract ?? null;
                       const hasRemainingDuePill = linkedContract?.statut_paiement_arrhes === "recu";
                       const isRemainingDuePaid = linkedContract?.statut_paiement_solde === "regle";
+                      const remainingDueAmount = linkedContract
+                        ? getReservationRemainingDueAmount(reservation, linkedContract)
+                        : 0;
                       const isRemainingDueUpdating = linkedContract
                         ? Boolean(balanceStatusUpdatingByContractId[linkedContract.id])
                         : false;
@@ -5716,13 +5725,13 @@ const ReservationsPage = () => {
                                         isRemainingDuePaid
                                           ? "Marquer le restant dû comme non payé"
                                           : "Marquer le restant dû comme payé"
-                                      } · ${formatEuro(linkedContract.solde_montant)}`}
+                                      } · ${formatEuro(remainingDueAmount)}`}
                                     >
                                       {isRemainingDueUpdating
                                         ? "Mise à jour..."
                                         : isRemainingDuePaid
                                           ? "Restant dû payé"
-                                          : `Restant dû : ${formatEuro(linkedContract.solde_montant)}`}
+                                          : `Restant dû : ${formatEuro(remainingDueAmount)}`}
                                     </button>
                                   ) : null}
                                 </div>

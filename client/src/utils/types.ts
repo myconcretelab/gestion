@@ -305,6 +305,7 @@ export type ReservationLinkedContract = {
   heure_depart?: string | null;
   statut_paiement_arrhes: "non_recu" | "recu";
   statut_paiement_solde: "non_regle" | "regle";
+  arrhes_montant?: number;
   solde_montant: number;
 };
 
