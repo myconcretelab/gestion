@@ -42,21 +42,109 @@ const router = Router();
 
 const cleaningCheckOccurrenceSchema = z.enum(["arrival", "departure"]);
 type CleaningCheckOccurrence = z.infer<typeof cleaningCheckOccurrenceSchema>;
+type CleaningCheckField = "arrival_cleaning_checked_at" | "departure_cleaning_checked_at";
+type CleaningCheckReservation = {
+  id: string;
+  gite_id: string | null;
+  date_entree: Date;
+  date_sortie: Date;
+  arrival_cleaning_checked_at: Date | null;
+  departure_cleaning_checked_at: Date | null;
+  gite: { nom: string } | null;
+};
 
-const cleaningCheckValue = (
-  reservation: { arrival_cleaning_checked_at: Date | null; departure_cleaning_checked_at: Date | null },
-  occurrence: CleaningCheckOccurrence
-) => occurrence === "arrival" ? reservation.arrival_cleaning_checked_at : reservation.departure_cleaning_checked_at;
+const cleaningCheckSelect = {
+  id: true,
+  gite_id: true,
+  date_entree: true,
+  date_sortie: true,
+  arrival_cleaning_checked_at: true,
+  departure_cleaning_checked_at: true,
+  gite: { select: { nom: true } },
+} as const;
+
+const getUtcDayRange = (value: Date) => {
+  const start = new Date(value);
+  start.setUTCHours(0, 0, 0, 0);
+  return { start, end: addDays(start, 1) };
+};
+
+const findRotationCounterpart = async (reservation: CleaningCheckReservation, occurrence: CleaningCheckOccurrence) => {
+  if (!reservation.gite_id) return null;
+  const occurrenceDate = occurrence === "arrival" ? reservation.date_entree : reservation.date_sortie;
+  const { start, end } = getUtcDayRange(occurrenceDate);
+  return prisma.reservation.findFirst({
+    where: {
+      id: { not: reservation.id },
+      gite_id: reservation.gite_id,
+      ...(occurrence === "arrival"
+        ? { date_sortie: { gte: start, lt: end } }
+        : { date_entree: { gte: start, lt: end } }),
+    },
+    select: cleaningCheckSelect,
+    orderBy: { createdAt: "asc" },
+  });
+};
+
+const getCleaningCheckScope = async (id: string, occurrence: CleaningCheckOccurrence) => {
+  const reservation = await prisma.reservation.findUnique({ where: { id }, select: cleaningCheckSelect });
+  if (!reservation) return null;
+  const counterpart = await findRotationCounterpart(reservation, occurrence);
+  const primaryField: CleaningCheckField = occurrence === "arrival"
+    ? "arrival_cleaning_checked_at"
+    : "departure_cleaning_checked_at";
+  if (!counterpart) {
+    return {
+      reservation,
+      counterpart: null,
+      canonical: { id: reservation.id, field: primaryField },
+      secondary: null,
+    };
+  }
+  return occurrence === "arrival"
+    ? {
+        reservation,
+        counterpart,
+        canonical: { id: counterpart.id, field: "departure_cleaning_checked_at" as const },
+        secondary: { id: reservation.id, field: "arrival_cleaning_checked_at" as const },
+      }
+    : {
+        reservation,
+        counterpart,
+        canonical: { id: reservation.id, field: "departure_cleaning_checked_at" as const },
+        secondary: { id: counterpart.id, field: "arrival_cleaning_checked_at" as const },
+      };
+};
+
+const getSharedCleaningCheckValue = (scope: NonNullable<Awaited<ReturnType<typeof getCleaningCheckScope>>>) => {
+  const valueFor = (target: { id: string; field: CleaningCheckField } | null) => {
+    if (!target) return null;
+    const row = target.id === scope.reservation.id ? scope.reservation : scope.counterpart;
+    return row?.[target.field] ?? null;
+  };
+  const values = [valueFor(scope.canonical), valueFor(scope.secondary)]
+    .filter((value): value is Date => Boolean(value));
+  return values.sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+};
+
+const readCleaningCheckField = async (target: { id: string; field: CleaningCheckField }) => {
+  const row = await prisma.reservation.findUnique({
+    where: { id: target.id },
+    select: { arrival_cleaning_checked_at: true, departure_cleaning_checked_at: true },
+  });
+  return row?.[target.field] ?? null;
+};
 
 router.get("/:id/cleaning-check", async (req, res, next) => {
   try {
     const occurrence = cleaningCheckOccurrenceSchema.default("arrival").parse(req.query.occurrence);
-    const reservation = await prisma.reservation.findUnique({
-      where: { id: req.params.id },
-      select: { arrival_cleaning_checked_at: true, departure_cleaning_checked_at: true },
+    const scope = await getCleaningCheckScope(req.params.id, occurrence);
+    if (!scope) return res.status(404).json({ error: "Réservation introuvable." });
+    res.json({
+      occurrence,
+      cleaning_checked_at: getSharedCleaningCheckValue(scope),
+      shared_with_rotation: Boolean(scope.counterpart),
     });
-    if (!reservation) return res.status(404).json({ error: "Réservation introuvable." });
-    res.json({ occurrence, cleaning_checked_at: cleaningCheckValue(reservation, occurrence) });
   } catch (error) { next(error); }
 });
 
@@ -66,37 +154,36 @@ router.put("/:id/cleaning-check", async (req, res, next) => {
       checked: z.boolean(),
       occurrence: cleaningCheckOccurrenceSchema.default("arrival"),
     }).parse(req.body);
-    const reservation = await prisma.reservation.findUnique({
-      where: { id: req.params.id },
-      select: { gite: { select: { nom: true } } },
-    });
-    if (!reservation) return res.status(404).json({ error: "Réservation introuvable." });
-    const checkedAt = checked ? new Date() : null;
-    // Conditional update prevents duplicate notifications from simultaneous checks.
+    const scope = await getCleaningCheckScope(req.params.id, occurrence);
+    if (!scope) return res.status(404).json({ error: "Réservation introuvable." });
+    const previousCheckedAt = getSharedCleaningCheckValue(scope);
+    const requestedCheckedAt = checked ? previousCheckedAt ?? new Date() : null;
+    // The departure side is the canonical lock during a rotation. This prevents
+    // duplicate notifications when both drawers are toggled at the same time.
     const changed = await prisma.reservation.updateMany({
-      where: occurrence === "arrival"
-        ? { id: req.params.id, arrival_cleaning_checked_at: checked ? null : { not: null } }
-        : { id: req.params.id, departure_cleaning_checked_at: checked ? null : { not: null } },
-      data: occurrence === "arrival"
-        ? { arrival_cleaning_checked_at: checkedAt }
-        : { departure_cleaning_checked_at: checkedAt },
+      where: { id: scope.canonical.id, [scope.canonical.field]: checked ? null : { not: null } },
+      data: { [scope.canonical.field]: requestedCheckedAt },
     });
+    const canonicalCheckedAt = await readCleaningCheckField(scope.canonical);
+    if (scope.secondary) {
+      await prisma.reservation.updateMany({
+        where: { id: scope.secondary.id },
+        data: { [scope.secondary.field]: canonicalCheckedAt },
+      });
+    }
     let notificationWarning: string | null = null;
-    if (changed.count && checkedAt) {
+    if (changed.count && checked && !previousCheckedAt && canonicalCheckedAt) {
       try {
-        const result = await notifyGiteCheckedOnTelegram(reservation.gite?.nom ?? "Gîte", checkedAt);
+        const result = await notifyGiteCheckedOnTelegram(scope.reservation.gite?.nom ?? "Gîte", canonicalCheckedAt);
         if (!result.sent_count) notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
       } catch {
         notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
       }
     }
-    const state = await prisma.reservation.findUnique({
-      where: { id: req.params.id },
-      select: { arrival_cleaning_checked_at: true, departure_cleaning_checked_at: true },
-    });
     res.json({
       occurrence,
-      cleaning_checked_at: state ? cleaningCheckValue(state, occurrence) : null,
+      cleaning_checked_at: canonicalCheckedAt,
+      shared_with_rotation: Boolean(scope.counterpart),
       notification_warning: notificationWarning,
     });
   } catch (error) { next(error); }
