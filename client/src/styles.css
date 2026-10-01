@@ -17408,14 +17408,20 @@ button.personal-expenses-status:disabled {
   }
 
   .today-utility-strip__fill-summary {
+    gap: 14px;
     padding-right: 12px;
+    padding-block: 4px;
   }
 
   .today-utility-strip__fill {
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
+    gap: 8px;
   }
+
+  .today-utility-strip__fill-copy strong { display: none; }
+
+  .today-utility-strip__fill-copy span { line-height: 1.6; }
 
   .today-utility-strip__block--revenue {
     grid-template-columns: 1fr;

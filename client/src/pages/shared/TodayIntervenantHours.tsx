@@ -257,7 +257,8 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
                   <button type="button" className={"today-hours__orb" + (active && chosenMinutes ? " is-confirming" : "")}
                     disabled={locked} aria-expanded={active}
                     aria-label={active && chosenMinutes ? "Ajouter " + formatWorkMinutes(chosenMinutes) + " à " + worker.nom + " le " + dayLabel(date) :
-                      "Ajouter des heures à " + worker.nom + " le " + dayLabel(date)}
+                      active ? "Fermer le choix des heures pour " + worker.nom :
+                        "Ajouter des heures à " + worker.nom + " le " + dayLabel(date)}
                     onClick={() => {
                       if (active && chosenMinutes) { void addHours(worker, chosenMinutes); return; }
                       if (active) { closePicker(); return; }
@@ -265,14 +266,16 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
                     }}>
                     {active && chosenMinutes ? <><span>+{formatWorkMinutes(chosenMinutes)}</span><small>✓ Valider</small></> : getWorkerInitials(worker.nom)}
                   </button>
-                  <span className="today-hours__name" title={worker.nom}>{worker.nom.split(" ")[0]}</span>
-                  <button type="button" className="today-hours__total" disabled={locked}
-                    aria-label={worker.nom + " : " + formatWorkMinutes(total) + ". Voir et corriger les saisies du " + dayLabel(date)}
-                    aria-expanded={historyId === worker.id}
-                    onClick={() => {
-                      closePicker(); setHistoryId(historyId === worker.id ? null : worker.id);
-                      setEdit(null); setDeleteArmed(null); void reload();
-                    }}>{formatWorkMinutes(total)}</button>
+                  <div className="today-hours__person-meta">
+                    <span className="today-hours__name" title={worker.nom}>{worker.nom.split(" ")[0]}</span>
+                    <button type="button" className="today-hours__total" disabled={locked}
+                      aria-label={worker.nom + " : " + formatWorkMinutes(total) + ". Voir et corriger les saisies du " + dayLabel(date)}
+                      aria-expanded={historyId === worker.id}
+                      onClick={() => {
+                        closePicker(); setHistoryId(historyId === worker.id ? null : worker.id);
+                        setEdit(null); setDeleteArmed(null); void reload();
+                      }}>{formatWorkMinutes(total)}</button>
+                  </div>
                   {active && custom && <form className="today-hours__custom" onSubmit={(event) => {
                     event.preventDefault();
                     if (customMinutes !== null) { setChosenMinutes(customMinutes); setCustom(false); }
