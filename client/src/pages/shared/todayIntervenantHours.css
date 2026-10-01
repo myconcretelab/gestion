@@ -1,0 +1,144 @@
+.today-hours {
+  min-width: 0;
+  color: var(--ink);
+}
+.today-hours__heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.today-hours__heading > strong { flex: 1; font-size: .82rem; }
+.today-hours__date { position: relative; flex: 1; margin: 0; font-size: .75rem; color: var(--muted); }
+.today-hours__date input {
+  display: block;
+  box-sizing: border-box;
+  width: 132px;
+  min-height: 32px;
+  padding: 3px 5px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+}
+.today-hours button { cursor: pointer; touch-action: manipulation; }
+.today-hours button:disabled { cursor: default; opacity: .55; }
+.today-hours button:focus-visible, .today-hours input:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+.today-hours .today-hours__text-button {
+  padding: 4px 5px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--primary);
+  font-size: .75rem;
+}
+.today-hours__people { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px 4px; margin-top: 12px; }
+.today-hours__person {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 78px;
+  gap: 5px;
+}
+.today-hours__person.is-open { width: min(232px, 100%); padding-top: 84px; }
+.today-hours .today-hours__orb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  min-height: 60px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--worker-color);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--worker-color) 22%, var(--card));
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--worker-color) 18%, transparent);
+  font-size: 1.2rem;
+  font-weight: 800;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.today-hours .today-hours__orb:hover:not(:disabled) { transform: translateY(-2px); }
+.today-hours .today-hours__orb.is-confirming {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 5px var(--primary-strong);
+  font-size: .84rem;
+}
+.today-hours__orb small { margin-top: 3px; font-size: .58rem; }
+.today-hours__name { max-width: 100%; font-size: .76rem; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.today-hours .today-hours__total {
+  position: relative;
+  min-height: 28px;
+  margin-top: -2px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: none;
+  font-size: .73rem;
+  font-weight: 700;
+}
+.today-hours__durations { position: absolute; inset: 0 0 auto; height: 84px; }
+.today-hours .today-hours__duration {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--ink);
+  font-size: .75rem;
+  box-shadow: var(--shadow-soft);
+  animation: today-hours-appear .16s ease-out;
+}
+.today-hours .today-hours__duration[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.today-hours__duration--0 { left: calc(50% - 111px); top: 48px; }
+.today-hours__duration--1 { left: calc(50% - 69px); top: 0; }
+.today-hours__duration--2 { left: calc(50% + 21px); top: 0; }
+.today-hours__duration--3 { left: calc(50% + 63px); top: 48px; }
+.today-hours__hint { margin: 7px 0 0; color: var(--muted); font-size: .73rem; line-height: 1.5; }
+.today-hours__selection, .today-hours__history {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.today-hours__selection { display: grid; gap: 8px; }
+.today-hours__selection label { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: .82rem; }
+.today-hours__selection input { width: 18px; height: 18px; accent-color: var(--primary); }
+.today-hours__selection a { font-size: .76rem; color: var(--primary); }
+.today-hours .today-hours__empty { margin-top: 10px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 20px; background: transparent; box-shadow: none; color: var(--muted); font-size: .8rem; }
+.today-hours__notice, .today-hours__error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: .76rem; line-height: 1.5; }
+.today-hours__notice { color: var(--ink); }
+.today-hours__error { color: #b42318; }
+.today-hours__error button { font-size: .75rem; }
+.today-hours__custom, .today-hours__edit { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; width: 100%; margin-top: 6px; font-size: .76rem; }
+.today-hours__custom label, .today-hours__edit label { display: grid; gap: 4px; min-width: 0; flex: 1 1 90px; }
+.today-hours__custom input, .today-hours__edit input { box-sizing: border-box; width: 100%; min-height: 36px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--field-bg); color: var(--ink); }
+.today-hours__custom small { width: 100%; color: var(--muted); }
+.today-hours__custom button, .today-hours__edit button, .today-hours__entry-line > button:not(.today-hours__text-button) { min-height: 36px; padding: 6px 10px; font-size: .75rem; }
+.today-hours__entry { padding: 9px 0; border-bottom: 1px solid var(--border); }
+.today-hours__entry:last-child { border-bottom: 0; padding-bottom: 0; }
+.today-hours__entry-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .75rem; }
+.today-hours__entry-line > strong { margin-right: auto; }
+.today-hours__entry-line > span { color: var(--muted); }
+@keyframes today-hours-appear { from { opacity: 0; transform: translateY(6px) scale(.88); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .today-hours .today-hours__orb { transition: none; }
+  .today-hours .today-hours__duration { animation: none; }
+}

@@ -478,6 +478,7 @@ type IntervenantDraft = {
   adresse: string;
   telegram_chat_id: string;
   is_active: boolean;
+  show_on_today: boolean;
 };
 
 const EMPTY_INTERVENANT_DRAFT: IntervenantDraft = {
@@ -487,6 +488,7 @@ const EMPTY_INTERVENANT_DRAFT: IntervenantDraft = {
   adresse: "",
   telegram_chat_id: "",
   is_active: true,
+  show_on_today: false,
 };
 
 const buildIntervenantDraft = (intervenant: Intervenant): IntervenantDraft => ({
@@ -496,6 +498,7 @@ const buildIntervenantDraft = (intervenant: Intervenant): IntervenantDraft => ({
   adresse: intervenant.adresse ?? "",
   telegram_chat_id: intervenant.message_channel_addresses.telegram ?? "",
   is_active: intervenant.is_active,
+  show_on_today: intervenant.show_on_today ?? false,
 });
 
 const buildIntervenantPayload = (draft: IntervenantDraft) => ({
@@ -510,6 +513,7 @@ const buildIntervenantPayload = (draft: IntervenantDraft) => ({
       : {}),
   },
   is_active: draft.is_active,
+  show_on_today: draft.show_on_today,
 });
 
 type DocumentEmailTextTemplate = {
@@ -4330,7 +4334,7 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
   const removeIntervenant = async (intervenant: Intervenant) => {
     if (
       !confirm(
-        `Supprimer l'intervenant « ${intervenant.nom} » ? Il sera retiré des plannings. Les frais professionnels déjà enregistrés seront conservés.`,
+        `Supprimer l'intervenant « ${intervenant.nom} » ? Il sera retiré des plannings. Les frais professionnels et les heures déjà enregistrés seront conservés.`,
       )
     ) {
       return;
@@ -9159,6 +9163,14 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                       />
                     </label>
                     <label className="settings-intervenant-active">
+                      <input type="checkbox" checked={newIntervenantDraft.show_on_today}
+                        disabled={creatingIntervenant}
+                        onChange={(event) => setNewIntervenantDraft((current) => ({
+                          ...current, show_on_today: event.target.checked,
+                        }))} />
+                      Afficher sur Aujourd'hui pour saisir les heures
+                    </label>
+                    <label className="settings-intervenant-active">
                       <input
                         type="checkbox"
                         checked={newIntervenantDraft.is_active}
@@ -9293,6 +9305,14 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
                                   })
                                 }
                               />
+                            </label>
+                            <label className="settings-intervenant-active">
+                              <input type="checkbox" checked={draft.show_on_today}
+                                disabled={isSaving || isDeleting}
+                                onChange={(event) => updateIntervenantDraft(intervenant.id, {
+                                  show_on_today: event.target.checked,
+                                })} />
+                              Afficher sur Aujourd'hui pour saisir les heures
                             </label>
                             <div className="settings-intervenant-item__footer">
                               <label className="settings-intervenant-active">

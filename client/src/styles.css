@@ -275,6 +275,21 @@ body.app-scroll-locked {
   min-height: 48px;
 }
 
+.today-utility-strip__fill-hours-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.42fr) minmax(0, 1.58fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.today-utility-strip__fill-summary {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
 .today-utility-strip__fill-copy {
   display: grid;
   gap: 2px;
