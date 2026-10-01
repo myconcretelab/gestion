@@ -1313,6 +1313,13 @@ const TodayPage = () => {
             </div>
             <TodayIntervenantHours today={todayIso} />
           </div>
+        </div>
+
+        <div className="today-utility-strip__block today-utility-strip__block--revenue">
+          <div className="today-utility-strip__section-head">
+            <span className="today-utility-strip__label">Revenus nets moyens</span>
+            <span>Sélectionnez un montant pour le détail</span>
+          </div>
           <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
             {revenueAverages.map((metric) => {
               const popoverId = `today-revenue-popover-${metric.id}`;
