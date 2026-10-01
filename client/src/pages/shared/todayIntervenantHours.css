@@ -3,9 +3,9 @@
   color: var(--ink);
 }
 .today-hours__heading {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(132px, 1fr) auto;
+  align-items: end;
   gap: 8px;
 }
 .today-hours__heading > strong { flex: 1; font-size: .82rem; }
@@ -13,7 +13,7 @@
 .today-hours__date input {
   display: block;
   box-sizing: border-box;
-  width: 132px;
+  width: 100%;
   min-height: 32px;
   padding: 3px 5px;
   margin-top: 2px;
@@ -141,4 +141,22 @@
 @media (prefers-reduced-motion: reduce) {
   .today-hours .today-hours__orb { transition: none; }
   .today-hours .today-hours__duration { animation: none; }
+}
+@media (max-width: 760px) {
+  .today-hours__heading {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+  .today-hours__date {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .today-hours__date > span { display: none; }
+  .today-hours__date input { min-width: 0; margin-top: 0; }
+  .today-hours__people { margin-top: 10px; }
 }
