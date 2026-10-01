@@ -181,6 +181,7 @@ export type Intervenant = {
   message_channel_addresses: Record<string, string>;
   is_active: boolean;
   show_on_today?: boolean;
+  hourly_rate: number;
   expenses?: IntervenantExpense[];
   created_at: string;
   updated_at: string;
