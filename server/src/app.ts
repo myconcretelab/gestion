@@ -16,6 +16,7 @@ import bookingRequestsRouter from "./routes/bookingRequests.js";
 import statisticsRouter from "./routes/statistics.js";
 import settingsRouter from "./routes/settings.js";
 import intervenantsRouter from "./routes/intervenants.js";
+import intervenantHoursRouter from "./routes/intervenantHours.js";
 import professionalExpensesRouter from "./routes/professionalExpenses.js";
 import guestNightDeclarationsRouter from "./routes/guestNightDeclarations.js";
 import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
@@ -143,6 +144,7 @@ export const createApp = () => {
   app.use("/api/booking-requests", bookingRequestsRouter);
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/intervenants/hours", intervenantHoursRouter);
   app.use("/api/intervenants", intervenantsRouter);
   app.use("/api/professional-expenses", professionalExpensesRouter);
   app.use("/api/guest-night-declarations", guestNightDeclarationsRouter);

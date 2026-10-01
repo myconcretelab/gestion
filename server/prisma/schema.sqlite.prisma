@@ -471,15 +471,34 @@ model PlanningRelayWorker {
   adresse     String?
   message_channel_addresses String @default("{}")
   is_active   Boolean  @default(true)
+  show_on_today Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   assignments PlanningRelayAssignment[]
   sms_periods PlanningRelayPeriod[] @relation("PlanningRelayPeriodSmsWorker")
   expenses    IntervenantExpense[]
+  hour_entries IntervenantHourEntry[]
 
   @@index([is_active, nom], map: "planning_relay_workers_active_nom_idx")
   @@map("planning_relay_workers")
+}
+
+
+model IntervenantHourEntry {
+  id             String   @id
+  intervenant_id String?
+  intervenant_nom String
+  worked_on      String
+  minutes        Int
+  deleted_at     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
+
+  @@index([worked_on, intervenant_id], map: "intervenant_hours_date_worker_idx")
+  @@map("intervenant_hour_entries")
 }
 
 model IntervenantExpense {

@@ -1,3 +1,4 @@
+import TodayIntervenantHours from "./shared/TodayIntervenantHours";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -1287,6 +1288,7 @@ const TodayPage = () => {
               Prochain passage : <strong>{trashPickupLabel}</strong>
             </span>
           </div>
+          <TodayIntervenantHours today={todayIso} />
         </div>
 
         <div className="today-utility-strip__block today-utility-strip__block--fill">
