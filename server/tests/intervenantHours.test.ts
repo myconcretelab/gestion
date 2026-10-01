@@ -89,3 +89,61 @@ test("saisie des heures : retry unique, annulation durable et correction concurr
     prisma.intervenantHourEntry.findUniqueOrThrow = originalFind;
   }
 });
+
+test("paiement des heures : remet le solde à zéro sans effacer l'historique", async () => {
+  const { default: prisma } = await import("../src/db/prisma.ts");
+  const { default: router } = await import("../src/routes/intervenantHours.ts");
+  const originalWorkerFind = prisma.planningRelayWorker.findUnique;
+  const originalEntriesFind = prisma.intervenantHourEntry.findMany;
+  const originalUpdateMany = prisma.intervenantHourEntry.updateMany;
+  const entries = [
+    { id: "h1", intervenant_id: "christine", minutes: 60, paid_at: null as Date | null, deleted_at: null, hourly_rate_snapshot: null as number | null },
+    { id: "h2", intervenant_id: "christine", minutes: 90, paid_at: null as Date | null, deleted_at: null, hourly_rate_snapshot: null as number | null },
+  ];
+  const layer = (router as any).stack.find((item: any) =>
+    item.route?.path === "/:workerId/settle" && item.route.methods.post);
+  const call = async () => {
+    const response = {
+      statusCode: 200, body: null as any,
+      status(code: number) { this.statusCode = code; return this; },
+      json(value: unknown) { this.body = value; return this; },
+    };
+    let error: unknown;
+    await layer.route.stack[0].handle({ params: { workerId: "christine" }, body: {} }, response, (err: unknown) => { error = err; });
+    return { ...response, error };
+  };
+  try {
+    prisma.planningRelayWorker.findUnique = (async () => ({ id: "christine", nom: "Christine", hourly_rate: 16 })) as any;
+    prisma.intervenantHourEntry.findMany = (async () => entries
+      .filter((entry) => !entry.paid_at && !entry.deleted_at)
+      .map(({ id, minutes }) => ({ id, minutes }))) as any;
+    prisma.intervenantHourEntry.updateMany = (async ({ where, data }: any) => {
+      const ids = new Set(where.id.in);
+      let count = 0;
+      entries.forEach((entry) => {
+        if (!ids.has(entry.id) || entry.paid_at) return;
+        entry.paid_at = data.paid_at;
+        entry.hourly_rate_snapshot = data.hourly_rate_snapshot;
+        count++;
+      });
+      return { count };
+    }) as any;
+
+    const result = await call();
+    assert.equal(result.error, undefined);
+    assert.equal(result.body.total_minutes, 150);
+    assert.equal(result.body.hourly_rate, 16);
+    assert.equal(result.body.amount, 40);
+    assert.equal(result.body.entry_count, 2);
+    assert.ok(entries.every((entry) => entry.paid_at && entry.hourly_rate_snapshot === 16));
+    assert.equal(entries.length, 2);
+
+    const second = await call();
+    assert.equal(second.body.total_minutes, 0);
+    assert.equal(second.body.entry_count, 0);
+  } finally {
+    prisma.planningRelayWorker.findUnique = originalWorkerFind;
+    prisma.intervenantHourEntry.findMany = originalEntriesFind;
+    prisma.intervenantHourEntry.updateMany = originalUpdateMany;
+  }
+});

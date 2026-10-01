@@ -23,6 +23,7 @@ const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const ProfessionalExpensesPage = lazy(() => import("./pages/ProfessionalExpensesPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
 const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
@@ -888,6 +889,7 @@ const App = () => {
             <Route path="/frais-personnels" element={<PersonalExpensesPage />} />
             <Route path="/frais-professionnels" element={<ProfessionalExpensesPage />} />
             <Route path="/tarifs" element={<SeasonRatesPage />} />
+            <Route path="/parametres/intervenants" element={<IntervenantsPage />} />
             <Route path="/parametres/*" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
           </Routes>
         </Suspense>

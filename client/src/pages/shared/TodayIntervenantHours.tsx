@@ -4,10 +4,14 @@ import { apiFetch, isApiError } from "../../utils/api";
 import { formatWorkMinutes, getWorkerColor, getWorkerInitials, parseWorkHours } from "../../utils/intervenantHours";
 import "./todayIntervenantHours.css";
 
-type Worker = { id: string; nom: string; is_active: boolean; show_on_today: boolean };
+type Worker = {
+  id: string; nom: string; is_active: boolean; show_on_today: boolean;
+  unpaid_minutes: number; hourly_rate: number;
+};
 type HourEntry = {
   id: string; intervenant_id: string | null; intervenant_nom: string;
-  worked_on: string; minutes: number; created_at: string; updated_at: string;
+  worked_on: string; minutes: number; paid_at: string | null;
+  hourly_rate_snapshot: number | null; created_at: string; updated_at: string;
 };
 type HoursData = { workers: Worker[]; entries: HourEntry[] };
 type PendingAddition = { id: string; workerId: string; worked_on: string; minutes: number };
@@ -181,6 +185,16 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
       setNotice({ message: "Saisie corrigée pour " + entry.intervenant_nom + "." });
     });
   };
+  const settleWorker = (worker: Worker) => {
+    if (!worker.unpaid_minutes || !confirm(
+      `Confirmer le paiement de ${formatWorkMinutes(worker.unpaid_minutes)} à ${worker.nom} et remettre son compteur à zéro ? Les heures resteront dans l'historique.`,
+    )) return;
+    void mutate(async () => {
+      await apiFetch(`/intervenants/hours/${encodeURIComponent(worker.id)}/settle`, { method: "POST" });
+      await reload();
+      setNotice({ message: `Paiement de ${worker.nom} enregistré. Le compteur est remis à zéro.` });
+    });
+  };
 
   const visibleWorkers = data?.workers.filter((worker) => worker.is_active && worker.show_on_today) ?? [];
   const historyWorker = data?.workers.find((worker) => worker.id === historyId);
@@ -237,7 +251,7 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
           <div className="today-hours__people">
             {visibleWorkers.map((worker) => {
               const active = activeId === worker.id;
-              const total = data.entries.filter((entry) => entry.intervenant_id === worker.id).reduce((sum, entry) => sum + entry.minutes, 0);
+              const total = worker.unpaid_minutes;
               const workerStyle = { "--worker-color": getWorkerColor(worker.id) } as CSSProperties;
               return (
                 <div key={worker.id} style={workerStyle} ref={active ? wheelRef : undefined}
@@ -296,21 +310,23 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
           {activeId && !pendingAddition && <p className="today-hours__hint">Choisissez une durée, puis validez au centre de la boule.</p>}
           {historyWorker && <div className="today-hours__history">
             <div className="today-hours__heading">
-              <strong>{historyWorker.nom} · {dayLabel(date)}</strong>
+              <strong>{historyWorker.nom} · {formatWorkMinutes(historyWorker.unpaid_minutes)} à payer</strong>
               <button type="button" className="today-hours__text-button" disabled={locked}
                 onClick={() => { setHistoryId(null); setEdit(null); setDeleteArmed(null); }}>Fermer</button>
             </div>
+            {historyWorker.unpaid_minutes > 0 && <button type="button" disabled={locked}
+              onClick={() => settleWorker(historyWorker)}>Paiement effectué · remettre à 0</button>}
             {!historyEntries.length && <p className="today-hours__hint">Aucune heure enregistrée pour cette date.</p>}
             {historyEntries.map((entry) => <div className="today-hours__entry" key={entry.id}>
               <div className="today-hours__entry-line">
                 <strong>{formatWorkMinutes(entry.minutes)}</strong>
                 <span>{new Date(entry.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
-                <button type="button" className="today-hours__text-button" disabled={locked} onClick={() => {
+                {entry.paid_at ? <span>Payée</span> : <button type="button" className="today-hours__text-button" disabled={locked} onClick={() => {
                   setEdit({ entry, date: entry.worked_on, hours: String(entry.minutes / 60) }); setDeleteArmed(null);
-                }}>Corriger</button>
-                <button type="button" className="today-hours__text-button" disabled={locked} onClick={() => {
+                }}>Corriger</button>}
+                {!entry.paid_at && <button type="button" className="today-hours__text-button" disabled={locked} onClick={() => {
                   setDeleteArmed(entry.id); setEdit(null);
-                }}>Supprimer</button>
+                }}>Supprimer</button>}
               </div>
               {deleteArmed === entry.id && <div className="today-hours__entry-line">
                 <span>Supprimer {formatWorkMinutes(entry.minutes)} ?</span>

@@ -472,6 +472,7 @@ model PlanningRelayWorker {
   message_channel_addresses String @default("{}")
   is_active   Boolean  @default(true)
   show_on_today Boolean @default(false)
+  hourly_rate Float @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -491,6 +492,8 @@ model IntervenantHourEntry {
   intervenant_nom String
   worked_on      String
   minutes        Int
+  paid_at        DateTime?
+  hourly_rate_snapshot Float?
   deleted_at     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -498,6 +501,7 @@ model IntervenantHourEntry {
   intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
 
   @@index([worked_on, intervenant_id], map: "intervenant_hours_date_worker_idx")
+  @@index([intervenant_id, paid_at], map: "intervenant_hours_worker_paid_idx")
   @@map("intervenant_hour_entries")
 }
 

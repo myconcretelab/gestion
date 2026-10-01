@@ -23,6 +23,7 @@ const intervenantPayloadSchema = z.object({
   ).optional(),
   is_active: z.boolean().optional(),
   show_on_today: z.boolean().optional(),
+  hourly_rate: z.coerce.number().min(0).max(10_000).optional(),
 });
 
 const intervenantExpenseFieldsSchema = z.object({
@@ -79,6 +80,7 @@ const serializeIntervenant = (intervenant: any) => ({
   },
   is_active: Boolean(intervenant.is_active),
   show_on_today: Boolean(intervenant.show_on_today),
+  hourly_rate: Number(intervenant.hourly_rate ?? 0),
   expenses: Array.isArray(intervenant.expenses)
     ? intervenant.expenses.map(serializeIntervenantExpense)
     : [],
@@ -117,6 +119,7 @@ router.post("/", async (req, res, next) => {
         ),
         is_active: payload.is_active ?? true,
         show_on_today: payload.show_on_today ?? false,
+        hourly_rate: payload.hourly_rate ?? 0,
       },
     });
     return res.status(201).json(serializeIntervenant(intervenant));
@@ -266,6 +269,9 @@ router.patch("/:id", async (req, res, next) => {
           : {}),
         ...(payload.is_active !== undefined
           ? { is_active: payload.is_active }
+          : {}),
+        ...(payload.hourly_rate !== undefined
+          ? { hourly_rate: payload.hourly_rate }
           : {}),
       },
     });
