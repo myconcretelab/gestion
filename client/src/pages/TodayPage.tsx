@@ -1,3 +1,4 @@
+import TodayIntervenantHours from "./shared/TodayIntervenantHours";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -1290,22 +1291,27 @@ const TodayPage = () => {
         </div>
 
         <div className="today-utility-strip__block today-utility-strip__block--fill">
-          <span className="today-utility-strip__label">Remplissage du jour</span>
-          <div className="today-utility-strip__fill">
-            <OccupationGaugeDial
-              id={`today-fill-rate-${todayIso}`}
-              occupation={filledGiteRate}
-              highlighted={false}
-              animate={false}
-              size={{ width: 60, height: 28 }}
-              className="today-utility-strip__fill-gauge"
-            />
-            <div className="today-utility-strip__fill-copy">
-              <strong>{Math.round(filledGiteRate * 100)}%</strong>
-              <span>
-                {filledGiteCount}/{gites.length || 0} gîte{gites.length > 1 ? "s" : ""}
-              </span>
+          <div className="today-utility-strip__fill-hours-row">
+            <div className="today-utility-strip__fill-summary">
+              <span className="today-utility-strip__label">Remplissage du jour</span>
+              <div className="today-utility-strip__fill">
+                <OccupationGaugeDial
+                  id={`today-fill-rate-${todayIso}`}
+                  occupation={filledGiteRate}
+                  highlighted={false}
+                  animate={false}
+                  size={{ width: 60, height: 28 }}
+                  className="today-utility-strip__fill-gauge"
+                />
+                <div className="today-utility-strip__fill-copy">
+                  <strong>{Math.round(filledGiteRate * 100)}%</strong>
+                  <span>
+                    {filledGiteCount}/{gites.length || 0} gîte{gites.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
             </div>
+            <TodayIntervenantHours today={todayIso} />
           </div>
           <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
             {revenueAverages.map((metric) => {
