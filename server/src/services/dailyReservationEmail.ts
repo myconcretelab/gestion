@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import { readSourceColorSettings, buildDefaultSourceColorSettings } from "./sourceColorSettings.js";
 import { formatEuro } from "../utils/money.js";
 import { getSmtpConfigIssues, sendSmtpMail } from "./mailer.js";
 import {
@@ -31,6 +32,7 @@ export type DailyReservationDigestReservation = {
   id: string;
   gite_id: string | null;
   gite_nom: string;
+  gite_prefixe?: string | null;
   hote_nom: string;
   date_entree: string;
   date_sortie: string;
@@ -281,7 +283,61 @@ const renderMetricCardHtml = (label: string, value: string, tone = "#1d1d1f") =>
     </table>
   </td>`;
 
+
+const getDigestGiteColor = (reservation: DailyReservationDigestReservation) => {
+  // Same palette and name/ID fallback as the Today page.
+  const palette = ["#2D8CFF", "#43B77D", "#F5A623", "#7E5BEF", "#FE5C73"];
+  const knownNames = ["phonsine", "gree", "edmond", "liberte"];
+  for (const candidate of [reservation.gite_nom, reservation.gite_prefixe ?? ""]) {
+    const name = normalizePaymentLabel(candidate);
+    const index = knownNames.findIndex((key) => name.includes(key));
+    if (index >= 0) return palette[index];
+  }
+  const hash = [...(reservation.gite_id ?? "")].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return palette[hash % palette.length];
+};
+
+const buildDigestSourceColorMap = () => {
+  const colors: Record<string, string> = {};
+  const settings = { ...buildDefaultSourceColorSettings().colors, ...readSourceColorSettings().colors };
+  for (const [label, color] of Object.entries(settings)) {
+    colors[normalizePaymentLabel(label)] = color;
+  }
+  return colors;
+};
+
+const getDigestSourceColor = (source: string, colors: Record<string, string>) => {
+  const payment = normalizePaymentLabel(source);
+  const aliases: [string, string][] = [
+    ["virmnt/chq", "Chèque"], ["chq", "Chèque"], ["indefini", "A définir"],
+    ["airbnb", "Airbnb"], ["abritel", "Abritel"], ["gites de france", "Gites de France"],
+    ["homeexchange", "HomeExchange"], ["cheque", "Chèque"], ["virement", "Virement"],
+    ["especes", "Espèces"], ["a definir", "A définir"],
+  ];
+  const label = aliases.find(([key]) => payment.includes(key))?.[1];
+  return colors[normalizePaymentLabel(label ?? source)] ?? "#D3D3D3";
+};
+
+const renderReservationBadgeHtml = (
+  reservation: DailyReservationDigestReservation,
+  sourceColors: Record<string, string>,
+) => {
+  const color = reservation.source_paiement
+    ? getDigestSourceColor(reservation.source_paiement, sourceColors)
+    : getDigestGiteColor(reservation);
+  const hex = color.slice(1);
+  const luminance = (
+    Number.parseInt(hex.slice(0, 2), 16) * 299 +
+    Number.parseInt(hex.slice(2, 4), 16) * 587 +
+    Number.parseInt(hex.slice(4, 6), 16) * 114
+  ) / 1000;
+  const initial = reservation.gite_prefixe?.trim().slice(0, 2).toUpperCase() ||
+    reservation.gite_nom.trim().slice(0, 1).toUpperCase();
+  return `<span title="${escapeHtml(reservation.gite_nom)} • ${escapeHtml(reservation.source_paiement || "A définir")}" style="display:inline-block;width:36px;height:36px;line-height:36px;border-radius:50%;background:${color};color:${luminance >= 160 ? "#111827" : "#ffffff"};font-size:15px;font-weight:700;text-align:center;">${escapeHtml(initial)}</span>`;
+};
+
 const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
+  const sourceColors = buildDigestSourceColorMap();
   const monthLabel = formatMonthLabel(input.monthStart);
   const icalConflicts = input.icalConflicts ?? [];
   const reservationCardsHtml =
@@ -293,12 +349,23 @@ const buildHtmlDigest = (input: DailyReservationDigestMessageInput) => {
                 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;background:#ffffff;border:1px solid #ece7e2;border-radius:24px;">
                   <tr>
                     <td style="padding:20px 22px 18px;">
-                      <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:#ff385c;font-weight:700;">${escapeHtml(reservation.gite_nom)}</div>
-                      <div style="margin-top:8px;font-size:22px;line-height:1.25;color:#1d1d1f;font-weight:700;">${escapeHtml(reservation.hote_nom)}</div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                        <tr>
+                          <td style="padding-right:10px;vertical-align:middle;">${renderReservationBadgeHtml(reservation, sourceColors)}</td>
+                          <td style="vertical-align:middle;">
+                            <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:#716a63;font-weight:700;">${escapeHtml(reservation.gite_nom)}</div>
+                            <div style="margin-top:3px;font-size:13px;color:#716a63;">${escapeHtml(reservation.source_paiement || "A définir")}</div>
+                          </td>
+                        </tr>
+                      </table>
+                      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-top:12px;border-collapse:collapse;">
+                        <tr>
+                          <td style="padding-right:14px;vertical-align:top;font-size:22px;line-height:1.25;color:#1d1d1f;font-weight:700;">${escapeHtml(reservation.hote_nom)}</td>
+                          <td align="right" style="vertical-align:top;font-size:20px;line-height:1.4;color:#48423d;font-weight:600;text-align:right;">${escapeHtml(formatDateOnly(reservation.date_entree))} → ${escapeHtml(formatDateOnly(reservation.date_sortie))}</td>
+                        </tr>
+                      </table>
                       <div style="margin-top:10px;font-size:14px;line-height:1.6;color:#48423d;">
-                        ${escapeHtml(formatDateOnly(reservation.date_entree))} -> ${escapeHtml(formatDateOnly(reservation.date_sortie))}<br />
                         ${escapeHtml(`${reservation.nb_nuits} nuit${reservation.nb_nuits > 1 ? "s" : ""}`)}
-                        ${reservation.source_paiement ? ` • ${escapeHtml(reservation.source_paiement)}` : ""}
                       </div>
                       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-top:18px;border-collapse:collapse;">
                         <tr>
@@ -653,6 +720,7 @@ export const buildNewReservations = async (windowStart: Date, windowEnd: Date) =
       gite: {
         select: {
           nom: true,
+          prefixe_contrat: true,
           ordre: true,
         },
       },
@@ -664,6 +732,7 @@ export const buildNewReservations = async (windowStart: Date, windowEnd: Date) =
     id: row.id,
     gite_id: row.gite_id ?? null,
     gite_nom: row.gite?.nom ?? "Sans gîte assigné",
+    gite_prefixe: row.gite?.prefixe_contrat ?? null,
     hote_nom: row.hote_nom,
     date_entree: row.date_entree.toISOString().slice(0, 10),
     date_sortie: row.date_sortie.toISOString().slice(0, 10),
