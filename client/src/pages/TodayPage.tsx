@@ -1293,7 +1293,7 @@ const TodayPage = () => {
         <div className="today-utility-strip__block today-utility-strip__block--fill">
           <div className="today-utility-strip__fill-hours-row">
             <div className="today-utility-strip__fill-summary">
-              <span className="today-utility-strip__label">Remplissage du jour</span>
+              <span className="today-utility-strip__label">Remplissage</span>
               <div className="today-utility-strip__fill">
                 <OccupationGaugeDial
                   id={`today-fill-rate-${todayIso}`}

@@ -44,7 +44,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 78px;
+  width: 110px;
   gap: 5px;
 }
 .today-hours__person.is-open { z-index: 3; }
@@ -77,7 +77,8 @@
   font-size: .84rem;
 }
 .today-hours__orb small { margin-top: 3px; font-size: .58rem; }
-.today-hours__name { max-width: 100%; font-size: .76rem; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.today-hours__person-meta { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-width: 0; }
+.today-hours__name { min-width: 0; max-width: 100%; font-size: .76rem; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .today-hours .today-hours__total {
   position: relative;
   min-height: 28px;
@@ -90,6 +91,7 @@
   box-shadow: none;
   font-size: .73rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 .today-hours__durations {
   position: absolute;
@@ -157,11 +159,12 @@
 @media (max-width: 760px) {
   .today-hours__heading {
     grid-template-columns: 1fr auto;
-    align-items: center;
+    align-items: end;
   }
+  .today-hours__heading > .today-utility-strip__label { display: none; }
   .today-hours__date {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    grid-column: 1;
+    grid-row: 1;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
@@ -171,4 +174,5 @@
   .today-hours__date > span { display: none; }
   .today-hours__date input { min-width: 0; margin-top: 0; }
   .today-hours__people { margin-top: 10px; }
+  .today-hours__cancel, .today-hours__people + .today-hours__hint { display: none; }
 }
