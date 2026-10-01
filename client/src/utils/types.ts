@@ -180,6 +180,7 @@ export type Intervenant = {
   adresse: string | null;
   message_channel_addresses: Record<string, string>;
   is_active: boolean;
+  show_on_today?: boolean;
   expenses?: IntervenantExpense[];
   created_at: string;
   updated_at: string;

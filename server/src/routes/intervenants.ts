@@ -22,6 +22,7 @@ const intervenantPayloadSchema = z.object({
     z.string().trim().max(180),
   ).optional(),
   is_active: z.boolean().optional(),
+  show_on_today: z.boolean().optional(),
 });
 
 const intervenantExpenseFieldsSchema = z.object({
@@ -77,6 +78,7 @@ const serializeIntervenant = (intervenant: any) => ({
     sms: intervenant.telephone,
   },
   is_active: Boolean(intervenant.is_active),
+  show_on_today: Boolean(intervenant.show_on_today),
   expenses: Array.isArray(intervenant.expenses)
     ? intervenant.expenses.map(serializeIntervenantExpense)
     : [],
@@ -114,6 +116,7 @@ router.post("/", async (req, res, next) => {
           payload.message_channel_addresses ?? {},
         ),
         is_active: payload.is_active ?? true,
+        show_on_today: payload.show_on_today ?? false,
       },
     });
     return res.status(201).json(serializeIntervenant(intervenant));
@@ -257,6 +260,9 @@ router.patch("/:id", async (req, res, next) => {
                 payload.message_channel_addresses,
               ),
             }
+          : {}),
+        ...(payload.show_on_today !== undefined
+          ? { show_on_today: payload.show_on_today }
           : {}),
         ...(payload.is_active !== undefined
           ? { is_active: payload.is_active }
