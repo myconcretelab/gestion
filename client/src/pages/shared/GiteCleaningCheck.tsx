@@ -1,7 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { apiFetch } from "../../utils/api";
 
-type CheckState = { cleaning_checked_at: string | null; notification_warning?: string | null };
+type CheckState = {
+  cleaning_checked_at: string | null;
+  shared_with_rotation?: boolean;
+  notification_warning?: string | null;
+};
 export type CleaningCheckOccurrence = "arrival" | "departure";
 
 const GiteCleaningCheck = ({ reservationId, occurrence }: { reservationId: string; occurrence: CleaningCheckOccurrence }) => {
@@ -81,7 +85,7 @@ const GiteCleaningCheck = ({ reservationId, occurrence }: { reservationId: strin
       {showDetails ? (
         <div id={detailsId} className="gite-cleaning-check__details" role="status">
           <strong>{checked ? "Ménage vérifié" : state ? "Pas checké" : "Contrôle du ménage"}</strong>
-          <span>{occurrence === "arrival" ? "Pour l’entrée" : "Pour la sortie"}</span>
+          <span>{state?.shared_with_rotation ? "Pour la rotation (entrée et sortie)" : occurrence === "arrival" ? "Pour l’entrée" : "Pour la sortie"}</span>
           {state?.cleaning_checked_at ? (
             <span>Le <time dateTime={state.cleaning_checked_at}>{new Date(state.cleaning_checked_at).toLocaleString("fr-FR", {
               timeZone: "Europe/Paris", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
