@@ -17,6 +17,12 @@ import {
   readSmartlifeAutomationConfig,
 } from "../services/smartlifeSettings.js";
 import { buildNewReservations } from "../services/dailyReservationEmail.js";
+import {
+  isCleaningCheckAvailable,
+  loadGiteCleaningReadiness,
+  updateGiteCleaningReadiness,
+} from "../services/giteCleaningReadiness.js";
+import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 import { extractAirbnbConfirmationCode } from "../utils/airbnbReservationIdentity.js";
@@ -32,6 +38,13 @@ import {
 const router = Router();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_ACTIVITY_LIMIT = 36;
+
+const todayGiteSelect = {
+  id: true,
+  nom: true,
+  prefixe_contrat: true,
+  ordre: true,
+} as const;
 
 type TodayRevenueAverageMetric = {
   id: "current_month" | "next_month" | "previous_month" | "last_24_months";
@@ -441,12 +454,13 @@ router.get("/overview/primary", async (req, res, next) => {
     const { days, notificationDays, today, endExclusive } = parseOverviewParams(req.query as Record<string, unknown>);
     const [gites, reservations, revenueAverages] = await Promise.all([
       prisma.gite.findMany({
-        select: { id: true, nom: true, prefixe_contrat: true, ordre: true },
+        select: todayGiteSelect,
         orderBy: [{ ordre: "asc" }, { nom: "asc" }],
       }),
       loadOverviewReservations(today, endExclusive),
       buildTodayRevenueAverageMetrics(today),
     ]);
+    const cleaningReadiness = await loadGiteCleaningReadiness(gites);
 
     return res.json({
       today: toIsoDate(today),
@@ -456,6 +470,48 @@ router.get("/overview/primary", async (req, res, next) => {
       reservations,
       source_colors: readSourceColorSettings().colors,
       revenue_averages: revenueAverages,
+      cleaning_readiness: cleaningReadiness,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
+  try {
+    const { checked } = z.object({ checked: z.boolean() }).parse(req.body ?? {});
+    const gite = await prisma.gite.findUnique({
+      where: { id: req.params.giteId },
+      select: todayGiteSelect,
+    });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
+
+    const [readiness] = await loadGiteCleaningReadiness([gite]);
+    if (!readiness) {
+      return res.status(409).json({ error: "Aucun contrôle de préparation n’est disponible pour ce gîte." });
+    }
+    if (checked && !isCleaningCheckAvailable(readiness, new Date())) {
+      return res.status(409).json({ error: "Le contrôle sera disponible à partir de 8 h 30 le jour du départ." });
+    }
+
+    const wasChecked = Boolean(readiness.checked_at);
+    const checkedAt = await updateGiteCleaningReadiness(readiness, checked);
+    let notificationWarning: string | null = null;
+    if (checked && !wasChecked && checkedAt) {
+      try {
+        const result = await notifyGiteCheckedOnTelegram(gite.nom, checkedAt);
+        if (!result.sent_count) {
+          notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
+        }
+      } catch {
+        notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
+      }
+    }
+
+    return res.json({
+      ...readiness,
+      checked_at: checkedAt,
+      notification_warning: notificationWarning,
     });
   } catch (error) {
     return next(error);

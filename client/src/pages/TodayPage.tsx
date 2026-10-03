@@ -41,6 +41,20 @@ type TodayPrimaryOverviewPayload = {
   reservations: Reservation[];
   source_colors: Record<string, string>;
   revenue_averages?: TodayRevenueAverageMetric[];
+  cleaning_readiness: GiteCleaningReadiness[];
+};
+
+type GiteCleaningReadiness = {
+  gite_id: string;
+  gite_name: string;
+  gite_prefix: string;
+  gite_order: number;
+  departure_reservation_id: string;
+  departure_date: string;
+  next_arrival_reservation_id: string | null;
+  next_arrival_date: string | null;
+  checked_at: string | null;
+  notification_warning?: string | null;
 };
 
 type TodayRevenueAverageMetric = {
@@ -480,12 +494,36 @@ const getEventOptionBadges = (event: TodayEvent): ReservationOptionBadge[] => {
   ];
 };
 
-const getEventCleaningCheckedAt = (event: TodayEvent) => {
-  if (event.type === "arrival") return event.arrivalReservation?.arrival_cleaning_checked_at ?? null;
-  if (event.type === "depart") return event.departureReservation?.departure_cleaning_checked_at ?? null;
-  return event.departureReservation?.departure_cleaning_checked_at
-    ?? event.arrivalReservation?.arrival_cleaning_checked_at
-    ?? null;
+const getEventCleaningCheckedAt = (
+  event: TodayEvent,
+  readinessByArrivalId: Map<string, GiteCleaningReadiness>,
+) => {
+  const arrivalReservation = event.arrivalReservation;
+  if (!arrivalReservation) return null;
+  return readinessByArrivalId.get(arrivalReservation.id)?.checked_at ?? null;
+};
+
+const getParisClock = (value: Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    dateIso: `${read("year")}-${read("month")}-${read("day")}`,
+    minutes: Number(read("hour")) * 60 + Number(read("minute")),
+  };
+};
+
+const isCleaningReadinessAvailable = (readiness: GiteCleaningReadiness, now: Date) => {
+  const clock = getParisClock(now);
+  return readiness.departure_date < clock.dateIso
+    || (readiness.departure_date === clock.dateIso && clock.minutes >= 8 * 60 + 30);
 };
 
 const buildReservationFocusHref = (event: TodayEvent) => {
@@ -625,6 +663,8 @@ const TodayPage = () => {
   const [icalConflictErrors, setIcalConflictErrors] = useState<Record<string, string>>({});
   const [openRevenueMetricId, setOpenRevenueMetricId] = useState<TodayRevenueAverageMetric["id"] | null>(null);
   const [trashNow, setTrashNow] = useState(() => new Date());
+  const [cleaningReadinessBusyId, setCleaningReadinessBusyId] = useState<string | null>(null);
+  const [cleaningReadinessUndo, setCleaningReadinessUndo] = useState<GiteCleaningReadiness | null>(null);
   const primaryRequestIdRef = useRef(0);
   const deferredRequestIdRef = useRef(0);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
@@ -746,6 +786,25 @@ const TodayPage = () => {
         ...(deferredOverview?.live_energy_by_reservation_id?.[reservation.id] ?? {}),
       })),
     [deferredOverview?.live_energy_by_reservation_id, primaryOverview?.reservations]
+  );
+  const cleaningReadiness = primaryOverview?.cleaning_readiness ?? [];
+  const pendingCleaningReadiness = useMemo(
+    () => cleaningReadiness
+      .filter((item) => !item.checked_at && isCleaningReadinessAvailable(item, trashNow))
+      .sort((left, right) => {
+        const leftUrgent = left.next_arrival_date === todayIso ? 0 : 1;
+        const rightUrgent = right.next_arrival_date === todayIso ? 0 : 1;
+        return leftUrgent - rightUrgent || left.gite_order - right.gite_order;
+      }),
+    [cleaningReadiness, todayIso, trashNow]
+  );
+  const cleaningReadinessByArrivalId = useMemo(
+    () => new Map(
+      cleaningReadiness
+        .filter((item) => item.next_arrival_reservation_id)
+        .map((item) => [item.next_arrival_reservation_id as string, item])
+    ),
+    [cleaningReadiness]
   );
   const unassignedCount = deferredOverview?.unassigned_count ?? 0;
   const newReservations = deferredOverview?.new_reservations ?? [];
@@ -1034,6 +1093,60 @@ const TodayPage = () => {
     void loadDeferredData({ notificationDays: nextValue });
   };
 
+  const updateCleaningReadiness = async (item: GiteCleaningReadiness, checked: boolean) => {
+    if (cleaningReadinessBusyId) return;
+    setCleaningReadinessBusyId(item.gite_id);
+    try {
+      const updated = await apiFetch<GiteCleaningReadiness>(
+        `/today/cleaning-readiness/${encodeURIComponent(item.gite_id)}`,
+        { method: "PUT", json: { checked } }
+      );
+      setPrimaryOverview((previous) => previous ? {
+        ...previous,
+        cleaning_readiness: previous.cleaning_readiness.map((candidate) =>
+          candidate.gite_id === updated.gite_id ? updated : candidate
+        ),
+      } : previous);
+      setCleaningReadinessUndo(checked ? updated : null);
+      dispatchAppNotice({
+        label: checked ? `${updated.gite_prefix} est prêt` : `Validation de ${updated.gite_prefix} annulée`,
+        message: checked
+          ? updated.next_arrival_date
+            ? `La prochaine arrivée du ${new Date(`${updated.next_arrival_date}T00:00:00Z`).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "UTC" })} est validée.`
+            : "Le contrôle du gîte a été enregistré."
+          : "Le gîte apparaît de nouveau dans la liste à vérifier.",
+        tone: checked ? "success" : "neutral",
+        timeoutMs: 4200,
+        role: "status",
+      });
+      if (updated.notification_warning) {
+        dispatchAppNotice({
+          label: "Notification non envoyée",
+          message: updated.notification_warning,
+          tone: "warning",
+          timeoutMs: 8000,
+          role: "status",
+        });
+      }
+    } catch (err) {
+      dispatchAppNotice({
+        label: checked ? "Contrôle non enregistré" : "Annulation impossible",
+        message: err instanceof Error ? err.message : "Une erreur est survenue.",
+        tone: "error",
+        timeoutMs: 8000,
+        role: "alert",
+      });
+    } finally {
+      setCleaningReadinessBusyId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!cleaningReadinessUndo) return;
+    const timeoutId = window.setTimeout(() => setCleaningReadinessUndo(null), 10_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [cleaningReadinessUndo]);
+
   const resolveIcalConflict = async (
     conflict: TodayIcalConflict,
     action: "keep_reservation" | "apply_ical" | "delete_reservation"
@@ -1125,6 +1238,43 @@ const TodayPage = () => {
             />
           </div>
         </div>
+        {pendingCleaningReadiness.length > 0 ? (
+          <div className="today-cleaning-readiness" aria-label="Gîtes à vérifier aujourd’hui">
+            <div className="today-cleaning-readiness__label">
+              <strong>À vérifier aujourd’hui</strong>
+              <span>{pendingCleaningReadiness.length} gîte{pendingCleaningReadiness.length > 1 ? "s" : ""}</span>
+            </div>
+            <div className="today-cleaning-readiness__actions">
+              {pendingCleaningReadiness.map((item) => (
+                <button
+                  key={item.gite_id}
+                  type="button"
+                  className={`today-cleaning-readiness__button${
+                    item.next_arrival_date === todayIso ? " today-cleaning-readiness__button--urgent" : ""
+                  }`}
+                  disabled={Boolean(cleaningReadinessBusyId)}
+                  aria-label={`Marquer ${item.gite_name} prêt${item.next_arrival_date === todayIso ? " avant 17 heures" : ""}`}
+                  onClick={() => void updateCleaningReadiness(item, true)}
+                >
+                  <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>
+                  {item.next_arrival_date === todayIso ? <small>17 h</small> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {cleaningReadinessUndo ? (
+          <div className="today-cleaning-readiness__undo" role="status">
+            <span>{cleaningReadinessUndo.gite_prefix} prêt pour la prochaine arrivée.</span>
+            <button
+              type="button"
+              disabled={Boolean(cleaningReadinessBusyId)}
+              onClick={() => void updateCleaningReadiness(cleaningReadinessUndo, false)}
+            >
+              Annuler
+            </button>
+          </div>
+        ) : null}
         <div className="today-timeline__viewport">
           <div className="today-timeline today-timeline__content">
             <div className="today-timeline__weekend-bands" aria-hidden="true">
@@ -1220,7 +1370,7 @@ const TodayPage = () => {
                         marker.event.gitePrefix.trim().slice(0, 2).toUpperCase() ||
                         marker.event.giteName.trim().slice(0, 1).toUpperCase();
                       const optionBadges = getEventOptionBadges(marker.event);
-                      const cleaningChecked = Boolean(getEventCleaningCheckedAt(marker.event));
+                      const cleaningChecked = Boolean(getEventCleaningCheckedAt(marker.event, cleaningReadinessByArrivalId));
 
                       return (
                         <button
@@ -1821,22 +1971,6 @@ const TodayPage = () => {
           open
           title={getReservationGuestName(mobileActionReservation)}
           reservation={mobileActionReservation}
-          giteId={mobileActionReservation.gite_id ?? null}
-          cleaningCheckOccurrence={mobileActionState?.mode === "actions" ? mobileActionState.cleaningCheckOccurrence : "arrival"}
-          onCleaningCheckChange={(cleaningCheckedAt) => {
-            if (mobileActionState?.mode !== "actions") return;
-            const field = mobileActionState.cleaningCheckOccurrence === "arrival"
-              ? "arrival_cleaning_checked_at"
-              : "departure_cleaning_checked_at";
-            setPrimaryOverview((previous) => previous ? {
-              ...previous,
-              reservations: previous.reservations.map((reservation) =>
-                reservation.id === mobileActionReservation.id
-                  ? { ...reservation, [field]: cleaningCheckedAt }
-                  : reservation
-              ),
-            } : previous);
-          }}
           onToggleSource={() => {
             setSourceUpdateError(null);
             setSourcePickerReservationId((current) => current === mobileActionReservation.id ? null : mobileActionReservation.id);

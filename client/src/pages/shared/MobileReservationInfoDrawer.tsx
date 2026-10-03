@@ -1,4 +1,3 @@
-import GiteCleaningCheck, { type CleaningCheckOccurrence } from "./GiteCleaningCheck";
 import type { ComponentProps } from "react";
 import { formatEuro } from "../../utils/format";
 import { getReservationOptionBadges } from "../../utils/reservationOptionBadges";
@@ -14,9 +13,6 @@ type ReservationInfo = Pick<Reservation, "id" | "date_entree" | "date_sortie" | 
 type Props = Pick<ComponentProps<typeof MobileReservationActionsBar>,
   "open" | "title" | "onClose" | "onEdit" | "highlightedCard" | "sourcePicker"> & {
   reservation: ReservationInfo;
-  giteId: string | null;
-  cleaningCheckOccurrence?: CleaningCheckOccurrence;
-  onCleaningCheckChange?: (cleaningCheckedAt: string | null) => void;
   total?: number;
   onToggleSource: () => void;
 };
@@ -27,9 +23,6 @@ const formatShortDate = (value: string) => new Date(value).toLocaleDateString("f
 
 const MobileReservationInfoDrawer = ({
   reservation,
-  giteId,
-  cleaningCheckOccurrence = "arrival",
-  onCleaningCheckChange,
   total,
   onToggleSource,
   ...props
@@ -56,14 +49,6 @@ const MobileReservationInfoDrawer = ({
         },
         ...(energyCost !== null ? [{ label: "Conso", value: formatEuro(energyCost) }] : []),
       ]}
-      cleaningCheck={props.open && giteId ? (
-        <GiteCleaningCheck
-          key={`${reservation.id}:${cleaningCheckOccurrence}`}
-          reservationId={reservation.id}
-          occurrence={cleaningCheckOccurrence}
-          onChange={onCleaningCheckChange}
-        />
-      ) : null}
       note={reservation.commentaire}
       phoneHref={buildTelephoneHref(reservation.telephone)}
       smsHref={buildSmsHref(reservation.telephone ?? "")}
