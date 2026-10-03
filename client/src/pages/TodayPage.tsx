@@ -480,6 +480,14 @@ const getEventOptionBadges = (event: TodayEvent): ReservationOptionBadge[] => {
   ];
 };
 
+const getEventCleaningCheckedAt = (event: TodayEvent) => {
+  if (event.type === "arrival") return event.arrivalReservation?.arrival_cleaning_checked_at ?? null;
+  if (event.type === "depart") return event.departureReservation?.departure_cleaning_checked_at ?? null;
+  return event.departureReservation?.departure_cleaning_checked_at
+    ?? event.arrivalReservation?.arrival_cleaning_checked_at
+    ?? null;
+};
+
 const buildReservationFocusHref = (event: TodayEvent) => {
   const reservationStartDate = parseIsoDate(event.primaryReservation.date_entree);
   const params = new URLSearchParams();
@@ -1212,6 +1220,7 @@ const TodayPage = () => {
                         marker.event.gitePrefix.trim().slice(0, 2).toUpperCase() ||
                         marker.event.giteName.trim().slice(0, 1).toUpperCase();
                       const optionBadges = getEventOptionBadges(marker.event);
+                      const cleaningChecked = Boolean(getEventCleaningCheckedAt(marker.event));
 
                       return (
                         <button
@@ -1220,6 +1229,7 @@ const TodayPage = () => {
                           className={[
                             "today-timeline__marker",
                             marker.event.dateIso === todayIso ? "today-timeline__marker--pulse" : "",
+                            cleaningChecked ? "today-timeline__marker--cleaning-checked" : "",
                           ]
                             .filter(Boolean)
                             .join(" ")}
@@ -1236,8 +1246,14 @@ const TodayPage = () => {
                                   .map((badge) => `${badge.label}${badge.muted ? " au départ" : ""}`)
                                   .join(", ")}`
                               : ""
-                          }`}
+                          }${cleaningChecked ? ", ménage vérifié" : ""}`}
                         >
+                          {cleaningChecked ? (
+                            <>
+                              <span className="today-timeline__cleaning-ring" aria-hidden="true" />
+                              <span className="today-timeline__cleaning-check" aria-hidden="true">✓</span>
+                            </>
+                          ) : null}
                           <span className="today-timeline__marker-prefix">{prefix}</span>
                           <span className="today-timeline__marker-icon">{getEventIcon(marker.event.type)}</span>
                           <ReservationOptionBadges badges={optionBadges} layout="orbit" />
@@ -1807,6 +1823,20 @@ const TodayPage = () => {
           reservation={mobileActionReservation}
           giteId={mobileActionReservation.gite_id ?? null}
           cleaningCheckOccurrence={mobileActionState?.mode === "actions" ? mobileActionState.cleaningCheckOccurrence : "arrival"}
+          onCleaningCheckChange={(cleaningCheckedAt) => {
+            if (mobileActionState?.mode !== "actions") return;
+            const field = mobileActionState.cleaningCheckOccurrence === "arrival"
+              ? "arrival_cleaning_checked_at"
+              : "departure_cleaning_checked_at";
+            setPrimaryOverview((previous) => previous ? {
+              ...previous,
+              reservations: previous.reservations.map((reservation) =>
+                reservation.id === mobileActionReservation.id
+                  ? { ...reservation, [field]: cleaningCheckedAt }
+                  : reservation
+              ),
+            } : previous);
+          }}
           onToggleSource={() => {
             setSourceUpdateError(null);
             setSourcePickerReservationId((current) => current === mobileActionReservation.id ? null : mobileActionReservation.id);

@@ -8,7 +8,11 @@ type CheckState = {
 };
 export type CleaningCheckOccurrence = "arrival" | "departure";
 
-const GiteCleaningCheck = ({ reservationId, occurrence }: { reservationId: string; occurrence: CleaningCheckOccurrence }) => {
+const GiteCleaningCheck = ({ reservationId, occurrence, onChange }: {
+  reservationId: string;
+  occurrence: CleaningCheckOccurrence;
+  onChange?: (cleaningCheckedAt: string | null) => void;
+}) => {
   const [state, setState] = useState<CheckState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +55,11 @@ const GiteCleaningCheck = ({ reservationId, occurrence }: { reservationId: strin
     setBusy(true);
     setError(null);
     try {
-      setState(await apiFetch<CheckState>(endpoint, {
+      const nextState = await apiFetch<CheckState>(endpoint, {
         method: "PUT", json: { checked: !state.cleaning_checked_at, occurrence },
-      }));
+      });
+      setState(nextState);
+      onChange?.(nextState.cleaning_checked_at);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d’enregistrer le contrôle.");
     } finally {

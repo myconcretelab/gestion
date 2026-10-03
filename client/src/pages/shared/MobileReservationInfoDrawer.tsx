@@ -16,6 +16,7 @@ type Props = Pick<ComponentProps<typeof MobileReservationActionsBar>,
   reservation: ReservationInfo;
   giteId: string | null;
   cleaningCheckOccurrence?: CleaningCheckOccurrence;
+  onCleaningCheckChange?: (cleaningCheckedAt: string | null) => void;
   total?: number;
   onToggleSource: () => void;
 };
@@ -24,7 +25,15 @@ const formatShortDate = (value: string) => new Date(value).toLocaleDateString("f
   day: "numeric", month: "short", timeZone: "UTC",
 });
 
-const MobileReservationInfoDrawer = ({ reservation, giteId, cleaningCheckOccurrence = "arrival", total, onToggleSource, ...props }: Props) => {
+const MobileReservationInfoDrawer = ({
+  reservation,
+  giteId,
+  cleaningCheckOccurrence = "arrival",
+  onCleaningCheckChange,
+  total,
+  onToggleSource,
+  ...props
+}: Props) => {
   const hasLiveEnergy = (reservation.energy_live_consumption_kwh ?? 0) > 0 || (reservation.energy_live_cost_eur ?? 0) > 0;
   const hasSavedEnergy = (reservation.energy_consumption_kwh ?? 0) > 0 || (reservation.energy_cost_eur ?? 0) > 0;
   const energyCost = hasLiveEnergy ? reservation.energy_live_cost_eur ?? 0
@@ -52,6 +61,7 @@ const MobileReservationInfoDrawer = ({ reservation, giteId, cleaningCheckOccurre
           key={`${reservation.id}:${cleaningCheckOccurrence}`}
           reservationId={reservation.id}
           occurrence={cleaningCheckOccurrence}
+          onChange={onCleaningCheckChange}
         />
       ) : null}
       note={reservation.commentaire}
