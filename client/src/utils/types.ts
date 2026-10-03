@@ -363,6 +363,8 @@ export type Reservation = {
     ended_by_rule_id?: string | null;
   }>;
   options?: ContratOptions;
+  arrival_cleaning_checked_at?: string | null;
+  departure_cleaning_checked_at?: string | null;
   createdAt?: string;
   updatedAt?: string;
   gite?: Pick<Gite, "id" | "nom" | "prefixe_contrat" | "ordre"> &

@@ -1115,6 +1115,47 @@ body.app-scroll-locked {
   display: inline-flex;
 }
 
+.today-timeline__cleaning-ring {
+  position: absolute;
+  inset: -3px;
+  z-index: 0;
+  border: 3px solid #16a34a;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.today-timeline__cleaning-check {
+  position: absolute;
+  left: -7px;
+  bottom: -7px;
+  z-index: 4;
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+  pointer-events: none;
+}
+
+.today-timeline__marker--cleaning-checked :is(
+  .today-timeline__marker-prefix,
+  .today-timeline__marker-icon
+) {
+  position: relative;
+  z-index: 2;
+}
+
+.today-timeline__marker--cleaning-checked .reservation-option-badges--orbit {
+  z-index: 3;
+}
+
 .today-timeline__marker--done {
   opacity: 0.58;
 }
