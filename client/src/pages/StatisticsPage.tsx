@@ -206,6 +206,9 @@ const readFileAsBase64 = (file: File) =>
 const StatisticsPage = () => {
   const currentYear = new Date().getUTCFullYear();
   const [dataset, setDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [allYearsDataset, setAllYearsDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [allYearsLoading, setAllYearsLoading] = useState(false);
+  const [allYearsError, setAllYearsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState<PeriodYear>(currentYear);
@@ -231,7 +234,12 @@ const StatisticsPage = () => {
         apiFetch<StatisticsPayload>(`/statistics?year=${statisticsYear}`),
         apiFetch<SourceColorSettings>("/settings/source-colors"),
       ]);
-      setDataset(parseStatisticsPayload(payload));
+      const parsedPayload = parseStatisticsPayload(payload);
+      setDataset(parsedPayload);
+      if (selectedYear === "all") {
+        setAllYearsDataset(parsedPayload);
+        setAllYearsError(null);
+      }
       setSourceColors(colorSettings.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
     } catch (err) {
       if (isApiError(err)) setError(err.message);
@@ -244,6 +252,25 @@ const StatisticsPage = () => {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const loadAllYearsData = useCallback(async () => {
+    try {
+      setAllYearsLoading(true);
+      setAllYearsError(null);
+      const payload = await apiFetch<StatisticsPayload>("/statistics?year=all");
+      setAllYearsDataset(parseStatisticsPayload(payload));
+    } catch (err) {
+      setAllYearsError(isApiError(err) ? err.message : "Impossible de charger l'historique du graphique.");
+    } finally {
+      setAllYearsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const isGiteSelected = typeof selectedItem === "string" && selectedItem !== "Tous";
+    if (!isGiteSelected || allYearsDataset || allYearsLoading || allYearsError) return;
+    void loadAllYearsData();
+  }, [allYearsDataset, allYearsError, allYearsLoading, loadAllYearsData, selectedItem]);
 
   const previewLegacyImport = async (file: File) => {
     setLegacyImportError(null);
@@ -298,6 +325,7 @@ const StatisticsPage = () => {
       setLegacyImportMessage(
         `Revenus ${report.year} importés : ${report.createCount} création(s), ${report.updateCount} mise(s) à jour.`
       );
+      setAllYearsDataset(null);
       await loadData();
     } catch (err) {
       setLegacyImportError(isApiError(err) ? err.message : "L'import n'a pas pu être appliqué.");
@@ -408,12 +436,15 @@ const StatisticsPage = () => {
   const chartGroups = useMemo(
     () =>
       buildChartGroups({
-        entriesByGite,
+        entriesByGite:
+          typeof selectedItem === "string" && selectedItem !== "Tous"
+            ? allYearsDataset?.entriesByGite ?? {}
+            : entriesByGite,
         gites,
         selectedItem,
         avgMode,
       }),
-    [avgMode, entriesByGite, gites, selectedItem]
+    [allYearsDataset?.entriesByGite, avgMode, entriesByGite, gites, selectedItem]
   );
 
   const selectedItemValue = typeof selectedItem === "number" ? `year:${selectedItem}` : selectedItem;
@@ -805,7 +836,18 @@ const StatisticsPage = () => {
           </label>
         </div>
 
-        <GlobalRevenueChart groups={chartGroups} avgMode={avgMode} onAvgModeChange={setAvgMode} />
+        {allYearsLoading && typeof selectedItem === "string" && selectedItem !== "Tous" ? (
+          <p>Chargement des années disponibles...</p>
+        ) : allYearsError && typeof selectedItem === "string" && selectedItem !== "Tous" ? (
+          <div className="stats-chart-load-error">
+            <p>{allYearsError}</p>
+            <button type="button" className="button-secondary" onClick={() => void loadAllYearsData()}>
+              Réessayer
+            </button>
+          </div>
+        ) : (
+          <GlobalRevenueChart groups={chartGroups} avgMode={avgMode} onAvgModeChange={setAvgMode} />
+        )}
       </section>
     </div>
   );
