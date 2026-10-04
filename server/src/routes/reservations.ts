@@ -37,12 +37,14 @@ import {
   shouldExportReservationToIcal,
 } from "../utils/reservationOrigin.js";
 import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
+import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 
 const router = Router();
 
 const cleaningCheckOccurrenceSchema = z.enum(["arrival", "departure"]);
 type CleaningCheckOccurrence = z.infer<typeof cleaningCheckOccurrenceSchema>;
 type CleaningCheckField = "arrival_cleaning_checked_at" | "departure_cleaning_checked_at";
+type CleaningCheckActorField = "arrival_cleaning_checked_by_user_id" | "departure_cleaning_checked_by_user_id";
 type CleaningCheckReservation = {
   id: string;
   gite_id: string | null;
@@ -50,6 +52,8 @@ type CleaningCheckReservation = {
   date_sortie: Date;
   arrival_cleaning_checked_at: Date | null;
   departure_cleaning_checked_at: Date | null;
+  arrival_cleaning_checked_by_user_id: string | null;
+  departure_cleaning_checked_by_user_id: string | null;
   gite: { nom: string } | null;
 };
 
@@ -60,6 +64,8 @@ const cleaningCheckSelect = {
   date_sortie: true,
   arrival_cleaning_checked_at: true,
   departure_cleaning_checked_at: true,
+  arrival_cleaning_checked_by_user_id: true,
+  departure_cleaning_checked_by_user_id: true,
   gite: { select: { nom: true } },
 } as const;
 
@@ -135,21 +141,43 @@ const readCleaningCheckField = async (target: { id: string; field: CleaningCheck
   return row?.[target.field] ?? null;
 };
 
+const actorFieldFor = (field: CleaningCheckField): CleaningCheckActorField =>
+  field === "arrival_cleaning_checked_at"
+    ? "arrival_cleaning_checked_by_user_id"
+    : "departure_cleaning_checked_by_user_id";
+
+const getSharedCleaningActorId = (scope: NonNullable<Awaited<ReturnType<typeof getCleaningCheckScope>>>) => {
+  for (const target of [scope.canonical, scope.secondary]) {
+    if (!target) continue;
+    const row = target.id === scope.reservation.id ? scope.reservation : scope.counterpart;
+    const actorId = row?.[actorFieldFor(target.field)] ?? null;
+    if (actorId) return actorId;
+  }
+  return null;
+};
+
+const loadCleaningActor = async (userId: string | null) => userId
+  ? prisma.appUser.findUnique({ where: { id: userId }, select: { id: true, display_name: true } })
+  : null;
+
 router.get("/:id/cleaning-check", async (req, res, next) => {
   try {
     const occurrence = cleaningCheckOccurrenceSchema.default("arrival").parse(req.query.occurrence);
     const scope = await getCleaningCheckScope(req.params.id, occurrence);
     if (!scope) return res.status(404).json({ error: "Réservation introuvable." });
+    const actor = await loadCleaningActor(getSharedCleaningActorId(scope));
     res.json({
       occurrence,
       cleaning_checked_at: getSharedCleaningCheckValue(scope),
       shared_with_rotation: Boolean(scope.counterpart),
+      cleaning_checked_by: actor ? { id: actor.id, displayName: actor.display_name } : null,
     });
   } catch (error) { next(error); }
 });
 
 router.put("/:id/cleaning-check", async (req, res, next) => {
   try {
+    const currentUser = req.headers ? await getAuthenticatedAppUser(req) : null;
     const { checked, occurrence } = z.object({
       checked: z.boolean(),
       occurrence: cleaningCheckOccurrenceSchema.default("arrival"),
@@ -162,19 +190,26 @@ router.put("/:id/cleaning-check", async (req, res, next) => {
     // duplicate notifications when both drawers are toggled at the same time.
     const changed = await prisma.reservation.updateMany({
       where: { id: scope.canonical.id, [scope.canonical.field]: checked ? null : { not: null } },
-      data: { [scope.canonical.field]: requestedCheckedAt },
+      data: {
+        [scope.canonical.field]: requestedCheckedAt,
+        [actorFieldFor(scope.canonical.field)]: checked ? currentUser?.id ?? null : null,
+      },
     });
     const canonicalCheckedAt = await readCleaningCheckField(scope.canonical);
     if (scope.secondary) {
       await prisma.reservation.updateMany({
         where: { id: scope.secondary.id },
-        data: { [scope.secondary.field]: canonicalCheckedAt },
+        data: {
+          [scope.secondary.field]: canonicalCheckedAt,
+          [actorFieldFor(scope.secondary.field)]: checked ? currentUser?.id ?? null : null,
+        },
       });
     }
     let notificationWarning: string | null = null;
     if (changed.count && checked && !previousCheckedAt && canonicalCheckedAt) {
       try {
-        const result = await notifyGiteCheckedOnTelegram(scope.reservation.gite?.nom ?? "Gîte", canonicalCheckedAt);
+        const firstName = currentUser?.displayName.trim().split(/\s+/)[0] ?? null;
+        const result = await notifyGiteCheckedOnTelegram(scope.reservation.gite?.nom ?? "Gîte", canonicalCheckedAt, firstName);
         if (!result.sent_count) notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
       } catch {
         notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
@@ -184,6 +219,7 @@ router.put("/:id/cleaning-check", async (req, res, next) => {
       occurrence,
       cleaning_checked_at: canonicalCheckedAt,
       shared_with_rotation: Boolean(scope.counterpart),
+      cleaning_checked_by: checked && currentUser ? { id: currentUser.id, displayName: currentUser.displayName } : null,
       notification_warning: notificationWarning,
     });
   } catch (error) { next(error); }

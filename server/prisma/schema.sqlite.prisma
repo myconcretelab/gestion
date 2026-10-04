@@ -170,6 +170,9 @@ model AppUser {
   id               String   @id @default(cuid())
   display_name     String
   gestionnaire_id  String?  @unique
+  intervenant_id   String?  @unique
+  status           String   @default("custom")
+  page_access      String   @default("[]")
   can_write        Boolean  @default(true)
   can_view_amounts Boolean  @default(true)
   is_owner         Boolean  @default(false)
@@ -178,6 +181,9 @@ model AppUser {
   updatedAt        DateTime @updatedAt
 
   gestionnaire Gestionnaire? @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
+  intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
+  arrival_cleaning_checks Reservation[] @relation("ArrivalCleaningCheckedBy")
+  departure_cleaning_checks Reservation[] @relation("DepartureCleaningCheckedBy")
 
   @@index([is_active, display_name], map: "app_users_active_name_idx")
   @@map("app_users")
@@ -498,6 +504,7 @@ model PlanningRelayWorker {
   sms_periods PlanningRelayPeriod[] @relation("PlanningRelayPeriodSmsWorker")
   expenses    IntervenantExpense[]
   hour_entries IntervenantHourEntry[]
+  app_user     AppUser?
 
   @@index([is_active, nom], map: "planning_relay_workers_active_nom_idx")
   @@map("planning_relay_workers")
@@ -599,6 +606,8 @@ model Reservation {
   commentaire              String?
   arrival_cleaning_checked_at   DateTime?
   departure_cleaning_checked_at DateTime?
+  arrival_cleaning_checked_by_user_id   String?
+  departure_cleaning_checked_by_user_id String?
   remise_montant           Float                  @default(0)
   commission_channel_mode  String?                @default("euro")
   commission_channel_value Float                  @default(0)
@@ -616,6 +625,8 @@ model Reservation {
   gite                     Gite?                  @relation(fields: [gite_id], references: [id])
   placeholder              ReservationPlaceholder? @relation(fields: [placeholder_id], references: [id])
   approved_booking_requests BookingRequest[]      @relation("ApprovedBookingRequest")
+  arrival_cleaning_checked_by AppUser? @relation("ArrivalCleaningCheckedBy", fields: [arrival_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
+  departure_cleaning_checked_by AppUser? @relation("DepartureCleaningCheckedBy", fields: [departure_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
 
   @@index([gite_id, date_entree])
   @@index([gite_id, date_sortie], map: "reservations_gite_id_date_sortie_idx")
@@ -629,6 +640,8 @@ model Reservation {
   @@index([placeholder_id, date_entree])
   @@index([placeholder_id, date_sortie], map: "reservations_placeholder_id_date_sortie_idx")
   @@index([stay_group_id], map: "reservations_stay_group_id_idx")
+  @@index([arrival_cleaning_checked_by_user_id], map: "reservations_arrival_cleaning_user_idx")
+  @@index([departure_cleaning_checked_by_user_id], map: "reservations_departure_cleaning_user_idx")
   @@map("reservations")
 }
 

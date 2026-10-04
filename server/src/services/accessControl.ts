@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import type { AppPageId } from "./appUsers.js";
 
 const AMOUNT_KEY_PATTERN = /(?:^|_)(?:amount|montant|prix|price|tarif|revenue|revenu|cout|cost|solde|arrhes|caution|commission|taxe_sejour|frais|payable)(?:_|$)/i;
 const CAMEL_AMOUNT_KEY_PATTERN = /(?:amount|montant|price|prix|tarif|revenue|revenu|cost|solde|arrhes|caution|commission|taxeSejour|totalGlobal|totalSans|optionsTotal|amountDue)/i;
@@ -60,3 +61,21 @@ export const isAmountsOnlyApiPath = (path: string) =>
 
 export const isWriteMethod = (method: string) =>
   !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+
+const PAGE_API_PREFIXES: Array<[string, AppPageId]> = [
+  ["/today", "today"],
+  ["/booking-requests", "booking_requests"],
+  ["/contracts", "contracts"],
+  ["/invoices", "invoices"],
+  ["/statistics", "statistics"],
+  ["/professional-expenses", "professional_expenses"],
+  ["/personal-expenses", "personal_expenses"],
+  ["/planning-relay-periods", "planning_relay"],
+  ["/intervenants", "planning_relay"],
+  ["/settings", "settings"],
+  ["/users", "settings"],
+  ["/managers", "settings"],
+];
+
+export const getRequiredPageForApiPath = (path: string): AppPageId | null =>
+  PAGE_API_PREFIXES.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))?.[1] ?? null;

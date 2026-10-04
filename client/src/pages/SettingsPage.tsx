@@ -5394,7 +5394,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
               className="settings-sidebar__nav"
               aria-label="Rubriques des paramètres"
             >
-              {SETTINGS_SECTIONS.map((section) => (
+              {SETTINGS_SECTIONS.filter((section) => section.id !== "settings-intervenants").map((section) => (
                 <NavLink
                   key={section.id}
                   id={`nav-${section.id}`}

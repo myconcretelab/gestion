@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from "react";
 import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { apiFetch, ApiError, isAbortError } from "./utils/api";
-import { AUTH_REQUIRED_EVENT, setCurrentAuthUser, type AppUser, type ServerAuthSession } from "./utils/auth";
+import { AUTH_REQUIRED_EVENT, setCurrentAuthUser, type AppPageId, type AppUser, type ServerAuthSession } from "./utils/auth";
 import { APP_NOTICE_EVENT, type AppNotice } from "./utils/appNotices";
 import { BOOKING_REQUESTS_CHANGED_EVENT } from "./utils/bookingRequestsBadge";
 import { RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT } from "./utils/recentImportsBadge";
@@ -23,7 +23,6 @@ const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const ProfessionalExpensesPage = lazy(() => import("./pages/ProfessionalExpensesPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
 const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
@@ -262,6 +261,14 @@ const AmountsAccess = ({ allowed, children }: { allowed: boolean; children: Reac
     </section>
   );
 
+const PageAccess = ({ allowed, children }: { allowed: boolean; children: ReactNode }) =>
+  allowed ? children : (
+    <section className="card access-restricted">
+      <h1>Page non autorisée</h1>
+      <p>Cette page n’est pas activée pour votre utilisateur.</p>
+    </section>
+  );
+
 const App = () => {
   const location = useLocation();
   const [authSession, setAuthSession] = useState<ServerAuthSession | null>(null);
@@ -281,6 +288,8 @@ const App = () => {
   const currentUser = authSession?.user ?? null;
   const canViewAmounts = currentUser?.permissions.canViewAmounts ?? true;
   const canWrite = currentUser?.permissions.canWrite ?? true;
+  const canAccessPage = (page: AppPageId) => !currentUser || currentUser.permissions.isOwner || currentUser.pageAccess.includes(page);
+  const canAccessSettings = canAccessPage("settings");
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -320,40 +329,47 @@ const App = () => {
   const navItems = [
     {
       to: "/aujourdhui",
+      pageId: "today" as const,
       label: "Aujourd'hui",
       isActive: isTodaySection,
       mobilePrimary: true,
     },
     {
       to: "/reservations",
+      pageId: "reservations" as const,
       label: "Réservations",
       isActive: isReservationsSection,
     },
     {
       to: "/demandes",
+      pageId: "booking_requests" as const,
       label: "Demandes",
       isActive: isBookingRequestsSection,
     },
     {
       to: "/calendrier",
+      pageId: "calendar" as const,
       label: "Calendrier",
       isActive: isCalendarSection,
       mobilePrimary: true,
     },
     {
       to: "/planning-relais",
+      pageId: "planning_relay" as const,
       label: "Planning relais",
       isActive: isOperationsSection,
       desktopOverflow: true,
     },
     {
       to: "/contrats",
+      pageId: "contracts" as const,
       label: "Contrats",
       isActive: isContratsSection,
       requiresAmounts: true,
     },
     {
       to: "/factures",
+      pageId: "invoices" as const,
       label: "Factures",
       isActive: isFacturesSection,
       desktopOverflow: true,
@@ -361,6 +377,7 @@ const App = () => {
     },
     {
       to: "/gites",
+      pageId: "gites" as const,
       label: "Gîtes",
       isActive: location.pathname === "/gites" || location.pathname.startsWith("/gites/"),
       desktopOverflow: true,
@@ -368,6 +385,7 @@ const App = () => {
     },
     {
       to: "/frais-professionnels",
+      pageId: "professional_expenses" as const,
       label: "Frais professionnels",
       isActive: isProfessionalExpensesSection,
       desktopOverflow: true,
@@ -375,6 +393,7 @@ const App = () => {
     },
     {
       to: "/frais-personnels",
+      pageId: "personal_expenses" as const,
       label: "Frais personnels",
       isActive: isExpensesSection,
       desktopOverflow: true,
@@ -382,6 +401,7 @@ const App = () => {
     },
     {
       to: "/statistiques",
+      pageId: "statistics" as const,
       label: "Statistiques",
       isActive: isStatsSection,
       desktopOverflow: true,
@@ -389,6 +409,7 @@ const App = () => {
     },
     {
       to: "/tarifs",
+      pageId: "rates" as const,
       label: "Tarifs",
       isActive: isSeasonRatesSection,
       desktopOverflow: true,
@@ -396,12 +417,13 @@ const App = () => {
     },
     {
       to: "/parametres",
+      pageId: "settings" as const,
       label: "Paramètres",
       isActive: isSettingsSection,
       desktopOverflow: true,
     },
   ];
-  const visibleNavItems = navItems.filter((item) => !(item.requiresAmounts && !canViewAmounts));
+  const visibleNavItems = navItems.filter((item) => canAccessPage(item.pageId) && !(item.requiresAmounts && !canViewAmounts));
   const desktopPrimaryItems = visibleNavItems.filter((item) => !item.desktopOverflow);
   const desktopOverflowItems = visibleNavItems.filter((item) => item.desktopOverflow);
   const mobilePrimaryItems = visibleNavItems.filter((item) => item.mobilePrimary);
@@ -593,12 +615,12 @@ const App = () => {
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
     const controller = new AbortController();
-    void loadRecentImportedReservationsCount(controller.signal);
-    void loadPendingBookingRequestsCount(controller.signal);
-    void loadPumpHealth(controller.signal);
+    if (canAccessPage("reservations")) void loadRecentImportedReservationsCount(controller.signal);
+    if (canAccessPage("booking_requests")) void loadPendingBookingRequestsCount(controller.signal);
+    if (canAccessSettings) void loadPumpHealth(controller.signal);
     const pollId = window.setInterval(() => {
-      void loadPumpHealth();
-      void loadPendingBookingRequestsCount();
+      if (canAccessSettings) void loadPumpHealth();
+      if (canAccessPage("booking_requests")) void loadPendingBookingRequestsCount();
     }, 60_000);
 
     const handleRecentImportedReservationsCreated = (event: Event) => {
@@ -626,10 +648,10 @@ const App = () => {
       );
       window.removeEventListener(BOOKING_REQUESTS_CHANGED_EVENT, handleBookingRequestsChanged);
     };
-  }, [authLoading, isAuthenticated, loadPendingBookingRequestsCount, loadPumpHealth, loadRecentImportedReservationsCount]);
+  }, [authLoading, canAccessSettings, currentUser, isAuthenticated, loadPendingBookingRequestsCount, loadPumpHealth, loadRecentImportedReservationsCount]);
 
   useEffect(() => {
-    if (authLoading || !isAuthenticated || !canWrite) return;
+    if (authLoading || !isAuthenticated || !canWrite || !canAccessSettings) return;
     if (typeof window === "undefined") return;
     const hasAttempted = readSessionStorageItem(ICAL_AUTO_SYNC_SESSION_KEY) === "1";
     if (hasAttempted && !appLoadIcalAutoSyncPromise) return;
@@ -669,7 +691,7 @@ const App = () => {
     return () => {
       active = false;
     };
-  }, [authLoading, canWrite, isAuthenticated, loadRecentImportedReservationsCount, pushAppNotice]);
+  }, [authLoading, canAccessSettings, canWrite, isAuthenticated, loadRecentImportedReservationsCount, pushAppNotice]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -822,7 +844,7 @@ const App = () => {
           ))}
         </nav>
         <div className="topbar-desktop-menu">
-          {currentUser ? <span className="topbar-user" title={currentUser.permissions.isOwner ? "Propriétaire" : "Utilisateur"}>{currentUser.displayName}</span> : null}
+          {currentUser ? <span className="topbar-user" title={currentUser.status === "owner" ? "Propriétaire" : currentUser.status === "worker" ? "Intervenant" : "Utilisateur personnalisé"}>{currentUser.displayName}</span> : null}
           {!canWrite ? <span className="access-badge">Lecture seule</span> : null}
           {!canViewAmounts ? <span className="access-badge">Montants masqués</span> : null}
           {isAuthRequired ? (
@@ -919,29 +941,29 @@ const App = () => {
       <main className="content">
         <Suspense fallback={<div className="card">Chargement...</div>}>
           <Routes>
-            <Route path="/" element={<Navigate to="/aujourdhui" replace />} />
-            <Route path="/aujourdhui" element={<TodayPage />} />
-            <Route path="/gites" element={<AmountsAccess allowed={canViewAmounts}><GitesPage /></AmountsAccess>} />
-            <Route path="/demandes" element={<BookingRequestsPage />} />
-            <Route path="/demandes/:requestId" element={<BookingRequestDetailPage />} />
-            <Route path="/contrats" element={<AmountsAccess allowed={canViewAmounts}><ContratsListPage /></AmountsAccess>} />
-            <Route path="/contrats/nouveau" element={<AmountsAccess allowed={canViewAmounts}><ContratFormPage /></AmountsAccess>} />
-            <Route path="/contrats/:id/edition" element={<AmountsAccess allowed={canViewAmounts}><ContratFormPage /></AmountsAccess>} />
-            <Route path="/contrats/:id" element={<AmountsAccess allowed={canViewAmounts}><ContratDetailPage /></AmountsAccess>} />
-            <Route path="/factures" element={<AmountsAccess allowed={canViewAmounts}><FacturesListPage /></AmountsAccess>} />
-            <Route path="/factures/nouvelle" element={<AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess>} />
-            <Route path="/factures/:id/edition" element={<AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess>} />
-            <Route path="/factures/:id" element={<AmountsAccess allowed={canViewAmounts}><FactureDetailPage /></AmountsAccess>} />
-            <Route path="/reservations/mobile" element={<MobileReservationEditorPage />} />
-            <Route path="/reservations" element={<ReservationsPage />} />
-            <Route path="/calendrier" element={<CalendrierPage />} />
-            <Route path="/planning-relais" element={<OperationsPrintPage />} />
-            <Route path="/statistiques" element={<AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess>} />
-            <Route path="/frais-personnels" element={<AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess>} />
-            <Route path="/frais-professionnels" element={<AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess>} />
-            <Route path="/tarifs" element={<AmountsAccess allowed={canViewAmounts}><SeasonRatesPage /></AmountsAccess>} />
-            <Route path="/parametres/intervenants" element={<IntervenantsPage />} />
-            <Route path="/parametres/*" element={<SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} />} />
+            <Route path="/" element={<Navigate to={visibleNavItems[0]?.to ?? "/aujourdhui"} replace />} />
+            <Route path="/aujourdhui" element={<PageAccess allowed={canAccessPage("today")}><TodayPage /></PageAccess>} />
+            <Route path="/gites" element={<PageAccess allowed={canAccessPage("gites")}><AmountsAccess allowed={canViewAmounts}><GitesPage /></AmountsAccess></PageAccess>} />
+            <Route path="/demandes" element={<PageAccess allowed={canAccessPage("booking_requests")}><BookingRequestsPage /></PageAccess>} />
+            <Route path="/demandes/:requestId" element={<PageAccess allowed={canAccessPage("booking_requests")}><BookingRequestDetailPage /></PageAccess>} />
+            <Route path="/contrats" element={<PageAccess allowed={canAccessPage("contracts")}><AmountsAccess allowed={canViewAmounts}><ContratsListPage /></AmountsAccess></PageAccess>} />
+            <Route path="/contrats/nouveau" element={<PageAccess allowed={canAccessPage("contracts")}><AmountsAccess allowed={canViewAmounts}><ContratFormPage /></AmountsAccess></PageAccess>} />
+            <Route path="/contrats/:id/edition" element={<PageAccess allowed={canAccessPage("contracts")}><AmountsAccess allowed={canViewAmounts}><ContratFormPage /></AmountsAccess></PageAccess>} />
+            <Route path="/contrats/:id" element={<PageAccess allowed={canAccessPage("contracts")}><AmountsAccess allowed={canViewAmounts}><ContratDetailPage /></AmountsAccess></PageAccess>} />
+            <Route path="/factures" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FacturesListPage /></AmountsAccess></PageAccess>} />
+            <Route path="/factures/nouvelle" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess></PageAccess>} />
+            <Route path="/factures/:id/edition" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess></PageAccess>} />
+            <Route path="/factures/:id" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureDetailPage /></AmountsAccess></PageAccess>} />
+            <Route path="/reservations/mobile" element={<PageAccess allowed={canAccessPage("reservations")}><MobileReservationEditorPage /></PageAccess>} />
+            <Route path="/reservations" element={<PageAccess allowed={canAccessPage("reservations")}><ReservationsPage /></PageAccess>} />
+            <Route path="/calendrier" element={<PageAccess allowed={canAccessPage("calendar")}><CalendrierPage /></PageAccess>} />
+            <Route path="/planning-relais" element={<PageAccess allowed={canAccessPage("planning_relay")}><OperationsPrintPage /></PageAccess>} />
+            <Route path="/statistiques" element={<PageAccess allowed={canAccessPage("statistics")}><AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess></PageAccess>} />
+            <Route path="/frais-personnels" element={<PageAccess allowed={canAccessPage("personal_expenses")}><AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess></PageAccess>} />
+            <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />
+            <Route path="/tarifs" element={<PageAccess allowed={canAccessPage("rates")}><AmountsAccess allowed={canViewAmounts}><SeasonRatesPage /></AmountsAccess></PageAccess>} />
+            <Route path="/parametres/intervenants" element={<Navigate to="/parametres/utilisateurs" replace />} />
+            <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
           </Routes>
         </Suspense>
       </main>

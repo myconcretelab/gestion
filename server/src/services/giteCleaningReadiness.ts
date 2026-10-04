@@ -16,6 +16,8 @@ type ReadinessReservation = {
   date_entree: Date;
   date_sortie: Date;
   departure_cleaning_checked_at: Date | null;
+  departure_cleaning_checked_by_user_id?: string | null;
+  departure_cleaning_checked_by?: { display_name: string } | null;
   options?: unknown;
 };
 
@@ -30,6 +32,8 @@ export type GiteCleaningReadiness = {
   next_arrival_date: string | null;
   departure_has_cleaning_option: boolean;
   checked_at: Date | null;
+  checked_by_user_id: string | null;
+  checked_by_name: string | null;
 };
 
 const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
@@ -95,6 +99,8 @@ export const buildGiteCleaningReadiness = (
         fromJsonString<{ menage?: { enabled?: boolean } }>(lastDeparture.options, {}).menage?.enabled
       ),
       checked_at: lastDeparture.departure_cleaning_checked_at,
+      checked_by_user_id: lastDeparture.departure_cleaning_checked_by_user_id ?? null,
+      checked_by_name: lastDeparture.departure_cleaning_checked_by?.display_name ?? null,
     }];
   }).sort((left, right) => left.gite_order - right.gite_order || left.gite_name.localeCompare(right.gite_name, "fr"));
 };
@@ -109,6 +115,8 @@ export const loadGiteCleaningReadiness = async (gites: ReadinessGite[], now = ne
       date_entree: true,
       date_sortie: true,
       departure_cleaning_checked_at: true,
+      departure_cleaning_checked_by_user_id: true,
+      departure_cleaning_checked_by: { select: { display_name: true } },
       options: true,
     },
   });
@@ -118,18 +126,25 @@ export const loadGiteCleaningReadiness = async (gites: ReadinessGite[], now = ne
 export const updateGiteCleaningReadiness = async (
   readiness: GiteCleaningReadiness,
   checked: boolean,
+  checkedByUserId: string | null,
   checkedAt = new Date(),
 ) => {
   const value = checked ? readiness.checked_at ?? checkedAt : null;
   await prisma.$transaction([
     prisma.reservation.update({
       where: { id: readiness.departure_reservation_id },
-      data: { departure_cleaning_checked_at: value },
+      data: {
+        departure_cleaning_checked_at: value,
+        departure_cleaning_checked_by_user_id: checked ? checkedByUserId : null,
+      },
     }),
     ...(readiness.next_arrival_reservation_id ? [
       prisma.reservation.update({
         where: { id: readiness.next_arrival_reservation_id },
-        data: { arrival_cleaning_checked_at: value },
+        data: {
+          arrival_cleaning_checked_at: value,
+          arrival_cleaning_checked_by_user_id: checked ? checkedByUserId : null,
+        },
       }),
     ] : []),
   ]);

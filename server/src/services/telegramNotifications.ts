@@ -294,14 +294,15 @@ export const notifyBookingRequestApprovedOnTelegram = async (payload: BookingReq
   return sendTelegramMessage(buildBookingRequestApprovedTelegramMessage(payload), config);
 };
 
-export const buildGiteCheckedMessage = (name: string, checkedAt: Date, mentions: string[] = []) => [
+export const buildGiteCheckedMessage = (name: string, checkedAt: Date, mentions: string[] = [], checkedBy?: string | null) => [
   `✅ <b>Gîte ${escapeHtml(name)} checké !</b>`,
+  checkedBy ? `Par ${escapeHtml(checkedBy)}` : "",
   escapeHtml(formatDateTimeFr(checkedAt)),
   mentions.map(escapeHtml).join(" "),
 ].filter(Boolean).join("\n");
 
-export const notifyGiteCheckedOnTelegram = async (name: string, checkedAt: Date) => {
+export const notifyGiteCheckedOnTelegram = async (name: string, checkedAt: Date, checkedBy?: string | null) => {
   const config = readTelegramNotificationConfig();
   if (!config.notify_gite_checked) return { sent_count: 0, skipped_reason: "event_disabled" };
-  return sendTelegramMessage(buildGiteCheckedMessage(name, checkedAt, config.gite_check_mentions), config);
+  return sendTelegramMessage(buildGiteCheckedMessage(name, checkedAt, config.gite_check_mentions, checkedBy), config);
 };

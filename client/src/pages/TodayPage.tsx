@@ -55,6 +55,8 @@ type GiteCleaningReadiness = {
   next_arrival_date: string | null;
   departure_has_cleaning_option: boolean;
   checked_at: string | null;
+  checked_by_user_id?: string | null;
+  checked_by_name?: string | null;
   notification_warning?: string | null;
 };
 
@@ -1269,7 +1271,7 @@ const TodayPage = () => {
         ) : null}
         {cleaningReadinessUndo ? (
           <div className="today-cleaning-readiness__undo" role="status">
-            <span>{cleaningReadinessUndo.gite_prefix} prêt pour la prochaine arrivée.</span>
+            <span>{cleaningReadinessUndo.gite_prefix} prêt pour la prochaine arrivée{cleaningReadinessUndo.checked_by_name ? ` · validé par ${cleaningReadinessUndo.checked_by_name}` : ""}.</span>
             <button
               type="button"
               disabled={Boolean(cleaningReadinessBusyId)}

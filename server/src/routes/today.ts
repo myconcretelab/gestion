@@ -23,6 +23,7 @@ import {
   updateGiteCleaningReadiness,
 } from "../services/giteCleaningReadiness.js";
 import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
+import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 import { extractAirbnbConfirmationCode } from "../utils/airbnbReservationIdentity.js";
@@ -479,6 +480,7 @@ router.get("/overview/primary", async (req, res, next) => {
 
 router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
   try {
+    const currentUser = req.headers ? await getAuthenticatedAppUser(req) : null;
     const { checked } = z.object({ checked: z.boolean() }).parse(req.body ?? {});
     const gite = await prisma.gite.findUnique({
       where: { id: req.params.giteId },
@@ -495,11 +497,12 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
     }
 
     const wasChecked = Boolean(readiness.checked_at);
-    const checkedAt = await updateGiteCleaningReadiness(readiness, checked);
+    const checkedAt = await updateGiteCleaningReadiness(readiness, checked, currentUser?.id ?? null);
     let notificationWarning: string | null = null;
     if (checked && !wasChecked && checkedAt) {
       try {
-        const result = await notifyGiteCheckedOnTelegram(gite.nom, checkedAt);
+        const firstName = currentUser?.displayName.trim().split(/\s+/)[0] ?? null;
+        const result = await notifyGiteCheckedOnTelegram(gite.nom, checkedAt, firstName);
         if (!result.sent_count) {
           notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
         }
@@ -511,6 +514,8 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
     return res.json({
       ...readiness,
       checked_at: checkedAt,
+      checked_by_user_id: checked ? currentUser?.id ?? null : null,
+      checked_by_name: checked ? currentUser?.displayName ?? null : null,
       notification_warning: notificationWarning,
     });
   } catch (error) {

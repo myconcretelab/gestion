@@ -1,9 +1,30 @@
 export const AUTH_REQUIRED_EVENT = "contrats:auth-required";
 
+export const APP_PAGES = [
+  { id: "today", label: "Aujourd’hui" },
+  { id: "reservations", label: "Réservations" },
+  { id: "booking_requests", label: "Demandes" },
+  { id: "calendar", label: "Calendrier" },
+  { id: "planning_relay", label: "Planning relais" },
+  { id: "contracts", label: "Contrats" },
+  { id: "invoices", label: "Factures" },
+  { id: "gites", label: "Gîtes" },
+  { id: "professional_expenses", label: "Frais professionnels" },
+  { id: "personal_expenses", label: "Frais personnels" },
+  { id: "statistics", label: "Statistiques" },
+  { id: "rates", label: "Tarifs" },
+  { id: "settings", label: "Paramètres" },
+] as const;
+export type AppPageId = (typeof APP_PAGES)[number]["id"];
+export type AppUserStatus = "owner" | "worker" | "custom";
+
 export type AppUser = {
   id: string;
   displayName: string;
   gestionnaireId: string | null;
+  intervenantId: string | null;
+  status: AppUserStatus;
+  pageAccess: AppPageId[];
   isActive: boolean;
   permissions: {
     canWrite: boolean;
@@ -20,6 +41,9 @@ export const setCurrentAuthUser = (user: AppUser | null) => {
 
 export const canCurrentUserViewAmounts = () =>
   currentUser?.permissions.canViewAmounts ?? true;
+
+export const canCurrentUserAccessPage = (page: AppPageId) =>
+  !currentUser || currentUser.permissions.isOwner || currentUser.pageAccess.includes(page);
 
 export type ServerAuthSession = {
   required: boolean;

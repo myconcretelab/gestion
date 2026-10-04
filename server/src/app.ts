@@ -34,7 +34,7 @@ import {
   getAuthenticatedAppUser,
   isServerAuthRequired,
 } from "./services/serverAuth.js";
-import { containsMonetaryFields, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
+import { containsMonetaryFields, getRequiredPageForApiPath, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -123,6 +123,13 @@ export const createApp = () => {
       const session = await getServerAuthSessionFromRequest(req);
       const user = session ? await getAuthenticatedAppUser(req) : null;
       if (session && user) {
+        const requiredPage = getRequiredPageForApiPath(req.path);
+        if (requiredPage && !user.permissions.isOwner && !user.pageAccess.includes(requiredPage)) {
+          return res.status(403).json({
+            error: "Cet utilisateur n’a pas accès à cette page.",
+            code: "PAGE_ACCESS_REQUIRED",
+          });
+        }
         if (isWriteMethod(req.method) && !user.permissions.canWrite) {
           return res.status(403).json({
             error: "Cet utilisateur dispose d'un accès en lecture seule.",
