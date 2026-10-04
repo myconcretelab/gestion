@@ -1261,7 +1261,7 @@ const TodayPage = () => {
                 >
                   <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>
                   {item.departure_has_cleaning_option ? <small className="today-cleaning-readiness__option-label">M</small> : null}
-                  {item.next_arrival_date === todayIso ? <small className="today-cleaning-readiness__deadline">17 h</small> : null}
+                  {item.next_arrival_date === todayIso ? <small className="today-cleaning-readiness__deadline">17h</small> : null}
                 </button>
               ))}
             </div>

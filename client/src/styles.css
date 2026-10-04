@@ -952,10 +952,15 @@ body.app-scroll-locked {
 }
 
 .today-cleaning-readiness__deadline {
-  padding: 2px 5px;
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
   border-radius: 999px;
-  background: #fff7ed;
-  color: #c2410c !important;
+  background: #f97316;
+  color: #ffffff !important;
+  font-size: 0.54rem !important;
+  letter-spacing: -0.02em;
 }
 
 .today-cleaning-readiness__button:hover:not(:disabled),
