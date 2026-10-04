@@ -18245,6 +18245,23 @@ button.personal-expenses-status:disabled {
   border-radius: 14px;
 }
 
+.user-worker-profile-toggle {
+  width: fit-content;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-soft) 28%, white);
+}
+
+.user-worker-profile-toggle span {
+  display: grid;
+  gap: 3px;
+}
+
+.user-worker-profile-toggle small {
+  color: var(--muted);
+}
+
 .user-editor__fieldset legend {
   padding: 0 7px;
   color: var(--text);

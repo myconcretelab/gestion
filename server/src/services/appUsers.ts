@@ -107,6 +107,22 @@ export const ensureAppUsersInitialized = async () => {
         orderBy: [{ nom: "asc" }],
       });
       for (const worker of workers) {
+        const ownerCandidates = await prisma.appUser.findMany({
+          where: { is_owner: true, intervenant_id: null },
+          select: { id: true, display_name: true },
+        });
+        const normalizedWorkerName = worker.nom.trim().toLocaleLowerCase("fr");
+        const matchingOwners = ownerCandidates.filter((owner) => {
+          const ownerName = owner.display_name.trim().toLocaleLowerCase("fr");
+          return ownerName === normalizedWorkerName || ownerName.startsWith(`${normalizedWorkerName} `);
+        });
+        if (matchingOwners.length === 1) {
+          await prisma.appUser.update({
+            where: { id: matchingOwners[0].id },
+            data: { intervenant_id: worker.id },
+          });
+          continue;
+        }
         await prisma.appUser.create({
           data: {
             display_name: worker.nom,

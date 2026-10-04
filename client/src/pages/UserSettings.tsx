@@ -12,6 +12,7 @@ type UserDraft = {
   displayName: string; gestionnaireId: string; status: AppUserStatus; canWrite: boolean;
   canViewAmounts: boolean; isActive: boolean; pageAccess: AppPageId[]; telephone: string;
   email: string; adresse: string; telegramChatId: string; hourlyRate: string; showOnToday: boolean;
+  hasWorkerProfile: boolean;
 };
 
 const ALL_PAGES = APP_PAGES.map(({ id }) => id);
@@ -24,6 +25,7 @@ const STATUS_PRESETS: Record<AppUserStatus, Pick<UserDraft, "canWrite" | "canVie
 const emptyDraft = (): UserDraft => ({
   displayName: "", gestionnaireId: "", status: "custom", isActive: true, ...STATUS_PRESETS.custom,
   telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "", showOnToday: true,
+  hasWorkerProfile: false,
 });
 const toDraft = (user: ManagedUser): UserDraft => ({
   displayName: user.displayName, gestionnaireId: user.gestionnaireId ?? "", status: user.status,
@@ -31,18 +33,21 @@ const toDraft = (user: ManagedUser): UserDraft => ({
   pageAccess: user.permissions.isOwner ? ALL_PAGES : user.pageAccess, telephone: user.intervenant?.telephone ?? "",
   email: user.intervenant?.email ?? "", adresse: user.intervenant?.adresse ?? "", telegramChatId: user.intervenant?.telegramChatId ?? "",
   hourlyRate: user.intervenant?.hourlyRate ? String(user.intervenant.hourlyRate).replace(".", ",") : "", showOnToday: user.intervenant?.showOnToday ?? true,
+  hasWorkerProfile: Boolean(user.intervenant),
 });
 const buildPayload = (draft: UserDraft) => ({
   displayName: draft.displayName.trim(), gestionnaireId: draft.gestionnaireId || null, status: draft.status,
   canWrite: draft.status === "owner" ? true : draft.canWrite, canViewAmounts: draft.status === "owner" ? true : draft.canViewAmounts,
   isActive: draft.isActive, pageAccess: draft.status === "owner" ? ALL_PAGES : draft.pageAccess,
-  workerProfile: draft.status === "worker" ? {
+  workerProfile: draft.status === "worker" || draft.hasWorkerProfile ? {
     telephone: draft.telephone.trim(), email: draft.email.trim() || null, adresse: draft.adresse.trim() || null,
     telegramChatId: draft.telegramChatId.trim() || null, hourlyRate: Number(draft.hourlyRate.replace(",", ".")) || 0,
     showOnToday: draft.showOnToday,
   } : null,
 });
-const applyStatus = (draft: UserDraft, status: AppUserStatus): UserDraft => ({ ...draft, status, ...STATUS_PRESETS[status] });
+const applyStatus = (draft: UserDraft, status: AppUserStatus): UserDraft => ({
+  ...draft, status, ...STATUS_PRESETS[status], hasWorkerProfile: status === "worker" ? true : draft.hasWorkerProfile,
+});
 
 function UserEditor({ draft, managers, linkedManagerIds, disabled, submitLabel, onChange, onSubmit }: {
   draft: UserDraft; managers: Gestionnaire[]; linkedManagerIds: Set<string | null>; disabled: boolean;
@@ -63,7 +68,8 @@ function UserEditor({ draft, managers, linkedManagerIds, disabled, submitLabel, 
         <option value="">Aucun lien</option>{managerOptions.map((manager) => <option key={manager.id} value={manager.id}>{manager.prenom} {manager.nom}</option>)}
       </select></label>
     </div>
-    {draft.status === "worker" ? <fieldset className="user-editor__fieldset"><legend>Profil intervenant</legend><div className="grid-2">
+    {draft.status !== "worker" ? <label className="checkbox-row user-worker-profile-toggle"><input type="checkbox" checked={draft.hasWorkerProfile} disabled={disabled} onChange={(e) => onChange({ ...draft, hasWorkerProfile: e.target.checked })} /><span><strong>Cette personne est aussi intervenante</strong><small>Ajouter ses coordonnées au planning relais et à la saisie des heures.</small></span></label> : null}
+    {draft.status === "worker" || draft.hasWorkerProfile ? <fieldset className="user-editor__fieldset"><legend>Profil intervenant</legend><div className="grid-2">
       <label className="field">Téléphone<input type="tel" value={draft.telephone} disabled={disabled} onChange={(e) => onChange({ ...draft, telephone: e.target.value })} /></label>
       <label className="field">Email<input type="email" value={draft.email} disabled={disabled} onChange={(e) => onChange({ ...draft, email: e.target.value })} /></label>
       <label className="field">Identifiant Telegram<input value={draft.telegramChatId} disabled={disabled} onChange={(e) => onChange({ ...draft, telegramChatId: e.target.value })} /></label>
@@ -79,7 +85,7 @@ function UserEditor({ draft, managers, linkedManagerIds, disabled, submitLabel, 
     <fieldset className="user-editor__fieldset"><legend>Pages visibles</legend><div className="user-page-access">
       {APP_PAGES.map((page) => <label className="checkbox-row" key={page.id}><input type="checkbox" checked={owner || draft.pageAccess.includes(page.id)} disabled={disabled || owner} onChange={(e) => togglePage(page.id, e.target.checked)} /><span>{page.label}</span></label>)}
     </div>{owner ? <p className="field-hint">Les propriétaires ont toujours accès à toutes les pages.</p> : null}</fieldset>
-    <div className="actions"><button type="button" disabled={disabled || !draft.displayName.trim() || (draft.status === "worker" && !draft.telephone.trim())} onClick={onSubmit}>{submitLabel}</button></div>
+    <div className="actions"><button type="button" disabled={disabled || !draft.displayName.trim() || ((draft.status === "worker" || draft.hasWorkerProfile) && !draft.telephone.trim())} onClick={onSubmit}>{submitLabel}</button></div>
   </div>;
 }
 
