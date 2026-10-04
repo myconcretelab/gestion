@@ -1244,8 +1244,7 @@ const TodayPage = () => {
         {pendingCleaningReadiness.length > 0 ? (
           <div className="today-cleaning-readiness" aria-label="Gîtes à vérifier aujourd’hui">
             <div className="today-cleaning-readiness__label">
-              <strong>À vérifier aujourd’hui</strong>
-              <span>{pendingCleaningReadiness.length} gîte{pendingCleaningReadiness.length > 1 ? "s" : ""}</span>
+              <strong>À vérifier</strong>
             </div>
             <div className="today-cleaning-readiness__actions">
               {pendingCleaningReadiness.map((item) => (
