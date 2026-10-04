@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../utils/api";
 import { APP_PAGES, type AppPageId, type AppUser, type AppUserStatus } from "../utils/auth";
 import type { Gestionnaire } from "../utils/types";
+import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 
 type WorkerProfile = { id?: string; telephone: string; email: string | null; adresse: string | null; telegramChatId: string | null; hourlyRate: number; showOnToday: boolean };
 type ManagedUser = AppUser & {
@@ -55,29 +56,27 @@ const applyStatus = (draft: UserDraft, status: AppUserStatus, presets: StatusPre
   pageAccess: presets[status].pageAccess, hasWorkerProfile: status === "worker" ? true : draft.hasWorkerProfile,
 });
 
-function StatusPresetEditor({ preset, disabled, onChange, onSubmit, onClose }: {
-  preset: StatusPreset; disabled: boolean; onChange: (preset: StatusPreset) => void; onSubmit: () => void; onClose: () => void;
+function StatusPresetEditor({ preset, disabled, onChange }: {
+  preset: StatusPreset; disabled: boolean; onChange: (preset: StatusPreset) => void;
 }) {
   const togglePage = (page: AppPageId, checked: boolean) => onChange({
     ...preset, pageAccess: checked ? [...new Set([...preset.pageAccess, page])] : preset.pageAccess.filter((item) => item !== page),
   });
-  return <div className="card user-editor-card status-preset-editor">
-    <div className="user-editor-card__header"><div><span className="settings-card__tag">Statut</span><div className="section-title">Droits du statut {STATUS_LABELS[preset.status]}</div></div><button type="button" className="secondary" onClick={onClose}>Fermer</button></div>
-    <p className="field-hint">L’enregistrement applique ces droits à tous les utilisateurs ayant ce statut.</p>
-    <fieldset className="user-editor__fieldset"><legend>Droits</legend><div className="user-permissions">
+  return <div className="user-editor status-preset-editor">
+    <p className="contract-return-drawer__intro">L’enregistrement applique ces droits à tous les utilisateurs ayant ce statut.</p>
+    <fieldset className="user-editor__fieldset contract-return-drawer__section"><legend>Droits</legend><div className="user-permissions">
       <label className="checkbox-row"><input type="checkbox" checked={preset.canWrite} disabled={disabled} onChange={(e) => onChange({ ...preset, canWrite: e.target.checked })} /><span><strong>Écriture</strong><small>Créer, modifier et supprimer.</small></span></label>
       <label className="checkbox-row"><input type="checkbox" checked={preset.canViewAmounts} disabled={disabled} onChange={(e) => onChange({ ...preset, canViewAmounts: e.target.checked })} /><span><strong>Montants en euros</strong><small>Afficher tous les chiffres financiers.</small></span></label>
     </div></fieldset>
-    <fieldset className="user-editor__fieldset"><legend>Pages visibles</legend><div className="user-page-access">
+    <fieldset className="user-editor__fieldset contract-return-drawer__section"><legend>Pages visibles</legend><div className="user-page-access">
       {APP_PAGES.map((page) => <label className="checkbox-row" key={page.id}><input type="checkbox" checked={preset.pageAccess.includes(page.id)} disabled={disabled} onChange={(e) => togglePage(page.id, e.target.checked)} /><span>{page.label}</span></label>)}
     </div></fieldset>
-    <div className="actions"><button type="button" disabled={disabled} onClick={onSubmit}>{disabled ? "Enregistrement…" : "Enregistrer les droits du statut"}</button></div>
   </div>;
 }
 
-function UserEditor({ draft, managers, linkedManagerIds, statusPresets, disabled, submitLabel, onChange, onSubmit }: {
+function UserEditor({ draft, managers, linkedManagerIds, statusPresets, disabled, onChange }: {
   draft: UserDraft; managers: Gestionnaire[]; linkedManagerIds: Set<string | null>; disabled: boolean;
-  statusPresets: StatusPresetMap; submitLabel: string; onChange: (draft: UserDraft) => void; onSubmit: () => void;
+  statusPresets: StatusPresetMap; onChange: (draft: UserDraft) => void;
 }) {
   const owner = draft.status === "owner";
   const managerOptions = managers.filter((manager) => manager.id === draft.gestionnaireId || !linkedManagerIds.has(manager.id));
@@ -111,9 +110,11 @@ function UserEditor({ draft, managers, linkedManagerIds, statusPresets, disabled
     <fieldset className="user-editor__fieldset"><legend>Pages visibles</legend><div className="user-page-access">
       {APP_PAGES.map((page) => <label className="checkbox-row" key={page.id}><input type="checkbox" checked={owner || draft.pageAccess.includes(page.id)} disabled={disabled || owner} onChange={(e) => togglePage(page.id, e.target.checked)} /><span>{page.label}</span></label>)}
     </div>{owner ? <p className="field-hint">Les propriétaires ont toujours accès à toutes les pages.</p> : null}</fieldset>
-    <div className="actions"><button type="button" disabled={disabled || !draft.displayName.trim() || ((draft.status === "worker" || draft.hasWorkerProfile) && !draft.telephone.trim())} onClick={onSubmit}>{submitLabel}</button></div>
   </div>;
 }
+
+const isUserDraftValid = (draft: UserDraft) =>
+  Boolean(draft.displayName.trim()) && (!((draft.status === "worker" || draft.hasWorkerProfile) && !draft.telephone.trim()));
 
 const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   const [users, setUsers] = useState<ManagedUser[]>([]); const [managers, setManagers] = useState<Gestionnaire[]>([]);
@@ -147,7 +148,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   useEffect(() => { void load(); }, []);
   const save = async (id: string) => {
     setBusyId(id); setError(null); setNotice(null);
-    try { await apiFetch(`/users/${id}`, { method: "PUT", json: buildPayload(drafts[id]) }); setNotice("Utilisateur mis à jour."); await load(); }
+    try { await apiFetch(`/users/${id}`, { method: "PUT", json: buildPayload(drafts[id]) }); setSelectedId(null); setNotice("Utilisateur mis à jour."); await load(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible d’enregistrer l’utilisateur."); } finally { setBusyId(null); }
   };
   const create = async () => {
@@ -167,17 +168,59 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
     {notice ? <div className="note note--success">{notice}</div> : null}{error ? <div className="note">{error}</div> : null}
     <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Droits par statut</div><span className="field-hint">Les propriétaires ont toujours tous les droits.</span></div></div>
       <div className="table-wrap"><table className="table user-list-table status-preset-table"><thead><tr><th>Statut</th><th>Droits</th><th>Pages</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
-        {(["owner", "worker", "custom"] as AppUserStatus[]).map((status) => { const preset = statusPresets[status]; return <tr key={status} className={selectedStatus === status ? "is-selected" : ""}><td><strong>{STATUS_LABELS[status]}</strong></td><td>{preset.canWrite ? "Écriture" : "Lecture"}{preset.canViewAmounts ? " · €" : " · sans €"}</td><td>{status === "owner" ? "Toutes" : `${preset.pageAccess.length} / ${APP_PAGES.length}`}</td><td className="table-actions-cell">{preset.locked ? <span className="field-hint">Fixe</span> : <button type="button" className="table-action" onClick={() => { setSelectedStatus(status); setSelectedId(null); setCreating(false); }}>Modifier</button>}</td></tr>; })}
+        {(["owner", "worker", "custom"] as AppUserStatus[]).map((status) => { const preset = statusPresets[status]; return <tr key={status} className={selectedStatus === status ? "is-selected" : ""}><td><strong>{STATUS_LABELS[status]}</strong></td><td>{preset.canWrite ? "Écriture" : "Lecture"}{preset.canViewAmounts ? " · €" : " · sans €"}</td><td>{status === "owner" ? "Toutes" : `${preset.pageAccess.length} / ${APP_PAGES.length}`}</td><td className="table-actions-cell">{preset.locked ? <span className="field-hint">Fixe</span> : <button type="button" className="table-action" onClick={() => { setError(null); setSelectedStatus(status); setSelectedId(null); setCreating(false); }}>Modifier</button>}</td></tr>; })}
       </tbody></table></div>
     </div>
-    {selectedStatus && selectedStatus !== "owner" ? <StatusPresetEditor preset={presetDrafts[selectedStatus]} disabled={busyId === `status-${selectedStatus}`} onChange={(preset) => setPresetDrafts((current) => ({ ...current, [selectedStatus]: preset }))} onSubmit={() => void savePreset(selectedStatus)} onClose={() => { setSelectedStatus(null); setPresetDrafts(statusPresets); }} /> : null}
-    <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Utilisateurs</div><span className="field-hint">{users.filter((user) => user.isActive).length} actif(s) sur {users.length}</span></div><button type="button" onClick={() => { setCreating(true); setSelectedId(null); setSelectedStatus(null); }}>Ajouter un utilisateur</button></div>
+    <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Utilisateurs</div><span className="field-hint">{users.filter((user) => user.isActive).length} actif(s) sur {users.length}</span></div><button type="button" onClick={() => { setError(null); setCreating(true); setSelectedId(null); setSelectedStatus(null); }}>Ajouter un utilisateur</button></div>
       {loading ? <div className="field-hint">Chargement…</div> : <div className="table-wrap"><table className="table user-list-table"><thead><tr><th>Utilisateur</th><th>Statut</th><th>Droits</th><th>Pages</th><th>État</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
-        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.intervenant?.telephone ? <small>{user.intervenant.telephone}</small> : null}</td><td><span className="badge">{STATUS_LABELS[user.status]}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setSelectedId(user.id); setCreating(false); setSelectedStatus(null); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
+        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.intervenant?.telephone ? <small>{user.intervenant.telephone}</small> : null}</td><td><span className="badge">{STATUS_LABELS[user.status]}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setError(null); setSelectedId(user.id); setCreating(false); setSelectedStatus(null); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
       </tbody></table></div>}
     </div>
-    {creating ? <div className="card user-editor-card"><div className="section-title">Nouvel utilisateur</div><UserEditor draft={newDraft} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === "new"} submitLabel={busyId === "new" ? "Ajout…" : "Ajouter"} onChange={setNewDraft} onSubmit={() => void create()} /></div> : null}
-    {selected ? <div className="card user-editor-card"><div className="user-editor-card__header"><div><span className="settings-card__tag">{STATUS_LABELS[selected.status]}</span><div className="section-title">Modifier {selected.displayName}</div></div><button type="button" className="secondary" onClick={() => setSelectedId(null)}>Fermer</button></div><UserEditor draft={drafts[selected.id] ?? toDraft(selected)} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === selected.id} submitLabel={busyId === selected.id ? "Enregistrement…" : "Enregistrer"} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} onSubmit={() => void save(selected.id)} /></div> : null}
+    <ReservationDetailsDrawer
+      open={Boolean(selectedStatus && selectedStatus !== "owner")}
+      title={selectedStatus ? `Droits du statut ${STATUS_LABELS[selectedStatus]}` : "Droits du statut"}
+      eyebrow="Statut utilisateur"
+      summary={["Modèle appliqué à tous les utilisateurs concernés"]}
+      busy={Boolean(selectedStatus && busyId === `status-${selectedStatus}`)}
+      onClose={() => { setSelectedStatus(null); setPresetDrafts(statusPresets); }}
+      footer={selectedStatus && selectedStatus !== "owner" ? <>
+        <button type="button" className="secondary" disabled={busyId === `status-${selectedStatus}`} onClick={() => { setSelectedStatus(null); setPresetDrafts(statusPresets); }}>Annuler</button>
+        <button type="button" disabled={busyId === `status-${selectedStatus}`} onClick={() => void savePreset(selectedStatus)}>{busyId === `status-${selectedStatus}` ? "Enregistrement…" : "Enregistrer"}</button>
+      </> : null}
+    >
+      {error ? <div className="note">{error}</div> : null}
+      {selectedStatus && selectedStatus !== "owner" ? <StatusPresetEditor preset={presetDrafts[selectedStatus]} disabled={busyId === `status-${selectedStatus}`} onChange={(preset) => setPresetDrafts((current) => ({ ...current, [selectedStatus]: preset }))} /> : null}
+    </ReservationDetailsDrawer>
+    <ReservationDetailsDrawer
+      open={creating}
+      title="Nouvel utilisateur"
+      eyebrow="Utilisateurs et privilèges"
+      summary={[`Droits proposés par le statut ${STATUS_LABELS[newDraft.status]}`]}
+      busy={busyId === "new"}
+      onClose={() => { setCreating(false); setNewDraft(emptyDraft(statusPresets)); }}
+      footer={<>
+        <button type="button" className="secondary" disabled={busyId === "new"} onClick={() => { setCreating(false); setNewDraft(emptyDraft(statusPresets)); }}>Annuler</button>
+        <button type="button" disabled={busyId === "new" || !isUserDraftValid(newDraft)} onClick={() => void create()}>{busyId === "new" ? "Ajout…" : "Ajouter"}</button>
+      </>}
+    >
+      {error ? <div className="note">{error}</div> : null}
+      <UserEditor draft={newDraft} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === "new"} onChange={setNewDraft} />
+    </ReservationDetailsDrawer>
+    <ReservationDetailsDrawer
+      open={Boolean(selected)}
+      title={selected?.displayName ?? "Utilisateur"}
+      eyebrow={selected ? STATUS_LABELS[selected.status] : "Utilisateur"}
+      summary={selected ? [selected.isActive ? "Compte actif" : "Compte inactif", selected.permissions.isOwner ? "Toutes les pages" : `${selected.pageAccess.length} page(s) visible(s)`] : []}
+      busy={Boolean(selected && busyId === selected.id)}
+      onClose={() => setSelectedId(null)}
+      footer={selected ? <>
+        <button type="button" className="secondary" disabled={busyId === selected.id} onClick={() => setSelectedId(null)}>Annuler</button>
+        <button type="button" disabled={busyId === selected.id || !isUserDraftValid(drafts[selected.id] ?? toDraft(selected))} onClick={() => void save(selected.id)}>{busyId === selected.id ? "Enregistrement…" : "Enregistrer"}</button>
+      </> : null}
+    >
+      {error ? <div className="note">{error}</div> : null}
+      {selected ? <UserEditor draft={drafts[selected.id] ?? toDraft(selected)} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === selected.id} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} /> : null}
+    </ReservationDetailsDrawer>
   </section>;
 };
 export default UserSettings;
