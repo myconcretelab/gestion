@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { Request, Response } from "express";
 import { env } from "../config/env.js";
+import { findActiveAppUser, type AppUserSummary } from "./appUsers.js";
 
 const scryptAsync = promisify(crypto.scrypt);
 
@@ -25,6 +26,7 @@ type StoredServerAuthSettings = {
 
 type StoredServerAuthSession = {
   id: string;
+  userId: string;
   createdAt: string;
   expiresAt: string;
 };
@@ -39,6 +41,7 @@ export type ServerAuthSessionState = {
   passwordConfigured: boolean;
   sessionDurationHours: number;
   sessionExpiresAt: string | null;
+  user: AppUserSummary | null;
 };
 
 export type ServerSecuritySettingsState = {
@@ -117,13 +120,15 @@ const writeSettingsToDisk = (settings: StoredServerAuthSettings) => {
 const normalizeSession = (id: string, input: Partial<StoredServerAuthSession>): StoredServerAuthSession | null => {
   const expiresAt = typeof input.expiresAt === "string" ? input.expiresAt : "";
   const createdAt = typeof input.createdAt === "string" ? input.createdAt : "";
-  if (!id || !expiresAt || !createdAt) return null;
+  const userId = typeof input.userId === "string" ? input.userId.trim() : "";
+  if (!id || !userId || !expiresAt || !createdAt) return null;
   if (Number.isNaN(new Date(expiresAt).getTime()) || Number.isNaN(new Date(createdAt).getTime())) {
     return null;
   }
 
   return {
     id,
+    userId,
     createdAt,
     expiresAt,
   };
@@ -342,7 +347,7 @@ export const getServerAuthSessionFromRequest = async (req: Pick<Request, "header
   return store.sessions[sessionId] ?? null;
 };
 
-export const createServerAuthSession = async (sessionDurationHours?: number) => {
+export const createServerAuthSession = async (userId: string, sessionDurationHours?: number) => {
   await ensureServerAuthInitialized();
   const settings = readSettingsFromDisk();
   const durationHours = normalizeSessionDurationHours(sessionDurationHours ?? settings.sessionDurationHours);
@@ -350,7 +355,7 @@ export const createServerAuthSession = async (sessionDurationHours?: number) => 
   const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
   const id = crypto.randomUUID();
   const store = readActiveSessions();
-  store.sessions[id] = { id, createdAt, expiresAt };
+  store.sessions[id] = { id, userId, createdAt, expiresAt };
   writeSessionsToDisk(store);
   return store.sessions[id];
 };
@@ -407,13 +412,15 @@ export const buildServerAuthSessionState = async (req: Pick<Request, "headers">)
   const settings = await readServerAuthSettings();
   const required = hasConfiguredPassword(settings);
   const session = required ? await getServerAuthSessionFromRequest(req) : null;
+  const user = session ? await findActiveAppUser(session.userId) : null;
 
   return {
     required,
-    authenticated: required ? Boolean(session) : true,
+    authenticated: required ? Boolean(session && user) : true,
     passwordConfigured: required,
     sessionDurationHours: settings.sessionDurationHours,
     sessionExpiresAt: session?.expiresAt ?? null,
+    user,
   };
 };
 
@@ -471,9 +478,6 @@ export const updateServerSecuritySettings = async (
   let session = currentSessionId ? await refreshServerAuthSession(currentSessionId, nextSettings.sessionDurationHours) : null;
   if (shouldUpdatePassword && hasConfiguredPassword(nextSettings)) {
     await deleteOtherServerAuthSessions(session?.id ?? currentSessionId ?? null);
-    if (!session) {
-      session = await createServerAuthSession(nextSettings.sessionDurationHours);
-    }
   }
 
   return {
@@ -483,6 +487,12 @@ export const updateServerSecuritySettings = async (
 };
 
 export const isServerAuthRequired = async () => hasConfiguredPassword(await readServerAuthSettings());
+
+export const getAuthenticatedAppUser = async (req: Pick<Request, "headers">) => {
+  const session = await getServerAuthSessionFromRequest(req);
+  if (!session) return null;
+  return findActiveAppUser(session.userId);
+};
 
 export const buildServerAuthRequiredError = () => ({
   status: 401,

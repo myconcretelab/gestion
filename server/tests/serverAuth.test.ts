@@ -31,9 +31,20 @@ test("serverAuth hash le mot de passe bootstrap et renouvelle les sessions", asy
 
   process.env.DATA_DIR = tempDir;
   process.env.BASIC_AUTH_PASSWORD = "InitialPass123!";
+  let createdUserId: string | null = null;
 
   try {
     const auth = await import("../src/services/serverAuth.ts");
+    const prisma = (await import("../src/db/prisma.ts")).default;
+    const user = await prisma.appUser.create({
+      data: {
+        display_name: "Utilisateur test auth",
+        can_write: true,
+        can_view_amounts: true,
+        is_owner: true,
+      },
+    });
+    createdUserId = user.id;
 
     await auth.ensureServerAuthInitialized();
 
@@ -50,8 +61,8 @@ test("serverAuth hash le mot de passe bootstrap et renouvelle les sessions", asy
     };
     assert.notEqual(settingsFile.passwordHash, "InitialPass123!");
 
-    const sessionA = await auth.createServerAuthSession();
-    const sessionB = await auth.createServerAuthSession();
+    const sessionA = await auth.createServerAuthSession(user.id);
+    const sessionB = await auth.createServerAuthSession(user.id);
 
     const stateA = await auth.buildServerAuthSessionState({
       headers: { cookie: `contrats_session=${sessionA.id}` },
@@ -109,6 +120,10 @@ test("serverAuth hash le mot de passe bootstrap et renouvelle les sessions", asy
     const httpsCookie = String(httpsResponse.headers.get("Set-Cookie"));
     assert.match(httpsCookie, /Secure/);
   } finally {
+    if (createdUserId) {
+      const prisma = (await import("../src/db/prisma.ts")).default;
+      await prisma.appUser.deleteMany({ where: { id: createdUserId } });
+    }
     restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
     restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
     await rm(tempDir, { recursive: true, force: true });

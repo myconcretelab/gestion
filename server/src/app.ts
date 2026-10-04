@@ -15,6 +15,7 @@ import bookedRouter from "./routes/booked.js";
 import bookingRequestsRouter from "./routes/bookingRequests.js";
 import statisticsRouter from "./routes/statistics.js";
 import settingsRouter from "./routes/settings.js";
+import usersRouter from "./routes/users.js";
 import intervenantsRouter from "./routes/intervenants.js";
 import intervenantHoursRouter from "./routes/intervenantHours.js";
 import professionalExpensesRouter from "./routes/professionalExpenses.js";
@@ -30,8 +31,10 @@ import {
   buildServerAuthRequiredError,
   clearServerAuthCookie,
   getServerAuthSessionFromRequest,
+  getAuthenticatedAppUser,
   isServerAuthRequired,
 } from "./services/serverAuth.js";
+import { containsMonetaryFields, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -118,7 +121,29 @@ export const createApp = () => {
       }
 
       const session = await getServerAuthSessionFromRequest(req);
-      if (session) {
+      const user = session ? await getAuthenticatedAppUser(req) : null;
+      if (session && user) {
+        if (isWriteMethod(req.method) && !user.permissions.canWrite) {
+          return res.status(403).json({
+            error: "Cet utilisateur dispose d'un accès en lecture seule.",
+            code: "WRITE_ACCESS_REQUIRED",
+          });
+        }
+        if (!user.permissions.canViewAmounts) {
+          if (isWriteMethod(req.method) && containsMonetaryFields(req.body)) {
+            return res.status(403).json({
+              error: "Le privilège d'accès aux montants est requis pour modifier ces données.",
+              code: "AMOUNTS_ACCESS_REQUIRED",
+            });
+          }
+          if (isAmountsOnlyApiPath(req.path)) {
+            return res.status(403).json({
+              error: "Le privilège d'accès aux montants est requis.",
+              code: "AMOUNTS_ACCESS_REQUIRED",
+            });
+          }
+          return redactMonetaryJson(req, res, next);
+        }
         return next();
       }
 
@@ -144,6 +169,7 @@ export const createApp = () => {
   app.use("/api/booking-requests", bookingRequestsRouter);
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/users", usersRouter);
   app.use("/api/intervenants/hours", intervenantHoursRouter);
   app.use("/api/intervenants", intervenantsRouter);
   app.use("/api/professional-expenses", professionalExpensesRouter);

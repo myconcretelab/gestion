@@ -108,6 +108,8 @@ import {
 import type { SmartlifeAutomationConfig } from "../services/smartlifeSettings.js";
 import {
   buildServerSecuritySettingsState,
+  getAuthenticatedAppUser,
+  isServerAuthRequired,
   getServerAuthSessionIdFromRequest,
   setServerAuthCookie,
   updateServerSecuritySettings,
@@ -672,6 +674,13 @@ router.get("/security", async (req, res, next) => {
 
 router.put("/security", async (req, res, next) => {
   try {
+    const currentUser = await getAuthenticatedAppUser(req);
+    if ((await isServerAuthRequired()) && !currentUser?.permissions.isOwner) {
+      return res.status(403).json({
+        error: "Le privilège propriétaire est requis pour modifier la sécurité.",
+        code: "OWNER_REQUIRED",
+      });
+    }
     const payload = serverSecuritySettingsSchema.parse(req.body);
     const result = await updateServerSecuritySettings(
       payload,
@@ -696,6 +705,7 @@ router.put("/security", async (req, res, next) => {
         passwordConfigured,
         sessionDurationHours: result.settings.sessionDurationHours,
         sessionExpiresAt: result.session?.expiresAt ?? null,
+        user: await getAuthenticatedAppUser(req),
       },
     });
   } catch (error) {

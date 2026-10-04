@@ -7,6 +7,7 @@ import { encodeJsonField } from "../src/utils/jsonFields.js";
 import { generateIcalExportToken } from "../src/utils/reservationOrigin.js";
 
 const seed = async () => {
+  await prisma.appUser.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.reservationPlaceholder.deleteMany();
   await prisma.facture.deleteMany();

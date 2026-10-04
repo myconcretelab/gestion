@@ -18172,6 +18172,73 @@ button.personal-expenses-status:disabled {
   margin: 8px 0 0;
 }
 
+.topbar-user,
+.access-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.topbar-user {
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+}
+
+.access-badge {
+  color: #77551d;
+  background: #fff1ce;
+}
+
+.access-restricted {
+  max-width: 720px;
+  margin: 32px auto;
+  text-align: center;
+}
+
+.user-settings-list {
+  display: grid;
+  gap: 16px;
+}
+
+.user-settings-card {
+  width: 100%;
+}
+
+.user-permissions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.user-permissions .checkbox-row {
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-soft) 35%, white);
+}
+
+.user-permissions .checkbox-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.user-permissions small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+@media (max-width: 760px) {
+  .user-permissions { grid-template-columns: 1fr; }
+  .topbar-user, .access-badge { display: none; }
+}
+
 .note--danger {
   color: #991b1b;
   background: #fef2f2;

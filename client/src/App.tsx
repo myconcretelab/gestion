@@ -1,7 +1,7 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from "react";
 import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { apiFetch, ApiError, isAbortError } from "./utils/api";
-import { AUTH_REQUIRED_EVENT, type ServerAuthSession } from "./utils/auth";
+import { AUTH_REQUIRED_EVENT, setCurrentAuthUser, type AppUser, type ServerAuthSession } from "./utils/auth";
 import { APP_NOTICE_EVENT, type AppNotice } from "./utils/appNotices";
 import { BOOKING_REQUESTS_CHANGED_EVENT } from "./utils/bookingRequestsBadge";
 import { RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT } from "./utils/recentImportsBadge";
@@ -68,6 +68,7 @@ type PumpHealthNotice = {
 };
 
 type LoginResult = ServerAuthSession;
+type LoginUser = Pick<AppUser, "id" | "displayName">;
 
 const ICAL_AUTO_SYNC_SESSION_KEY = "ical-auto-sync-attempted";
 const ICAL_AUTO_SYNC_TIMEOUT_MS = 15_000;
@@ -200,21 +201,31 @@ const getAppLoadIcalAutoSyncPromise = () => {
 
 type AuthScreenProps = {
   session: ServerAuthSession | null;
+  users: LoginUser[];
+  userId: string;
   password: string;
   error: string | null;
   submitting: boolean;
+  onUserChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: () => void;
 };
 
-const AuthScreen = ({ session, password, error, submitting, onPasswordChange, onSubmit }: AuthScreenProps) => (
+const AuthScreen = ({ session, users, userId, password, error, submitting, onUserChange, onPasswordChange, onSubmit }: AuthScreenProps) => (
   <main className="auth-shell">
     <section className="card auth-card">
       <div className="auth-card__eyebrow">Protection serveur</div>
       <h1 className="auth-card__title">Connexion requise</h1>
       <p className="auth-card__text">
-        Le serveur protège les données avec une session cookie HTTP-only. Entrez le mot de passe administrateur pour ouvrir l’application.
+        Sélectionnez votre utilisateur puis entrez le mot de passe pour ouvrir l’application.
       </p>
+      <label className="field">
+        Utilisateur
+        <select value={userId} onChange={(event) => onUserChange(event.target.value)} disabled={submitting || users.length === 0} autoFocus>
+          <option value="">Sélectionner un utilisateur</option>
+          {users.map((user) => <option key={user.id} value={user.id}>{user.displayName}</option>)}
+        </select>
+      </label>
       <label className="field">
         Mot de passe
         <input
@@ -227,7 +238,6 @@ const AuthScreen = ({ session, password, error, submitting, onPasswordChange, on
               onSubmit();
             }
           }}
-          autoFocus
           disabled={submitting}
         />
       </label>
@@ -236,7 +246,7 @@ const AuthScreen = ({ session, password, error, submitting, onPasswordChange, on
       </div>
       {error ? <div className="note" style={{ marginTop: 12 }}>{error}</div> : null}
       <div className="actions" style={{ marginTop: 16 }}>
-        <button type="button" onClick={onSubmit} disabled={submitting || !password.trim()}>
+        <button type="button" onClick={onSubmit} disabled={submitting || !userId || !password.trim()}>
           {submitting ? "Connexion..." : "Se connecter"}
         </button>
       </div>
@@ -244,11 +254,21 @@ const AuthScreen = ({ session, password, error, submitting, onPasswordChange, on
   </main>
 );
 
+const AmountsAccess = ({ allowed, children }: { allowed: boolean; children: ReactNode }) =>
+  allowed ? children : (
+    <section className="card access-restricted">
+      <h1>Accès restreint</h1>
+      <p>Votre profil ne permet pas de consulter les montants en euros.</p>
+    </section>
+  );
+
 const App = () => {
   const location = useLocation();
   const [authSession, setAuthSession] = useState<ServerAuthSession | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authPassword, setAuthPassword] = useState("");
+  const [authUsers, setAuthUsers] = useState<LoginUser[]>([]);
+  const [authUserId, setAuthUserId] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -258,6 +278,9 @@ const App = () => {
   const [pumpHealthNotice, setPumpHealthNotice] = useState<PumpHealthNotice | null>(null);
   const isAuthenticated = authSession?.authenticated ?? false;
   const isAuthRequired = authSession?.required ?? false;
+  const currentUser = authSession?.user ?? null;
+  const canViewAmounts = currentUser?.permissions.canViewAmounts ?? true;
+  const canWrite = currentUser?.permissions.canWrite ?? true;
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -327,42 +350,49 @@ const App = () => {
       to: "/contrats",
       label: "Contrats",
       isActive: isContratsSection,
+      requiresAmounts: true,
     },
     {
       to: "/factures",
       label: "Factures",
       isActive: isFacturesSection,
       desktopOverflow: true,
+      requiresAmounts: true,
     },
     {
       to: "/gites",
       label: "Gîtes",
       isActive: location.pathname === "/gites" || location.pathname.startsWith("/gites/"),
       desktopOverflow: true,
+      requiresAmounts: true,
     },
     {
       to: "/frais-professionnels",
       label: "Frais professionnels",
       isActive: isProfessionalExpensesSection,
       desktopOverflow: true,
+      requiresAmounts: true,
     },
     {
       to: "/frais-personnels",
       label: "Frais personnels",
       isActive: isExpensesSection,
       desktopOverflow: true,
+      requiresAmounts: true,
     },
     {
       to: "/statistiques",
       label: "Statistiques",
       isActive: isStatsSection,
       desktopOverflow: true,
+      requiresAmounts: true,
     },
     {
       to: "/tarifs",
       label: "Tarifs",
       isActive: isSeasonRatesSection,
       desktopOverflow: true,
+      requiresAmounts: true,
     },
     {
       to: "/parametres",
@@ -371,10 +401,11 @@ const App = () => {
       desktopOverflow: true,
     },
   ];
-  const desktopPrimaryItems = navItems.filter((item) => !item.desktopOverflow);
-  const desktopOverflowItems = navItems.filter((item) => item.desktopOverflow);
-  const mobilePrimaryItems = navItems.filter((item) => item.mobilePrimary);
-  const mobileOverflowItems = navItems.filter((item) => !item.mobilePrimary);
+  const visibleNavItems = navItems.filter((item) => !(item.requiresAmounts && !canViewAmounts));
+  const desktopPrimaryItems = visibleNavItems.filter((item) => !item.desktopOverflow);
+  const desktopOverflowItems = visibleNavItems.filter((item) => item.desktopOverflow);
+  const mobilePrimaryItems = visibleNavItems.filter((item) => item.mobilePrimary);
+  const mobileOverflowItems = visibleNavItems.filter((item) => !item.mobilePrimary);
   const reservationBadgeLabel =
     recentImportedReservationsCount > 0
       ? `${recentImportedReservationsCount} nouvelle${recentImportedReservationsCount > 1 ? "s" : ""} réservation${recentImportedReservationsCount > 1 ? "s" : ""} sur les dernières 24 heures`
@@ -393,13 +424,20 @@ const App = () => {
   const loadAuthSession = async () => {
     setAuthError(null);
     const payload = await apiFetch<ServerAuthSession>("/auth/session");
+    setCurrentAuthUser(payload.user);
     setAuthSession(payload);
     return payload;
   };
 
+  const loadAuthUsers = async () => {
+    const users = await apiFetch<LoginUser[]>("/auth/users");
+    setAuthUsers(users);
+    setAuthUserId((current) => current && users.some((user) => user.id === current) ? current : users[0]?.id ?? "");
+  };
+
   const submitLogin = async () => {
-    if (!authPassword.trim()) {
-      setAuthError("Renseigne le mot de passe serveur.");
+    if (!authUserId || !authPassword.trim()) {
+      setAuthError("Sélectionne un utilisateur et renseigne le mot de passe.");
       return;
     }
 
@@ -408,8 +446,9 @@ const App = () => {
     try {
       const payload = await apiFetch<LoginResult>("/auth/login", {
         method: "POST",
-        json: { password: authPassword },
+        json: { userId: authUserId, password: authPassword },
       });
+      setCurrentAuthUser(payload.user);
       setAuthSession(payload);
       setAuthPassword("");
     } catch (error) {
@@ -435,6 +474,7 @@ const App = () => {
               ...current,
               authenticated: false,
               sessionExpiresAt: null,
+              user: null,
             }
           : {
               required: true,
@@ -442,8 +482,10 @@ const App = () => {
               passwordConfigured: true,
               sessionDurationHours: 24 * 7,
               sessionExpiresAt: null,
+              user: null,
             }
       );
+      setCurrentAuthUser(null);
       setAuthPassword("");
       setAuthError(null);
       setMobileMenuOpen(false);
@@ -502,7 +544,7 @@ const App = () => {
   useEffect(() => {
     let active = true;
     setAuthLoading(true);
-    loadAuthSession()
+    Promise.all([loadAuthSession(), loadAuthUsers()])
       .catch((error) => {
         if (!active || isAbortError(error)) return;
         setAuthError(error instanceof Error ? error.message : "Impossible de vérifier la session.");
@@ -527,6 +569,7 @@ const App = () => {
               required: true,
               authenticated: false,
               sessionExpiresAt: null,
+              user: null,
             }
           : {
               required: true,
@@ -534,8 +577,10 @@ const App = () => {
               passwordConfigured: true,
               sessionDurationHours: 24 * 7,
               sessionExpiresAt: null,
+              user: null,
             }
       );
+      setCurrentAuthUser(null);
       setAuthError("La session a expiré. Reconnecte-toi.");
     };
 
@@ -584,7 +629,7 @@ const App = () => {
   }, [authLoading, isAuthenticated, loadPendingBookingRequestsCount, loadPumpHealth, loadRecentImportedReservationsCount]);
 
   useEffect(() => {
-    if (authLoading || !isAuthenticated) return;
+    if (authLoading || !isAuthenticated || !canWrite) return;
     if (typeof window === "undefined") return;
     const hasAttempted = readSessionStorageItem(ICAL_AUTO_SYNC_SESSION_KEY) === "1";
     if (hasAttempted && !appLoadIcalAutoSyncPromise) return;
@@ -624,7 +669,7 @@ const App = () => {
     return () => {
       active = false;
     };
-  }, [authLoading, isAuthenticated, loadRecentImportedReservationsCount, pushAppNotice]);
+  }, [authLoading, canWrite, isAuthenticated, loadRecentImportedReservationsCount, pushAppNotice]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -735,9 +780,12 @@ const App = () => {
     return (
       <AuthScreen
         session={authSession}
+        users={authUsers}
+        userId={authUserId}
         password={authPassword}
         error={authError}
         submitting={authSubmitting}
+        onUserChange={setAuthUserId}
         onPasswordChange={setAuthPassword}
         onSubmit={() => void submitLogin()}
       />
@@ -745,7 +793,7 @@ const App = () => {
   }
 
   return (
-    <div className="app">
+    <div className={`app${canWrite ? "" : " app--read-only"}${canViewAmounts ? "" : " app--amounts-hidden"}`}>
       <header className="topbar">
         <div className="brand">
           <img className="brand-logo" src="/logo.png" alt="Les gîtes de Brocéliande" />
@@ -774,6 +822,9 @@ const App = () => {
           ))}
         </nav>
         <div className="topbar-desktop-menu">
+          {currentUser ? <span className="topbar-user" title={currentUser.permissions.isOwner ? "Propriétaire" : "Utilisateur"}>{currentUser.displayName}</span> : null}
+          {!canWrite ? <span className="access-badge">Lecture seule</span> : null}
+          {!canViewAmounts ? <span className="access-badge">Montants masqués</span> : null}
           {isAuthRequired ? (
             <button
               type="button"
@@ -870,27 +921,27 @@ const App = () => {
           <Routes>
             <Route path="/" element={<Navigate to="/aujourdhui" replace />} />
             <Route path="/aujourdhui" element={<TodayPage />} />
-            <Route path="/gites" element={<GitesPage />} />
+            <Route path="/gites" element={<AmountsAccess allowed={canViewAmounts}><GitesPage /></AmountsAccess>} />
             <Route path="/demandes" element={<BookingRequestsPage />} />
             <Route path="/demandes/:requestId" element={<BookingRequestDetailPage />} />
-            <Route path="/contrats" element={<ContratsListPage />} />
-            <Route path="/contrats/nouveau" element={<ContratFormPage />} />
-            <Route path="/contrats/:id/edition" element={<ContratFormPage />} />
-            <Route path="/contrats/:id" element={<ContratDetailPage />} />
-            <Route path="/factures" element={<FacturesListPage />} />
-            <Route path="/factures/nouvelle" element={<FactureFormPage />} />
-            <Route path="/factures/:id/edition" element={<FactureFormPage />} />
-            <Route path="/factures/:id" element={<FactureDetailPage />} />
+            <Route path="/contrats" element={<AmountsAccess allowed={canViewAmounts}><ContratsListPage /></AmountsAccess>} />
+            <Route path="/contrats/nouveau" element={<AmountsAccess allowed={canViewAmounts}><ContratFormPage /></AmountsAccess>} />
+            <Route path="/contrats/:id/edition" element={<AmountsAccess allowed={canViewAmounts}><ContratFormPage /></AmountsAccess>} />
+            <Route path="/contrats/:id" element={<AmountsAccess allowed={canViewAmounts}><ContratDetailPage /></AmountsAccess>} />
+            <Route path="/factures" element={<AmountsAccess allowed={canViewAmounts}><FacturesListPage /></AmountsAccess>} />
+            <Route path="/factures/nouvelle" element={<AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess>} />
+            <Route path="/factures/:id/edition" element={<AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess>} />
+            <Route path="/factures/:id" element={<AmountsAccess allowed={canViewAmounts}><FactureDetailPage /></AmountsAccess>} />
             <Route path="/reservations/mobile" element={<MobileReservationEditorPage />} />
             <Route path="/reservations" element={<ReservationsPage />} />
             <Route path="/calendrier" element={<CalendrierPage />} />
             <Route path="/planning-relais" element={<OperationsPrintPage />} />
-            <Route path="/statistiques" element={<StatisticsPage />} />
-            <Route path="/frais-personnels" element={<PersonalExpensesPage />} />
-            <Route path="/frais-professionnels" element={<ProfessionalExpensesPage />} />
-            <Route path="/tarifs" element={<SeasonRatesPage />} />
+            <Route path="/statistiques" element={<AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess>} />
+            <Route path="/frais-personnels" element={<AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess>} />
+            <Route path="/frais-professionnels" element={<AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess>} />
+            <Route path="/tarifs" element={<AmountsAccess allowed={canViewAmounts}><SeasonRatesPage /></AmountsAccess>} />
             <Route path="/parametres/intervenants" element={<IntervenantsPage />} />
-            <Route path="/parametres/*" element={<SettingsPage onAuthSessionUpdated={setAuthSession} />} />
+            <Route path="/parametres/*" element={<SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} />} />
           </Routes>
         </Suspense>
       </main>

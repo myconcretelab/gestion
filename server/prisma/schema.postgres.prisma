@@ -160,9 +160,27 @@ model Gestionnaire {
   urssaf_declarations UrssafDeclaration[]
   expense_recurring_rules ExpenseRecurringRule[]
   expense_entries         ExpenseEntry[]
+  app_user                AppUser?
 
   @@unique([prenom, nom])
   @@map("gestionnaires")
+}
+
+model AppUser {
+  id               String   @id @default(cuid())
+  display_name     String
+  gestionnaire_id  String?  @unique
+  can_write        Boolean  @default(true)
+  can_view_amounts Boolean  @default(true)
+  is_owner         Boolean  @default(false)
+  is_active        Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  gestionnaire Gestionnaire? @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
+
+  @@index([is_active, display_name], map: "app_users_active_name_idx")
+  @@map("app_users")
 }
 
 model ExpenseCategory {

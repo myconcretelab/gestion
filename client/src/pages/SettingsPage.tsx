@@ -3,6 +3,7 @@ import { NavLink, Navigate, useLocation } from "react-router-dom";
 import { apiFetch, buildApiUrl } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
 import {
+  type AppUser,
   type ServerAuthSession,
   type ServerSecuritySaveResult,
   type ServerSecuritySettings,
@@ -31,6 +32,7 @@ import type {
 } from "../utils/types";
 
 import AppearanceSettings from "./AppearanceSettings";
+import UserSettings from "./UserSettings";
 
 type IcalPreviewItem = {
   id: string;
@@ -324,6 +326,7 @@ const SETTINGS_SECTIONS = [
   { id: "settings-ical-exports", label: "Exports iCal OTA" },
   { id: "settings-ical-sync", label: "Synchronisation iCal" },
   { id: "settings-imports", label: "Pump" },
+  { id: "settings-users", label: "Utilisateurs" },
   { id: "settings-security", label: "Sécurité" },
 ] as const;
 
@@ -347,6 +350,7 @@ const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
   "settings-ical-exports": "ical-exports",
   "settings-ical-sync": "ical-sync",
   "settings-imports": "pump",
+  "settings-users": "utilisateurs",
   "settings-security": "securite",
 };
 
@@ -776,6 +780,7 @@ type SmartlifeRulesImportExportPayload = {
 };
 
 type SettingsPageProps = {
+  currentUser?: AppUser | null;
   onAuthSessionUpdated?: (session: ServerAuthSession) => void;
 };
 
@@ -1719,7 +1724,7 @@ const importPreviewStatusLabelMap: Record<ImportPreviewItem["status"], string> =
     unmapped_listing: "Listing non mappé",
   };
 
-const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
+const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) => {
   const location = useLocation();
   const activeSettingsSection = useMemo(
     () => resolveSettingsSectionFromPathname(location.pathname),
@@ -5409,6 +5414,11 @@ const SettingsPage = ({ onAuthSessionUpdated }: SettingsPageProps) => {
 
         <div className="settings-content">
           {activeSettingsSection === "settings-appearance" ? <AppearanceSettings /> : null}
+          {activeSettingsSection === "settings-users" ? (
+            currentUser?.permissions.isOwner
+              ? <UserSettings currentUserId={currentUser.id} />
+              : <section className="card access-restricted"><h2>Accès restreint</h2><p>Le privilège propriétaire est requis pour gérer les utilisateurs.</p></section>
+          ) : null}
           {activeSettingsSection === "settings-security" ? (
             <section
               id="settings-security"

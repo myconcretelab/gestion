@@ -11,6 +11,7 @@ import {
   verifyServerPassword,
   getServerAuthSessionIdFromRequest,
 } from "../services/serverAuth.js";
+import { findActiveAppUser, listLoginUsers } from "../services/appUsers.js";
 import {
   checkRequestThrottle,
   clearRequestThrottleFailures,
@@ -22,7 +23,16 @@ import {
 const router = Router();
 
 const loginSchema = z.object({
+  userId: z.string().trim().min(1, "L'utilisateur est requis."),
   password: z.string().min(1, "Le mot de passe est requis."),
+});
+
+router.get("/users", async (_req, res, next) => {
+  try {
+    res.json(await listLoginUsers());
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get("/session", async (req, res, next) => {
@@ -44,6 +54,11 @@ router.post("/login", async (req, res, next) => {
       return res.status(503).json({ error: "Authentification serveur non configurée." });
     }
 
+    const user = await findActiveAppUser(payload.userId);
+    if (!user) {
+      return res.status(401).json({ error: "Utilisateur invalide ou désactivé.", code: "AUTH_REQUIRED" });
+    }
+
     const throttleState = await checkRequestThrottle(req, res, LOGIN_THROTTLE_CONFIG);
     if (throttleState.blocked) return sendThrottleResponse(res, throttleState);
 
@@ -62,7 +77,7 @@ router.post("/login", async (req, res, next) => {
       await deleteServerAuthSession(previousSessionId);
     }
 
-    const session = await createServerAuthSession();
+    const session = await createServerAuthSession(user.id);
     const settings = await readServerAuthSettings();
     setServerAuthCookie(req, res, session);
     res.json({
@@ -71,6 +86,7 @@ router.post("/login", async (req, res, next) => {
       passwordConfigured: true,
       sessionDurationHours: settings.sessionDurationHours,
       sessionExpiresAt: session.expiresAt,
+      user,
     });
   } catch (error) {
     next(error);
