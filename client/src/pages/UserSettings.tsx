@@ -14,16 +14,21 @@ type UserDraft = {
   email: string; adresse: string; telegramChatId: string; hourlyRate: string; showOnToday: boolean;
   hasWorkerProfile: boolean;
 };
+type StatusPreset = {
+  status: AppUserStatus; canWrite: boolean; canViewAmounts: boolean; pageAccess: AppPageId[]; locked: boolean;
+};
+type StatusPresetMap = Record<AppUserStatus, StatusPreset>;
 
 const ALL_PAGES = APP_PAGES.map(({ id }) => id);
 const STATUS_LABELS: Record<AppUserStatus, string> = { owner: "Propriétaire", worker: "Intervenant", custom: "Personnalisé" };
-const STATUS_PRESETS: Record<AppUserStatus, Pick<UserDraft, "canWrite" | "canViewAmounts" | "pageAccess">> = {
-  owner: { canWrite: true, canViewAmounts: true, pageAccess: ALL_PAGES },
-  worker: { canWrite: true, canViewAmounts: false, pageAccess: ["today", "calendar", "planning_relay"] },
-  custom: { canWrite: false, canViewAmounts: false, pageAccess: [] },
+const DEFAULT_STATUS_PRESETS: StatusPresetMap = {
+  owner: { status: "owner", canWrite: true, canViewAmounts: true, pageAccess: ALL_PAGES, locked: true },
+  worker: { status: "worker", canWrite: true, canViewAmounts: false, pageAccess: ["today", "calendar", "planning_relay"], locked: false },
+  custom: { status: "custom", canWrite: false, canViewAmounts: false, pageAccess: [], locked: false },
 };
-const emptyDraft = (): UserDraft => ({
-  displayName: "", gestionnaireId: "", status: "custom", isActive: true, ...STATUS_PRESETS.custom,
+const emptyDraft = (presets: StatusPresetMap = DEFAULT_STATUS_PRESETS): UserDraft => ({
+  displayName: "", gestionnaireId: "", status: "custom", isActive: true,
+  canWrite: presets.custom.canWrite, canViewAmounts: presets.custom.canViewAmounts, pageAccess: presets.custom.pageAccess,
   telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "", showOnToday: true,
   hasWorkerProfile: false,
 });
@@ -45,13 +50,34 @@ const buildPayload = (draft: UserDraft) => ({
     showOnToday: draft.showOnToday,
   } : null,
 });
-const applyStatus = (draft: UserDraft, status: AppUserStatus): UserDraft => ({
-  ...draft, status, ...STATUS_PRESETS[status], hasWorkerProfile: status === "worker" ? true : draft.hasWorkerProfile,
+const applyStatus = (draft: UserDraft, status: AppUserStatus, presets: StatusPresetMap): UserDraft => ({
+  ...draft, status, canWrite: presets[status].canWrite, canViewAmounts: presets[status].canViewAmounts,
+  pageAccess: presets[status].pageAccess, hasWorkerProfile: status === "worker" ? true : draft.hasWorkerProfile,
 });
 
-function UserEditor({ draft, managers, linkedManagerIds, disabled, submitLabel, onChange, onSubmit }: {
+function StatusPresetEditor({ preset, disabled, onChange, onSubmit, onClose }: {
+  preset: StatusPreset; disabled: boolean; onChange: (preset: StatusPreset) => void; onSubmit: () => void; onClose: () => void;
+}) {
+  const togglePage = (page: AppPageId, checked: boolean) => onChange({
+    ...preset, pageAccess: checked ? [...new Set([...preset.pageAccess, page])] : preset.pageAccess.filter((item) => item !== page),
+  });
+  return <div className="card user-editor-card status-preset-editor">
+    <div className="user-editor-card__header"><div><span className="settings-card__tag">Statut</span><div className="section-title">Droits du statut {STATUS_LABELS[preset.status]}</div></div><button type="button" className="secondary" onClick={onClose}>Fermer</button></div>
+    <p className="field-hint">L’enregistrement applique ces droits à tous les utilisateurs ayant ce statut.</p>
+    <fieldset className="user-editor__fieldset"><legend>Droits</legend><div className="user-permissions">
+      <label className="checkbox-row"><input type="checkbox" checked={preset.canWrite} disabled={disabled} onChange={(e) => onChange({ ...preset, canWrite: e.target.checked })} /><span><strong>Écriture</strong><small>Créer, modifier et supprimer.</small></span></label>
+      <label className="checkbox-row"><input type="checkbox" checked={preset.canViewAmounts} disabled={disabled} onChange={(e) => onChange({ ...preset, canViewAmounts: e.target.checked })} /><span><strong>Montants en euros</strong><small>Afficher tous les chiffres financiers.</small></span></label>
+    </div></fieldset>
+    <fieldset className="user-editor__fieldset"><legend>Pages visibles</legend><div className="user-page-access">
+      {APP_PAGES.map((page) => <label className="checkbox-row" key={page.id}><input type="checkbox" checked={preset.pageAccess.includes(page.id)} disabled={disabled} onChange={(e) => togglePage(page.id, e.target.checked)} /><span>{page.label}</span></label>)}
+    </div></fieldset>
+    <div className="actions"><button type="button" disabled={disabled} onClick={onSubmit}>{disabled ? "Enregistrement…" : "Enregistrer les droits du statut"}</button></div>
+  </div>;
+}
+
+function UserEditor({ draft, managers, linkedManagerIds, statusPresets, disabled, submitLabel, onChange, onSubmit }: {
   draft: UserDraft; managers: Gestionnaire[]; linkedManagerIds: Set<string | null>; disabled: boolean;
-  submitLabel: string; onChange: (draft: UserDraft) => void; onSubmit: () => void;
+  statusPresets: StatusPresetMap; submitLabel: string; onChange: (draft: UserDraft) => void; onSubmit: () => void;
 }) {
   const owner = draft.status === "owner";
   const managerOptions = managers.filter((manager) => manager.id === draft.gestionnaireId || !linkedManagerIds.has(manager.id));
@@ -61,7 +87,7 @@ function UserEditor({ draft, managers, linkedManagerIds, disabled, submitLabel, 
   return <div className="user-editor">
     <div className="grid-2 user-settings-form">
       <label className="field">Nom affiché<input value={draft.displayName} disabled={disabled} onChange={(e) => onChange({ ...draft, displayName: e.target.value })} /></label>
-      <label className="field">Statut<select value={draft.status} disabled={disabled} onChange={(e) => onChange(applyStatus(draft, e.target.value as AppUserStatus))}>
+      <label className="field">Statut<select value={draft.status} disabled={disabled} onChange={(e) => onChange(applyStatus(draft, e.target.value as AppUserStatus, statusPresets))}>
         <option value="owner">Propriétaire</option><option value="worker">Intervenant</option><option value="custom">Personnalisé</option>
       </select></label>
       <label className="field">Propriétaire / gestionnaire lié<select value={draft.gestionnaireId} disabled={disabled} onChange={(e) => onChange({ ...draft, gestionnaireId: e.target.value })}>
@@ -91,6 +117,8 @@ function UserEditor({ draft, managers, linkedManagerIds, disabled, submitLabel, 
 
 const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   const [users, setUsers] = useState<ManagedUser[]>([]); const [managers, setManagers] = useState<Gestionnaire[]>([]);
+  const [statusPresets, setStatusPresets] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS);
+  const [presetDrafts, setPresetDrafts] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS); const [selectedStatus, setSelectedStatus] = useState<AppUserStatus | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({}); const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newDraft, setNewDraft] = useState<UserDraft>(emptyDraft); const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true); const [busyId, setBusyId] = useState<string | null>(null);
@@ -99,11 +127,22 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   const load = async () => {
     setLoading(true); setError(null);
     try {
-      const [userRows, managerRows] = await Promise.all([apiFetch<ManagedUser[]>("/users"), apiFetch<Gestionnaire[]>("/managers")]);
-      setUsers(userRows); setManagers(managerRows); setDrafts(Object.fromEntries(userRows.map((user) => [user.id, toDraft(user)])));
+      const [userRows, managerRows, presetRows] = await Promise.all([apiFetch<ManagedUser[]>("/users"), apiFetch<Gestionnaire[]>("/managers"), apiFetch<StatusPreset[]>("/users/status-presets")]);
+      const nextPresets = { ...DEFAULT_STATUS_PRESETS, ...Object.fromEntries(presetRows.map((preset) => [preset.status, preset])) } as StatusPresetMap;
+      setUsers(userRows); setManagers(managerRows); setStatusPresets(nextPresets); setPresetDrafts(nextPresets); setNewDraft(emptyDraft(nextPresets)); setDrafts(Object.fromEntries(userRows.map((user) => [user.id, toDraft(user)])));
       setSelectedId((current) => current && userRows.some((user) => user.id === current) ? current : null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible de charger les utilisateurs."); }
     finally { setLoading(false); }
+  };
+  const savePreset = async (status: AppUserStatus) => {
+    if (status === "owner") return;
+    setBusyId(`status-${status}`); setError(null); setNotice(null);
+    try {
+      const preset = presetDrafts[status];
+      await apiFetch(`/users/status-presets/${status}`, { method: "PUT", json: { canWrite: preset.canWrite, canViewAmounts: preset.canViewAmounts, pageAccess: preset.pageAccess } });
+      setSelectedStatus(null); setNotice(`Droits du statut ${STATUS_LABELS[status]} mis à jour.`); await load();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible d’enregistrer les droits du statut."); }
+    finally { setBusyId(null); }
   };
   useEffect(() => { void load(); }, []);
   const save = async (id: string) => {
@@ -126,13 +165,19 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   return <section id="settings-users" className="settings-cluster" aria-labelledby="nav-settings-users">
     <div className="settings-cluster__header"><div><div className="settings-cluster__eyebrow">Accès</div><h2 className="settings-cluster__title">Utilisateurs et privilèges</h2></div><p className="settings-cluster__text">Les statuts proposent des droits par défaut, ensuite modifiables. Les profils intervenants et leurs coordonnées sont gérés ici.</p></div>
     {notice ? <div className="note note--success">{notice}</div> : null}{error ? <div className="note">{error}</div> : null}
-    <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Utilisateurs</div><span className="field-hint">{users.filter((user) => user.isActive).length} actif(s) sur {users.length}</span></div><button type="button" onClick={() => { setCreating(true); setSelectedId(null); }}>Ajouter un utilisateur</button></div>
+    <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Droits par statut</div><span className="field-hint">Les propriétaires ont toujours tous les droits.</span></div></div>
+      <div className="table-wrap"><table className="table user-list-table status-preset-table"><thead><tr><th>Statut</th><th>Droits</th><th>Pages</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
+        {(["owner", "worker", "custom"] as AppUserStatus[]).map((status) => { const preset = statusPresets[status]; return <tr key={status} className={selectedStatus === status ? "is-selected" : ""}><td><strong>{STATUS_LABELS[status]}</strong></td><td>{preset.canWrite ? "Écriture" : "Lecture"}{preset.canViewAmounts ? " · €" : " · sans €"}</td><td>{status === "owner" ? "Toutes" : `${preset.pageAccess.length} / ${APP_PAGES.length}`}</td><td className="table-actions-cell">{preset.locked ? <span className="field-hint">Fixe</span> : <button type="button" className="table-action" onClick={() => { setSelectedStatus(status); setSelectedId(null); setCreating(false); }}>Modifier</button>}</td></tr>; })}
+      </tbody></table></div>
+    </div>
+    {selectedStatus && selectedStatus !== "owner" ? <StatusPresetEditor preset={presetDrafts[selectedStatus]} disabled={busyId === `status-${selectedStatus}`} onChange={(preset) => setPresetDrafts((current) => ({ ...current, [selectedStatus]: preset }))} onSubmit={() => void savePreset(selectedStatus)} onClose={() => { setSelectedStatus(null); setPresetDrafts(statusPresets); }} /> : null}
+    <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Utilisateurs</div><span className="field-hint">{users.filter((user) => user.isActive).length} actif(s) sur {users.length}</span></div><button type="button" onClick={() => { setCreating(true); setSelectedId(null); setSelectedStatus(null); }}>Ajouter un utilisateur</button></div>
       {loading ? <div className="field-hint">Chargement…</div> : <div className="table-wrap"><table className="table user-list-table"><thead><tr><th>Utilisateur</th><th>Statut</th><th>Droits</th><th>Pages</th><th>État</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
-        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.intervenant?.telephone ? <small>{user.intervenant.telephone}</small> : null}</td><td><span className="badge">{STATUS_LABELS[user.status]}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setSelectedId(user.id); setCreating(false); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
+        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.intervenant?.telephone ? <small>{user.intervenant.telephone}</small> : null}</td><td><span className="badge">{STATUS_LABELS[user.status]}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setSelectedId(user.id); setCreating(false); setSelectedStatus(null); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
       </tbody></table></div>}
     </div>
-    {creating ? <div className="card user-editor-card"><div className="section-title">Nouvel utilisateur</div><UserEditor draft={newDraft} managers={managers} linkedManagerIds={linkedManagerIds} disabled={busyId === "new"} submitLabel={busyId === "new" ? "Ajout…" : "Ajouter"} onChange={setNewDraft} onSubmit={() => void create()} /></div> : null}
-    {selected ? <div className="card user-editor-card"><div className="user-editor-card__header"><div><span className="settings-card__tag">{STATUS_LABELS[selected.status]}</span><div className="section-title">Modifier {selected.displayName}</div></div><button type="button" className="secondary" onClick={() => setSelectedId(null)}>Fermer</button></div><UserEditor draft={drafts[selected.id] ?? toDraft(selected)} managers={managers} linkedManagerIds={linkedManagerIds} disabled={busyId === selected.id} submitLabel={busyId === selected.id ? "Enregistrement…" : "Enregistrer"} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} onSubmit={() => void save(selected.id)} /></div> : null}
+    {creating ? <div className="card user-editor-card"><div className="section-title">Nouvel utilisateur</div><UserEditor draft={newDraft} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === "new"} submitLabel={busyId === "new" ? "Ajout…" : "Ajouter"} onChange={setNewDraft} onSubmit={() => void create()} /></div> : null}
+    {selected ? <div className="card user-editor-card"><div className="user-editor-card__header"><div><span className="settings-card__tag">{STATUS_LABELS[selected.status]}</span><div className="section-title">Modifier {selected.displayName}</div></div><button type="button" className="secondary" onClick={() => setSelectedId(null)}>Fermer</button></div><UserEditor draft={drafts[selected.id] ?? toDraft(selected)} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === selected.id} submitLabel={busyId === selected.id ? "Enregistrement…" : "Enregistrer"} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} onSubmit={() => void save(selected.id)} /></div> : null}
   </section>;
 };
 export default UserSettings;

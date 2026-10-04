@@ -189,6 +189,16 @@ model AppUser {
   @@map("app_users")
 }
 
+model AppUserStatusPreset {
+  status           String   @id
+  page_access      String   @default("[]")
+  can_write        Boolean  @default(false)
+  can_view_amounts Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
+
+  @@map("app_user_status_presets")
+}
+
 model ExpenseCategory {
   id        String   @id @default(cuid())
   name      String

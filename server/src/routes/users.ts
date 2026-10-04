@@ -5,8 +5,10 @@ import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import {
   APP_PAGE_IDS,
   ensureAppUsersInitialized,
+  listStatusPresets,
   normalizeAppUserStatus,
   serializeAppUser,
+  serializeStatusPreset,
 } from "../services/appUsers.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 
@@ -34,6 +36,12 @@ const userSchema = z.object({
     hourlyRate: z.coerce.number().min(0).max(10_000).default(0),
     showOnToday: z.boolean().default(true),
   }).nullable().optional(),
+});
+
+const statusPresetSchema = z.object({
+  canWrite: z.boolean(),
+  canViewAmounts: z.boolean(),
+  pageAccess: z.array(z.enum(APP_PAGE_IDS)),
 });
 
 const resolvedPermissions = (payload: z.infer<typeof userSchema>) => {
@@ -78,6 +86,50 @@ const requireOwner = async (req: Request, res: Response, next: NextFunction) => 
 };
 
 router.use(requireOwner);
+
+router.get("/status-presets", async (_req, res, next) => {
+  try {
+    res.json(await listStatusPresets());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/status-presets/:status", async (req, res, next) => {
+  try {
+    const status = z.enum(["worker", "custom"]).parse(req.params.status);
+    const payload = statusPresetSchema.parse(req.body);
+    const pageAccess = APP_PAGE_IDS.filter((page) => payload.pageAccess.includes(page));
+    const preset = await prisma.$transaction(async (tx) => {
+      const row = await tx.appUserStatusPreset.upsert({
+        where: { status },
+        update: {
+          can_write: payload.canWrite,
+          can_view_amounts: payload.canViewAmounts,
+          page_access: encodeJsonField(pageAccess),
+        },
+        create: {
+          status,
+          can_write: payload.canWrite,
+          can_view_amounts: payload.canViewAmounts,
+          page_access: encodeJsonField(pageAccess),
+        },
+      });
+      await tx.appUser.updateMany({
+        where: { status, is_owner: false },
+        data: {
+          can_write: payload.canWrite,
+          can_view_amounts: payload.canViewAmounts,
+          page_access: encodeJsonField(pageAccess),
+        },
+      });
+      return row;
+    });
+    res.json(serializeStatusPreset(preset));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/", async (_req, res, next) => {
   try {

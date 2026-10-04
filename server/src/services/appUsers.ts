@@ -9,10 +9,24 @@ export const APP_PAGE_IDS = [
 export type AppPageId = (typeof APP_PAGE_IDS)[number];
 export type AppUserStatus = "owner" | "worker" | "custom";
 
+export type AppUserStatusPreset = {
+  status: AppUserStatus;
+  canWrite: boolean;
+  canViewAmounts: boolean;
+  pageAccess: AppPageId[];
+  locked: boolean;
+};
+
+export const DEFAULT_STATUS_PRESETS: Record<AppUserStatus, AppUserStatusPreset> = {
+  owner: { status: "owner", canWrite: true, canViewAmounts: true, pageAccess: [...APP_PAGE_IDS], locked: true },
+  worker: { status: "worker", canWrite: true, canViewAmounts: false, pageAccess: ["today", "calendar", "planning_relay"], locked: false },
+  custom: { status: "custom", canWrite: false, canViewAmounts: false, pageAccess: [], locked: false },
+};
+
 export const STATUS_PAGE_PRESETS: Record<AppUserStatus, AppPageId[]> = {
-  owner: [...APP_PAGE_IDS],
-  worker: ["today", "calendar", "planning_relay"],
-  custom: [],
+  owner: DEFAULT_STATUS_PRESETS.owner.pageAccess,
+  worker: DEFAULT_STATUS_PRESETS.worker.pageAccess,
+  custom: DEFAULT_STATUS_PRESETS.custom.pageAccess,
 };
 
 export const normalizeAppUserStatus = (value: unknown, isOwner = false): AppUserStatus =>
@@ -42,9 +56,61 @@ export type AppUserSummary = {
 };
 
 let initializationPromise: Promise<void> | null = null;
+let statusPresetInitializationPromise: Promise<void> | null = null;
 
 const formatDisplayName = (manager: { prenom: string; nom: string }) =>
   `${manager.prenom} ${manager.nom}`.trim();
+
+export const serializeStatusPreset = (preset: {
+  status: string;
+  page_access: unknown;
+  can_write: boolean;
+  can_view_amounts: boolean;
+}): AppUserStatusPreset => {
+  const status = normalizeAppUserStatus(preset.status);
+  const owner = status === "owner";
+  return {
+    status,
+    canWrite: owner ? true : preset.can_write,
+    canViewAmounts: owner ? true : preset.can_view_amounts,
+    pageAccess: normalizePageAccess(preset.page_access, owner),
+    locked: owner,
+  };
+};
+
+export const ensureStatusPresetsInitialized = async () => {
+  if (!statusPresetInitializationPromise) {
+    statusPresetInitializationPromise = (async () => {
+      for (const preset of Object.values(DEFAULT_STATUS_PRESETS)) {
+        await prisma.appUserStatusPreset.upsert({
+          where: { status: preset.status },
+          update: preset.status === "owner" ? {
+            page_access: encodeJsonField(APP_PAGE_IDS),
+            can_write: true,
+            can_view_amounts: true,
+          } : {},
+          create: {
+            status: preset.status,
+            page_access: encodeJsonField(preset.pageAccess),
+            can_write: preset.canWrite,
+            can_view_amounts: preset.canViewAmounts,
+          },
+        });
+      }
+    })().catch((error) => {
+      statusPresetInitializationPromise = null;
+      throw error;
+    });
+  }
+  await statusPresetInitializationPromise;
+};
+
+export const listStatusPresets = async (): Promise<AppUserStatusPreset[]> => {
+  await ensureStatusPresetsInitialized();
+  const rows = await prisma.appUserStatusPreset.findMany();
+  const byStatus = new Map(rows.map((row) => [normalizeAppUserStatus(row.status), serializeStatusPreset(row)]));
+  return (["owner", "worker", "custom"] as AppUserStatus[]).map((status) => byStatus.get(status) ?? DEFAULT_STATUS_PRESETS[status]);
+};
 
 export const serializeAppUser = (user: {
   id: string;
@@ -80,6 +146,9 @@ export const serializeAppUser = (user: {
 export const ensureAppUsersInitialized = async () => {
   if (!initializationPromise) {
     initializationPromise = (async () => {
+      await ensureStatusPresetsInitialized();
+      const workerPresetRow = await prisma.appUserStatusPreset.findUnique({ where: { status: "worker" } });
+      const workerPreset = workerPresetRow ? serializeStatusPreset(workerPresetRow) : DEFAULT_STATUS_PRESETS.worker;
       const managers = await prisma.gestionnaire.findMany({
         where: { app_user: null },
         orderBy: [{ nom: "asc" }, { prenom: "asc" }],
@@ -128,9 +197,9 @@ export const ensureAppUsersInitialized = async () => {
             display_name: worker.nom,
             intervenant_id: worker.id,
             status: "worker",
-            page_access: encodeJsonField(STATUS_PAGE_PRESETS.worker),
-            can_write: true,
-            can_view_amounts: false,
+            page_access: encodeJsonField(workerPreset.pageAccess),
+            can_write: workerPreset.canWrite,
+            can_view_amounts: workerPreset.canViewAmounts,
             is_owner: false,
             is_active: worker.is_active,
           },
