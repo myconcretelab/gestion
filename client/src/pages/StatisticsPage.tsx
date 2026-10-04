@@ -224,6 +224,7 @@ const StatisticsPage = () => {
   const [legacyImportMessage, setLegacyImportMessage] = useState<string | null>(null);
   const [legacyImportError, setLegacyImportError] = useState<string | null>(null);
   const [legacyConflictsApproved, setLegacyConflictsApproved] = useState(false);
+  const chartUsesAllYears = typeof selectedItem === "string";
 
   const loadData = useCallback(async () => {
     try {
@@ -267,10 +268,9 @@ const StatisticsPage = () => {
   }, []);
 
   useEffect(() => {
-    const isGiteSelected = typeof selectedItem === "string" && selectedItem !== "Tous";
-    if (!isGiteSelected || allYearsDataset || allYearsLoading || allYearsError) return;
+    if (!chartUsesAllYears || allYearsDataset || allYearsLoading || allYearsError) return;
     void loadAllYearsData();
-  }, [allYearsDataset, allYearsError, allYearsLoading, loadAllYearsData, selectedItem]);
+  }, [allYearsDataset, allYearsError, allYearsLoading, chartUsesAllYears, loadAllYearsData]);
 
   const previewLegacyImport = async (file: File) => {
     setLegacyImportError(null);
@@ -436,15 +436,12 @@ const StatisticsPage = () => {
   const chartGroups = useMemo(
     () =>
       buildChartGroups({
-        entriesByGite:
-          typeof selectedItem === "string" && selectedItem !== "Tous"
-            ? allYearsDataset?.entriesByGite ?? {}
-            : entriesByGite,
+        entriesByGite: chartUsesAllYears ? allYearsDataset?.entriesByGite ?? {} : entriesByGite,
         gites,
         selectedItem,
         avgMode,
       }),
-    [allYearsDataset?.entriesByGite, avgMode, entriesByGite, gites, selectedItem]
+    [allYearsDataset?.entriesByGite, avgMode, chartUsesAllYears, entriesByGite, gites, selectedItem]
   );
 
   const selectedItemValue = typeof selectedItem === "number" ? `year:${selectedItem}` : selectedItem;
@@ -836,9 +833,9 @@ const StatisticsPage = () => {
           </label>
         </div>
 
-        {allYearsLoading && typeof selectedItem === "string" && selectedItem !== "Tous" ? (
+        {allYearsLoading && chartUsesAllYears ? (
           <p>Chargement des années disponibles...</p>
-        ) : allYearsError && typeof selectedItem === "string" && selectedItem !== "Tous" ? (
+        ) : allYearsError && chartUsesAllYears ? (
           <div className="stats-chart-load-error">
             <p>{allYearsError}</p>
             <button type="button" className="button-secondary" onClick={() => void loadAllYearsData()}>
