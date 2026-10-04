@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../utils/api";
 import { APP_PAGES, type AppPageId, type AppUser, type AppUserStatus } from "../utils/auth";
-import type { Gestionnaire } from "../utils/types";
 import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 
 type WorkerProfile = { id?: string; telephone: string; email: string | null; adresse: string | null; telegramChatId: string | null; hourlyRate: number; showOnToday: boolean };
@@ -10,7 +9,7 @@ type ManagedUser = AppUser & {
   intervenant?: WorkerProfile | null;
 };
 type UserDraft = {
-  displayName: string; gestionnaireId: string; status: AppUserStatus; canWrite: boolean;
+  firstName: string; lastName: string; status: AppUserStatus; canWrite: boolean;
   canViewAmounts: boolean; isActive: boolean; pageAccess: AppPageId[]; telephone: string;
   email: string; adresse: string; telegramChatId: string; hourlyRate: string; showOnToday: boolean;
   hasWorkerProfile: boolean;
@@ -28,13 +27,13 @@ const DEFAULT_STATUS_PRESETS: StatusPresetMap = {
   custom: { status: "custom", canWrite: false, canViewAmounts: false, pageAccess: [], locked: false },
 };
 const emptyDraft = (presets: StatusPresetMap = DEFAULT_STATUS_PRESETS): UserDraft => ({
-  displayName: "", gestionnaireId: "", status: "custom", isActive: true,
+  firstName: "", lastName: "", status: "custom", isActive: true,
   canWrite: presets.custom.canWrite, canViewAmounts: presets.custom.canViewAmounts, pageAccess: presets.custom.pageAccess,
   telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "", showOnToday: true,
   hasWorkerProfile: false,
 });
 const toDraft = (user: ManagedUser): UserDraft => ({
-  displayName: user.displayName, gestionnaireId: user.gestionnaireId ?? "", status: user.status,
+  firstName: user.firstName, lastName: user.lastName, status: user.status,
   canWrite: user.permissions.canWrite, canViewAmounts: user.permissions.canViewAmounts, isActive: user.isActive,
   pageAccess: user.permissions.isOwner ? ALL_PAGES : user.pageAccess, telephone: user.intervenant?.telephone ?? "",
   email: user.intervenant?.email ?? "", adresse: user.intervenant?.adresse ?? "", telegramChatId: user.intervenant?.telegramChatId ?? "",
@@ -42,7 +41,7 @@ const toDraft = (user: ManagedUser): UserDraft => ({
   hasWorkerProfile: Boolean(user.intervenant),
 });
 const buildPayload = (draft: UserDraft) => ({
-  displayName: draft.displayName.trim(), gestionnaireId: draft.gestionnaireId || null, status: draft.status,
+  firstName: draft.firstName.trim(), lastName: draft.lastName.trim(), status: draft.status,
   canWrite: draft.status === "owner" ? true : draft.canWrite, canViewAmounts: draft.status === "owner" ? true : draft.canViewAmounts,
   isActive: draft.isActive, pageAccess: draft.status === "owner" ? ALL_PAGES : draft.pageAccess,
   workerProfile: draft.status === "worker" || draft.hasWorkerProfile ? {
@@ -74,23 +73,20 @@ function StatusPresetEditor({ preset, disabled, onChange }: {
   </div>;
 }
 
-function UserEditor({ draft, managers, linkedManagerIds, statusPresets, disabled, onChange }: {
-  draft: UserDraft; managers: Gestionnaire[]; linkedManagerIds: Set<string | null>; disabled: boolean;
+function UserEditor({ draft, statusPresets, disabled, onChange }: {
+  draft: UserDraft; disabled: boolean;
   statusPresets: StatusPresetMap; onChange: (draft: UserDraft) => void;
 }) {
   const owner = draft.status === "owner";
-  const managerOptions = managers.filter((manager) => manager.id === draft.gestionnaireId || !linkedManagerIds.has(manager.id));
   const togglePage = (page: AppPageId, checked: boolean) => onChange({
     ...draft, pageAccess: checked ? [...new Set([...draft.pageAccess, page])] : draft.pageAccess.filter((item) => item !== page),
   });
   return <div className="user-editor">
     <div className="grid-2 user-settings-form">
-      <label className="field">Nom affiché<input value={draft.displayName} disabled={disabled} onChange={(e) => onChange({ ...draft, displayName: e.target.value })} /></label>
+      <label className="field">Prénom<input value={draft.firstName} disabled={disabled} onChange={(e) => onChange({ ...draft, firstName: e.target.value })} /></label>
+      <label className="field">Nom<input value={draft.lastName} disabled={disabled} onChange={(e) => onChange({ ...draft, lastName: e.target.value })} /></label>
       <label className="field">Statut<select value={draft.status} disabled={disabled} onChange={(e) => onChange(applyStatus(draft, e.target.value as AppUserStatus, statusPresets))}>
         <option value="owner">Propriétaire</option><option value="worker">Intervenant</option><option value="custom">Personnalisé</option>
-      </select></label>
-      <label className="field">Propriétaire / gestionnaire lié<select value={draft.gestionnaireId} disabled={disabled} onChange={(e) => onChange({ ...draft, gestionnaireId: e.target.value })}>
-        <option value="">Aucun lien</option>{managerOptions.map((manager) => <option key={manager.id} value={manager.id}>{manager.prenom} {manager.nom}</option>)}
       </select></label>
     </div>
     {draft.status !== "worker" ? <label className="checkbox-row user-worker-profile-toggle"><input type="checkbox" checked={draft.hasWorkerProfile} disabled={disabled} onChange={(e) => onChange({ ...draft, hasWorkerProfile: e.target.checked })} /><span><strong>Cette personne est aussi intervenante</strong><small>Ajouter ses coordonnées au planning relais et à la saisie des heures.</small></span></label> : null}
@@ -114,23 +110,22 @@ function UserEditor({ draft, managers, linkedManagerIds, statusPresets, disabled
 }
 
 const isUserDraftValid = (draft: UserDraft) =>
-  Boolean(draft.displayName.trim()) && (!((draft.status === "worker" || draft.hasWorkerProfile) && !draft.telephone.trim()));
+  Boolean(draft.firstName.trim()) && (!((draft.status === "worker" || draft.hasWorkerProfile) && !draft.telephone.trim()));
 
 const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
-  const [users, setUsers] = useState<ManagedUser[]>([]); const [managers, setManagers] = useState<Gestionnaire[]>([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
   const [statusPresets, setStatusPresets] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS);
   const [presetDrafts, setPresetDrafts] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS); const [selectedStatus, setSelectedStatus] = useState<AppUserStatus | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({}); const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newDraft, setNewDraft] = useState<UserDraft>(emptyDraft); const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true); const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null);
-  const linkedManagerIds = useMemo(() => new Set(users.map((user) => user.gestionnaireId)), [users]);
   const load = async () => {
     setLoading(true); setError(null);
     try {
-      const [userRows, managerRows, presetRows] = await Promise.all([apiFetch<ManagedUser[]>("/users"), apiFetch<Gestionnaire[]>("/managers"), apiFetch<StatusPreset[]>("/users/status-presets")]);
+      const [userRows, presetRows] = await Promise.all([apiFetch<ManagedUser[]>("/users"), apiFetch<StatusPreset[]>("/users/status-presets")]);
       const nextPresets = { ...DEFAULT_STATUS_PRESETS, ...Object.fromEntries(presetRows.map((preset) => [preset.status, preset])) } as StatusPresetMap;
-      setUsers(userRows); setManagers(managerRows); setStatusPresets(nextPresets); setPresetDrafts(nextPresets); setNewDraft(emptyDraft(nextPresets)); setDrafts(Object.fromEntries(userRows.map((user) => [user.id, toDraft(user)])));
+      setUsers(userRows); setStatusPresets(nextPresets); setPresetDrafts(nextPresets); setNewDraft(emptyDraft(nextPresets)); setDrafts(Object.fromEntries(userRows.map((user) => [user.id, toDraft(user)])));
       setSelectedId((current) => current && userRows.some((user) => user.id === current) ? current : null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible de charger les utilisateurs."); }
     finally { setLoading(false); }
@@ -164,7 +159,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   };
   const selected = users.find((user) => user.id === selectedId) ?? null;
   return <section id="settings-users" className="settings-cluster" aria-labelledby="nav-settings-users">
-    <div className="settings-cluster__header"><div><div className="settings-cluster__eyebrow">Accès</div><h2 className="settings-cluster__title">Utilisateurs et privilèges</h2></div><p className="settings-cluster__text">Les statuts proposent des droits par défaut, ensuite modifiables. Les profils intervenants et leurs coordonnées sont gérés ici.</p></div>
+    <div className="settings-cluster__header"><div><div className="settings-cluster__eyebrow">Accès</div><h2 className="settings-cluster__title">Utilisateurs et privilèges</h2></div><p className="settings-cluster__text">Toutes les informations des personnes, leurs statuts et leurs droits sont gérés ici. Les utilisateurs propriétaires sont ensuite proposés dans les fiches des gîtes.</p></div>
     {notice ? <div className="note note--success">{notice}</div> : null}{error ? <div className="note">{error}</div> : null}
     <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Droits par statut</div><span className="field-hint">Les propriétaires ont toujours tous les droits.</span></div></div>
       <div className="table-wrap"><table className="table user-list-table status-preset-table"><thead><tr><th>Statut</th><th>Droits</th><th>Pages</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
@@ -173,7 +168,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
     </div>
     <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Utilisateurs</div><span className="field-hint">{users.filter((user) => user.isActive).length} actif(s) sur {users.length}</span></div><button type="button" onClick={() => { setError(null); setCreating(true); setSelectedId(null); setSelectedStatus(null); }}>Ajouter un utilisateur</button></div>
       {loading ? <div className="field-hint">Chargement…</div> : <div className="table-wrap"><table className="table user-list-table"><thead><tr><th>Utilisateur</th><th>Statut</th><th>Droits</th><th>Pages</th><th>État</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
-        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.intervenant?.telephone ? <small>{user.intervenant.telephone}</small> : null}</td><td><span className="badge">{STATUS_LABELS[user.status]}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setError(null); setSelectedId(user.id); setCreating(false); setSelectedStatus(null); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
+        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.intervenant?.telephone ? <small>{user.intervenant.telephone}</small> : user.gestionnaire?.gitesCount ? <small>{user.gestionnaire.gitesCount} gîte(s)</small> : null}</td><td><span className="badge">{STATUS_LABELS[user.status]}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setError(null); setSelectedId(user.id); setCreating(false); setSelectedStatus(null); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
       </tbody></table></div>}
     </div>
     <ReservationDetailsDrawer
@@ -204,7 +199,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
       </>}
     >
       {error ? <div className="note">{error}</div> : null}
-      <UserEditor draft={newDraft} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === "new"} onChange={setNewDraft} />
+      <UserEditor draft={newDraft} statusPresets={statusPresets} disabled={busyId === "new"} onChange={setNewDraft} />
     </ReservationDetailsDrawer>
     <ReservationDetailsDrawer
       open={Boolean(selected)}
@@ -219,7 +214,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
       </> : null}
     >
       {error ? <div className="note">{error}</div> : null}
-      {selected ? <UserEditor draft={drafts[selected.id] ?? toDraft(selected)} managers={managers} linkedManagerIds={linkedManagerIds} statusPresets={statusPresets} disabled={busyId === selected.id} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} /> : null}
+      {selected ? <UserEditor draft={drafts[selected.id] ?? toDraft(selected)} statusPresets={statusPresets} disabled={busyId === selected.id} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} /> : null}
     </ReservationDetailsDrawer>
   </section>;
 };

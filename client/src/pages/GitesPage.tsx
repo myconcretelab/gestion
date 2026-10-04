@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
-import type { Gestionnaire, Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
+import type { Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
 import {
   getEntryUrssafBase,
@@ -13,6 +13,13 @@ import { getNetAverageMonthlyRevenue } from "./statistics/revenueAverageUtils";
 import { buildGiteNameWithPreposition } from "../utils/giteName";
 
 type NumberInputValue = number | "";
+type OwnerUserOption = {
+  id: string;
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  gestionnaireId: string;
+};
 type PublicWebInfoForm = {
   surface_m2: NumberInputValue;
   max_people: NumberInputValue;
@@ -261,7 +268,7 @@ const isGiteEditorSectionId = (value: string | null): value is GiteEditorSection
   Boolean(value && GITE_EDITOR_SECTION_BY_ID.has(value as GiteEditorSectionId));
 
 const formatManagerLabel = (gite: Gite) =>
-  gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "Gestion directe";
+  gite.gestionnaire ? `${gite.gestionnaire.prenom} ${gite.gestionnaire.nom}` : "Aucun propriétaire";
 
 const formatAddressLabel = (gite: Gite) =>
   [gite.adresse_ligne1, gite.adresse_ligne2].map((part) => part?.trim()).filter(Boolean).join(", ");
@@ -1556,7 +1563,7 @@ const GitesPage = () => {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
-  const [gestionnaires, setGestionnaires] = useState<Gestionnaire[]>([]);
+  const [ownerUsers, setOwnerUsers] = useState<OwnerUserOption[]>([]);
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [revenueAverageDataset, setRevenueAverageDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(DEFAULT_EXPENSE_CATEGORIES);
@@ -1622,17 +1629,17 @@ const GitesPage = () => {
   }, [activeEditorSection, searchParams, selectedId, setSearchParams]);
 
   const load = async () => {
-    const [gitesData, placeholdersData, gestionnairesData, statisticsData, revenueAverageData, expenseCategoryData] = await Promise.all([
+    const [gitesData, placeholdersData, ownerUserData, statisticsData, revenueAverageData, expenseCategoryData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
-      apiFetch<Gestionnaire[]>("/managers"),
+      apiFetch<OwnerUserOption[]>("/users/owners"),
       apiFetch<StatisticsPayload>(`/statistics?year=${expenseStatisticsYear}`),
       apiFetch<StatisticsPayload>("/statistics?year=all"),
       apiFetch<ExpenseCategorySettings>("/gites/expense-categories"),
     ]);
     setGites(gitesData);
     setPlaceholders(placeholdersData);
-    setGestionnaires(gestionnairesData);
+    setOwnerUsers(ownerUserData);
     setStatisticsDataset(parseStatisticsPayload(statisticsData));
     setRevenueAverageDataset(parseStatisticsPayload(revenueAverageData));
     setExpenseCategories(normalizeExpenseManagement({ categories: expenseCategoryData.categories, expenses: [] }).categories);
@@ -2997,15 +3004,15 @@ const GitesPage = () => {
               />
             </label>
             <label className="field">
-              Gestionnaire
+              Propriétaire
               <select
                 value={form.gestionnaire_id}
                 onChange={(e) => handleChange("gestionnaire_id", e.target.value)}
               >
-                <option value="">Aucun</option>
-                {gestionnaires.map((gestionnaire) => (
-                  <option key={gestionnaire.id} value={gestionnaire.id}>
-                    {gestionnaire.prenom} {gestionnaire.nom}
+                <option value="">Aucun propriétaire</option>
+                {ownerUsers.map((owner) => (
+                  <option key={owner.id} value={owner.gestionnaireId}>
+                    {owner.displayName}
                   </option>
                 ))}
               </select>

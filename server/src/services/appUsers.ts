@@ -47,6 +47,8 @@ export type AppUserPermissions = {
 export type AppUserSummary = {
   id: string;
   displayName: string;
+  firstName: string;
+  lastName: string;
   gestionnaireId: string | null;
   intervenantId: string | null;
   status: AppUserStatus;
@@ -115,6 +117,8 @@ export const listStatusPresets = async (): Promise<AppUserStatusPreset[]> => {
 export const serializeAppUser = (user: {
   id: string;
   display_name: string;
+  first_name: string;
+  last_name: string;
   gestionnaire_id: string | null;
   intervenant_id: string | null;
   status: string;
@@ -123,20 +127,29 @@ export const serializeAppUser = (user: {
   can_view_amounts: boolean;
   is_owner: boolean;
   is_active: boolean;
-}): AppUserSummary => ({
-  id: user.id,
-  displayName: user.display_name,
-  gestionnaireId: user.gestionnaire_id,
-  intervenantId: user.intervenant_id,
-  status: normalizeAppUserStatus(user.status, user.is_owner),
-  pageAccess: normalizePageAccess(user.page_access, user.is_owner),
-  isActive: user.is_active,
-  permissions: {
-    canWrite: user.can_write,
-    canViewAmounts: user.can_view_amounts,
-    isOwner: user.is_owner,
-  },
-});
+}): AppUserSummary => {
+  const storedFirstName = user.first_name.trim();
+  const storedLastName = user.last_name.trim();
+  const fallbackParts = user.display_name.trim().split(/\s+/);
+  const firstName = storedFirstName || fallbackParts.shift() || user.display_name.trim();
+  const lastName = storedFirstName || storedLastName ? storedLastName : fallbackParts.join(" ");
+  return {
+    id: user.id,
+    displayName: [firstName, lastName].filter(Boolean).join(" "),
+    firstName,
+    lastName,
+    gestionnaireId: user.gestionnaire_id,
+    intervenantId: user.intervenant_id,
+    status: normalizeAppUserStatus(user.status, user.is_owner),
+    pageAccess: normalizePageAccess(user.page_access, user.is_owner),
+    isActive: user.is_active,
+    permissions: {
+      canWrite: user.can_write,
+      canViewAmounts: user.can_view_amounts,
+      isOwner: user.is_owner,
+    },
+  };
+};
 
 /**
  * Existing managers are the canonical people already attached to the gites.
@@ -157,9 +170,15 @@ export const ensureAppUsersInitialized = async () => {
       for (const manager of managers) {
         await prisma.appUser.upsert({
           where: { gestionnaire_id: manager.id },
-          update: {},
+          update: {
+            display_name: formatDisplayName(manager),
+            first_name: manager.prenom,
+            last_name: manager.nom,
+          },
           create: {
             display_name: formatDisplayName(manager),
+            first_name: manager.prenom,
+            last_name: manager.nom,
             gestionnaire_id: manager.id,
             status: "owner",
             page_access: encodeJsonField(APP_PAGE_IDS),
@@ -195,6 +214,8 @@ export const ensureAppUsersInitialized = async () => {
         await prisma.appUser.create({
           data: {
             display_name: worker.nom,
+            first_name: worker.nom,
+            last_name: "",
             intervenant_id: worker.id,
             status: "worker",
             page_access: encodeJsonField(workerPreset.pageAccess),

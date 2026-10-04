@@ -14,14 +14,9 @@ import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 
 const router = Router();
 
-const nullableId = z.preprocess(
-  (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
-  z.string().min(1).nullable(),
-);
-
 const userSchema = z.object({
-  displayName: z.string().trim().min(1).max(100),
-  gestionnaireId: nullableId.optional().default(null),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().max(100).default(""),
   canWrite: z.boolean().default(false),
   canViewAmounts: z.boolean().default(false),
   status: z.enum(["owner", "worker", "custom"]).default("custom"),
@@ -70,6 +65,9 @@ const workerData = (displayName: string, isActive: boolean, profile: NonNullable
   hourly_rate: profile.hourlyRate,
 });
 
+const displayNameFor = (payload: Pick<z.infer<typeof userSchema>, "firstName" | "lastName">) =>
+  [payload.firstName, payload.lastName].filter(Boolean).join(" ");
+
 const requireOwner = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = await getAuthenticatedAppUser(req);
@@ -84,6 +82,33 @@ const requireOwner = async (req: Request, res: Response, next: NextFunction) => 
     return next(error);
   }
 };
+
+router.get("/owners", async (_req, res, next) => {
+  try {
+    await ensureAppUsersInitialized();
+    const owners = await prisma.appUser.findMany({
+      where: {
+        status: "owner",
+        is_owner: true,
+        is_active: true,
+        gestionnaire_id: { not: null },
+      },
+      orderBy: [{ first_name: "asc" }, { last_name: "asc" }],
+    });
+    res.json(owners.map((owner) => {
+      const user = serializeAppUser(owner);
+      return {
+        id: user.id,
+        displayName: user.displayName,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        gestionnaireId: user.gestionnaireId,
+      };
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.use(requireOwner);
 
@@ -174,16 +199,33 @@ router.post("/", async (req, res, next) => {
   try {
     const payload = userSchema.parse(req.body);
     const permissions = resolvedPermissions(payload);
+    const displayName = displayNameFor(payload);
     if (permissions.status === "worker" && !payload.workerProfile) {
       return res.status(400).json({ error: "Les coordonnées de l’intervenant sont requises." });
     }
+
+    const matchingManager = permissions.isOwner
+      ? await prisma.gestionnaire.findUnique({
+          where: { prenom_nom: { prenom: payload.firstName, nom: payload.lastName } },
+          include: { app_user: { select: { id: true } } },
+        })
+      : null;
+    if (matchingManager?.app_user) {
+      return res.status(409).json({ error: "Un utilisateur est déjà associé à ce propriétaire." });
+    }
+
     const user = await prisma.$transaction(async (tx) => {
       const worker = payload.workerProfile
-        ? await tx.planningRelayWorker.create({ data: workerData(payload.displayName, payload.isActive, payload.workerProfile) })
+        ? await tx.planningRelayWorker.create({ data: workerData(displayName, payload.isActive, payload.workerProfile) })
+        : null;
+      const manager = permissions.isOwner
+        ? matchingManager ?? await tx.gestionnaire.create({ data: { prenom: payload.firstName, nom: payload.lastName } })
         : null;
       return tx.appUser.create({ data: {
-        display_name: payload.displayName,
-        gestionnaire_id: payload.gestionnaireId,
+        display_name: displayName,
+        first_name: payload.firstName,
+        last_name: payload.lastName,
+        gestionnaire_id: manager?.id ?? null,
         intervenant_id: worker?.id ?? null,
         status: permissions.status,
         page_access: encodeJsonField(permissions.pageAccess),
@@ -203,8 +245,14 @@ router.put("/:id", async (req, res, next) => {
   try {
     const payload = userSchema.parse(req.body);
     const permissions = resolvedPermissions(payload);
+    const displayName = displayNameFor(payload);
     const currentUser = await getAuthenticatedAppUser(req);
-    const existing = await prisma.appUser.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.appUser.findUnique({
+      where: { id: req.params.id },
+      include: {
+        gestionnaire: { include: { _count: { select: { gites: true } } } },
+      },
+    });
     if (!existing) return res.status(404).json({ error: "Utilisateur introuvable." });
 
     if (currentUser?.id === existing.id && !payload.isActive) {
@@ -220,22 +268,53 @@ router.put("/:id", async (req, res, next) => {
       }
     }
 
+    if (existing.gestionnaire?._count.gites && (!permissions.isOwner || !payload.isActive)) {
+      return res.status(409).json({
+        error: `Cet utilisateur est propriétaire de ${existing.gestionnaire._count.gites} gîte(s). Réattribuez-les avant de modifier son statut ou de le désactiver.`,
+      });
+    }
+
     if (permissions.status === "worker" && !payload.workerProfile) {
       return res.status(400).json({ error: "Les coordonnées de l’intervenant sont requises." });
     }
+
+
+    const matchingManager = await prisma.gestionnaire.findUnique({
+      where: { prenom_nom: { prenom: payload.firstName, nom: payload.lastName } },
+      include: { app_user: { select: { id: true } } },
+    });
+    if (matchingManager && matchingManager.id !== existing.gestionnaire_id) {
+      if (existing.gestionnaire_id || !permissions.isOwner || matchingManager.app_user) {
+        return res.status(409).json({ error: "Une autre personne utilise déjà ce prénom et ce nom." });
+      }
+    }
+
     const user = await prisma.$transaction(async (tx) => {
       let intervenantId = existing.intervenant_id;
       if (payload.workerProfile) {
         if (intervenantId) {
-          await tx.planningRelayWorker.update({ where: { id: intervenantId }, data: workerData(payload.displayName, payload.isActive, payload.workerProfile) });
+          await tx.planningRelayWorker.update({ where: { id: intervenantId }, data: workerData(displayName, payload.isActive, payload.workerProfile) });
         } else {
-          const worker = await tx.planningRelayWorker.create({ data: workerData(payload.displayName, payload.isActive, payload.workerProfile) });
+          const worker = await tx.planningRelayWorker.create({ data: workerData(displayName, payload.isActive, payload.workerProfile) });
           intervenantId = worker.id;
         }
       }
+      let gestionnaireId = existing.gestionnaire_id;
+      if (gestionnaireId) {
+        await tx.gestionnaire.update({
+          where: { id: gestionnaireId },
+          data: { prenom: payload.firstName, nom: payload.lastName },
+        });
+      } else if (permissions.isOwner) {
+        const manager = matchingManager
+          ?? await tx.gestionnaire.create({ data: { prenom: payload.firstName, nom: payload.lastName } });
+        gestionnaireId = manager.id;
+      }
       return tx.appUser.update({ where: { id: existing.id }, data: {
-        display_name: payload.displayName,
-        gestionnaire_id: payload.gestionnaireId,
+        display_name: displayName,
+        first_name: payload.firstName,
+        last_name: payload.lastName,
+        gestionnaire_id: gestionnaireId,
         intervenant_id: intervenantId,
         status: permissions.status,
         page_access: encodeJsonField(permissions.pageAccess),
@@ -257,8 +336,21 @@ router.delete("/:id", async (req, res, next) => {
     if (currentUser?.id === req.params.id) {
       return res.status(409).json({ error: "Vous ne pouvez pas supprimer votre propre compte." });
     }
-    const existing = await prisma.appUser.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.appUser.findUnique({
+      where: { id: req.params.id },
+      include: { gestionnaire: { include: { _count: { select: { gites: true } } } } },
+    });
     if (!existing) return res.status(404).json({ error: "Utilisateur introuvable." });
+    if (existing.gestionnaire?._count.gites) {
+      return res.status(409).json({
+        error: `Cet utilisateur est propriétaire de ${existing.gestionnaire._count.gites} gîte(s). Réattribuez-les avant de le supprimer.`,
+      });
+    }
+    if (existing.gestionnaire_id || existing.intervenant_id) {
+      return res.status(409).json({
+        error: "Cet utilisateur est lié à des données de gestion. Désactivez son compte pour conserver son historique.",
+      });
+    }
     if (existing.is_owner && existing.is_active) {
       const otherActiveOwners = await prisma.appUser.count({
         where: { is_owner: true, is_active: true, id: { not: existing.id } },

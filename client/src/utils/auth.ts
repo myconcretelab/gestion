@@ -21,6 +21,8 @@ export type AppUserStatus = "owner" | "worker" | "custom";
 export type AppUser = {
   id: string;
   displayName: string;
+  firstName: string;
+  lastName: string;
   gestionnaireId: string | null;
   intervenantId: string | null;
   status: AppUserStatus;

@@ -963,6 +963,7 @@ const App = () => {
             <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/tarifs" element={<PageAccess allowed={canAccessPage("rates")}><AmountsAccess allowed={canViewAmounts}><SeasonRatesPage /></AmountsAccess></PageAccess>} />
             <Route path="/parametres/intervenants" element={<Navigate to="/parametres/utilisateurs" replace />} />
+            <Route path="/parametres/equipe" element={<Navigate to="/parametres/utilisateurs" replace />} />
             <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
           </Routes>
         </Suspense>

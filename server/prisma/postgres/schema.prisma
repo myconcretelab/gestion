@@ -169,6 +169,8 @@ model Gestionnaire {
 model AppUser {
   id               String   @id @default(cuid())
   display_name     String
+  first_name       String   @default("")
+  last_name        String   @default("")
   gestionnaire_id  String?  @unique
   intervenant_id   String?  @unique
   status           String   @default("custom")

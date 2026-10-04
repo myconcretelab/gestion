@@ -34,6 +34,7 @@ test("redactMonetaryValues retire les montants sans masquer les compteurs", () =
 test("les API dédiées respectent le droit de page", () => {
   assert.equal(getRequiredPageForApiPath("/today/overview/primary"), "today");
   assert.equal(getRequiredPageForApiPath("/contracts/abc"), "contracts");
+  assert.equal(getRequiredPageForApiPath("/users/owners"), "gites");
   assert.equal(getRequiredPageForApiPath("/users"), "settings");
   assert.equal(getRequiredPageForApiPath("/reservations/calendar"), null);
 });

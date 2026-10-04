@@ -34,6 +34,7 @@ import {
   readGiteExpenseCategorySettings,
   writeGiteExpenseCategorySettings,
 } from "../services/giteExpenseCategorySettings.js";
+import { ensureAppUsersInitialized } from "../services/appUsers.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -407,10 +408,16 @@ const getNextGiteOrder = async () => {
   return (aggregate._max.ordre ?? -1) + 1;
 };
 
-const gestionnaireExists = async (gestionnaireId?: string | null) => {
+const ownerExists = async (gestionnaireId?: string | null) => {
   if (!gestionnaireId) return true;
-  const existing = await prisma.gestionnaire.findUnique({
-    where: { id: gestionnaireId },
+  await ensureAppUsersInitialized();
+  const existing = await prisma.appUser.findFirst({
+    where: {
+      gestionnaire_id: gestionnaireId,
+      status: "owner",
+      is_owner: true,
+      is_active: true,
+    },
     select: { id: true },
   });
   return Boolean(existing);
@@ -664,8 +671,8 @@ router.post("/reorder", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
-    if (!(await gestionnaireExists(parsed.gestionnaire_id))) {
-      return res.status(400).json({ error: "Gestionnaire introuvable." });
+    if (!(await ownerExists(parsed.gestionnaire_id))) {
+      return res.status(400).json({ error: "Propriétaire introuvable ou inactif." });
     }
     const ordre = await getNextGiteOrder();
     const gite = await prisma.gite.create({
@@ -688,8 +695,8 @@ router.post("/", async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
-    if (!(await gestionnaireExists(parsed.gestionnaire_id))) {
-      return res.status(400).json({ error: "Gestionnaire introuvable." });
+    if (!(await ownerExists(parsed.gestionnaire_id))) {
+      return res.status(400).json({ error: "Propriétaire introuvable ou inactif." });
     }
     const gite = await prisma.gite.update({
       where: { id: req.params.id },
@@ -969,12 +976,18 @@ router.post("/import", async (req, res, next) => {
 
     const gestionnaireIds = [...new Set(normalized.map((row) => row.gestionnaire_id).filter(Boolean))] as string[];
     if (gestionnaireIds.length > 0) {
-      const existingManagers = await prisma.gestionnaire.findMany({
-        where: { id: { in: gestionnaireIds } },
-        select: { id: true },
+      await ensureAppUsersInitialized();
+      const existingOwners = await prisma.appUser.findMany({
+        where: {
+          gestionnaire_id: { in: gestionnaireIds },
+          status: "owner",
+          is_owner: true,
+          is_active: true,
+        },
+        select: { gestionnaire_id: true },
       });
-      if (existingManagers.length !== gestionnaireIds.length) {
-        return res.status(400).json({ error: "L'import contient un gestionnaire introuvable." });
+      if (existingOwners.length !== gestionnaireIds.length) {
+        return res.status(400).json({ error: "L’import contient un propriétaire introuvable ou inactif." });
       }
     }
 

@@ -501,7 +501,7 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
     let notificationWarning: string | null = null;
     if (checked && !wasChecked && checkedAt) {
       try {
-        const firstName = currentUser?.displayName.trim().split(/\s+/)[0] ?? null;
+        const firstName = currentUser?.firstName ?? null;
         const result = await notifyGiteCheckedOnTelegram(gite.nom, checkedAt, firstName);
         if (!result.sent_count) {
           notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
