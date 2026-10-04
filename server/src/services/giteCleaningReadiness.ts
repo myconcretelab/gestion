@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import { fromJsonString } from "../utils/jsonFields.js";
 
 export const CLEANING_CHECK_START_MINUTES = 8 * 60 + 30;
 
@@ -15,6 +16,7 @@ type ReadinessReservation = {
   date_entree: Date;
   date_sortie: Date;
   departure_cleaning_checked_at: Date | null;
+  options?: unknown;
 };
 
 export type GiteCleaningReadiness = {
@@ -26,6 +28,7 @@ export type GiteCleaningReadiness = {
   departure_date: string;
   next_arrival_reservation_id: string | null;
   next_arrival_date: string | null;
+  departure_has_cleaning_option: boolean;
   checked_at: Date | null;
 };
 
@@ -88,6 +91,9 @@ export const buildGiteCleaningReadiness = (
       departure_date: toIsoDate(lastDeparture.date_sortie),
       next_arrival_reservation_id: nextArrival?.id ?? null,
       next_arrival_date: nextArrival ? toIsoDate(nextArrival.date_entree) : null,
+      departure_has_cleaning_option: Boolean(
+        fromJsonString<{ menage?: { enabled?: boolean } }>(lastDeparture.options, {}).menage?.enabled
+      ),
       checked_at: lastDeparture.departure_cleaning_checked_at,
     }];
   }).sort((left, right) => left.gite_order - right.gite_order || left.gite_name.localeCompare(right.gite_name, "fr"));
@@ -103,6 +109,7 @@ export const loadGiteCleaningReadiness = async (gites: ReadinessGite[], now = ne
       date_entree: true,
       date_sortie: true,
       departure_cleaning_checked_at: true,
+      options: true,
     },
   });
   return buildGiteCleaningReadiness(gites, reservations, now);

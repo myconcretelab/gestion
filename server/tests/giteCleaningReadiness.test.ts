@@ -11,12 +11,14 @@ const reservation = (overrides: Partial<{
   date_entree: Date;
   date_sortie: Date;
   departure_cleaning_checked_at: Date | null;
+  options: unknown;
 }> = {}) => ({
   id: overrides.id ?? "departure",
   gite_id: gite.id,
   date_entree: overrides.date_entree ?? new Date("2026-10-01T00:00:00.000Z"),
   date_sortie: overrides.date_sortie ?? new Date("2026-10-03T00:00:00.000Z"),
   departure_cleaning_checked_at: overrides.departure_cleaning_checked_at ?? null,
+  options: overrides.options ?? {},
 });
 
 test("le gîte devient disponible au contrôle à 8 h 30 le jour du départ", () => {
@@ -53,4 +55,19 @@ test("le contrôle est consommé après le début du séjour suivant", () => {
     new Date("2026-10-07T10:00:00.000Z"),
   );
   assert.deepEqual(readiness, []);
+});
+
+test("le statut signale l’option ménage de la réservation sortante", () => {
+  const [withCleaning] = buildGiteCleaningReadiness(
+    [gite],
+    [reservation({ options: JSON.stringify({ menage: { enabled: true } }) })],
+    new Date("2026-10-03T10:00:00.000Z"),
+  );
+  const [withoutCleaning] = buildGiteCleaningReadiness(
+    [gite],
+    [reservation({ options: { menage: { enabled: false } } })],
+    new Date("2026-10-03T10:00:00.000Z"),
+  );
+  assert.equal(withCleaning?.departure_has_cleaning_option, true);
+  assert.equal(withoutCleaning?.departure_has_cleaning_option, false);
 });

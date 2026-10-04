@@ -930,10 +930,32 @@ body.app-scroll-locked {
   white-space: nowrap;
 }
 
-.today-cleaning-readiness__button--urgent {
+.today-cleaning-readiness__button--cleaning-option {
   border-color: var(--primary);
   background: var(--primary-soft);
   color: var(--primary-strong);
+}
+
+.today-cleaning-readiness__option-label {
+  width: 17px;
+  height: 17px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #ffffff !important;
+}
+
+.today-cleaning-readiness__button--urgent {
+  border-color: #f97316;
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.2), 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+.today-cleaning-readiness__deadline {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c !important;
 }
 
 .today-cleaning-readiness__button:hover:not(:disabled),

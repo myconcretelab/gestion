@@ -53,6 +53,7 @@ type GiteCleaningReadiness = {
   departure_date: string;
   next_arrival_reservation_id: string | null;
   next_arrival_date: string | null;
+  departure_has_cleaning_option: boolean;
   checked_at: string | null;
   notification_warning?: string | null;
 };
@@ -1250,14 +1251,17 @@ const TodayPage = () => {
                   key={item.gite_id}
                   type="button"
                   className={`today-cleaning-readiness__button${
+                    item.departure_has_cleaning_option ? " today-cleaning-readiness__button--cleaning-option" : ""
+                  }${
                     item.next_arrival_date === todayIso ? " today-cleaning-readiness__button--urgent" : ""
                   }`}
                   disabled={Boolean(cleaningReadinessBusyId)}
-                  aria-label={`Marquer ${item.gite_name} prêt${item.next_arrival_date === todayIso ? " avant 17 heures" : ""}`}
+                  aria-label={`Marquer ${item.gite_name} prêt${item.departure_has_cleaning_option ? ", option ménage prise" : ""}${item.next_arrival_date === todayIso ? " avant 17 heures" : ""}`}
                   onClick={() => void updateCleaningReadiness(item, true)}
                 >
                   <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>
-                  {item.next_arrival_date === todayIso ? <small>17 h</small> : null}
+                  {item.departure_has_cleaning_option ? <small className="today-cleaning-readiness__option-label">M</small> : null}
+                  {item.next_arrival_date === todayIso ? <small className="today-cleaning-readiness__deadline">17 h</small> : null}
                 </button>
               ))}
             </div>
