@@ -1613,33 +1613,11 @@ const TodayPage = () => {
                       <span>Frais des gîtes</span>
                       <strong>{formatEuro(metric.gite_expenses)}</strong>
                     </div>
-                    <div className="reservations-summary-popover__row">
-                      <span>Frais perso récurrents</span>
-                      <strong>{formatEuro(metric.personal_recurring_expenses)}</strong>
-                    </div>
                     {metric.id !== "last_24_months" ? (
                       <div className="reservations-summary-popover__row">
                         <span>Frais perso ponctuels</span>
                         <strong>{formatEuro(metric.personal_occasional_expenses)}</strong>
                       </div>
-                    ) : null}
-                    {(metric.personal_expense_details ?? []).filter((detail) => detail.kind === "recurring").length > 0 ? (
-                      <>
-                        <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
-                          Frais perso récurrents
-                        </div>
-                        {(metric.personal_expense_details ?? [])
-                          .filter((detail) => detail.kind === "recurring")
-                          .map((detail) => (
-                            <div className="reservations-summary-popover__row" key={`recurring-${detail.id}`}>
-                              <span className="today-revenue-mini__expense-label">
-                                {detail.label}
-                                <small>{[detail.category_name, detail.manager_name].filter(Boolean).join(" · ")}</small>
-                              </span>
-                              <strong>{formatEuro(detail.period_expenses)}</strong>
-                            </div>
-                          ))}
-                      </>
                     ) : null}
                     {(metric.personal_expense_details ?? []).filter((detail) => detail.kind === "occasional").length > 0 ? (
                       <>
