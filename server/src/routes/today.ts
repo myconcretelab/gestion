@@ -18,6 +18,10 @@ import {
 } from "../services/smartlifeSettings.js";
 import { buildNewReservations } from "../services/dailyReservationEmail.js";
 import {
+  buildTodayRevenueComparison,
+  type TodayRevenueComparison,
+} from "../services/todayRevenueComparison.js";
+import {
   isCleaningCheckAvailable,
   loadGiteCleaningReadiness,
   updateGiteCleaningReadiness,
@@ -57,6 +61,7 @@ type TodayRevenueAverageMetric = {
   personal_occasional_expenses: number;
   expenses: number;
   net_average_monthly_revenue: number;
+  comparison?: TodayRevenueComparison;
   expense_details: Array<{
     gite_id: string;
     gite_name: string;
@@ -143,6 +148,11 @@ const getUtcMonthStart = (date: Date, offsetMonths = 0) =>
 const formatMonthName = (date: Date) =>
   date.toLocaleDateString("fr-FR", { month: "long", timeZone: "UTC" }).replace(/^./, (char) => char.toUpperCase());
 
+const formatMonthYear = (date: Date) =>
+  date
+    .toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" })
+    .replace(/^./, (char) => char.toUpperCase());
+
 const listMonthKeys = (startInclusive: Date, monthCount: number) =>
   Array.from({ length: monthCount }, (_, index) => {
     const date = getUtcMonthStart(startInclusive, index);
@@ -190,6 +200,12 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
   const nextMonthStart = getUtcMonthStart(today, 1);
   const followingMonthStart = getUtcMonthStart(today, 2);
   const last24MonthsStart = getUtcMonthStart(today, -23);
+  const previousMonthLastYearStart = new Date(
+    Date.UTC(previousMonthStart.getUTCFullYear() - 1, previousMonthStart.getUTCMonth(), 1)
+  );
+  const currentMonthLastYearStart = new Date(
+    Date.UTC(currentMonthStart.getUTCFullYear() - 1, currentMonthStart.getUTCMonth(), 1)
+  );
   const periods = [
     {
       id: "previous_month" as const,
@@ -267,7 +283,7 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
     prisma.expenseEntry.findMany({
       where: {
         scope: "personal",
-        expense_date: { gte: previousMonthStart, lt: followingMonthStart },
+        expense_date: { gte: last24MonthsStart, lt: followingMonthStart },
       },
       select: {
         id: true,
@@ -305,7 +321,13 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
     }
   }
 
-  return periods.map((period) => {
+  const buildPeriodFinancials = (period: (typeof periods)[number] | {
+    id: "comparison";
+    label: string;
+    month_count: 1;
+    monthStarts: Date[];
+    monthKeys: Set<string>;
+  }) => {
     const grossRevenue = round2([...period.monthKeys].reduce((sum, key) => sum + (grossRevenueByMonth.get(key) ?? 0), 0));
     const giteExpenses = round2(totalMonthlyExpenses * period.month_count);
     const recurringDetails = personalRecurringExpenses
@@ -346,9 +368,6 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
     );
     const expenses = round2(giteExpenses + personalRecurringExpensesTotal + personalOccasionalExpensesTotal);
     return {
-      id: period.id,
-      label: period.label,
-      month_count: period.month_count,
       gross_revenue: grossRevenue,
       gite_expenses: giteExpenses,
       personal_recurring_expenses: personalRecurringExpensesTotal,
@@ -362,6 +381,50 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
           period_expenses: round2(gite.monthly_expenses * period.month_count),
         })),
       personal_expense_details: [...recurringDetails, ...occasionalDetails],
+    };
+  };
+
+  const previousMonthReference = buildPeriodFinancials({
+    id: "comparison",
+    label: formatMonthName(previousMonthLastYearStart),
+    month_count: 1,
+    monthStarts: [previousMonthLastYearStart],
+    monthKeys: new Set(listMonthKeys(previousMonthLastYearStart, 1)),
+  });
+  const currentMonthReference = buildPeriodFinancials({
+    id: "comparison",
+    label: formatMonthName(currentMonthLastYearStart),
+    month_count: 1,
+    monthStarts: [currentMonthLastYearStart],
+    monthKeys: new Set(listMonthKeys(currentMonthLastYearStart, 1)),
+  });
+
+  return periods.map((period) => {
+    const financials = buildPeriodFinancials(period);
+    const comparison = period.id === "previous_month"
+      ? buildTodayRevenueComparison({
+          currentNetRevenue: financials.net_average_monthly_revenue,
+          referenceMonthNetRevenue: previousMonthReference.net_average_monthly_revenue,
+          referenceLabel: formatMonthYear(previousMonthLastYearStart),
+          today,
+          prorateReference: false,
+        })
+      : period.id === "current_month"
+        ? buildTodayRevenueComparison({
+            currentNetRevenue: financials.net_average_monthly_revenue,
+            referenceMonthNetRevenue: currentMonthReference.net_average_monthly_revenue,
+            referenceLabel: formatMonthYear(currentMonthLastYearStart),
+            today,
+            prorateReference: true,
+          })
+        : undefined;
+
+    return {
+      id: period.id,
+      label: period.label,
+      month_count: period.month_count,
+      ...financials,
+      ...(comparison ? { comparison } : {}),
     };
   });
 };

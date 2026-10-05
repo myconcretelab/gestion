@@ -70,6 +70,14 @@ type TodayRevenueAverageMetric = {
   personal_occasional_expenses: number;
   expenses: number;
   net_average_monthly_revenue: number;
+  comparison?: {
+    reference_label: string;
+    reference_net_revenue: number;
+    difference: number;
+    prorated: boolean;
+    elapsed_days: number | null;
+    days_in_month: number | null;
+  };
   expense_details?: Array<{
     gite_id: string;
     gite_name: string;
@@ -648,6 +656,26 @@ const getRevenueAverageIcon = (id: TodayRevenueAverageMetric["id"]) => {
   if (id === "previous_month") return "◐";
   return "↔";
 };
+
+const RevenueTrendIcon = ({ direction }: { direction: "up" | "down" | "flat" }) => (
+  <svg viewBox="0 0 18 12" aria-hidden="true" focusable="false">
+    {direction === "up" ? (
+      <>
+        <path d="M2 10 7 6.5l3 2L16 2" />
+        <path d="M12.5 2H16v3.5" />
+      </>
+    ) : direction === "down" ? (
+      <>
+        <path d="m2 2 5 3.5 3-2L16 10" />
+        <path d="M12.5 10H16V6.5" />
+      </>
+    ) : (
+      <path d="M2 6h14" />
+    )}
+  </svg>
+);
+
+const formatRevenueDifference = (value: number) => `${value > 0 ? "+" : ""}${formatEuro(value)}`;
 
 const TodayPage = () => {
   const navigate = useNavigate();
@@ -1494,6 +1522,16 @@ const TodayPage = () => {
           <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
             {revenueAverages.map((metric) => {
               const popoverId = `today-revenue-popover-${metric.id}`;
+              const comparisonDirection = !metric.comparison || metric.comparison.difference === 0
+                ? "flat"
+                : metric.comparison.difference > 0
+                  ? "up"
+                  : "down";
+              const comparisonProrataLabel = metric.comparison?.prorated && metric.comparison.elapsed_days
+                ? ` · ${metric.comparison.elapsed_days} j`
+                : "";
+              const comparisonReferenceYear = metric.comparison?.reference_label.match(/\d{4}$/)?.[0]
+                ?? metric.comparison?.reference_label;
               return (
                 <div
                   key={metric.id}
@@ -1534,6 +1572,22 @@ const TodayPage = () => {
                       {metric.label}
                     </span>
                     <strong>{formatEuro(metric.net_average_monthly_revenue)}</strong>
+                    {metric.comparison ? (
+                      <div
+                        className={`today-revenue-mini__trend today-revenue-mini__trend--${comparisonDirection}`}
+                        title={`Écart par rapport à ${metric.comparison.reference_label}${
+                          metric.comparison.prorated
+                            ? `, référence proratisée sur ${metric.comparison.elapsed_days} jours : ${formatEuro(metric.comparison.reference_net_revenue)}`
+                            : ` : ${formatEuro(metric.comparison.reference_net_revenue)}`
+                        }`}
+                      >
+                        <RevenueTrendIcon direction={comparisonDirection} />
+                        <small>
+                          {formatRevenueDifference(metric.comparison.difference)} · vs {comparisonReferenceYear}
+                          {comparisonProrataLabel}
+                        </small>
+                      </div>
+                    ) : null}
                   </div>
                   <span
                     id={popoverId}
