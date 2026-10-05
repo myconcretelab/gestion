@@ -11,6 +11,9 @@ type DocumentGite = {
   nom?: string | null;
   nom_avec_preposition?: string | null;
   email?: string | null;
+  adresse_ligne1?: string | null;
+  adresse_ligne2?: string | null;
+  telephones?: unknown;
 };
 
 type BaseDocumentEmail = {
@@ -112,6 +115,30 @@ const formatEuroText = (value: number | string) => {
 
 const formatStayDuration = (value: number) =>
   `${value} ${value > 1 ? "nuits" : "nuit"}`;
+
+const formatGiteAddress = (gite?: DocumentGite | null) =>
+  [gite?.adresse_ligne1, gite?.adresse_ligne2]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+const formatOwnerPhone = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.map((phone) => String(phone ?? "").trim()).filter(Boolean).join(" / ");
+  }
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.map((phone) => String(phone ?? "").trim()).filter(Boolean).join(" / ");
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+};
 
 const formatArrhesPaymentMethod = (value: string) => {
   const trimmedValue = String(value ?? "").trim();
@@ -312,6 +339,8 @@ export const buildContractEmailMessage = (
     documentUrl,
     giteName,
     giteNameWithPreposition,
+    giteAddress: formatGiteAddress(contract.gite),
+    ownerPhone: formatOwnerPhone(contract.gite?.telephones),
     documentNumber: contract.numero_contrat.trim(),
     locataireNom: contract.locataire_nom.trim(),
     giteReference: giteName ? `au ${giteName}` : "dans notre gîte",
@@ -365,6 +394,8 @@ export const buildInvoiceEmailMessage = (
     documentUrl,
     giteName,
     giteNameWithPreposition,
+    giteAddress: formatGiteAddress(invoice.gite),
+    ownerPhone: formatOwnerPhone(invoice.gite?.telephones),
     documentNumber: invoice.numero_facture.trim(),
     locataireNom: invoice.locataire_nom.trim(),
     giteSentence: giteName ? ` au ${giteName}.` : ".",

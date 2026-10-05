@@ -74,6 +74,9 @@ const bookingRequestGiteSelect = {
   nom: true,
   nom_avec_preposition: true,
   email: true,
+  adresse_ligne1: true,
+  adresse_ligne2: true,
+  telephones: true,
   photos: {
     orderBy: [{ is_primary: "desc" }, { ordre: "asc" }, { createdAt: "asc" }],
     take: 1,

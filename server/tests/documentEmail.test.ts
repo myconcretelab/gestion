@@ -137,6 +137,26 @@ test("les modèles peuvent utiliser le nom du gîte avec sa préposition", () =>
   assert.equal(customized.text, "Votre location près de la Grée.");
 });
 
+test("les modèles peuvent utiliser l'adresse du gîte et le téléphone du propriétaire", () => {
+  const settings = buildDefaultDocumentEmailTemplateSettings();
+  settings.facture.subject = "Coordonnées {{giteName}}";
+  settings.facture.bodyLines = ["Adresse : {{giteAddress}}", "Téléphone : {{ownerPhone}}"];
+  writeDocumentEmailTemplateSettings(settings);
+
+  const message = buildInvoiceEmailMessage({
+    numero_facture: "LIB-2026-02",
+    locataire_nom: "Client",
+    gite: {
+      nom: "Liberté",
+      adresse_ligne1: "1 rue de la Forêt",
+      adresse_ligne2: "56430 Mauron",
+      telephones: JSON.stringify(["06 12 34 56 78", "02 97 00 00 00"]),
+    },
+  });
+
+  assert.equal(message.text, "Adresse : 1 rue de la Forêt, 56430 Mauron\nTéléphone : 06 12 34 56 78 / 02 97 00 00 00");
+});
+
 test("buildContractEmailMessage peut preparer un email avec PDF sans mention explicite de piece jointe", () => {
   const message = buildContractEmailMessage(
     {

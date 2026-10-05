@@ -9,6 +9,9 @@ type BookingRequestEmailGite = {
   nom: string;
   nom_avec_preposition?: string | null;
   email?: string | null;
+  adresse_ligne1?: string | null;
+  adresse_ligne2?: string | null;
+  telephones?: unknown;
 };
 
 type BookingRequestEmailPayload = {
@@ -49,6 +52,30 @@ const formatPrice = (value: number) =>
 
 const formatStayDuration = (value: number) =>
   `${value} ${value > 1 ? "nuits" : "nuit"}`;
+
+const formatGiteAddress = (gite: BookingRequestEmailGite) =>
+  [gite.adresse_ligne1, gite.adresse_ligne2]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+const formatOwnerPhone = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.map((phone) => String(phone ?? "").trim()).filter(Boolean).join(" / ");
+  }
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.map((phone) => String(phone ?? "").trim()).filter(Boolean).join(" / ");
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+};
 
 const formatLongDate = (value: Date | string) =>
   new Date(value).toLocaleDateString("fr-FR", {
@@ -166,6 +193,8 @@ const buildApprovedTemplateValues = (payload: BookingRequestEmailPayload) => {
       clientName: payload.hote_nom.trim(),
       giteName,
       giteNameWithPreposition,
+      giteAddress: formatGiteAddress(payload.gite),
+      ownerPhone: formatOwnerPhone(payload.gite.telephones),
       giteReference: giteName ? `au ${giteName}` : "dans notre gîte",
       stayDuration: formatStayDuration(payload.pricing_snapshot.nb_nuits),
       dateEntree: formatBookedDateInput(payload.date_entree),

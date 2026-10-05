@@ -5983,6 +5983,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                 <div className="field-hint">
                   Variables disponibles selon le type: {"{{greeting}}"},{" "}
                   {"{{documentUrl}}"}, {"{{giteName}}"}, {"{{giteNameWithPreposition}}"}, {"{{documentNumber}}"},{" "}
+                  {"{{giteAddress}}"}, {"{{ownerPhone}}"},{" "}
                   {"{{locataireNom}}"}, {"{{giteSentence}}"},{" "}
                   {"{{giteReference}}"}, {"{{stayDuration}}"},{" "}
                   {"{{dateDebutLong}}"}, {"{{heureArrivee}}"},{" "}

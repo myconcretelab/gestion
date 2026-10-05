@@ -15,6 +15,9 @@ type BuildDocumentMailtoHrefBaseParams = {
   locataireNom: string;
   giteNom?: string | null;
   giteNameWithPreposition?: string | null;
+  giteAddressLine1?: string | null;
+  giteAddressLine2?: string | null;
+  ownerPhoneNumbers?: string[] | null;
   deliveryMode?: DocumentEmailDeliveryMode;
 };
 
@@ -72,6 +75,15 @@ const resolveDeliveryMode = (
   value?: DocumentEmailDeliveryMode | null,
 ): DocumentEmailDeliveryMode =>
   value === "attachment" ? "attachment" : "download_link";
+
+const formatGiteAddress = (line1?: string | null, line2?: string | null) =>
+  [line1, line2]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+const formatOwnerPhone = (phones?: string[] | null) =>
+  (phones ?? []).map((phone) => String(phone ?? "").trim()).filter(Boolean).join(" / ");
 
 const buildDeliveryTemplateValues = (
   documentType: BuildDocumentMailtoHrefParams["documentType"],
@@ -370,6 +382,8 @@ export const buildDocumentMailtoHref = (
     documentUrl: documentUrl.trim(),
     giteName: safeGiteNom,
     giteNameWithPreposition: safeGiteNameWithPreposition,
+    giteAddress: formatGiteAddress(params.giteAddressLine1, params.giteAddressLine2),
+    ownerPhone: formatOwnerPhone(params.ownerPhoneNumbers),
     documentNumber: safeDocumentNumber,
     locataireNom: safeLocataireNom,
     giteSentence: safeGiteNom ? ` au ${safeGiteNom}.` : ".",
@@ -439,6 +453,8 @@ export const buildBookingRequestApprovedEmailDraft = (
     clientName: request.hote_nom.trim(),
     giteName,
     giteNameWithPreposition,
+    giteAddress: formatGiteAddress(request.gite?.adresse_ligne1, request.gite?.adresse_ligne2),
+    ownerPhone: formatOwnerPhone(request.gite?.telephones),
     giteReference: giteName ? `au ${giteName}` : "dans notre gîte",
     stayDuration: formatStayDuration(request.nb_nuits),
     dateEntree: String(request.date_entree ?? "").slice(0, 10),

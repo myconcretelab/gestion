@@ -394,9 +394,12 @@ const toContractEmailDocument = (contrat: any): ContractEmailDocument => ({
   mode_paiement_arrhes: contrat.mode_paiement_arrhes ?? null,
   solde_montant: toNumber(contrat.solde_montant),
   gite: contrat.gite
-    ? {
+      ? {
         nom: contrat.gite.nom,
         email: contrat.gite.email,
+        adresse_ligne1: contrat.gite.adresse_ligne1,
+        adresse_ligne2: contrat.gite.adresse_ligne2,
+        telephones: contrat.gite.telephones,
       }
     : undefined,
 });

@@ -16,12 +16,16 @@ import {
 import {
   buildDefaultDocumentEmailTemplateSettings,
   readDocumentEmailTemplateSettings,
+  writeDocumentEmailTemplateSettings,
 } from "../src/services/documentEmailTemplateSettings.ts";
 import { buildBookingRequestApprovedEmailDraft, buildDocumentEmailTemplateSettings } from "../../client/src/utils/documentEmail.ts";
 import type { BookingRequest } from "../../client/src/utils/types.ts";
 
 const settingsPath = path.join(env.DATA_DIR, "document-email-template-settings.json");
 const originalSettings = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath, "utf-8") : null;
+test.beforeEach(() => {
+  writeDocumentEmailTemplateSettings(buildDefaultDocumentEmailTemplateSettings());
+});
 test.after(() => {
   if (originalSettings === null) fs.rmSync(settingsPath, { force: true });
   else fs.writeFileSync(settingsPath, originalSettings, "utf-8");
@@ -93,6 +97,42 @@ test("le rappel des draps reste affiché quand l'option n'est pas choisie", () =
 
   for (const text of [serverEmail.text, clientEmail.body]) {
     assert.match(text, /Petit rappel : les draps ne sont pas inclus/);
+  }
+});
+
+test("l'email d'approbation expose l'adresse du gîte et le téléphone du propriétaire", () => {
+  const settings = buildDefaultDocumentEmailTemplateSettings();
+  settings.bookingRequestApproved.bodyLines = ["{{giteAddress}}", "{{ownerPhone}}"];
+  writeDocumentEmailTemplateSettings(settings);
+  const request = {
+    ...payload,
+    gite: {
+      ...payload.gite,
+      adresse_ligne1: "1 rue de la Forêt",
+      adresse_ligne2: "56430 Mauron",
+      telephones: ["06 12 34 56 78"],
+    },
+  };
+
+  const serverEmail = buildBookingRequestApprovedMessage(request as any);
+  const clientEmail = buildBookingRequestApprovedEmailDraft(
+    { ...request, nb_nuits: 2 } as unknown as BookingRequest,
+    buildDocumentEmailTemplateSettings({
+      contrat: { subject: "", body: "", activitiesList: "", guideUrl: "", destinationUrl: "" },
+      facture: { subject: "", body: "" },
+      bookingRequestApproved: {
+        subject: serverEmail.subject,
+        body: settings.bookingRequestApproved.bodyLines.join("\n"),
+        activitiesList: "",
+        guideUrl: "",
+        destinationUrl: "",
+        smsBody: "",
+      },
+    }),
+  );
+
+  for (const text of [serverEmail.text, clientEmail.body]) {
+    assert.match(text, /^1 rue de la Forêt, 56430 Mauron\n06 12 34 56 78/);
   }
 });
 

@@ -95,6 +95,31 @@ test("buildDocumentMailtoHref conserve le template simple pour les factures", ()
   assert.match(mail.body, /agréable séjour au Liberté\./);
 });
 
+test("les variables email exposent l'adresse du gîte et le téléphone du propriétaire", () => {
+  const href = buildDocumentMailtoHref(
+    {
+      recipient: "client@example.com",
+      documentType: "facture",
+      documentNumber: "FAC-2026-000002",
+      documentUrl: "",
+      locataireNom: "Client",
+      giteNom: "Liberté",
+      giteAddressLine1: "1 rue de la Forêt",
+      giteAddressLine2: "56430 Mauron",
+      ownerPhoneNumbers: ["06 12 34 56 78", "02 97 00 00 00"],
+    },
+    {
+      facture: {
+        subject: "Coordonnées {{giteName}}",
+        bodyLines: ["Adresse : {{giteAddress}}", "Téléphone : {{ownerPhone}}"],
+      },
+    }
+  );
+
+  const mail = extractMailtoParts(href);
+  assert.equal(mail.body, "Adresse : 1 rue de la Forêt, 56430 Mauron\nTéléphone : 06 12 34 56 78 / 02 97 00 00 00");
+});
+
 test("buildDocumentEmailDraft expose le sujet et le corps editables", () => {
   const draft = buildDocumentEmailDraft({
     recipient: "client@example.com",
