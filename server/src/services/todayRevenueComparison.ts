@@ -20,6 +20,9 @@ type TodayRevenueComparisonParams = {
 export const getUtcDaysInMonth = (date: Date) =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
 
+export const getComparableNetRevenue = (netRevenue: number, personalRecurringExpenses: number) =>
+  round2(netRevenue + personalRecurringExpenses);
+
 export const buildTodayRevenueComparison = ({
   currentNetRevenue,
   referenceMonthNetRevenue,
@@ -32,11 +35,14 @@ export const buildTodayRevenueComparison = ({
   const referenceNetRevenue = prorateReference
     ? round2(referenceMonthNetRevenue * ((elapsedDays ?? 0) / (daysInMonth ?? 1)))
     : round2(referenceMonthNetRevenue);
+  const currentNetRevenueForPeriod = prorateReference
+    ? round2(currentNetRevenue * ((elapsedDays ?? 0) / (daysInMonth ?? 1)))
+    : round2(currentNetRevenue);
 
   return {
     reference_label: referenceLabel,
     reference_net_revenue: referenceNetRevenue,
-    difference: round2(currentNetRevenue - referenceNetRevenue),
+    difference: round2(currentNetRevenueForPeriod - referenceNetRevenue),
     prorated: prorateReference,
     elapsed_days: elapsedDays,
     days_in_month: daysInMonth,

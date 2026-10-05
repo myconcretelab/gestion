@@ -1527,11 +1527,6 @@ const TodayPage = () => {
                 : metric.comparison.difference > 0
                   ? "up"
                   : "down";
-              const comparisonProrataLabel = metric.comparison?.prorated && metric.comparison.elapsed_days
-                ? ` · ${metric.comparison.elapsed_days} j`
-                : "";
-              const comparisonReferenceYear = metric.comparison?.reference_label.match(/\d{4}$/)?.[0]
-                ?? metric.comparison?.reference_label;
               return (
                 <div
                   key={metric.id}
@@ -1577,15 +1572,14 @@ const TodayPage = () => {
                         className={`today-revenue-mini__trend today-revenue-mini__trend--${comparisonDirection}`}
                         title={`Écart par rapport à ${metric.comparison.reference_label}${
                           metric.comparison.prorated
-                            ? `, référence proratisée sur ${metric.comparison.elapsed_days} jours : ${formatEuro(metric.comparison.reference_net_revenue)}`
-                            : ` : ${formatEuro(metric.comparison.reference_net_revenue)}`
+                            ? `, montants proratisés sur ${metric.comparison.elapsed_days} jours`
+                            : ""
+                        } (hors frais perso récurrents) : ${
+                          formatEuro(metric.comparison.reference_net_revenue)
                         }`}
                       >
                         <RevenueTrendIcon direction={comparisonDirection} />
-                        <small>
-                          {formatRevenueDifference(metric.comparison.difference)} · vs {comparisonReferenceYear}
-                          {comparisonProrataLabel}
-                        </small>
+                        <small>{formatRevenueDifference(metric.comparison.difference)}</small>
                       </div>
                     ) : null}
                   </div>

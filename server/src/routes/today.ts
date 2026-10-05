@@ -19,6 +19,7 @@ import {
 import { buildNewReservations } from "../services/dailyReservationEmail.js";
 import {
   buildTodayRevenueComparison,
+  getComparableNetRevenue,
   type TodayRevenueComparison,
 } from "../services/todayRevenueComparison.js";
 import {
@@ -403,16 +404,28 @@ const buildTodayRevenueAverageMetrics = async (today: Date): Promise<TodayRevenu
     const financials = buildPeriodFinancials(period);
     const comparison = period.id === "previous_month"
       ? buildTodayRevenueComparison({
-          currentNetRevenue: financials.net_average_monthly_revenue,
-          referenceMonthNetRevenue: previousMonthReference.net_average_monthly_revenue,
+          currentNetRevenue: getComparableNetRevenue(
+            financials.net_average_monthly_revenue,
+            financials.personal_recurring_expenses
+          ),
+          referenceMonthNetRevenue: getComparableNetRevenue(
+            previousMonthReference.net_average_monthly_revenue,
+            previousMonthReference.personal_recurring_expenses
+          ),
           referenceLabel: formatMonthYear(previousMonthLastYearStart),
           today,
           prorateReference: false,
         })
       : period.id === "current_month"
         ? buildTodayRevenueComparison({
-            currentNetRevenue: financials.net_average_monthly_revenue,
-            referenceMonthNetRevenue: currentMonthReference.net_average_monthly_revenue,
+            currentNetRevenue: getComparableNetRevenue(
+              financials.net_average_monthly_revenue,
+              financials.personal_recurring_expenses
+            ),
+            referenceMonthNetRevenue: getComparableNetRevenue(
+              currentMonthReference.net_average_monthly_revenue,
+              currentMonthReference.personal_recurring_expenses
+            ),
             referenceLabel: formatMonthYear(currentMonthLastYearStart),
             today,
             prorateReference: true,

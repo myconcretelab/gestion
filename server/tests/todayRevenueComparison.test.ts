@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildTodayRevenueComparison,
+  getComparableNetRevenue,
   getUtcDaysInMonth,
 } from "../src/services/todayRevenueComparison.ts";
 
@@ -25,10 +26,10 @@ test("compare le mois précédent au même mois de l'année précédente", () =>
   );
 });
 
-test("proratise le mois de référence sur les jours écoulés du mois courant", () => {
+test("proratise les deux mois sur les jours écoulés du mois courant", () => {
   assert.deepEqual(
     buildTodayRevenueComparison({
-      currentNetRevenue: 500,
+      currentNetRevenue: 3_100,
       referenceMonthNetRevenue: 3_100,
       referenceLabel: "Octobre 2025",
       today: new Date("2026-10-05T00:00:00.000Z"),
@@ -43,6 +44,10 @@ test("proratise le mois de référence sur les jours écoulés du mois courant",
       days_in_month: 31,
     }
   );
+});
+
+test("compare le net sans laisser les frais personnels récurrents fausser l'écart", () => {
+  assert.equal(getComparableNetRevenue(-555.81, 3_277.58), 2_721.77);
 });
 
 test("gère correctement février lors d'une année bissextile", () => {
