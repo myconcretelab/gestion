@@ -13,7 +13,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY client/package.json client/package.json
 COPY server/package.json server/package.json
-RUN npm ci --include=dev --include=optional \
+RUN NODE_ENV=development npm ci --include=dev --include=optional \
     && npx playwright install --with-deps chromium \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client sqlite3 openssl \
