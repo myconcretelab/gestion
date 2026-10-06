@@ -38,6 +38,7 @@ import {
 } from "../utils/reservationOrigin.js";
 import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
+import { recordCleaningCheckIntervention, removeUnpaidCleaningCheckIntervention } from "../services/userInterventions.js";
 
 const router = Router();
 
@@ -204,6 +205,11 @@ router.put("/:id/cleaning-check", async (req, res, next) => {
           [actorFieldFor(scope.secondary.field)]: checked ? currentUser?.id ?? null : null,
         },
       });
+    }
+    if (changed.count && canonicalCheckedAt && checked) {
+      await recordCleaningCheckIntervention(scope.canonical.id, currentUser?.id ?? null, canonicalCheckedAt);
+    } else if (changed.count && !checked) {
+      await removeUnpaidCleaningCheckIntervention(scope.canonical.id);
     }
     let notificationWarning: string | null = null;
     if (changed.count && checked && !previousCheckedAt && canonicalCheckedAt) {

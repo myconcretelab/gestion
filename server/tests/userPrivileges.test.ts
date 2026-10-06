@@ -80,6 +80,9 @@ test("un utilisateur cumule les rôles et porte ses propres coordonnées", () =>
     email: "camille@example.com",
     adresse: "1 rue des Gîtes",
     telegram_chat_id: "123456789",
+    hourly_rate: 18,
+    cleaning_check_rate: 7.5,
+    full_cleaning_rate: 42,
     gestionnaire_id: "manager-1",
     intervenant_id: "worker-1",
     status: "owner",
@@ -92,6 +95,9 @@ test("un utilisateur cumule les rôles et porte ses propres coordonnées", () =>
   assert.deepEqual(user.roles, ["owner", "worker"]);
   assert.equal(user.telephone, "0612345678");
   assert.equal(user.telegramChatId, "123456789");
+  assert.equal(user.hourlyRate, 18);
+  assert.equal(user.cleaningCheckRate, 7.5);
+  assert.equal(user.fullCleaningRate, 42);
   assert.equal(user.permissions.isOwner, true);
   assert.deepEqual(user.pageAccess, [...APP_PAGE_IDS]);
 });

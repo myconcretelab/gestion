@@ -3,7 +3,7 @@ import { apiFetch } from "../utils/api";
 import { APP_PAGES, type AppPageId, type AppUser, type AppUserRole, type AppUserStatus } from "../utils/auth";
 import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 
-type WorkerProfile = { id?: string; hourlyRate: number; showOnToday: boolean };
+type WorkerProfile = { id?: string; showOnToday: boolean };
 type ManagedUser = AppUser & {
   gestionnaire?: { id: string; prenom: string; nom: string; gitesCount: number } | null;
   intervenant?: WorkerProfile | null;
@@ -11,7 +11,8 @@ type ManagedUser = AppUser & {
 type UserDraft = {
   firstName: string; lastName: string; roles: AppUserRole[]; canWrite: boolean;
   canViewAmounts: boolean; isActive: boolean; pageAccess: AppPageId[]; telephone: string;
-  email: string; adresse: string; telegramChatId: string; hourlyRate: string; showOnToday: boolean;
+  email: string; adresse: string; telegramChatId: string; hourlyRate: string;
+  cleaningCheckRate: string; fullCleaningRate: string; showOnToday: boolean;
 };
 type StatusPreset = {
   status: AppUserStatus; canWrite: boolean; canViewAmounts: boolean; pageAccess: AppPageId[]; locked: boolean;
@@ -29,23 +30,29 @@ const DEFAULT_STATUS_PRESETS: StatusPresetMap = {
 const emptyDraft = (presets: StatusPresetMap = DEFAULT_STATUS_PRESETS): UserDraft => ({
   firstName: "", lastName: "", roles: [], isActive: true,
   canWrite: presets.custom.canWrite, canViewAmounts: presets.custom.canViewAmounts, pageAccess: presets.custom.pageAccess,
-  telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "", showOnToday: true,
+  telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "",
+  cleaningCheckRate: "", fullCleaningRate: "", showOnToday: true,
 });
 const toDraft = (user: ManagedUser): UserDraft => ({
   firstName: user.firstName, lastName: user.lastName, roles: user.roles,
   canWrite: user.permissions.canWrite, canViewAmounts: user.permissions.canViewAmounts, isActive: user.isActive,
   pageAccess: user.permissions.isOwner ? ALL_PAGES : user.pageAccess, telephone: user.telephone ?? "",
   email: user.email ?? "", adresse: user.adresse ?? "", telegramChatId: user.telegramChatId ?? "",
-  hourlyRate: user.intervenant?.hourlyRate ? String(user.intervenant.hourlyRate).replace(".", ",") : "", showOnToday: user.intervenant?.showOnToday ?? true,
+  hourlyRate: user.hourlyRate ? String(user.hourlyRate).replace(".", ",") : "",
+  cleaningCheckRate: user.cleaningCheckRate ? String(user.cleaningCheckRate).replace(".", ",") : "",
+  fullCleaningRate: user.fullCleaningRate ? String(user.fullCleaningRate).replace(".", ",") : "",
+  showOnToday: user.intervenant?.showOnToday ?? true,
 });
 const buildPayload = (draft: UserDraft) => ({
   firstName: draft.firstName.trim(), lastName: draft.lastName.trim(), roles: draft.roles,
   telephone: draft.telephone.trim(), email: draft.email.trim() || null, adresse: draft.adresse.trim() || null,
   telegramChatId: draft.telegramChatId.trim() || null,
+  hourlyRate: Number(draft.hourlyRate.replace(",", ".")) || 0,
+  cleaningCheckRate: Number(draft.cleaningCheckRate.replace(",", ".")) || 0,
+  fullCleaningRate: Number(draft.fullCleaningRate.replace(",", ".")) || 0,
   canWrite: draft.roles.includes("owner") ? true : draft.canWrite, canViewAmounts: draft.roles.includes("owner") ? true : draft.canViewAmounts,
   isActive: draft.isActive, pageAccess: draft.roles.includes("owner") ? ALL_PAGES : draft.pageAccess,
   workerProfile: draft.roles.includes("worker") ? {
-    hourlyRate: Number(draft.hourlyRate.replace(",", ".")) || 0,
     showOnToday: draft.showOnToday,
   } : null,
 });
@@ -113,6 +120,8 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
     </div>{draft.roles.length === 0 ? <p className="field-hint">Sans statut métier, cet utilisateur conserve des droits personnalisés.</p> : null}</fieldset>
     {worker ? <fieldset className="user-editor__fieldset"><legend>Paramètres intervenant</legend><div className="grid-2">
       <label className="field">Taux horaire (€)<input inputMode="decimal" value={draft.hourlyRate} disabled={disabled} onChange={(e) => onChange({ ...draft, hourlyRate: e.target.value })} /></label>
+      <label className="field">Forfait par contrôle ménage (€)<input inputMode="decimal" value={draft.cleaningCheckRate} disabled={disabled} onChange={(e) => onChange({ ...draft, cleaningCheckRate: e.target.value })} /></label>
+      <label className="field">Forfait par ménage complet (€)<input inputMode="decimal" value={draft.fullCleaningRate} disabled={disabled} onChange={(e) => onChange({ ...draft, fullCleaningRate: e.target.value })} /></label>
       <SwitchRow title="Afficher sur Aujourd’hui" description="Permettre la saisie rapide des heures." checked={draft.showOnToday} disabled={disabled} onChange={(checked) => onChange({ ...draft, showOnToday: checked })} />
     </div></fieldset> : null}
     <fieldset className="user-editor__fieldset"><legend>Droits</legend><div className="user-permissions">

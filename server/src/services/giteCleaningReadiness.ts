@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { fromJsonString } from "../utils/jsonFields.js";
+import { recordCleaningCheckIntervention, removeUnpaidCleaningCheckIntervention } from "./userInterventions.js";
 
 export const CLEANING_CHECK_START_MINUTES = 0;
 
@@ -148,5 +149,10 @@ export const updateGiteCleaningReadiness = async (
       }),
     ] : []),
   ]);
+  if (checked) {
+    await recordCleaningCheckIntervention(readiness.departure_reservation_id, checkedByUserId, value ?? checkedAt);
+  } else {
+    await removeUnpaidCleaningCheckIntervention(readiness.departure_reservation_id);
+  }
   return value;
 };

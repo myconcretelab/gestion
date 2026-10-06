@@ -22,6 +22,9 @@ const userSchema = z.object({
   email: z.preprocess((value) => value === "" ? null : value, z.string().trim().email().max(180).nullable()).optional(),
   adresse: z.preprocess((value) => value === "" ? null : value, z.string().trim().max(500).nullable()).optional(),
   telegramChatId: z.preprocess((value) => value === "" ? null : value, z.string().trim().max(180).nullable()).optional(),
+  hourlyRate: z.coerce.number().min(0).max(10_000).default(0),
+  cleaningCheckRate: z.coerce.number().min(0).max(10_000).default(0),
+  fullCleaningRate: z.coerce.number().min(0).max(10_000).default(0),
   canWrite: z.boolean().default(false),
   canViewAmounts: z.boolean().default(false),
   status: z.enum(["owner", "worker", "custom"]).optional(),
@@ -29,7 +32,6 @@ const userSchema = z.object({
   isOwner: z.boolean().optional(),
   isActive: z.boolean().default(true),
   workerProfile: z.object({
-    hourlyRate: z.coerce.number().min(0).max(10_000).default(0),
     showOnToday: z.boolean().default(true),
   }).nullable().optional(),
 });
@@ -63,7 +65,7 @@ const resolvedPermissions = (payload: z.infer<typeof userSchema>) => {
 const workerData = (
   displayName: string,
   isActive: boolean,
-  contacts: Pick<z.infer<typeof userSchema>, "telephone" | "email" | "adresse">,
+  contacts: Pick<z.infer<typeof userSchema>, "telephone" | "email" | "adresse" | "hourlyRate">,
   profile: NonNullable<z.infer<typeof userSchema>["workerProfile"]>,
 ) => ({
   nom: displayName,
@@ -73,7 +75,7 @@ const workerData = (
   message_channel_addresses: encodeJsonField({ sms: contacts.telephone }),
   is_active: isActive,
   show_on_today: profile.showOnToday,
-  hourly_rate: profile.hourlyRate,
+  hourly_rate: contacts.hourlyRate,
 });
 
 const displayNameFor = (payload: Pick<z.infer<typeof userSchema>, "firstName" | "lastName">) =>
@@ -192,7 +194,6 @@ router.get("/", async (_req, res, next) => {
       intervenant: user.intervenant
         ? {
             id: user.intervenant.id,
-            hourlyRate: Number(user.intervenant.hourly_rate ?? 0),
             showOnToday: Boolean(user.intervenant.show_on_today),
           }
         : null,
@@ -237,6 +238,9 @@ router.post("/", async (req, res, next) => {
         email: payload.email ?? null,
         adresse: payload.adresse ?? null,
         telegram_chat_id: payload.telegramChatId ?? null,
+        hourly_rate: payload.hourlyRate,
+        cleaning_check_rate: payload.cleaningCheckRate,
+        full_cleaning_rate: payload.fullCleaningRate,
         gestionnaire_id: manager?.id ?? null,
         intervenant_id: worker?.id ?? null,
         status: permissions.status,
@@ -343,6 +347,9 @@ router.put("/:id", async (req, res, next) => {
         email: payload.email ?? null,
         adresse: payload.adresse ?? null,
         telegram_chat_id: payload.telegramChatId ?? null,
+        hourly_rate: payload.hourlyRate,
+        cleaning_check_rate: payload.cleaningCheckRate,
+        full_cleaning_rate: payload.fullCleaningRate,
         gestionnaire_id: gestionnaireId,
         intervenant_id: intervenantId,
         status: permissions.status,

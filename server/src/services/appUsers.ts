@@ -74,6 +74,9 @@ export type AppUserSummary = {
   email: string | null;
   adresse: string | null;
   telegramChatId: string | null;
+  hourlyRate: number;
+  cleaningCheckRate: number;
+  fullCleaningRate: number;
   pageAccess: AppPageId[];
   isActive: boolean;
   permissions: AppUserPermissions;
@@ -149,6 +152,9 @@ export const serializeAppUser = (user: {
   email?: string | null;
   adresse?: string | null;
   telegram_chat_id?: string | null;
+  hourly_rate?: unknown;
+  cleaning_check_rate?: unknown;
+  full_cleaning_rate?: unknown;
   page_access: unknown;
   can_write: boolean;
   can_view_amounts: boolean;
@@ -180,6 +186,9 @@ export const serializeAppUser = (user: {
     email: user.email?.trim() || null,
     adresse: user.adresse?.trim() || null,
     telegramChatId: user.telegram_chat_id?.trim() || null,
+    hourlyRate: Number(user.hourly_rate ?? 0),
+    cleaningCheckRate: Number(user.cleaning_check_rate ?? 0),
+    fullCleaningRate: Number(user.full_cleaning_rate ?? 0),
     pageAccess: normalizePageAccess(user.page_access, owner),
     isActive: user.is_active,
     permissions: {
@@ -260,6 +269,7 @@ export const ensureAppUsersInitialized = async () => {
               email: worker.email,
               adresse: worker.adresse,
               telegram_chat_id: fromJsonString<Record<string, string>>(worker.message_channel_addresses, {}).telegram ?? null,
+              hourly_rate: worker.hourly_rate,
             },
           });
           continue;
@@ -275,6 +285,7 @@ export const ensureAppUsersInitialized = async () => {
             email: worker.email,
             adresse: worker.adresse,
             telegram_chat_id: fromJsonString<Record<string, string>>(worker.message_channel_addresses, {}).telegram ?? null,
+            hourly_rate: worker.hourly_rate,
             status: "worker",
             page_access: encodeJsonField(workerPreset.pageAccess),
             can_write: workerPreset.canWrite,

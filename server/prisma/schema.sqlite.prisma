@@ -96,6 +96,7 @@ model Gite {
   expense_recurring_rules              ExpenseRecurringRule[]
   expense_entries                      ExpenseEntry[]
   intervenant_expenses                 IntervenantExpense[]
+  user_interventions                   UserIntervention[]
 
   @@unique([public_slug], map: "gites_public_slug_key")
   @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
@@ -176,6 +177,9 @@ model AppUser {
   email            String?
   adresse          String?
   telegram_chat_id String?
+  hourly_rate      Float    @default(0)
+  cleaning_check_rate Float @default(0)
+  full_cleaning_rate Float  @default(0)
   gestionnaire_id  String?  @unique
   intervenant_id   String?  @unique
   status           String   @default("custom")
@@ -191,6 +195,7 @@ model AppUser {
   intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
   arrival_cleaning_checks Reservation[] @relation("ArrivalCleaningCheckedBy")
   departure_cleaning_checks Reservation[] @relation("DepartureCleaningCheckedBy")
+  interventions UserIntervention[]
 
   @@index([is_active, display_name], map: "app_users_active_name_idx")
   @@map("app_users")
@@ -547,6 +552,30 @@ model IntervenantHourEntry {
   @@map("intervenant_hour_entries")
 }
 
+model UserIntervention {
+  id              String   @id @default(cuid())
+  user_id         String?
+  user_name       String
+  kind            String
+  occurred_on     String
+  gite_id         String?
+  gite_name       String?
+  reservation_id  String?
+  source_key      String?  @unique
+  amount_snapshot Float
+  paid_at         DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user        AppUser?     @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  gite        Gite?        @relation(fields: [gite_id], references: [id], onDelete: SetNull)
+  reservation Reservation? @relation(fields: [reservation_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, paid_at], map: "user_interventions_user_paid_idx")
+  @@index([occurred_on, kind], map: "user_interventions_date_kind_idx")
+  @@map("user_interventions")
+}
+
 model IntervenantExpense {
   id             String   @id @default(cuid())
   intervenant_id String?
@@ -644,6 +673,7 @@ model Reservation {
   approved_booking_requests BookingRequest[]      @relation("ApprovedBookingRequest")
   arrival_cleaning_checked_by AppUser? @relation("ArrivalCleaningCheckedBy", fields: [arrival_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
   departure_cleaning_checked_by AppUser? @relation("DepartureCleaningCheckedBy", fields: [departure_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
+  user_interventions UserIntervention[]
 
   @@index([gite_id, date_entree])
   @@index([gite_id, date_sortie], map: "reservations_gite_id_date_sortie_idx")

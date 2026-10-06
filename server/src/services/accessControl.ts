@@ -72,6 +72,7 @@ const PAGE_API_PREFIXES: Array<[string, AppPageId]> = [
   ["/personal-expenses", "personal_expenses"],
   ["/planning-relay-periods", "planning_relay"],
   ["/intervenants", "planning_relay"],
+  ["/interventions", "planning_relay"],
   ["/settings", "settings"],
   ["/users/owners", "gites"],
   ["/users", "settings"],

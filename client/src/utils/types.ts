@@ -174,6 +174,7 @@ export type PlanningRelaySmsProgrammeTemplate = {
 
 export type Intervenant = {
   id: string;
+  user_id?: string | null;
   nom: string;
   telephone: string;
   email: string | null;
@@ -182,6 +183,8 @@ export type Intervenant = {
   is_active: boolean;
   show_on_today?: boolean;
   hourly_rate: number;
+  cleaning_check_rate?: number;
+  full_cleaning_rate?: number;
   expenses?: IntervenantExpense[];
   created_at: string;
   updated_at: string;

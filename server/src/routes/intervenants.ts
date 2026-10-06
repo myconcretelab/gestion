@@ -68,6 +68,7 @@ const serializeIntervenantExpense = (expense: any) => ({
 
 const serializeIntervenant = (intervenant: any) => ({
   id: intervenant.id,
+  user_id: intervenant.app_user?.id ?? null,
   nom: intervenant.app_user?.display_name ?? intervenant.nom,
   telephone: intervenant.app_user?.telephone ?? intervenant.telephone,
   email: intervenant.app_user?.email ?? intervenant.email ?? null,
@@ -82,7 +83,9 @@ const serializeIntervenant = (intervenant: any) => ({
   },
   is_active: Boolean(intervenant.is_active),
   show_on_today: Boolean(intervenant.show_on_today),
-  hourly_rate: Number(intervenant.hourly_rate ?? 0),
+  hourly_rate: Number(intervenant.app_user?.hourly_rate ?? intervenant.hourly_rate ?? 0),
+  cleaning_check_rate: Number(intervenant.app_user?.cleaning_check_rate ?? 0),
+  full_cleaning_rate: Number(intervenant.app_user?.full_cleaning_rate ?? 0),
   expenses: Array.isArray(intervenant.expenses)
     ? intervenant.expenses.map(serializeIntervenantExpense)
     : [],
@@ -297,6 +300,7 @@ router.patch("/:id", async (req, res, next) => {
           ...(payload.adresse !== undefined ? { adresse: payload.adresse } : {}),
           ...(telegramChatId !== undefined ? { telegram_chat_id: telegramChatId || null } : {}),
           ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
+          ...(payload.hourly_rate !== undefined ? { hourly_rate: payload.hourly_rate } : {}),
         } });
       }
       return worker;

@@ -3,13 +3,21 @@
 .intervenants-hero h1, .intervenants-history h2 { margin: 3px 0 6px; color: var(--ink); }
 .intervenants-hero p { max-width: 720px; margin: 0; color: var(--muted); line-height: 1.55; }
 .intervenants-hero__eyebrow { color: var(--primary); font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.intervenants-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.intervenants-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .intervenants-kpis article { display: grid; gap: 5px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
 .intervenants-kpis span { color: var(--muted); font-size: .78rem; }
 .intervenants-kpis strong { font-size: 1.35rem; }
 .intervenants-layout { display: block; }
+.intervenants-grid { display: grid; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr); gap: 16px; align-items: start; }
 .intervenants-create-card, .intervenant-profile, .intervenants-history { padding: 18px; }
-.intervenants-create-card { position: sticky; top: 12px; display: grid; gap: 15px; }
+.intervenants-create-card { display: grid; gap: 15px; }
+.intervenants-summary, .intervenants-operational { padding: 18px; display: grid; gap: 16px; }
+.intervenants-summary h2, .intervenants-operational h2, .intervenants-create-card h2 { margin: 3px 0 0; }
+.intervenants-summary__table { min-width: 900px; }
+.intervenants-summary__table td:first-child { display: grid; gap: 3px; }
+.intervenants-summary__table small, .intervenants-operational__row small { color: var(--muted); }
+.intervenants-operational__row { display: grid; grid-template-columns: minmax(160px, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--border); }
+.intervenants-operational__row > div { display: grid; gap: 3px; }
 .intervenants-profiles { display: grid; gap: 12px; }
 .intervenant-profile { display: grid; gap: 16px; }
 .intervenant-profile.is-disabled { opacity: .72; }
@@ -35,13 +43,14 @@
 .intervenants-status--paid { color: #166534; background: #dcfce7; }
 @media (max-width: 900px) {
   .intervenants-layout { grid-template-columns: 1fr; }
-  .intervenants-create-card { position: static; }
+  .intervenants-grid { grid-template-columns: 1fr; }
+  .intervenants-kpis { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 640px) {
   .intervenants-page { gap: 12px; }
   .intervenants-hero { align-items: flex-start; flex-direction: column; padding: 18px; border-radius: 18px; }
   .intervenants-kpis { grid-template-columns: 1fr 1fr; }
-  .intervenants-kpis article:last-child { grid-column: 1 / -1; }
+  .intervenants-operational__row { grid-template-columns: 1fr; }
   .intervenant-fields--compact { grid-template-columns: 1fr 1fr; }
   .intervenant-profile__actions > button { flex: 1 1 130px; }
   .intervenants-history__filters, .intervenants-history__filters label { width: 100%; }

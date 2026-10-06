@@ -44,7 +44,8 @@ router.get("/", async (req, res, next) => {
     const date = workDate.parse(req.query.date);
     const [workers, entries, unpaidTotals] = await Promise.all([
       prisma.planningRelayWorker.findMany({
-        select: { id: true, nom: true, is_active: true, show_on_today: true, hourly_rate: true },
+        select: { id: true, nom: true, is_active: true, show_on_today: true, hourly_rate: true,
+          app_user: { select: { id: true, display_name: true, hourly_rate: true, cleaning_check_rate: true, full_cleaning_rate: true } } },
         orderBy: [{ nom: "asc" }, { id: "asc" }],
       }),
       prisma.intervenantHourEntry.findMany({
@@ -61,7 +62,12 @@ router.get("/", async (req, res, next) => {
     return res.json({
       workers: workers.map((worker) => ({
         ...worker,
-        hourly_rate: Number(worker.hourly_rate ?? 0),
+        nom: worker.app_user?.display_name ?? worker.nom,
+        user_id: worker.app_user?.id ?? null,
+        hourly_rate: Number(worker.app_user?.hourly_rate ?? worker.hourly_rate ?? 0),
+        cleaning_check_rate: Number(worker.app_user?.cleaning_check_rate ?? 0),
+        full_cleaning_rate: Number(worker.app_user?.full_cleaning_rate ?? 0),
+        app_user: undefined,
         unpaid_minutes: unpaidByWorker.get(worker.id) ?? 0,
       })),
       entries: entries.map(serializeEntry),
@@ -96,31 +102,47 @@ router.post("/:workerId/settle", async (req, res, next) => {
   try {
     const worker = await prisma.planningRelayWorker.findUnique({
       where: { id: req.params.workerId },
-      select: { id: true, nom: true, hourly_rate: true },
+      select: { id: true, nom: true, hourly_rate: true,
+        app_user: { select: { id: true, display_name: true, hourly_rate: true } } },
     });
     if (!worker) return res.status(404).json({ error: "Intervenant introuvable." });
-    const entries = await prisma.intervenantHourEntry.findMany({
-      where: { intervenant_id: worker.id, deleted_at: null, paid_at: null },
-      select: { id: true, minutes: true },
-    });
+    const [entries, interventions] = await Promise.all([
+      prisma.intervenantHourEntry.findMany({
+        where: { intervenant_id: worker.id, deleted_at: null, paid_at: null },
+        select: { id: true, minutes: true },
+      }),
+      worker.app_user ? prisma.userIntervention.findMany({
+        where: { user_id: worker.app_user.id, paid_at: null },
+        select: { id: true, amount_snapshot: true },
+      }) : [],
+    ]);
     const totalMinutes = entries.reduce((sum, entry) => sum + entry.minutes, 0);
-    const hourlyRate = Number(worker.hourly_rate ?? 0);
-    if (!entries.length) {
+    const hourlyRate = Number(worker.app_user?.hourly_rate ?? worker.hourly_rate ?? 0);
+    const interventionAmount = interventions.reduce((sum, entry) => sum + Number(entry.amount_snapshot ?? 0), 0);
+    if (!entries.length && !interventions.length) {
       return res.json({ worker_id: worker.id, worker_name: worker.nom, entry_count: 0,
-        total_minutes: 0, hourly_rate: hourlyRate, amount: 0, paid_at: null });
+        intervention_count: 0, total_minutes: 0, hourly_rate: hourlyRate, amount: 0, paid_at: null });
     }
     const paidAt = new Date();
-    const updated = await prisma.intervenantHourEntry.updateMany({
-      where: { id: { in: entries.map((entry) => entry.id) }, paid_at: null, deleted_at: null },
-      data: { paid_at: paidAt, hourly_rate_snapshot: hourlyRate },
-    });
+    const [updatedHours, updatedInterventions] = await Promise.all([
+      prisma.intervenantHourEntry.updateMany({
+        where: { id: { in: entries.map((entry) => entry.id) }, paid_at: null, deleted_at: null },
+        data: { paid_at: paidAt, hourly_rate_snapshot: hourlyRate },
+      }),
+      prisma.userIntervention.updateMany({
+        where: { id: { in: interventions.map((entry) => entry.id) }, paid_at: null },
+        data: { paid_at: paidAt },
+      }),
+    ]);
+    const hoursAmount = Math.round((totalMinutes / 60) * hourlyRate * 100) / 100;
     return res.json({
       worker_id: worker.id,
-      worker_name: worker.nom,
-      entry_count: updated.count,
+      worker_name: worker.app_user?.display_name ?? worker.nom,
+      entry_count: updatedHours.count,
+      intervention_count: updatedInterventions.count,
       total_minutes: totalMinutes,
       hourly_rate: hourlyRate,
-      amount: Math.round((totalMinutes / 60) * hourlyRate * 100) / 100,
+      amount: Math.round((hoursAmount + interventionAmount) * 100) / 100,
       paid_at: paidAt.toISOString(),
     });
   } catch (error) { return next(error); }

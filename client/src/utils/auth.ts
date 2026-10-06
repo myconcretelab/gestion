@@ -32,6 +32,9 @@ export type AppUser = {
   email: string | null;
   adresse: string | null;
   telegramChatId: string | null;
+  hourlyRate: number;
+  cleaningCheckRate: number;
+  fullCleaningRate: number;
   pageAccess: AppPageId[];
   isActive: boolean;
   permissions: {
