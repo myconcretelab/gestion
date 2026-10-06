@@ -28,6 +28,13 @@ test("un jeton d'intégration est hashé, limité à ses scopes et révocable", 
 });
 
 test("un PDF privé, la liste de comptes et les API hors rôle sont refusés", async () => {
+  const previousInstallation = await prisma.installationConfig.findUnique({ where: { id: "default" } });
+  const previousModules = previousInstallation ? JSON.parse(previousInstallation.modules_json) as Record<string, boolean> : {};
+  await prisma.installationConfig.upsert({
+    where: { id: "default" },
+    update: { modules_json: JSON.stringify({ ...previousModules, contracts: true, worker_planning: true }) },
+    create: { id: "default", organization_json: "{}", modules_json: JSON.stringify({ contracts: true, worker_planning: true }) },
+  });
   const suffix = crypto.randomUUID();
   const loginId = `pilot-worker-${suffix}`;
   const user = await prisma.appUser.create({ data: {
@@ -71,5 +78,10 @@ test("un PDF privé, la liste de comptes et les API hors rôle sont refusés", a
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await prisma.appUser.delete({ where: { id: user.id } });
+    if (previousInstallation) {
+      await prisma.installationConfig.update({ where: { id: "default" }, data: { modules_json: previousInstallation.modules_json } });
+    } else {
+      await prisma.installationConfig.delete({ where: { id: "default" } });
+    }
   }
 });

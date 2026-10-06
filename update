@@ -222,13 +222,29 @@ else
     echo "==> Skip Playwright install (SKIP_PLAYWRIGHT_INSTALL=1)"
   fi
 
-  run_step "Generate Prisma client (PostgreSQL)" npm run prod:generate
-
   if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
-    run_step "Run tests" npm run test
+    TEST_RUNTIME_DIR="$(mktemp -d)"
+    TEST_DATABASE_URL="file:${TEST_RUNTIME_DIR}/test.db"
+    touch "${TEST_RUNTIME_DIR}/test.db"
+    cleanup_test_runtime() {
+      rm -rf -- "${TEST_RUNTIME_DIR}"
+    }
+    trap cleanup_test_runtime EXIT
+    run_step "Select SQLite schema for isolated tests" npm run prisma:use:sqlite
+    run_step "Generate Prisma client (isolated tests)" env DATABASE_URL="${TEST_DATABASE_URL}" npm run prisma:generate
+    run_step \
+      "Prepare isolated test database" \
+      env DATABASE_URL="${TEST_DATABASE_URL}" bash -c 'cd server && node scripts/prisma.mjs migrate deploy'
+    run_step \
+      "Run tests against isolated SQLite database" \
+      env DATABASE_URL="${TEST_DATABASE_URL}" DATA_DIR="${TEST_RUNTIME_DIR}/data" npm run test
+    cleanup_test_runtime
+    trap - EXIT
   else
     echo "==> Skip tests (SKIP_TESTS=1)"
   fi
+
+  run_step "Generate Prisma client (PostgreSQL)" npm run prod:generate
 fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
