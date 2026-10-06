@@ -21,4 +21,4 @@ FROM "planning_relay_workers" worker
 WHERE worker."id" = app_user."intervenant_id";
 
 UPDATE "planning_relay_workers"
-SET "message_channel_addresses" = ("message_channel_addresses"::jsonb - 'telegram')::text;
+SET "message_channel_addresses" = "message_channel_addresses" - 'telegram';
