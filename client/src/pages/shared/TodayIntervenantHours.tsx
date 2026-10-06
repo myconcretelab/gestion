@@ -242,7 +242,7 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
                 {worker.nom}
               </label>
             ))}
-            <Link to="/parametres/intervenants">Gérer les intervenants</Link>
+            <Link to="/interventions">Gérer les interventions</Link>
           </div>}
           {!visibleWorkers.length && !choosingWorkers && <button type="button"
             className="today-hours__empty" disabled={locked} onClick={() => setChoosingWorkers(true)}>

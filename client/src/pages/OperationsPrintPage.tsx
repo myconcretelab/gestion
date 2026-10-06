@@ -1208,7 +1208,7 @@ const OperationsPrintPage = () => {
                 </div>
               ) : null}
               <p>Chaque période peut envoyer son programme à plusieurs intervenants via le canal choisi.</p>
-              <Link className="secondary button-link" to="/parametres/intervenants">
+              <Link className="secondary button-link" to="/interventions">
                 Gérer les intervenants
               </Link>
             </div>

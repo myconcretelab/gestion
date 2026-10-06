@@ -23,6 +23,7 @@ const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const ProfessionalExpensesPage = lazy(() => import("./pages/ProfessionalExpensesPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
 const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
@@ -323,6 +324,9 @@ const App = () => {
   const isSeasonRatesSection =
     location.pathname === "/tarifs" ||
     location.pathname.startsWith("/tarifs/");
+  const isInterventionsSection =
+    location.pathname === "/interventions" ||
+    location.pathname.startsWith("/interventions/");
   const isSettingsSection =
     location.pathname === "/parametres" ||
     location.pathname.startsWith("/parametres/");
@@ -412,6 +416,14 @@ const App = () => {
       pageId: "rates" as const,
       label: "Tarifs",
       isActive: isSeasonRatesSection,
+      desktopOverflow: true,
+      requiresAmounts: true,
+    },
+    {
+      to: "/interventions",
+      pageId: "settings" as const,
+      label: "Interventions",
+      isActive: isInterventionsSection,
       desktopOverflow: true,
       requiresAmounts: true,
     },
@@ -962,7 +974,8 @@ const App = () => {
             <Route path="/frais-personnels" element={<PageAccess allowed={canAccessPage("personal_expenses")}><AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/tarifs" element={<PageAccess allowed={canAccessPage("rates")}><AmountsAccess allowed={canViewAmounts}><SeasonRatesPage /></AmountsAccess></PageAccess>} />
-            <Route path="/parametres/intervenants" element={<Navigate to="/parametres/utilisateurs" replace />} />
+            <Route path="/interventions" element={<PageAccess allowed={canAccessPage("settings")}><AmountsAccess allowed={canViewAmounts}><IntervenantsPage /></AmountsAccess></PageAccess>} />
+            <Route path="/parametres/intervenants" element={<Navigate to="/interventions" replace />} />
             <Route path="/parametres/equipe" element={<Navigate to="/parametres/utilisateurs" replace />} />
             <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
           </Routes>
