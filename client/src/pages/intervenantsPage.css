@@ -7,7 +7,7 @@
 .intervenants-kpis article { display: grid; gap: 5px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
 .intervenants-kpis span { color: var(--muted); font-size: .78rem; }
 .intervenants-kpis strong { font-size: 1.35rem; }
-.intervenants-layout { display: grid; grid-template-columns: minmax(250px, .68fr) minmax(0, 1.32fr); align-items: start; gap: 16px; }
+.intervenants-layout { display: block; }
 .intervenants-create-card, .intervenant-profile, .intervenants-history { padding: 18px; }
 .intervenants-create-card { position: sticky; top: 12px; display: grid; gap: 15px; }
 .intervenants-profiles { display: grid; gap: 12px; }

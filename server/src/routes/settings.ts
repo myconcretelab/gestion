@@ -84,6 +84,7 @@ import {
   buildTelegramNotificationState,
   mergeTelegramNotificationConfig,
   readTelegramNotificationConfig,
+  resolveTelegramNotificationRecipients,
   writeTelegramNotificationConfig,
   type TelegramNotificationConfig,
 } from "../services/telegramNotifications.js";
@@ -327,6 +328,7 @@ const telegramNotificationSettingsSchema = z.object({
   chat_ids: z
     .array(z.string().trim().min(1))
     .default([]),
+  recipient_user_ids: z.array(z.string().trim().min(1)).default([]),
   notify_gite_checked: z.boolean().optional(),
   gite_check_mentions: z.array(z.string().trim().regex(/^@?[a-zA-Z][a-zA-Z0-9_]{4,31}$/, "Pseudo Telegram invalide.")).optional(),
   notify_booking_request_created: z.boolean().default(true),
@@ -1492,11 +1494,13 @@ router.put("/telegram", (req, res, next) => {
 router.post("/telegram/test", async (req, res, next) => {
   try {
     const payload = telegramNotificationTestSchema.parse(req.body ?? {});
+    const telegramConfig = readTelegramNotificationConfig(
+      buildDefaultTelegramNotificationConfig(),
+    );
     const result = await sendMessage("telegram", {
       message: payload.message,
-      options: readTelegramNotificationConfig(
-        buildDefaultTelegramNotificationConfig(),
-      ),
+      recipients: await resolveTelegramNotificationRecipients(telegramConfig),
+      options: telegramConfig,
     });
     res.json({ ok: result.skipped_reason === null, ...result });
   } catch (error) {

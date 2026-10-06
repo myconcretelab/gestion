@@ -4,30 +4,31 @@ import prisma from "../db/prisma.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import {
   APP_PAGE_IDS,
+  APP_USER_ROLES,
   ensureAppUsersInitialized,
   listStatusPresets,
-  normalizeAppUserStatus,
   serializeAppUser,
   serializeStatusPreset,
 } from "../services/appUsers.js";
-import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
+import { encodeJsonField } from "../utils/jsonFields.js";
 
 const router = Router();
 
 const userSchema = z.object({
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().max(100).default(""),
+  roles: z.array(z.enum(APP_USER_ROLES)).optional(),
+  telephone: z.string().trim().max(32).default(""),
+  email: z.preprocess((value) => value === "" ? null : value, z.string().trim().email().max(180).nullable()).optional(),
+  adresse: z.preprocess((value) => value === "" ? null : value, z.string().trim().max(500).nullable()).optional(),
+  telegramChatId: z.preprocess((value) => value === "" ? null : value, z.string().trim().max(180).nullable()).optional(),
   canWrite: z.boolean().default(false),
   canViewAmounts: z.boolean().default(false),
-  status: z.enum(["owner", "worker", "custom"]).default("custom"),
+  status: z.enum(["owner", "worker", "custom"]).optional(),
   pageAccess: z.array(z.enum(APP_PAGE_IDS)).default([]),
   isOwner: z.boolean().optional(),
   isActive: z.boolean().default(true),
   workerProfile: z.object({
-    telephone: z.string().trim().min(1).max(32),
-    email: z.string().trim().email().max(180).nullable().optional(),
-    adresse: z.string().trim().max(500).nullable().optional(),
-    telegramChatId: z.string().trim().max(180).nullable().optional(),
     hourlyRate: z.coerce.number().min(0).max(10_000).default(0),
     showOnToday: z.boolean().default(true),
   }).nullable().optional(),
@@ -40,9 +41,17 @@ const statusPresetSchema = z.object({
 });
 
 const resolvedPermissions = (payload: z.infer<typeof userSchema>) => {
-  const status = normalizeAppUserStatus(payload.status);
-  const isOwner = status === "owner";
+  const legacyRoles = payload.status === "owner"
+    ? ["owner"] as const
+    : payload.status === "worker"
+      ? ["worker"] as const
+      : [];
+  const requestedRoles: readonly string[] = payload.roles ?? legacyRoles;
+  const roles = APP_USER_ROLES.filter((role) => requestedRoles.includes(role));
+  const isOwner = roles.includes("owner");
+  const status = isOwner ? "owner" : roles.includes("worker") ? "worker" : "custom";
   return {
+    roles,
     status,
     isOwner,
     canWrite: isOwner ? true : payload.canWrite,
@@ -51,15 +60,17 @@ const resolvedPermissions = (payload: z.infer<typeof userSchema>) => {
   };
 };
 
-const workerData = (displayName: string, isActive: boolean, profile: NonNullable<z.infer<typeof userSchema>["workerProfile"]>) => ({
+const workerData = (
+  displayName: string,
+  isActive: boolean,
+  contacts: Pick<z.infer<typeof userSchema>, "telephone" | "email" | "adresse">,
+  profile: NonNullable<z.infer<typeof userSchema>["workerProfile"]>,
+) => ({
   nom: displayName,
-  telephone: profile.telephone,
-  email: profile.email ?? null,
-  adresse: profile.adresse ?? null,
-  message_channel_addresses: encodeJsonField({
-    sms: profile.telephone,
-    ...(profile.telegramChatId ? { telegram: profile.telegramChatId } : {}),
-  }),
+  telephone: contacts.telephone,
+  email: contacts.email ?? null,
+  adresse: contacts.adresse ?? null,
+  message_channel_addresses: encodeJsonField({ sms: contacts.telephone }),
   is_active: isActive,
   show_on_today: profile.showOnToday,
   hourly_rate: profile.hourlyRate,
@@ -181,10 +192,6 @@ router.get("/", async (_req, res, next) => {
       intervenant: user.intervenant
         ? {
             id: user.intervenant.id,
-            telephone: user.intervenant.telephone,
-            email: user.intervenant.email ?? null,
-            adresse: user.intervenant.adresse ?? null,
-            telegramChatId: fromJsonString<Record<string, string>>(user.intervenant.message_channel_addresses, {}).telegram ?? null,
             hourlyRate: Number(user.intervenant.hourly_rate ?? 0),
             showOnToday: Boolean(user.intervenant.show_on_today),
           }
@@ -200,8 +207,8 @@ router.post("/", async (req, res, next) => {
     const payload = userSchema.parse(req.body);
     const permissions = resolvedPermissions(payload);
     const displayName = displayNameFor(payload);
-    if (permissions.status === "worker" && !payload.workerProfile) {
-      return res.status(400).json({ error: "Les coordonnées de l’intervenant sont requises." });
+    if (permissions.roles.includes("worker") && (!payload.workerProfile || !payload.telephone)) {
+      return res.status(400).json({ error: "Le téléphone et les informations de l’intervenant sont requis." });
     }
 
     const matchingManager = permissions.isOwner
@@ -215,8 +222,8 @@ router.post("/", async (req, res, next) => {
     }
 
     const user = await prisma.$transaction(async (tx) => {
-      const worker = payload.workerProfile
-        ? await tx.planningRelayWorker.create({ data: workerData(displayName, payload.isActive, payload.workerProfile) })
+      const worker = permissions.roles.includes("worker") && payload.workerProfile
+        ? await tx.planningRelayWorker.create({ data: workerData(displayName, payload.isActive, payload, payload.workerProfile) })
         : null;
       const manager = permissions.isOwner
         ? matchingManager ?? await tx.gestionnaire.create({ data: { prenom: payload.firstName, nom: payload.lastName } })
@@ -225,6 +232,11 @@ router.post("/", async (req, res, next) => {
         display_name: displayName,
         first_name: payload.firstName,
         last_name: payload.lastName,
+        roles: encodeJsonField(permissions.roles),
+        telephone: payload.telephone || null,
+        email: payload.email ?? null,
+        adresse: payload.adresse ?? null,
+        telegram_chat_id: payload.telegramChatId ?? null,
         gestionnaire_id: manager?.id ?? null,
         intervenant_id: worker?.id ?? null,
         status: permissions.status,
@@ -274,8 +286,8 @@ router.put("/:id", async (req, res, next) => {
       });
     }
 
-    if (permissions.status === "worker" && !payload.workerProfile) {
-      return res.status(400).json({ error: "Les coordonnées de l’intervenant sont requises." });
+    if (permissions.roles.includes("worker") && (!payload.workerProfile || !payload.telephone)) {
+      return res.status(400).json({ error: "Le téléphone et les informations de l’intervenant sont requis." });
     }
 
 
@@ -291,13 +303,25 @@ router.put("/:id", async (req, res, next) => {
 
     const user = await prisma.$transaction(async (tx) => {
       let intervenantId = existing.intervenant_id;
-      if (payload.workerProfile) {
+      if (permissions.roles.includes("worker") && payload.workerProfile) {
         if (intervenantId) {
-          await tx.planningRelayWorker.update({ where: { id: intervenantId }, data: workerData(displayName, payload.isActive, payload.workerProfile) });
+          await tx.planningRelayWorker.update({ where: { id: intervenantId }, data: workerData(displayName, payload.isActive, payload, payload.workerProfile) });
         } else {
-          const worker = await tx.planningRelayWorker.create({ data: workerData(displayName, payload.isActive, payload.workerProfile) });
+          const worker = await tx.planningRelayWorker.create({ data: workerData(displayName, payload.isActive, payload, payload.workerProfile) });
           intervenantId = worker.id;
         }
+      } else if (intervenantId) {
+        await tx.planningRelayWorker.update({
+          where: { id: intervenantId },
+          data: {
+            nom: displayName,
+            telephone: payload.telephone || existing.telephone || "Non renseigné",
+            email: payload.email ?? null,
+            adresse: payload.adresse ?? null,
+            message_channel_addresses: encodeJsonField({ sms: payload.telephone }),
+            is_active: false,
+          },
+        });
       }
       let gestionnaireId = existing.gestionnaire_id;
       if (gestionnaireId) {
@@ -314,6 +338,11 @@ router.put("/:id", async (req, res, next) => {
         display_name: displayName,
         first_name: payload.firstName,
         last_name: payload.lastName,
+        roles: encodeJsonField(permissions.roles),
+        telephone: payload.telephone || null,
+        email: payload.email ?? null,
+        adresse: payload.adresse ?? null,
+        telegram_chat_id: payload.telegramChatId ?? null,
         gestionnaire_id: gestionnaireId,
         intervenant_id: intervenantId,
         status: permissions.status,

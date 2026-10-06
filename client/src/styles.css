@@ -18308,6 +18308,44 @@ button.personal-expenses-status:disabled {
   font-weight: 750;
 }
 
+.user-role-grid,
+.user-permissions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.user-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 48px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-soft) 28%, white);
+  cursor: pointer;
+}
+
+.user-switch-row > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.user-switch-row small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.user-switch-row .switch {
+  flex: 0 0 auto;
+}
+
+.user-switch-row .switch input:checked + .slider {
+  background: var(--primary);
+}
+
 .user-page-access {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -18326,9 +18364,6 @@ button.personal-expenses-status:disabled {
 }
 
 .user-permissions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
   margin: 16px 0;
 }
 
@@ -18351,7 +18386,7 @@ button.personal-expenses-status:disabled {
 }
 
 @media (max-width: 760px) {
-  .user-permissions { grid-template-columns: 1fr; }
+  .user-permissions, .user-role-grid { grid-template-columns: 1fr; }
   .user-page-access { grid-template-columns: 1fr; }
   .user-list-toolbar, .user-editor-card__header { align-items: flex-start; flex-direction: column; }
   .topbar-user, .access-badge { display: none; }

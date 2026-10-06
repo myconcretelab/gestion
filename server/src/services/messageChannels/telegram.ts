@@ -8,6 +8,7 @@ export type TelegramMessageChannelOptions = {
   enabled: boolean;
   bot_token: string;
   chat_ids: string[];
+  recipient_user_ids?: string[];
   parse_mode?: "HTML" | null;
   has_explicit_recipients?: boolean;
   reply_markup?: {
@@ -58,7 +59,7 @@ export const telegramMessageChannel: MessageChannel = {
     const options = rawOptions as TelegramMessageChannelOptions | undefined;
     const missing = [];
     if (!options?.bot_token.trim()) missing.push("bot_token");
-    if (!options?.has_explicit_recipients && !options?.chat_ids.length) {
+    if (!options?.has_explicit_recipients && !options?.chat_ids.length && !options?.recipient_user_ids?.length) {
       missing.push("chat_ids");
     }
     return {

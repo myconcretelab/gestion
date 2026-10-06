@@ -191,6 +191,7 @@ export const getPlanningRelayWorkerChannelAddress = (
   worker: {
     telephone: string;
     message_channel_addresses?: unknown;
+    app_user?: { telephone?: string | null; telegram_chat_id?: string | null } | null;
   },
   channel: PlanningRelayMessageChannel,
 ) => {
@@ -198,7 +199,10 @@ export const getPlanningRelayWorkerChannelAddress = (
     worker.message_channel_addresses,
     {},
   );
-  if (channel === "sms") return worker.telephone.trim();
+  if (channel === "sms") return (worker.app_user?.telephone ?? worker.telephone).trim();
+  if (channel === "telegram" && worker.app_user?.telegram_chat_id?.trim()) {
+    return worker.app_user.telegram_chat_id.trim();
+  }
   return typeof addresses[channel] === "string"
     ? addresses[channel].trim()
     : "";
@@ -210,6 +214,7 @@ export const resolvePlanningRelayRecipientDelivery = (
     id: string;
     telephone: string;
     message_channel_addresses?: unknown;
+    app_user?: { telephone?: string | null; telegram_chat_id?: string | null } | null;
   },
 ) => {
   const configuredChannel = getPlanningRelayRecipientChannel(config, worker.id);
@@ -775,6 +780,7 @@ export const sendPlanningRelayConfigTestSms = async (period: {
   nom: string;
   telephone: string;
   message_channel_addresses?: unknown;
+  app_user?: { telephone?: string | null; telegram_chat_id?: string | null } | null;
   id: string;
 }[], currentIsoDate = getParisDateTimeParts().isoDate, publicOrigin?: string) => {
   let targetIsoDate = period.date_debut > parsePlanningRelayIsoDate(currentIsoDate)
@@ -883,7 +889,10 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
       });
 
       try {
-        const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: config.worker_ids } } });
+        const workers = await prisma.planningRelayWorker.findMany({
+          where: { id: { in: config.worker_ids } },
+          include: { app_user: { select: { telephone: true, telegram_chat_id: true } } },
+        });
         if (
           workers.length !== config.worker_ids.length ||
           workers.some(

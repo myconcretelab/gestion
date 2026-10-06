@@ -1,18 +1,17 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../utils/api";
-import { APP_PAGES, type AppPageId, type AppUser, type AppUserStatus } from "../utils/auth";
+import { APP_PAGES, type AppPageId, type AppUser, type AppUserRole, type AppUserStatus } from "../utils/auth";
 import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 
-type WorkerProfile = { id?: string; telephone: string; email: string | null; adresse: string | null; telegramChatId: string | null; hourlyRate: number; showOnToday: boolean };
+type WorkerProfile = { id?: string; hourlyRate: number; showOnToday: boolean };
 type ManagedUser = AppUser & {
   gestionnaire?: { id: string; prenom: string; nom: string; gitesCount: number } | null;
   intervenant?: WorkerProfile | null;
 };
 type UserDraft = {
-  firstName: string; lastName: string; status: AppUserStatus; canWrite: boolean;
+  firstName: string; lastName: string; roles: AppUserRole[]; canWrite: boolean;
   canViewAmounts: boolean; isActive: boolean; pageAccess: AppPageId[]; telephone: string;
   email: string; adresse: string; telegramChatId: string; hourlyRate: string; showOnToday: boolean;
-  hasWorkerProfile: boolean;
 };
 type StatusPreset = {
   status: AppUserStatus; canWrite: boolean; canViewAmounts: boolean; pageAccess: AppPageId[]; locked: boolean;
@@ -21,39 +20,54 @@ type StatusPresetMap = Record<AppUserStatus, StatusPreset>;
 
 const ALL_PAGES = APP_PAGES.map(({ id }) => id);
 const STATUS_LABELS: Record<AppUserStatus, string> = { owner: "Propriétaire", worker: "Intervenant", custom: "Personnalisé" };
+const ROLE_LABELS: Record<AppUserRole, string> = { owner: "Propriétaire", worker: "Intervenant" };
 const DEFAULT_STATUS_PRESETS: StatusPresetMap = {
   owner: { status: "owner", canWrite: true, canViewAmounts: true, pageAccess: ALL_PAGES, locked: true },
   worker: { status: "worker", canWrite: true, canViewAmounts: false, pageAccess: ["today", "calendar", "planning_relay"], locked: false },
   custom: { status: "custom", canWrite: false, canViewAmounts: false, pageAccess: [], locked: false },
 };
 const emptyDraft = (presets: StatusPresetMap = DEFAULT_STATUS_PRESETS): UserDraft => ({
-  firstName: "", lastName: "", status: "custom", isActive: true,
+  firstName: "", lastName: "", roles: [], isActive: true,
   canWrite: presets.custom.canWrite, canViewAmounts: presets.custom.canViewAmounts, pageAccess: presets.custom.pageAccess,
   telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "", showOnToday: true,
-  hasWorkerProfile: false,
 });
 const toDraft = (user: ManagedUser): UserDraft => ({
-  firstName: user.firstName, lastName: user.lastName, status: user.status,
+  firstName: user.firstName, lastName: user.lastName, roles: user.roles,
   canWrite: user.permissions.canWrite, canViewAmounts: user.permissions.canViewAmounts, isActive: user.isActive,
-  pageAccess: user.permissions.isOwner ? ALL_PAGES : user.pageAccess, telephone: user.intervenant?.telephone ?? "",
-  email: user.intervenant?.email ?? "", adresse: user.intervenant?.adresse ?? "", telegramChatId: user.intervenant?.telegramChatId ?? "",
+  pageAccess: user.permissions.isOwner ? ALL_PAGES : user.pageAccess, telephone: user.telephone ?? "",
+  email: user.email ?? "", adresse: user.adresse ?? "", telegramChatId: user.telegramChatId ?? "",
   hourlyRate: user.intervenant?.hourlyRate ? String(user.intervenant.hourlyRate).replace(".", ",") : "", showOnToday: user.intervenant?.showOnToday ?? true,
-  hasWorkerProfile: Boolean(user.intervenant),
 });
 const buildPayload = (draft: UserDraft) => ({
-  firstName: draft.firstName.trim(), lastName: draft.lastName.trim(), status: draft.status,
-  canWrite: draft.status === "owner" ? true : draft.canWrite, canViewAmounts: draft.status === "owner" ? true : draft.canViewAmounts,
-  isActive: draft.isActive, pageAccess: draft.status === "owner" ? ALL_PAGES : draft.pageAccess,
-  workerProfile: draft.status === "worker" || draft.hasWorkerProfile ? {
-    telephone: draft.telephone.trim(), email: draft.email.trim() || null, adresse: draft.adresse.trim() || null,
-    telegramChatId: draft.telegramChatId.trim() || null, hourlyRate: Number(draft.hourlyRate.replace(",", ".")) || 0,
+  firstName: draft.firstName.trim(), lastName: draft.lastName.trim(), roles: draft.roles,
+  telephone: draft.telephone.trim(), email: draft.email.trim() || null, adresse: draft.adresse.trim() || null,
+  telegramChatId: draft.telegramChatId.trim() || null,
+  canWrite: draft.roles.includes("owner") ? true : draft.canWrite, canViewAmounts: draft.roles.includes("owner") ? true : draft.canViewAmounts,
+  isActive: draft.isActive, pageAccess: draft.roles.includes("owner") ? ALL_PAGES : draft.pageAccess,
+  workerProfile: draft.roles.includes("worker") ? {
+    hourlyRate: Number(draft.hourlyRate.replace(",", ".")) || 0,
     showOnToday: draft.showOnToday,
   } : null,
 });
-const applyStatus = (draft: UserDraft, status: AppUserStatus, presets: StatusPresetMap): UserDraft => ({
-  ...draft, status, canWrite: presets[status].canWrite, canViewAmounts: presets[status].canViewAmounts,
-  pageAccess: presets[status].pageAccess, hasWorkerProfile: status === "worker" ? true : draft.hasWorkerProfile,
-});
+const statusForRoles = (roles: AppUserRole[]): AppUserStatus => roles.includes("owner") ? "owner" : roles.includes("worker") ? "worker" : "custom";
+const rolesLabel = (roles: AppUserRole[]) => roles.length ? roles.map((role) => ROLE_LABELS[role]).join(" · ") : STATUS_LABELS.custom;
+const applyRole = (draft: UserDraft, role: AppUserRole, checked: boolean, presets: StatusPresetMap): UserDraft => {
+  const roles = checked ? [...new Set([...draft.roles, role])] : draft.roles.filter((candidate) => candidate !== role);
+  const status = statusForRoles(roles);
+  return {
+    ...draft,
+    roles,
+    canWrite: presets[status].canWrite,
+    canViewAmounts: presets[status].canViewAmounts,
+    pageAccess: presets[status].pageAccess,
+  };
+};
+
+function SwitchRow({ checked, disabled, title, description, onChange }: {
+  checked: boolean; disabled?: boolean; title: string; description?: string; onChange: (checked: boolean) => void;
+}) {
+  return <label className="user-switch-row"><span><strong>{title}</strong>{description ? <small>{description}</small> : null}</span><span className="switch switch--compact"><input role="switch" type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /><span className="slider" /></span></label>;
+}
 
 function StatusPresetEditor({ preset, disabled, onChange }: {
   preset: StatusPreset; disabled: boolean; onChange: (preset: StatusPreset) => void;
@@ -64,11 +78,11 @@ function StatusPresetEditor({ preset, disabled, onChange }: {
   return <div className="user-editor status-preset-editor">
     <p className="contract-return-drawer__intro">L’enregistrement applique ces droits à tous les utilisateurs ayant ce statut.</p>
     <fieldset className="user-editor__fieldset contract-return-drawer__section"><legend>Droits</legend><div className="user-permissions">
-      <label className="checkbox-row"><input type="checkbox" checked={preset.canWrite} disabled={disabled} onChange={(e) => onChange({ ...preset, canWrite: e.target.checked })} /><span><strong>Écriture</strong><small>Créer, modifier et supprimer.</small></span></label>
-      <label className="checkbox-row"><input type="checkbox" checked={preset.canViewAmounts} disabled={disabled} onChange={(e) => onChange({ ...preset, canViewAmounts: e.target.checked })} /><span><strong>Montants en euros</strong><small>Afficher tous les chiffres financiers.</small></span></label>
+      <SwitchRow title="Écriture" description="Créer, modifier et supprimer." checked={preset.canWrite} disabled={disabled} onChange={(checked) => onChange({ ...preset, canWrite: checked })} />
+      <SwitchRow title="Montants en euros" description="Afficher tous les chiffres financiers." checked={preset.canViewAmounts} disabled={disabled} onChange={(checked) => onChange({ ...preset, canViewAmounts: checked })} />
     </div></fieldset>
     <fieldset className="user-editor__fieldset contract-return-drawer__section"><legend>Pages visibles</legend><div className="user-page-access">
-      {APP_PAGES.map((page) => <label className="checkbox-row" key={page.id}><input type="checkbox" checked={preset.pageAccess.includes(page.id)} disabled={disabled} onChange={(e) => togglePage(page.id, e.target.checked)} /><span>{page.label}</span></label>)}
+      {APP_PAGES.map((page) => <SwitchRow key={page.id} title={page.label} checked={preset.pageAccess.includes(page.id)} disabled={disabled} onChange={(checked) => togglePage(page.id, checked)} />)}
     </div></fieldset>
   </div>;
 }
@@ -77,40 +91,43 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
   draft: UserDraft; disabled: boolean;
   statusPresets: StatusPresetMap; onChange: (draft: UserDraft) => void;
 }) {
-  const owner = draft.status === "owner";
+  const owner = draft.roles.includes("owner");
+  const worker = draft.roles.includes("worker");
   const togglePage = (page: AppPageId, checked: boolean) => onChange({
     ...draft, pageAccess: checked ? [...new Set([...draft.pageAccess, page])] : draft.pageAccess.filter((item) => item !== page),
   });
   return <div className="user-editor">
+    <fieldset className="user-editor__fieldset"><legend>Identité et coordonnées</legend>
     <div className="grid-2 user-settings-form">
       <label className="field">Prénom<input value={draft.firstName} disabled={disabled} onChange={(e) => onChange({ ...draft, firstName: e.target.value })} /></label>
       <label className="field">Nom<input value={draft.lastName} disabled={disabled} onChange={(e) => onChange({ ...draft, lastName: e.target.value })} /></label>
-      <label className="field">Statut<select value={draft.status} disabled={disabled} onChange={(e) => onChange(applyStatus(draft, e.target.value as AppUserStatus, statusPresets))}>
-        <option value="owner">Propriétaire</option><option value="worker">Intervenant</option><option value="custom">Personnalisé</option>
-      </select></label>
-    </div>
-    {draft.status !== "worker" ? <label className="checkbox-row user-worker-profile-toggle"><input type="checkbox" checked={draft.hasWorkerProfile} disabled={disabled} onChange={(e) => onChange({ ...draft, hasWorkerProfile: e.target.checked })} /><span><strong>Cette personne est aussi intervenante</strong><small>Ajouter ses coordonnées au planning relais et à la saisie des heures.</small></span></label> : null}
-    {draft.status === "worker" || draft.hasWorkerProfile ? <fieldset className="user-editor__fieldset"><legend>Profil intervenant</legend><div className="grid-2">
       <label className="field">Téléphone<input type="tel" value={draft.telephone} disabled={disabled} onChange={(e) => onChange({ ...draft, telephone: e.target.value })} /></label>
       <label className="field">Email<input type="email" value={draft.email} disabled={disabled} onChange={(e) => onChange({ ...draft, email: e.target.value })} /></label>
-      <label className="field">Identifiant Telegram<input value={draft.telegramChatId} disabled={disabled} onChange={(e) => onChange({ ...draft, telegramChatId: e.target.value })} /></label>
-      <label className="field">Taux horaire (€)<input inputMode="decimal" value={draft.hourlyRate} disabled={disabled} onChange={(e) => onChange({ ...draft, hourlyRate: e.target.value })} /></label>
+      <label className="field">Identifiant de chat Telegram<input value={draft.telegramChatId} disabled={disabled} onChange={(e) => onChange({ ...draft, telegramChatId: e.target.value })} /></label>
       <label className="field">Adresse<textarea rows={2} value={draft.adresse} disabled={disabled} onChange={(e) => onChange({ ...draft, adresse: e.target.value })} /></label>
-      <label className="checkbox-row"><input type="checkbox" checked={draft.showOnToday} disabled={disabled} onChange={(e) => onChange({ ...draft, showOnToday: e.target.checked })} /><span>Afficher sur Aujourd’hui pour saisir les heures</span></label>
+    </div>
+    </fieldset>
+    <fieldset className="user-editor__fieldset"><legend>Statuts</legend><div className="user-role-grid">
+      <SwitchRow title="Propriétaire" description="Accès complet et attribution possible aux gîtes." checked={owner} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "owner", checked, statusPresets))} />
+      <SwitchRow title="Intervenant" description="Planning relais, saisie des heures et taux horaire." checked={worker} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "worker", checked, statusPresets))} />
+    </div>{draft.roles.length === 0 ? <p className="field-hint">Sans statut métier, cet utilisateur conserve des droits personnalisés.</p> : null}</fieldset>
+    {worker ? <fieldset className="user-editor__fieldset"><legend>Paramètres intervenant</legend><div className="grid-2">
+      <label className="field">Taux horaire (€)<input inputMode="decimal" value={draft.hourlyRate} disabled={disabled} onChange={(e) => onChange({ ...draft, hourlyRate: e.target.value })} /></label>
+      <SwitchRow title="Afficher sur Aujourd’hui" description="Permettre la saisie rapide des heures." checked={draft.showOnToday} disabled={disabled} onChange={(checked) => onChange({ ...draft, showOnToday: checked })} />
     </div></fieldset> : null}
     <fieldset className="user-editor__fieldset"><legend>Droits</legend><div className="user-permissions">
-      <label className="checkbox-row"><input type="checkbox" checked={owner || draft.canWrite} disabled={disabled || owner} onChange={(e) => onChange({ ...draft, canWrite: e.target.checked })} /><span><strong>Écriture</strong><small>Créer, modifier et supprimer.</small></span></label>
-      <label className="checkbox-row"><input type="checkbox" checked={owner || draft.canViewAmounts} disabled={disabled || owner} onChange={(e) => onChange({ ...draft, canViewAmounts: e.target.checked })} /><span><strong>Montants en euros</strong><small>Afficher tous les chiffres financiers.</small></span></label>
-      <label className="checkbox-row"><input type="checkbox" checked={draft.isActive} disabled={disabled} onChange={(e) => onChange({ ...draft, isActive: e.target.checked })} /><span><strong>Compte actif</strong><small>Disponible sur l’écran de connexion.</small></span></label>
+      <SwitchRow title="Écriture" description="Créer, modifier et supprimer." checked={owner || draft.canWrite} disabled={disabled || owner} onChange={(checked) => onChange({ ...draft, canWrite: checked })} />
+      <SwitchRow title="Montants en euros" description="Afficher tous les chiffres financiers." checked={owner || draft.canViewAmounts} disabled={disabled || owner} onChange={(checked) => onChange({ ...draft, canViewAmounts: checked })} />
+      <SwitchRow title="Compte actif" description="Disponible sur l’écran de connexion." checked={draft.isActive} disabled={disabled} onChange={(checked) => onChange({ ...draft, isActive: checked })} />
     </div></fieldset>
     <fieldset className="user-editor__fieldset"><legend>Pages visibles</legend><div className="user-page-access">
-      {APP_PAGES.map((page) => <label className="checkbox-row" key={page.id}><input type="checkbox" checked={owner || draft.pageAccess.includes(page.id)} disabled={disabled || owner} onChange={(e) => togglePage(page.id, e.target.checked)} /><span>{page.label}</span></label>)}
+      {APP_PAGES.map((page) => <SwitchRow key={page.id} title={page.label} checked={owner || draft.pageAccess.includes(page.id)} disabled={disabled || owner} onChange={(checked) => togglePage(page.id, checked)} />)}
     </div>{owner ? <p className="field-hint">Les propriétaires ont toujours accès à toutes les pages.</p> : null}</fieldset>
   </div>;
 }
 
 const isUserDraftValid = (draft: UserDraft) =>
-  Boolean(draft.firstName.trim()) && (!((draft.status === "worker" || draft.hasWorkerProfile) && !draft.telephone.trim()));
+  Boolean(draft.firstName.trim()) && (!draft.roles.includes("worker") || Boolean(draft.telephone.trim()));
 
 const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -168,7 +185,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
     </div>
     <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Utilisateurs</div><span className="field-hint">{users.filter((user) => user.isActive).length} actif(s) sur {users.length}</span></div><button type="button" onClick={() => { setError(null); setCreating(true); setSelectedId(null); setSelectedStatus(null); }}>Ajouter un utilisateur</button></div>
       {loading ? <div className="field-hint">Chargement…</div> : <div className="table-wrap"><table className="table user-list-table"><thead><tr><th>Utilisateur</th><th>Statut</th><th>Droits</th><th>Pages</th><th>État</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
-        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.intervenant?.telephone ? <small>{user.intervenant.telephone}</small> : user.gestionnaire?.gitesCount ? <small>{user.gestionnaire.gitesCount} gîte(s)</small> : null}</td><td><span className="badge">{STATUS_LABELS[user.status]}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setError(null); setSelectedId(user.id); setCreating(false); setSelectedStatus(null); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
+        {users.map((user) => <tr key={user.id} className={selectedId === user.id ? "is-selected" : ""}><td><strong>{user.displayName}</strong>{user.telephone ? <small>{user.telephone}</small> : user.gestionnaire?.gitesCount ? <small>{user.gestionnaire.gitesCount} gîte(s)</small> : null}</td><td><span className="badge">{rolesLabel(user.roles)}</span></td><td>{user.permissions.canWrite ? "Écriture" : "Lecture"}{user.permissions.canViewAmounts ? " · €" : " · sans €"}</td><td>{user.permissions.isOwner ? "Toutes" : `${user.pageAccess.length} / ${APP_PAGES.length}`}</td><td>{user.isActive ? "Actif" : "Inactif"}</td><td className="table-actions-cell"><button type="button" className="table-action" onClick={() => { setError(null); setSelectedId(user.id); setCreating(false); setSelectedStatus(null); }}>Modifier</button><button type="button" className="table-action table-action--danger" disabled={busyId === user.id || user.id === currentUserId} onClick={() => void remove(user)}>Supprimer</button></td></tr>)}
       </tbody></table></div>}
     </div>
     <ReservationDetailsDrawer
@@ -190,7 +207,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
       open={creating}
       title="Nouvel utilisateur"
       eyebrow="Utilisateurs et privilèges"
-      summary={[`Droits proposés par le statut ${STATUS_LABELS[newDraft.status]}`]}
+      summary={[`Statuts : ${rolesLabel(newDraft.roles)}`]}
       busy={busyId === "new"}
       onClose={() => { setCreating(false); setNewDraft(emptyDraft(statusPresets)); }}
       footer={<>
@@ -204,7 +221,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
     <ReservationDetailsDrawer
       open={Boolean(selected)}
       title={selected?.displayName ?? "Utilisateur"}
-      eyebrow={selected ? STATUS_LABELS[selected.status] : "Utilisateur"}
+      eyebrow={selected ? rolesLabel(selected.roles) : "Utilisateur"}
       summary={selected ? [selected.isActive ? "Compte actif" : "Compte inactif", selected.permissions.isOwner ? "Toutes les pages" : `${selected.pageAccess.length} page(s) visible(s)`] : []}
       busy={Boolean(selected && busyId === selected.id)}
       onClose={() => setSelectedId(null)}

@@ -308,6 +308,21 @@ test("normalise Telegram et résout l'adresse du destinataire", () => {
   );
 });
 
+test("utilise l'identifiant Telegram de la fiche utilisateur", () => {
+  const [config] = normalizePlanningRelaySmsConfigs([{
+    id: "telegram-user",
+    channel: "telegram",
+    worker_id: "worker-1",
+    worker_ids: ["worker-1"],
+  }]);
+  assert.deepEqual(resolvePlanningRelayRecipientDelivery(config, {
+    id: "worker-1",
+    telephone: "0600000000",
+    message_channel_addresses: JSON.stringify({}),
+    app_user: { telephone: "0611111111", telegram_chat_id: "987654321" },
+  }), { channel: "telegram", recipient: "987654321" });
+});
+
 test("retombe sur SMS quand un destinataire n'a pas d'identifiant Telegram", () => {
   const delivery = resolvePlanningRelayRecipientDelivery({
     channel: "telegram",

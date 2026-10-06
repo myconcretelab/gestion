@@ -28,7 +28,6 @@ import type {
   Gestionnaire,
   Gite,
   IcalSource,
-  Intervenant,
 } from "../utils/types";
 
 import AppearanceSettings from "./AppearanceSettings";
@@ -321,7 +320,6 @@ const SETTINGS_SECTIONS = [
   { id: "settings-declaration-nights", label: "Nuitées à déclarer" },
   { id: "settings-source-colors", label: "Couleurs des sources" },
   { id: "settings-team", label: "Équipe" },
-  { id: "settings-intervenants", label: "Intervenants" },
   { id: "settings-ical-sources", label: "Sources iCal" },
   { id: "settings-ical-exports", label: "Exports iCal OTA" },
   { id: "settings-ical-sync", label: "Synchronisation iCal" },
@@ -345,7 +343,6 @@ const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
   "settings-declaration-nights": "nuitees",
   "settings-source-colors": "couleurs-sources",
   "settings-team": "equipe",
-  "settings-intervenants": "intervenants",
   "settings-ical-sources": "ical-sources",
   "settings-ical-exports": "ical-exports",
   "settings-ical-sync": "ical-sync",
@@ -475,51 +472,6 @@ type SmsTextSettings = {
   texts: SmsTextItem[];
 };
 
-type IntervenantDraft = {
-  nom: string;
-  telephone: string;
-  email: string;
-  adresse: string;
-  telegram_chat_id: string;
-  is_active: boolean;
-  show_on_today: boolean;
-};
-
-const EMPTY_INTERVENANT_DRAFT: IntervenantDraft = {
-  nom: "",
-  telephone: "",
-  email: "",
-  adresse: "",
-  telegram_chat_id: "",
-  is_active: true,
-  show_on_today: false,
-};
-
-const buildIntervenantDraft = (intervenant: Intervenant): IntervenantDraft => ({
-  nom: intervenant.nom,
-  telephone: intervenant.telephone,
-  email: intervenant.email ?? "",
-  adresse: intervenant.adresse ?? "",
-  telegram_chat_id: intervenant.message_channel_addresses.telegram ?? "",
-  is_active: intervenant.is_active,
-  show_on_today: intervenant.show_on_today ?? false,
-});
-
-const buildIntervenantPayload = (draft: IntervenantDraft) => ({
-  nom: draft.nom.trim(),
-  telephone: draft.telephone.trim(),
-  email: draft.email.trim() || null,
-  adresse: draft.adresse.trim() || null,
-  message_channel_addresses: {
-    sms: draft.telephone.trim(),
-    ...(draft.telegram_chat_id.trim()
-      ? { telegram: draft.telegram_chat_id.trim() }
-      : {}),
-  },
-  is_active: draft.is_active,
-  show_on_today: draft.show_on_today,
-});
-
 type DocumentEmailTextTemplate = {
   subject: string;
   body: string;
@@ -544,6 +496,7 @@ type TelegramNotificationConfig = {
   enabled: boolean;
   bot_token: string;
   chat_ids: string[];
+  recipient_user_ids: string[];
   notify_gite_checked: boolean;
   gite_check_mentions: string[];
   notify_booking_request_created: boolean;
@@ -551,6 +504,13 @@ type TelegramNotificationConfig = {
   notify_contract_return_overdue: boolean;
   notify_invoice_payment_overdue: boolean;
   notify_cleaning_check_reminder: boolean;
+};
+
+type TelegramRecipientUser = {
+  id: string;
+  displayName: string;
+  telegramChatId: string | null;
+  isActive: boolean;
 };
 
 type TelegramNotificationState = {
@@ -994,6 +954,7 @@ const DEFAULT_TELEGRAM_NOTIFICATION_CONFIG: TelegramNotificationConfig = {
   enabled: false,
   bot_token: "",
   chat_ids: [],
+  recipient_user_ids: [],
   notify_gite_checked: true,
   gite_check_mentions: [],
   notify_booking_request_created: true,
@@ -1746,25 +1707,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
   const [managerError, setManagerError] = useState<string | null>(null);
   const [managerNotice, setManagerNotice] = useState<string | null>(null);
 
-  const [intervenants, setIntervenants] = useState<Intervenant[]>([]);
-  const [intervenantDrafts, setIntervenantDrafts] = useState<
-    Record<string, IntervenantDraft>
-  >({});
-  const [newIntervenantDraft, setNewIntervenantDraft] =
-    useState<IntervenantDraft>(EMPTY_INTERVENANT_DRAFT);
-  const [loadingIntervenants, setLoadingIntervenants] = useState(true);
-  const [creatingIntervenant, setCreatingIntervenant] = useState(false);
-  const [savingIntervenantId, setSavingIntervenantId] = useState<string | null>(
-    null,
-  );
-  const [deletingIntervenantId, setDeletingIntervenantId] = useState<
-    string | null
-  >(null);
-  const [intervenantError, setIntervenantError] = useState<string | null>(null);
-  const [intervenantNotice, setIntervenantNotice] = useState<string | null>(
-    null,
-  );
-
   const [loadingSources, setLoadingSources] = useState(true);
   const [icalExports, setIcalExports] = useState<IcalExportFeed[]>([]);
   const [operationsCalendar, setOperationsCalendar] =
@@ -1857,6 +1799,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
     useState<TelegramNotificationConfig>(
       DEFAULT_TELEGRAM_NOTIFICATION_CONFIG,
     );
+  const [telegramRecipientUsers, setTelegramRecipientUsers] = useState<TelegramRecipientUser[]>([]);
   const [loadingTelegramNotification, setLoadingTelegramNotification] =
     useState(true);
   const [savingTelegramNotification, setSavingTelegramNotification] =
@@ -2363,19 +2306,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
     setGestionnaires(data);
   };
 
-  const loadIntervenants = async () => {
-    const data = await apiFetch<Intervenant[]>("/intervenants");
-    setIntervenants(data);
-    setIntervenantDrafts(
-      Object.fromEntries(
-        data.map((intervenant) => [
-          intervenant.id,
-          buildIntervenantDraft(intervenant),
-        ]),
-      ),
-    );
-  };
-
   const loadSources = async () => {
     const [gitesData, sourcesData, exportsData, operationsData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
@@ -2540,6 +2470,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
         enabled: Boolean(data?.config?.enabled),
         bot_token: "",
         chat_ids: chatIds,
+        recipient_user_ids: Array.isArray(data?.config?.recipient_user_ids) ? data.config.recipient_user_ids : [],
         notify_gite_checked: data?.config?.notify_gite_checked !== false,
         gite_check_mentions: data?.config?.gite_check_mentions ?? [],
         notify_booking_request_created:
@@ -2848,9 +2779,11 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
   };
 
   const loadTelegramNotificationState = async () => {
-    const data = await apiFetch<TelegramNotificationState>(
-      "/settings/telegram",
-    );
+    const [data, users] = await Promise.all([
+      apiFetch<TelegramNotificationState>("/settings/telegram"),
+      apiFetch<TelegramRecipientUser[]>("/users"),
+    ]);
+    setTelegramRecipientUsers(users);
     applyTelegramNotificationState(data);
   };
 
@@ -3139,23 +3072,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
             return;
           } finally {
             setLoadingManagers(false);
-          }
-          break;
-        case "settings-intervenants":
-          setLoadingIntervenants(true);
-          try {
-            const [, gitesData] = await Promise.all([
-              loadIntervenants(),
-              apiFetch<Gite[]>("/gites"),
-            ]);
-            setGites(gitesData);
-          } catch (error: any) {
-            setIntervenantError(
-              error?.message ?? "Impossible de charger les intervenants.",
-            );
-            return;
-          } finally {
-            setLoadingIntervenants(false);
           }
           break;
         case "settings-ical-sources":
@@ -3527,6 +3443,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
         .map((item) => String(item ?? "").trim())
         .filter(Boolean);
       const deduplicatedChatIds = [...new Set(chatIds)];
+      const recipientUserIds = [...new Set(telegramNotificationDraft.recipient_user_ids)];
 
       if (telegramNotificationDraft.enabled) {
         const hasBotToken =
@@ -3536,9 +3453,9 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
           setTelegramNotificationError("Renseignez le token du bot Telegram.");
           return;
         }
-        if (deduplicatedChatIds.length === 0) {
+        if (deduplicatedChatIds.length === 0 && recipientUserIds.length === 0) {
           setTelegramNotificationError(
-            "Ajoutez au moins un chat ID Telegram.",
+            "Sélectionnez au moins un utilisateur destinataire.",
           );
           return;
         }
@@ -3552,6 +3469,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
             enabled: telegramNotificationDraft.enabled,
             bot_token: telegramNotificationDraft.bot_token.trim(),
             chat_ids: deduplicatedChatIds,
+            recipient_user_ids: recipientUserIds,
             notify_gite_checked: telegramNotificationDraft.notify_gite_checked,
             gite_check_mentions: telegramNotificationDraft.gite_check_mentions.map((name) => name.trim()).filter(Boolean),
             notify_booking_request_created:
@@ -4255,115 +4173,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
       setManagerError(error.message);
     } finally {
       setDeletingManagerId(null);
-    }
-  };
-
-  const updateIntervenantDraft = (
-    intervenantId: string,
-    patch: Partial<IntervenantDraft>,
-  ) => {
-    setIntervenantDrafts((current) => ({
-      ...current,
-      [intervenantId]: {
-        ...(current[intervenantId] ??
-          buildIntervenantDraft(
-            intervenants.find((item) => item.id === intervenantId)!,
-          )),
-        ...patch,
-      },
-    }));
-  };
-
-  const createIntervenant = async () => {
-    if (!newIntervenantDraft.nom.trim() || !newIntervenantDraft.telephone.trim()) {
-      setIntervenantError("Le nom et le téléphone sont obligatoires.");
-      return;
-    }
-
-    setCreatingIntervenant(true);
-    setIntervenantError(null);
-    setIntervenantNotice(null);
-    try {
-      await apiFetch<Intervenant>("/intervenants", {
-        method: "POST",
-        json: buildIntervenantPayload(newIntervenantDraft),
-      });
-      setNewIntervenantDraft(EMPTY_INTERVENANT_DRAFT);
-      await loadIntervenants();
-      setIntervenantNotice("Intervenant ajouté au référentiel.");
-    } catch (error: any) {
-      setIntervenantError(
-        error.message ?? "Impossible d'ajouter l'intervenant.",
-      );
-    } finally {
-      setCreatingIntervenant(false);
-    }
-  };
-
-  const saveIntervenant = async (intervenant: Intervenant) => {
-    const draft =
-      intervenantDrafts[intervenant.id] ?? buildIntervenantDraft(intervenant);
-    if (!draft.nom.trim() || !draft.telephone.trim()) {
-      setIntervenantError("Le nom et le téléphone sont obligatoires.");
-      return;
-    }
-
-    setSavingIntervenantId(intervenant.id);
-    setIntervenantError(null);
-    setIntervenantNotice(null);
-    try {
-      const updated = await apiFetch<Intervenant>(
-        `/intervenants/${intervenant.id}`,
-        {
-          method: "PATCH",
-          json: buildIntervenantPayload(draft),
-        },
-      );
-      setIntervenants((current) =>
-        current
-          .map((item) => (item.id === updated.id ? updated : item))
-          .sort(
-            (left, right) =>
-              Number(right.is_active) - Number(left.is_active) ||
-              left.nom.localeCompare(right.nom, "fr"),
-          ),
-      );
-      setIntervenantDrafts((current) => ({
-        ...current,
-        [updated.id]: buildIntervenantDraft(updated),
-      }));
-      setIntervenantNotice("Intervenant enregistré.");
-    } catch (error: any) {
-      setIntervenantError(
-        error.message ?? "Impossible d'enregistrer l'intervenant.",
-      );
-    } finally {
-      setSavingIntervenantId(null);
-    }
-  };
-
-  const removeIntervenant = async (intervenant: Intervenant) => {
-    if (
-      !confirm(
-        `Supprimer l'intervenant « ${intervenant.nom} » ? Il sera retiré des plannings. Les frais professionnels et les heures déjà enregistrés seront conservés.`,
-      )
-    ) {
-      return;
-    }
-
-    setDeletingIntervenantId(intervenant.id);
-    setIntervenantError(null);
-    setIntervenantNotice(null);
-    try {
-      await apiFetch(`/intervenants/${intervenant.id}`, { method: "DELETE" });
-      await loadIntervenants();
-      setIntervenantNotice("Intervenant supprimé.");
-    } catch (error: any) {
-      setIntervenantError(
-        error.message ?? "Impossible de supprimer l'intervenant.",
-      );
-    } finally {
-      setDeletingIntervenantId(null);
     }
   };
 
@@ -6548,28 +6357,26 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, gite_check_mentions: event.target.value.split(/[,;\n]/) }))} />
                           <span className="field-hint">Pseudos Telegram, séparés par des virgules. Le message est envoyé dans les mêmes chats que les nouvelles réservations. Laissez vide pour ne mentionner personne.</span>
                         </label>
-                        <label className="field">
-                          Chat IDs
-                          <textarea
-                            rows={4}
-                            value={telegramNotificationDraft.chat_ids.join("\n")}
-                            onChange={(event) => {
-                              setTelegramNotificationError(null);
-                              setTelegramNotificationNotice(null);
-                              setTelegramNotificationDraft((previous) => ({
-                                ...previous,
-                                chat_ids: event.target.value
-                                  .split(/[\n,;]+/)
-                                  .map((item) => item.trim()),
-                              }));
-                            }}
-                            disabled={
-                              savingTelegramNotification ||
-                              testingTelegramNotification
-                            }
-                            placeholder="Un chat ID par ligne"
-                          />
-                        </label>
+                        <fieldset className="user-editor__fieldset">
+                          <legend>Destinataires</legend>
+                          <div className="user-page-access">
+                            {telegramRecipientUsers.filter((user) => user.isActive).map((user) => (
+                              <label className="user-switch-row" key={user.id}>
+                                <span><strong>{user.displayName}</strong><small>{user.telegramChatId ? "Identifiant Telegram renseigné" : "Identifiant Telegram manquant dans sa fiche"}</small></span>
+                                <span className="switch switch--compact"><input role="switch" type="checkbox"
+                                  checked={telegramNotificationDraft.recipient_user_ids.includes(user.id)}
+                                  disabled={savingTelegramNotification || testingTelegramNotification || !user.telegramChatId}
+                                  onChange={(event) => setTelegramNotificationDraft((previous) => ({
+                                    ...previous,
+                                    recipient_user_ids: event.target.checked
+                                      ? [...new Set([...previous.recipient_user_ids, user.id])]
+                                      : previous.recipient_user_ids.filter((id) => id !== user.id),
+                                  }))} /><span className="slider" /></span>
+                              </label>
+                            ))}
+                          </div>
+                          <span className="field-hint">Les identifiants de chat se renseignent dans les fiches utilisateurs. Les choix d’abonnement restent centralisés ici.</span>
+                        </fieldset>
                       </div>
 
                       <div className="field-hint" style={{ marginTop: 8 }}>
@@ -6581,7 +6388,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                         </strong>
                         {" · "}Destinataires:{" "}
                         <strong>
-                          {telegramNotificationDraft.chat_ids.length}
+                          {telegramNotificationDraft.recipient_user_ids.length + telegramNotificationDraft.chat_ids.length}
                         </strong>
                       </div>
 
@@ -9089,296 +8896,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                 )}
               </div>
             </div>
-            </section>
-          ) : null}
-
-          {activeSettingsSection === "settings-intervenants" ? (
-            <section
-              id="settings-intervenants"
-              className="settings-cluster"
-              aria-labelledby="nav-settings-intervenants"
-            >
-              <div className="settings-cluster__header">
-                <div>
-                  <div className="settings-cluster__eyebrow">Référentiel</div>
-                  <h2 className="settings-cluster__title">Intervenants</h2>
-                </div>
-                <p className="settings-cluster__text">
-                  Centralisez les coordonnées des personnes mobilisables. Ce
-                  référentiel est partagé avec le planning relais et les futurs
-                  outils opérationnels.
-                </p>
-              </div>
-              <div className="settings-cluster__grid">
-                <div className="card settings-card settings-card--sand settings-card--span-4">
-                  <div className="settings-card__topline">
-                    <span className="settings-card__tag">Nouveau profil</span>
-                  </div>
-                  <div className="section-title">Ajouter un intervenant</div>
-                  <div className="settings-intervenant-form">
-                    <label className="field">
-                      Nom
-                      <input
-                        value={newIntervenantDraft.nom}
-                        onChange={(event) =>
-                          setNewIntervenantDraft((current) => ({
-                            ...current,
-                            nom: event.target.value,
-                          }))
-                        }
-                        placeholder="Ex. Marie Dupont"
-                        disabled={creatingIntervenant}
-                      />
-                    </label>
-                    <label className="field">
-                      Téléphone
-                      <input
-                        type="tel"
-                        inputMode="tel"
-                        value={newIntervenantDraft.telephone}
-                        onChange={(event) =>
-                          setNewIntervenantDraft((current) => ({
-                            ...current,
-                            telephone: event.target.value,
-                          }))
-                        }
-                        placeholder="06 00 00 00 00"
-                        disabled={creatingIntervenant}
-                      />
-                    </label>
-                    <label className="field">
-                      Email
-                      <input
-                        type="email"
-                        value={newIntervenantDraft.email}
-                        onChange={(event) =>
-                          setNewIntervenantDraft((current) => ({
-                            ...current,
-                            email: event.target.value,
-                          }))
-                        }
-                        disabled={creatingIntervenant}
-                      />
-                    </label>
-                    <label className="field">
-                      Identifiant de chat Telegram
-                      <input
-                        value={newIntervenantDraft.telegram_chat_id}
-                        onChange={(event) =>
-                          setNewIntervenantDraft((current) => ({
-                            ...current,
-                            telegram_chat_id: event.target.value,
-                          }))
-                        }
-                        placeholder="Ex. 123456789"
-                        disabled={creatingIntervenant}
-                      />
-                    </label>
-                    <label className="field">
-                      Adresse
-                      <textarea
-                        rows={3}
-                        value={newIntervenantDraft.adresse}
-                        onChange={(event) =>
-                          setNewIntervenantDraft((current) => ({
-                            ...current,
-                            adresse: event.target.value,
-                          }))
-                        }
-                        disabled={creatingIntervenant}
-                      />
-                    </label>
-                    <label className="settings-intervenant-active">
-                      <input type="checkbox" checked={newIntervenantDraft.show_on_today}
-                        disabled={creatingIntervenant}
-                        onChange={(event) => setNewIntervenantDraft((current) => ({
-                          ...current, show_on_today: event.target.checked,
-                        }))} />
-                      Afficher sur Aujourd'hui pour saisir les heures
-                    </label>
-                    <label className="settings-intervenant-active">
-                      <input
-                        type="checkbox"
-                        checked={newIntervenantDraft.is_active}
-                        onChange={(event) =>
-                          setNewIntervenantDraft((current) => ({
-                            ...current,
-                            is_active: event.target.checked,
-                          }))
-                        }
-                        disabled={creatingIntervenant}
-                      />
-                      Actif et disponible dans les sélecteurs
-                    </label>
-                  </div>
-                  <div className="actions" style={{ marginTop: 16 }}>
-                    <button
-                      type="button"
-                      onClick={() => void createIntervenant()}
-                      disabled={creatingIntervenant}
-                    >
-                      {creatingIntervenant ? "Ajout..." : "Ajouter"}
-                    </button>
-                  </div>
-                  {intervenantNotice ? (
-                    <div className="note note--success">
-                      {intervenantNotice}
-                    </div>
-                  ) : null}
-                  {intervenantError ? (
-                    <div className="note">{intervenantError}</div>
-                  ) : null}
-                </div>
-
-                <div className="card settings-card settings-card--neutral settings-card--span-8">
-                  <div className="settings-managers-header">
-                    <div>
-                      <div className="settings-card__tag">Référentiel partagé</div>
-                      <div className="section-title">Profils enregistrés</div>
-                    </div>
-                    <div className="field-hint">
-                      {intervenants.filter((item) => item.is_active).length} actif(s)
-                      sur {intervenants.length}
-                    </div>
-                  </div>
-                  {loadingIntervenants ? (
-                    <div className="field-hint">Chargement...</div>
-                  ) : intervenants.length === 0 ? (
-                    <div className="field-hint">
-                      Aucun intervenant enregistré.
-                    </div>
-                  ) : (
-                    <div className="settings-intervenants-list">
-                      {intervenants.map((intervenant) => {
-                        const draft =
-                          intervenantDrafts[intervenant.id] ??
-                          buildIntervenantDraft(intervenant);
-                        const isSaving =
-                          savingIntervenantId === intervenant.id;
-                        const isDeleting =
-                          deletingIntervenantId === intervenant.id;
-                        return (
-                          <article
-                            key={intervenant.id}
-                            className={`settings-intervenant-item${
-                              draft.is_active ? "" : " is-disabled"
-                            }`}
-                          >
-                            <div className="settings-intervenant-item__header">
-                              <strong>{draft.nom || "Intervenant sans nom"}</strong>
-                              <span className="settings-card__badge">
-                                {draft.is_active ? "Actif" : "Inactif"}
-                              </span>
-                            </div>
-                            <div className="grid-2">
-                              <label className="field">
-                                Nom
-                                <input
-                                  value={draft.nom}
-                                  onChange={(event) =>
-                                    updateIntervenantDraft(intervenant.id, {
-                                      nom: event.target.value,
-                                    })
-                                  }
-                                />
-                              </label>
-                              <label className="field">
-                                Téléphone
-                                <input
-                                  type="tel"
-                                  inputMode="tel"
-                                  value={draft.telephone}
-                                  onChange={(event) =>
-                                    updateIntervenantDraft(intervenant.id, {
-                                      telephone: event.target.value,
-                                    })
-                                  }
-                                />
-                              </label>
-                              <label className="field">
-                                Email
-                                <input
-                                  type="email"
-                                  value={draft.email}
-                                  onChange={(event) =>
-                                    updateIntervenantDraft(intervenant.id, {
-                                      email: event.target.value,
-                                    })
-                                  }
-                                />
-                              </label>
-                              <label className="field">
-                                Identifiant Telegram
-                                <input
-                                  value={draft.telegram_chat_id}
-                                  onChange={(event) =>
-                                    updateIntervenantDraft(intervenant.id, {
-                                      telegram_chat_id: event.target.value,
-                                    })
-                                  }
-                                  placeholder="Ex. 123456789"
-                                />
-                              </label>
-                            </div>
-                            <label className="field">
-                              Adresse
-                              <textarea
-                                rows={2}
-                                value={draft.adresse}
-                                onChange={(event) =>
-                                  updateIntervenantDraft(intervenant.id, {
-                                    adresse: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label className="settings-intervenant-active">
-                              <input type="checkbox" checked={draft.show_on_today}
-                                disabled={isSaving || isDeleting}
-                                onChange={(event) => updateIntervenantDraft(intervenant.id, {
-                                  show_on_today: event.target.checked,
-                                })} />
-                              Afficher sur Aujourd'hui pour saisir les heures
-                            </label>
-                            <div className="settings-intervenant-item__footer">
-                              <label className="settings-intervenant-active">
-                                <input
-                                  type="checkbox"
-                                  checked={draft.is_active}
-                                  onChange={(event) =>
-                                    updateIntervenantDraft(intervenant.id, {
-                                      is_active: event.target.checked,
-                                    })
-                                  }
-                                />
-                                Actif
-                              </label>
-                              <div className="actions">
-                                <button
-                                  type="button"
-                                  onClick={() => void saveIntervenant(intervenant)}
-                                  disabled={isSaving || isDeleting}
-                                >
-                                  {isSaving ? "Enregistrement..." : "Enregistrer"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="danger"
-                                  onClick={() => void removeIntervenant(intervenant)}
-                                  disabled={isSaving || isDeleting}
-                                >
-                                  {isDeleting ? "Suppression..." : "Supprimer"}
-                                </button>
-                              </div>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-              </div>
             </section>
           ) : null}
 

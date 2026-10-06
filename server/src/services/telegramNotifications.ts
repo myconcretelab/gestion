@@ -3,12 +3,14 @@ import path from "node:path";
 import { env } from "../config/env.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
 import { telegramMessageChannel } from "./messageChannels/telegram.js";
+import prisma from "../db/prisma.js";
 import type { OptionsInput } from "./contractCalculator.js";
 
 export type TelegramNotificationConfig = {
   enabled: boolean;
   bot_token: string;
   chat_ids: string[];
+  recipient_user_ids: string[];
   notify_gite_checked: boolean;
   gite_check_mentions: string[];
   notify_booking_request_created: boolean;
@@ -93,6 +95,7 @@ export const buildDefaultTelegramNotificationConfig =
     enabled: false,
     bot_token: "",
     chat_ids: [],
+    recipient_user_ids: [],
     notify_gite_checked: true,
     gite_check_mentions: [],
     notify_booking_request_created: true,
@@ -112,6 +115,7 @@ export const normalizeTelegramNotificationConfig = (
       ? input.bot_token.trim()
       : fallback.bot_token,
   chat_ids: normalizeChatIds(input?.chat_ids, fallback.chat_ids),
+  recipient_user_ids: normalizeChatIds(input?.recipient_user_ids, fallback.recipient_user_ids),
   notify_gite_checked: toBoolean(input?.notify_gite_checked, fallback.notify_gite_checked),
   gite_check_mentions: normalizeChatIds(input?.gite_check_mentions, fallback.gite_check_mentions)
     .map((name) => name.replace(/^@/, ""))
@@ -188,6 +192,7 @@ export const buildTelegramNotificationState = (
     enabled: config.enabled,
     bot_token: "",
     chat_ids: config.chat_ids,
+    recipient_user_ids: config.recipient_user_ids,
     notify_gite_checked: config.notify_gite_checked,
     gite_check_mentions: config.gite_check_mentions,
     notify_booking_request_created: config.notify_booking_request_created,
@@ -223,14 +228,31 @@ export const sendTelegramMessage = async (
   text: string,
   config = readTelegramNotificationConfig(),
 ) => {
+  const recipients = await resolveTelegramNotificationRecipients(config);
   const result = await telegramMessageChannel.send({
     message: text,
+    recipients,
     options: config,
   });
   return {
     sent_count: result.sent_count,
     skipped_reason: result.skipped_reason,
   };
+};
+
+export const resolveTelegramNotificationRecipients = async (
+  config = readTelegramNotificationConfig(),
+) => {
+  const users = config.recipient_user_ids.length
+    ? await prisma.appUser.findMany({
+        where: { id: { in: config.recipient_user_ids }, is_active: true },
+        select: { telegram_chat_id: true },
+      })
+    : [];
+  return [...new Set([
+    ...config.chat_ids,
+    ...users.map((user) => user.telegram_chat_id?.trim() ?? "").filter(Boolean),
+  ])];
 };
 
 export const buildBookingRequestCreatedMessage = (

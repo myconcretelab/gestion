@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { normalizePlanningRelaySmsConfigs } from "../services/planningRelaySms.js";
+import { DEFAULT_STATUS_PRESETS } from "../services/appUsers.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 
 const router = Router();
@@ -67,16 +68,17 @@ const serializeIntervenantExpense = (expense: any) => ({
 
 const serializeIntervenant = (intervenant: any) => ({
   id: intervenant.id,
-  nom: intervenant.nom,
-  telephone: intervenant.telephone,
-  email: intervenant.email ?? null,
-  adresse: intervenant.adresse ?? null,
+  nom: intervenant.app_user?.display_name ?? intervenant.nom,
+  telephone: intervenant.app_user?.telephone ?? intervenant.telephone,
+  email: intervenant.app_user?.email ?? intervenant.email ?? null,
+  adresse: intervenant.app_user?.adresse ?? intervenant.adresse ?? null,
   message_channel_addresses: {
     ...fromJsonString<Record<string, string>>(
       intervenant.message_channel_addresses,
       {},
     ),
-    sms: intervenant.telephone,
+    sms: intervenant.app_user?.telephone ?? intervenant.telephone,
+    ...(intervenant.app_user?.telegram_chat_id ? { telegram: intervenant.app_user.telegram_chat_id } : {}),
   },
   is_active: Boolean(intervenant.is_active),
   show_on_today: Boolean(intervenant.show_on_today),
@@ -93,6 +95,7 @@ router.get("/", async (_req, res, next) => {
     const intervenants = await prisma.planningRelayWorker.findMany({
       orderBy: [{ is_active: "desc" }, { nom: "asc" }, { createdAt: "asc" }],
       include: {
+        app_user: true,
         expenses: {
           include: { gite: { select: { id: true, nom: true } } },
           orderBy: [{ year: "desc" }, { month: "desc" }, { createdAt: "desc" }],
@@ -108,19 +111,36 @@ router.get("/", async (_req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const payload = intervenantPayloadSchema.parse(req.body ?? {});
-    const intervenant = await prisma.planningRelayWorker.create({
-      data: {
+    const telegramChatId = payload.message_channel_addresses?.telegram?.trim() || null;
+    const intervenant = await prisma.$transaction(async (tx) => {
+      const worker = await tx.planningRelayWorker.create({ data: {
         nom: payload.nom,
         telephone: payload.telephone,
         email: payload.email ?? null,
         adresse: payload.adresse ?? null,
-        message_channel_addresses: encodeJsonField(
-          payload.message_channel_addresses ?? {},
-        ),
+        message_channel_addresses: encodeJsonField({ sms: payload.telephone }),
         is_active: payload.is_active ?? true,
         show_on_today: payload.show_on_today ?? false,
         hourly_rate: payload.hourly_rate ?? 0,
-      },
+      } });
+      await tx.appUser.create({ data: {
+        display_name: payload.nom,
+        first_name: payload.nom,
+        last_name: "",
+        roles: encodeJsonField(["worker"]),
+        telephone: payload.telephone,
+        email: payload.email ?? null,
+        adresse: payload.adresse ?? null,
+        telegram_chat_id: telegramChatId,
+        intervenant_id: worker.id,
+        status: "worker",
+        page_access: encodeJsonField(DEFAULT_STATUS_PRESETS.worker.pageAccess),
+        can_write: DEFAULT_STATUS_PRESETS.worker.canWrite,
+        can_view_amounts: DEFAULT_STATUS_PRESETS.worker.canViewAmounts,
+        is_owner: false,
+        is_active: payload.is_active ?? true,
+      } });
+      return worker;
     });
     return res.status(201).json(serializeIntervenant(intervenant));
   } catch (error) {
@@ -243,27 +263,22 @@ router.patch("/:id", async (req, res, next) => {
     const payload = intervenantPayloadSchema.partial().parse(req.body ?? {});
     const current = await prisma.planningRelayWorker.findUnique({
       where: { id: req.params.id },
+      include: { app_user: true },
     });
     if (!current) {
       return res.status(404).json({ error: "Intervenant introuvable." });
     }
 
-    const intervenant = await prisma.planningRelayWorker.update({
-      where: { id: current.id },
-      data: {
+    const telegramChatId = payload.message_channel_addresses?.telegram?.trim();
+    const intervenant = await prisma.$transaction(async (tx) => {
+      const worker = await tx.planningRelayWorker.update({ where: { id: current.id }, data: {
         ...(payload.nom !== undefined ? { nom: payload.nom } : {}),
         ...(payload.telephone !== undefined
           ? { telephone: payload.telephone }
           : {}),
         ...(payload.email !== undefined ? { email: payload.email } : {}),
         ...(payload.adresse !== undefined ? { adresse: payload.adresse } : {}),
-        ...(payload.message_channel_addresses !== undefined
-          ? {
-              message_channel_addresses: encodeJsonField(
-                payload.message_channel_addresses,
-              ),
-            }
-          : {}),
+        ...(payload.telephone !== undefined ? { message_channel_addresses: encodeJsonField({ sms: payload.telephone }) } : {}),
         ...(payload.show_on_today !== undefined
           ? { show_on_today: payload.show_on_today }
           : {}),
@@ -273,9 +288,20 @@ router.patch("/:id", async (req, res, next) => {
         ...(payload.hourly_rate !== undefined
           ? { hourly_rate: payload.hourly_rate }
           : {}),
-      },
+      } });
+      if (current.app_user) {
+        await tx.appUser.update({ where: { id: current.app_user.id }, data: {
+          ...(payload.nom !== undefined ? { display_name: payload.nom, first_name: payload.nom, last_name: "" } : {}),
+          ...(payload.telephone !== undefined ? { telephone: payload.telephone } : {}),
+          ...(payload.email !== undefined ? { email: payload.email } : {}),
+          ...(payload.adresse !== undefined ? { adresse: payload.adresse } : {}),
+          ...(telegramChatId !== undefined ? { telegram_chat_id: telegramChatId || null } : {}),
+          ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
+        } });
+      }
+      return worker;
     });
-    return res.json(serializeIntervenant(intervenant));
+    return res.json(serializeIntervenant({ ...intervenant, app_user: current.app_user }));
   } catch (error) {
     return next(error);
   }

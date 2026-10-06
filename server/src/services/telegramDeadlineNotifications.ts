@@ -5,6 +5,7 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import {
   readTelegramNotificationConfig,
+  resolveTelegramNotificationRecipients,
 } from "./telegramNotifications.js";
 import { sendMessage } from "./messageChannels/index.js";
 import { loadGiteCleaningReadiness } from "./giteCleaningReadiness.js";
@@ -189,6 +190,7 @@ const sendCleaningCheckReminders = async (
   now: Date,
   config: ReturnType<typeof readTelegramNotificationConfig>,
   state: NotificationState,
+  recipients: string[],
 ) => {
   if (!config.notify_cleaning_check_reminder) return { checked: 0, sent: 0, failed: 0 };
   const gites = await prisma.gite.findMany({
@@ -250,6 +252,7 @@ const sendCleaningCheckReminders = async (
           guestName: arrival.hote_nom,
           arrivalAt,
         }),
+        recipients,
         options: {
           ...config,
           ...(confirmationUrl ? {
@@ -287,6 +290,7 @@ export const runTelegramDeadlineNotifications = async (
     }
 
     const deadlineBefore = startOfTodayInParisAsUtc(now);
+    const recipients = await resolveTelegramNotificationRecipients(config);
     const [contracts, invoices] = await Promise.all([
       config.notify_contract_return_overdue
         ? prisma.contrat.findMany({
@@ -324,6 +328,7 @@ export const runTelegramDeadlineNotifications = async (
       try {
         const result = await sendMessage("telegram", {
           message,
+          recipients,
           options: config,
         });
         if (result.sent_count > 0) {
@@ -359,7 +364,7 @@ export const runTelegramDeadlineNotifications = async (
       await send("invoice", document, buildInvoicePaymentOverdueMessage(document));
     }
 
-    const cleaningReminders = await sendCleaningCheckReminders(now, config, state);
+    const cleaningReminders = await sendCleaningCheckReminders(now, config, state, recipients);
 
     return {
       checked_count: contracts.length + invoices.length + cleaningReminders.checked,

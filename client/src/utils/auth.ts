@@ -17,6 +17,7 @@ export const APP_PAGES = [
 ] as const;
 export type AppPageId = (typeof APP_PAGES)[number]["id"];
 export type AppUserStatus = "owner" | "worker" | "custom";
+export type AppUserRole = "owner" | "worker";
 
 export type AppUser = {
   id: string;
@@ -25,7 +26,12 @@ export type AppUser = {
   lastName: string;
   gestionnaireId: string | null;
   intervenantId: string | null;
+  roles: AppUserRole[];
   status: AppUserStatus;
+  telephone: string | null;
+  email: string | null;
+  adresse: string | null;
+  telegramChatId: string | null;
   pageAccess: AppPageId[];
   isActive: boolean;
   permissions: {

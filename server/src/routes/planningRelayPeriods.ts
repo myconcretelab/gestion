@@ -280,16 +280,17 @@ const normalizeGitePrices = (value: unknown) => Object.fromEntries(
 
 const serializeWorker = (worker: any) => ({
   id: worker.id,
-  nom: worker.nom,
-  telephone: worker.telephone,
-  email: worker.email ?? null,
-  adresse: worker.adresse ?? null,
+  nom: worker.app_user?.display_name ?? worker.nom,
+  telephone: worker.app_user?.telephone ?? worker.telephone,
+  email: worker.app_user?.email ?? worker.email ?? null,
+  adresse: worker.app_user?.adresse ?? worker.adresse ?? null,
   message_channel_addresses: {
     ...fromJsonString<Record<string, string>>(
       worker.message_channel_addresses,
       {},
     ),
-    sms: worker.telephone,
+    sms: worker.app_user?.telephone ?? worker.telephone,
+    ...(worker.app_user?.telegram_chat_id ? { telegram: worker.app_user.telegram_chat_id } : {}),
   },
   is_active: Boolean(worker.is_active),
   created_at: worker.createdAt.toISOString(),
@@ -468,6 +469,7 @@ privateRouter.get("/workers", async (_req, res, next) => {
   try {
     const workers = await prisma.planningRelayWorker.findMany({
       orderBy: [{ is_active: "desc" }, { nom: "asc" }, { createdAt: "asc" }],
+      include: { app_user: true },
     });
     return res.json(workers.map(serializeWorker));
   } catch (error) {
@@ -499,7 +501,7 @@ privateRouter.post("/workers", async (req, res, next) => {
 privateRouter.patch("/workers/:id", async (req, res, next) => {
   try {
     const payload = workerPayloadSchema.partial().parse(req.body ?? {});
-    const current = await prisma.planningRelayWorker.findUnique({ where: { id: req.params.id } });
+    const current = await prisma.planningRelayWorker.findUnique({ where: { id: req.params.id }, include: { app_user: true } });
     if (!current) return res.status(404).json({ error: "Intervenant introuvable." });
     const worker = await prisma.planningRelayWorker.update({
       where: { id: current.id },
@@ -518,7 +520,7 @@ privateRouter.patch("/workers/:id", async (req, res, next) => {
         ...(payload.is_active !== undefined ? { is_active: payload.is_active } : {}),
       },
     });
-    return res.json(serializeWorker(worker));
+    return res.json(serializeWorker({ ...worker, app_user: current.app_user }));
   } catch (error) {
     return next(error);
   }
@@ -643,6 +645,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
       const workerIds = [...new Set(payload.sms_configs.flatMap((config) => config.worker_ids))];
       const configuredWorkers = await prisma.planningRelayWorker.findMany({
         where: { id: { in: workerIds } },
+        include: { app_user: { select: { telephone: true, telegram_chat_id: true } } },
       });
       if (configuredWorkers.length !== workerIds.length) {
         return res.status(404).json({ error: "Un intervenant est introuvable." });
@@ -819,7 +822,10 @@ privateRouter.post("/:id/send-test-sms", async (req, res, next) => {
       });
     }
     if (payload.config) {
-      const workers = await prisma.planningRelayWorker.findMany({ where: { id: { in: payload.config.worker_ids } } });
+      const workers = await prisma.planningRelayWorker.findMany({
+        where: { id: { in: payload.config.worker_ids } },
+        include: { app_user: { select: { telephone: true, telegram_chat_id: true } } },
+      });
       if (workers.length !== payload.config.worker_ids.length) return res.status(404).json({ error: "Un intervenant est introuvable." });
       const workerWithoutAddress = workers.find(
         (worker) =>
@@ -896,7 +902,10 @@ privateRouter.post("/:id/preview-sms", async (req, res, next) => {
         data: { public_origin: requestOrigin },
       });
     }
-    const worker = await prisma.planningRelayWorker.findUnique({ where: { id: config.worker_ids[0] } });
+    const worker = await prisma.planningRelayWorker.findUnique({
+      where: { id: config.worker_ids[0] },
+      include: { app_user: { select: { telephone: true, telegram_chat_id: true } } },
+    });
     if (!worker) return res.status(404).json({ error: "Intervenant SMS introuvable." });
     const preview = await previewPlanningRelayConfigSms(current, {
       ...config,

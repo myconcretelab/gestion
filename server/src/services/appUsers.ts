@@ -8,6 +8,8 @@ export const APP_PAGE_IDS = [
 ] as const;
 export type AppPageId = (typeof APP_PAGE_IDS)[number];
 export type AppUserStatus = "owner" | "worker" | "custom";
+export type AppUserRole = "owner" | "worker";
+export const APP_USER_ROLES = ["owner", "worker"] as const;
 
 export type AppUserStatusPreset = {
   status: AppUserStatus;
@@ -32,6 +34,21 @@ export const STATUS_PAGE_PRESETS: Record<AppUserStatus, AppPageId[]> = {
 export const normalizeAppUserStatus = (value: unknown, isOwner = false): AppUserStatus =>
   isOwner || value === "owner" ? "owner" : value === "worker" ? "worker" : "custom";
 
+export const normalizeAppUserRoles = (
+  value: unknown,
+  legacy?: { status?: unknown; isOwner?: boolean; intervenantId?: string | null },
+): AppUserRole[] => {
+  if (value !== undefined && value !== null) {
+    const raw = fromJsonString<unknown[]>(value, []);
+    return APP_USER_ROLES.filter((role) => Array.isArray(raw) && raw.includes(role));
+  }
+  return APP_USER_ROLES.filter((role) =>
+    role === "owner"
+      ? Boolean(legacy?.isOwner) || legacy?.status === "owner"
+      : Boolean(legacy?.intervenantId) || legacy?.status === "worker",
+  );
+};
+
 export const normalizePageAccess = (value: unknown, isOwner = false): AppPageId[] => {
   if (isOwner) return [...APP_PAGE_IDS];
   const raw = fromJsonString<unknown[]>(value, []);
@@ -51,7 +68,12 @@ export type AppUserSummary = {
   lastName: string;
   gestionnaireId: string | null;
   intervenantId: string | null;
+  roles: AppUserRole[];
   status: AppUserStatus;
+  telephone: string | null;
+  email: string | null;
+  adresse: string | null;
+  telegramChatId: string | null;
   pageAccess: AppPageId[];
   isActive: boolean;
   permissions: AppUserPermissions;
@@ -121,7 +143,12 @@ export const serializeAppUser = (user: {
   last_name: string;
   gestionnaire_id: string | null;
   intervenant_id: string | null;
+  roles?: unknown;
   status: string;
+  telephone?: string | null;
+  email?: string | null;
+  adresse?: string | null;
+  telegram_chat_id?: string | null;
   page_access: unknown;
   can_write: boolean;
   can_view_amounts: boolean;
@@ -133,6 +160,13 @@ export const serializeAppUser = (user: {
   const fallbackParts = user.display_name.trim().split(/\s+/);
   const firstName = storedFirstName || fallbackParts.shift() || user.display_name.trim();
   const lastName = storedFirstName || storedLastName ? storedLastName : fallbackParts.join(" ");
+  const roles = normalizeAppUserRoles(user.roles, {
+    status: user.status,
+    isOwner: user.is_owner,
+    intervenantId: user.intervenant_id,
+  });
+  const owner = roles.includes("owner");
+  const status: AppUserStatus = owner ? "owner" : roles.includes("worker") ? "worker" : "custom";
   return {
     id: user.id,
     displayName: [firstName, lastName].filter(Boolean).join(" "),
@@ -140,13 +174,18 @@ export const serializeAppUser = (user: {
     lastName,
     gestionnaireId: user.gestionnaire_id,
     intervenantId: user.intervenant_id,
-    status: normalizeAppUserStatus(user.status, user.is_owner),
-    pageAccess: normalizePageAccess(user.page_access, user.is_owner),
+    roles,
+    status,
+    telephone: user.telephone?.trim() || null,
+    email: user.email?.trim() || null,
+    adresse: user.adresse?.trim() || null,
+    telegramChatId: user.telegram_chat_id?.trim() || null,
+    pageAccess: normalizePageAccess(user.page_access, owner),
     isActive: user.is_active,
     permissions: {
-      canWrite: user.can_write,
-      canViewAmounts: user.can_view_amounts,
-      isOwner: user.is_owner,
+      canWrite: owner ? true : user.can_write,
+      canViewAmounts: owner ? true : user.can_view_amounts,
+      isOwner: owner,
     },
   };
 };
@@ -180,6 +219,7 @@ export const ensureAppUsersInitialized = async () => {
             first_name: manager.prenom,
             last_name: manager.nom,
             gestionnaire_id: manager.id,
+            roles: encodeJsonField(["owner"]),
             status: "owner",
             page_access: encodeJsonField(APP_PAGE_IDS),
             can_write: true,
@@ -205,9 +245,22 @@ export const ensureAppUsersInitialized = async () => {
           return ownerName === normalizedWorkerName || ownerName.startsWith(`${normalizedWorkerName} `);
         });
         if (matchingOwners.length === 1) {
+          const existingOwner = await prisma.appUser.findUnique({ where: { id: matchingOwners[0].id } });
+          const roles = normalizeAppUserRoles(existingOwner?.roles, {
+            status: existingOwner?.status,
+            isOwner: existingOwner?.is_owner,
+            intervenantId: existingOwner?.intervenant_id,
+          });
           await prisma.appUser.update({
             where: { id: matchingOwners[0].id },
-            data: { intervenant_id: worker.id },
+            data: {
+              intervenant_id: worker.id,
+              roles: encodeJsonField([...new Set([...roles, "worker"])]),
+              telephone: worker.telephone,
+              email: worker.email,
+              adresse: worker.adresse,
+              telegram_chat_id: fromJsonString<Record<string, string>>(worker.message_channel_addresses, {}).telegram ?? null,
+            },
           });
           continue;
         }
@@ -217,6 +270,11 @@ export const ensureAppUsersInitialized = async () => {
             first_name: worker.nom,
             last_name: "",
             intervenant_id: worker.id,
+            roles: encodeJsonField(["worker"]),
+            telephone: worker.telephone,
+            email: worker.email,
+            adresse: worker.adresse,
+            telegram_chat_id: fromJsonString<Record<string, string>>(worker.message_channel_addresses, {}).telegram ?? null,
             status: "worker",
             page_access: encodeJsonField(workerPreset.pageAccess),
             can_write: workerPreset.canWrite,

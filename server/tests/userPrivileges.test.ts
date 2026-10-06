@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { APP_PAGE_IDS, DEFAULT_STATUS_PRESETS, normalizePageAccess, serializeAppUser, serializeStatusPreset } from "../src/services/appUsers.ts";
+import { APP_PAGE_IDS, DEFAULT_STATUS_PRESETS, normalizeAppUserRoles, normalizePageAccess, serializeAppUser, serializeStatusPreset } from "../src/services/appUsers.ts";
 import { buildGiteCheckedMessage } from "../src/services/telegramNotifications.ts";
 
 test("un propriétaire conserve toujours toutes les pages", () => {
@@ -66,6 +66,34 @@ test("le prénom et le nom pilotent le nom affiché d’un utilisateur", () => {
   });
   assert.equal(singleNameUser.displayName, "Camille");
   assert.equal(singleNameUser.lastName, "");
+});
+
+test("un utilisateur cumule les rôles et porte ses propres coordonnées", () => {
+  assert.deepEqual(normalizeAppUserRoles('["owner","worker","invalid"]'), ["owner", "worker"]);
+  const user = serializeAppUser({
+    id: "user-both",
+    display_name: "Camille Martin",
+    first_name: "Camille",
+    last_name: "Martin",
+    roles: '["owner","worker"]',
+    telephone: "0612345678",
+    email: "camille@example.com",
+    adresse: "1 rue des Gîtes",
+    telegram_chat_id: "123456789",
+    gestionnaire_id: "manager-1",
+    intervenant_id: "worker-1",
+    status: "owner",
+    page_access: "[]",
+    can_write: false,
+    can_view_amounts: false,
+    is_owner: true,
+    is_active: true,
+  });
+  assert.deepEqual(user.roles, ["owner", "worker"]);
+  assert.equal(user.telephone, "0612345678");
+  assert.equal(user.telegramChatId, "123456789");
+  assert.equal(user.permissions.isOwner, true);
+  assert.deepEqual(user.pageAccess, [...APP_PAGE_IDS]);
 });
 
 test("le message Telegram du ménage indique le prénom de l’utilisateur", () => {
