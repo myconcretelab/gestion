@@ -96,6 +96,8 @@ test("paiement des heures : remet le solde à zéro sans effacer l'historique", 
   const originalWorkerFind = prisma.planningRelayWorker.findUnique;
   const originalEntriesFind = prisma.intervenantHourEntry.findMany;
   const originalUpdateMany = prisma.intervenantHourEntry.updateMany;
+  const originalInterventionsFind = prisma.userIntervention.findMany;
+  const originalInterventionsUpdate = prisma.userIntervention.updateMany;
   const entries = [
     { id: "h1", intervenant_id: "christine", minutes: 60, paid_at: null as Date | null, deleted_at: null, hourly_rate_snapshot: null as number | null },
     { id: "h2", intervenant_id: "christine", minutes: 90, paid_at: null as Date | null, deleted_at: null, hourly_rate_snapshot: null as number | null },
@@ -128,6 +130,8 @@ test("paiement des heures : remet le solde à zéro sans effacer l'historique", 
       });
       return { count };
     }) as any;
+    prisma.userIntervention.findMany = (async () => []) as any;
+    prisma.userIntervention.updateMany = (async () => ({ count: 0 })) as any;
 
     const result = await call();
     assert.equal(result.error, undefined);
@@ -145,5 +149,7 @@ test("paiement des heures : remet le solde à zéro sans effacer l'historique", 
     prisma.planningRelayWorker.findUnique = originalWorkerFind;
     prisma.intervenantHourEntry.findMany = originalEntriesFind;
     prisma.intervenantHourEntry.updateMany = originalUpdateMany;
+    prisma.userIntervention.findMany = originalInterventionsFind;
+    prisma.userIntervention.updateMany = originalInterventionsUpdate;
   }
 });
