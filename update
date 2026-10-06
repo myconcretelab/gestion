@@ -186,10 +186,10 @@ else
 
   case "$NPM_INSTALL_MODE" in
     ci)
-      run_step "Install/update dependencies with npm ci" npm ci --include=optional
+      run_step "Install/update dependencies with npm ci" npm ci --include=dev --include=optional
       ;;
     install)
-      run_step "Install/update dependencies with npm install (keeps existing node_modules)" npm install --include=optional
+      run_step "Install/update dependencies with npm install (keeps existing node_modules)" npm install --include=dev --include=optional
       ;;
     *)
       echo "Invalid NPM_INSTALL_MODE='${NPM_INSTALL_MODE}'. Expected 'ci' or 'install'."
