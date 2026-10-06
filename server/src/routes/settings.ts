@@ -333,6 +333,7 @@ const telegramNotificationSettingsSchema = z.object({
   notify_booking_request_approved: z.boolean().default(true),
   notify_contract_return_overdue: z.boolean().default(true),
   notify_invoice_payment_overdue: z.boolean().default(true),
+  notify_cleaning_check_reminder: z.boolean().default(true),
 });
 const dailyReservationEmailRunSchema = z.object({
   force: z.boolean().optional().default(false),

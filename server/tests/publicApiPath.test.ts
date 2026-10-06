@@ -8,6 +8,8 @@ test("isPublicApiPath autorise les endpoints publics attendus", () => {
   assert.equal(isPublicApiPath("/public/gites"), true);
   assert.equal(isPublicApiPath("/public/gites/gite-le-liberte"), true);
   assert.equal(isPublicApiPath("/public/planning-relay/period.signature"), true);
+  assert.equal(isPublicApiPath("/public/cleaning-check/confirm"), true);
+  assert.equal(isPublicApiPath("/public/cleaning-check/other"), false);
   assert.equal(isPublicApiPath("/public/planning-relay"), false);
   assert.equal(isPublicApiPath("/contracts/abc123"), false);
   assert.equal(isPublicApiPath("/contracts/abc123/pdf/extra"), false);

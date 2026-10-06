@@ -569,7 +569,7 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
       return res.status(409).json({ error: "Aucun contrôle de préparation n’est disponible pour ce gîte." });
     }
     if (checked && !isCleaningCheckAvailable(readiness, new Date())) {
-      return res.status(409).json({ error: "Le contrôle sera disponible à partir de 8 h 30 le jour du départ." });
+      return res.status(409).json({ error: "Le contrôle sera disponible à partir de minuit le jour du départ." });
     }
 
     const wasChecked = Boolean(readiness.checked_at);

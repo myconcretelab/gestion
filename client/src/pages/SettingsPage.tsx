@@ -550,6 +550,7 @@ type TelegramNotificationConfig = {
   notify_booking_request_approved: boolean;
   notify_contract_return_overdue: boolean;
   notify_invoice_payment_overdue: boolean;
+  notify_cleaning_check_reminder: boolean;
 };
 
 type TelegramNotificationState = {
@@ -999,6 +1000,7 @@ const DEFAULT_TELEGRAM_NOTIFICATION_CONFIG: TelegramNotificationConfig = {
   notify_booking_request_approved: true,
   notify_contract_return_overdue: true,
   notify_invoice_payment_overdue: true,
+  notify_cleaning_check_reminder: true,
 };
 
 const DEFAULT_TELEGRAM_NOTIFICATION_STATE: TelegramNotificationState = {
@@ -2548,6 +2550,8 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
           data?.config?.notify_contract_return_overdue !== false,
         notify_invoice_payment_overdue:
           data?.config?.notify_invoice_payment_overdue !== false,
+        notify_cleaning_check_reminder:
+          data?.config?.notify_cleaning_check_reminder !== false,
       },
       bot_configured: Boolean(data?.bot_configured),
     };
@@ -3558,6 +3562,8 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
               telegramNotificationDraft.notify_contract_return_overdue,
             notify_invoice_payment_overdue:
               telegramNotificationDraft.notify_invoice_payment_overdue,
+            notify_cleaning_check_reminder:
+              telegramNotificationDraft.notify_cleaning_check_reminder,
           },
         },
       );
@@ -6523,6 +6529,15 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, notify_gite_checked: event.target.value === "1" }))}>
                             <option value="1">Notifier quand un gîte est checké</option>
                             <option value="0">Ne pas notifier</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          Rappel du contrôle ménage
+                          <select value={telegramNotificationDraft.notify_cleaning_check_reminder ? "1" : "0"}
+                            disabled={savingTelegramNotification || testingTelegramNotification}
+                            onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, notify_cleaning_check_reminder: event.target.value === "1" }))}>
+                            <option value="1">Rappeler 1 h avant l'arrivée</option>
+                            <option value="0">Ne pas rappeler</option>
                           </select>
                         </label>
                         <label className="field">

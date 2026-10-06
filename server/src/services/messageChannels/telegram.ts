@@ -10,6 +10,12 @@ export type TelegramMessageChannelOptions = {
   chat_ids: string[];
   parse_mode?: "HTML" | null;
   has_explicit_recipients?: boolean;
+  reply_markup?: {
+    inline_keyboard: Array<Array<{
+      text: string;
+      url: string;
+    }>>;
+  };
 };
 
 const getOptions = (request: MessageSendRequest) =>
@@ -20,6 +26,7 @@ const postTelegramMessage = async (params: {
   chatId: string;
   text: string;
   parseMode: "HTML" | null;
+  replyMarkup?: TelegramMessageChannelOptions["reply_markup"];
 }) => {
   const response = await fetch(
     `https://api.telegram.org/bot${params.botToken}/sendMessage`,
@@ -30,6 +37,7 @@ const postTelegramMessage = async (params: {
         chat_id: params.chatId,
         text: params.text,
         ...(params.parseMode ? { parse_mode: params.parseMode } : {}),
+        ...(params.replyMarkup ? { reply_markup: params.replyMarkup } : {}),
         disable_web_page_preview: true,
       }),
     },
@@ -108,6 +116,7 @@ export const telegramMessageChannel: MessageChannel = {
         chatId,
         text: request.message,
         parseMode: options.parse_mode === null ? null : "HTML",
+        replyMarkup: options.reply_markup,
       });
       deliveries.push({
         recipient: chatId,

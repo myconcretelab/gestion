@@ -15,6 +15,7 @@ export type TelegramNotificationConfig = {
   notify_booking_request_approved: boolean;
   notify_contract_return_overdue: boolean;
   notify_invoice_payment_overdue: boolean;
+  notify_cleaning_check_reminder: boolean;
 };
 
 export type TelegramNotificationPublicState = {
@@ -98,6 +99,7 @@ export const buildDefaultTelegramNotificationConfig =
     notify_booking_request_approved: true,
     notify_contract_return_overdue: true,
     notify_invoice_payment_overdue: true,
+    notify_cleaning_check_reminder: true,
   });
 
 export const normalizeTelegramNotificationConfig = (
@@ -130,6 +132,10 @@ export const normalizeTelegramNotificationConfig = (
   notify_invoice_payment_overdue: toBoolean(
     input?.notify_invoice_payment_overdue,
     fallback.notify_invoice_payment_overdue,
+  ),
+  notify_cleaning_check_reminder: toBoolean(
+    input?.notify_cleaning_check_reminder,
+    fallback.notify_cleaning_check_reminder,
   ),
 });
 
@@ -188,6 +194,7 @@ export const buildTelegramNotificationState = (
     notify_booking_request_approved: config.notify_booking_request_approved,
     notify_contract_return_overdue: config.notify_contract_return_overdue,
     notify_invoice_payment_overdue: config.notify_invoice_payment_overdue,
+    notify_cleaning_check_reminder: config.notify_cleaning_check_reminder,
   },
   bot_configured: Boolean(config.bot_token.trim()),
 });

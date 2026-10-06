@@ -7,6 +7,7 @@ import { env } from "./config/env.js";
 import authRouter from "./routes/auth.js";
 import gitesRouter from "./routes/gites.js";
 import publicGitesRouter from "./routes/publicGites.js";
+import publicCleaningCheckRouter from "./routes/publicCleaningCheck.js";
 import managersRouter from "./routes/managers.js";
 import contractsRouter from "./routes/contracts.js";
 import invoicesRouter from "./routes/invoices.js";
@@ -167,6 +168,7 @@ export const createApp = () => {
 
   app.use("/api/gites", gitesRouter);
   app.use("/api/public/gites", publicGitesRouter);
+  app.use("/api/public/cleaning-check", publicCleaningCheckRouter);
   app.use("/api/public/planning-relay", publicPlanningRelayRouter);
   app.use("/api/managers", managersRouter);
   app.use("/api/contracts", contractsRouter);

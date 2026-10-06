@@ -534,7 +534,7 @@ const getParisClock = (value: Date) => {
 const isCleaningReadinessAvailable = (readiness: GiteCleaningReadiness, now: Date) => {
   const clock = getParisClock(now);
   return readiness.departure_date < clock.dateIso
-    || (readiness.departure_date === clock.dateIso && clock.minutes >= 8 * 60 + 30);
+    || readiness.departure_date === clock.dateIso;
 };
 
 const buildReservationFocusHref = (event: TodayEvent) => {

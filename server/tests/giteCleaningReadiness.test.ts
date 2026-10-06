@@ -21,11 +21,11 @@ const reservation = (overrides: Partial<{
   options: overrides.options ?? {},
 });
 
-test("le gîte devient disponible au contrôle à 8 h 30 le jour du départ", () => {
-  const [readiness] = buildGiteCleaningReadiness([gite], [reservation()], new Date("2026-10-03T06:29:00.000Z"));
+test("le gîte devient disponible au contrôle à minuit le jour du départ", () => {
+  const [readiness] = buildGiteCleaningReadiness([gite], [reservation()], new Date("2026-10-02T22:00:00.000Z"));
   assert.ok(readiness);
-  assert.equal(isCleaningCheckAvailable(readiness, new Date("2026-10-03T06:29:00.000Z")), false);
-  assert.equal(isCleaningCheckAvailable(readiness, new Date("2026-10-03T06:30:00.000Z")), true);
+  assert.equal(isCleaningCheckAvailable(readiness, new Date("2026-10-02T21:59:00.000Z")), false);
+  assert.equal(isCleaningCheckAvailable(readiness, new Date("2026-10-02T22:00:00.000Z")), true);
 });
 
 test("le contrôle reste à faire pendant les jours vides avant la prochaine arrivée", () => {

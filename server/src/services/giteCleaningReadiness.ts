@@ -1,7 +1,7 @@
 import prisma from "../db/prisma.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 
-export const CLEANING_CHECK_START_MINUTES = 8 * 60 + 30;
+export const CLEANING_CHECK_START_MINUTES = 0;
 
 type ReadinessGite = {
   id: string;
