@@ -61,7 +61,8 @@ test("buildContractEmailMessage construit un email de contrat exploitable", () =
   assert.match(message.text, /arrhes de 170€/);
   assert.match(message.text, /soit 800€/);
   assert.match(message.text, /https:\/\/example.com\/contracts\/GT-2026-000001\.pdf/);
-  assert.match(message.text, /Les calèches de Brocéliande/);
+  assert.match(message.text, /N'hésitez pas à nous contacter/);
+  assert.doesNotMatch(message.text, /Brocéliande/);
   assert.match(message.html, /<p>Bonjour Mickael,/);
 });
 

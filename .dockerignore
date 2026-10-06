@@ -1,0 +1,8 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.env*
+server/data
+server/prisma/*.db*
+*.log

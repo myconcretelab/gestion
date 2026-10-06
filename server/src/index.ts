@@ -8,6 +8,7 @@ import { startTelegramDeadlineNotificationCron } from "./services/telegramDeadli
 import { startPlanningRelaySmsCron } from "./services/planningRelaySms.js";
 import { assertProductionAuthConfigured } from "./services/serverAuth.js";
 import { ensureLegacyIntegrationTokenMigrated } from "./services/apiTokens.js";
+import { isModuleEnabled } from "./services/installationConfig.js";
 
 await assertProductionAuthConfigured();
 await ensureLegacyIntegrationTokenMigrated();
@@ -15,12 +16,12 @@ await ensureLegacyIntegrationTokenMigrated();
 const app = createApp();
 
 if (env.NODE_ENV !== "test") {
-  startPumpCron();
-  startDailyReservationEmailCron();
-  startSmartlifeAutomationCron();
-  startGitePhotosWordPressWebhookQueue();
-  startTelegramDeadlineNotificationCron();
-  startPlanningRelaySmsCron();
+  if (await isModuleEnabled("pump_airbnb")) startPumpCron();
+  if (await isModuleEnabled("daily_email")) startDailyReservationEmailCron();
+  if (await isModuleEnabled("smart_life")) startSmartlifeAutomationCron();
+  if (await isModuleEnabled("web_publication")) startGitePhotosWordPressWebhookQueue();
+  if (await isModuleEnabled("telegram")) startTelegramDeadlineNotificationCron();
+  if (await isModuleEnabled("sms") && await isModuleEnabled("worker_planning")) startPlanningRelaySmsCron();
 }
 
 app.listen(env.PORT, () => {

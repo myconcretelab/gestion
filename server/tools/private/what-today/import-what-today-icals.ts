@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
-import prisma from "../src/db/prisma.js";
+import prisma from "../../../src/db/prisma.js";
 
 type WhatTodaySource = {
   url: string;

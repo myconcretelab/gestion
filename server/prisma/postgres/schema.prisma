@@ -12,6 +12,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model InstallationConfig {
+  id                String   @id @default("default")
+  organization_json String   @default("{}")
+  modules_json      String   @default("{}")
+  setup_completed   Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("installation_config")
+}
+
+model ContentTemplateVersion {
+  id            String   @id @default(cuid())
+  template_key  String
+  version       Int
+  subject       String?
+  content       String
+  is_active     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@unique([template_key, version], map: "content_template_versions_key_version_key")
+  @@index([template_key, is_active], map: "content_template_versions_active_idx")
+  @@map("content_template_versions")
+}
+
 model Gite {
   id                                   String   @id @default(cuid())
   ordre                                Int      @default(0)

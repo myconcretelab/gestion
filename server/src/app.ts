@@ -29,6 +29,8 @@ import todayRouter from "./routes/today.js";
 import personalExpensesRouter from "./routes/personalExpenses.js";
 import { planningRelayPeriodsRouter, publicPlanningRelayRouter } from "./routes/planningRelayPeriods.js";
 import documentSharesRouter, { publicDocumentSharesRouter } from "./routes/documentShares.js";
+import installationRouter from "./routes/installation.js";
+import productSettingsRouter from "./routes/productSettings.js";
 import { hasValidCronTriggerToken } from "./utils/cronTriggerAuth.js";
 import { isPublicApiPath } from "./utils/publicApiPath.js";
 import { enforceRequestRateLimit, PUBLIC_API_THROTTLE_CONFIG, sendThrottleResponse } from "./services/requestThrottle.js";
@@ -40,6 +42,7 @@ import {
   isServerAuthRequired,
 } from "./services/serverAuth.js";
 import { canActAsRequestedUser, containsMonetaryFields, getRequiredBusinessPermission, hasBusinessPermission, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
+import { getModuleForApiPath, isModuleEnabled } from "./services/installationConfig.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -106,8 +109,13 @@ export const createApp = () => {
   });
 
   app.use("/api/auth", authRouter);
+  app.use("/api/installation", installationRouter);
   app.use("/api", async (req, res, next) => {
     try {
+      const requiredModule = getModuleForApiPath(req.path);
+      if (requiredModule && !(await isModuleEnabled(requiredModule))) {
+        return res.status(404).json({ error: "Fonctionnalité désactivée.", code: "MODULE_DISABLED", module: requiredModule });
+      }
       if (isPublicApiPath(req.path)) {
         const throttle = await enforceRequestRateLimit(req, res, PUBLIC_API_THROTTLE_CONFIG);
         if (throttle.blocked) return sendThrottleResponse(res, throttle);
@@ -197,6 +205,7 @@ export const createApp = () => {
   app.use("/api/booking-requests", bookingRequestsRouter);
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/settings", productSettingsRouter);
   app.use("/api/users", usersRouter);
   app.use("/api/intervenants/hours", intervenantHoursRouter);
   app.use("/api/intervenants", intervenantsRouter);

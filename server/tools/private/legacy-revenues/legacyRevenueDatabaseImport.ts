@@ -1,4 +1,4 @@
-import prisma from "../db/prisma.js";
+import prisma from "../../../src/db/prisma.js";
 import type { LegacyRevenueParseResult, LegacyRevenueRecord } from "./legacyRevenueImport.js";
 
 const normalizeTextKey = (value: string) =>

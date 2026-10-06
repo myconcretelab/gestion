@@ -14,9 +14,7 @@ const normalize = (value: string) =>
     .trim();
 
 const KNOWN_NAME_COLORS: Record<string, string> = {
-  phonsine: GITE_COLOR_PALETTE[0],
   gree: GITE_COLOR_PALETTE[1],
-  edmond: GITE_COLOR_PALETTE[2],
   liberte: GITE_COLOR_PALETTE[3],
 };
 

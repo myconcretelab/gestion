@@ -33,6 +33,7 @@ backups/
 *.tsv
 *.dump
 *.backup
+installation-backup-*.tar.gz
 *.pem
 *.key
 *.p12

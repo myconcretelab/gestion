@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
 import { renderTemplate } from "./template.js";
+import { getInstallationConfig } from "./installationConfig.js";
 import { formatDate } from "../utils/dates.js";
 import { formatEuro, round2, toNumber, type NumericLike } from "../utils/money.js";
 import type { ContractTotals, OptionsInput } from "./contractCalculator.js";
@@ -1057,7 +1058,7 @@ const buildContractHtml = async (params: {
     arrhesMontant: formatEuro(toNumber(params.contract.arrhes_montant)),
     arrhesDateLimite: formatDate(params.contract.arrhes_date_limite),
     reservationTermsHtml: buildReservationTermsHtml({
-      emailContact: params.gite.email ?? "contact@gites-broceliande.com",
+      emailContact: params.gite.email ?? "",
       arrhesDateLimite: formatDate(params.contract.arrhes_date_limite),
       arrhesMontant: formatEuro(toNumber(params.contract.arrhes_montant)),
       statutPaiementArrhes: params.contract.statut_paiement_arrhes,
@@ -1246,6 +1247,7 @@ const buildInvoiceHtml = async (params: {
   totals: ContractTotals;
   bodyAttrs?: string;
 }) => {
+  const { organization } = await getInstallationConfig();
   const template = await loadInvoiceTemplate();
   const options = parseJsonField<OptionsInput>(params.invoice.options, {});
   const clauses = parseJsonField<Record<string, unknown>>(params.invoice.clauses ?? {}, {});
@@ -1303,6 +1305,7 @@ const buildInvoiceHtml = async (params: {
         )}</span></div>`;
 
   return renderTemplate(template, {
+    organizationName: organization.publicDisplayName || organization.tradeName || params.gite.proprietaires_noms,
     bodyAttrs: params.bodyAttrs ?? "",
     invoiceNumber: params.invoice.numero_facture,
     emissionDate: formatDate(new Date()),

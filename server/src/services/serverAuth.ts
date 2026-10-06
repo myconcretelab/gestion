@@ -5,6 +5,7 @@ import type { Request, Response } from "express";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { APP_PAGE_IDS, ensureAppUsersInitialized, findActiveAppUser, type AppUserSummary } from "./appUsers.js";
+import { getInstallationConfig } from "./installationConfig.js";
 
 const SETTINGS_FILE = path.join(env.DATA_DIR, "server-auth-settings.json");
 const SESSION_COOKIE_NAME = "contrats_session";
@@ -217,7 +218,55 @@ export const assertProductionAuthConfigured = async () => {
     where: { is_active: true, password_hash: { not: null }, password_salt: { not: null } },
   });
   if (shouldRefuseProductionStart(env.NODE_ENV, protectedUsers)) {
-    throw new Error("Démarrage refusé: aucun compte protégé. Configurez BOOTSTRAP_ADMIN_LOGIN et BOOTSTRAP_ADMIN_PASSWORD (12 caractères minimum), ou migrez BASIC_AUTH_PASSWORD une seule fois.");
+    const installation = await getInstallationConfig();
+    if (!installation.setupComplete && env.SETUP_TOKEN.length >= 24) return;
+    throw new Error("Démarrage refusé: aucun compte protégé. Configurez SETUP_TOKEN pour l'assistant initial, ou BOOTSTRAP_ADMIN_LOGIN et BOOTSTRAP_ADMIN_PASSWORD (12 caractères minimum).");
+  }
+};
+
+export const createFirstAdministrator = async (input: {
+  loginId: string;
+  password: string;
+  displayName: string;
+  email?: string;
+}) => {
+  const existingProtectedUsers = await prisma.appUser.count({
+    where: { password_hash: { not: null }, password_salt: { not: null } },
+  });
+  if (existingProtectedUsers > 0) {
+    throw Object.assign(new Error("Le premier administrateur existe déjà."), { status: 409, code: "SETUP_ALREADY_COMPLETED" });
+  }
+  const loginId = normalizeLoginId(input.loginId);
+  if (!loginId || loginId.length > 180) throw Object.assign(new Error("Identifiant invalide."), { status: 400 });
+  if (input.password.length < PASSWORD_MIN_LENGTH) throw Object.assign(new Error("Le mot de passe doit contenir au moins 12 caractères."), { status: 400 });
+  const displayName = input.displayName.trim();
+  if (!displayName) throw Object.assign(new Error("Le nom de l'administrateur est requis."), { status: 400 });
+  const hash = await hashPassword(input.password);
+  const existingOwner = await prisma.appUser.findFirst({ where: { is_owner: true }, orderBy: { createdAt: "asc" } });
+  const data = {
+    display_name: displayName,
+    first_name: displayName,
+    last_name: "",
+    email: input.email?.trim() || null,
+    roles: JSON.stringify(["owner"]),
+    status: "owner",
+    page_access: JSON.stringify(APP_PAGE_IDS),
+    can_write: true,
+    can_view_amounts: true,
+    is_owner: true,
+    is_active: true,
+    login_id: loginId,
+    password_hash: hash.passwordHash,
+    password_salt: hash.passwordSalt,
+    password_updated_at: new Date(),
+  };
+  try {
+    return existingOwner
+      ? await prisma.appUser.update({ where: { id: existingOwner.id }, data })
+      : await prisma.appUser.create({ data });
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") throw Object.assign(new Error("Cet identifiant est déjà utilisé."), { status: 409 });
+    throw error;
   }
 };
 

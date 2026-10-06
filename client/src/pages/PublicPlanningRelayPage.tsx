@@ -16,6 +16,7 @@ import {
 } from "../utils/printableOperations";
 import { formatEuro } from "../utils/format";
 import type { PublicPlanningRelayResponse, Reservation } from "../utils/types";
+import type { PublicInstallationConfig } from "../utils/installation";
 
 const formatDayHeader = (value: string) => {
   const date = parseIsoDateUtc(value);
@@ -89,6 +90,7 @@ const PublicPlanningRelayPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [hidePastDays, setHidePastDays] = useState(true);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [brand, setBrand] = useState<PublicInstallationConfig["organization"] | null>(null);
 
   const load = useCallback(async (silent = false) => {
     if (!token) return;
@@ -106,6 +108,7 @@ const PublicPlanningRelayPage = () => {
   }, [token]);
 
   useEffect(() => {
+    void apiFetch<PublicInstallationConfig>("/installation/public-config").then((config) => setBrand(config.organization)).catch(() => undefined);
     void load();
     const interval = window.setInterval(() => void load(true), 60_000);
     return () => window.clearInterval(interval);
@@ -182,7 +185,7 @@ const PublicPlanningRelayPage = () => {
   if (error || !data) {
     return (
       <main className="public-relay-state">
-        <img src="/logo.png" alt="Les gîtes de Brocéliande" />
+        {brand?.logoUrl ? <img src={brand.logoUrl} alt={brand.publicDisplayName || brand.tradeName} /> : null}
         <h1>Planning indisponible</h1>
         <p>{error ?? "Ce lien n’est plus valide."}</p>
       </main>
@@ -194,7 +197,7 @@ const PublicPlanningRelayPage = () => {
   return (
     <main className="public-relay-page operations-print-page">
       <header className="public-relay-toolbar no-print">
-        <img src="/logo.png" alt="Les gîtes de Brocéliande" />
+        {brand?.logoUrl ? <img src={brand.logoUrl} alt={brand.publicDisplayName || brand.tradeName} /> : null}
         <div>
           <span>Planning relais</span>
           <h1>{period.label}</h1>
@@ -376,7 +379,7 @@ const PublicPlanningRelayPage = () => {
             </table>
           )}
         </section>
-        <footer className="operations-sheet__footer">Planning actualisé le {new Date(data.generated_at).toLocaleString("fr-FR")} · Les gîtes de Brocéliande</footer>
+        <footer className="operations-sheet__footer">Planning actualisé le {new Date(data.generated_at).toLocaleString("fr-FR")}{brand?.publicDisplayName || brand?.tradeName ? ` · ${brand.publicDisplayName || brand.tradeName}` : ""}</footer>
       </article>
     </main>
   );

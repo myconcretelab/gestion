@@ -7,6 +7,8 @@ import { encodeJsonField } from "../src/utils/jsonFields.js";
 import { generateIcalExportToken } from "../src/utils/reservationOrigin.js";
 
 const seed = async () => {
+  await prisma.contentTemplateVersion.deleteMany();
+  await prisma.installationConfig.deleteMany();
   await prisma.appUser.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.reservationPlaceholder.deleteMany();
@@ -16,6 +18,47 @@ const seed = async () => {
   await prisma.contratCounter.deleteMany();
   await prisma.gite.deleteMany();
   await prisma.gestionnaire.deleteMany();
+
+  await prisma.installationConfig.create({
+    data: {
+      id: "default",
+      setup_completed: true,
+      organization_json: JSON.stringify({
+        tradeName: "Locations Démonstration",
+        legalName: "Société Démonstration",
+        addressLine1: "10 rue des Démonstrations",
+        addressLine2: "",
+        postalCode: "44000",
+        city: "Nantes",
+        country: "FR",
+        email: "location@example.test",
+        phone: "06 00 00 00 00",
+        website: "https://example.test",
+        iban: "FR7630003000300030003000300",
+        bic: "DEMOFRPP",
+        bankAccountHolder: "Société Démonstration",
+        locale: "fr-FR",
+        currency: "EUR",
+        timezone: "Europe/Paris",
+        logoUrl: "",
+        faviconUrl: "",
+        primaryColor: "#315f4b",
+        emailSignature: "L'équipe de démonstration",
+        smsSignature: "Locations Démonstration",
+        documentFooter: "Locations Démonstration",
+        publicDisplayName: "Locations Démonstration",
+        documentLocale: "fr-FR",
+        documentDateFormat: "",
+        documentPaymentTerms: "",
+      }),
+      modules_json: JSON.stringify({
+        reservations: true, contracts: true, invoices: true, finances: true,
+        personal_expenses: true, worker_planning: true, web_publication: false,
+        ical: false, pump_airbnb: false, smart_life: false, sms: false,
+        telegram: false, daily_email: false,
+      }),
+    },
+  });
 
   const gestionnaireLea = await prisma.gestionnaire.create({
     data: {
@@ -34,23 +77,23 @@ const seed = async () => {
     data: {
       ordre: 0,
       ical_export_token: generateIcalExportToken(),
-      nom: "GITE LE LIBERTÉ",
-      prefixe_contrat: "LIB",
-      adresse_ligne1: "1 Rue de la Forêt, 35380 Paimpont",
-      adresse_ligne2: "Brocéliande",
+      nom: "GÎTE DES HORIZONS",
+      prefixe_contrat: "HOR",
+      adresse_ligne1: "10 rue des Démonstrations, 44000 Nantes",
+      adresse_ligne2: null,
       capacite_max: 6,
       nb_adultes_max: 6,
       nb_adultes_habituel: 6,
       nb_enfants_max: 0,
-      proprietaires_noms: "Sébastien JACQMIN et Soazig MOLINIER",
-      proprietaires_adresse: "1 Rue de la Forêt, 35380 Paimpont",
-      site_web: "www.gites-broceliande.com",
-      email: "contact@gites-broceliande.com",
+      proprietaires_noms: "Société Démonstration",
+      proprietaires_adresse: "10 rue des Démonstrations, 44000 Nantes",
+      site_web: "https://example.test",
+      email: "location@example.test",
       telephones: encodeJsonField(["06 00 00 00 00", "02 99 00 00 00"]),
       taxe_sejour_par_personne_par_nuit: 0.6,
       iban: "FR76 3000 3000 3000 3000 3000 300",
       bic: "SOGEFRPP",
-      titulaire: "Sébastien JACQMIN",
+      titulaire: "Société Démonstration",
       caracteristiques: "Jardin clos\nCheminée\nTerrasse couverte",
       regle_animaux_acceptes: false,
       regle_bois_premiere_flambee: true,
@@ -74,23 +117,23 @@ const seed = async () => {
     data: {
       ordre: 1,
       ical_export_token: generateIcalExportToken(),
-      nom: "GITE LA PRAIRIE",
-      prefixe_contrat: "PRA",
-      adresse_ligne1: "12 Chemin des Sources, 56430 Tréhorenteuc",
+      nom: "GÎTE DU JARDIN",
+      prefixe_contrat: "JAR",
+      adresse_ligne1: "20 avenue Exemple, 33000 Bordeaux",
       adresse_ligne2: null,
       capacite_max: 4,
       nb_adultes_max: 4,
       nb_adultes_habituel: 4,
       nb_enfants_max: 0,
-      proprietaires_noms: "Claire DURAND",
-      proprietaires_adresse: "12 Chemin des Sources, 56430 Tréhorenteuc",
-      site_web: "www.gites-prairie.fr",
-      email: "bonjour@gites-prairie.fr",
+      proprietaires_noms: "Société Démonstration",
+      proprietaires_adresse: "10 rue des Démonstrations, 44000 Nantes",
+      site_web: "https://example.test",
+      email: "location@example.test",
       telephones: encodeJsonField(["06 11 22 33 44"]),
       taxe_sejour_par_personne_par_nuit: 0.8,
       iban: "FR76 1000 2000 3000 4000 5000 600",
       bic: "AGRIFRPP",
-      titulaire: "Claire DURAND",
+      titulaire: "Société Démonstration",
       caracteristiques: "Vue campagne\nParking privé\nCuisine équipée",
       regle_animaux_acceptes: true,
       regle_bois_premiere_flambee: false,
@@ -204,8 +247,8 @@ const seed = async () => {
 
   await createContract({
     gite: giteLib,
-    locataire_nom: "Camille Demillier",
-    locataire_adresse: "4 Rue du Chêne, 35000 Rennes",
+    locataire_nom: "Client Exemple",
+    locataire_adresse: "1 rue Fictive, 75000 Paris",
     locataire_tel: "06 12 34 56 78",
     nb_adultes: 2,
     nb_enfants_2_17: 1,
@@ -229,8 +272,8 @@ const seed = async () => {
 
   await createContract({
     gite: gitePrairie,
-    locataire_nom: "Luc Jego",
-    locataire_adresse: "15 Rue des Hortensias, 56000 Vannes",
+    locataire_nom: "Cliente Démonstration",
+    locataire_adresse: "2 avenue Exemple, 69000 Lyon",
     locataire_tel: "06 98 76 54 32",
     nb_adultes: 2,
     nb_enfants_2_17: 0,

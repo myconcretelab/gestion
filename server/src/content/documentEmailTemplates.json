@@ -1,105 +1,21 @@
 {
   "contrat": {
     "subject": "Contrat {{giteName}} {{documentNumber}}",
-    "bodyLines": [
-      "{{greeting}}",
-      "",
-      "Suite à votre appel, veuillez trouver {{documentDeliveryIntroContract}} le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.",
-      "",
-      "{{documentDeliveryLabel}}",
-      "{{documentDeliveryValue}}",
-      "",
-      "{{arrhesInstruction}}",
-      "",
-      "Si vous voulez des idées d'activités pour votre escapade mauronnaise, voici ce que je peux vous conseiller :",
-      "",
-      "{{activitiesList}}",
-      "",
-      "Vous trouverez de bonnes indications sur ces sites :",
-      "{{guideUrl}}",
-      "{{destinationUrl}}",
-      "",
-      "N'hésitez pas à revenir vers nous si vous avez des questions pour l'organisation de votre rencontre.",
-      "",
-      "Si toutefois vous ne voulez pas donner suite à cette location, merci de nous en informer rapidement pour que nous puissions débloquer les dates sur le calendrier et les proposer à d'autres locataires.",
-      "",
-      "Je vous souhaite une bonne journée.",
-      "",
-      "Bien à vous,",
-      "Soazig",
-      "",
-      "www.gites-broceliande.com",
-      "Soazig et Sébastien Jacqmin",
-      "T : (0033) 6 98 99 37 35"
-    ],
-    "activities": [
-      "Les calèches de Brocéliande. Ils proposent des balades en forêt.\nhttps://broceliande.guide/Les-Caleches-de-Barenton",
-      "Les balades contées avec les guides conteurs de Brocéliande.\nhttps://guidesdebroceliande.com/",
-      "Le Château de Comper, avec le Centre de l'Imaginaire Arthurien.",
-      "La Porte des Secrets à Paimpont.",
-      "En balades : la fontaine de Barenton, le Val sans Retour, le lac au Duc et l'étang de Trémelin."
-    ],
-    "guideUrl": "https://broceliande.guide/Secrets-de-Broceliande",
-    "destinationUrl": "https://destination-broceliande.com/"
+    "bodyLines": ["{{greeting}}", "", "Suite à votre appel, veuillez trouver {{documentDeliveryIntroContract}} le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.", "", "{{documentDeliveryLabel}}", "{{documentDeliveryValue}}", "", "{{arrhesInstruction}}", "", "N'hésitez pas à nous contacter si vous avez des questions.", "", "Bien cordialement"],
+    "activities": [],
+    "guideUrl": "",
+    "destinationUrl": ""
   },
   "facture": {
     "subject": "Facture {{giteName}} {{documentNumber}}",
-    "bodyLines": [
-      "{{greeting}}",
-      "",
-      "{{documentDeliveryIntroSentence}}",
-      "En espérant que vous avez passé un agréable séjour{{giteSentence}}",
-      "",
-      "{{documentDeliveryLabel}}",
-      "{{documentDeliveryValue}}",
-      "",
-      "A bientôt,",
-      "",
-      "Sébastien et Soazig",
-      "Les Gites de Brocéliande"
-    ]
+    "bodyLines": ["{{greeting}}", "", "{{documentDeliveryIntroSentence}}", "En espérant que vous avez passé un agréable séjour{{giteSentence}}", "{{documentDeliveryLabel}}", "{{documentDeliveryValue}}", "", "Bien cordialement"]
   },
   "bookingRequestApproved": {
     "subject": "Votre réservation est acceptée · {{giteName}}",
-    "bodyLines": [
-      "{{greeting}}",
-      "",
-      "Merci pour votre demande de réservation {{giteReference}}. Nous avons le plaisir de vous confirmer que votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.",
-      "",
-      "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.",
-      "",
-      "{{optionsSummary}}",
-      "",
-      "{{beddingReminder}}",
-      "",
-      "Si vous voulez des idées d'activités pour votre escapade mauronnaise, voici ce que je peux vous conseiller :",
-      "",
-      "{{activitiesList}}",
-      "",
-      "Vous trouverez de bonnes indications sur ces sites :",
-      "{{guideUrl}}",
-      "{{destinationUrl}}",
-      "",
-      "N'hésitez pas à revenir vers nous si vous avez des questions pour l'organisation de votre séjour.",
-      "",
-      "Je vous souhaite une bonne journée.",
-      "",
-      "Bien à vous,",
-      "Soazig",
-      "",
-      "www.gites-broceliande.com",
-      "Soazig et Sébastien Jacqmin",
-      "T : (0033) 6 98 99 37 35"
-    ],
-    "activities": [
-      "Les calèches de Brocéliande. Ils proposent des balades en forêt.\nhttps://broceliande.guide/Les-Caleches-de-Barenton",
-      "Les balades contées avec les guides conteurs de Brocéliande.\nhttps://guidesdebroceliande.com/",
-      "Le Château de Comper, avec le Centre de l'Imaginaire Arthurien.",
-      "La Porte des Secrets à Paimpont.",
-      "En balades : la fontaine de Barenton, le Val sans Retour, le lac au Duc et l'étang de Trémelin."
-    ],
-    "guideUrl": "https://broceliande.guide/Secrets-de-Broceliande",
-    "destinationUrl": "https://destination-broceliande.com/",
-    "smsBody": "Bonjour {{clientName}}, votre réservation au {{giteName}} du {{dateEntree}} au {{dateSortie}} est approuvée. Plus d’informations dans votre email. Les Gîtes de Brocéliande"
+    "bodyLines": ["{{greeting}}", "", "Votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.", "", "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.", "", "{{optionsSummary}}", "", "{{beddingReminder}}", "", "N'hésitez pas à nous contacter si vous avez des questions.", "", "Bien cordialement"],
+    "activities": [],
+    "guideUrl": "",
+    "destinationUrl": "",
+    "smsBody": "Bonjour {{clientName}}, votre réservation au {{giteName}} du {{dateEntree}} au {{dateSortie}} est approuvée. Plus d’informations dans votre email."
   }
 }

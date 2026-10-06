@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import prisma from "../db/prisma.js";
+import prisma from "../../../src/db/prisma.js";
 import {
   importLegacyRevenueWorkbook,
   LegacyRevenueConflictError,
   type LegacyRevenueImportReport,
-} from "../services/legacyRevenueDatabaseImport.js";
-import { readLegacyRevenueWorkbook } from "../services/legacyRevenueImport.js";
+} from "./legacyRevenueDatabaseImport.js";
+import { readLegacyRevenueWorkbook } from "./legacyRevenueImport.js";
 
 type CliOptions = {
   filePath: string | null;

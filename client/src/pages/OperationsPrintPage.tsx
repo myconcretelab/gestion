@@ -326,7 +326,7 @@ const getOperationTone = (operations: StayOperation[]) => {
 
 const renderProgrammeTemplateExample = (template: string) => {
   const examples = [
-    { gite: "Tante Phonsine", horaire: "Entre 12h et 17h", in_out: "entrée + sortie", options: "(draps 2 lits, ménage)" },
+    { gite: "Gîte Démonstration", horaire: "Entre 12h et 17h", in_out: "entrée + sortie", options: "(draps 2 lits, ménage)" },
     { gite: "Le Liberté", horaire: "Avant 17h", in_out: "entrée", options: "" },
   ];
   return examples.map((values) => template.replace(
@@ -1946,7 +1946,7 @@ const OperationsPrintPage = () => {
               </table>
             )}
           </section>
-          <footer className="operations-sheet__footer">Document préparé le {new Date().toLocaleDateString("fr-FR")} · Les gîtes de Brocéliande</footer>
+          <footer className="operations-sheet__footer">Document préparé le {new Date().toLocaleDateString("fr-FR")}</footer>
         </article>
       ) : null}
     </div>

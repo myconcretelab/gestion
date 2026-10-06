@@ -2990,7 +2990,7 @@ const GitesPage = () => {
               <input
                 value={form.nom_avec_preposition}
                 onChange={(e) => handleChange("nom_avec_preposition", e.target.value)}
-                placeholder={buildGiteNameWithPreposition({ nom: form.nom }) || "de la Grée"}
+                placeholder={buildGiteNameWithPreposition({ nom: form.nom }) || "du Jardin"}
               />
               <small>
                 Utilisé par la variable {"{{giteNameWithPreposition}}"} dans les emails. Laissez vide pour le calcul automatique.

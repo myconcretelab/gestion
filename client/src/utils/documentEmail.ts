@@ -1,4 +1,3 @@
-import templates from "../content/documentEmailTemplates.json";
 import type { BookingRequest, ContratOptions } from "./types";
 import { buildGiteNameWithPreposition } from "./giteName";
 
@@ -167,7 +166,13 @@ export type DocumentEmailTextSettings = {
   bookingRequestApproved: ContractDocumentEmailTextTemplate;
 };
 
-const documentTemplates = templates as DocumentEmailTemplateSettings;
+// Neutral fallback only. Normal flows load the authoritative templates from
+// the server, where changes are stored as immutable versions.
+const documentTemplates: DocumentEmailTemplateSettings = {
+  contrat: { subject: "Contrat {{giteName}} {{documentNumber}}", bodyLines: ["{{greeting}}", "", "Suite à votre appel, veuillez trouver {{documentDeliveryIntroContract}} le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.", "", "{{documentDeliveryLabel}}", "{{documentDeliveryValue}}", "", "{{arrhesInstruction}}", "", "Bien cordialement"] },
+  facture: { subject: "Facture {{giteName}} {{documentNumber}}", bodyLines: ["{{greeting}}", "", "{{documentDeliveryIntroSentence}}", "En espérant que vous avez passé un agréable séjour{{giteSentence}}", "{{documentDeliveryValue}}", "", "Bien cordialement"] },
+  bookingRequestApproved: { subject: "Votre réservation est acceptée · {{giteName}}", bodyLines: ["{{greeting}}", "", "Votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.", "", "Bien cordialement"] },
+};
 
 const isIsoDateOnly = (value: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value.trim());

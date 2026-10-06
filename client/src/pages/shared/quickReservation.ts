@@ -406,7 +406,7 @@ export const computeQuickReservationDerivedState = (params: {
       .map((snippet) => interpolateQuickReservationSmsSnippet(snippet.text, snippetValues))
       .filter((snippet) => snippet.trim().length > 0);
 
-    smsText = [...baseLines, ...selectedSnippets, "Merci beaucoup,", "Soazig Molinier"].join("\n");
+    smsText = [...baseLines, ...selectedSnippets, "Merci beaucoup,"].join("\n");
   }
 
   const smsHref = buildSmsHref(draft ? getQuickReservationSmsPhoneDigits(draft.telephone) : "", smsText);

@@ -64,6 +64,7 @@ export const env = {
   BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD ?? "",
   BOOTSTRAP_ADMIN_LOGIN: process.env.BOOTSTRAP_ADMIN_LOGIN ?? "",
   BOOTSTRAP_ADMIN_PASSWORD: process.env.BOOTSTRAP_ADMIN_PASSWORD ?? "",
+  SETUP_TOKEN: process.env.SETUP_TOKEN ?? "",
   INTEGRATION_API_TOKEN: process.env.INTEGRATION_API_TOKEN ?? "",
   PLANNING_RELAY_SHARE_SECRET: process.env.PLANNING_RELAY_SHARE_SECRET ?? "",
   SECURITY_THROTTLE_SECRET: process.env.SECURITY_THROTTLE_SECRET ?? "",
@@ -191,6 +192,9 @@ export const validateEnvironment = () => {
     const databaseUrl = String(process.env.DATABASE_URL ?? "");
     if (!databaseUrl.startsWith("postgresql://") && !databaseUrl.startsWith("postgres://")) {
       throw new Error("Configuration invalide: PostgreSQL est requis en production.");
+    }
+    if (env.SETUP_TOKEN && env.SETUP_TOKEN.length < 24) {
+      throw new Error("Configuration invalide: SETUP_TOKEN doit contenir au moins 24 caractères.");
     }
   }
 };

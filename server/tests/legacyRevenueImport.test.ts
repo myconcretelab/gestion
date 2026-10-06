@@ -3,8 +3,8 @@ import test from "node:test";
 import {
   parseLegacyRevenue2020Sheets,
   parseLegacyRevenueSheets,
-} from "../src/services/legacyRevenueImport.ts";
-import { resolveLegacyRevenueGite } from "../src/services/legacyRevenueDatabaseImport.ts";
+} from "../tools/private/legacy-revenues/legacyRevenueImport.ts";
+import { resolveLegacyRevenueGite } from "../tools/private/legacy-revenues/legacyRevenueDatabaseImport.ts";
 
 const headers = [
   "Nom",

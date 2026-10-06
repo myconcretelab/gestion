@@ -5,6 +5,7 @@ import { AUTH_REQUIRED_EVENT, setCurrentAuthUser, type AppPageId, type AppUser, 
 import { APP_NOTICE_EVENT, type AppNotice } from "./utils/appNotices";
 import { BOOKING_REQUESTS_CHANGED_EVENT } from "./utils/bookingRequestsBadge";
 import { RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT } from "./utils/recentImportsBadge";
+import type { ModuleKey, PublicInstallationConfig } from "./utils/installation";
 
 const GitesPage = lazy(() => import("./pages/GitesPage"));
 const ContratsListPage = lazy(() => import("./pages/ContratsListPage"));
@@ -27,6 +28,8 @@ const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
 const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
+const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
+const ProductSettingsPage = lazy(() => import("./pages/ProductSettingsPage"));
 
 const MenuIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -279,6 +282,7 @@ const App = () => {
   const [pendingBookingRequestsCount, setPendingBookingRequestsCount] = useState(0);
   const [appNotice, setAppNotice] = useState<(AppNotice & { id: number }) | null>(null);
   const [pumpHealthNotice, setPumpHealthNotice] = useState<PumpHealthNotice | null>(null);
+  const [installationConfig, setInstallationConfig] = useState<PublicInstallationConfig | null>(null);
   const isAuthenticated = authSession?.authenticated ?? false;
   const isAuthRequired = authSession?.required ?? false;
   const currentUser = authSession?.user ?? null;
@@ -286,6 +290,7 @@ const App = () => {
   const canWrite = currentUser?.permissions.canWrite ?? true;
   const canAccessPage = (page: AppPageId) => !currentUser || currentUser.permissions.isOwner || currentUser.pageAccess.includes(page);
   const canAccessSettings = canAccessPage("settings");
+  const moduleEnabled = (module: ModuleKey) => installationConfig?.modules[module] === true;
   const isContratsSection =
     location.pathname === "/contrats" ||
     location.pathname.startsWith("/contrats/");
@@ -332,18 +337,21 @@ const App = () => {
       label: "Aujourd'hui",
       isActive: isTodaySection,
       mobilePrimary: true,
+      module: "reservations" as const,
     },
     {
       to: "/reservations",
       pageId: "reservations" as const,
       label: "Réservations",
       isActive: isReservationsSection,
+      module: "reservations" as const,
     },
     {
       to: "/demandes",
       pageId: "booking_requests" as const,
       label: "Demandes",
       isActive: isBookingRequestsSection,
+      module: "reservations" as const,
     },
     {
       to: "/calendrier",
@@ -351,6 +359,7 @@ const App = () => {
       label: "Calendrier",
       isActive: isCalendarSection,
       mobilePrimary: true,
+      module: "reservations" as const,
     },
     {
       to: "/planning-relais",
@@ -358,6 +367,7 @@ const App = () => {
       label: "Planning relais",
       isActive: isOperationsSection,
       desktopOverflow: true,
+      module: "worker_planning" as const,
     },
     {
       to: "/contrats",
@@ -365,6 +375,7 @@ const App = () => {
       label: "Contrats",
       isActive: isContratsSection,
       requiresAmounts: true,
+      module: "contracts" as const,
     },
     {
       to: "/factures",
@@ -373,6 +384,7 @@ const App = () => {
       isActive: isFacturesSection,
       desktopOverflow: true,
       requiresAmounts: true,
+      module: "invoices" as const,
     },
     {
       to: "/gites",
@@ -389,6 +401,7 @@ const App = () => {
       isActive: isProfessionalExpensesSection,
       desktopOverflow: true,
       requiresAmounts: true,
+      module: "finances" as const,
     },
     {
       to: "/frais-personnels",
@@ -397,6 +410,7 @@ const App = () => {
       isActive: isExpensesSection,
       desktopOverflow: true,
       requiresAmounts: true,
+      module: "personal_expenses" as const,
     },
     {
       to: "/statistiques",
@@ -405,6 +419,7 @@ const App = () => {
       isActive: isStatsSection,
       desktopOverflow: true,
       requiresAmounts: true,
+      module: "finances" as const,
     },
     {
       to: "/tarifs",
@@ -413,6 +428,7 @@ const App = () => {
       isActive: isSeasonRatesSection,
       desktopOverflow: true,
       requiresAmounts: true,
+      module: "reservations" as const,
     },
     {
       to: "/interventions",
@@ -421,6 +437,7 @@ const App = () => {
       isActive: isInterventionsSection,
       desktopOverflow: true,
       requiresAmounts: true,
+      module: "worker_planning" as const,
     },
     {
       to: "/parametres",
@@ -430,7 +447,7 @@ const App = () => {
       desktopOverflow: true,
     },
   ];
-  const visibleNavItems = navItems.filter((item) => canAccessPage(item.pageId) && !(item.requiresAmounts && !canViewAmounts));
+  const visibleNavItems = navItems.filter((item) => canAccessPage(item.pageId) && !(item.requiresAmounts && !canViewAmounts) && (!("module" in item) || moduleEnabled(item.module as ModuleKey)));
   const desktopPrimaryItems = visibleNavItems.filter((item) => !item.desktopOverflow);
   const desktopOverflowItems = visibleNavItems.filter((item) => item.desktopOverflow);
   const mobilePrimaryItems = visibleNavItems.filter((item) => item.mobilePrimary);
@@ -565,9 +582,28 @@ const App = () => {
   }, [location.pathname]);
 
   useEffect(() => {
+    if (!installationConfig || typeof document === "undefined") return;
+    const organization = installationConfig.organization;
+    document.title = organization.publicDisplayName || organization.tradeName || "Gestion locative";
+    document.documentElement.style.setProperty("--primary", organization.primaryColor || "#315f4b");
+    const existing = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (organization.faviconUrl) {
+      const link = existing ?? document.createElement("link");
+      link.rel = "icon";
+      link.href = organization.faviconUrl;
+      if (!existing) document.head.appendChild(link);
+    } else {
+      existing?.remove();
+    }
+  }, [installationConfig]);
+
+  useEffect(() => {
     let active = true;
     setAuthLoading(true);
-    loadAuthSession()
+    Promise.all([
+      loadAuthSession(),
+      apiFetch<PublicInstallationConfig>("/installation/public-config").then((config) => { if (active) setInstallationConfig(config); }),
+    ])
       .catch((error) => {
         if (!active || isAbortError(error)) return;
         setAuthError(error instanceof Error ? error.message : "Impossible de vérifier la session.");
@@ -616,12 +652,12 @@ const App = () => {
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
     const controller = new AbortController();
-    if (canAccessPage("reservations")) void loadRecentImportedReservationsCount(controller.signal);
-    if (canAccessPage("booking_requests")) void loadPendingBookingRequestsCount(controller.signal);
-    if (canAccessSettings) void loadPumpHealth(controller.signal);
+    if (moduleEnabled("reservations") && canAccessPage("reservations")) void loadRecentImportedReservationsCount(controller.signal);
+    if (moduleEnabled("reservations") && canAccessPage("booking_requests")) void loadPendingBookingRequestsCount(controller.signal);
+    if (moduleEnabled("pump_airbnb") && canAccessSettings) void loadPumpHealth(controller.signal);
     const pollId = window.setInterval(() => {
-      if (canAccessSettings) void loadPumpHealth();
-      if (canAccessPage("booking_requests")) void loadPendingBookingRequestsCount();
+      if (moduleEnabled("pump_airbnb") && canAccessSettings) void loadPumpHealth();
+      if (moduleEnabled("reservations") && canAccessPage("booking_requests")) void loadPendingBookingRequestsCount();
     }, 60_000);
 
     const handleRecentImportedReservationsCreated = (event: Event) => {
@@ -649,10 +685,10 @@ const App = () => {
       );
       window.removeEventListener(BOOKING_REQUESTS_CHANGED_EVENT, handleBookingRequestsChanged);
     };
-  }, [authLoading, canAccessSettings, currentUser, isAuthenticated, loadPendingBookingRequestsCount, loadPumpHealth, loadRecentImportedReservationsCount]);
+  }, [authLoading, canAccessSettings, currentUser, isAuthenticated, installationConfig, loadPendingBookingRequestsCount, loadPumpHealth, loadRecentImportedReservationsCount]);
 
   useEffect(() => {
-    if (authLoading || !isAuthenticated || !canWrite || !canAccessSettings) return;
+    if (authLoading || !isAuthenticated || !canWrite || !canAccessSettings || !moduleEnabled("ical")) return;
     if (typeof window === "undefined") return;
     const hasAttempted = readSessionStorageItem(ICAL_AUTO_SYNC_SESSION_KEY) === "1";
     if (hasAttempted && !appLoadIcalAutoSyncPromise) return;
@@ -692,7 +728,7 @@ const App = () => {
     return () => {
       active = false;
     };
-  }, [authLoading, canAccessSettings, canWrite, isAuthenticated, loadRecentImportedReservationsCount, pushAppNotice]);
+  }, [authLoading, canAccessSettings, canWrite, installationConfig, isAuthenticated, loadRecentImportedReservationsCount, pushAppNotice]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -787,7 +823,7 @@ const App = () => {
     );
   }
 
-  if (authLoading) {
+  if (authLoading || !installationConfig) {
     return (
       <main className="auth-shell">
         <section className="card auth-card">
@@ -797,6 +833,10 @@ const App = () => {
         </section>
       </main>
     );
+  }
+
+  if (!installationConfig.setupComplete) {
+    return <Suspense fallback={<main className="auth-shell">Chargement de l’assistant…</main>}><OnboardingPage onComplete={() => window.location.reload()} /></Suspense>;
   }
 
   if (isAuthRequired && !isAuthenticated) {
@@ -818,8 +858,8 @@ const App = () => {
     <div className={`app${canWrite ? "" : " app--read-only"}${canViewAmounts ? "" : " app--amounts-hidden"}`}>
       <header className="topbar">
         <div className="brand">
-          <img className="brand-logo" src="/logo.png" alt="Les gîtes de Brocéliande" />
-          {pumpHealthNotice ? (
+          {installationConfig.organization.logoUrl ? <img className="brand-logo" src={installationConfig.organization.logoUrl} alt={installationConfig.organization.publicDisplayName || installationConfig.organization.tradeName} /> : <strong>{installationConfig.organization.publicDisplayName || installationConfig.organization.tradeName}</strong>}
+          {moduleEnabled("pump_airbnb") && pumpHealthNotice ? (
             <span
               className={`pump-indicator pump-indicator--${pumpHealthNotice.tone}`}
               title={`Pump: ${pumpHealthNotice.label}. ${pumpHealthNotice.summary}`}
@@ -965,6 +1005,10 @@ const App = () => {
             <Route path="/interventions" element={<PageAccess allowed={canAccessPage("settings")}><AmountsAccess allowed={canViewAmounts}><IntervenantsPage /></AmountsAccess></PageAccess>} />
             <Route path="/parametres/intervenants" element={<Navigate to="/interventions" replace />} />
             <Route path="/parametres/equipe" element={<Navigate to="/parametres/utilisateurs" replace />} />
+            <Route path="/parametres" element={<Navigate to="/parametres/organisation" replace />} />
+            {(["organisation", "hebergements", "documents", "canaux", "connexions", "equipe-acces", "donnees", "systeme"] as const).map((section) => (
+              <Route key={section} path={`/parametres/${section}`} element={<PageAccess allowed={canAccessPage("settings")}><ProductSettingsPage /></PageAccess>} />
+            ))}
             <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
           </Routes>
         </Suspense>

@@ -43,8 +43,8 @@ test("buildDocumentMailtoHref rend le texte detaille du contrat depuis le templa
   assert.match(mail.body, /soit 800€/);
   assert.match(mail.body, /Lien de téléchargement du contrat :/);
   assert.match(mail.body, /https:\/\/example.com\/contracts\/LIB-2026-000123\.pdf/);
-  assert.match(mail.body, /Les calèches de Brocéliande/);
-  assert.match(mail.body, /https:\/\/destination-broceliande\.com\//);
+  assert.match(mail.body, /Bien cordialement/);
+  assert.doesNotMatch(mail.body, /Brocéliande/);
 });
 
 test("buildDocumentMailtoHref adapte le texte du contrat quand les arrhes sont deja recues", () => {
@@ -141,7 +141,8 @@ test("buildDocumentEmailDraft expose le sujet et le corps editables", () => {
   assert.equal(draft.recipient, "client@example.com");
   assert.equal(draft.subject, "Contrat Liberté LIB-2026-000123");
   assert.match(draft.body, /Lien de téléchargement du contrat :/);
-  assert.match(draft.body, /Les calèches de Brocéliande/);
+  assert.match(draft.body, /Bien cordialement/);
+  assert.doesNotMatch(draft.body, /Brocéliande/);
 });
 
 test("renderEmailBodyHtml convertit les paragraphes et liens en aperçu HTML", () => {

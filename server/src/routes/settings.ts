@@ -79,6 +79,7 @@ import {
   readDocumentEmailTemplateSettings,
   writeDocumentEmailTemplateSettings,
 } from "../services/documentEmailTemplateSettings.js";
+import { versionDocumentEmailTemplates } from "../services/contentTemplateVersions.js";
 import {
   buildDefaultTelegramNotificationConfig,
   buildTelegramNotificationState,
@@ -1482,12 +1483,13 @@ router.put("/sms-texts", (req, res, next) => {
   }
 });
 
-router.put("/document-email-texts", (req, res, next) => {
+router.put("/document-email-texts", async (req, res, next) => {
   try {
     const payload = documentEmailTextSettingsSchema.parse(req.body ?? {});
     const current = readDocumentEmailTemplateSettings();
     const merged = mergeDocumentEmailTemplateSettings(current, payload);
     writeDocumentEmailTemplateSettings(merged);
+    await versionDocumentEmailTemplates(merged);
     res.json(buildDocumentEmailTextSettingsResponse(merged));
   } catch (error) {
     next(error);

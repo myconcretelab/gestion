@@ -287,13 +287,8 @@ const renderMetricCardHtml = (label: string, value: string, tone = "#1d1d1f") =>
 const getDigestGiteColor = (reservation: DailyReservationDigestReservation) => {
   // Same palette and name/ID fallback as the Today page.
   const palette = ["#2D8CFF", "#43B77D", "#F5A623", "#7E5BEF", "#FE5C73"];
-  const knownNames = ["phonsine", "gree", "edmond", "liberte"];
-  for (const candidate of [reservation.gite_nom, reservation.gite_prefixe ?? ""]) {
-    const name = normalizePaymentLabel(candidate);
-    const index = knownNames.findIndex((key) => name.includes(key));
-    if (index >= 0) return palette[index];
-  }
-  const hash = [...(reservation.gite_id ?? "")].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const stableKey = reservation.gite_id || reservation.gite_prefixe || reservation.gite_nom;
+  const hash = [...stableKey].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   return palette[hash % palette.length];
 };
 

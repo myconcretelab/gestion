@@ -26,7 +26,10 @@
     "prisma:generate": "npm run prisma:generate -w server",
     "prisma:use:sqlite": "npm run prisma:use:sqlite -w server",
     "prisma:use:postgres": "npm run prisma:use:postgres -w server",
-    "db:migrate:sqlite-to-postgres": "npm run db:migrate:sqlite-to-postgres -w server"
+    "db:migrate:sqlite-to-postgres": "npm run db:migrate:sqlite-to-postgres -w server",
+    "backup": "node server/scripts/installation-data.mjs backup",
+    "restore:preview": "node server/scripts/installation-data.mjs preview",
+    "restore": "node server/scripts/installation-data.mjs restore"
   },
   "overrides": {
     "proxy-addr": "$proxy-addr",

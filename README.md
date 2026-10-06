@@ -1,328 +1,66 @@
-# Contrats de location de gîtes
+# Gestion locative
 
-Monorepo Node.js + React pour générer et archiver des contrats de location de gîtes en PDF A4, avec stockage local et base SQLite (et option PostgreSQL en production).
-
-## Structure
-
-- `server/` API Express + Prisma + Playwright
-- `client/` React + Vite
-- `server/templates/` templates HTML/CSS pour PDF
-- `server/data/pdfs/YYYY/MM/` stockage des PDF générés
+Application Node.js + React destinée à une installation isolée par organisation. Elle gère les hébergements, réservations, contrats PDF et, selon les modules activés, la facturation et les intégrations.
 
 ## Prérequis
 
-- Node.js 22.12+
-- (Optionnel) PostgreSQL pour production
+- Node.js 22.12 ou supérieur ;
+- Chromium Playwright pour les PDF ;
+- SQLite en développement, PostgreSQL 15+ en production ;
+- un proxy HTTPS en production.
 
-## Installation locale
-
-1. Installer les dépendances à la racine (inclure les deps optionnelles pour Rollup/Prisma):
-
-```bash
-npm install --include=optional
-```
-
-2. Installer Chromium pour Playwright:
+## Installation locale vierge
 
 ```bash
+npm ci --include=optional
 npx playwright install chromium
-```
-
-3. Copier le fichier d'environnement:
-
-```bash
 cp .env.example .env
-```
-
-4. Lancer Prisma (SQLite):
-
-```bash
-npm run dev:db
-npm run seed
-```
-
-5. Démarrer en dev (client + server):
-
-```bash
+npm run migrate
 npm run dev
 ```
 
-Accès:
-- Front: http://localhost:5173
-- API: http://localhost:4000/api
+Générez `SETUP_TOKEN` avec un générateur cryptographiquement sûr (32 octets ou plus), placez-le dans `.env`, puis ouvrez l'application. L'assistant crée le premier administrateur, l'organisation, le premier hébergement et choisit les modules. Retirez `SETUP_TOKEN` après la fin de l'assistant. Aucun seed n'est nécessaire.
 
-## Intégration Pump
+`npm run seed` est réservé à une base locale jetable : il efface son contenu et crée uniquement des données manifestement fictives. Ne jamais l'utiliser en production.
 
-Le repo `contrats` embarque maintenant sa propre automatisation Pump côté serveur.
+## Production avec PostgreSQL
 
-Variables d'environnement utiles:
+1. Copier `.env.production.example` vers un fichier non versionné et renseigner `CLIENT_ORIGIN`, `DATABASE_URL`, `DATA_DIR`, `SETUP_TOKEN` et les chemins.
+2. Installer avec `npm ci --include=optional` et `npx playwright install chromium`.
+3. Générer le client PostgreSQL avec `npm run prod:generate`.
+4. Sauvegarder l'installation, puis appliquer les migrations avec `npm run prod:migrate`.
+5. Construire avec `npm run build` et démarrer avec `npm run start`.
+6. Terminer l'assistant, vérifier `/api/health`, puis retirer `SETUP_TOKEN`.
 
-- `PUMP_BASE_URL=https://www.airbnb.fr/hosting/multicalendar`
-- `PUMP_USERNAME=...`
-- `PUMP_SESSION_PASSWORD=...`
-- `PUMP_AUTH_MODE=persisted-only`
-- `PUMP_SCROLL_SELECTOR=...`
-- `PUMP_LOGIN_STRATEGY=simple` ou `multi-step`
-- `PUMP_IMPORT_CRON_ENABLED=true`
-- `PUMP_IMPORT_CRON_SCHEDULER=internal` ou `external`
-- `PUMP_IMPORT_CRON_INTERVAL_DAYS=3`
-- `PUMP_IMPORT_CRON_HOUR=10`
-- `PUMP_IMPORT_CRON_MINUTE=0`
-- `PUMP_ALERT_EMAIL_TO=...`
-- `PUMP_ALERT_EMAIL_FROM=...`
-- `SMTP_HOST=...`
+Une installation de production refuse de démarrer sans compte protégé, sauf pendant l'onboarding lorsqu'un `SETUP_TOKEN` robuste est présent. Aucun reset ni seed n'est requis.
 
-Flux prévu:
+## Modules
 
-1. Configurer l'automatisation Pump locale dans `contrats`.
-2. Importer une session persistée Playwright depuis un navigateur local visible.
-3. Ouvrir **Réglages**.
-4. Utiliser la section **Import Pump**:
-   - `Ouvrir le navigateur de capture`
-   - `Lancer refresh Pump`
-   - `Rafraîchir le statut`
-   - `Analyser la dernière extraction`
-   - `Importer`
+Les modules sont désactivés sur une installation vierge : réservations et demandes, contrats, factures, finances et statistiques, frais personnels, planning des intervenants, publication web/WordPress, iCal, Pump/Airbnb, Smart Life, SMS, Telegram et e-mail quotidien. Une fonctionnalité désactivée est masquée, ses API sont fermées et ses tâches ne démarrent pas.
 
-En phase 1, le mode recommandé est `persisted-only`: `contrats` réutilise une session Airbnb déjà persistée et n'essaie plus de reconstruire le login via les boutons/classes de la page.
-
-En local, le bouton `Ouvrir le navigateur de capture` lance un navigateur visible, attend votre connexion Airbnb, puis sauvegarde automatiquement le `storageState` réutilisé ensuite par Pump.
-
-`contrats` exécute alors la capture Airbnb localement, extrait les réservations normalisées, les prévisualise, puis crée ou complète les réservations locales.
-
-Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h. En production, vous pouvez utiliser le mode `external` et déclencher:
-
-- `POST /api/settings/pump/cron/run` avec `Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN`
-
-## Synchronisation iCal
-
-La synchronisation iCal n'utilise plus de minuteur en mémoire dans le process Node. Le serveur stocke la configuration et l'état du dernier passage, mais c'est un cron externe qui doit lancer le job.
-
-Le déclenchement se fait via l'URL HTTP Alwaysdata:
-
-- `POST https://votre-domaine/api/settings/ical/cron/run` avec `Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN`
-
-Le déclenchement HTTP accepte `CRON_TRIGGER_TOKEN` dans l'en-tête Bearer. Les jetons ne sont pas acceptés dans l'URL afin d'éviter leur fuite dans les journaux et historiques.
-
-Le job déclenché par l'URL:
-
-- lit la configuration iCal enregistrée dans **Réglages**
-- exécute immédiatement la synchro si elle est activée
-- verrouille l'exécution pour éviter les chevauchements
-- journalise aussi les échecs dans **Traçabilité > Journal des imports**
-
-## Génération PDF
-
-- Template principal: `server/templates/contract.html`
-- Conditions générales: `server/templates/conditions.html`
-- Playwright génère un PDF A4 en 2 pages.
-
-## Seed
-
-Le seed crée 2 gîtes et 2 contrats. Pour ignorer la génération PDF lors du seed (si Playwright n'est pas installé):
+## Sauvegarde et restauration
 
 ```bash
-SEED_SKIP_PDF=1 npm run seed
+npm run backup -- /chemin/sauvegarde.tar.gz
+npm run restore:preview -- /chemin/sauvegarde.tar.gz
+npm run restore -- /chemin/sauvegarde.tar.gz --apply --confirm-replace
 ```
 
-## Mise a jour AlwaysData
+L'archive contient la base, un manifeste SHA-256 et les PDF, photos, uploads et documents signés présents sous `DATA_DIR`. Les fichiers `.env`, sessions Pump et autres fichiers de secrets ne sont jamais inclus. PostgreSQL nécessite `pg_dump`/`pg_restore`. La restauration vérifie d'abord le manifeste et conserve une copie de sécurité de la base SQLite remplacée.
 
-Le script `./update` du repo fait par defaut:
+Avec PostgreSQL, définir en plus `INSTALLATION_BACKUP_PASSPHRASE` (24 caractères minimum) avant la sauvegarde et la restauration. Le dump de base est chiffré dans l'archive ; les secrets stockés en base ne sont jamais exportés en clair. Conserver cette phrase secrète séparément de l'archive. SQLite produit à la place une copie assainie qui révoque sessions, jetons et liens publics.
 
-- `git pull`
-- reinstall des dependances (`npm ci` par defaut, ou `NPM_INSTALL_MODE=install`)
-- reinstall de Chromium Playwright (sauf `SKIP_PLAYWRIGHT_INSTALL=1`)
-- `npm run prod:generate`
-- `npm run test` (sauf `SKIP_TESTS=1`)
-- `npm run build` (sauf `SKIP_BUILD=1`)
-- `npm run prod:migrate`
-- redemarrage du serveur (sauf `SKIP_RESTART=1`)
+## Docker
 
-Le redemarrage se fait soit via `RESTART_CMD`, soit via l'API Alwaysdata avec `ALWAYSDATA_API_TOKEN`, `ALWAYSDATA_ACCOUNT` et `ALWAYSDATA_SITE_ID`. Ces variables peuvent vivre dans `.env.update`.
+Le `Dockerfile` fournit l'image de production. `docker compose -f compose.demo.yml up --build` lance une démonstration locale, applique les migrations et permet de terminer l'assistant avec le `SETUP_TOKEN` de démonstration indiqué dans le compose. Ces identifiants doivent être remplacés. Pour une vraie production, placez l'application derrière HTTPS, utilisez des volumes persistants pour PostgreSQL et `DATA_DIR`, et gérez les secrets hors du compose.
 
-Mode leger:
+## Commandes
 
-```bash
-./update --light
-```
+- `npm run dev` : développement ;
+- `npm run migrate` : migrations SQLite locales ;
+- `npm run prod:migrate` : migrations PostgreSQL ;
+- `npm run test`, `npm run typecheck`, `npm run build` : validation ;
+- `npm audit --omit=dev` : audit des dépendances de production ;
+- `npm run backup`, `npm run restore:preview`, `npm run restore` : portabilité.
 
-Ce mode fait `git pull`, puis `npm run build`, puis redemarre le serveur, sans reinstaller les dependances, sans relancer Playwright, sans tests ni migrations PostgreSQL.
-
-Le wrapper local `/Users/sebsoaz/bin/update` transmet aussi cette option:
-
-```bash
-/Users/sebsoaz/bin/update gestion --light
-```
-
-1. Configurer les variables d'environnement (via l'interface AlwaysData):
-
-- `DATABASE_URL=postgresql://myconcretelab:YOUR_PASSWORD@postgresql-myconcretelab.alwaysdata.net:5432/myconcretelab_contrats?schema=public`
-- (optionnel) `DATABASE_URL_POSTGRES=...` si vous gardez un `DATABASE_URL` SQLite dans un `.env` local
-- `NODE_ENV=production`
-- `PORT=4000`
-- `CLIENT_DIST_DIR=/home/USER/app/client/dist`
-- `PLAYWRIGHT_HEADLESS=true` par defaut implicite en production (`NODE_ENV=production`) ; vous pouvez l'ajouter explicitement pour rendre le comportement visible
-- (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` au lieu de `npm ci`
-- (optionnel) `RESTART_CMD=...` si vous preferez un redemarrage via commande shell
-- (optionnel) `ALWAYSDATA_API_TOKEN=...`, `ALWAYSDATA_ACCOUNT=...`, `ALWAYSDATA_SITE_ID=...` pour redemarrer via l'API Alwaysdata
-- `BOOTSTRAP_ADMIN_LOGIN=...` et `BOOTSTRAP_ADMIN_PASSWORD=...` (12 caractères minimum) pour créer le premier administrateur sur une installation vide
-- (migration uniquement) `BASIC_AUTH_PASSWORD=...` initialise les mots de passe individuels manquants, puis doit être retiré
-- (migration uniquement) `INTEGRATION_API_TOKEN=...` est importé sous forme hashée avec le scope `reservations:write`, puis doit être retiré
-- (optionnel) `ICAL_SYNC_ENABLED=true`
-- (optionnel) `CRON_TRIGGER_TOKEN=...` pour déclencher le cron iCal via URL HTTP
-- (optionnel) `PUMP_IMPORT_CRON_SCHEDULER=external` pour déclencher Pump via cron HTTP
-- (optionnel) `PUMP_ALERT_EMAIL_TO=...`, `PUMP_ALERT_EMAIL_FROM=...`, `SMTP_HOST=...`, `SMTP_PORT=587`, `SMTP_SECURE=false`, `SMTP_USER=...`, `SMTP_PASS=...`
-
-Note: le port 5432 est le defaut PostgreSQL. AlwaysData peut afficher un port different dans l'UI. Si SSL est requis, ajoutez `sslmode=require` a l'URL.
-Note: `NPM_INSTALL_MODE=ci` est le comportement par defaut. `NPM_INSTALL_MODE=install` conserve `node_modules`.
-
-2. Mettre a jour le code, verifier, build, migrer et redemarrer:
-
-```bash
-./update
-# ou: NPM_INSTALL_MODE=install ./update
-```
-
-3. Variante legere:
-
-```bash
-./update --light
-```
-
-4. Lancer le serveur manuellement uniquement si vous ne passez pas par `./update`:
-
-```bash
-npm run start
-```
-
-4bis. Configurer l'URL du cron iCal dans Alwaysdata:
-
-```text
-POST https://votre-domaine/api/settings/ical/cron/run
-Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN
-```
-
-4ter. Si Pump est en scheduler `external`, configurer aussi:
-
-```text
-POST https://votre-domaine/api/settings/pump/cron/run
-Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN
-```
-
-5. PDFs: les fichiers sont stockes dans `server/data/pdfs/YYYY/MM/` par defaut. Assurez-vous que le dossier `server/data/` (ou la variable `DATA_DIR`) est sur un volume persistant et accessible en ecriture par le processus AlwaysData.
-
-SQLite en production n'est pas recommande si vous avez des acces concurrents. PostgreSQL est le mode prevu pour la prod.
-
-## Schémas Prisma (SQLite vs PostgreSQL)
-
-- SQLite (dev): `server/prisma/schema.prisma` + migrations dans `server/prisma/migrations/`
-- PostgreSQL (prod): `server/prisma/postgres/schema.prisma` + migrations dans `server/prisma/postgres/migrations/`
-
-Scripts utiles:
-
-- `npm run dev:db` (SQLite migrate dev)
-- `npm run dev:reset` (SQLite reset)
-- `npm run prod:generate` (gen client Postgres)
-- `npm run prod:migrate` (migrate deploy Postgres)
-- `npm run db:studio` (SQLite studio)
-
-Le fichier `server/prisma/schema.sqlite.prisma` est la source SQLite. Le fichier `server/prisma/schema.postgres.prisma` est la source PostgreSQL, et `npm run prisma:use:postgres` synchronise le schema utilise pour les migrations Postgres.
-
-## Migration des donnees SQLite -> PostgreSQL
-
-```bash
-npm run db:migrate:sqlite-to-postgres
-```
-
-Options:
-
-- `--wipe` : vide les tables Postgres avant import
-- `--dry-run` : lecture seule
-
-Par defaut, la source SQLite vient de `DATABASE_URL` (ou `DATABASE_URL_SQLITE`) et la cible Postgres de `DATABASE_URL` (ou `DATABASE_URL_POSTGRES`). Vous pouvez aussi utiliser `--from-url` et `--to-url`.
-
-## Import des revenus historiques 2015 à 2020
-
-L'écran **Statistiques** permet de sélectionner directement un classeur Excel, d'en vérifier l'aperçu puis de confirmer l'import. Le même écran fonctionne en production et accepte:
-
-- le fichier Airbnb 2015 avec la feuille `Phonsine 2015`;
-- le fichier Airbnb 2016 avec la feuille sans en-tête `Phonsine`;
-- le fichier 2017 avec les feuilles `Phonsine 2017` et `Grée 2017`;
-- le fichier 2018 avec les feuilles `Phonsine 2018` et `Grée 2018`;
-- le fichier 2019 avec les feuilles `Phonsine` et `Gree`;
-- le fichier 2020 avec les feuilles `Gree2020`, `Phonsine2020` et `Edmond2020`.
-
-L'import utilise une référence stable par ligne: il peut être relancé sans créer de doublons. Une commande reste disponible pour l'administration. Aperçu local:
-
-```bash
-npm run import:revenus -w server -- --file "/chemin/Revenus Gites 2019.xlsx"
-```
-
-Application locale:
-
-```bash
-npm run import:revenus -w server -- --file "/chemin/Revenus Gites 2019.xlsx" --apply
-```
-
-En production, après sauvegarde de la base, déploiement, migration et build:
-
-```bash
-node server/dist/cli/importLegacyRevenues.js --file "/chemin/prive/Revenus Gites 2019.xlsx"
-node server/dist/cli/importLegacyRevenues.js --file "/chemin/prive/Revenus Gites 2019.xlsx" --apply
-```
-
-La première commande de production est une lecture seule. Vérifiez son récapitulatif avant d'ajouter `--apply`. L'outil:
-
-- associe les feuilles à **La Grée**, **Tante Phonsine** et **Edmond**;
-- ignore les lignes à zéro nuit;
-- reconstruit la sortie depuis la date d'entrée et le nombre de nuits;
-- conserve exactement le revenu indiqué dans le classeur;
-- marque les réservations avec l'origine `legacy` et désactive leur export iCal;
-- avance si nécessaire la date de début d'activité du gîte;
-- s'arrête si des réservations déjà présentes se chevauchent, sauf usage explicite et vérifié de `--allow-existing-conflicts`.
-
-Le classeur contient des données personnelles: gardez-le hors du dépôt et hors de tout répertoire public du serveur.
-
-## Endpoints API principaux
-
-- `GET /api/gites`
-- `POST /api/gites`
-- `PUT /api/gites/:id`
-- `DELETE /api/gites/:id`
-- `GET /api/contracts`
-- `POST /api/contracts` (création + PDF)
-- `PUT /api/contracts/:id` (mise à jour + régénération)
-- `GET /api/contracts/:id/pdf`
-- `POST /api/contracts/:id/regenerate`
-
-## Notes
-
-- Les PDF sont stockés sous `server/data/pdfs/YYYY/MM/`.
-- La numérotation est automatique `{PREFIX}-{YYYY}-{000001}` par gîte et par année.
-- Chaque utilisateur possède un identifiant et un mot de passe hashé avec scrypt. Les sessions opaques, hashées et révocables sont stockées en base.
-- `BASIC_AUTH_PASSWORD` et `INTEGRATION_API_TOKEN` sont uniquement des aides de migration temporaire et doivent être retirés après un démarrage réussi.
-- Les jetons machine-à-machine sont hashés, révocables et limités à des scopes. L'intégration réservations utilise le scope `reservations:write`.
-- Un propriétaire peut administrer ces jetons via `GET/POST /api/settings/api-tokens` et les révoquer via `DELETE /api/settings/api-tokens/:id`; le secret brut n'est retourné qu'à la création.
-- Les PDF privés exigent une session. Un partage externe passe par un lien aléatoire expirable et révocable créé via `/api/document-shares`.
-
-### Contenus des gîtes en français, anglais et espagnol
-
-Dans **Gîtes → Présentation web → Traductions du site**, renseigner les versions anglaise et espagnole des textes, du SEO, des rubriques et des métadonnées photo. Les champs historiques restent la référence française. Un texte absent utilise le français. Les noms contractuels, slugs, prix, capacités, adresses et photos restent communs.
-
-Les API `GET /api/public/gites`, `GET /api/public/gites/:slug` et `GET /api/booked/gites/:id/content` acceptent `?lang=fr|en|es` (locales régionales également reconnues). Sans paramètre ou pour une langue inconnue, elles utilisent le français. Le champ `language` indique la langue demandée résolue ; des champs individuels peuvent utiliser le repli français. Les traductions brutes sont uniquement accessibles dans l’API de gestion authentifiée. Les exports/imports et duplications de gîtes conservent les traductions.
-
-Les rubriques traduites sont associées par leurs identifiants ; les nouveaux groupes français restent visibles. Les types et quantités de lits viennent toujours de la référence française. Après une modification des listes françaises, vérifier la traduction correspondante : leurs éléments sont associés par position. Les ajouts et changements de structure se font dans les onglets français.
-
-Booked 0.3.97 sélectionne la langue de la page via Polylang, WPML ou la locale WordPress. Ses requêtes de contenu et de galerie transmettent la langue explicitement ; les caches de contenu sont séparés par langue. Le français reste compatible avec les anciennes versions du plugin. Prévoir les traductions des pages, menus et autres textes WordPress indépendamment des données des gîtes.
-
-Déploiement : appliquer les migrations SQLite ou PostgreSQL habituelles, régénérer Prisma, construire et redémarrer l’application avant de mettre Booked à jour. Une colonne nullable `public_translations` est ajoutée sans modifier les contenus existants.
-
-Pour importer un premier lot préparé depuis les contenus publiés :
-
-```sh
-cd server
-npx tsx scripts/import-gite-translations.ts /chemin/traductions.json
-npx tsx scripts/import-gite-translations.ts /chemin/traductions.json --apply
-```
-
-Le fichier est un tableau de `{ id, source_updated_at, public_translations: { en: {...}, es: {...} } }`. L’import valide les champs, refuse les sources modifiées ou les traductions déjà présentes, et écrit tout le lot dans une transaction. Sans `--apply`, il effectue seulement la validation.
+Voir [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) et [docs/versioning.md](docs/versioning.md).
