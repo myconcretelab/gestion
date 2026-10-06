@@ -227,9 +227,24 @@ model AppUser {
   departure_cleaning_checks Reservation[] @relation("DepartureCleaningCheckedBy")
   interventions UserIntervention[]
   auth_sessions AuthSession[]
+  password_reset_tokens PasswordResetToken[]
 
   @@index([is_active, display_name], map: "app_users_active_name_idx")
   @@map("app_users")
+}
+
+model PasswordResetToken {
+  id         String    @id
+  user_id    String
+  created_at DateTime  @default(now())
+  expires_at DateTime
+  used_at    DateTime?
+
+  user AppUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, used_at, expires_at], map: "password_reset_tokens_user_active_idx")
+  @@index([expires_at], map: "password_reset_tokens_expires_idx")
+  @@map("password_reset_tokens")
 }
 
 model AuthSession {

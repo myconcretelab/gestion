@@ -6,6 +6,7 @@ import {
   createServerAuthSession,
   getServerAuthSessionFromRequest,
   revokeUserSessions,
+  resetPasswordWithToken,
   setServerAuthCookie,
   updateUserCredentials,
   verifyServerPassword,
@@ -53,6 +54,40 @@ test("serverAuth utilise un mot de passe individuel robuste et révoque les sess
     const httpsResponse = createMockResponse();
     setServerAuthCookie({ headers: { "x-forwarded-proto": "https" }, socket: {} } as never, httpsResponse as never, sessionA);
     assert.match(String(httpsResponse.headers.get("Set-Cookie")), /Secure/);
+  } finally {
+    await prisma.appUser.delete({ where: { id: user.id } });
+  }
+});
+
+test("un lien de récupération est hashé, à usage unique et révoque les sessions", async () => {
+  const suffix = crypto.randomUUID();
+  const rawToken = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const user = await prisma.appUser.create({ data: {
+    display_name: `Test Reset ${suffix}`,
+    first_name: "Test",
+    last_name: "Reset",
+    email: `reset-${suffix}@example.test`,
+    login_id: `test-reset-${suffix}`,
+    roles: "[]",
+    page_access: "[]",
+    is_active: true,
+  } });
+  try {
+    await updateUserCredentials(user.id, { loginId: `test-reset-${suffix}`, password: "InitialPass123!" });
+    const session = await createServerAuthSession(user.id);
+    await prisma.passwordResetToken.create({ data: {
+      id: tokenHash,
+      user_id: user.id,
+      expires_at: new Date(Date.now() + 60_000),
+    } });
+
+    await resetPasswordWithToken(rawToken, "ReplacementPass123!");
+    assert.equal(await verifyServerPassword("InitialPass123!", user.id), false);
+    assert.equal(await verifyServerPassword("ReplacementPass123!", user.id), true);
+    assert.equal(await getServerAuthSessionFromRequest({ headers: { cookie: `contrats_session=${session.id}` } }), null);
+    assert.ok((await prisma.passwordResetToken.findUniqueOrThrow({ where: { id: tokenHash } })).used_at);
+    await assert.rejects(() => resetPasswordWithToken(rawToken, "AnotherPassword123!"), /invalide ou expiré/);
   } finally {
     await prisma.appUser.delete({ where: { id: user.id } });
   }

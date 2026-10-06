@@ -6,6 +6,7 @@ import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { APP_PAGE_IDS, ensureAppUsersInitialized, findActiveAppUser, type AppUserSummary } from "./appUsers.js";
 import { getInstallationConfig } from "./installationConfig.js";
+import { getSmtpConfigIssues, sendSmtpMail } from "./mailer.js";
 
 const SETTINGS_FILE = path.join(env.DATA_DIR, "server-auth-settings.json");
 const SESSION_COOKIE_NAME = "contrats_session";
@@ -13,6 +14,7 @@ const DEFAULT_SESSION_DURATION_HOURS = 24 * 7;
 const MIN_SESSION_DURATION_HOURS = 1;
 const MAX_SESSION_DURATION_HOURS = 24 * 90;
 const PASSWORD_MIN_LENGTH = 12;
+const PASSWORD_RESET_DURATION_MS = 30 * 60 * 1000;
 
 type StoredServerAuthSettings = {
   passwordHash: string | null;
@@ -445,4 +447,121 @@ export const updateUserCredentials = async (userId: string, input: { loginId: st
   }
   if (input.password !== undefined) await revokeUserSessions(userId);
   return findActiveAppUser(userId);
+};
+
+export const isPasswordRecoveryAvailable = () => getSmtpConfigIssues().length === 0 && Boolean(env.CLIENT_ORIGIN.trim());
+
+export const requestPasswordReset = async (identifier: string) => {
+  await ensureServerAuthInitialized();
+  if (!isPasswordRecoveryAvailable()) {
+    throw Object.assign(new Error("La récupération par e-mail n’est pas configurée."), {
+      status: 503,
+      code: "PASSWORD_RECOVERY_UNAVAILABLE",
+    });
+  }
+
+  const normalizedIdentifier = normalizeLoginId(identifier);
+  const candidates = await prisma.appUser.findMany({
+    where: { is_active: true, email: { not: null } },
+    select: { id: true, login_id: true, email: true, display_name: true },
+  });
+  const user = candidates.find((candidate) =>
+    normalizeLoginId(candidate.login_id ?? "") === normalizedIdentifier
+    || normalizeLoginId(candidate.email ?? "") === normalizedIdentifier,
+  );
+
+  // Always return the same public result so this endpoint cannot enumerate accounts.
+  if (!user?.email) return { accepted: true } as const;
+
+  const rawToken = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_DURATION_MS);
+  await prisma.$transaction([
+    prisma.passwordResetToken.updateMany({
+      where: { user_id: user.id, used_at: null },
+      data: { used_at: new Date() },
+    }),
+    prisma.passwordResetToken.create({
+      data: { id: tokenHash, user_id: user.id, expires_at: expiresAt },
+    }),
+    prisma.passwordResetToken.deleteMany({ where: { expires_at: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } }),
+  ]);
+
+  const installation = await getInstallationConfig();
+  const organizationName = installation.organization.publicDisplayName
+    || installation.organization.tradeName
+    || "Votre hébergement";
+  const resetUrl = new URL("/reset-password", env.CLIENT_ORIGIN);
+  resetUrl.searchParams.set("token", rawToken);
+
+  try {
+    await sendSmtpMail({
+      to: user.email,
+      subject: `Réinitialisation de votre mot de passe — ${organizationName}`,
+      text: [
+        `Bonjour ${user.display_name},`,
+        "",
+        "Une demande de réinitialisation du mot de passe de votre compte a été reçue.",
+        `Utilisez ce lien dans les 30 minutes : ${resetUrl.toString()}`,
+        "",
+        "Ce lien est personnel et utilisable une seule fois. Si vous n’êtes pas à l’origine de cette demande, ignorez cet e-mail.",
+      ].join("\n"),
+    });
+  } catch (error) {
+    await prisma.passwordResetToken.deleteMany({ where: { id: tokenHash } });
+    console.error("[password-reset] Échec de l’envoi de l’e-mail de récupération.", error instanceof Error ? error.message : "Erreur inconnue");
+  }
+
+  return { accepted: true } as const;
+};
+
+export const resetPasswordWithToken = async (rawToken: string, password: string) => {
+  await ensureServerAuthInitialized();
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    throw Object.assign(new Error("Le mot de passe doit contenir au moins 12 caractères."), { status: 400 });
+  }
+  const tokenHash = hashToken(rawToken);
+  const token = await prisma.passwordResetToken.findUnique({
+    where: { id: tokenHash },
+    include: { user: { select: { id: true, is_active: true } } },
+  });
+  if (!token || token.used_at || token.expires_at <= new Date() || !token.user.is_active) {
+    throw Object.assign(new Error("Ce lien de réinitialisation est invalide ou expiré."), {
+      status: 400,
+      code: "PASSWORD_RESET_INVALID",
+    });
+  }
+
+  const hash = await hashPassword(password);
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    const consumed = await tx.passwordResetToken.updateMany({
+      where: { id: tokenHash, used_at: null, expires_at: { gt: now } },
+      data: { used_at: now },
+    });
+    if (consumed.count !== 1) {
+      throw Object.assign(new Error("Ce lien de réinitialisation est invalide ou expiré."), {
+        status: 400,
+        code: "PASSWORD_RESET_INVALID",
+      });
+    }
+    await tx.appUser.update({
+      where: { id: token.user.id },
+      data: {
+        password_hash: hash.passwordHash,
+        password_salt: hash.passwordSalt,
+        password_updated_at: now,
+        auth_version: { increment: 1 },
+      },
+    });
+    await tx.passwordResetToken.updateMany({
+      where: { user_id: token.user.id, used_at: null },
+      data: { used_at: now },
+    });
+    await tx.authSession.updateMany({
+      where: { user_id: token.user.id, revoked_at: null },
+      data: { revoked_at: now },
+    });
+  });
+  return { reset: true } as const;
 };

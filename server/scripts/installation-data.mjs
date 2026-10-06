@@ -61,7 +61,7 @@ const backup = () => {
         "UPDATE ical_sources SET url = 'redacted://not-exported', is_active = 0;",
         "UPDATE gites SET ical_export_token = NULL, airbnb_listing_id = NULL;",
         "UPDATE planning_relay_periods SET share_nonce = lower(hex(randomblob(32))), public_code_hash = NULL, public_origin = NULL;",
-        "DELETE FROM auth_sessions; DELETE FROM api_tokens; DELETE FROM document_shares; DELETE FROM security_throttles;",
+        "DELETE FROM auth_sessions; DELETE FROM api_tokens; DELETE FROM document_shares; DELETE FROM password_reset_tokens; DELETE FROM security_throttles;",
       ].join(" ")]);
       databaseFormat = "sqlite-sanitized";
     } else {
@@ -90,7 +90,7 @@ const backup = () => {
       secretsIncluded: false,
       secretProtection: sqliteSanitized ? "sanitized" : "encrypted-at-rest",
       excludedSecrets: sqliteSanitized
-        ? ["environment", "sessions", "apiTokens", "documentShares", "icalUrls", "publicLinkTokens", "integrationState"]
+        ? ["environment", "sessions", "apiTokens", "documentShares", "passwordResetTokens", "icalUrls", "publicLinkTokens", "integrationState"]
         : ["environment"],
       protectedSecrets: sqliteSanitized ? [] : ["database fields"],
       files,

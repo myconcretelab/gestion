@@ -21,8 +21,8 @@ type StatusPreset = {
 type StatusPresetMap = Record<AppUserStatus, StatusPreset>;
 
 const ALL_PAGES = APP_PAGES.map(({ id }) => id);
-const STATUS_LABELS: Record<AppUserStatus, string> = { owner: "Propriétaire", worker: "Intervenant", custom: "Personnalisé" };
-const ROLE_LABELS: Record<AppUserRole, string> = { owner: "Propriétaire", worker: "Intervenant" };
+const STATUS_LABELS: Record<AppUserStatus, string> = { owner: "Propriétaire / administrateur", worker: "Intervenant", custom: "Personnalisé" };
+const ROLE_LABELS: Record<AppUserRole, string> = { owner: "Propriétaire / administrateur", worker: "Intervenant" };
 const DEFAULT_STATUS_PRESETS: StatusPresetMap = {
   owner: { status: "owner", canWrite: true, canViewAmounts: true, pageAccess: ALL_PAGES, locked: true },
   worker: { status: "worker", canWrite: true, canViewAmounts: false, pageAccess: ["today", "calendar", "planning_relay"], locked: false },
@@ -120,9 +120,9 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
     <fieldset className="user-editor__fieldset"><legend>Connexion personnelle</legend><div className="grid-2 user-settings-form">
       <label className="field">Identifiant de connexion<input autoComplete="off" value={draft.loginId} disabled={disabled} onChange={(e) => onChange({ ...draft, loginId: e.target.value })} /></label>
       <label className="field">{draft.loginId ? "Nouveau mot de passe (facultatif)" : "Mot de passe initial"}<input type="password" autoComplete="new-password" value={draft.password} disabled={disabled} onChange={(e) => onChange({ ...draft, password: e.target.value })} placeholder="12 caractères minimum" /></label>
-    </div><p className="field-hint">Changer le mot de passe révoque toutes les sessions de cet utilisateur.</p></fieldset>
+    </div><p className="field-hint">Les propriétaires / administrateurs peuvent définir un nouveau mot de passe pour n’importe quel utilisateur. Le changement révoque toutes les sessions de ce compte.</p></fieldset>
     <fieldset className="user-editor__fieldset"><legend>Statuts</legend><div className="user-role-grid">
-      <SwitchRow title="Propriétaire" description="Accès complet et attribution possible aux gîtes." checked={owner} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "owner", checked, statusPresets))} />
+      <SwitchRow title="Propriétaire / administrateur" description="Accès complet, gestion des comptes et réinitialisation de tous les mots de passe." checked={owner} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "owner", checked, statusPresets))} />
       <SwitchRow title="Intervenant" description="Planning relais, saisie des heures et taux horaire." checked={worker} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "worker", checked, statusPresets))} />
     </div>{draft.roles.length === 0 ? <p className="field-hint">Sans statut métier, cet utilisateur conserve des droits personnalisés.</p> : null}</fieldset>
     {worker ? <fieldset className="user-editor__fieldset"><legend>Paramètres intervenant</legend><div className="grid-2">
@@ -204,7 +204,7 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   return <section id="settings-users" className="settings-cluster" aria-labelledby="nav-settings-users">
     <div className="settings-cluster__header"><div><div className="settings-cluster__eyebrow">Accès</div><h2 className="settings-cluster__title">Utilisateurs et privilèges</h2></div><p className="settings-cluster__text">Toutes les informations des personnes, leurs statuts et leurs droits sont gérés ici. Les utilisateurs propriétaires sont ensuite proposés dans les fiches des gîtes.</p></div>
     {notice ? <div className="note note--success">{notice}</div> : null}{error ? <div className="note">{error}</div> : null}
-    <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Droits par statut</div><span className="field-hint">Les propriétaires ont toujours tous les droits.</span></div></div>
+    <div className="card user-list-card"><div className="user-list-toolbar"><div><div className="section-title">Droits par statut</div><span className="field-hint">Les propriétaires / administrateurs ont tous les droits et peuvent gérer les accès des autres utilisateurs.</span></div></div>
       <div className="table-wrap"><table className="table user-list-table status-preset-table"><thead><tr><th>Statut</th><th>Droits</th><th>Pages</th><th className="table-actions-cell">Actions</th></tr></thead><tbody>
         {(["owner", "worker", "custom"] as AppUserStatus[]).map((status) => { const preset = statusPresets[status]; return <tr key={status} className={selectedStatus === status ? "is-selected" : ""}><td><strong>{STATUS_LABELS[status]}</strong></td><td>{preset.canWrite ? "Écriture" : "Lecture"}{preset.canViewAmounts ? " · €" : " · sans €"}</td><td>{status === "owner" ? "Toutes" : `${preset.pageAccess.length} / ${APP_PAGES.length}`}</td><td className="table-actions-cell">{preset.locked ? <span className="field-hint">Fixe</span> : <button type="button" className="table-action" onClick={() => { setError(null); setSelectedStatus(status); setSelectedId(null); setCreating(false); }}>Modifier</button>}</td></tr>; })}
       </tbody></table></div>

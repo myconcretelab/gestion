@@ -25,6 +25,22 @@ export const LOGIN_THROTTLE_CONFIG: RequestThrottleConfig = {
   blockMs: 60 * 60 * 1000,
 };
 
+export const PASSWORD_RESET_THROTTLE_CONFIG: RequestThrottleConfig = {
+  scope: "password-reset",
+  threshold: 3,
+  globalThreshold: 30,
+  windowMs: 60 * 60 * 1000,
+  blockMs: 60 * 60 * 1000,
+};
+
+export const PASSWORD_RESET_CONFIRM_THROTTLE_CONFIG: RequestThrottleConfig = {
+  scope: "password-reset-confirm",
+  threshold: 5,
+  globalThreshold: 100,
+  windowMs: 15 * 60 * 1000,
+  blockMs: 60 * 60 * 1000,
+};
+
 export const PLANNING_RELAY_THROTTLE_CONFIG: RequestThrottleConfig = {
   scope: "planning-relay",
   threshold: 10,

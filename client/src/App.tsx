@@ -210,48 +210,83 @@ type AuthScreenProps = {
   onLoginIdChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: () => void;
+  resetToken: string | null;
 };
 
-const AuthScreen = ({ session, loginId, password, error, submitting, onLoginIdChange, onPasswordChange, onSubmit }: AuthScreenProps) => (
-  <main className="auth-shell">
+const AuthScreen = ({ session, loginId, password, error, submitting, onLoginIdChange, onPasswordChange, onSubmit, resetToken }: AuthScreenProps) => {
+  const [mode, setMode] = useState<"login" | "request" | "reset">(resetToken ? "reset" : "login");
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recoveryIdentifier, setRecoveryIdentifier] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    void apiFetch<{ available: boolean }>("/auth/password-recovery")
+      .then((result) => setRecoveryAvailable(result.available))
+      .catch(() => setRecoveryAvailable(false));
+  }, []);
+
+  const requestReset = async () => {
+    setRecoveryBusy(true); setRecoveryError(null); setRecoveryNotice(null);
+    try {
+      const result = await apiFetch<{ message: string }>("/auth/password-reset/request", {
+        method: "POST", json: { identifier: recoveryIdentifier },
+      });
+      setRecoveryNotice(result.message);
+    } catch (reason) {
+      setRecoveryError(reason instanceof Error ? reason.message : "Impossible d’envoyer le lien de récupération.");
+    } finally { setRecoveryBusy(false); }
+  };
+
+  const confirmReset = async () => {
+    if (!resetToken) return setRecoveryError("Le lien de réinitialisation est incomplet.");
+    if (newPassword.length < 12) return setRecoveryError("Le mot de passe doit contenir au moins 12 caractères.");
+    if (newPassword !== confirmPassword) return setRecoveryError("Les deux mots de passe ne correspondent pas.");
+    setRecoveryBusy(true); setRecoveryError(null); setRecoveryNotice(null);
+    try {
+      await apiFetch("/auth/password-reset/confirm", { method: "POST", json: { token: resetToken, password: newPassword } });
+      window.history.replaceState({}, "", "/");
+      setNewPassword(""); setConfirmPassword(""); setMode("login");
+      setRecoveryNotice("Mot de passe modifié. Vous pouvez maintenant vous connecter.");
+    } catch (reason) {
+      setRecoveryError(reason instanceof Error ? reason.message : "Impossible de modifier le mot de passe.");
+    } finally { setRecoveryBusy(false); }
+  };
+
+  return <main className="auth-shell">
     <section className="card auth-card">
       <div className="auth-card__eyebrow">Protection serveur</div>
-      <h1 className="auth-card__title">Connexion requise</h1>
-      <p className="auth-card__text">
-        Saisissez votre identifiant personnel et votre mot de passe pour ouvrir l’application.
-      </p>
-      <label className="field">
-        Identifiant
-        <input value={loginId} onChange={(event) => onLoginIdChange(event.target.value)} disabled={submitting} autoComplete="username" autoFocus />
-      </label>
-      <label className="field">
-        Mot de passe
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => onPasswordChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              onSubmit();
-            }
-          }}
-          disabled={submitting}
-        />
-      </label>
-      <div className="field-hint">
-        Session par défaut: {formatSessionDurationLabel(session?.sessionDurationHours ?? 24 * 7)}.
-      </div>
-      {error ? <div className="note" style={{ marginTop: 12 }}>{error}</div> : null}
-      <div className="actions" style={{ marginTop: 16 }}>
-        <button type="button" onClick={onSubmit} disabled={submitting || !loginId.trim() || !password.trim()}>
-          {submitting ? "Connexion..." : "Se connecter"}
-        </button>
-      </div>
+      <h1 className="auth-card__title">{mode === "request" ? "Mot de passe oublié" : mode === "reset" ? "Nouveau mot de passe" : "Connexion requise"}</h1>
+      {mode === "login" ? <>
+        <p className="auth-card__text">Saisissez votre identifiant personnel et votre mot de passe pour ouvrir l’application.</p>
+        <label className="field">Identifiant<input value={loginId} onChange={(event) => onLoginIdChange(event.target.value)} disabled={submitting} autoComplete="username" autoFocus /></label>
+        <label className="field">Mot de passe<input type="password" autoComplete="current-password" value={password} onChange={(event) => onPasswordChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); onSubmit(); } }} disabled={submitting} /></label>
+        <div className="field-hint">Session par défaut: {formatSessionDurationLabel(session?.sessionDurationHours ?? 24 * 7)}.</div>
+        {error ? <div className="note" style={{ marginTop: 12 }}>{error}</div> : null}
+        {recoveryNotice ? <div className="note note--success" style={{ marginTop: 12 }}>{recoveryNotice}</div> : null}
+        <div className="actions" style={{ marginTop: 16 }}>
+          <button type="button" onClick={onSubmit} disabled={submitting || !loginId.trim() || !password.trim()}>{submitting ? "Connexion..." : "Se connecter"}</button>
+          {recoveryAvailable ? <button type="button" className="secondary" onClick={() => { setRecoveryError(null); setRecoveryNotice(null); setRecoveryIdentifier(loginId); setMode("request"); }}>Mot de passe oublié ?</button> : null}
+        </div>
+      </> : mode === "request" ? <>
+        <p className="auth-card__text">Indiquez votre identifiant ou votre adresse e-mail. Si le compte est actif et possède un e-mail, vous recevrez un lien valable 30 minutes.</p>
+        <label className="field">Identifiant ou e-mail<input value={recoveryIdentifier} onChange={(event) => setRecoveryIdentifier(event.target.value)} disabled={recoveryBusy} autoComplete="username" autoFocus /></label>
+        {recoveryError ? <div className="note" style={{ marginTop: 12 }}>{recoveryError}</div> : null}
+        {recoveryNotice ? <div className="note note--success" style={{ marginTop: 12 }}>{recoveryNotice}</div> : null}
+        <div className="actions" style={{ marginTop: 16 }}><button type="button" onClick={() => void requestReset()} disabled={recoveryBusy || !recoveryIdentifier.trim()}>{recoveryBusy ? "Envoi…" : "Envoyer le lien"}</button><button type="button" className="secondary" onClick={() => { setRecoveryError(null); setRecoveryNotice(null); setMode("login"); }}>Retour</button></div>
+      </> : <>
+        <p className="auth-card__text">Choisissez un mot de passe personnel d’au moins 12 caractères.</p>
+        <label className="field">Nouveau mot de passe<input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} disabled={recoveryBusy} autoFocus /></label>
+        <label className="field">Confirmation<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} disabled={recoveryBusy} /></label>
+        {recoveryError ? <div className="note" style={{ marginTop: 12 }}>{recoveryError}</div> : null}
+        <div className="actions" style={{ marginTop: 16 }}><button type="button" onClick={() => void confirmReset()} disabled={recoveryBusy || newPassword.length < 12 || !confirmPassword}>{recoveryBusy ? "Modification…" : "Modifier le mot de passe"}</button></div>
+      </>}
     </section>
-  </main>
-);
+  </main>;
+};
 
 const AmountsAccess = ({ allowed, children }: { allowed: boolean; children: ReactNode }) =>
   allowed ? children : (
@@ -850,6 +885,7 @@ const App = () => {
         onLoginIdChange={setAuthLoginId}
         onPasswordChange={setAuthPassword}
         onSubmit={() => void submitLogin()}
+        resetToken={location.pathname === "/reset-password" ? new URLSearchParams(location.search).get("token") : null}
       />
     );
   }
