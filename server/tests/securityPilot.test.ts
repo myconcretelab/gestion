@@ -4,11 +4,27 @@ import test from "node:test";
 import prisma from "../src/db/prisma.ts";
 import { createApp } from "../src/app.ts";
 import { shouldRefuseProductionStart, updateUserCredentials } from "../src/services/serverAuth.ts";
+import { createApiToken, revokeApiToken, verifyScopedApiToken } from "../src/services/apiTokens.ts";
 
 test("une production sans compte protégé reste fermée", () => {
   assert.equal(shouldRefuseProductionStart("production", 0), true);
   assert.equal(shouldRefuseProductionStart("production", 1), false);
   assert.equal(shouldRefuseProductionStart("development", 0), false);
+});
+
+test("un jeton d'intégration est hashé, limité à ses scopes et révocable", async () => {
+  const created = await createApiToken({ name: "Test", scopes: ["reservations:write"], expiresAt: new Date(Date.now() + 60_000) });
+  try {
+    const stored = await prisma.apiToken.findUniqueOrThrow({ where: { id: created.id } });
+    assert.notEqual(stored.token_hash, created.token);
+    const request = { headers: { authorization: `Bearer ${created.token}` } } as never;
+    assert.equal(await verifyScopedApiToken(request, "reservations:write"), true);
+    assert.equal(await verifyScopedApiToken(request, "cron:run"), false);
+    assert.equal(await revokeApiToken(created.id), true);
+    assert.equal(await verifyScopedApiToken(request, "reservations:write"), false);
+  } finally {
+    await prisma.apiToken.deleteMany({ where: { id: created.id } });
+  }
 });
 
 test("un PDF privé, la liste de comptes et les API hors rôle sont refusés", async () => {

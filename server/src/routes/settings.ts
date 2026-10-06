@@ -128,6 +128,7 @@ import {
   getOperationsCalendarSettings,
   resetOperationsCalendarToken,
 } from "../services/operationsCalendarSettings.js";
+import { API_TOKEN_SCOPES, createApiToken, listApiTokens, revokeApiToken } from "../services/apiTokens.js";
 
 const router = Router();
 
@@ -422,6 +423,11 @@ const serverSecuritySettingsSchema = z.object({
     .min(1)
     .max(24 * 90),
 });
+const apiTokenSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  scopes: z.array(z.enum(API_TOKEN_SCOPES)).min(1),
+  expiresInDays: z.number().int().min(1).max(365).nullable().optional(),
+});
 
 const getIcalExportWindowStart = () => {
   const todayUtc = new Date();
@@ -709,6 +715,33 @@ router.put("/security", async (req, res, next) => {
         user: await getAuthenticatedAppUser(req),
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api-tokens", async (_req, res, next) => {
+  try {
+    res.json(await listApiTokens());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api-tokens", async (req, res, next) => {
+  try {
+    const payload = apiTokenSchema.parse(req.body);
+    const expiresAt = payload.expiresInDays ? new Date(Date.now() + payload.expiresInDays * 86_400_000) : null;
+    res.status(201).json(await createApiToken({ name: payload.name, scopes: payload.scopes, expiresAt }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/api-tokens/:id", async (req, res, next) => {
+  try {
+    if (!(await revokeApiToken(req.params.id))) return res.status(404).json({ error: "Jeton introuvable ou déjà révoqué." });
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

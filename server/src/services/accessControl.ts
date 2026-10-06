@@ -51,7 +51,7 @@ export const getRequiredBusinessPermission = (method: string, requestPath: strin
   if (path.startsWith("/document-shares")) return "contracts:share";
   if (path.startsWith("/users") || path.startsWith("/managers")) return isWriteMethod(method) ? "users:manage" : "users:read";
   if (path.startsWith("/settings")) {
-    if (/^\/settings\/(?:pump|smartlife|telegram|message-channels|ical)/.test(path)) return "integrations:manage";
+    if (/^\/settings\/(?:api-tokens|pump|smartlife|telegram|message-channels|ical)/.test(path)) return "integrations:manage";
     return familyPermission("settings", method);
   }
   if (path.startsWith("/gites") && path.includes("season-rates")) return familyPermission("rates", method);

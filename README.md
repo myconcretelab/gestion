@@ -302,6 +302,7 @@ Le classeur contient des données personnelles: gardez-le hors du dépôt et hor
 - Chaque utilisateur possède un identifiant et un mot de passe hashé avec scrypt. Les sessions opaques, hashées et révocables sont stockées en base.
 - `BASIC_AUTH_PASSWORD` et `INTEGRATION_API_TOKEN` sont uniquement des aides de migration temporaire et doivent être retirés après un démarrage réussi.
 - Les jetons machine-à-machine sont hashés, révocables et limités à des scopes. L'intégration réservations utilise le scope `reservations:write`.
+- Un propriétaire peut administrer ces jetons via `GET/POST /api/settings/api-tokens` et les révoquer via `DELETE /api/settings/api-tokens/:id`; le secret brut n'est retourné qu'à la création.
 - Les PDF privés exigent une session. Un partage externe passe par un lien aléatoire expirable et révocable créé via `/api/document-shares`.
 
 ### Contenus des gîtes en français, anglais et espagnol
