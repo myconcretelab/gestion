@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import fs from "fs";
+import crypto from "node:crypto";
 import { ZodError } from "zod";
 import { env } from "./config/env.js";
 import authRouter from "./routes/auth.js";
@@ -27,8 +28,10 @@ import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
 import personalExpensesRouter from "./routes/personalExpenses.js";
 import { planningRelayPeriodsRouter, publicPlanningRelayRouter } from "./routes/planningRelayPeriods.js";
-import { hasValidCronTriggerToken, parseBearerToken } from "./utils/cronTriggerAuth.js";
+import documentSharesRouter, { publicDocumentSharesRouter } from "./routes/documentShares.js";
+import { hasValidCronTriggerToken } from "./utils/cronTriggerAuth.js";
 import { isPublicApiPath } from "./utils/publicApiPath.js";
+import { enforceRequestRateLimit, PUBLIC_API_THROTTLE_CONFIG, sendThrottleResponse } from "./services/requestThrottle.js";
 import {
   buildServerAuthRequiredError,
   clearServerAuthCookie,
@@ -36,7 +39,7 @@ import {
   getAuthenticatedAppUser,
   isServerAuthRequired,
 } from "./services/serverAuth.js";
-import { containsMonetaryFields, getRequiredPageForApiPath, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
+import { canActAsRequestedUser, containsMonetaryFields, getRequiredBusinessPermission, hasBusinessPermission, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -65,9 +68,24 @@ const getHttpErrorPayload = (err: Error) => {
 export const createApp = () => {
   const app = express();
 
+  app.disable("x-powered-by");
+  // Express' simple parser avoids the optional qs parser and rejects nested query-object tricks.
+  app.set("query parser", "simple");
+
   if (env.TRUST_PROXY) app.set("trust proxy", 1);
 
-  app.use(express.json({ limit: "20mb" }));
+  app.use((req, res, next) => {
+    const requestId = String(req.headers["x-request-id"] ?? "").trim().slice(0, 128) || crypto.randomUUID();
+    res.setHeader("X-Request-Id", requestId);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'");
+    if (env.NODE_ENV === "production") res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    next();
+  });
+  app.use(express.json({ limit: env.REQUEST_BODY_LIMIT, strict: true }));
   app.use(
     cors({
       origin: env.CLIENT_ORIGIN,
@@ -91,10 +109,16 @@ export const createApp = () => {
   app.use("/api", async (req, res, next) => {
     try {
       if (isPublicApiPath(req.path)) {
+        const throttle = await enforceRequestRateLimit(req, res, PUBLIC_API_THROTTLE_CONFIG);
+        if (throttle.blocked) return sendThrottleResponse(res, throttle);
         return next();
       }
 
       if (/^\/gites\/[^/]+\/calendar\.ics$/i.test(req.path)) {
+        return next();
+      }
+
+      if (/^\/reservations\/integrations\/what-today$/i.test(req.path)) {
         return next();
       }
 
@@ -110,14 +134,6 @@ export const createApp = () => {
         return next();
       }
 
-      const header = req.headers.authorization ?? "";
-      if (env.INTEGRATION_API_TOKEN) {
-        const bearer = parseBearerToken(header);
-        if (bearer === env.INTEGRATION_API_TOKEN) {
-          return next();
-        }
-      }
-
       if (!(await isServerAuthRequired())) {
         return next();
       }
@@ -125,17 +141,18 @@ export const createApp = () => {
       const session = await getServerAuthSessionFromRequest(req);
       const user = session ? await getAuthenticatedAppUser(req) : null;
       if (session && user) {
-        const requiredPage = getRequiredPageForApiPath(req.path);
-        if (requiredPage && !user.permissions.isOwner && !user.pageAccess.includes(requiredPage)) {
+        const requiredPermission = getRequiredBusinessPermission(req.method, req.path);
+        if (requiredPermission && !hasBusinessPermission(user, requiredPermission)) {
           return res.status(403).json({
-            error: "Cet utilisateur n’a pas accès à cette page.",
-            code: "PAGE_ACCESS_REQUIRED",
+            error: "Permission métier insuffisante.",
+            code: "BUSINESS_PERMISSION_REQUIRED",
+            permission: requiredPermission,
           });
         }
-        if (isWriteMethod(req.method) && !user.permissions.canWrite) {
+        if (!canActAsRequestedUser(user, req.path, req.body)) {
           return res.status(403).json({
-            error: "Cet utilisateur dispose d'un accès en lecture seule.",
-            code: "WRITE_ACCESS_REQUIRED",
+            error: "Vous ne pouvez pas agir sous l’identité d’un autre utilisateur.",
+            code: "SUBJECT_ACCESS_REQUIRED",
           });
         }
         if (!user.permissions.canViewAmounts) {
@@ -171,6 +188,7 @@ export const createApp = () => {
   app.use("/api/public/gites", publicGitesRouter);
   app.use("/api/public/cleaning-check", publicCleaningCheckRouter);
   app.use("/api/public/planning-relay", publicPlanningRelayRouter);
+  app.use("/api/public/documents", publicDocumentSharesRouter);
   app.use("/api/managers", managersRouter);
   app.use("/api/contracts", contractsRouter);
   app.use("/api/invoices", invoicesRouter);
@@ -190,6 +208,11 @@ export const createApp = () => {
   app.use("/api/today", todayRouter);
   app.use("/api/personal-expenses", personalExpensesRouter);
   app.use("/api/planning-relay-periods", planningRelayPeriodsRouter);
+  app.use("/api/document-shares", documentSharesRouter);
+
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: "Endpoint introuvable.", code: "NOT_FOUND" });
+  });
 
   const clientDistCandidates = [
     process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : null,
@@ -201,20 +224,26 @@ export const createApp = () => {
 
   if (clientDist) {
     app.use(express.static(clientDist));
-    app.get("*", (_req, res) => {
+    app.get("/{*splat}", (_req, res) => {
       res.sendFile(path.join(clientDist, "index.html"));
     });
   }
 
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const requestId = String(res.getHeader("X-Request-Id") ?? "");
     if (err instanceof ZodError) {
-      return res.status(400).json({ error: "Validation", details: err.flatten() });
+      return res.status(400).json({ error: "Validation", details: err.flatten(), requestId });
     }
     if (err instanceof Error) {
       const payload = getHttpErrorPayload(err);
-      return res.status(payload.status).json(payload.body);
+      if (payload.status >= 500) {
+        console.error(JSON.stringify({ level: "error", requestId, method: req.method, path: req.path, error: err.message }));
+        return res.status(payload.status).json({ error: "Erreur interne", code: "INTERNAL_ERROR", requestId });
+      }
+      return res.status(payload.status).json({ ...payload.body, requestId });
     }
-    return res.status(500).json({ error: "Erreur inconnue" });
+    console.error(JSON.stringify({ level: "error", requestId, method: req.method, path: req.path, error: "unknown" }));
+    return res.status(500).json({ error: "Erreur interne", code: "INTERNAL_ERROR", requestId });
   });
 
   return app;

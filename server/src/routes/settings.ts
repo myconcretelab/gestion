@@ -414,7 +414,7 @@ const serverSecuritySettingsSchema = z.object({
   newPassword: z
     .string()
     .trim()
-    .min(8, "Le nouveau mot de passe doit contenir au moins 8 caractères.")
+    .min(12, "Le nouveau mot de passe doit contenir au moins 12 caractères.")
     .optional(),
   sessionDurationHours: z
     .number()
@@ -692,9 +692,7 @@ router.put("/security", async (req, res, next) => {
     if (result.session) {
       setServerAuthCookie(req, res, result.session);
     }
-    const passwordConfigured = Boolean(
-      result.settings.passwordHash && result.settings.passwordSalt,
-    );
+    const passwordConfigured = true;
     res.json({
       settings: {
         enabled: passwordConfigured,

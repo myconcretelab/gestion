@@ -11,7 +11,7 @@ Monorepo Node.js + React pour générer et archiver des contrats de location de 
 
 ## Prérequis
 
-- Node.js 18+
+- Node.js 22.12+
 - (Optionnel) PostgreSQL pour production
 
 ## Installation locale
@@ -92,8 +92,7 @@ En local, le bouton `Ouvrir le navigateur de capture` lance un navigateur visibl
 
 Un cron Pump configurable est aussi disponible dans **Réglages**. Par défaut, il est prérempli sur un import automatique tous les 3 jours à 10h. En production, vous pouvez utiliser le mode `external` et déclencher:
 
-- `GET /api/settings/pump/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN`
-- ou `POST /api/settings/pump/cron/run` avec le même token
+- `POST /api/settings/pump/cron/run` avec `Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN`
 
 ## Synchronisation iCal
 
@@ -101,9 +100,9 @@ La synchronisation iCal n'utilise plus de minuteur en mémoire dans le process N
 
 Le déclenchement se fait via l'URL HTTP Alwaysdata:
 
-- `https://votre-domaine/api/settings/ical/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN`
+- `POST https://votre-domaine/api/settings/ical/cron/run` avec `Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN`
 
-Le déclenchement HTTP accepte `CRON_TRIGGER_TOKEN` et, par repli, `INTEGRATION_API_TOKEN`. Il passe aussi la Basic Auth globale si le token URL est valide.
+Le déclenchement HTTP accepte `CRON_TRIGGER_TOKEN` dans l'en-tête Bearer. Les jetons ne sont pas acceptés dans l'URL afin d'éviter leur fuite dans les journaux et historiques.
 
 Le job déclenché par l'URL:
 
@@ -166,8 +165,9 @@ Le wrapper local `/Users/sebsoaz/bin/update` transmet aussi cette option:
 - (optionnel) `NPM_INSTALL_MODE=install` pour que `./update` utilise `npm install` au lieu de `npm ci`
 - (optionnel) `RESTART_CMD=...` si vous preferez un redemarrage via commande shell
 - (optionnel) `ALWAYSDATA_API_TOKEN=...`, `ALWAYSDATA_ACCOUNT=...`, `ALWAYSDATA_SITE_ID=...` pour redemarrer via l'API Alwaysdata
-- (optionnel) `BASIC_AUTH_PASSWORD=...` pour initialiser le premier mot de passe serveur hashé au premier démarrage
-- (optionnel) `INTEGRATION_API_TOKEN=...` pour les appels serveur-à-serveur (ex: repo `what-today`)
+- `BOOTSTRAP_ADMIN_LOGIN=...` et `BOOTSTRAP_ADMIN_PASSWORD=...` (12 caractères minimum) pour créer le premier administrateur sur une installation vide
+- (migration uniquement) `BASIC_AUTH_PASSWORD=...` initialise les mots de passe individuels manquants, puis doit être retiré
+- (migration uniquement) `INTEGRATION_API_TOKEN=...` est importé sous forme hashée avec le scope `reservations:write`, puis doit être retiré
 - (optionnel) `ICAL_SYNC_ENABLED=true`
 - (optionnel) `CRON_TRIGGER_TOKEN=...` pour déclencher le cron iCal via URL HTTP
 - (optionnel) `PUMP_IMPORT_CRON_SCHEDULER=external` pour déclencher Pump via cron HTTP
@@ -198,13 +198,15 @@ npm run start
 4bis. Configurer l'URL du cron iCal dans Alwaysdata:
 
 ```text
-https://votre-domaine/api/settings/ical/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN
+POST https://votre-domaine/api/settings/ical/cron/run
+Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN
 ```
 
 4ter. Si Pump est en scheduler `external`, configurer aussi:
 
 ```text
-https://votre-domaine/api/settings/pump/cron/run?token=VOTRE_CRON_TRIGGER_TOKEN
+POST https://votre-domaine/api/settings/pump/cron/run
+Authorization: Bearer VOTRE_CRON_TRIGGER_TOKEN
 ```
 
 5. PDFs: les fichiers sont stockes dans `server/data/pdfs/YYYY/MM/` par defaut. Assurez-vous que le dossier `server/data/` (ou la variable `DATA_DIR`) est sur un volume persistant et accessible en ecriture par le processus AlwaysData.
@@ -297,9 +299,10 @@ Le classeur contient des données personnelles: gardez-le hors du dépôt et hor
 
 - Les PDF sont stockés sous `server/data/pdfs/YYYY/MM/`.
 - La numérotation est automatique `{PREFIX}-{YYYY}-{000001}` par gîte et par année.
-- Auth serveur via mot de passe hashé + session cookie. `BASIC_AUTH_PASSWORD` ne sert plus que de bootstrap initial optionnel.
-- Le mot de passe serveur et la durée d'expiration de session se changent ensuite dans **Paramètres**.
-- Auth machine-à-machine possible via `Authorization: Bearer <INTEGRATION_API_TOKEN>`.
+- Chaque utilisateur possède un identifiant et un mot de passe hashé avec scrypt. Les sessions opaques, hashées et révocables sont stockées en base.
+- `BASIC_AUTH_PASSWORD` et `INTEGRATION_API_TOKEN` sont uniquement des aides de migration temporaire et doivent être retirés après un démarrage réussi.
+- Les jetons machine-à-machine sont hashés, révocables et limités à des scopes. L'intégration réservations utilise le scope `reservations:write`.
+- Les PDF privés exigent une session. Un partage externe passe par un lien aléatoire expirable et révocable créé via `/api/document-shares`.
 
 ### Contenus des gîtes en français, anglais et espagnol
 

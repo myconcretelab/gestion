@@ -68,7 +68,6 @@ type PumpHealthNotice = {
 };
 
 type LoginResult = ServerAuthSession;
-type LoginUser = Pick<AppUser, "id" | "displayName">;
 
 const ICAL_AUTO_SYNC_SESSION_KEY = "ical-auto-sync-attempted";
 const ICAL_AUTO_SYNC_TIMEOUT_MS = 15_000;
@@ -201,35 +200,32 @@ const getAppLoadIcalAutoSyncPromise = () => {
 
 type AuthScreenProps = {
   session: ServerAuthSession | null;
-  users: LoginUser[];
-  userId: string;
+  loginId: string;
   password: string;
   error: string | null;
   submitting: boolean;
-  onUserChange: (value: string) => void;
+  onLoginIdChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: () => void;
 };
 
-const AuthScreen = ({ session, users, userId, password, error, submitting, onUserChange, onPasswordChange, onSubmit }: AuthScreenProps) => (
+const AuthScreen = ({ session, loginId, password, error, submitting, onLoginIdChange, onPasswordChange, onSubmit }: AuthScreenProps) => (
   <main className="auth-shell">
     <section className="card auth-card">
       <div className="auth-card__eyebrow">Protection serveur</div>
       <h1 className="auth-card__title">Connexion requise</h1>
       <p className="auth-card__text">
-        Sélectionnez votre utilisateur puis entrez le mot de passe pour ouvrir l’application.
+        Saisissez votre identifiant personnel et votre mot de passe pour ouvrir l’application.
       </p>
       <label className="field">
-        Utilisateur
-        <select value={userId} onChange={(event) => onUserChange(event.target.value)} disabled={submitting || users.length === 0} autoFocus>
-          <option value="">Sélectionner un utilisateur</option>
-          {users.map((user) => <option key={user.id} value={user.id}>{user.displayName}</option>)}
-        </select>
+        Identifiant
+        <input value={loginId} onChange={(event) => onLoginIdChange(event.target.value)} disabled={submitting} autoComplete="username" autoFocus />
       </label>
       <label className="field">
         Mot de passe
         <input
           type="password"
+          autoComplete="current-password"
           value={password}
           onChange={(event) => onPasswordChange(event.target.value)}
           onKeyDown={(event) => {
@@ -246,7 +242,7 @@ const AuthScreen = ({ session, users, userId, password, error, submitting, onUse
       </div>
       {error ? <div className="note" style={{ marginTop: 12 }}>{error}</div> : null}
       <div className="actions" style={{ marginTop: 16 }}>
-        <button type="button" onClick={onSubmit} disabled={submitting || !userId || !password.trim()}>
+        <button type="button" onClick={onSubmit} disabled={submitting || !loginId.trim() || !password.trim()}>
           {submitting ? "Connexion..." : "Se connecter"}
         </button>
       </div>
@@ -275,8 +271,7 @@ const App = () => {
   const [authSession, setAuthSession] = useState<ServerAuthSession | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authPassword, setAuthPassword] = useState("");
-  const [authUsers, setAuthUsers] = useState<LoginUser[]>([]);
-  const [authUserId, setAuthUserId] = useState("");
+  const [authLoginId, setAuthLoginId] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -463,15 +458,9 @@ const App = () => {
     return payload;
   };
 
-  const loadAuthUsers = async () => {
-    const users = await apiFetch<LoginUser[]>("/auth/users");
-    setAuthUsers(users);
-    setAuthUserId((current) => current && users.some((user) => user.id === current) ? current : users[0]?.id ?? "");
-  };
-
   const submitLogin = async () => {
-    if (!authUserId || !authPassword.trim()) {
-      setAuthError("Sélectionne un utilisateur et renseigne le mot de passe.");
+    if (!authLoginId.trim() || !authPassword.trim()) {
+      setAuthError("Renseigne ton identifiant et ton mot de passe.");
       return;
     }
 
@@ -480,14 +469,14 @@ const App = () => {
     try {
       const payload = await apiFetch<LoginResult>("/auth/login", {
         method: "POST",
-        json: { userId: authUserId, password: authPassword },
+        json: { loginId: authLoginId, password: authPassword },
       });
       setCurrentAuthUser(payload.user);
       setAuthSession(payload);
       setAuthPassword("");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        setAuthError("Mot de passe invalide.");
+        setAuthError("Identifiant ou mot de passe invalide.");
       } else {
         setAuthError(error instanceof Error ? error.message : "Impossible d'ouvrir la session.");
       }
@@ -578,7 +567,7 @@ const App = () => {
   useEffect(() => {
     let active = true;
     setAuthLoading(true);
-    Promise.all([loadAuthSession(), loadAuthUsers()])
+    loadAuthSession()
       .catch((error) => {
         if (!active || isAbortError(error)) return;
         setAuthError(error instanceof Error ? error.message : "Impossible de vérifier la session.");
@@ -814,12 +803,11 @@ const App = () => {
     return (
       <AuthScreen
         session={authSession}
-        users={authUsers}
-        userId={authUserId}
+        loginId={authLoginId}
         password={authPassword}
         error={authError}
         submitting={authSubmitting}
-        onUserChange={setAuthUserId}
+        onLoginIdChange={setAuthLoginId}
         onPasswordChange={setAuthPassword}
         onSubmit={() => void submitLogin()}
       />

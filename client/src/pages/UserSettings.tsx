@@ -13,6 +13,7 @@ type UserDraft = {
   canViewAmounts: boolean; isActive: boolean; pageAccess: AppPageId[]; telephone: string;
   email: string; adresse: string; telegramChatId: string; hourlyRate: string;
   cleaningCheckRate: string; fullCleaningRate: string; showOnToday: boolean;
+  loginId: string; password: string;
 };
 type StatusPreset = {
   status: AppUserStatus; canWrite: boolean; canViewAmounts: boolean; pageAccess: AppPageId[]; locked: boolean;
@@ -32,6 +33,7 @@ const emptyDraft = (presets: StatusPresetMap = DEFAULT_STATUS_PRESETS): UserDraf
   canWrite: presets.custom.canWrite, canViewAmounts: presets.custom.canViewAmounts, pageAccess: presets.custom.pageAccess,
   telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "",
   cleaningCheckRate: "", fullCleaningRate: "", showOnToday: true,
+  loginId: "", password: "",
 });
 const toDraft = (user: ManagedUser): UserDraft => ({
   firstName: user.firstName, lastName: user.lastName, roles: user.roles,
@@ -42,6 +44,7 @@ const toDraft = (user: ManagedUser): UserDraft => ({
   cleaningCheckRate: user.cleaningCheckRate ? String(user.cleaningCheckRate).replace(".", ",") : "",
   fullCleaningRate: user.fullCleaningRate ? String(user.fullCleaningRate).replace(".", ",") : "",
   showOnToday: user.intervenant?.showOnToday ?? true,
+  loginId: user.loginId ?? "", password: "",
 });
 const buildPayload = (draft: UserDraft) => ({
   firstName: draft.firstName.trim(), lastName: draft.lastName.trim(), roles: draft.roles,
@@ -114,6 +117,10 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
       <label className="field">Adresse<textarea rows={2} value={draft.adresse} disabled={disabled} onChange={(e) => onChange({ ...draft, adresse: e.target.value })} /></label>
     </div>
     </fieldset>
+    <fieldset className="user-editor__fieldset"><legend>Connexion personnelle</legend><div className="grid-2 user-settings-form">
+      <label className="field">Identifiant de connexion<input autoComplete="off" value={draft.loginId} disabled={disabled} onChange={(e) => onChange({ ...draft, loginId: e.target.value })} /></label>
+      <label className="field">{draft.loginId ? "Nouveau mot de passe (facultatif)" : "Mot de passe initial"}<input type="password" autoComplete="new-password" value={draft.password} disabled={disabled} onChange={(e) => onChange({ ...draft, password: e.target.value })} placeholder="12 caractères minimum" /></label>
+    </div><p className="field-hint">Changer le mot de passe révoque toutes les sessions de cet utilisateur.</p></fieldset>
     <fieldset className="user-editor__fieldset"><legend>Statuts</legend><div className="user-role-grid">
       <SwitchRow title="Propriétaire" description="Accès complet et attribution possible aux gîtes." checked={owner} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "owner", checked, statusPresets))} />
       <SwitchRow title="Intervenant" description="Planning relais, saisie des heures et taux horaire." checked={worker} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "worker", checked, statusPresets))} />
@@ -136,7 +143,7 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
 }
 
 const isUserDraftValid = (draft: UserDraft) =>
-  Boolean(draft.firstName.trim()) && (!draft.roles.includes("worker") || Boolean(draft.telephone.trim()));
+  Boolean(draft.firstName.trim()) && Boolean(draft.loginId.trim()) && (!draft.password || draft.password.length >= 12) && (!draft.roles.includes("worker") || Boolean(draft.telephone.trim()));
 
 const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -169,12 +176,22 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
   useEffect(() => { void load(); }, []);
   const save = async (id: string) => {
     setBusyId(id); setError(null); setNotice(null);
-    try { await apiFetch(`/users/${id}`, { method: "PUT", json: buildPayload(drafts[id]) }); setSelectedId(null); setNotice("Utilisateur mis à jour."); await load(); }
+    try {
+      const draft = drafts[id];
+      await apiFetch(`/users/${id}`, { method: "PUT", json: buildPayload(draft) });
+      await apiFetch(`/users/${id}/credentials`, { method: "PUT", json: { loginId: draft.loginId.trim(), ...(draft.password ? { password: draft.password } : {}) } });
+      setSelectedId(null); setNotice("Utilisateur mis à jour."); await load();
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible d’enregistrer l’utilisateur."); } finally { setBusyId(null); }
   };
   const create = async () => {
     setBusyId("new"); setError(null); setNotice(null);
-    try { await apiFetch("/users", { method: "POST", json: buildPayload(newDraft) }); setNewDraft(emptyDraft()); setCreating(false); setNotice("Utilisateur ajouté."); await load(); }
+    try {
+      if (newDraft.password.length < 12) throw new Error("Le mot de passe initial doit contenir au moins 12 caractères.");
+      const created = await apiFetch<ManagedUser>("/users", { method: "POST", json: buildPayload(newDraft) });
+      await apiFetch(`/users/${created.id}/credentials`, { method: "PUT", json: { loginId: newDraft.loginId.trim(), password: newDraft.password } });
+      setNewDraft(emptyDraft()); setCreating(false); setNotice("Utilisateur ajouté."); await load();
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible d’ajouter l’utilisateur."); } finally { setBusyId(null); }
   };
   const remove = async (user: ManagedUser) => {

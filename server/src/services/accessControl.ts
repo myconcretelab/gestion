@@ -1,5 +1,84 @@
 import type { RequestHandler } from "express";
-import type { AppPageId } from "./appUsers.js";
+import type { AppPageId, AppUserSummary } from "./appUsers.js";
+
+export type BusinessPermission =
+  | "today:read" | "today:write"
+  | "reservations:read" | "reservations:write"
+  | "booking_requests:read" | "booking_requests:write"
+  | "gites:read" | "gites:write"
+  | "rates:read" | "rates:write"
+  | "calendar:read" | "calendar:write"
+  | "contracts:read" | "contracts:write" | "contracts:share"
+  | "invoices:read" | "invoices:write" | "invoices:share"
+  | "finances:read" | "finances:write"
+  | "declarations:read" | "declarations:write"
+  | "planning:read" | "planning:write"
+  | "statistics:read"
+  | "users:read" | "users:manage"
+  | "settings:read" | "settings:write"
+  | "integrations:manage";
+
+const pageForPermission: Partial<Record<BusinessPermission, AppPageId>> = {
+  "today:read": "today", "today:write": "today",
+  "reservations:read": "reservations", "reservations:write": "reservations",
+  "booking_requests:read": "booking_requests", "booking_requests:write": "booking_requests",
+  "gites:read": "gites", "gites:write": "gites",
+  "rates:read": "rates", "rates:write": "rates",
+  "calendar:read": "calendar", "calendar:write": "calendar",
+  "contracts:read": "contracts", "contracts:write": "contracts", "contracts:share": "contracts",
+  "invoices:read": "invoices", "invoices:write": "invoices", "invoices:share": "invoices",
+  "finances:read": "professional_expenses", "finances:write": "professional_expenses",
+  "declarations:read": "statistics", "declarations:write": "statistics",
+  "planning:read": "planning_relay", "planning:write": "planning_relay",
+  "statistics:read": "statistics",
+  "settings:read": "settings", "settings:write": "settings",
+};
+
+export const hasBusinessPermission = (user: AppUserSummary, permission: BusinessPermission) => {
+  if (user.permissions.isOwner) return true;
+  if (permission.startsWith("users:") || permission === "integrations:manage" || permission.endsWith(":share")) return false;
+  const page = pageForPermission[permission];
+  if (!page || !user.pageAccess.includes(page)) return false;
+  return !permission.endsWith(":write") || user.permissions.canWrite;
+};
+
+const familyPermission = (family: string, method: string): BusinessPermission =>
+  `${family}:${isWriteMethod(method) ? "write" : "read"}` as BusinessPermission;
+
+export const getRequiredBusinessPermission = (method: string, requestPath: string): BusinessPermission | null => {
+  const path = requestPath.toLowerCase();
+  if (path.startsWith("/users/owners")) return familyPermission("gites", method);
+  if (path.startsWith("/document-shares")) return "contracts:share";
+  if (path.startsWith("/users") || path.startsWith("/managers")) return isWriteMethod(method) ? "users:manage" : "users:read";
+  if (path.startsWith("/settings")) {
+    if (/^\/settings\/(?:pump|smartlife|telegram|message-channels|ical)/.test(path)) return "integrations:manage";
+    return familyPermission("settings", method);
+  }
+  if (path.startsWith("/gites") && path.includes("season-rates")) return familyPermission("rates", method);
+  if (path.startsWith("/gites") && path.includes("calendar.ics")) return "calendar:read";
+  if (path.startsWith("/gites")) return familyPermission("gites", method);
+  if (path.startsWith("/reservations")) return familyPermission(path.includes("calendar") ? "calendar" : "reservations", method);
+  if (path.startsWith("/booking-requests")) return familyPermission("booking_requests", method);
+  if (path.startsWith("/contracts")) return familyPermission("contracts", method);
+  if (path.startsWith("/invoices")) return familyPermission("invoices", method);
+  if (path.startsWith("/statistics")) return isWriteMethod(method) ? "finances:write" : "statistics:read";
+  if (/^\/(?:personal-expenses|professional-expenses)/.test(path)) return familyPermission("finances", method);
+  if (/^\/(?:guest-night-declarations|urssaf-declarations)/.test(path)) return familyPermission("declarations", method);
+  if (/^\/(?:planning-relay-periods|intervenants|interventions)/.test(path)) return familyPermission("planning", method);
+  if (path.startsWith("/today")) return familyPermission("today", method);
+  if (path.startsWith("/school-holidays")) return "calendar:read";
+  if (path.startsWith("/booked")) return familyPermission("gites", method);
+  return null;
+};
+
+export const canActAsRequestedUser = (user: AppUserSummary, requestPath: string, body: unknown) => {
+  if (user.permissions.isOwner) return true;
+  const payload = body && typeof body === "object" ? body as Record<string, unknown> : {};
+  const requestedUserId = typeof payload.userId === "string" ? payload.userId : typeof payload.user_id === "string" ? payload.user_id : null;
+  const workerMatch = requestPath.match(/^\/intervenants\/hours\/([^/]+)/i);
+  const requestedWorkerId = workerMatch?.[1] ?? (typeof payload.workerId === "string" ? payload.workerId : null);
+  return (!requestedUserId || requestedUserId === user.id) && (!requestedWorkerId || requestedWorkerId === user.intervenantId);
+};
 
 const AMOUNT_KEY_PATTERN = /(?:^|_)(?:amount|montant|prix|price|tarif|revenue|revenu|cout|cost|solde|arrhes|caution|commission|taxe_sejour|frais|payable)(?:_|$)/i;
 const CAMEL_AMOUNT_KEY_PATTERN = /(?:amount|montant|price|prix|tarif|revenue|revenu|cost|solde|arrhes|caution|commission|taxeSejour|totalGlobal|totalSans|optionsTotal|amountDue)/i;

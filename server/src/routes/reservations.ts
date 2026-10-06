@@ -38,6 +38,7 @@ import {
 } from "../utils/reservationOrigin.js";
 import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
+import { verifyScopedApiToken } from "../services/apiTokens.js";
 import { recordCleaningCheckIntervention, removeUnpaidCleaningCheckIntervention } from "../services/userInterventions.js";
 
 const router = Router();
@@ -627,23 +628,15 @@ const computeReservationFields = (payload: z.infer<typeof reservationPayloadSche
   };
 };
 
-const parseBearerToken = (authorizationHeader: string | undefined) => {
-  const [type, token] = String(authorizationHeader ?? "").split(" ");
-  if (type !== "Bearer" || !token) return null;
-  return token.trim();
-};
-
-const requireIntegrationToken = (req: any, res: any, next: (err?: unknown) => void) => {
-  if (!env.INTEGRATION_API_TOKEN) {
-    return res.status(503).json({ error: "INTEGRATION_API_TOKEN non configuré." });
+const requireIntegrationToken = async (req: any, res: any, next: (err?: unknown) => void) => {
+  try {
+    if (!(await verifyScopedApiToken(req, "reservations:write"))) {
+      return res.status(401).json({ error: "Jeton d'intégration invalide, expiré, révoqué ou hors scope." });
+    }
+    return next();
+  } catch (error) {
+    return next(error);
   }
-
-  const token = parseBearerToken(req.headers.authorization);
-  if (!token || token !== env.INTEGRATION_API_TOKEN) {
-    return res.status(401).json({ error: "Token d'intégration invalide." });
-  }
-
-  return next();
 };
 
 const splitReservationByMonth = (dateEntree: Date, dateSortie: Date): ReservationPeriodSegment[] => {

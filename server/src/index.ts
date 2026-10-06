@@ -6,6 +6,11 @@ import { startSmartlifeAutomationCron } from "./services/smartlifeAutomation.js"
 import { startGitePhotosWordPressWebhookQueue } from "./services/bookedWordPressWebhook.js";
 import { startTelegramDeadlineNotificationCron } from "./services/telegramDeadlineNotifications.js";
 import { startPlanningRelaySmsCron } from "./services/planningRelaySms.js";
+import { assertProductionAuthConfigured } from "./services/serverAuth.js";
+import { ensureLegacyIntegrationTokenMigrated } from "./services/apiTokens.js";
+
+await assertProductionAuthConfigured();
+await ensureLegacyIntegrationTokenMigrated();
 
 const app = createApp();
 

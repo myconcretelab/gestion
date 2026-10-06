@@ -9,9 +9,9 @@ import {
   readServerAuthSettings,
   setServerAuthCookie,
   verifyServerPassword,
+  findUserForLogin,
   getServerAuthSessionIdFromRequest,
 } from "../services/serverAuth.js";
-import { findActiveAppUser, listLoginUsers } from "../services/appUsers.js";
 import {
   checkRequestThrottle,
   clearRequestThrottleFailures,
@@ -23,16 +23,12 @@ import {
 const router = Router();
 
 const loginSchema = z.object({
-  userId: z.string().trim().min(1, "L'utilisateur est requis."),
+  loginId: z.string().trim().min(1, "L'identifiant est requis.").max(180),
   password: z.string().min(1, "Le mot de passe est requis."),
 });
 
-router.get("/users", async (_req, res, next) => {
-  try {
-    res.json(await listLoginUsers());
-  } catch (error) {
-    next(error);
-  }
+router.get("/users", (_req, res) => {
+  res.status(404).json({ error: "Endpoint introuvable.", code: "NOT_FOUND" });
 });
 
 router.get("/session", async (req, res, next) => {
@@ -54,20 +50,16 @@ router.post("/login", async (req, res, next) => {
       return res.status(503).json({ error: "Authentification serveur non configurée." });
     }
 
-    const user = await findActiveAppUser(payload.userId);
-    if (!user) {
-      return res.status(401).json({ error: "Utilisateur invalide ou désactivé.", code: "AUTH_REQUIRED" });
-    }
-
     const throttleState = await checkRequestThrottle(req, res, LOGIN_THROTTLE_CONFIG);
     if (throttleState.blocked) return sendThrottleResponse(res, throttleState);
 
-    const isValid = await verifyServerPassword(payload.password);
-    if (!isValid) {
+    const user = await findUserForLogin(payload.loginId);
+    const isValid = user ? await verifyServerPassword(payload.password, user.id) : false;
+    if (!user || !isValid) {
       clearServerAuthCookie(req, res);
       const failureState = await recordRequestThrottleFailure(req, res, LOGIN_THROTTLE_CONFIG);
       if (failureState.blocked) return sendThrottleResponse(res, failureState);
-      return res.status(401).json({ error: "Mot de passe invalide.", code: "AUTH_REQUIRED" });
+      return res.status(401).json({ error: "Identifiant ou mot de passe invalide.", code: "AUTH_REQUIRED" });
     }
 
     await clearRequestThrottleFailures(req, res, LOGIN_THROTTLE_CONFIG);

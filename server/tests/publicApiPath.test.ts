@@ -3,8 +3,9 @@ import test from "node:test";
 import { isPublicApiPath } from "../src/utils/publicApiPath.ts";
 
 test("isPublicApiPath autorise les endpoints publics attendus", () => {
-  assert.equal(isPublicApiPath("/contracts/abc123/pdf"), true);
-  assert.equal(isPublicApiPath("/invoices/xyz789/pdf"), true);
+  assert.equal(isPublicApiPath("/contracts/abc123/pdf"), false);
+  assert.equal(isPublicApiPath("/invoices/xyz789/pdf"), false);
+  assert.equal(isPublicApiPath("/public/documents/abc_DEF-123"), true);
   assert.equal(isPublicApiPath("/public/gites"), true);
   assert.equal(isPublicApiPath("/public/gites/gite-le-liberte"), true);
   assert.equal(isPublicApiPath("/public/planning-relay/period.signature"), true);

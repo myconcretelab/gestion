@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { z } from "zod";
 
 const dotenvPaths = [
   process.env.DOTENV_CONFIG_PATH,
@@ -61,6 +62,8 @@ export const env = {
   PORT: Number.isNaN(port) ? 4000 : port,
   NODE_ENV: process.env.NODE_ENV ?? "development",
   BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD ?? "",
+  BOOTSTRAP_ADMIN_LOGIN: process.env.BOOTSTRAP_ADMIN_LOGIN ?? "",
+  BOOTSTRAP_ADMIN_PASSWORD: process.env.BOOTSTRAP_ADMIN_PASSWORD ?? "",
   INTEGRATION_API_TOKEN: process.env.INTEGRATION_API_TOKEN ?? "",
   PLANNING_RELAY_SHARE_SECRET: process.env.PLANNING_RELAY_SHARE_SECRET ?? "",
   SECURITY_THROTTLE_SECRET: process.env.SECURITY_THROTTLE_SECRET ?? "",
@@ -122,6 +125,7 @@ export const env = {
     String(process.env.PUMP_LOGIN_STRATEGY ?? "simple").trim().toLowerCase() === "multi-step" ? "multi-step" : "simple",
   DEFAULT_ARRHES_RATE: Number(process.env.DEFAULT_ARRHES_RATE ?? 0.2),
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
+  REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT ?? "20mb",
   DATA_DIR: process.env.DATA_DIR ?? path.join(process.cwd(), "data"),
   PDF_SUBDIR: process.env.PDF_SUBDIR ?? "pdfs",
   ICAL_SYNC_ENABLED: parseBooleanEnv(process.env.ICAL_SYNC_ENABLED, true),
@@ -162,3 +166,33 @@ export const env = {
   SMS_API_BASE_URL: process.env.SMS_API_BASE_URL ?? "https://eu.api.ovh.com/1.0",
   SMS_NO_STOP_CLAUSE: parseBooleanEnv(process.env.SMS_NO_STOP_CLAUSE, true),
 };
+
+const startupSchema = z.object({
+  PORT: z.number().int().min(1).max(65535),
+  NODE_ENV: z.enum(["development", "test", "production"]),
+  CLIENT_ORIGIN: z.string().url(),
+  REQUEST_BODY_LIMIT: z.string().regex(/^\d+(?:kb|mb)$/i, "format attendu: 512kb ou 2mb"),
+});
+
+export const validateEnvironment = () => {
+  const parsed = startupSchema.safeParse(env);
+  if (!parsed.success) {
+    const summary = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+    throw new Error(`Configuration invalide: ${summary}`);
+  }
+  if (env.NODE_ENV === "production") {
+    const origin = new URL(env.CLIENT_ORIGIN);
+    if (origin.protocol !== "https:") {
+      throw new Error("Configuration invalide: CLIENT_ORIGIN doit utiliser HTTPS en production.");
+    }
+    if (!env.TRUST_PROXY) {
+      throw new Error("Configuration invalide: TRUST_PROXY=true est requis en production derrière le proxy HTTPS.");
+    }
+    const databaseUrl = String(process.env.DATABASE_URL ?? "");
+    if (!databaseUrl.startsWith("postgresql://") && !databaseUrl.startsWith("postgres://")) {
+      throw new Error("Configuration invalide: PostgreSQL est requis en production.");
+    }
+  }
+};
+
+validateEnvironment();

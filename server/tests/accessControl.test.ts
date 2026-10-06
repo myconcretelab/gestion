@@ -6,7 +6,11 @@ import {
   containsMonetaryFields,
   redactMonetaryValues,
   getRequiredPageForApiPath,
+  getRequiredBusinessPermission,
+  hasBusinessPermission,
+  canActAsRequestedUser,
 } from "../src/services/accessControl.ts";
+import type { AppUserSummary } from "../src/services/appUsers.ts";
 
 test("redactMonetaryValues retire les montants sans masquer les compteurs", () => {
   const result = redactMonetaryValues({
@@ -29,6 +33,39 @@ test("redactMonetaryValues retire les montants sans masquer les compteurs", () =
   });
   assert.deepEqual(result.guest, { name: "Camille", adults_count: 2 });
   assert.deepEqual(result.prices_by_gite, {});
+});
+
+const worker = {
+  id: "user-1", loginId: "worker", displayName: "Worker", firstName: "Work", lastName: "Er",
+  gestionnaireId: null, intervenantId: "worker-1", roles: ["worker"], status: "worker",
+  telephone: null, email: null, adresse: null, telegramChatId: null, hourlyRate: 0,
+  cleaningCheckRate: 0, fullCleaningRate: 0, pageAccess: ["today", "reservations", "calendar", "planning_relay"],
+  isActive: true, permissions: { canWrite: true, canViewAmounts: false, isOwner: false },
+} as AppUserSummary;
+
+test("chaque famille de routes reçoit une permission métier explicite", () => {
+  const cases: Array<[string, string, string]> = [
+    ["GET", "/reservations", "reservations:read"], ["POST", "/reservations", "reservations:write"],
+    ["GET", "/gites", "gites:read"], ["PUT", "/gites/1", "gites:write"],
+    ["GET", "/gites/1/season-rates", "rates:read"], ["GET", "/reservations/calendar", "calendar:read"],
+    ["GET", "/contracts", "contracts:read"], ["POST", "/contracts", "contracts:write"],
+    ["GET", "/invoices", "invoices:read"], ["GET", "/statistics", "statistics:read"],
+    ["GET", "/personal-expenses", "finances:read"], ["POST", "/urssaf-declarations", "declarations:write"],
+    ["GET", "/users", "users:read"], ["PUT", "/settings/security", "settings:write"],
+    ["GET", "/settings/pump/status", "integrations:manage"], ["GET", "/planning-relay-periods", "planning:read"],
+    ["GET", "/booking-requests", "booking_requests:read"], ["GET", "/today/overview/primary", "today:read"],
+  ];
+  for (const [method, path, permission] of cases) assert.equal(getRequiredBusinessPermission(method, path), permission, `${method} ${path}`);
+});
+
+test("un intervenant est refusé sur les familles hors rôle et ne peut pas emprunter une identité", () => {
+  assert.equal(hasBusinessPermission(worker, "reservations:read"), true);
+  assert.equal(hasBusinessPermission(worker, "contracts:read"), false);
+  assert.equal(hasBusinessPermission(worker, "users:read"), false);
+  assert.equal(hasBusinessPermission(worker, "integrations:manage"), false);
+  assert.equal(canActAsRequestedUser(worker, "/interventions", { userId: "user-2" }), false);
+  assert.equal(canActAsRequestedUser(worker, "/intervenants/hours/worker-2", {}), false);
+  assert.equal(canActAsRequestedUser(worker, "/intervenants/hours/worker-1", {}), true);
 });
 
 test("les API dédiées respectent le droit de page", () => {

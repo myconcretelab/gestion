@@ -188,6 +188,11 @@ model AppUser {
   can_view_amounts Boolean  @default(true)
   is_owner         Boolean  @default(false)
   is_active        Boolean  @default(true)
+  login_id         String?  @unique
+  password_hash    String?
+  password_salt    String?
+  password_updated_at DateTime?
+  auth_version     Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -196,9 +201,58 @@ model AppUser {
   arrival_cleaning_checks Reservation[] @relation("ArrivalCleaningCheckedBy")
   departure_cleaning_checks Reservation[] @relation("DepartureCleaningCheckedBy")
   interventions UserIntervention[]
+  auth_sessions AuthSession[]
 
   @@index([is_active, display_name], map: "app_users_active_name_idx")
   @@map("app_users")
+}
+
+model AuthSession {
+  id           String    @id
+  user_id      String
+  auth_version Int
+  created_at   DateTime  @default(now())
+  expires_at   DateTime
+  revoked_at   DateTime?
+  last_seen_at DateTime  @default(now())
+
+  user AppUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, revoked_at, expires_at], map: "auth_sessions_user_active_idx")
+  @@index([expires_at], map: "auth_sessions_expires_idx")
+  @@map("auth_sessions")
+}
+
+model ApiToken {
+  id           String    @id @default(cuid())
+  name         String
+  token_hash   String    @unique
+  scopes       String    @default("[]")
+  expires_at   DateTime?
+  revoked_at   DateTime?
+  last_used_at DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([revoked_at, expires_at], map: "api_tokens_active_idx")
+  @@map("api_tokens")
+}
+
+model DocumentShare {
+  id            String    @id @default(cuid())
+  token_hash    String    @unique
+  document_type String
+  document_id   String
+  expires_at    DateTime
+  revoked_at    DateTime?
+  access_count  Int       @default(0)
+  last_access_at DateTime?
+  created_by_id String?
+  createdAt     DateTime  @default(now())
+
+  @@index([document_type, document_id, revoked_at], map: "document_shares_document_idx")
+  @@index([expires_at], map: "document_shares_expires_idx")
+  @@map("document_shares")
 }
 
 model AppUserStatusPreset {

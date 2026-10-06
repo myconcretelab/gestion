@@ -14,12 +14,9 @@ export const getCronTriggerToken = () => {
   return integration || null;
 };
 
-export const hasValidCronTriggerToken = (req: Pick<Request, "headers" | "query">) => {
+export const hasValidCronTriggerToken = (req: Pick<Request, "headers">) => {
   const expected = getCronTriggerToken();
   if (!expected) return false;
-
-  const queryToken = typeof req.query.token === "string" ? req.query.token.trim() : "";
-  if (queryToken && queryToken === expected) return true;
 
   const bearerToken = parseBearerToken(req.headers.authorization);
   return Boolean(bearerToken && bearerToken === expected);

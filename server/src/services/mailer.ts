@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 import addressparser from "nodemailer/lib/addressparser/index.js";
 import type Mail from "nodemailer/lib/mailer/index.js";
 import type SMTPTransport from "nodemailer/lib/smtp-transport/index.js";
@@ -40,7 +40,7 @@ export class SmtpDeliveryError extends Error {
   }
 }
 
-let transporter: nodemailer.Transporter<SMTPTransport.SentMessageInfo> | null = null;
+let transporter: Transporter<SMTPTransport.SentMessageInfo> | null = null;
 let verifyPromise: Promise<void> | null = null;
 let verified = false;
 
@@ -154,7 +154,7 @@ const ensureTransportVerified = async () => {
       .then(() => {
         verified = true;
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         resetTransportState();
         throw new SmtpDeliveryError(`Connexion SMTP impossible: ${formatSmtpError(error)}.`);
       })
@@ -195,7 +195,7 @@ export const sendSmtpMail = async (params: SendSmtpMailParams) => {
     if (info.accepted.length === 0) {
       const details = [
         info.rejected.length > 0 ? `${info.rejected.length} destinataire(s) refusé(s)` : "",
-        info.pending.length > 0 ? `${info.pending.length} destinataire(s) en attente` : "",
+        (info.pending?.length ?? 0) > 0 ? `${info.pending!.length} destinataire(s) en attente` : "",
       ]
         .filter(Boolean)
         .join(", ");

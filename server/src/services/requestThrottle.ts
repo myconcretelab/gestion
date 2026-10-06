@@ -33,6 +33,14 @@ export const PLANNING_RELAY_THROTTLE_CONFIG: RequestThrottleConfig = {
   blockMs: 60 * 60 * 1000,
 };
 
+export const PUBLIC_API_THROTTLE_CONFIG: RequestThrottleConfig = {
+  scope: "public-api",
+  threshold: 120,
+  globalThreshold: 5_000,
+  windowMs: 15 * 60 * 1000,
+  blockMs: 15 * 60 * 1000,
+};
+
 const readOrCreateSecret = () => {
   if (env.SECURITY_THROTTLE_SECRET.trim()) return env.SECURITY_THROTTLE_SECRET.trim();
   fs.mkdirSync(env.DATA_DIR, { recursive: true });
@@ -191,4 +199,10 @@ export const sendThrottleResponse = (res: Response, state: ThrottleState) => {
     code: "RATE_LIMITED",
     retry_after_seconds: state.retryAfterSeconds,
   });
+};
+
+export const enforceRequestRateLimit = async (req: Request, res: Response, config: RequestThrottleConfig) => {
+  const current = await checkRequestThrottle(req, res, config);
+  if (current.blocked) return current;
+  return recordRequestThrottleFailure(req, res, config);
 };

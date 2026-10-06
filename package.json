@@ -1,11 +1,18 @@
 {
   "name": "contrats-monorepo",
   "private": true,
-  "workspaces": ["server", "client"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "server",
+    "client"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client && npm run build -w server",
     "test": "npm run test -w server && npm run test -w client",
+    "typecheck": "npm run build -w server && npm run typecheck -w client",
     "start": "npm run start -w server",
     "migrate": "npm run migrate -w server",
     "update": "bash ./update",
@@ -22,9 +29,8 @@
     "db:migrate:sqlite-to-postgres": "npm run db:migrate:sqlite-to-postgres -w server"
   },
   "overrides": {
-    "body-parser": {
-      "qs": "^6.15.1"
-    },
+    "proxy-addr": "$proxy-addr",
+    "qs": "$qs",
     "c12": {
       "defu": "^6.1.7"
     },
@@ -32,8 +38,8 @@
       "lodash": "^4.18.1"
     },
     "express": {
-      "path-to-regexp": "0.1.13",
-      "qs": "^6.15.1"
+      "proxy-addr": "$proxy-addr",
+      "qs": "$qs"
     },
     "vite": {
       "rollup": "^4.60.1"
@@ -41,5 +47,10 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "body-parser": "1.20.6",
+    "proxy-addr": "2.0.8",
+    "qs": "6.16.0"
   }
 }

@@ -4085,9 +4085,9 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
 
     try {
       if (trimmedNewPassword || trimmedConfirmPassword) {
-        if (trimmedNewPassword.length < 8) {
+        if (trimmedNewPassword.length < 12) {
           setServerSecurityError(
-            "Le nouveau mot de passe doit contenir au moins 8 caractères.",
+            "Le nouveau mot de passe doit contenir au moins 12 caractères.",
           );
           return;
         }
@@ -5341,7 +5341,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                           placeholder={
                             serverSecuritySettings.passwordConfigured
                               ? "Laisser vide pour conserver l'actuel"
-                              : "Minimum 8 caractères"
+                              : "Minimum 12 caractères"
                           }
                           disabled={savingServerSecurity}
                         />
@@ -9730,8 +9730,9 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                   </div>
                 ) : null}
                 <div className="field-hint" style={{ marginTop: 8 }}>
-                  Déclenchement externe possible via URL HTTP Alwaysdata sur{" "}
-                  <code>/api/settings/ical/cron/run?token=...</code>.
+                  Déclenchement externe par requête POST sur{" "}
+                  <code>/api/settings/ical/cron/run</code> avec le jeton dans
+                  l’en-tête <code>Authorization: Bearer</code>.
                 </div>
                 <div className="grid-2" style={{ marginTop: 12 }}>
                   <label className="field">

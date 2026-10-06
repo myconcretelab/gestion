@@ -63,6 +63,7 @@ export type AppUserPermissions = {
 
 export type AppUserSummary = {
   id: string;
+  loginId: string | null;
   displayName: string;
   firstName: string;
   lastName: string;
@@ -141,6 +142,7 @@ export const listStatusPresets = async (): Promise<AppUserStatusPreset[]> => {
 
 export const serializeAppUser = (user: {
   id: string;
+  login_id?: string | null;
   display_name: string;
   first_name: string;
   last_name: string;
@@ -175,6 +177,7 @@ export const serializeAppUser = (user: {
   const status: AppUserStatus = owner ? "owner" : roles.includes("worker") ? "worker" : "custom";
   return {
     id: user.id,
+    loginId: user.login_id?.trim() || null,
     displayName: [firstName, lastName].filter(Boolean).join(" "),
     firstName,
     lastName,
@@ -312,9 +315,6 @@ export const listActiveAppUsers = async () => {
   });
   return users.map(serializeAppUser);
 };
-
-export const listLoginUsers = async () =>
-  (await listActiveAppUsers()).map(({ id, displayName }) => ({ id, displayName }));
 
 export const findActiveAppUser = async (id: string) => {
   await ensureAppUsersInitialized();

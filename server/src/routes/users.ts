@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
-import { getAuthenticatedAppUser } from "../services/serverAuth.js";
+import { getAuthenticatedAppUser, revokeUserSessions, updateUserCredentials } from "../services/serverAuth.js";
 import {
   APP_PAGE_IDS,
   APP_USER_ROLES,
@@ -40,6 +40,11 @@ const statusPresetSchema = z.object({
   canWrite: z.boolean(),
   canViewAmounts: z.boolean(),
   pageAccess: z.array(z.enum(APP_PAGE_IDS)),
+});
+
+const credentialsSchema = z.object({
+  loginId: z.string().trim().min(1).max(180),
+  password: z.string().min(12).max(512).optional(),
 });
 
 const resolvedPermissions = (payload: z.infer<typeof userSchema>) => {
@@ -203,6 +208,26 @@ router.get("/", async (_req, res, next) => {
   }
 });
 
+router.put("/:id/credentials", async (req, res, next) => {
+  try {
+    const payload = credentialsSchema.parse(req.body);
+    const user = await updateUserCredentials(req.params.id, payload);
+    if (!user) return res.status(404).json({ error: "Utilisateur introuvable." });
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/revoke-sessions", async (req, res, next) => {
+  try {
+    await revokeUserSessions(req.params.id);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/", async (req, res, next) => {
   try {
     const payload = userSchema.parse(req.body);
@@ -360,6 +385,7 @@ router.put("/:id", async (req, res, next) => {
         is_active: payload.isActive,
       }});
     });
+    if (!payload.isActive) await revokeUserSessions(user.id);
     res.json(serializeAppUser(user));
   } catch (error) {
     next(error);

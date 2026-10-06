@@ -21,6 +21,7 @@ export type AppUserRole = "owner" | "worker";
 
 export type AppUser = {
   id: string;
+  loginId: string | null;
   displayName: string;
   firstName: string;
   lastName: string;
