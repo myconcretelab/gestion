@@ -30,6 +30,8 @@ const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
 const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
 const ProductSettingsPage = lazy(() => import("./pages/ProductSettingsPage"));
+const BillingPage = lazy(() => import("./features/billing"));
+const PlatformBillingPage = lazy(() => import("./features/platformAdministration"));
 
 const MenuIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -473,6 +475,13 @@ const App = () => {
       desktopOverflow: true,
       requiresAmounts: true,
       module: "worker_planning" as const,
+    },
+    {
+      to: "/abonnement",
+      pageId: "settings" as const,
+      label: "Abonnement",
+      isActive: location.pathname.startsWith("/abonnement"),
+      desktopOverflow: true,
     },
     {
       to: "/parametres",
@@ -1046,6 +1055,8 @@ const App = () => {
               <Route key={section} path={`/parametres/${section}`} element={<PageAccess allowed={canAccessPage("settings")}><ProductSettingsPage /></PageAccess>} />
             ))}
             <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
+            <Route path="/abonnement" element={<PageAccess allowed={canAccessPage("settings")}><BillingPage /></PageAccess>} />
+            <Route path="/administration/facturation" element={<PlatformBillingPage />} />
           </Routes>
         </Suspense>
       </main>

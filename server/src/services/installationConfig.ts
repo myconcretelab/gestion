@@ -176,7 +176,11 @@ export const completeInstallation = async (organization: unknown, modulesInput: 
   return { organization: parsedOrganization, modules, setupComplete: true };
 };
 
-export const isModuleEnabled = async (key: ModuleKey) => (await getInstallationConfig()).modules[key];
+export const isModuleEnabled = async (key: ModuleKey) => {
+  const organizationEnabled = (await getInstallationConfig()).modules[key];
+  const { isFeatureAvailable } = await import("../modules/billing/service.js");
+  return isFeatureAvailable(getOrganizationId(), key, organizationEnabled);
+};
 
 const ROUTE_MODULES: Array<[RegExp, ModuleKey]> = [
   [/^\/(?:reservations|booking-requests|today)(?:\/|$)/, "reservations"],

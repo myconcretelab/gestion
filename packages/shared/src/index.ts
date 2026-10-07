@@ -11,6 +11,29 @@ export type OrganizationId = z.infer<typeof organizationIdSchema>;
 export const membershipStatusSchema = z.enum(["invited", "active", "disabled"]);
 export type MembershipStatus = z.infer<typeof membershipStatusSchema>;
 
+export const subscriptionStatusSchema = z.enum([
+  "trialing",
+  "active",
+  "past_due",
+  "grace_period",
+  "suspended",
+  "cancelled",
+]);
+export type SubscriptionStatus = z.infer<typeof subscriptionStatusSchema>;
+
+export const usageMetricKeys = [
+  "active_properties",
+  "manager_members",
+  "worker_members",
+  "reservations_created",
+  "documents_generated",
+  "storage_bytes",
+  "sms_sent",
+  "automations_executed",
+] as const;
+export const usageMetricKeySchema = z.enum(usageMetricKeys);
+export type UsageMetricKey = z.infer<typeof usageMetricKeySchema>;
+
 export const moduleIds = [
   "reservations",
   "contracts",

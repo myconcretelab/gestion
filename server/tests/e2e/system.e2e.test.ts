@@ -26,5 +26,8 @@ test("le service expose une santé exploitable sans fuite d'information", async 
   const ready = await api.get("/api/ready");
   assert.equal(ready.status(), 200);
   assert.deepEqual(await ready.json(), { ok: true, database: "ready" });
+  const platform = await api.get("/api/platform/billing/session");
+  assert.equal(platform.status(), 403);
+  assert.equal((await platform.json()).code, "PLATFORM_ADMIN_REQUIRED");
   await api.dispose();
 });

@@ -11,6 +11,7 @@ const TABLES = [
   "user_interventions", "intervenant_expenses", "planning_relay_assignments", "reservations", "gite_season_rates",
   "booking_requests", "gite_monthly_energy_readings",
   "organization_runtime_settings", "organization_jobs", "audit_logs", "document_assets",
+  "plans", "plan_entitlements", "subscriptions", "organization_entitlement_overrides", "usage_counters", "billing_events", "platform_administrators",
 ] as const;
 
 const scalar = async (sql: string) => {
@@ -29,6 +30,8 @@ const orphanChecks = {
   invoicesWithoutGite: await scalar('SELECT COUNT(*) AS value FROM "factures" f LEFT JOIN "gites" g ON g."id" = f."gite_id" WHERE g."id" IS NULL'),
   membershipsWithoutUser: await scalar('SELECT COUNT(*) AS value FROM "memberships" m LEFT JOIN "users" u ON u."id" = m."user_id" WHERE u."id" IS NULL'),
   membershipsWithoutOrganization: await scalar('SELECT COUNT(*) AS value FROM "memberships" m LEFT JOIN "organizations" o ON o."id" = m."organization_id" WHERE o."id" IS NULL'),
+  subscriptionsWithoutOrganization: await scalar('SELECT COUNT(*) AS value FROM "subscriptions" s LEFT JOIN "organizations" o ON o."id" = s."organization_id" WHERE o."id" IS NULL'),
+  subscriptionsWithoutPlan: await scalar('SELECT COUNT(*) AS value FROM "subscriptions" s LEFT JOIN "plans" p ON p."id" = s."plan_id" WHERE p."id" IS NULL'),
 };
 
 const financialSums = {

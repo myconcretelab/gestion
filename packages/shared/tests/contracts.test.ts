@@ -5,6 +5,8 @@ import {
   businessPermissionSchema,
   moduleIdSchema,
   organizationIdSchema,
+  subscriptionStatusSchema,
+  usageMetricKeySchema,
 } from "../src/index.js";
 
 test("shared API contracts reject invalid organization and permission values", () => {
@@ -20,4 +22,6 @@ test("shared API contracts reject invalid organization and permission values", (
       .success,
     true,
   );
+  assert.equal(subscriptionStatusSchema.parse("grace_period"), "grace_period");
+  assert.equal(usageMetricKeySchema.parse("storage_bytes"), "storage_bytes");
 });

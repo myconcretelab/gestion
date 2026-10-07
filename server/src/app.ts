@@ -45,6 +45,9 @@ import { canActAsRequestedUser, containsMonetaryFields, getRequiredBusinessPermi
 import { getModuleForApiPath, isModuleEnabled } from "./services/installationConfig.js";
 import { assertRequestedOrganization, HISTORICAL_ORGANIZATION_ID, runWithOrganization } from "./services/organizationContext.js";
 import { systemPrisma } from "./db/prisma.js";
+import billingRouter from "./modules/billing/routes.js";
+import platformBillingRouter from "./modules/billing/platformRoutes.js";
+import { assertCreationQuota, assertSubscriptionWriteAllowed, quotaMetricForRequest } from "./modules/billing/service.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -121,6 +124,7 @@ export const createApp = () => {
 
   app.use("/api/auth", authRouter);
   app.use("/api/installation", installationRouter);
+  app.use("/api/platform/billing", platformBillingRouter);
   app.use("/api", async (req, _res, next) => {
     try {
       const session = await getServerAuthSessionFromRequest(req);
@@ -180,6 +184,11 @@ export const createApp = () => {
       const session = await getServerAuthSessionFromRequest(req);
       const user = session ? await getAuthenticatedAppUser(req) : null;
       if (session && user) {
+        if (isWriteMethod(req.method) && !req.path.startsWith("/billing/portal")) {
+          await assertSubscriptionWriteAllowed(session.organizationId);
+          const quotaMetric = quotaMetricForRequest(req.method, req.path, req.body);
+          if (quotaMetric) await assertCreationQuota(session.organizationId, quotaMetric);
+        }
         const requiredPermission = getRequiredBusinessPermission(req.method, req.path);
         if (requiredPermission && !hasBusinessPermission(user, requiredPermission)) {
           return res.status(403).json({
@@ -230,6 +239,8 @@ export const createApp = () => {
     const memory = process.memoryUsage();
     res.json({ uptimeSeconds: Math.round(process.uptime()), memoryRssBytes: memory.rss, heapUsedBytes: memory.heapUsed });
   });
+
+  app.use("/api/billing", billingRouter);
 
   app.use("/api/gites", gitesRouter);
   app.use("/api/public/gites", publicGitesRouter);

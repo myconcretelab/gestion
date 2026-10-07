@@ -44,6 +44,7 @@ const TENANT_MODELS = new Set([
   "IntervenantExpense", "PlanningRelayAssignment", "Reservation", "GiteSeasonRate", "BookingRequest",
   "GiteMonthlyEnergyReading",
   "OrganizationRuntimeSetting", "OrganizationJob", "AuditLog", "DocumentAsset",
+  "Subscription", "OrganizationEntitlementOverride", "UsageCounter", "BillingEvent",
 ]);
 
 const withTenantWhere = (where: Record<string, unknown> | undefined, organizationId: string) => ({

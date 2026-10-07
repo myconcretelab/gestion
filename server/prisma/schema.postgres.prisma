@@ -20,12 +20,16 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settings         OrganizationSettings?
-  memberships      Membership[]
-  runtime_settings OrganizationRuntimeSetting[]
-  jobs             OrganizationJob[]
-  audit_logs       AuditLog[]
-  document_assets  DocumentAsset[]
+  settings              OrganizationSettings?
+  memberships           Membership[]
+  runtime_settings      OrganizationRuntimeSetting[]
+  jobs                  OrganizationJob[]
+  audit_logs            AuditLog[]
+  document_assets       DocumentAsset[]
+  subscriptions         Subscription[]
+  entitlement_overrides OrganizationEntitlementOverride[]
+  usage_counters        UsageCounter[]
+  billing_events        BillingEvent[]
 
   @@map("organizations")
 }
@@ -41,8 +45,9 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  memberships Membership[]
-  profiles    AppUser[]
+  memberships            Membership[]
+  profiles               AppUser[]
+  platform_administrator PlatformAdministrator?
 
   @@map("users")
 }
@@ -158,6 +163,131 @@ model DocumentAsset {
   @@unique([organization_id, storage_key], map: "document_assets_org_storage_key")
   @@index([organization_id, status], map: "document_assets_org_status_idx")
   @@map("document_assets")
+}
+
+model Plan {
+  id              String            @id @default(cuid())
+  code            String            @unique
+  name            String
+  description     String            @default("")
+  billing_periods Json              @default("[]")
+  status          String            @default("active")
+  public_metadata Json              @default("{}")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  entitlements    PlanEntitlement[]
+  subscriptions   Subscription[]
+
+  @@map("plans")
+}
+
+model PlanEntitlement {
+  id            String   @id @default(cuid())
+  plan_id       String
+  feature_key   String
+  value_boolean Boolean?
+  limit_value   Int?
+  limit_type    String   @default("hard")
+  plan          Plan     @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+
+  @@unique([plan_id, feature_key], map: "plan_entitlements_plan_feature_key")
+  @@map("plan_entitlements")
+}
+
+model Subscription {
+  id                       String         @id @default(cuid())
+  organization_id          String
+  plan_id                  String
+  status                   String         @default("active")
+  trial_start              DateTime?
+  trial_end                DateTime?
+  current_period_start     DateTime?
+  current_period_end       DateTime?
+  cancel_at_period_end     Boolean        @default(false)
+  cancelled_at             DateTime?
+  grace_period_end         DateTime?
+  provider                 String?
+  provider_customer_id     String?
+  provider_subscription_id String?
+  sync_version             Int            @default(0)
+  last_synced_at           DateTime?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  organization             Organization   @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  plan                     Plan           @relation(fields: [plan_id], references: [id], onDelete: Restrict)
+  events                   BillingEvent[]
+
+  @@unique([organization_id], map: "subscriptions_organization_key")
+  @@index([status], map: "subscriptions_status_idx")
+  @@map("subscriptions")
+}
+
+model OrganizationEntitlementOverride {
+  id              String       @id @default(cuid())
+  organization_id String
+  feature_key     String
+  value_boolean   Boolean?
+  limit_value     Int?
+  reason          String
+  expires_at      DateTime?
+  author_user_id  String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id, feature_key, expires_at], map: "entitlement_overrides_lookup_idx")
+  @@map("organization_entitlement_overrides")
+}
+
+model UsageCounter {
+  id              String       @id @default(cuid())
+  organization_id String
+  metric_key      String
+  period_key      String
+  value           Int          @default(0)
+  source          String       @default("computed")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, metric_key, period_key], map: "usage_counters_org_metric_period_key")
+  @@map("usage_counters")
+}
+
+model BillingEvent {
+  id                String        @id @default(cuid())
+  organization_id   String
+  subscription_id   String?
+  provider          String
+  provider_event_id String
+  type              String
+  payload_reference String?
+  payload_json      Json          @default("{}")
+  idempotency_key   String
+  status            String        @default("received")
+  result            String?
+  error_message     String?
+  received_at       DateTime      @default(now())
+  processed_at      DateTime?
+  createdAt         DateTime      @default(now())
+  organization      Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  subscription      Subscription? @relation(fields: [subscription_id], references: [id], onDelete: SetNull)
+
+  @@unique([provider, provider_event_id], map: "billing_events_provider_event_key")
+  @@unique([provider, idempotency_key], map: "billing_events_provider_idempotency_key")
+  @@index([organization_id, received_at], map: "billing_events_org_received_idx")
+  @@map("billing_events")
+}
+
+model PlatformAdministrator {
+  user_id   String   @id
+  role      String   @default("billing_admin")
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("platform_administrators")
 }
 
 model InstallationConfig {
