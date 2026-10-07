@@ -48,7 +48,7 @@ export default function BillingPage() {
   if (!snapshot) return <main className="page"><h1>Abonnement</h1><p>Chargement…</p></main>;
   const status = snapshot.subscription?.status ?? "active";
   return <main className="page">
-    <header className="page-header"><div><h1>Abonnement</h1><p>{snapshot.plan?.description || "Aucun forfait commercial configuré."}</p></div>{platformAdmin ? <Link className="button" to="/administration/facturation">Administration commerciale</Link> : null}</header>
+    <header className="page-header"><div><h1>Abonnement</h1><p>{snapshot.plan?.description || "Aucun forfait commercial configuré."}</p></div>{platformAdmin ? <Link className="button" to="/admin">Administration commerciale</Link> : null}</header>
     {error ? <p role="alert">{error}</p> : null}
     <section className="card"><h2>{snapshot.plan?.name ?? "Installation autonome"}</h2><p>Statut : <strong>{statusLabels[status] ?? "État inconnu"}</strong></p>
       {status === "trialing" && snapshot.subscription?.trialEnd ? <p>Essai jusqu’au {formatDate(snapshot.subscription.trialEnd)}.</p> : null}

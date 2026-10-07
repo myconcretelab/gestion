@@ -901,6 +901,14 @@ const App = () => {
     );
   }
 
+  if (location.pathname.startsWith("/admin")) {
+    return (
+      <Suspense fallback={<main className="admin-loading admin-loading--screen">Chargement de l’administration…</main>}>
+        <PlatformBillingPage currentUser={currentUser} onLogout={() => void logout()} />
+      </Suspense>
+    );
+  }
+
   return (
     <div className={`app${canWrite ? "" : " app--read-only"}${canViewAmounts ? "" : " app--amounts-hidden"}`}>
       <header className="topbar">
@@ -1058,7 +1066,7 @@ const App = () => {
             ))}
             <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
             <Route path="/abonnement" element={<PageAccess allowed={canAccessPage("settings")}><BillingPage /></PageAccess>} />
-            <Route path="/administration/facturation" element={<PlatformBillingPage />} />
+            <Route path="/administration/facturation" element={<Navigate to="/admin" replace />} />
           </Routes>
         </Suspense>
       </main>
