@@ -5,6 +5,7 @@ import prisma from "../src/db/prisma.ts";
 import {
   createServerAuthSession,
   getServerAuthSessionFromRequest,
+  findUserForLogin,
   revokeUserSessions,
   resetPasswordWithToken,
   setServerAuthCookie,
@@ -23,6 +24,7 @@ test("serverAuth utilise un mot de passe individuel robuste et révoque les sess
     display_name: `Test Auth ${suffix}`,
     first_name: "Test",
     last_name: "Auth",
+    email: `Test.Auth.${suffix}@Example.test`,
     login_id: `test-auth-${suffix}`,
     roles: "[]",
     page_access: "[]",
@@ -36,6 +38,7 @@ test("serverAuth utilise un mot de passe individuel robuste et révoque les sess
     assert.notEqual(stored.password_hash, "InitialPass123!");
     assert.equal(await verifyServerPassword("InitialPass123!", user.id), true);
     assert.equal(await verifyServerPassword("wrong-password", user.id), false);
+    assert.equal((await findUserForLogin(`test.auth.${suffix}@example.test`))?.id, user.id);
 
     const sessionA = await createServerAuthSession(user.id);
     const sessionB = await createServerAuthSession(user.id);

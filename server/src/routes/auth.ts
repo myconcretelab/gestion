@@ -28,7 +28,7 @@ import {
 const router = Router();
 
 const loginSchema = z.object({
-  loginId: z.string().trim().min(1, "L'identifiant est requis.").max(180),
+  loginId: z.string().trim().min(1, "L’identifiant ou l’adresse e-mail est requis.").max(180),
   password: z.string().min(1, "Le mot de passe est requis."),
 });
 

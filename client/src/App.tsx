@@ -261,8 +261,8 @@ const AuthScreen = ({ session, loginId, password, error, submitting, onLoginIdCh
       <div className="auth-card__eyebrow">Protection serveur</div>
       <h1 className="auth-card__title">{mode === "request" ? "Mot de passe oublié" : mode === "reset" ? "Nouveau mot de passe" : "Connexion requise"}</h1>
       {mode === "login" ? <>
-        <p className="auth-card__text">Saisissez votre identifiant personnel et votre mot de passe pour ouvrir l’application.</p>
-        <label className="field">Identifiant<input value={loginId} onChange={(event) => onLoginIdChange(event.target.value)} disabled={submitting} autoComplete="username" autoFocus /></label>
+        <p className="auth-card__text">Saisissez votre identifiant personnel ou votre adresse e-mail, puis votre mot de passe.</p>
+        <label className="field">Identifiant ou e-mail<input value={loginId} onChange={(event) => onLoginIdChange(event.target.value)} disabled={submitting} autoComplete="username" autoFocus /></label>
         <label className="field">Mot de passe<input type="password" autoComplete="current-password" value={password} onChange={(event) => onPasswordChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); onSubmit(); } }} disabled={submitting} /></label>
         <div className="field-hint">Session par défaut: {formatSessionDurationLabel(session?.sessionDurationHours ?? 24 * 7)}.</div>
         {error ? <div className="note" style={{ marginTop: 12 }}>{error}</div> : null}
@@ -512,7 +512,7 @@ const App = () => {
 
   const submitLogin = async () => {
     if (!authLoginId.trim() || !authPassword.trim()) {
-      setAuthError("Renseigne ton identifiant et ton mot de passe.");
+      setAuthError("Renseigne ton identifiant ou ton e-mail et ton mot de passe.");
       return;
     }
 

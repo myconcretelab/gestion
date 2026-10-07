@@ -287,10 +287,22 @@ export const verifyServerPassword = async (password: string, userId?: string) =>
   return Boolean(user?.password_hash && user.password_salt && await verifyHash(password, user.password_hash, user.password_salt));
 };
 
-export const findUserForLogin = async (loginId: string) => {
+export const findUserForLogin = async (identifier: string) => {
   await ensureServerAuthInitialized();
-  const user = await prisma.appUser.findFirst({ where: { login_id: normalizeLoginId(loginId), is_active: true } });
-  return user ? findActiveAppUser(user.id) : null;
+  const normalizedIdentifier = normalizeLoginId(identifier);
+  const userByLoginId = await prisma.appUser.findFirst({
+    where: { login_id: normalizedIdentifier, is_active: true },
+    select: { id: true },
+  });
+  if (userByLoginId) return findActiveAppUser(userByLoginId.id);
+
+  const emailCandidates = await prisma.appUser.findMany({
+    where: { is_active: true, email: { not: null } },
+    select: { id: true, email: true },
+  });
+  const emailMatches = emailCandidates.filter((candidate) => normalizeLoginId(candidate.email ?? "") === normalizedIdentifier);
+  // An address shared by several active accounts is ambiguous and must not select one silently.
+  return emailMatches.length === 1 ? findActiveAppUser(emailMatches[0].id) : null;
 };
 
 const parseCookies = (header: string | undefined) => Object.fromEntries(String(header ?? "").split(";").map((part) => part.trim()).filter(Boolean).flatMap((part) => {
