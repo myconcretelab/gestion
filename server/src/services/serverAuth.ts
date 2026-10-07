@@ -2,11 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Request, Response } from "express";
-import prisma from "../db/prisma.js";
+import prisma, { systemPrisma } from "../db/prisma.js";
 import { env } from "../config/env.js";
-import { APP_PAGE_IDS, ensureAppUsersInitialized, findActiveAppUser, type AppUserSummary } from "./appUsers.js";
+import { APP_PAGE_IDS, ensureAppUsersInitialized, serializeAppUser, type AppUserSummary } from "./appUsers.js";
 import { getInstallationConfig } from "./installationConfig.js";
 import { getSmtpConfigIssues, sendSmtpMail } from "./mailer.js";
+import { provisionGlobalIdentityForProfile } from "./globalIdentity.js";
 
 const SETTINGS_FILE = path.join(env.DATA_DIR, "server-auth-settings.json");
 const SESSION_COOKIE_NAME = "contrats_session";
@@ -28,6 +29,7 @@ type StoredServerAuthSettings = {
 type ServerAuthSession = {
   id: string;
   userId: string;
+  organizationId: string;
   createdAt: string;
   expiresAt: string;
 };
@@ -280,7 +282,7 @@ export const readServerAuthSettings = async () => {
 export const verifyServerPassword = async (password: string, userId?: string) => {
   await ensureServerAuthInitialized();
   if (!userId) return false;
-  const user = await prisma.appUser.findFirst({
+  const user = await systemPrisma.appUser.findFirst({
     where: { id: userId, is_active: true },
     select: { password_hash: true, password_salt: true },
   });
@@ -290,19 +292,17 @@ export const verifyServerPassword = async (password: string, userId?: string) =>
 export const findUserForLogin = async (identifier: string) => {
   await ensureServerAuthInitialized();
   const normalizedIdentifier = normalizeLoginId(identifier);
-  const userByLoginId = await prisma.appUser.findFirst({
+  const userByLoginId = await systemPrisma.appUser.findFirst({
     where: { login_id: normalizedIdentifier, is_active: true },
-    select: { id: true },
   });
-  if (userByLoginId) return findActiveAppUser(userByLoginId.id);
+  if (userByLoginId) return serializeAppUser(userByLoginId);
 
-  const emailCandidates = await prisma.appUser.findMany({
+  const emailCandidates = await systemPrisma.appUser.findMany({
     where: { is_active: true, email: { not: null } },
-    select: { id: true, email: true },
   });
   const emailMatches = emailCandidates.filter((candidate) => normalizeLoginId(candidate.email ?? "") === normalizedIdentifier);
   // An address shared by several active accounts is ambiguous and must not select one silently.
-  return emailMatches.length === 1 ? findActiveAppUser(emailMatches[0].id) : null;
+  return emailMatches.length === 1 ? serializeAppUser(emailMatches[0]) : null;
 };
 
 const parseCookies = (header: string | undefined) => Object.fromEntries(String(header ?? "").split(";").map((part) => part.trim()).filter(Boolean).flatMap((part) => {
@@ -320,30 +320,37 @@ export const getServerAuthSessionFromRequest = async (req: Pick<Request, "header
   await ensureServerAuthInitialized();
   const token = getServerAuthSessionIdFromRequest(req);
   if (!token) return null;
-  const row = await prisma.authSession.findUnique({ where: { id: hashToken(token) }, include: { user: true } });
+  const row = await systemPrisma.authSession.findUnique({ where: { id: hashToken(token) }, include: { user: true } });
   if (!row || row.revoked_at || row.expires_at <= new Date() || !row.user.is_active || row.auth_version !== row.user.auth_version) return null;
-  await prisma.authSession.update({ where: { id: row.id }, data: { last_seen_at: new Date() } });
-  return { id: token, userId: row.user_id, createdAt: row.created_at.toISOString(), expiresAt: row.expires_at.toISOString() };
+  if (row.user.user_id) {
+    const membership = await systemPrisma.membership.findUnique({
+      where: { user_id_organization_id: { user_id: row.user.user_id, organization_id: row.organization_id } },
+    });
+    if (!membership || membership.status !== "active") return null;
+  }
+  await systemPrisma.authSession.update({ where: { id: row.id }, data: { last_seen_at: new Date() } });
+  return { id: token, userId: row.user_id, organizationId: row.organization_id, createdAt: row.created_at.toISOString(), expiresAt: row.expires_at.toISOString() };
 };
 
-export const createServerAuthSession = async (userId: string, sessionDurationHours?: number): Promise<ServerAuthSession> => {
+export const createServerAuthSession = async (userId: string, sessionDurationHours?: number, organizationId?: string): Promise<ServerAuthSession> => {
   await ensureServerAuthInitialized();
   const settings = readLegacySettings();
-  const user = await prisma.appUser.findUniqueOrThrow({ where: { id: userId }, select: { auth_version: true } });
+  const user = await systemPrisma.appUser.findUniqueOrThrow({ where: { id: userId }, select: { auth_version: true, organization_id: true } });
+  const activeOrganizationId = organizationId ?? user.organization_id;
   const token = crypto.randomBytes(32).toString("base64url");
   const createdAt = new Date();
   const expiresAt = new Date(Date.now() + normalizeSessionDurationHours(sessionDurationHours ?? settings.sessionDurationHours) * 3_600_000);
-  await prisma.authSession.create({ data: { id: hashToken(token), user_id: userId, auth_version: user.auth_version, created_at: createdAt, expires_at: expiresAt } });
-  return { id: token, userId, createdAt: createdAt.toISOString(), expiresAt: expiresAt.toISOString() };
+  await systemPrisma.authSession.create({ data: { id: hashToken(token), user_id: userId, organization_id: activeOrganizationId, auth_version: user.auth_version, created_at: createdAt, expires_at: expiresAt } });
+  return { id: token, userId, organizationId: activeOrganizationId, createdAt: createdAt.toISOString(), expiresAt: expiresAt.toISOString() };
 };
 
 export const refreshServerAuthSession = async (token: string, sessionDurationHours?: number) => {
   const id = hashToken(token);
-  const row = await prisma.authSession.findUnique({ where: { id } });
+  const row = await systemPrisma.authSession.findUnique({ where: { id } });
   if (!row || row.revoked_at) return null;
   const expiresAt = new Date(Date.now() + normalizeSessionDurationHours(sessionDurationHours ?? readLegacySettings().sessionDurationHours) * 3_600_000);
-  await prisma.authSession.update({ where: { id }, data: { expires_at: expiresAt, last_seen_at: new Date() } });
-  return { id: token, userId: row.user_id, createdAt: row.created_at.toISOString(), expiresAt: expiresAt.toISOString() };
+  await systemPrisma.authSession.update({ where: { id }, data: { expires_at: expiresAt, last_seen_at: new Date() } });
+  return { id: token, userId: row.user_id, organizationId: row.organization_id, createdAt: row.created_at.toISOString(), expiresAt: expiresAt.toISOString() };
 };
 
 export const deleteServerAuthSession = async (token: string | null | undefined) => {
@@ -356,6 +363,54 @@ export const revokeUserSessions = async (userId: string, keepToken?: string | nu
     where: { user_id: userId, revoked_at: null, ...(keepToken ? { id: { not: hashToken(keepToken) } } : {}) },
     data: { revoked_at: new Date() },
   });
+};
+
+export const revokeOrganizationSessions = async (organizationId: string) =>
+  systemPrisma.authSession.updateMany({
+    where: { organization_id: organizationId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+
+export const listAvailableOrganizations = async (req: Pick<Request, "headers">) => {
+  const session = await getServerAuthSessionFromRequest(req);
+  if (!session) throw Object.assign(new Error("Authentification requise."), { status: 401, code: "AUTH_REQUIRED" });
+  const profile = await systemPrisma.appUser.findUnique({ where: { id: session.userId }, select: { user_id: true } });
+  if (!profile?.user_id) return [];
+  const memberships = await systemPrisma.membership.findMany({
+    where: { user_id: profile.user_id, status: "active" },
+    include: { organization: true },
+    orderBy: { organization: { name: "asc" } },
+  });
+  return memberships.map((membership) => ({
+    id: membership.organization_id,
+    slug: membership.organization.slug,
+    name: membership.organization.name,
+    role: membership.role,
+    active: membership.organization_id === session.organizationId,
+  }));
+};
+
+export const switchSessionOrganization = async (req: Pick<Request, "headers">, organizationId: string) => {
+  const session = await getServerAuthSessionFromRequest(req);
+  const rawToken = getServerAuthSessionIdFromRequest(req);
+  if (!session || !rawToken) throw Object.assign(new Error("Authentification requise."), { status: 401, code: "AUTH_REQUIRED" });
+  const currentProfile = await systemPrisma.appUser.findUnique({ where: { id: session.userId }, select: { user_id: true } });
+  if (!currentProfile?.user_id) throw Object.assign(new Error("Organisation introuvable."), { status: 404, code: "NOT_FOUND" });
+  const membership = await systemPrisma.membership.findUnique({
+    where: { user_id_organization_id: { user_id: currentProfile.user_id, organization_id: organizationId } },
+  });
+  if (!membership || membership.status !== "active") {
+    throw Object.assign(new Error("Organisation introuvable."), { status: 404, code: "NOT_FOUND" });
+  }
+  const targetProfile = await systemPrisma.appUser.findFirst({
+    where: { user_id: currentProfile.user_id, organization_id: organizationId, is_active: true },
+  });
+  if (!targetProfile) throw Object.assign(new Error("Organisation introuvable."), { status: 404, code: "NOT_FOUND" });
+  await systemPrisma.authSession.update({
+    where: { id: hashToken(rawToken) },
+    data: { user_id: targetProfile.id, organization_id: organizationId, auth_version: targetProfile.auth_version, last_seen_at: new Date() },
+  });
+  return { organizationId, user: serializeAppUser(targetProfile) };
 };
 
 export const deleteOtherServerAuthSessions = async (keepToken?: string | null) => {
@@ -383,18 +438,20 @@ export const setServerAuthCookie = (req: Pick<Request, "headers" | "socket"> & {
 
 export const isServerAuthRequired = async () => {
   await ensureServerAuthInitialized();
-  return (await prisma.appUser.count({ where: { is_active: true, password_hash: { not: null }, password_salt: { not: null } } })) > 0;
+  return (await systemPrisma.appUser.count({ where: { is_active: true, password_hash: { not: null }, password_salt: { not: null } } })) > 0;
 };
 
 export const getAuthenticatedAppUser = async (req: Pick<Request, "headers">) => {
   const session = await getServerAuthSessionFromRequest(req);
-  return session ? findActiveAppUser(session.userId) : null;
+  if (!session) return null;
+  const user = await systemPrisma.appUser.findFirst({ where: { id: session.userId, organization_id: session.organizationId, is_active: true } });
+  return user ? serializeAppUser(user) : null;
 };
 
 export const buildServerAuthSessionState = async (req: Pick<Request, "headers">): Promise<ServerAuthSessionState> => {
   const required = await isServerAuthRequired();
   const session = required ? await getServerAuthSessionFromRequest(req) : null;
-  const user = session ? await findActiveAppUser(session.userId) : null;
+  const user = session ? await getAuthenticatedAppUser(req) : null;
   return {
     required,
     authenticated: Boolean(session && user),
@@ -458,7 +515,9 @@ export const updateUserCredentials = async (userId: string, input: { loginId: st
     throw error;
   }
   if (input.password !== undefined) await revokeUserSessions(userId);
-  return findActiveAppUser(userId);
+  await provisionGlobalIdentityForProfile(userId);
+  const updated = await systemPrisma.appUser.findUnique({ where: { id: userId } });
+  return updated ? serializeAppUser(updated) : null;
 };
 
 export const isPasswordRecoveryAvailable = () => getSmtpConfigIssues().length === 0 && Boolean(env.CLIENT_ORIGIN.trim());

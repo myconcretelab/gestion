@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import { getOrganizationId } from "./organizationContext.js";
 
 export const USER_INTERVENTION_KINDS = ["cleaning_check", "full_cleaning"] as const;
 export type UserInterventionKind = (typeof USER_INTERVENTION_KINDS)[number];
@@ -28,7 +29,7 @@ export const recordCleaningCheckIntervention = async (
   ]);
   if (!user || !reservation) return null;
   return prisma.userIntervention.upsert({
-    where: { source_key: `cleaning-check:${reservation.id}` },
+    where: { organization_id_source_key: { organization_id: getOrganizationId(), source_key: `cleaning-check:${reservation.id}` } },
     update: {},
     create: {
       user_id: user.id,

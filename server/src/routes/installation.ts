@@ -10,6 +10,7 @@ import {
   organizationProfileSchema,
 } from "../services/installationConfig.js";
 import { generateIcalExportToken } from "../utils/reservationOrigin.js";
+import { provisionGlobalIdentityForProfile } from "../services/globalIdentity.js";
 
 const router = Router();
 
@@ -71,7 +72,8 @@ router.post("/setup", async (req, res, next) => {
     const giteCount = await prisma.gite.count();
     if (giteCount > 0) return res.status(409).json({ error: "Une installation contenant déjà des hébergements doit utiliser la migration existante.", code: "SETUP_DATA_PRESENT" });
 
-    await createFirstAdministrator(payload.administrator);
+    const administrator = await createFirstAdministrator(payload.administrator);
+    await provisionGlobalIdentityForProfile(administrator.id);
     const organization = payload.organization;
     await prisma.gite.create({
       data: {

@@ -1,6 +1,8 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { getOrganizationId } from "../services/organizationContext.js";
+import { provisionGlobalIdentityForProfile } from "../services/globalIdentity.js";
 import { getAuthenticatedAppUser, revokeUserSessions, updateUserCredentials } from "../services/serverAuth.js";
 import {
   APP_PAGE_IDS,
@@ -239,7 +241,7 @@ router.post("/", async (req, res, next) => {
 
     const matchingManager = permissions.isOwner
       ? await prisma.gestionnaire.findUnique({
-          where: { prenom_nom: { prenom: payload.firstName, nom: payload.lastName } },
+          where: { organization_id_prenom_nom: { organization_id: getOrganizationId(), prenom: payload.firstName, nom: payload.lastName } },
           include: { app_user: { select: { id: true } } },
         })
       : null;
@@ -276,6 +278,7 @@ router.post("/", async (req, res, next) => {
         is_active: payload.isActive,
       }});
     });
+    await provisionGlobalIdentityForProfile(user.id);
     res.status(201).json(serializeAppUser(user));
   } catch (error) {
     next(error);
@@ -321,7 +324,7 @@ router.put("/:id", async (req, res, next) => {
 
 
     const matchingManager = await prisma.gestionnaire.findUnique({
-      where: { prenom_nom: { prenom: payload.firstName, nom: payload.lastName } },
+      where: { organization_id_prenom_nom: { organization_id: getOrganizationId(), prenom: payload.firstName, nom: payload.lastName } },
       include: { app_user: { select: { id: true } } },
     });
     if (matchingManager && matchingManager.id !== existing.gestionnaire_id) {
@@ -385,6 +388,7 @@ router.put("/:id", async (req, res, next) => {
         is_active: payload.isActive,
       }});
     });
+    await provisionGlobalIdentityForProfile(user.id);
     if (!payload.isActive) await revokeUserSessions(user.id);
     res.json(serializeAppUser(user));
   } catch (error) {

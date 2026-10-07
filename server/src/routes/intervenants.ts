@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { provisionGlobalIdentityForProfile } from "../services/globalIdentity.js";
 import { normalizePlanningRelaySmsConfigs } from "../services/planningRelaySms.js";
 import { DEFAULT_STATUS_PRESETS } from "../services/appUsers.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
@@ -126,7 +127,7 @@ router.post("/", async (req, res, next) => {
         show_on_today: payload.show_on_today ?? false,
         hourly_rate: payload.hourly_rate ?? 0,
       } });
-      await tx.appUser.create({ data: {
+      const profile = await tx.appUser.create({ data: {
         display_name: payload.nom,
         first_name: payload.nom,
         last_name: "",
@@ -143,9 +144,10 @@ router.post("/", async (req, res, next) => {
         is_owner: false,
         is_active: payload.is_active ?? true,
       } });
-      return worker;
+      return { worker, profileId: profile.id };
     });
-    return res.status(201).json(serializeIntervenant(intervenant));
+    await provisionGlobalIdentityForProfile(intervenant.profileId);
+    return res.status(201).json(serializeIntervenant(intervenant.worker));
   } catch (error) {
     return next(error);
   }

@@ -19,6 +19,8 @@
     "prod:generate": "npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma",
     "db:studio": "npm run prisma:use:sqlite && node scripts/prisma.mjs studio",
     "db:migrate:sqlite-to-postgres": "npm run prisma:use:sqlite && node scripts/prisma.mjs generate --schema prisma/schema.sqlite.prisma && npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma && tsx scripts/migrate-sqlite-to-postgres.ts --from=sqlite --to=postgres",
+    "files:migrate-tenants": "node scripts/migrate-tenant-files.mjs",
+    "multitenant:parity": "tsx scripts/multitenant-parity.ts",
     "private:import:what-today:icals": "tsx tools/private/what-today/import-what-today-icals.ts",
     "private:import:revenus": "tsx tools/private/legacy-revenues/importLegacyRevenues.ts",
     "cron:ical": "node dist/cli/run-ical-sync-cron.js",

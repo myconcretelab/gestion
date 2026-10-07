@@ -12,6 +12,75 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Organization {
+  id        String   @id
+  slug      String   @unique
+  name      String
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings    OrganizationSettings?
+  memberships Membership[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                  String    @id
+  login_id            String    @unique
+  email               String?   @unique
+  password_hash       String?
+  password_salt       String?
+  password_updated_at DateTime?
+  auth_version        Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  memberships Membership[]
+  profiles    AppUser[]
+
+  @@map("users")
+}
+
+model Membership {
+  id              String    @id @default(cuid())
+  user_id         String
+  organization_id String
+  role            String    @default("custom")
+  status          String    @default("active")
+  permissions     String    @default("{}")
+  invited_at      DateTime?
+  accepted_at     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, organization_id], map: "memberships_user_organization_key")
+  @@index([organization_id, status], map: "memberships_organization_status_idx")
+  @@map("memberships")
+}
+
+model OrganizationSettings {
+  organization_id String   @id
+  profile_json    String   @default("{}")
+  locale          String   @default("fr-FR")
+  currency        String   @default("EUR")
+  timezone        String   @default("Europe/Paris")
+  branding_json   String   @default("{}")
+  documents_json  String   @default("{}")
+  modules_json    String   @default("{}")
+  setup_completed Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@map("organization_settings")
+}
+
 model InstallationConfig {
   id                String   @id @default("default")
   organization_json String   @default("{}")
@@ -19,111 +88,114 @@ model InstallationConfig {
   setup_completed   Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  organization_id   String   @default("org_historical_broceliande")
 
   @@map("installation_config")
 }
 
 model ContentTemplateVersion {
-  id            String   @id @default(cuid())
-  template_key  String
-  version       Int
-  subject       String?
-  content       String
-  is_active     Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  template_key    String
+  version         Int
+  subject         String?
+  content         String
+  is_active       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  organization_id String   @default("org_historical_broceliande")
 
-  @@unique([template_key, version], map: "content_template_versions_key_version_key")
+  @@unique([organization_id, template_key, version], map: "content_template_versions_org_key_version_key")
   @@index([template_key, is_active], map: "content_template_versions_active_idx")
   @@map("content_template_versions")
 }
 
 model Gite {
-  id                                   String   @id @default(cuid())
-  ordre                                Int      @default(0)
-  nom                                  String
-  nom_avec_preposition                 String?
-  prefixe_contrat                      String
-  adresse_ligne1                       String
-  adresse_ligne2                       String?
-  capacite_max                         Int
-  nb_adultes_max                       Int      @default(1)
-  nb_adultes_habituel                  Int      @default(1)
-  nb_enfants_max                       Int      @default(0)
-  proprietaires_noms                   String
-  proprietaires_adresse                String
-  site_web                             String?
-  public_slug                          String?
-  public_translations                  String?
-  public_title                         String?
-  public_summary                       String?
-  public_description                   String?
-  public_technical_description         String?
-  public_seo_title                     String?
-  public_seo_description               String?
-  public_is_published                  Boolean  @default(false)
-  public_structured_content            String?
-  public_equipment                     String?
-  public_rooms                         String?
-  public_practical_info                String?
-  public_location_info                 String?
-  public_web_info                      String?
-  public_latitude                      Float?
-  public_longitude                     Float?
-  email                                String?
-  telephones                           String
-  taxe_sejour_par_personne_par_nuit    Float
-  iban                                 String
-  bic                                  String?
-  titulaire                            String
-  regle_animaux_acceptes               Boolean  @default(false)
-  regle_bois_premiere_flambee          Boolean  @default(false)
-  regle_tiers_personnes_info           Boolean  @default(false)
-  options_draps_par_lit                Float  @default(0)
-  options_linge_toilette_par_personne  Float  @default(0)
-  options_menage_forfait               Float  @default(0)
-  options_depart_tardif_forfait        Float  @default(0)
-  options_chiens_forfait               Float  @default(0)
-  heure_arrivee_defaut                 String  @default("17:00")
-  heure_depart_defaut                  String  @default("12:00")
-  caution_montant_defaut               Float  @default(0)
-  cheque_menage_montant_defaut         Float  @default(0)
-  arrhes_taux_defaut                   Float  @default(0.2)
-  electricity_price_per_kwh            Float  @default(0)
-  prix_intervention                     Float  @default(0)
-  frais_gestion                        String?
-  prix_nuit_basse_saison               Float  @default(0)
-  prix_nuit_haute_saison               Float  @default(0)
-  min_nuits_toute_annee                Int    @default(1)
-  min_nuits_vacances_scolaires         Int    @default(1)
-  min_nuits_juillet_aout               Int    @default(1)
-  prix_nuit_liste                      String?
-  caracteristiques                     String?
-  airbnb_listing_id                    String?
-  ical_export_token                    String?
-  gestionnaire_id                      String?
-  date_debut_activite                  DateTime?
-  createdAt                            DateTime @default(now())
-  updatedAt                            DateTime @updatedAt
+  id                                  String    @id @default(cuid())
+  ordre                               Int       @default(0)
+  nom                                 String
+  nom_avec_preposition                String?
+  prefixe_contrat                     String
+  adresse_ligne1                      String
+  adresse_ligne2                      String?
+  capacite_max                        Int
+  nb_adultes_max                      Int       @default(1)
+  nb_adultes_habituel                 Int       @default(1)
+  nb_enfants_max                      Int       @default(0)
+  proprietaires_noms                  String
+  proprietaires_adresse               String
+  site_web                            String?
+  public_slug                         String?
+  public_translations                 String?
+  public_title                        String?
+  public_summary                      String?
+  public_description                  String?
+  public_technical_description        String?
+  public_seo_title                    String?
+  public_seo_description              String?
+  public_is_published                 Boolean   @default(false)
+  public_structured_content           String?
+  public_equipment                    String?
+  public_rooms                        String?
+  public_practical_info               String?
+  public_location_info                String?
+  public_web_info                     String?
+  public_latitude                     Float?
+  public_longitude                    Float?
+  email                               String?
+  telephones                          String
+  taxe_sejour_par_personne_par_nuit   Float
+  iban                                String
+  bic                                 String?
+  titulaire                           String
+  regle_animaux_acceptes              Boolean   @default(false)
+  regle_bois_premiere_flambee         Boolean   @default(false)
+  regle_tiers_personnes_info          Boolean   @default(false)
+  options_draps_par_lit               Float     @default(0)
+  options_linge_toilette_par_personne Float     @default(0)
+  options_menage_forfait              Float     @default(0)
+  options_depart_tardif_forfait       Float     @default(0)
+  options_chiens_forfait              Float     @default(0)
+  heure_arrivee_defaut                String    @default("17:00")
+  heure_depart_defaut                 String    @default("12:00")
+  caution_montant_defaut              Float     @default(0)
+  cheque_menage_montant_defaut        Float     @default(0)
+  arrhes_taux_defaut                  Float     @default(0.2)
+  electricity_price_per_kwh           Float     @default(0)
+  prix_intervention                   Float     @default(0)
+  frais_gestion                       String?
+  prix_nuit_basse_saison              Float     @default(0)
+  prix_nuit_haute_saison              Float     @default(0)
+  min_nuits_toute_annee               Int       @default(1)
+  min_nuits_vacances_scolaires        Int       @default(1)
+  min_nuits_juillet_aout              Int       @default(1)
+  prix_nuit_liste                     String?
+  caracteristiques                    String?
+  airbnb_listing_id                   String?
+  ical_export_token                   String?
+  gestionnaire_id                     String?
+  date_debut_activite                 DateTime?
+  createdAt                           DateTime  @default(now())
+  updatedAt                           DateTime  @updatedAt
+  organization_id                     String    @default("org_historical_broceliande")
 
-  gestionnaire                         Gestionnaire? @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
-  ical_sources                         IcalSource[]
-  contrats                             Contrat[]
-  factures                             Facture[]
-  reservations                         Reservation[]
-  guest_night_declarations             GuestNightDeclaration[]
-  monthly_energy_readings              GiteMonthlyEnergyReading[]
-  season_rates                         GiteSeasonRate[]
-  booking_requests                     BookingRequest[]
-  photos                               GitePhoto[]
-  wordpress_photo_sync_job             WordPressWebhookJob?
-  counters                             ContratCounter[]
-  facture_counters                     FactureCounter[]
-  expense_recurring_rules              ExpenseRecurringRule[]
-  expense_entries                      ExpenseEntry[]
-  intervenant_expenses                 IntervenantExpense[]
-  user_interventions                   UserIntervention[]
+  gestionnaire             Gestionnaire?              @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
+  ical_sources             IcalSource[]
+  contrats                 Contrat[]
+  factures                 Facture[]
+  reservations             Reservation[]
+  guest_night_declarations GuestNightDeclaration[]
+  monthly_energy_readings  GiteMonthlyEnergyReading[]
+  season_rates             GiteSeasonRate[]
+  booking_requests         BookingRequest[]
+  photos                   GitePhoto[]
+  wordpress_photo_sync_job WordPressWebhookJob?
+  counters                 ContratCounter[]
+  facture_counters         FactureCounter[]
+  expense_recurring_rules  ExpenseRecurringRule[]
+  expense_entries          ExpenseEntry[]
+  intervenant_expenses     IntervenantExpense[]
+  user_interventions       UserIntervention[]
 
-  @@unique([public_slug], map: "gites_public_slug_key")
+  @@unique([organization_id, public_slug], map: "gites_org_public_slug_key")
   @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
   @@index([ical_export_token], map: "gites_ical_export_token_idx")
   @@index([ordre], map: "gites_ordre_idx")
@@ -132,19 +204,20 @@ model Gite {
 }
 
 model GitePhoto {
-  id          String   @id @default(cuid())
-  gite_id     String
-  url         String
-  title       String?
-  alt         String?
-  credit      String?
-  is_primary  Boolean  @default(false)
-  is_public   Boolean  @default(true)
-  ordre       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  gite_id         String
+  url             String
+  title           String?
+  alt             String?
+  credit          String?
+  is_primary      Boolean  @default(false)
+  is_public       Boolean  @default(true)
+  ordre           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
-  gite        Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  gite Gite @relation(fields: [gite_id], references: [id], onDelete: Cascade)
 
   @@index([gite_id, ordre], map: "gite_photos_gite_ordre_idx")
   @@index([gite_id, is_public, ordre], map: "gite_photos_public_ordre_idx")
@@ -168,68 +241,74 @@ model WordPressWebhookJob {
   last_error      String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  organization_id String    @default("org_historical_broceliande")
 
-  gite            Gite      @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  gite Gite @relation(fields: [gite_id], references: [id], onDelete: Cascade)
 
   @@index([state, run_after], map: "wordpress_webhook_jobs_state_run_after_idx")
   @@map("wordpress_webhook_jobs")
 }
 
 model Gestionnaire {
-  id        String   @id @default(cuid())
-  prenom    String
-  nom       String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  prenom          String
+  nom             String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
-  gites               Gite[]
-  urssaf_declarations UrssafDeclaration[]
+  gites                   Gite[]
+  urssaf_declarations     UrssafDeclaration[]
   expense_recurring_rules ExpenseRecurringRule[]
   expense_entries         ExpenseEntry[]
   app_user                AppUser?
 
-  @@unique([prenom, nom])
+  @@unique([organization_id, prenom, nom])
   @@map("gestionnaires")
 }
 
 model AppUser {
-  id               String   @id @default(cuid())
-  display_name     String
-  first_name       String   @default("")
-  last_name        String   @default("")
-  roles            String   @default("[]")
-  telephone        String?
-  email            String?
-  adresse          String?
-  telegram_chat_id String?
-  hourly_rate      Float    @default(0)
-  cleaning_check_rate Float @default(0)
-  full_cleaning_rate Float  @default(0)
-  gestionnaire_id  String?  @unique
-  intervenant_id   String?  @unique
-  status           String   @default("custom")
-  page_access      String   @default("[]")
-  can_write        Boolean  @default(true)
-  can_view_amounts Boolean  @default(true)
-  is_owner         Boolean  @default(false)
-  is_active        Boolean  @default(true)
-  login_id         String?  @unique
-  password_hash    String?
-  password_salt    String?
+  id                  String    @id @default(cuid())
+  display_name        String
+  first_name          String    @default("")
+  last_name           String    @default("")
+  roles               String    @default("[]")
+  telephone           String?
+  email               String?
+  adresse             String?
+  telegram_chat_id    String?
+  hourly_rate         Float     @default(0)
+  cleaning_check_rate Float     @default(0)
+  full_cleaning_rate  Float     @default(0)
+  gestionnaire_id     String?   @unique
+  intervenant_id      String?   @unique
+  status              String    @default("custom")
+  page_access         String    @default("[]")
+  can_write           Boolean   @default(true)
+  can_view_amounts    Boolean   @default(true)
+  is_owner            Boolean   @default(false)
+  is_active           Boolean   @default(true)
+  login_id            String?   @unique
+  password_hash       String?
+  password_salt       String?
   password_updated_at DateTime?
-  auth_version     Int      @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  auth_version        Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  organization_id     String    @default("org_historical_broceliande")
+  user_id             String?
 
-  gestionnaire Gestionnaire? @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
-  intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
-  arrival_cleaning_checks Reservation[] @relation("ArrivalCleaningCheckedBy")
-  departure_cleaning_checks Reservation[] @relation("DepartureCleaningCheckedBy")
-  interventions UserIntervention[]
-  auth_sessions AuthSession[]
-  password_reset_tokens PasswordResetToken[]
+  gestionnaire              Gestionnaire?        @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
+  intervenant               PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
+  arrival_cleaning_checks   Reservation[]        @relation("ArrivalCleaningCheckedBy")
+  departure_cleaning_checks Reservation[]        @relation("DepartureCleaningCheckedBy")
+  interventions             UserIntervention[]
+  auth_sessions             AuthSession[]
+  password_reset_tokens     PasswordResetToken[]
+  global_user               User?                @relation(fields: [user_id], references: [id], onDelete: SetNull)
 
-  @@index([is_active, display_name], map: "app_users_active_name_idx")
+  @@unique([organization_id, user_id], map: "app_users_org_user_key")
+  @@index([organization_id, is_active, display_name], map: "app_users_org_active_name_idx")
   @@map("app_users")
 }
 
@@ -248,13 +327,14 @@ model PasswordResetToken {
 }
 
 model AuthSession {
-  id           String    @id
-  user_id      String
-  auth_version Int
-  created_at   DateTime  @default(now())
-  expires_at   DateTime
-  revoked_at   DateTime?
-  last_seen_at DateTime  @default(now())
+  id              String    @id
+  user_id         String
+  auth_version    Int
+  created_at      DateTime  @default(now())
+  expires_at      DateTime
+  revoked_at      DateTime?
+  last_seen_at    DateTime  @default(now())
+  organization_id String    @default("org_historical_broceliande")
 
   user AppUser @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
@@ -264,31 +344,33 @@ model AuthSession {
 }
 
 model ApiToken {
-  id           String    @id @default(cuid())
-  name         String
-  token_hash   String    @unique
-  scopes       String    @default("[]")
-  expires_at   DateTime?
-  revoked_at   DateTime?
-  last_used_at DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  token_hash      String    @unique
+  scopes          String    @default("[]")
+  expires_at      DateTime?
+  revoked_at      DateTime?
+  last_used_at    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  organization_id String    @default("org_historical_broceliande")
 
   @@index([revoked_at, expires_at], map: "api_tokens_active_idx")
   @@map("api_tokens")
 }
 
 model DocumentShare {
-  id            String    @id @default(cuid())
-  token_hash    String    @unique
-  document_type String
-  document_id   String
-  expires_at    DateTime
-  revoked_at    DateTime?
-  access_count  Int       @default(0)
-  last_access_at DateTime?
-  created_by_id String?
-  createdAt     DateTime  @default(now())
+  id              String    @id @default(cuid())
+  token_hash      String    @unique
+  document_type   String
+  document_id     String
+  expires_at      DateTime
+  revoked_at      DateTime?
+  access_count    Int       @default(0)
+  last_access_at  DateTime?
+  created_by_id   String?
+  createdAt       DateTime  @default(now())
+  organization_id String    @default("org_historical_broceliande")
 
   @@index([document_type, document_id, revoked_at], map: "document_shares_document_idx")
   @@index([expires_at], map: "document_shares_expires_idx")
@@ -306,37 +388,39 @@ model AppUserStatusPreset {
 }
 
 model ExpenseCategory {
-  id        String   @id @default(cuid())
-  name      String
-  color     String
-  scope     String   @default("both")
-  ordre     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  color           String
+  scope           String   @default("both")
+  ordre           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
   recurring_rules ExpenseRecurringRule[]
   entries         ExpenseEntry[]
 
-  @@unique([scope, name], map: "expense_categories_scope_name_key")
+  @@unique([organization_id, scope, name], map: "expense_categories_org_scope_name_key")
   @@index([scope, ordre], map: "expense_categories_scope_order_idx")
   @@map("expense_categories")
 }
 
 model ExpenseRecurringRule {
-  id              String   @id @default(cuid())
-  scope           String   @default("personal")
+  id              String    @id @default(cuid())
+  scope           String    @default("personal")
   label           String
-  frequency       String   @default("monthly")
-  amount          Float    @default(0)
+  frequency       String    @default("monthly")
+  amount          Float     @default(0)
   start_date      DateTime
   end_date        DateTime?
-  notes           String   @default("")
-  is_active       Boolean  @default(true)
+  notes           String    @default("")
+  is_active       Boolean   @default(true)
   category_id     String
   gestionnaire_id String?
   gite_id         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  organization_id String    @default("org_historical_broceliande")
 
   category     ExpenseCategory @relation(fields: [category_id], references: [id], onDelete: Restrict)
   gestionnaire Gestionnaire?   @relation(fields: [gestionnaire_id], references: [id], onDelete: Cascade)
@@ -362,6 +446,7 @@ model ExpenseEntry {
   gite_id         String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
   category     ExpenseCategory @relation(fields: [category_id], references: [id], onDelete: Restrict)
   gestionnaire Gestionnaire?   @relation(fields: [gestionnaire_id], references: [id], onDelete: Cascade)
@@ -375,36 +460,38 @@ model ExpenseEntry {
 }
 
 model UrssafDeclaration {
-  id             String       @id @default(cuid())
-  year           Int
-  month          Int
+  id              String   @id @default(cuid())
+  year            Int
+  month           Int
   gestionnaire_id String
-  amount         Float        @default(0)
-  declared_at    DateTime     @default(now())
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  amount          Float    @default(0)
+  declared_at     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
-  gestionnaire   Gestionnaire @relation(fields: [gestionnaire_id], references: [id], onDelete: Cascade)
+  gestionnaire Gestionnaire @relation(fields: [gestionnaire_id], references: [id], onDelete: Cascade)
 
-  @@unique([year, month, gestionnaire_id], map: "urssaf_declarations_period_manager_key")
+  @@unique([organization_id, year, month, gestionnaire_id], map: "urssaf_declarations_org_period_manager_key")
   @@index([year, month], map: "urssaf_declarations_period_idx")
   @@index([gestionnaire_id], map: "urssaf_declarations_manager_idx")
   @@map("urssaf_declarations")
 }
 
 model GuestNightDeclaration {
-  id           String   @id @default(cuid())
-  year         Int
-  month        Int
-  gite_id      String
-  guest_nights Int      @default(0)
-  declared_at  DateTime @default(now())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  year            Int
+  month           Int
+  gite_id         String
+  guest_nights    Int      @default(0)
+  declared_at     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
-  gite         Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  gite Gite @relation(fields: [gite_id], references: [id], onDelete: Cascade)
 
-  @@unique([year, month, gite_id], map: "guest_night_declarations_period_gite_key")
+  @@unique([organization_id, year, month, gite_id], map: "guest_night_declarations_org_period_gite_key")
   @@index([year, month], map: "guest_night_declarations_period_idx")
   @@index([gite_id], map: "guest_night_declarations_gite_idx")
   @@map("guest_night_declarations")
@@ -421,181 +508,191 @@ model IcalSource {
   ordre           Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
-  gite            Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  gite Gite @relation(fields: [gite_id], references: [id], onDelete: Cascade)
 
-  @@unique([gite_id, url], map: "ical_sources_gite_url_key")
+  @@unique([organization_id, gite_id, url], map: "ical_sources_org_gite_url_key")
   @@index([gite_id, ordre], map: "ical_sources_gite_id_ordre_idx")
   @@index([is_active], map: "ical_sources_is_active_idx")
   @@map("ical_sources")
 }
 
 model Contrat {
-  id                     String   @id @default(cuid())
-  numero_contrat         String   @unique
-  gite_id                String
-  date_creation          DateTime @default(now())
-  date_derniere_modif    DateTime @updatedAt
-  locataire_nom          String
-  locataire_adresse      String
-  locataire_tel          String
-  locataire_email        String?
-  nb_adultes             Int
-  nb_enfants_2_17        Int
-  date_debut             DateTime
-  heure_arrivee          String
-  date_fin               DateTime
-  heure_depart           String
-  nb_nuits               Int
-  prix_par_nuit          Float
-  remise_montant         Float @default(0)
-  taxe_sejour_calculee   Float? 
-  options                String
-  arrhes_montant         Float
-  arrhes_date_limite     DateTime
-  solde_montant          Float
-  caution_montant        Float
-  cheque_menage_montant  Float
-  afficher_caution_phrase Boolean @default(true)
-  afficher_cheque_menage_phrase Boolean @default(true)
-  clauses                String
-  pdf_path               String
-  pdf_sent_path          String?
-  signed_document_path   String?
-  signed_document_filename String?
-  signed_document_mime_type String?
-  signed_document_size   Int?
-  signed_document_uploaded_at DateTime?
-  snapshot_json          String?
-  date_envoi_email       DateTime?
-  statut_reception_contrat String   @default("non_recu")
-  date_reception_contrat DateTime?
-  statut_paiement_arrhes String   @default("non_recu")
-  date_paiement_arrhes   DateTime?
-  statut_paiement_solde  String   @default("non_regle")
-  mode_paiement_arrhes   String?
-  notes                  String?
-  commentaire_interne    String?
-  reservation_id         String?
+  id                            String    @id @default(cuid())
+  numero_contrat                String
+  gite_id                       String
+  date_creation                 DateTime  @default(now())
+  date_derniere_modif           DateTime  @updatedAt
+  locataire_nom                 String
+  locataire_adresse             String
+  locataire_tel                 String
+  locataire_email               String?
+  nb_adultes                    Int
+  nb_enfants_2_17               Int
+  date_debut                    DateTime
+  heure_arrivee                 String
+  date_fin                      DateTime
+  heure_depart                  String
+  nb_nuits                      Int
+  prix_par_nuit                 Float
+  remise_montant                Float     @default(0)
+  taxe_sejour_calculee          Float?
+  options                       String
+  arrhes_montant                Float
+  arrhes_date_limite            DateTime
+  solde_montant                 Float
+  caution_montant               Float
+  cheque_menage_montant         Float
+  afficher_caution_phrase       Boolean   @default(true)
+  afficher_cheque_menage_phrase Boolean   @default(true)
+  clauses                       String
+  pdf_path                      String
+  pdf_sent_path                 String?
+  signed_document_path          String?
+  signed_document_filename      String?
+  signed_document_mime_type     String?
+  signed_document_size          Int?
+  signed_document_uploaded_at   DateTime?
+  snapshot_json                 String?
+  date_envoi_email              DateTime?
+  statut_reception_contrat      String    @default("non_recu")
+  date_reception_contrat        DateTime?
+  statut_paiement_arrhes        String    @default("non_recu")
+  date_paiement_arrhes          DateTime?
+  statut_paiement_solde         String    @default("non_regle")
+  mode_paiement_arrhes          String?
+  notes                         String?
+  commentaire_interne           String?
+  reservation_id                String?
+  organization_id               String    @default("org_historical_broceliande")
 
-  gite                   Gite     @relation(fields: [gite_id], references: [id])
+  gite Gite @relation(fields: [gite_id], references: [id])
 
+  @@unique([organization_id, numero_contrat], map: "contrats_org_numero_key")
   @@index([reservation_id], map: "contrats_reservation_id_idx")
   @@map("contrats")
 }
 
 model ContratCounter {
-  id        String @id @default(cuid())
-  giteId    String
-  year      Int
-  lastNumber Int
+  id              String @id @default(cuid())
+  giteId          String
+  year            Int
+  lastNumber      Int
+  organization_id String @default("org_historical_broceliande")
 
-  gite      Gite   @relation(fields: [giteId], references: [id])
+  gite Gite @relation(fields: [giteId], references: [id])
 
-  @@unique([giteId, year])
+  @@unique([organization_id, giteId, year])
   @@map("contrat_counters")
 }
 
 model Facture {
-  id                     String   @id @default(cuid())
-  numero_facture         String   @unique
-  gite_id                String
-  date_creation          DateTime @default(now())
-  date_derniere_modif    DateTime @updatedAt
-  locataire_nom          String
-  locataire_adresse      String
-  locataire_tel          String
-  locataire_email        String?
-  nb_adultes             Int
-  nb_enfants_2_17        Int
-  date_debut             DateTime
-  heure_arrivee          String
-  date_fin               DateTime
-  heure_depart           String
-  nb_nuits               Int
-  prix_par_nuit          Float
-  remise_montant         Float @default(0)
-  frais_supplementaires  String @default("[]")
-  reservation_items      String @default("[]")
-  taxe_sejour_calculee   Float?
-  options                String
-  arrhes_montant         Float
-  arrhes_date_limite     DateTime
-  solde_montant          Float
-  caution_montant        Float
-  cheque_menage_montant  Float
-  afficher_caution_phrase Boolean @default(true)
-  afficher_cheque_menage_phrase Boolean @default(true)
-  clauses                String
-  pdf_path               String
-  date_envoi_email       DateTime?
-  statut_paiement        String   @default("non_reglee")
-  notes                  String?
-  reservation_id         String?
+  id                            String    @id @default(cuid())
+  numero_facture                String
+  gite_id                       String
+  date_creation                 DateTime  @default(now())
+  date_derniere_modif           DateTime  @updatedAt
+  locataire_nom                 String
+  locataire_adresse             String
+  locataire_tel                 String
+  locataire_email               String?
+  nb_adultes                    Int
+  nb_enfants_2_17               Int
+  date_debut                    DateTime
+  heure_arrivee                 String
+  date_fin                      DateTime
+  heure_depart                  String
+  nb_nuits                      Int
+  prix_par_nuit                 Float
+  remise_montant                Float     @default(0)
+  frais_supplementaires         String    @default("[]")
+  reservation_items             String    @default("[]")
+  taxe_sejour_calculee          Float?
+  options                       String
+  arrhes_montant                Float
+  arrhes_date_limite            DateTime
+  solde_montant                 Float
+  caution_montant               Float
+  cheque_menage_montant         Float
+  afficher_caution_phrase       Boolean   @default(true)
+  afficher_cheque_menage_phrase Boolean   @default(true)
+  clauses                       String
+  pdf_path                      String
+  date_envoi_email              DateTime?
+  statut_paiement               String    @default("non_reglee")
+  notes                         String?
+  reservation_id                String?
+  organization_id               String    @default("org_historical_broceliande")
 
-  gite                   Gite     @relation(fields: [gite_id], references: [id])
+  gite Gite @relation(fields: [gite_id], references: [id])
 
+  @@unique([organization_id, numero_facture], map: "factures_org_numero_key")
   @@index([reservation_id], map: "factures_reservation_id_idx")
   @@map("factures")
 }
 
 model FactureCounter {
-  id         String @id @default(cuid())
-  giteId     String
-  year       Int
-  lastNumber Int
+  id              String @id @default(cuid())
+  giteId          String
+  year            Int
+  lastNumber      Int
+  organization_id String @default("org_historical_broceliande")
 
-  gite       Gite   @relation(fields: [giteId], references: [id])
+  gite Gite @relation(fields: [giteId], references: [id])
 
-  @@unique([giteId, year])
+  @@unique([organization_id, giteId, year])
   @@map("facture_counters")
 }
 
 model ReservationPlaceholder {
-  id           String        @id @default(cuid())
-  abbreviation String        @unique
-  label        String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id              String   @id @default(cuid())
+  abbreviation    String
+  label           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
   reservations Reservation[]
 
+  @@unique([organization_id, abbreviation], map: "reservation_placeholders_org_abbreviation_key")
   @@map("reservation_placeholders")
 }
 
 model PlanningRelayPeriod {
-  id               String    @id @default(cuid())
-  label            String
-  date_debut       DateTime
-  date_fin         DateTime
-  gite_ids         String    @default("[]")
-  show_timeline    Boolean   @default(false)
-  show_comments    Boolean   @default(false)
-  show_phones      Boolean   @default(false)
-  show_options     Boolean   @default(false)
-  show_intervention_prices Boolean @default(false)
-  gite_prices      String    @default("{}") @map("intervention_prices")
-  arrivals_only    Boolean   @default(false)
-  stay_nights      Int?
-  is_active        Boolean   @default(true)
-  share_nonce      String
-  public_code_hash String?   @unique
-  public_origin    String?
-  expires_at       DateTime?
-  last_accessed_at DateTime?
-  sms_enabled      Boolean   @default(false)
-  sms_recipient    String?
-  sms_worker_id    String?
-  sms_send_time    String    @default("18:00")
-  sms_send_day     String    @default("previous_day")
+  id                        String    @id @default(cuid())
+  label                     String
+  date_debut                DateTime
+  date_fin                  DateTime
+  gite_ids                  String    @default("[]")
+  show_timeline             Boolean   @default(false)
+  show_comments             Boolean   @default(false)
+  show_phones               Boolean   @default(false)
+  show_options              Boolean   @default(false)
+  show_intervention_prices  Boolean   @default(false)
+  gite_prices               String    @default("{}") @map("intervention_prices")
+  arrivals_only             Boolean   @default(false)
+  stay_nights               Int?
+  is_active                 Boolean   @default(true)
+  share_nonce               String
+  public_code_hash          String?   @unique
+  public_origin             String?
+  expires_at                DateTime?
+  last_accessed_at          DateTime?
+  sms_enabled               Boolean   @default(false)
+  sms_recipient             String?
+  sms_worker_id             String?
+  sms_send_time             String    @default("18:00")
+  sms_send_day              String    @default("previous_day")
   sms_last_sent_for_date    String?
   sms_last_attempt_for_date String?
-  sms_configs      String    @default("[]")
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  sms_configs               String    @default("[]")
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  organization_id           String    @default("org_historical_broceliande")
 
-  assignments      PlanningRelayAssignment[]
-  sms_worker       PlanningRelayWorker? @relation("PlanningRelayPeriodSmsWorker", fields: [sms_worker_id], references: [id], onDelete: SetNull)
+  assignments PlanningRelayAssignment[]
+  sms_worker  PlanningRelayWorker?      @relation("PlanningRelayPeriodSmsWorker", fields: [sms_worker_id], references: [id], onDelete: SetNull)
 
   @@index([is_active, date_fin], map: "planning_relay_periods_active_date_fin_idx")
   @@index([sms_enabled, sms_send_time], map: "planning_relay_periods_sms_schedule_idx")
@@ -604,21 +701,22 @@ model PlanningRelayPeriod {
 }
 
 model PlanningRelayWorker {
-  id          String   @id @default(cuid())
-  nom         String
-  telephone   String
-  email       String?
-  adresse     String?
-  message_channel_addresses String @default("{}")
-  is_active   Boolean  @default(true)
-  show_on_today Boolean @default(false)
-  hourly_rate Float @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                        String   @id @default(cuid())
+  nom                       String
+  telephone                 String
+  email                     String?
+  adresse                   String?
+  message_channel_addresses String   @default("{}")
+  is_active                 Boolean  @default(true)
+  show_on_today             Boolean  @default(false)
+  hourly_rate               Float    @default(0)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  organization_id           String   @default("org_historical_broceliande")
 
-  assignments PlanningRelayAssignment[]
-  sms_periods PlanningRelayPeriod[] @relation("PlanningRelayPeriodSmsWorker")
-  expenses    IntervenantExpense[]
+  assignments  PlanningRelayAssignment[]
+  sms_periods  PlanningRelayPeriod[]     @relation("PlanningRelayPeriodSmsWorker")
+  expenses     IntervenantExpense[]
   hour_entries IntervenantHourEntry[]
   app_user     AppUser?
 
@@ -626,18 +724,18 @@ model PlanningRelayWorker {
   @@map("planning_relay_workers")
 }
 
-
 model IntervenantHourEntry {
-  id             String   @id
-  intervenant_id String?
-  intervenant_nom String
-  worked_on      String
-  minutes        Int
-  paid_at        DateTime?
+  id                   String    @id
+  intervenant_id       String?
+  intervenant_nom      String
+  worked_on            String
+  minutes              Int
+  paid_at              DateTime?
   hourly_rate_snapshot Float?
-  deleted_at     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  deleted_at           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  organization_id      String    @default("org_historical_broceliande")
 
   intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
 
@@ -647,7 +745,7 @@ model IntervenantHourEntry {
 }
 
 model UserIntervention {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   user_id         String?
   user_name       String
   kind            String
@@ -655,38 +753,41 @@ model UserIntervention {
   gite_id         String?
   gite_name       String?
   reservation_id  String?
-  source_key      String?  @unique
+  source_key      String?
   amount_snapshot Float
   paid_at         DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  organization_id String    @default("org_historical_broceliande")
 
   user        AppUser?     @relation(fields: [user_id], references: [id], onDelete: SetNull)
   gite        Gite?        @relation(fields: [gite_id], references: [id], onDelete: SetNull)
   reservation Reservation? @relation(fields: [reservation_id], references: [id], onDelete: SetNull)
 
+  @@unique([organization_id, source_key], map: "user_interventions_org_source_key")
   @@index([user_id, paid_at], map: "user_interventions_user_paid_idx")
   @@index([occurred_on, kind], map: "user_interventions_date_kind_idx")
   @@map("user_interventions")
 }
 
 model IntervenantExpense {
-  id             String   @id @default(cuid())
-  intervenant_id String?
+  id              String   @id @default(cuid())
+  intervenant_id  String?
   intervenant_nom String?
-  label          String   @default("Frais ponctuel")
-  scope          String   @default("all_gites")
-  gite_id        String?
-  gite_nom       String?
-  year           Int
-  month          Int
-  amount         Float
-  notes          String   @default("")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  label           String   @default("Frais ponctuel")
+  scope           String   @default("all_gites")
+  gite_id         String?
+  gite_nom        String?
+  year            Int
+  month           Int
+  amount          Float
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
   intervenant PlanningRelayWorker? @relation(fields: [intervenant_id], references: [id], onDelete: SetNull)
-  gite         Gite?               @relation(fields: [gite_id], references: [id], onDelete: SetNull)
+  gite        Gite?                @relation(fields: [gite_id], references: [id], onDelete: SetNull)
 
   @@index([year, month], map: "intervenant_expenses_year_month_idx")
   @@index([intervenant_id, year, month], map: "intervenant_expenses_intervenant_period_idx")
@@ -695,18 +796,19 @@ model IntervenantExpense {
 }
 
 model PlanningRelayAssignment {
-  id         String   @id @default(cuid())
-  period_id String
-  date      String
-  gite_id   String
-  worker_id String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  period_id       String
+  date            String
+  gite_id         String
+  worker_id       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
-  period     PlanningRelayPeriod @relation(fields: [period_id], references: [id], onDelete: Cascade)
-  worker     PlanningRelayWorker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  period PlanningRelayPeriod @relation(fields: [period_id], references: [id], onDelete: Cascade)
+  worker PlanningRelayWorker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
 
-  @@unique([period_id, date, gite_id], map: "planning_relay_assignments_period_date_gite_key")
+  @@unique([organization_id, period_id, date, gite_id], map: "planning_relay_assignments_org_period_date_gite_key")
   @@index([worker_id], map: "planning_relay_assignments_worker_idx")
   @@map("planning_relay_assignments")
 }
@@ -724,50 +826,51 @@ model SecurityThrottle {
 }
 
 model Reservation {
-  id                       String                  @id @default(cuid())
-  gite_id                  String?
-  stay_group_id            String?
-  placeholder_id           String?
-  origin_system            String?
-  origin_reference         String?
-  export_to_ical           Boolean?
-  airbnb_url               String?
-  hote_nom                 String
-  telephone                String?
-  email                    String?
-  date_entree              DateTime
-  date_sortie              DateTime
-  nb_nuits                 Int
-  nb_adultes               Int
-  nb_enfants_2_17          Int                     @default(0)
-  prix_par_nuit            Float
-  prix_total               Float
-  source_paiement          String?
-  commentaire              String?
-  arrival_cleaning_checked_at   DateTime?
-  departure_cleaning_checked_at DateTime?
+  id                                    String    @id @default(cuid())
+  gite_id                               String?
+  stay_group_id                         String?
+  placeholder_id                        String?
+  origin_system                         String?
+  origin_reference                      String?
+  export_to_ical                        Boolean?
+  airbnb_url                            String?
+  hote_nom                              String
+  telephone                             String?
+  email                                 String?
+  date_entree                           DateTime
+  date_sortie                           DateTime
+  nb_nuits                              Int
+  nb_adultes                            Int
+  nb_enfants_2_17                       Int       @default(0)
+  prix_par_nuit                         Float
+  prix_total                            Float
+  source_paiement                       String?
+  commentaire                           String?
+  arrival_cleaning_checked_at           DateTime?
+  departure_cleaning_checked_at         DateTime?
   arrival_cleaning_checked_by_user_id   String?
   departure_cleaning_checked_by_user_id String?
-  remise_montant           Float                  @default(0)
-  commission_channel_mode  String?                @default("euro")
-  commission_channel_value Float                  @default(0)
-  frais_optionnels_montant Float                  @default(0)
-  frais_optionnels_libelle String?
-  frais_optionnels_declares Boolean               @default(false)
-  options                  String                 @default("{}")
-  energy_consumption_kwh   Float                  @default(0)
-  energy_cost_eur          Float                  @default(0)
-  energy_price_per_kwh     Float?
-  energy_tracking          String                 @default("[]")
-  createdAt                DateTime               @default(now())
-  updatedAt                DateTime               @updatedAt
+  remise_montant                        Float     @default(0)
+  commission_channel_mode               String?   @default("euro")
+  commission_channel_value              Float     @default(0)
+  frais_optionnels_montant              Float     @default(0)
+  frais_optionnels_libelle              String?
+  frais_optionnels_declares             Boolean   @default(false)
+  options                               String    @default("{}")
+  energy_consumption_kwh                Float     @default(0)
+  energy_cost_eur                       Float     @default(0)
+  energy_price_per_kwh                  Float?
+  energy_tracking                       String    @default("[]")
+  createdAt                             DateTime  @default(now())
+  updatedAt                             DateTime  @updatedAt
+  organization_id                       String    @default("org_historical_broceliande")
 
-  gite                     Gite?                  @relation(fields: [gite_id], references: [id])
-  placeholder              ReservationPlaceholder? @relation(fields: [placeholder_id], references: [id])
-  approved_booking_requests BookingRequest[]      @relation("ApprovedBookingRequest")
-  arrival_cleaning_checked_by AppUser? @relation("ArrivalCleaningCheckedBy", fields: [arrival_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
-  departure_cleaning_checked_by AppUser? @relation("DepartureCleaningCheckedBy", fields: [departure_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
-  user_interventions UserIntervention[]
+  gite                          Gite?                   @relation(fields: [gite_id], references: [id])
+  placeholder                   ReservationPlaceholder? @relation(fields: [placeholder_id], references: [id])
+  approved_booking_requests     BookingRequest[]        @relation("ApprovedBookingRequest")
+  arrival_cleaning_checked_by   AppUser?                @relation("ArrivalCleaningCheckedBy", fields: [arrival_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
+  departure_cleaning_checked_by AppUser?                @relation("DepartureCleaningCheckedBy", fields: [departure_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
+  user_interventions            UserIntervention[]
 
   @@index([gite_id, date_entree])
   @@index([gite_id, date_sortie], map: "reservations_gite_id_date_sortie_idx")
@@ -787,17 +890,18 @@ model Reservation {
 }
 
 model GiteSeasonRate {
-  id            String   @id @default(cuid())
-  gite_id       String
-  date_debut    DateTime
-  date_fin      DateTime
-  prix_par_nuit Float
-  min_nuits     Int      @default(1)
-  ordre         Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  gite_id         String
+  date_debut      DateTime
+  date_fin        DateTime
+  prix_par_nuit   Float
+  min_nuits       Int      @default(1)
+  ordre           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization_id String   @default("org_historical_broceliande")
 
-  gite          Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  gite Gite @relation(fields: [gite_id], references: [id], onDelete: Cascade)
 
   @@index([gite_id, ordre], map: "gite_season_rates_gite_id_ordre_idx")
   @@index([gite_id, date_debut, date_fin], map: "gite_season_rates_gite_dates_idx")
@@ -805,30 +909,31 @@ model GiteSeasonRate {
 }
 
 model BookingRequest {
-  id                     String       @id @default(cuid())
-  gite_id                String
+  id                      String    @id @default(cuid())
+  gite_id                 String
   approved_reservation_id String?
-  hote_nom               String
-  telephone              String?
-  email                  String?
-  date_entree            DateTime
-  date_sortie            DateTime
-  nb_nuits               Int
-  nb_adultes             Int
-  nb_enfants_2_17        Int          @default(0)
-  options                String       @default("{}")
-  message_client         String?
-  internal_note          String?
-  pricing_snapshot       String
-  status                 String       @default("pending")
-  hold_expires_at        DateTime
-  decided_at             DateTime?
-  decision_note          String?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
+  hote_nom                String
+  telephone               String?
+  email                   String?
+  date_entree             DateTime
+  date_sortie             DateTime
+  nb_nuits                Int
+  nb_adultes              Int
+  nb_enfants_2_17         Int       @default(0)
+  options                 String    @default("{}")
+  message_client          String?
+  internal_note           String?
+  pricing_snapshot        String
+  status                  String    @default("pending")
+  hold_expires_at         DateTime
+  decided_at              DateTime?
+  decision_note           String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  organization_id         String    @default("org_historical_broceliande")
 
-  gite                   Gite         @relation(fields: [gite_id], references: [id], onDelete: Cascade)
-  approved_reservation   Reservation? @relation("ApprovedBookingRequest", fields: [approved_reservation_id], references: [id], onDelete: SetNull)
+  gite                 Gite         @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  approved_reservation Reservation? @relation("ApprovedBookingRequest", fields: [approved_reservation_id], references: [id], onDelete: SetNull)
 
   @@index([gite_id, status, hold_expires_at], map: "booking_requests_gite_status_hold_idx")
   @@index([gite_id, date_entree, date_sortie], map: "booking_requests_gite_dates_idx")
@@ -837,22 +942,23 @@ model BookingRequest {
 }
 
 model GiteMonthlyEnergyReading {
-  id                 String   @id @default(cuid())
-  gite_id            String
-  year               Int
-  month              Int
-  device_id          String
-  device_name        String
-  opening_total_kwh  Float?
+  id                  String    @id @default(cuid())
+  gite_id             String
+  year                Int
+  month               Int
+  device_id           String
+  device_name         String
+  opening_total_kwh   Float?
   opening_recorded_at DateTime?
-  closing_total_kwh  Float?
+  closing_total_kwh   Float?
   closing_recorded_at DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  organization_id     String    @default("org_historical_broceliande")
 
-  gite               Gite     @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  gite Gite @relation(fields: [gite_id], references: [id], onDelete: Cascade)
 
-  @@unique([gite_id, year, month, device_id], map: "gite_monthly_energy_readings_period_device_key")
+  @@unique([organization_id, gite_id, year, month, device_id], map: "gite_monthly_energy_readings_org_period_device_key")
   @@index([year, month], map: "gite_monthly_energy_readings_period_idx")
   @@index([gite_id, year, month], map: "gite_monthly_energy_readings_gite_period_idx")
   @@map("gite_monthly_energy_readings")

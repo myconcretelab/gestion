@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import type { Request } from "express";
-import prisma from "../db/prisma.js";
+import prisma, { systemPrisma } from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { parseBearerToken } from "../utils/cronTriggerAuth.js";
+import { enterOrganizationContext } from "./organizationContext.js";
 
 export type ApiTokenScope = "reservations:write" | "cron:run";
 export const API_TOKEN_SCOPES = ["reservations:write", "cron:run"] as const;
@@ -35,9 +36,10 @@ export const verifyScopedApiToken = async (req: Pick<Request, "headers">, requir
   const rawToken = parseBearerToken(req.headers.authorization);
   if (!rawToken) return false;
   const now = new Date();
-  const token = await prisma.apiToken.findUnique({ where: { token_hash: hashToken(rawToken) } });
+  const token = await systemPrisma.apiToken.findUnique({ where: { token_hash: hashToken(rawToken) } });
   if (!token || token.revoked_at || (token.expires_at && token.expires_at <= now)) return false;
   if (!fromJsonString<string[]>(token.scopes, []).includes(requiredScope)) return false;
+  enterOrganizationContext({ organizationId: token.organization_id, source: "public-token" });
   await prisma.apiToken.update({ where: { id: token.id }, data: { last_used_at: now } });
   return true;
 };

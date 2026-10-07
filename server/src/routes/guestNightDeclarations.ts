@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { getOrganizationId } from "../services/organizationContext.js";
 
 const router = Router();
 
@@ -62,7 +63,8 @@ router.post("/", async (req, res, next) => {
     const now = new Date();
     const saved = await prisma.guestNightDeclaration.upsert({
       where: {
-        year_month_gite_id: {
+        organization_id_year_month_gite_id: {
+          organization_id: getOrganizationId(),
           year: payload.year,
           month: payload.month,
           gite_id: payload.gite_id,

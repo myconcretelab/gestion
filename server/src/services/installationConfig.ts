@@ -1,6 +1,7 @@
 import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { fromJsonString } from "../utils/jsonFields.js";
+import { getOrganizationId, HISTORICAL_ORGANIZATION_ID } from "./organizationContext.js";
 
 export const MODULE_KEYS = [
   "reservations",
@@ -81,7 +82,16 @@ export type InstallationConfig = {
 };
 
 export const getInstallationConfig = async (): Promise<InstallationConfig> => {
-  const row = await prisma.installationConfig.findUnique({ where: { id: "default" } });
+  const organizationId = getOrganizationId();
+  const settings = await prisma.organizationSettings.findUnique({ where: { organization_id: organizationId } });
+  if (settings) return {
+    organization: parseOrganization(settings.profile_json),
+    modules: normalizeModules(settings.modules_json),
+    setupComplete: settings.setup_completed,
+  };
+  const row = organizationId === HISTORICAL_ORGANIZATION_ID
+    ? await prisma.installationConfig.findUnique({ where: { id: "default" } })
+    : null;
   if (!row) return { organization: EMPTY_ORGANIZATION, modules: DEFAULT_MODULES, setupComplete: false };
   return {
     organization: parseOrganization(row.organization_json),
@@ -92,8 +102,24 @@ export const getInstallationConfig = async (): Promise<InstallationConfig> => {
 
 export const saveOrganizationProfile = async (input: unknown) => {
   const organization = organizationProfileSchema.parse(input);
+  const organizationId = getOrganizationId();
   await prisma.$transaction(async (tx) => {
-    await tx.installationConfig.upsert({
+    await tx.organizationSettings.upsert({
+      where: { organization_id: organizationId },
+      update: {
+        profile_json: JSON.stringify(organization), locale: organization.locale,
+        currency: organization.currency, timezone: organization.timezone,
+        branding_json: JSON.stringify(organization), documents_json: JSON.stringify(organization),
+      },
+      create: {
+        organization_id: organizationId, profile_json: JSON.stringify(organization),
+        locale: organization.locale, currency: organization.currency, timezone: organization.timezone,
+        branding_json: JSON.stringify(organization), documents_json: JSON.stringify(organization),
+        modules_json: JSON.stringify(DEFAULT_MODULES),
+      },
+    });
+    await tx.organization.update({ where: { id: organizationId }, data: { name: organization.tradeName || organization.legalName } });
+    if (organizationId === HISTORICAL_ORGANIZATION_ID) await tx.installationConfig.upsert({
       where: { id: "default" },
       update: { organization_json: JSON.stringify(organization) },
       create: { id: "default", organization_json: JSON.stringify(organization), modules_json: JSON.stringify(DEFAULT_MODULES) },
@@ -115,7 +141,13 @@ export const saveOrganizationProfile = async (input: unknown) => {
 export const saveModuleSettings = async (input: unknown) => {
   const raw = z.record(z.string(), z.boolean()).parse(input);
   const modules = Object.fromEntries(MODULE_KEYS.map((key) => [key, raw[key] === true])) as ModuleSettings;
-  await prisma.installationConfig.upsert({
+  const organizationId = getOrganizationId();
+  await prisma.organizationSettings.upsert({
+    where: { organization_id: organizationId },
+    update: { modules_json: JSON.stringify(modules) },
+    create: { organization_id: organizationId, profile_json: JSON.stringify(EMPTY_ORGANIZATION), modules_json: JSON.stringify(modules) },
+  });
+  if (organizationId === HISTORICAL_ORGANIZATION_ID) await prisma.installationConfig.upsert({
     where: { id: "default" },
     update: { modules_json: JSON.stringify(modules) },
     create: { id: "default", organization_json: JSON.stringify(EMPTY_ORGANIZATION), modules_json: JSON.stringify(modules) },
@@ -130,7 +162,13 @@ export const completeInstallation = async (organization: unknown, modulesInput: 
   }
   const rawModules = z.record(z.string(), z.boolean()).parse(modulesInput);
   const modules = Object.fromEntries(MODULE_KEYS.map((key) => [key, rawModules[key] === true])) as ModuleSettings;
-  await prisma.installationConfig.upsert({
+  const organizationId = getOrganizationId();
+  await prisma.organizationSettings.upsert({
+    where: { organization_id: organizationId },
+    update: { profile_json: JSON.stringify(parsedOrganization), modules_json: JSON.stringify(modules), setup_completed: true },
+    create: { organization_id: organizationId, profile_json: JSON.stringify(parsedOrganization), modules_json: JSON.stringify(modules), setup_completed: true },
+  });
+  if (organizationId === HISTORICAL_ORGANIZATION_ID) await prisma.installationConfig.upsert({
     where: { id: "default" },
     update: { organization_json: JSON.stringify(parsedOrganization), modules_json: JSON.stringify(modules), setup_completed: true },
     create: { id: "default", organization_json: JSON.stringify(parsedOrganization), modules_json: JSON.stringify(modules), setup_completed: true },

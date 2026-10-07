@@ -2,6 +2,7 @@ import "../config/env.js";
 import fs from "fs";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
+import { getOrganizationId } from "../services/organizationContext.js";
 
 const resolveDatabaseUrl = (value: string | undefined) => {
   if (!value) return value;
@@ -32,6 +33,57 @@ if (databaseUrl) {
   }
 }
 
-const prisma = new PrismaClient();
+export const systemPrisma = new PrismaClient();
+
+const TENANT_MODELS = new Set([
+  "InstallationConfig", "ContentTemplateVersion", "Gite", "GitePhoto", "WordPressWebhookJob",
+  "Gestionnaire", "AppUser", "Membership", "OrganizationSettings", "ApiToken", "DocumentShare",
+  "ExpenseCategory", "ExpenseRecurringRule", "ExpenseEntry", "UrssafDeclaration", "GuestNightDeclaration",
+  "IcalSource", "Contrat", "ContratCounter", "Facture", "FactureCounter", "ReservationPlaceholder",
+  "PlanningRelayPeriod", "PlanningRelayWorker", "IntervenantHourEntry", "UserIntervention",
+  "IntervenantExpense", "PlanningRelayAssignment", "Reservation", "GiteSeasonRate", "BookingRequest",
+  "GiteMonthlyEnergyReading",
+]);
+
+const withTenantWhere = (where: Record<string, unknown> | undefined, organizationId: string) => ({
+  ...(where ?? {}),
+  organization_id: organizationId,
+});
+
+const scopeTenantOperation = (operation: string, args: Record<string, unknown>, organizationId: string) => {
+  if (["findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "findMany", "count", "aggregate", "groupBy", "update", "updateMany", "delete", "deleteMany"].includes(operation)) {
+    args.where = withTenantWhere(args.where as Record<string, unknown> | undefined, organizationId);
+  }
+  if (operation === "create") {
+    args.data = { ...(args.data as Record<string, unknown>), organization_id: organizationId };
+  }
+  if (operation === "createMany" || operation === "createManyAndReturn") {
+    const rows = Array.isArray(args.data) ? args.data : [args.data];
+    args.data = rows.map((row) => ({ ...(row as Record<string, unknown>), organization_id: organizationId }));
+  }
+  if (operation === "upsert") {
+    args.where = withTenantWhere(args.where as Record<string, unknown> | undefined, organizationId);
+    args.create = { ...(args.create as Record<string, unknown>), organization_id: organizationId };
+  }
+  return args;
+};
+
+const extendForTenant = (organizationId: () => string) => systemPrisma.$extends({
+  name: "tenant-isolation",
+  query: {
+    $allModels: {
+      async $allOperations({ model, operation, args, query }) {
+        if (model && TENANT_MODELS.has(model)) {
+          scopeTenantOperation(operation, args as Record<string, unknown>, organizationId());
+        }
+        return query(args);
+      },
+    },
+  },
+});
+
+export const getTenantPrisma = (organizationId: string) => extendForTenant(() => organizationId);
+
+const prisma = extendForTenant(getOrganizationId);
 
 export default prisma;

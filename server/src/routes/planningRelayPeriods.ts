@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { addDays, differenceInCalendarDays, endOfDay } from "date-fns";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { getOrganizationId } from "../services/organizationContext.js";
 import { env } from "../config/env.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 import {
@@ -745,7 +746,8 @@ privateRouter.patch("/:id/assignments", async (req, res, next) => {
 
     const existing = await prisma.planningRelayAssignment.findUnique({
       where: {
-        period_id_date_gite_id: {
+        organization_id_period_id_date_gite_id: {
+          organization_id: getOrganizationId(),
           period_id: current.id,
           date: payload.date,
           gite_id: payload.gite_id,

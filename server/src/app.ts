@@ -43,6 +43,7 @@ import {
 } from "./services/serverAuth.js";
 import { canActAsRequestedUser, containsMonetaryFields, getRequiredBusinessPermission, hasBusinessPermission, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
 import { getModuleForApiPath, isModuleEnabled } from "./services/installationConfig.js";
+import { assertRequestedOrganization, HISTORICAL_ORGANIZATION_ID, runWithOrganization } from "./services/organizationContext.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -110,13 +111,30 @@ export const createApp = () => {
 
   app.use("/api/auth", authRouter);
   app.use("/api/installation", installationRouter);
+  app.use("/api", async (req, _res, next) => {
+    try {
+      const session = await getServerAuthSessionFromRequest(req);
+      const organizationId = session?.organizationId ?? HISTORICAL_ORGANIZATION_ID;
+      runWithOrganization({
+        organizationId,
+        source: session ? "session" : "historical-compatibility",
+      }, () => {
+        const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+        assertRequestedOrganization(body.organization_id ?? body.organizationId);
+        assertRequestedOrganization(req.query.organization_id ?? req.query.organizationId);
+        next();
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
   app.use("/api", async (req, res, next) => {
     try {
       const requiredModule = getModuleForApiPath(req.path);
-      if (requiredModule && !(await isModuleEnabled(requiredModule))) {
-        return res.status(404).json({ error: "Fonctionnalité désactivée.", code: "MODULE_DISABLED", module: requiredModule });
-      }
       if (isPublicApiPath(req.path)) {
+        if (requiredModule && !(await isModuleEnabled(requiredModule))) {
+          return res.status(404).json({ error: "Fonctionnalité désactivée.", code: "MODULE_DISABLED", module: requiredModule });
+        }
         const throttle = await enforceRequestRateLimit(req, res, PUBLIC_API_THROTTLE_CONFIG);
         if (throttle.blocked) return sendThrottleResponse(res, throttle);
         return next();
@@ -143,6 +161,9 @@ export const createApp = () => {
       }
 
       if (!(await isServerAuthRequired())) {
+        if (requiredModule && !(await isModuleEnabled(requiredModule))) {
+          return res.status(404).json({ error: "Fonctionnalité désactivée.", code: "MODULE_DISABLED", module: requiredModule });
+        }
         return next();
       }
 
@@ -162,6 +183,9 @@ export const createApp = () => {
             error: "Vous ne pouvez pas agir sous l’identité d’un autre utilisateur.",
             code: "SUBJECT_ACCESS_REQUIRED",
           });
+        }
+        if (requiredModule && !(await isModuleEnabled(requiredModule))) {
+          return res.status(404).json({ error: "Fonctionnalité désactivée.", code: "MODULE_DISABLED", module: requiredModule });
         }
         if (!user.permissions.canViewAmounts) {
           if (isWriteMethod(req.method) && containsMonetaryFields(req.body)) {

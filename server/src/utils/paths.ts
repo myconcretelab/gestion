@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { env } from "../config/env.js";
+import { getOrganizationId } from "../services/organizationContext.js";
 
 export const resolveDataDir = () =>
   path.isAbsolute(env.DATA_DIR) ? env.DATA_DIR : path.join(process.cwd(), env.DATA_DIR);
@@ -15,7 +16,7 @@ export const getPdfPaths = (numeroContrat: string, dateReference: Date | string)
   const resolvedDate = normalizeDateReference(dateReference);
   const year = numeroContrat.split("-")[1] ?? String(resolvedDate.getFullYear());
   const month = String(resolvedDate.getMonth() + 1).padStart(2, "0");
-  const absolutePath = path.join(resolveDataDir(), env.PDF_SUBDIR, year, month, `${numeroContrat}.pdf`);
+  const absolutePath = path.join(resolveDataDir(), "organizations", getOrganizationId(), env.PDF_SUBDIR, year, month, `${numeroContrat}.pdf`);
   const relativePath = path.relative(process.cwd(), absolutePath);
   return { absolutePath, relativePath };
 };
@@ -24,7 +25,7 @@ export const getSentPdfPaths = (numeroContrat: string, dateReference: Date | str
   const resolvedDate = normalizeDateReference(dateReference);
   const year = numeroContrat.split("-")[1] ?? String(resolvedDate.getFullYear());
   const month = String(resolvedDate.getMonth() + 1).padStart(2, "0");
-  const absolutePath = path.join(resolveDataDir(), env.PDF_SUBDIR, year, month, `${numeroContrat}--envoye.pdf`);
+  const absolutePath = path.join(resolveDataDir(), "organizations", getOrganizationId(), env.PDF_SUBDIR, year, month, `${numeroContrat}--envoye.pdf`);
   const relativePath = path.relative(process.cwd(), absolutePath);
   return { absolutePath, relativePath };
 };
@@ -40,6 +41,8 @@ export const getSignedContractPaths = (
   const normalizedExtension = extension.startsWith(".") ? extension : `.${extension}`;
   const absolutePath = path.join(
     resolveDataDir(),
+    "organizations",
+    getOrganizationId(),
     "signed-contracts",
     year,
     month,
@@ -51,7 +54,7 @@ export const getSignedContractPaths = (
 
 export const getGitePhotoPaths = (giteId: string, photoId: string, extension: string) => {
   const normalizedExtension = extension.startsWith(".") ? extension : `.${extension}`;
-  const absolutePath = path.join(resolveDataDir(), "gites", giteId, "photos", `${photoId}${normalizedExtension.toLowerCase()}`);
+  const absolutePath = path.join(resolveDataDir(), "organizations", getOrganizationId(), "photos", giteId, `${photoId}${normalizedExtension.toLowerCase()}`);
   const relativePath = path.relative(process.cwd(), absolutePath);
   return { absolutePath, relativePath };
 };
@@ -86,7 +89,7 @@ export const resolveStoredDataFilePath = (storedRelativePath: string) => {
     if (isInside(dataDir, candidate)) return true;
     const parts = candidate.split(path.sep).filter(Boolean);
     const candidateDataDirIndex = parts.lastIndexOf(dataDirName);
-    return candidateDataDirIndex >= 0 && parts[candidateDataDirIndex + 1] === "gites";
+    return candidateDataDirIndex >= 0 && ["gites", "organizations"].includes(parts[candidateDataDirIndex + 1] ?? "");
   };
   const safeCandidates = candidates.filter(isDataCandidate);
 

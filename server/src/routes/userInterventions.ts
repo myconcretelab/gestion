@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { getOrganizationId } from "../services/organizationContext.js";
 import { normalizeAppUserRoles } from "../services/appUsers.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { isValidWorkDate } from "../utils/intervenantHours.js";
@@ -82,7 +83,7 @@ router.post("/", async (req, res, next) => {
     }
 
     const sourceKey = `full-cleaning:${reservation.id}`;
-    const existing = await prisma.userIntervention.findUnique({ where: { source_key: sourceKey } });
+    const existing = await prisma.userIntervention.findUnique({ where: { organization_id_source_key: { organization_id: getOrganizationId(), source_key: sourceKey } } });
     if (existing) return res.status(409).json({ error: "Ce ménage complet est déjà comptabilisé." });
     const entry = await prisma.userIntervention.create({
       data: {

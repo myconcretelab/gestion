@@ -3,8 +3,9 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { Router } from "express";
 import { z } from "zod";
-import prisma from "../db/prisma.js";
+import prisma, { systemPrisma } from "../db/prisma.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
+import { enterOrganizationContext } from "../services/organizationContext.js";
 
 const router = Router();
 const publicRouter = Router();
@@ -51,8 +52,9 @@ router.delete("/:id", async (req, res, next) => {
 
 publicRouter.get("/:token", async (req, res, next) => {
   try {
-    const share = await prisma.documentShare.findUnique({ where: { token_hash: hashToken(req.params.token) } });
+    const share = await systemPrisma.documentShare.findUnique({ where: { token_hash: hashToken(req.params.token) } });
     if (!share || share.revoked_at || share.expires_at <= new Date()) return res.status(404).json({ error: "Lien introuvable ou expiré." });
+    enterOrganizationContext({ organizationId: share.organization_id, source: "public-token" });
     const record = share.document_type === "contract"
       ? await prisma.contrat.findUnique({ where: { id: share.document_id }, select: { pdf_path: true, pdf_sent_path: true } })
       : await prisma.facture.findUnique({ where: { id: share.document_id }, select: { pdf_path: true } });

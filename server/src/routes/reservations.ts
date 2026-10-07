@@ -4,6 +4,7 @@ import { addDays, format } from "date-fns";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { getOrganizationId } from "../services/organizationContext.js";
 import { env } from "../config/env.js";
 import { getRemainingDueAmount, round2, toNumber } from "../utils/money.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
@@ -2793,7 +2794,7 @@ router.post("/import", async (req, res, next) => {
       if (existingId) return existingId;
 
       const created = await prisma.reservationPlaceholder.upsert({
-        where: { abbreviation },
+        where: { organization_id_abbreviation: { organization_id: getOrganizationId(), abbreviation } },
         create: {
           abbreviation,
           label: `Import ${abbreviation}`,

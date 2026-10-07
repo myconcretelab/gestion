@@ -14,6 +14,8 @@ import {
   isPasswordRecoveryAvailable,
   requestPasswordReset,
   resetPasswordWithToken,
+  listAvailableOrganizations,
+  switchSessionOrganization,
 } from "../services/serverAuth.js";
 import {
   checkRequestThrottle,
@@ -40,6 +42,7 @@ const passwordResetSchema = z.object({
   token: z.string().min(32).max(512),
   password: z.string().min(12).max(512),
 });
+const organizationSwitchSchema = z.object({ organizationId: z.string().trim().min(1).max(160) });
 
 router.get("/users", (_req, res) => {
   res.status(404).json({ error: "Endpoint introuvable.", code: "NOT_FOUND" });
@@ -52,6 +55,23 @@ router.get("/session", async (req, res, next) => {
       clearServerAuthCookie(req, res);
     }
     res.json(payload);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/organizations", async (req, res, next) => {
+  try {
+    res.json({ organizations: await listAvailableOrganizations(req) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/organization", async (req, res, next) => {
+  try {
+    const { organizationId } = organizationSwitchSchema.parse(req.body);
+    res.json(await switchSessionOrganization(req, organizationId));
   } catch (error) {
     next(error);
   }
