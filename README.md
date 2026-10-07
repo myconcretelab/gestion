@@ -38,6 +38,30 @@ Une installation de production refuse de démarrer sans compte protégé, sauf p
 
 Les modules sont désactivés sur une installation vierge : réservations et demandes, contrats, factures, finances et statistiques, frais personnels, planning des intervenants, publication web/WordPress, iCal, Pump/Airbnb, Smart Life, SMS, Telegram et e-mail quotidien. Une fonctionnalité désactivée est masquée, ses API sont fermées et ses tâches ne démarrent pas.
 
+## Stripe en mode test
+
+La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.
+
+1. Dans le Dashboard Stripe en mode test, copier la clé secrète dans le fichier `.env` non versionné :
+
+   ```dotenv
+   STRIPE_MODE=test
+   STRIPE_SECRET_KEY=sk_test_...
+   ```
+
+2. Pour recevoir les webhooks sur la machine locale, installer la CLI Stripe, s'y connecter puis lancer :
+
+   ```bash
+   stripe listen \
+     --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed \
+     --forward-to localhost:4000/api/billing/webhook/stripe
+   ```
+
+3. Copier le secret `whsec_...` affiché par la CLI dans `.env` sous `STRIPE_WEBHOOK_SECRET`, puis redémarrer le serveur.
+4. Dans `/admin`, ouvrir **Forfaits et quotas**, renseigner les prix mensuel/annuel, enregistrer le forfait puis sélectionner **Synchroniser avec Stripe**.
+
+La synchronisation crée un Product Stripe et ses Prices récurrents en mode test. Un changement de montant crée un nouveau Price et désactive l'ancien, conformément au fonctionnement Stripe. Les identifiants Stripe sont conservés en base ; les clés secrètes ne le sont jamais.
+
 ## Sauvegarde et restauration
 
 ```bash

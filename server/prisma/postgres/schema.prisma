@@ -124,7 +124,7 @@ model OrganizationJob {
   createdAt       DateTime  @default(now())
   completed_at    DateTime?
 
-  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  organization Organization             @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   attempt_runs OrganizationJobAttempt[]
 
   @@unique([organization_id, idempotency_key], map: "organization_jobs_org_idempotency_key")
@@ -188,20 +188,52 @@ model DocumentAsset {
 }
 
 model Plan {
-  id              String            @id @default(cuid())
-  code            String            @unique
-  name            String
-  description     String            @default("")
-  billing_periods Json              @default("[]")
-  status          String            @default("active")
-  public_metadata Json              @default("{}")
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  entitlements    PlanEntitlement[]
-  subscriptions   Subscription[]
-  billing_prices  BillingPrice[]
+  id                String                @id @default(cuid())
+  code              String                @unique
+  name              String
+  description       String                @default("")
+  billing_periods   Json                  @default("[]")
+  status            String                @default("active")
+  public_metadata   Json                  @default("{}")
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  entitlements      PlanEntitlement[]
+  subscriptions     Subscription[]
+  billing_prices    BillingPrice[]
+  price_definitions PlanPriceDefinition[]
+  billing_products  BillingProduct[]
 
   @@map("plans")
+}
+
+model PlanPriceDefinition {
+  id             String   @id @default(cuid())
+  plan_id        String
+  billing_period String
+  amount_cents   Int?
+  currency       String   @default("eur")
+  tax_behavior   String   @default("unspecified")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  plan           Plan     @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+
+  @@unique([plan_id, billing_period], map: "plan_price_definitions_plan_period_key")
+  @@map("plan_price_definitions")
+}
+
+model BillingProduct {
+  id                  String   @id @default(cuid())
+  plan_id             String
+  provider            String
+  provider_product_id String
+  status              String   @default("active")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  plan                Plan     @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_product_id], map: "billing_products_provider_product_key")
+  @@unique([plan_id, provider], map: "billing_products_plan_provider_key")
+  @@map("billing_products")
 }
 
 model PlanEntitlement {
@@ -363,8 +395,8 @@ model PlatformAdministratorEvent {
 }
 
 model OrganizationTaskLease {
-  id               String        @id @default(cuid())
-  organization_id  String
+  id                String       @id @default(cuid())
+  organization_id   String
   task_key          String
   lease_owner       String?
   lease_expires_at  DateTime?
@@ -372,9 +404,9 @@ model OrganizationTaskLease {
   last_succeeded_at DateTime?
   last_failed_at    DateTime?
   last_error        String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  organization      Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  organization      Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
   @@unique([organization_id, task_key], map: "organization_task_leases_org_task_key")
   @@index([task_key, lease_expires_at], map: "organization_task_leases_task_expiry_idx")

@@ -20211,6 +20211,17 @@ button.personal-expenses-status:disabled {
 .admin-fieldset:disabled { opacity: .68; }
 .admin-editor-section { padding: 24px 28px; border-top: 1px solid var(--admin-border); }
 .admin-toggle-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.admin-price-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin-price-grid > div { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; padding: 16px; border: 1px solid #2e3036; border-radius: 13px; background: #131419; opacity: .58; }
+.admin-price-grid > div.is-enabled { border-color: #4c625d; background: #161c1a; opacity: 1; }
+.admin-price-grid .admin-checkbox { grid-column: 1 / -1; }
+.admin-price-grid label:not(.admin-checkbox) { display: grid; gap: 7px; color: #b7bac2; font-size: .74rem; font-weight: 700; }
+.admin-price-grid input, .admin-price-grid select { width: 100%; min-height: 43px; padding: 9px 11px; border: 1px solid #353740; border-radius: 9px; background: #17181d; color: #f5f6f7; }
+.admin-field-help { margin: 13px 0 0; color: var(--admin-muted); font-size: .73rem; line-height: 1.5; }
+.admin-stripe-panel { display: grid; gap: 14px; }
+.admin-stripe-panel .admin-section-heading > div { display: grid; gap: 5px; }
+.admin-stripe-panel .admin-section-heading h3 { margin: 0; }
+.admin-stripe-panel .admin-section-heading p { margin: 0; color: var(--admin-muted); font-size: .78rem; }
 .admin-checkbox { display: flex; align-items: center; gap: 8px; padding: 10px 13px; border: 1px solid #33353c; border-radius: 10px; background: #17181d; color: #d2d4d9; font-size: .8rem; }
 .admin-entitlement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .admin-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px; border: 1px solid #2e3036; border-radius: 11px; background: #15161a; }
@@ -20238,6 +20249,7 @@ button.personal-expenses-status:disabled {
   .admin-overview-grid { grid-template-columns: 1fr; }
   .admin-plans-layout { grid-template-columns: 235px minmax(0, 1fr); }
   .admin-entitlement-grid { grid-template-columns: 1fr; }
+  .admin-price-grid { grid-template-columns: 1fr; }
   .admin-quota-editor > div { grid-template-columns: 1fr 130px 110px; }
 }
 
@@ -20276,6 +20288,8 @@ button.personal-expenses-status:disabled {
   .admin-panel__header { padding: 21px 18px; }
   .admin-plan-list { grid-template-columns: 1fr; }
   .admin-quota-editor > div { grid-template-columns: 1fr; }
+  .admin-price-grid > div { grid-template-columns: 1fr; }
+  .admin-price-grid .admin-checkbox { grid-column: auto; }
   .admin-fieldset, .admin-editor-section { padding: 21px 18px; }
   .admin-drawer { width: 100vw; }
   .admin-drawer__header, .admin-drawer__content > section { padding-inline: 18px; }

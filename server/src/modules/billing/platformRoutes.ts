@@ -11,6 +11,7 @@ import { MODULE_KEYS } from "../../services/installationConfig.js";
 import { encodeJsonField, fromJsonString } from "../../utils/jsonFields.js";
 import { USAGE_METRICS } from "./service.js";
 import { HISTORICAL_ORGANIZATION_ID } from "../organizations/context.js";
+import { getStripeTestConfiguration, syncPlanCatalogToStripe } from "./stripeCatalog.js";
 
 const router = Router();
 
@@ -81,6 +82,12 @@ const planWriteSchema = z.object({
   description: z.string().trim().max(500).default(""),
   status: z.enum(["draft", "active", "archived"]),
   billingPeriods: z.array(z.enum(["monthly", "annual"])).max(2).default([]),
+  priceDefinitions: z.array(z.object({
+    billingPeriod: z.enum(["monthly", "annual"]),
+    amountCents: z.number().int().nonnegative().nullable(),
+    currency: z.literal("eur").default("eur"),
+    taxBehavior: z.enum(["inclusive", "exclusive", "unspecified"]).default("unspecified"),
+  })).max(2).default([]),
   entitlements: z.array(planEntitlementSchema).max(50),
 });
 
@@ -91,6 +98,8 @@ const serializePlan = (plan: {
   description: string;
   status: string;
   billing_periods: unknown;
+  price_definitions: Array<{ billing_period: string; amount_cents: number | null; currency: string; tax_behavior: string }>;
+  billing_products: Array<{ provider: string; provider_product_id: string; status: string }>;
   entitlements: Array<{ feature_key: string; value_boolean: boolean | null; limit_value: number | null; limit_type: string }>;
   billing_prices: Array<{ id: string; provider: string; provider_product_id: string; provider_price_id: string; billing_period: string; status: string }>;
   _count: { subscriptions: number };
@@ -101,6 +110,17 @@ const serializePlan = (plan: {
   description: plan.description,
   status: plan.status,
   billingPeriods: fromJsonString<string[]>(plan.billing_periods, []),
+  priceDefinitions: plan.price_definitions.map((item) => ({
+    billingPeriod: item.billing_period,
+    amountCents: item.amount_cents,
+    currency: item.currency,
+    taxBehavior: item.tax_behavior,
+  })),
+  products: plan.billing_products.map((product) => ({
+    provider: product.provider,
+    productId: product.provider_product_id,
+    status: product.status,
+  })),
   locked: plan.code === "legacy_unlimited",
   subscriptionCount: plan._count.subscriptions,
   entitlements: plan.entitlements.map((item) => ({
@@ -197,6 +217,8 @@ router.get("/plans", async (_req, res, next) => {
     const plans = await systemPrisma.plan.findMany({
       include: {
         entitlements: { orderBy: { feature_key: "asc" } },
+        price_definitions: { orderBy: { billing_period: "asc" } },
+        billing_products: { orderBy: { provider: "asc" } },
         billing_prices: { orderBy: { billing_period: "asc" } },
         _count: { select: { subscriptions: true } },
       },
@@ -214,6 +236,10 @@ router.get("/plans", async (_req, res, next) => {
   }
 });
 
+router.get("/stripe/configuration", (_req, res) => {
+  res.json(getStripeTestConfiguration());
+});
+
 router.post("/plans", async (req, res, next) => {
   try {
     const payload = planWriteSchema.extend({ code: planWriteSchema.shape.code.unwrap() }).parse(req.body);
@@ -227,6 +253,14 @@ router.post("/plans", async (req, res, next) => {
         status: payload.status,
         billing_periods: encodeJsonField(payload.billingPeriods),
         public_metadata: encodeJsonField({ commercial: true }),
+        price_definitions: {
+          create: payload.priceDefinitions.map((item) => ({
+            billing_period: item.billingPeriod,
+            amount_cents: item.amountCents,
+            currency: item.currency,
+            tax_behavior: item.taxBehavior,
+          })),
+        },
         entitlements: {
           create: payload.entitlements.map((item) => ({
             feature_key: item.featureKey,
@@ -236,7 +270,7 @@ router.post("/plans", async (req, res, next) => {
           })),
         },
       },
-      include: { entitlements: true, billing_prices: true, _count: { select: { subscriptions: true } } },
+      include: { entitlements: true, price_definitions: true, billing_products: true, billing_prices: true, _count: { select: { subscriptions: true } } },
     });
     await recordAuditEvent({
       organizationId: HISTORICAL_ORGANIZATION_ID,
@@ -263,6 +297,7 @@ router.patch("/plans/:planId", async (req, res, next) => {
     }
     const updated = await systemPrisma.$transaction(async (tx) => {
       await tx.planEntitlement.deleteMany({ where: { plan_id: current.id } });
+      await tx.planPriceDefinition.deleteMany({ where: { plan_id: current.id } });
       return tx.plan.update({
         where: { id: current.id },
         data: {
@@ -270,6 +305,14 @@ router.patch("/plans/:planId", async (req, res, next) => {
           description: payload.description,
           status: payload.status,
           billing_periods: encodeJsonField(payload.billingPeriods),
+          price_definitions: {
+            create: payload.priceDefinitions.map((item) => ({
+              billing_period: item.billingPeriod,
+              amount_cents: item.amountCents,
+              currency: item.currency,
+              tax_behavior: item.taxBehavior,
+            })),
+          },
           entitlements: {
             create: payload.entitlements.map((item) => ({
               feature_key: item.featureKey,
@@ -279,7 +322,7 @@ router.patch("/plans/:planId", async (req, res, next) => {
             })),
           },
         },
-        include: { entitlements: true, billing_prices: true, _count: { select: { subscriptions: true } } },
+        include: { entitlements: true, price_definitions: true, billing_products: true, billing_prices: true, _count: { select: { subscriptions: true } } },
       });
     });
     await recordAuditEvent({
@@ -292,6 +335,24 @@ router.patch("/plans/:planId", async (req, res, next) => {
       metadata: { code: updated.code },
     });
     res.json(serializePlan(updated));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/plans/:planId/sync-stripe", async (req, res, next) => {
+  try {
+    const result = await syncPlanCatalogToStripe(req.params.planId);
+    await recordAuditEvent({
+      organizationId: HISTORICAL_ORGANIZATION_ID,
+      userId: res.locals.platformUserId,
+      requestId: String(res.getHeader("X-Request-Id") ?? ""),
+      action: "billing.plan.stripe_synced",
+      resourceType: "plan",
+      resourceId: req.params.planId,
+      metadata: { productId: result.productId, prices: result.prices.map((price) => price.priceId), mode: result.mode },
+    });
+    res.json(result);
   } catch (error) {
     next(error);
   }

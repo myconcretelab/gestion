@@ -66,6 +66,13 @@ type Entitlement = {
   limitType: "soft" | "hard";
 };
 
+type PriceDefinition = {
+  billingPeriod: "monthly" | "annual";
+  amountCents: number | null;
+  currency: "eur";
+  taxBehavior: "inclusive" | "exclusive" | "unspecified";
+};
+
 type Plan = {
   id: string;
   code: string;
@@ -73,10 +80,19 @@ type Plan = {
   description: string;
   status: "draft" | "active" | "archived";
   billingPeriods: Array<"monthly" | "annual">;
+  priceDefinitions: PriceDefinition[];
+  products: Array<{ provider: string; productId: string; status: string }>;
   locked: boolean;
   subscriptionCount: number;
   entitlements: Entitlement[];
   prices: Array<{ id: string; provider: string; productId: string; priceId: string; billingPeriod: string; status: string }>;
+};
+
+type StripeConfiguration = {
+  mode: "test";
+  secretKeyConfigured: boolean;
+  webhookSecretConfigured: boolean;
+  ready: boolean;
 };
 
 type PlansPayload = {
@@ -271,30 +287,43 @@ function Organizations({ rows, reload }: { rows: OrganizationRow[]; reload: (que
   </>;
 }
 
-function Plans({ payload, reload }: { payload: PlansPayload; reload: () => Promise<void> }) {
-  const newPlan = (): Plan => ({ id: "new", code: "", name: "", description: "", status: "draft", billingPeriods: ["monthly"], locked: false, subscriptionCount: 0, entitlements: [...payload.catalog.modules.map((item) => ({ featureKey: item.key, valueBoolean: true, limitValue: null, limitType: "hard" as const })), ...payload.catalog.metrics.map((item) => ({ featureKey: item.key, valueBoolean: null, limitValue: null, limitType: "hard" as const }))], prices: [] });
+function Plans({ payload, stripe, reload }: { payload: PlansPayload; stripe: StripeConfiguration; reload: () => Promise<PlansPayload> }) {
+  const newPlan = (): Plan => ({ id: "new", code: "", name: "", description: "", status: "draft", billingPeriods: ["monthly"], priceDefinitions: [{ billingPeriod: "monthly", amountCents: null, currency: "eur", taxBehavior: "unspecified" }], products: [], locked: false, subscriptionCount: 0, entitlements: [...payload.catalog.modules.map((item) => ({ featureKey: item.key, valueBoolean: true, limitValue: null, limitType: "hard" as const })), ...payload.catalog.metrics.map((item) => ({ featureKey: item.key, valueBoolean: null, limitValue: null, limitType: "hard" as const }))], prices: [] });
   const [draft, setDraft] = useState<Plan | null>(payload.plans[0] ?? null);
   const [saving, setSaving] = useState(false);
+  const [synchronizing, setSynchronizing] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => { if (!draft && payload.plans[0]) setDraft(payload.plans[0]); }, [draft, payload.plans]);
   const entitlement = (key: string) => draft?.entitlements.find((item) => item.featureKey === key);
+  const priceDefinition = (period: "monthly" | "annual") => draft?.priceDefinitions.find((item) => item.billingPeriod === period) ?? { billingPeriod: period, amountCents: null, currency: "eur" as const, taxBehavior: "unspecified" as const };
   const updateEntitlement = (key: string, change: Partial<Entitlement>) => setDraft((current) => current ? { ...current, entitlements: current.entitlements.some((item) => item.featureKey === key) ? current.entitlements.map((item) => item.featureKey === key ? { ...item, ...change } : item) : [...current.entitlements, { featureKey: key, valueBoolean: null, limitValue: null, limitType: "hard", ...change }] } : current);
+  const updatePrice = (period: "monthly" | "annual", change: Partial<PriceDefinition>) => setDraft((current) => current ? { ...current, priceDefinitions: current.priceDefinitions.some((item) => item.billingPeriod === period) ? current.priceDefinitions.map((item) => item.billingPeriod === period ? { ...item, ...change } : item) : [...current.priceDefinitions, { billingPeriod: period, amountCents: null, currency: "eur", taxBehavior: "unspecified", ...change }] } : current);
   const save = async (event: FormEvent) => {
     event.preventDefault(); if (!draft) return; setSaving(true); setMessage("");
-    const json = { code: draft.code, name: draft.name, description: draft.description, status: draft.status, billingPeriods: draft.billingPeriods, entitlements: draft.entitlements };
+    const json = { code: draft.code, name: draft.name, description: draft.description, status: draft.status, billingPeriods: draft.billingPeriods, priceDefinitions: draft.priceDefinitions.filter((item) => draft.billingPeriods.includes(item.billingPeriod)), entitlements: draft.entitlements };
     try {
-      const saved = draft.id === "new" ? await apiFetch<Plan>("/platform/billing/plans", { method: "POST", json }) : await apiFetch<Plan>(`/platform/billing/plans/${draft.id}`, { method: "PATCH", json: { name: json.name, description: json.description, status: json.status, billingPeriods: json.billingPeriods, entitlements: json.entitlements } });
+      const saved = draft.id === "new" ? await apiFetch<Plan>("/platform/billing/plans", { method: "POST", json }) : await apiFetch<Plan>(`/platform/billing/plans/${draft.id}`, { method: "PATCH", json: { name: json.name, description: json.description, status: json.status, billingPeriods: json.billingPeriods, priceDefinitions: json.priceDefinitions, entitlements: json.entitlements } });
       await reload(); setDraft(saved); setMessage("Forfait enregistré.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Enregistrement impossible."); } finally { setSaving(false); }
+  };
+  const synchronizeStripe = async () => {
+    if (!draft || draft.id === "new") return;
+    setSynchronizing(true); setMessage("");
+    try {
+      const result = await apiFetch<{ productId: string; prices: Array<{ priceId: string }> }>(`/platform/billing/plans/${draft.id}/sync-stripe`, { method: "POST" });
+      const refreshed = await reload();
+      setDraft(refreshed.plans.find((item) => item.id === draft.id) ?? draft);
+      setMessage(`Synchronisation Stripe test réussie : ${result.prices.length} tarif(s) publié(s).`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Synchronisation Stripe impossible."); } finally { setSynchronizing(false); }
   };
   return <div className="admin-plans-layout">
     <aside className="admin-plan-list"><button className="admin-primary-button admin-primary-button--full" type="button" onClick={() => { setDraft(newPlan()); setMessage(""); }}>+ Nouveau forfait</button>{payload.plans.map((plan) => <button type="button" key={plan.id} className={`admin-plan-item${draft?.id === plan.id ? " is-active" : ""}`} onClick={() => { setDraft(plan); setMessage(""); }}><span><strong>{plan.name}</strong><small>{plan.code}</small></span><span><Badge value={plan.status} /><small>{plan.subscriptionCount} client(s)</small></span></button>)}</aside>
     <section className="admin-panel admin-plan-editor">{draft ? <form onSubmit={save}><header className="admin-panel__header"><div><h2>{draft.id === "new" ? "Créer un forfait" : draft.name}</h2><p>{draft.locked ? "Ce forfait protège l’installation historique et reste en lecture seule." : "Définissez l’offre, ses modules et ses quotas."}</p></div>{!draft.locked ? <button className="admin-primary-button" disabled={saving} type="submit">{saving ? "Enregistrement…" : "Enregistrer"}</button> : null}</header>{message ? <p className="admin-feedback" role="status">{message}</p> : null}
       <fieldset disabled={draft.locked || saving} className="admin-fieldset"><div className="admin-form__row"><label>Nom<input required minLength={2} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>Code technique<input required pattern="[a-z][a-z0-9_]*" disabled={draft.id !== "new"} value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value })} placeholder="ex. essentiel" /></label><label>État<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as Plan["status"] })}><option value="draft">Brouillon</option><option value="active">Actif</option><option value="archived">Archivé</option></select></label></div><label>Description<textarea rows={3} maxLength={500} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
-      <div className="admin-editor-section"><h3>Périodicités</h3><div className="admin-toggle-row">{(["monthly", "annual"] as const).map((period) => <label className="admin-checkbox" key={period}><input type="checkbox" checked={draft.billingPeriods.includes(period)} onChange={(event) => setDraft({ ...draft, billingPeriods: event.target.checked ? [...draft.billingPeriods, period] : draft.billingPeriods.filter((item) => item !== period) })} /><span>{period === "monthly" ? "Mensuelle" : "Annuelle"}</span></label>)}</div></div>
+      <div className="admin-editor-section"><h3>Tarification</h3><div className="admin-price-grid">{(["monthly", "annual"] as const).map((period) => { const enabled = draft.billingPeriods.includes(period); const definition = priceDefinition(period); return <div className={enabled ? "is-enabled" : ""} key={period}><label className="admin-checkbox"><input type="checkbox" checked={enabled} onChange={(event) => setDraft({ ...draft, billingPeriods: event.target.checked ? [...draft.billingPeriods, period] : draft.billingPeriods.filter((item) => item !== period) })} /><span>{period === "monthly" ? "Mensuel" : "Annuel"}</span></label><label>Prix en euros<input type="number" min="0" step="0.01" disabled={!enabled} value={definition.amountCents === null ? "" : (definition.amountCents / 100).toFixed(2)} placeholder="29,00" onChange={(event) => updatePrice(period, { amountCents: event.target.value === "" ? null : Math.round(Number(event.target.value) * 100) })} /></label><label>Traitement de la taxe<select disabled={!enabled} value={definition.taxBehavior} onChange={(event) => updatePrice(period, { taxBehavior: event.target.value as PriceDefinition["taxBehavior"] })}><option value="unspecified">Réglage Stripe</option><option value="inclusive">TTC</option><option value="exclusive">HT</option></select></label></div>; })}</div><p className="admin-field-help">Les prix sont enregistrés en euros. Si un montant déjà publié change, Stripe crée un nouveau prix et désactive l’ancien.</p></div>
       <div className="admin-editor-section"><h3>Modules inclus</h3><div className="admin-entitlement-grid">{payload.catalog.modules.map((item) => <label className="admin-switch-row" key={item.key}><span><strong>{item.label}</strong><small>{item.key}</small></span><input type="checkbox" checked={entitlement(item.key)?.valueBoolean === true} onChange={(event) => updateEntitlement(item.key, { valueBoolean: event.target.checked })} /></label>)}</div></div>
       <div className="admin-editor-section"><h3>Quotas</h3><div className="admin-quota-editor">{payload.catalog.metrics.map((item) => <div key={item.key}><span><strong>{item.label}</strong><small>{item.key}</small></span><label>Limite<input type="number" min="0" value={entitlement(item.key)?.limitValue ?? ""} placeholder="Illimitée" onChange={(event) => updateEntitlement(item.key, { limitValue: event.target.value === "" ? null : Number(event.target.value) })} /></label><label>Contrôle<select value={entitlement(item.key)?.limitType ?? "hard"} onChange={(event) => updateEntitlement(item.key, { limitType: event.target.value as "soft" | "hard" })}><option value="soft">Souple</option><option value="hard">Dur</option></select></label></div>)}</div></div></fieldset>
-      {draft.prices.length ? <div className="admin-editor-section"><h3>Prix reliés au fournisseur</h3><div className="admin-compact-list">{draft.prices.map((price) => <div key={price.id}><strong>{price.billingPeriod === "annual" ? "Annuel" : "Mensuel"} · {price.provider}</strong><span>{price.priceId} · {price.status}</span></div>)}</div></div> : <div className="admin-editor-section"><h3>Prix reliés au fournisseur</h3><EmptyState>Aucun prix Stripe relié à ce forfait.</EmptyState></div>}
+      <div className="admin-editor-section admin-stripe-panel"><div className="admin-section-heading"><div><h3>Stripe test</h3><p>{stripe.secretKeyConfigured ? stripe.webhookSecretConfigured ? "Clé API et webhook configurés." : "Clé API configurée ; le secret webhook reste à ajouter." : "Ajoutez une clé secrète Stripe de test dans l’environnement du serveur."}</p></div>{!draft.locked ? <button className="admin-secondary-button" type="button" disabled={!stripe.secretKeyConfigured || draft.id === "new" || saving || synchronizing} onClick={() => void synchronizeStripe()}>{synchronizing ? "Synchronisation…" : "Synchroniser avec Stripe"}</button> : null}</div>{draft.products.length ? <div className="admin-compact-list">{draft.products.map((product) => <div key={`${product.provider}:${product.productId}`}><strong>Produit {product.provider} · {product.status}</strong><span>{product.productId}</span></div>)}</div> : null}{draft.prices.length ? <div className="admin-compact-list">{draft.prices.map((price) => <div key={price.id}><strong>{price.billingPeriod === "annual" ? "Annuel" : "Mensuel"} · {price.provider}</strong><span>{price.priceId} · {price.status}</span></div>)}</div> : <EmptyState>Aucun produit ni tarif Stripe n’a encore été publié.</EmptyState>}<p className="admin-field-help">Enregistrez toujours le forfait avant de lancer la synchronisation.</p></div>
     </form> : <EmptyState>Sélectionnez un forfait.</EmptyState>}</section>
   </div>;
 }
@@ -318,20 +347,22 @@ export default function PlatformBillingPage({ currentUser, onLogout }: { current
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [organizations, setOrganizations] = useState<OrganizationRow[]>([]);
   const [plans, setPlans] = useState<PlansPayload | null>(null);
+  const [stripe, setStripe] = useState<StripeConfiguration | null>(null);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const loadDashboard = useCallback(async () => setDashboard(await apiFetch<Dashboard>("/platform/billing/dashboard")), []);
   const loadOrganizations = useCallback(async (query = "") => setOrganizations(await apiFetch<OrganizationRow[]>(`/platform/billing/organizations?q=${encodeURIComponent(query)}`)), []);
-  const loadPlans = useCallback(async () => setPlans(await apiFetch<PlansPayload>("/platform/billing/plans")), []);
+  const loadPlans = useCallback(async () => { const value = await apiFetch<PlansPayload>("/platform/billing/plans"); setPlans(value); return value; }, []);
+  const loadStripe = useCallback(async () => { const value = await apiFetch<StripeConfiguration>("/platform/billing/stripe/configuration"); setStripe(value); return value; }, []);
   const loadUsers = useCallback(async () => setUsers(await apiFetch<UserRow[]>("/platform/billing/users")), []);
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
-    try { await Promise.all([loadDashboard(), loadOrganizations(), loadPlans(), loadUsers()]); }
+    try { await Promise.all([loadDashboard(), loadOrganizations(), loadPlans(), loadStripe(), loadUsers()]); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "L’administration n’est pas accessible."); }
     finally { setLoading(false); }
-  }, [loadDashboard, loadOrganizations, loadPlans, loadUsers]);
+  }, [loadDashboard, loadOrganizations, loadPlans, loadStripe, loadUsers]);
 
   useEffect(() => { void refresh(); }, [refresh]);
   const nav = useMemo(() => [
@@ -351,10 +382,10 @@ export default function PlatformBillingPage({ currentUser, onLogout }: { current
     </aside>
     <main className="admin-main">
       <header className="admin-page-header"><div><p>{copy.eyebrow}</p><h1>{copy.title}</h1><span>{copy.description}</span></div><div className="admin-page-header__actions"><Link className="admin-secondary-button" to="/aujourdhui">Retour à l’application</Link><button className="admin-secondary-button" type="button" onClick={() => void refresh()} disabled={loading}><Icon name="refresh" />Actualiser</button></div></header>
-      {error ? <section className="admin-access-error" role="alert"><h2>Accès indisponible</h2><p>{error}</p><Link to="/aujourdhui">Retourner à l’application</Link></section> : loading || !dashboard || !plans ? <div className="admin-loading">Chargement du pilotage commercial…</div> : <div className="admin-page-content">
+      {error ? <section className="admin-access-error" role="alert"><h2>Accès indisponible</h2><p>{error}</p><Link to="/aujourdhui">Retourner à l’application</Link></section> : loading || !dashboard || !plans || !stripe ? <div className="admin-loading">Chargement du pilotage commercial…</div> : <div className="admin-page-content">
         {section === "overview" ? <Overview dashboard={dashboard} onNavigate={setSection} /> : null}
         {section === "organizations" ? <Organizations rows={organizations} reload={loadOrganizations} /> : null}
-        {section === "plans" ? <Plans payload={plans} reload={loadPlans} /> : null}
+        {section === "plans" ? <Plans payload={plans} stripe={stripe} reload={loadPlans} /> : null}
         {section === "users" ? <Users users={users} /> : null}
         {section === "activity" ? <section className="admin-panel"><header className="admin-panel__header"><div><h2>Journal de la plateforme</h2><p>Les vingt événements les plus récents.</p></div></header><ActivityList items={dashboard.activity} /></section> : null}
       </div>}

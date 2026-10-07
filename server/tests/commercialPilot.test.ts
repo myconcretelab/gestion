@@ -10,6 +10,7 @@ import { claimNextOrganizationJob, enqueueOrganizationJob, runOrganizationJobBat
 import { runTenantTaskAcrossOrganizations } from "../src/modules/system/tenantTasks.js";
 import { assertBillingOwner } from "../src/modules/billing/routes.js";
 import { changePlatformAdministrator, isPlatformAdministrator } from "../src/modules/billing/admin.js";
+import { StripeCatalogSynchronizer } from "../src/modules/billing/stripeCatalog.js";
 
 const suffix = crypto.randomBytes(6).toString("hex");
 const orgA = `org_commercial_a_${suffix}`;
@@ -17,6 +18,57 @@ const orgB = `org_commercial_b_${suffix}`;
 const planId = `plan_commercial_${suffix}`;
 const userA = `user_commercial_a_${suffix}`;
 const userB = `user_commercial_b_${suffix}`;
+const catalogPlanId = `plan_catalog_${suffix}`;
+
+class FakeStripeCatalog {
+  productCreates = 0;
+  priceCreates = 0;
+  productsStore = new Map<string, Stripe.Product>();
+  pricesStore = new Map<string, Stripe.Price>();
+  products: Stripe["products"];
+  prices: Stripe["prices"];
+
+  constructor() {
+    this.products = {
+      create: (async (params: Stripe.ProductCreateParams) => {
+        this.productCreates += 1;
+        const product = { id: `prod_catalog_${this.productCreates}`, object: "product", active: params.active ?? true, livemode: false, name: params.name, description: params.description ?? null, metadata: params.metadata ?? {} } as Stripe.Product;
+        this.productsStore.set(product.id, product);
+        return product;
+      }) as never,
+      retrieve: (async (id: string) => {
+        const product = this.productsStore.get(id);
+        if (!product) throw Object.assign(new Error("missing"), { statusCode: 404 });
+        return product;
+      }) as never,
+      update: (async (id: string, params: Stripe.ProductUpdateParams) => {
+        const current = this.productsStore.get(id)!;
+        const product = { ...current, ...params, id, livemode: false } as Stripe.Product;
+        this.productsStore.set(id, product);
+        return product;
+      }) as never,
+    } as unknown as Stripe["products"];
+    this.prices = {
+      create: (async (params: Stripe.PriceCreateParams) => {
+        this.priceCreates += 1;
+        const price = { id: `price_catalog_${this.priceCreates}`, object: "price", active: params.active ?? true, livemode: false, unit_amount: params.unit_amount ?? null, currency: params.currency, tax_behavior: params.tax_behavior ?? "unspecified", recurring: params.recurring ? { interval: params.recurring.interval } : null, product: params.product } as Stripe.Price;
+        this.pricesStore.set(price.id, price);
+        return price;
+      }) as never,
+      retrieve: (async (id: string) => {
+        const price = this.pricesStore.get(id);
+        if (!price) throw Object.assign(new Error("missing"), { statusCode: 404 });
+        return price;
+      }) as never,
+      update: (async (id: string, params: Stripe.PriceUpdateParams) => {
+        const current = this.pricesStore.get(id)!;
+        const price = { ...current, ...params, id, livemode: false } as Stripe.Price;
+        this.pricesStore.set(id, price);
+        return price;
+      }) as never,
+    } as unknown as Stripe["prices"];
+  }
+}
 
 class FakeProvider implements BillingProvider {
   readonly name = "stripe";
@@ -96,6 +148,50 @@ test("Checkout et portail exigent explicitement un propriétaire", () => {
     () => assertBillingOwner(null),
     (error: { code?: string }) => error.code === "OWNER_REQUIRED",
   );
+});
+
+test("le catalogue publie les produits et remplace un prix Stripe modifié sans doublon", async () => {
+  await systemPrisma.plan.create({
+    data: {
+      id: catalogPlanId,
+      code: `catalog_${suffix}`,
+      name: "Catalogue test",
+      description: "Forfait synchronisé",
+      status: "active",
+      billing_periods: JSON.stringify(["monthly", "annual"]),
+      price_definitions: {
+        create: [
+          { billing_period: "monthly", amount_cents: 2900, currency: "eur", tax_behavior: "inclusive" },
+          { billing_period: "annual", amount_cents: 29000, currency: "eur", tax_behavior: "inclusive" },
+        ],
+      },
+    },
+  });
+  const fake = new FakeStripeCatalog();
+  const synchronizer = new StripeCatalogSynchronizer(fake as unknown as Stripe);
+  const first = await synchronizer.synchronize(catalogPlanId);
+  assert.equal(first.prices.length, 2);
+  assert.equal(fake.productCreates, 1);
+  assert.equal(fake.priceCreates, 2);
+
+  await synchronizer.synchronize(catalogPlanId);
+  assert.equal(fake.productCreates, 1);
+  assert.equal(fake.priceCreates, 2);
+
+  await systemPrisma.planPriceDefinition.update({
+    where: { plan_id_billing_period: { plan_id: catalogPlanId, billing_period: "monthly" } },
+    data: { amount_cents: 3900 },
+  });
+  const previousMonthly = await systemPrisma.billingPrice.findUniqueOrThrow({
+    where: { plan_id_provider_billing_period: { plan_id: catalogPlanId, provider: "stripe", billing_period: "monthly" } },
+  });
+  await synchronizer.synchronize(catalogPlanId);
+  const nextMonthly = await systemPrisma.billingPrice.findUniqueOrThrow({
+    where: { plan_id_provider_billing_period: { plan_id: catalogPlanId, provider: "stripe", billing_period: "monthly" } },
+  });
+  assert.notEqual(nextMonthly.provider_price_id, previousMonthly.provider_price_id);
+  assert.equal(fake.pricesStore.get(previousMonthly.provider_price_id)?.active, false);
+  assert.equal(fake.priceCreates, 3);
 });
 
 test("webhook client Stripe retrouve la bonne organisation sans identifiant navigateur", async () => {
@@ -210,11 +306,15 @@ after(async () => {
   await systemPrisma.usageEvent.deleteMany({ where: { organization_id: { in: [orgA, orgB] } } });
   await systemPrisma.usageCounter.deleteMany({ where: { organization_id: { in: [orgA, orgB] } } });
   await systemPrisma.billingPrice.deleteMany({ where: { plan_id: planId } });
+  await systemPrisma.billingPrice.deleteMany({ where: { plan_id: catalogPlanId } });
+  await systemPrisma.billingProduct.deleteMany({ where: { plan_id: catalogPlanId } });
+  await systemPrisma.planPriceDefinition.deleteMany({ where: { plan_id: catalogPlanId } });
   await systemPrisma.appUser.deleteMany({ where: { organization_id: { in: [orgA, orgB] } } });
   await systemPrisma.membership.deleteMany({ where: { organization_id: { in: [orgA, orgB] } } });
   await systemPrisma.user.deleteMany({ where: { id: { in: [userA, userB] } } });
   await systemPrisma.subscription.deleteMany({ where: { organization_id: { in: [orgA, orgB] } } });
   await systemPrisma.planEntitlement.deleteMany({ where: { plan_id: planId } });
+  await systemPrisma.plan.deleteMany({ where: { id: catalogPlanId } });
   await systemPrisma.plan.deleteMany({ where: { id: planId } });
   await systemPrisma.organization.deleteMany({ where: { id: { in: [orgA, orgB] } } });
 });
