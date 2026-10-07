@@ -1,10 +1,10 @@
 import fs from "node:fs";
-import path from "node:path";
 import { env } from "../config/env.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
 import { telegramMessageChannel } from "./messageChannels/telegram.js";
 import prisma from "../db/prisma.js";
 import type { OptionsInput } from "./contractCalculator.js";
+import { organizationDataPath } from "./organizationFiles.js";
 
 export type TelegramNotificationConfig = {
   enabled: boolean;
@@ -46,10 +46,7 @@ type BookingRequestTelegramPayload = {
   options?: OptionsInput | null;
 };
 
-const SETTINGS_FILE = path.join(
-  env.DATA_DIR,
-  "telegram-notifications-settings.json",
-);
+const settingsFile = () => organizationDataPath("telegram-notifications-settings.json");
 
 const ensureDataDir = () => {
   if (!fs.existsSync(env.DATA_DIR)) {
@@ -149,10 +146,10 @@ export const readTelegramNotificationConfig = (
   const defaults = fallback ?? buildDefaultTelegramNotificationConfig();
   ensureDataDir();
 
-  if (!fs.existsSync(SETTINGS_FILE)) return defaults;
+  if (!fs.existsSync(settingsFile())) return defaults;
 
   try {
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    const raw = fs.readFileSync(settingsFile(), "utf-8");
     if (!raw.trim()) return defaults;
     return normalizeTelegramNotificationConfig(
       JSON.parse(raw) as Partial<TelegramNotificationConfig>,
@@ -167,7 +164,7 @@ export const writeTelegramNotificationConfig = (
   config: TelegramNotificationConfig,
 ) => {
   ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2), "utf-8");
+  fs.writeFileSync(settingsFile(), JSON.stringify(config, null, 2), "utf-8");
 };
 
 export const mergeTelegramNotificationConfig = (

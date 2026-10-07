@@ -24,12 +24,15 @@ model Organization {
   memberships           Membership[]
   runtime_settings      OrganizationRuntimeSetting[]
   jobs                  OrganizationJob[]
+  job_attempts          OrganizationJobAttempt[]
   audit_logs            AuditLog[]
   document_assets       DocumentAsset[]
   subscriptions         Subscription[]
   entitlement_overrides OrganizationEntitlementOverride[]
   usage_counters        UsageCounter[]
+  usage_events          UsageEvent[]
   billing_events        BillingEvent[]
+  task_leases           OrganizationTaskLease[]
 
   @@map("organizations")
 }
@@ -122,10 +125,29 @@ model OrganizationJob {
   completed_at    DateTime?
 
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  attempt_runs OrganizationJobAttempt[]
 
   @@unique([organization_id, idempotency_key], map: "organization_jobs_org_idempotency_key")
   @@index([organization_id, status, run_at], map: "organization_jobs_org_status_run_idx")
   @@map("organization_jobs")
+}
+
+model OrganizationJobAttempt {
+  id              String          @id @default(cuid())
+  organization_id String
+  job_id          String
+  attempt         Int
+  status          String
+  result_json     Json            @default("{}")
+  error_message   String?
+  started_at      DateTime        @default(now())
+  completed_at    DateTime?
+  organization    Organization    @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  job             OrganizationJob @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@unique([job_id, attempt], map: "organization_job_attempts_job_attempt_key")
+  @@index([organization_id, status, started_at], map: "organization_job_attempts_org_status_idx")
+  @@map("organization_job_attempts")
 }
 
 model AuditLog {
@@ -177,6 +199,7 @@ model Plan {
   updatedAt       DateTime          @updatedAt
   entitlements    PlanEntitlement[]
   subscriptions   Subscription[]
+  billing_prices  BillingPrice[]
 
   @@map("plans")
 }
@@ -192,6 +215,24 @@ model PlanEntitlement {
 
   @@unique([plan_id, feature_key], map: "plan_entitlements_plan_feature_key")
   @@map("plan_entitlements")
+}
+
+model BillingPrice {
+  id                  String   @id @default(cuid())
+  plan_id             String
+  provider            String
+  provider_product_id String
+  provider_price_id   String
+  billing_period      String
+  status              String   @default("active")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  plan                Plan     @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_price_id], map: "billing_prices_provider_price_key")
+  @@unique([plan_id, provider, billing_period], map: "billing_prices_plan_provider_period_key")
+  @@index([provider, provider_product_id], map: "billing_prices_provider_product_idx")
+  @@map("billing_prices")
 }
 
 model Subscription {
@@ -218,6 +259,8 @@ model Subscription {
   events                   BillingEvent[]
 
   @@unique([organization_id], map: "subscriptions_organization_key")
+  @@unique([provider, provider_customer_id], map: "subscriptions_provider_customer_key")
+  @@unique([provider, provider_subscription_id], map: "subscriptions_provider_subscription_key")
   @@index([status], map: "subscriptions_status_idx")
   @@map("subscriptions")
 }
@@ -254,6 +297,23 @@ model UsageCounter {
   @@map("usage_counters")
 }
 
+model UsageEvent {
+  id              String       @id @default(cuid())
+  organization_id String
+  metric_key      String
+  period_key      String
+  amount          Int          @default(1)
+  idempotency_key String
+  source          String
+  metadata_json   Json         @default("{}")
+  createdAt       DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, idempotency_key], map: "usage_events_org_idempotency_key")
+  @@index([organization_id, metric_key, period_key], map: "usage_events_org_metric_period_idx")
+  @@map("usage_events")
+}
+
 model BillingEvent {
   id                String        @id @default(cuid())
   organization_id   String
@@ -288,6 +348,37 @@ model PlatformAdministrator {
   user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("platform_administrators")
+}
+
+model PlatformAdministratorEvent {
+  id            String   @id @default(cuid())
+  user_id       String
+  actor_user_id String?
+  action        String
+  reason        String
+  createdAt     DateTime @default(now())
+
+  @@index([user_id, createdAt], map: "platform_admin_events_user_created_idx")
+  @@map("platform_administrator_events")
+}
+
+model OrganizationTaskLease {
+  id               String        @id @default(cuid())
+  organization_id  String
+  task_key          String
+  lease_owner       String?
+  lease_expires_at  DateTime?
+  last_started_at   DateTime?
+  last_succeeded_at DateTime?
+  last_failed_at    DateTime?
+  last_error        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  organization      Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, task_key], map: "organization_task_leases_org_task_key")
+  @@index([task_key, lease_expires_at], map: "organization_task_leases_task_expiry_idx")
+  @@map("organization_task_leases")
 }
 
 model InstallationConfig {

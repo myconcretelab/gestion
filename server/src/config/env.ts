@@ -126,6 +126,19 @@ export const env = {
     String(process.env.PUMP_LOGIN_STRATEGY ?? "simple").trim().toLowerCase() === "multi-step" ? "multi-step" : "simple",
   DEFAULT_ARRHES_RATE: Number(process.env.DEFAULT_ARRHES_RATE ?? 0.2),
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
+  APP_PUBLIC_URL: process.env.APP_PUBLIC_URL ?? process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
+  STRIPE_MODE: String(process.env.STRIPE_MODE ?? "test").trim().toLowerCase(),
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "",
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  STRIPE_PILOT_PRODUCT_ID: process.env.STRIPE_PILOT_PRODUCT_ID ?? "",
+  STRIPE_PILOT_MONTHLY_PRICE_ID: process.env.STRIPE_PILOT_MONTHLY_PRICE_ID ?? "",
+  STRIPE_PILOT_ANNUAL_PRICE_ID: process.env.STRIPE_PILOT_ANNUAL_PRICE_ID ?? "",
+  STRIPE_GRACE_PERIOD_DAYS: parseIntegerEnv(process.env.STRIPE_GRACE_PERIOD_DAYS, 7, 0, 90),
+  ORGANIZATION_JOB_WORKER_ENABLED: parseBooleanEnv(process.env.ORGANIZATION_JOB_WORKER_ENABLED, true),
+  ORGANIZATION_JOB_POLL_MS: parseIntegerEnv(process.env.ORGANIZATION_JOB_POLL_MS, 5000, 500, 300_000),
+  ORGANIZATION_JOB_LEASE_MS: parseIntegerEnv(process.env.ORGANIZATION_JOB_LEASE_MS, 60_000, 5000, 3_600_000),
+  ORGANIZATION_JOB_MAX_ATTEMPTS: parseIntegerEnv(process.env.ORGANIZATION_JOB_MAX_ATTEMPTS, 5, 1, 20),
+  MULTITENANT_AUTOMATION_ENABLED: parseBooleanEnv(process.env.MULTITENANT_AUTOMATION_ENABLED, false),
   REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT ?? "20mb",
   DATA_DIR: process.env.DATA_DIR ?? path.join(process.cwd(), "data"),
   PDF_SUBDIR: process.env.PDF_SUBDIR ?? "pdfs",
@@ -172,6 +185,7 @@ const startupSchema = z.object({
   PORT: z.number().int().min(1).max(65535),
   NODE_ENV: z.enum(["development", "test", "production"]),
   CLIENT_ORIGIN: z.string().url(),
+  APP_PUBLIC_URL: z.string().url(),
   REQUEST_BODY_LIMIT: z.string().regex(/^\d+(?:kb|mb)$/i, "format attendu: 512kb ou 2mb"),
 });
 
@@ -180,6 +194,12 @@ export const validateEnvironment = () => {
   if (!parsed.success) {
     const summary = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
     throw new Error(`Configuration invalide: ${summary}`);
+  }
+  if (env.STRIPE_MODE !== "test") {
+    throw new Error("Configuration invalide: seul STRIPE_MODE=test est autorisé pendant le pilote.");
+  }
+  if (env.STRIPE_SECRET_KEY && !env.STRIPE_SECRET_KEY.startsWith("sk_test_")) {
+    throw new Error("Configuration invalide: une clé Stripe de test est obligatoire pendant le pilote.");
   }
   if (env.NODE_ENV === "production") {
     const origin = new URL(env.CLIENT_ORIGIN);

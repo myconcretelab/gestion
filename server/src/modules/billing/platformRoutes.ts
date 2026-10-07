@@ -6,6 +6,7 @@ import { recordAuditEvent } from "../system/audit.js";
 import { SUBSCRIPTION_STATUSES } from "./policies.js";
 import { getSubscriptionSnapshot } from "./service.js";
 import { isPlatformAdministrator } from "./admin.js";
+import { enqueueOrganizationJob } from "../system/jobs.js";
 
 const router = Router();
 
@@ -67,7 +68,7 @@ router.get("/organizations/:organizationId", async (req, res, next) => {
       return res
         .status(404)
         .json({ error: "Organisation introuvable.", code: "NOT_FOUND" });
-    const [billing, events, overrides] = await Promise.all([
+    const [billing, events, overrides, jobs, plans] = await Promise.all([
       getSubscriptionSnapshot(organization.id),
       systemPrisma.billingEvent.findMany({
         where: { organization_id: organization.id },
@@ -96,8 +97,15 @@ router.get("/organizations/:organizationId", async (req, res, next) => {
         },
         orderBy: { createdAt: "desc" },
       }),
+      systemPrisma.organizationJob.findMany({
+        where: { organization_id: organization.id, type: "billing.reconcile" },
+        include: { attempt_runs: { orderBy: { attempt: "desc" }, take: 1 } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
+      systemPrisma.plan.findMany({ where: { status: { in: ["active", "archived"] } }, select: { code: true, name: true, status: true }, orderBy: { name: "asc" } }),
     ]);
-    res.json({ organization, billing, events, overrides });
+    res.json({ organization, billing, events, overrides, jobs, plans });
   } catch (error) {
     next(error);
   }
@@ -194,13 +202,11 @@ router.post("/organizations/:organizationId/resync", async (req, res, next) => {
         error: "Aucun fournisseur n’est configuré.",
         code: "BILLING_PROVIDER_NOT_CONFIGURED",
       });
-    const job = await systemPrisma.organizationJob.create({
-      data: {
-        organization_id: req.params.organizationId,
-        type: "billing.reconcile",
-        idempotency_key: `billing-reconcile:${subscription.id}:${Date.now()}`,
-        payload_json: JSON.stringify({ subscriptionId: subscription.id }),
-      },
+    const job = await enqueueOrganizationJob({
+      organizationId: req.params.organizationId,
+      type: "billing.reconcile",
+      idempotencyKey: `billing-reconcile:${subscription.id}:${Date.now()}`,
+      payload: { subscriptionId: subscription.id },
     });
     await recordAuditEvent({
       organizationId: req.params.organizationId,

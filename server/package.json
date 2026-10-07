@@ -23,6 +23,9 @@
     "db:migrate:sqlite-to-postgres": "npm run prisma:use:sqlite && node scripts/prisma.mjs generate --schema prisma/schema.sqlite.prisma && npm run prisma:use:postgres && node scripts/prisma.mjs generate --schema prisma/schema.postgres.prisma && tsx scripts/migrate-sqlite-to-postgres.ts --from=sqlite --to=postgres",
     "files:migrate-tenants": "node scripts/migrate-tenant-files.mjs",
     "multitenant:parity": "tsx scripts/multitenant-parity.ts",
+    "staging:pilot": "tsx scripts/staging-pilot.ts",
+    "staging:visual-check": "tsx scripts/visual-staging-pilot.ts",
+    "platform-admin": "tsx scripts/platform-admin.ts",
     "private:import:what-today:icals": "tsx tools/private/what-today/import-what-today-icals.ts",
     "private:import:revenus": "tsx tools/private/legacy-revenues/importLegacyRevenues.ts",
     "cron:ical": "node dist/cli/run-ical-sync-cron.js",
@@ -40,6 +43,7 @@
     "playwright": "^1.48.2",
     "qs": "^6.16.0",
     "read-excel-file": "^9.3.2",
+    "stripe": "^23.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -58,7 +58,7 @@ const backup = () => {
       const copiedDatabase = path.join(dbDir, "database.sqlite");
       fs.copyFileSync(sqlite, copiedDatabase);
       run("sqlite3", [copiedDatabase, [
-        "UPDATE ical_sources SET url = 'redacted://not-exported', is_active = 0;",
+        "UPDATE ical_sources SET url = 'redacted://not-exported/' || rowid, is_active = 0;",
         "UPDATE gites SET ical_export_token = NULL, airbnb_listing_id = NULL;",
         "UPDATE planning_relay_periods SET share_nonce = lower(hex(randomblob(32))), public_code_hash = NULL, public_origin = NULL;",
         "DELETE FROM auth_sessions; DELETE FROM api_tokens; DELETE FROM document_shares; DELETE FROM password_reset_tokens; DELETE FROM security_throttles;",

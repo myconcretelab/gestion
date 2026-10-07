@@ -534,6 +534,8 @@ const App = () => {
       });
       setCurrentAuthUser(payload.user);
       setAuthSession(payload);
+      const config = await apiFetch<PublicInstallationConfig>("/installation/public-config");
+      setInstallationConfig(config);
       setAuthPassword("");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {

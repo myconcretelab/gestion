@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import { env } from "../config/env.js";
+import { organizationDataPath } from "./organizationFiles.js";
 
 export type SmartlifeRegion =
   | "eu"
@@ -68,10 +68,7 @@ type LegacySmartlifeMeterAssignment = Partial<
   }
 >;
 
-const SETTINGS_FILE = path.join(
-  env.DATA_DIR,
-  "smartlife-automation-settings.json",
-);
+const settingsFile = () => organizationDataPath("smartlife-automation-settings.json");
 
 const MAX_OFFSET_MINUTES = 14 * 24 * 60;
 
@@ -450,10 +447,10 @@ export const readSmartlifeAutomationConfig = (
   const defaults = fallback ?? buildDefaultSmartlifeAutomationConfig();
   ensureDataDir();
 
-  if (!fs.existsSync(SETTINGS_FILE)) return defaults;
+  if (!fs.existsSync(settingsFile())) return defaults;
 
   try {
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    const raw = fs.readFileSync(settingsFile(), "utf-8");
     if (!raw.trim()) return defaults;
     return normalizeSmartlifeAutomationConfig(
       JSON.parse(raw) as Partial<SmartlifeAutomationConfig>,
@@ -468,7 +465,7 @@ export const writeSmartlifeAutomationConfig = (
   config: SmartlifeAutomationConfig,
 ) => {
   ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2), "utf-8");
+  fs.writeFileSync(settingsFile(), JSON.stringify(config, null, 2), "utf-8");
 };
 
 export const mergeSmartlifeAutomationConfig = (

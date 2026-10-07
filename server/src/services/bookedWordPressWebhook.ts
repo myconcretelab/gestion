@@ -452,6 +452,8 @@ const drainQueue = async () => {
   await scheduleNextQueueWake();
 };
 
+export const runGitePhotosWordPressWebhookQueueOnce = () => drainQueue();
+
 export const startGitePhotosWordPressWebhookQueue = () => {
   if (queueStarted) return;
   queueStarted = true;

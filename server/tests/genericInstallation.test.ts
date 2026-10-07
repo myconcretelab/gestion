@@ -78,7 +78,7 @@ test("une sauvegarde standard est validée puis restaurée sans secrets", () => 
     assert.equal(spawnSync("sqlite3", [database, "UPDATE business_data SET value='changed';"]).status, 0);
     const restore = spawnSync(process.execPath, ["scripts/installation-data.mjs", "restore", archive, "--apply", "--confirm-replace"], { cwd: serverRoot, env, encoding: "utf8" }); assert.equal(restore.status, 0, restore.stderr || restore.stdout);
     assert.equal(spawnSync("sqlite3", [database, "SELECT value FROM business_data;"], { encoding: "utf8" }).stdout.trim(), "database-original");
-    assert.equal(spawnSync("sqlite3", [database, "SELECT url FROM ical_sources;"], { encoding: "utf8" }).stdout.trim(), "redacted://not-exported");
+    assert.equal(spawnSync("sqlite3", [database, "SELECT url FROM ical_sources;"], { encoding: "utf8" }).stdout.trim(), "redacted://not-exported/1");
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 

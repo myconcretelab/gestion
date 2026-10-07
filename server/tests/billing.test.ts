@@ -5,7 +5,7 @@ import { getTenantPrisma, systemPrisma } from "../src/db/prisma.js";
 import { normalizeModules } from "../src/services/installationConfig.js";
 import { HISTORICAL_ORGANIZATION_ID } from "../src/modules/organizations/context.js";
 import { computeEffectiveFeature, subscriptionCapabilities } from "../src/modules/billing/policies.js";
-import { assertCreationQuota, assertSubscriptionWriteAllowed, consumeMeteredUsage, getSubscriptionSnapshot, processVerifiedBillingEvent } from "../src/modules/billing/service.js";
+import { assertCreationQuota, assertSubscriptionWriteAllowed, consumeMeteredUsage, getSubscriptionSnapshot, processVerifiedBillingEvent, usagePeriodKey } from "../src/modules/billing/service.js";
 import { isPlatformAdministrator } from "../src/modules/billing/admin.js";
 
 const suffix = crypto.randomBytes(6).toString("hex");
@@ -75,7 +75,7 @@ test("droits, déclassement, dérogation expirée, isolation et quotas concurren
   assert.equal((await getSubscriptionSnapshot(orgA)).features.reservations.effective, true, "la dérogation expirée est ignorée");
 
   await systemPrisma.subscription.update({ where: { organization_id: orgA }, data: { plan_id: planHigh } });
-  await systemPrisma.usageCounter.create({ data: { organization_id: orgA, metric_key: "sms_sent", period_key: "downgrade", value: 2, source: "metered" } });
+  await systemPrisma.usageCounter.create({ data: { organization_id: orgA, metric_key: "sms_sent", period_key: usagePeriodKey(), value: 2, source: "metered" } });
   await systemPrisma.subscription.update({ where: { organization_id: orgA }, data: { plan_id: planLow } });
   assert.equal(await systemPrisma.expenseCategory.count({ where: { id: `category_${suffix}` } }), 1, "aucune donnée métier ne varie lors des changements de forfait");
   assert.equal((await getSubscriptionSnapshot(orgA)).limits.find((item) => item.metricKey === "sms_sent")?.exceeded, true);

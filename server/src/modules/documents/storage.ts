@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { getTenantPrisma } from "../../db/prisma.js";
 
 export type StoredDocument = {
   storageKey: string;
@@ -69,3 +70,20 @@ export class LocalDocumentStorage implements DocumentStorage {
     return fs.readFile(path.join(this.legacyRoot, safePart(legacyPath)));
   }
 }
+
+export const registerGeneratedDocumentAsset = async (input: {
+  organizationId: string;
+  storageKey: string;
+  absolutePath: string;
+  legacyPath?: string;
+  contentType?: string;
+}) => {
+  const contents = await fs.readFile(input.absolutePath);
+  const checksum = crypto.createHash("sha256").update(contents).digest("hex");
+  const db = getTenantPrisma(input.organizationId);
+  return db.documentAsset.upsert({
+    where: { organization_id_storage_key: { organization_id: input.organizationId, storage_key: input.storageKey } },
+    update: { legacy_path: input.legacyPath, content_type: input.contentType ?? "application/pdf", size_bytes: contents.byteLength, checksum_sha256: checksum, status: "active", deleted_at: null },
+    create: { organization_id: input.organizationId, storage_key: input.storageKey, legacy_path: input.legacyPath, content_type: input.contentType ?? "application/pdf", size_bytes: contents.byteLength, checksum_sha256: checksum, status: "active" },
+  });
+};

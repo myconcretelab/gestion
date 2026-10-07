@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import path from "node:path";
 import { env } from "../config/env.js";
+import { organizationDataPath } from "./organizationFiles.js";
 
 export type DailyReservationEmailConfig = {
   enabled: boolean;
@@ -15,10 +15,7 @@ export type DailyReservationEmailRecipientConfig = {
   send_if_empty: boolean;
 };
 
-const SETTINGS_FILE = path.join(
-  env.DATA_DIR,
-  "daily-reservation-email-settings.json",
-);
+const settingsFile = () => organizationDataPath("daily-reservation-email-settings.json");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
@@ -148,10 +145,10 @@ export const readDailyReservationEmailConfig = (
   const defaults = fallback ?? buildDefaultDailyReservationEmailConfig();
   ensureDataDir();
 
-  if (!fs.existsSync(SETTINGS_FILE)) return defaults;
+  if (!fs.existsSync(settingsFile())) return defaults;
 
   try {
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    const raw = fs.readFileSync(settingsFile(), "utf-8");
     if (!raw.trim()) return defaults;
     return normalizeDailyReservationEmailConfig(
       JSON.parse(raw) as Partial<DailyReservationEmailConfig>,
@@ -166,7 +163,7 @@ export const writeDailyReservationEmailConfig = (
   config: DailyReservationEmailConfig,
 ) => {
   ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2), "utf-8");
+  fs.writeFileSync(settingsFile(), JSON.stringify(config, null, 2), "utf-8");
 };
 
 export const mergeDailyReservationEmailConfig = (

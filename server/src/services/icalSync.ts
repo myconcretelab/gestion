@@ -1214,6 +1214,7 @@ type ScheduledIcalSyncRun = {
 };
 
 export const runScheduledIcalSync = async (options?: { source?: "ical-cron" }): Promise<ScheduledIcalSyncRun> => {
+  cronConfig = readIcalCronConfig(buildDefaultIcalCronConfig());
   const source = options?.source ?? "ical-cron";
 
   if (!cronConfig.enabled) {

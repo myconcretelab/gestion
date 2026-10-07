@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
+import { organizationDataPath } from "./organizationFiles.js";
 
 export type PumpCronConfig = {
   enabled: boolean;
@@ -10,7 +11,7 @@ export type PumpCronConfig = {
   run_on_start: boolean;
 };
 
-const SETTINGS_FILE = path.join(env.DATA_DIR, "pump-cron-settings.json");
+const settingsFile = () => organizationDataPath("pump-cron-settings.json");
 
 const clampInteger = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
@@ -57,10 +58,10 @@ export const readPumpCronConfig = (fallback?: PumpCronConfig): PumpCronConfig =>
   const defaults = fallback ?? buildDefaultPumpCronConfig();
   ensureDataDir();
 
-  if (!fs.existsSync(SETTINGS_FILE)) return defaults;
+  if (!fs.existsSync(settingsFile())) return defaults;
 
   try {
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    const raw = fs.readFileSync(settingsFile(), "utf-8");
     if (!raw.trim()) return defaults;
     const parsed = JSON.parse(raw) as Partial<PumpCronConfig>;
     return normalizeConfig(parsed, defaults);
@@ -71,7 +72,7 @@ export const readPumpCronConfig = (fallback?: PumpCronConfig): PumpCronConfig =>
 
 export const writePumpCronConfig = (config: PumpCronConfig) => {
   ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2), "utf-8");
+  fs.writeFileSync(settingsFile(), JSON.stringify(config, null, 2), "utf-8");
 };
 
 export const mergePumpCronConfig = (current: PumpCronConfig, patch: Partial<PumpCronConfig>) =>

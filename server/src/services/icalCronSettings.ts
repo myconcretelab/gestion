@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
+import { organizationDataPath } from "./organizationFiles.js";
 
 export type IcalCronConfig = {
   enabled: boolean;
@@ -8,7 +9,7 @@ export type IcalCronConfig = {
   auto_run_pump_for_new_airbnb_ical: boolean;
 };
 
-const SETTINGS_FILE = path.join(env.DATA_DIR, "ical-cron-settings.json");
+const settingsFile = () => organizationDataPath("ical-cron-settings.json");
 
 const toBoolean = (value: unknown, fallback: boolean) => {
   if (typeof value === "boolean") return value;
@@ -53,10 +54,10 @@ export const readIcalCronConfig = (fallback?: IcalCronConfig): IcalCronConfig =>
   const defaults = fallback ?? buildDefaultIcalCronConfig();
   ensureDataDir();
 
-  if (!fs.existsSync(SETTINGS_FILE)) return defaults;
+  if (!fs.existsSync(settingsFile())) return defaults;
 
   try {
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    const raw = fs.readFileSync(settingsFile(), "utf-8");
     if (!raw.trim()) return defaults;
     const parsed = JSON.parse(raw) as IcalCronConfigInput;
     return normalizeIcalCronConfig(parsed, defaults);
@@ -67,7 +68,7 @@ export const readIcalCronConfig = (fallback?: IcalCronConfig): IcalCronConfig =>
 
 export const writeIcalCronConfig = (config: IcalCronConfig) => {
   ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2), "utf-8");
+  fs.writeFileSync(settingsFile(), JSON.stringify(config, null, 2), "utf-8");
 };
 
 export const mergeIcalCronConfig = (current: IcalCronConfig, patch: Partial<IcalCronConfig>) =>

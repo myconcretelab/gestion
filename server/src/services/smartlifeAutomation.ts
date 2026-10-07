@@ -30,6 +30,8 @@ import {
 } from "./smartlifeClient.js";
 import { trackSmartlifeEnergyForAutomationEvent } from "./smartlifeEnergyTracking.js";
 import { recordSmartlifeMonthlyEnergySnapshots } from "./smartlifeMonthlyEnergy.js";
+import { assertCreationQuota, recordUsageEvent } from "../modules/billing/service.js";
+import { getOrganizationId } from "./organizationContext.js";
 
 const CRON_INTERVAL_MS = 60 * 1000;
 const EXECUTION_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -728,6 +730,7 @@ export const runSmartlifeAutomation = async (options?: {
   triggered_by?: "manual" | "scheduler" | "startup" | "http";
   now?: Date;
 }): Promise<SmartlifeAutomationRunSummary> => {
+  cronConfig = readSmartlifeAutomationConfig(buildDefaultSmartlifeAutomationConfig());
   if (activeRunPromise) {
     // eslint-disable-next-line no-console
     console.info(
@@ -885,11 +888,13 @@ export const runSmartlifeAutomation = async (options?: {
 
         try {
           if (isSmartlifeDeviceCommandAction(event.action)) {
+            await assertCreationQuota(getOrganizationId(), "automations_executed");
             await sendSmartlifeCommand(cronConfig, {
               device_id: event.device_id,
               command_code: event.command_code,
               command_value: event.command_value,
             });
+            await recordUsageEvent({ organizationId: getOrganizationId(), metricKey: "automations_executed", idempotencyKey: `smartlife:${event.key}`, source: "smartlife_automation", metadata: { action: event.action } });
           }
 
           const executedAt = new Date().toISOString();

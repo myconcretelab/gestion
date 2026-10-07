@@ -183,6 +183,12 @@ export const runPumpCronImport = async (importSource: PumpImportSource = "pump-c
   return activeImportPromise;
 };
 
+export const runConfiguredPumpCronImport = async () => {
+  cronConfig = readPumpCronConfig(buildDefaultPumpCronConfig());
+  if (!cronConfig.enabled) return { skipped: true as const, reason: "disabled" as const };
+  return runPumpCronImport();
+};
+
 export const startPumpCron = () => {
   applyCronConfig(cronConfig);
   if (env.PUMP_IMPORT_CRON_SCHEDULER === "external") {

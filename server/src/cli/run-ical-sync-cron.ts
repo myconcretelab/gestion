@@ -1,18 +1,17 @@
 import prisma from "../db/prisma.js";
 import { runScheduledIcalSync } from "../services/icalSync.js";
+import { runTenantTaskAcrossOrganizations } from "../modules/system/tenantTasks.js";
 
 const main = async () => {
-  const outcome = await runScheduledIcalSync();
-
-  if (outcome.status === "success") {
-    const result = outcome.result;
-    console.log(
-      `iCal cron OK: ajoutees=${result?.created_count ?? 0}, mises_a_jour=${result?.updated_count ?? 0}, ignorees=${result?.skipped_count ?? 0}`
-    );
-    return;
-  }
-
-  console.log(`iCal cron ignore: ${outcome.status}`);
+  const outcomes = await runTenantTaskAcrossOrganizations({
+    taskKey: "automation.ical.external",
+    moduleKeys: ["ical"],
+    leaseMs: 60 * 60_000,
+    handler: async () => runScheduledIcalSync(),
+  });
+  const succeeded = outcomes.filter((outcome) => outcome.status === "succeeded").length;
+  const failed = outcomes.filter((outcome) => outcome.status === "failed").length;
+  console.log(`iCal cron multi-tenant: organisations_ok=${succeeded}, organisations_erreur=${failed}, total=${outcomes.length}`);
 };
 
 main()

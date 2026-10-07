@@ -5,6 +5,8 @@ import { buildPlanningRelayShortCode } from "./planningRelayShare.js";
 import { encodeJsonField, fromJsonString } from "../utils/jsonFields.js";
 import { sendMessage } from "./messageChannels/index.js";
 import { readTelegramNotificationConfig } from "./telegramNotifications.js";
+import { assertCreationQuota, recordUsageEvent } from "../modules/billing/service.js";
+import { getOrganizationId } from "./organizationContext.js";
 
 const PARIS_TIME_ZONE = "Europe/Paris";
 
@@ -697,8 +699,10 @@ export const sendPlanningRelayProgramSms = async (period: {
     data: { sms_last_attempt_for_date: targetIsoDate },
   });
   const results = [];
-  for (const message of messages) {
+  for (const [index, message] of messages.entries()) {
+    await assertCreationQuota(getOrganizationId(), "sms_sent");
     results.push(await sendMessage("sms", { recipients: [recipient], message }));
+    await recordUsageEvent({ organizationId: getOrganizationId(), metricKey: "sms_sent", idempotencyKey: `planning-relay:${period.id}:${targetIsoDate}:${index}`, source: "planning_relay_sms" });
   }
   await prisma.planningRelayPeriod.update({
     where: { id: period.id },

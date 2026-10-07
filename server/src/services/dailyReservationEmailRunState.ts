@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
+import { organizationDataPath } from "./organizationFiles.js";
 
-const STATE_FILE = path.join(env.DATA_DIR, "daily-reservation-email-state.json");
+const stateFile = () => organizationDataPath("daily-reservation-email-state.json");
 
 export type DailyReservationEmailRunStatus =
   | "idle"
@@ -162,12 +163,12 @@ export const readDailyReservationEmailRunState =
   (): PersistedDailyReservationEmailRunState => {
     ensureDataDir();
 
-    if (!fs.existsSync(STATE_FILE)) {
+    if (!fs.existsSync(stateFile())) {
       return buildDefaultDailyReservationEmailRunState();
     }
 
     try {
-      const raw = fs.readFileSync(STATE_FILE, "utf-8");
+      const raw = fs.readFileSync(stateFile(), "utf-8");
       if (!raw.trim()) return buildDefaultDailyReservationEmailRunState();
       const parsed = JSON.parse(raw) as Partial<PersistedDailyReservationEmailRunState>;
       return {
@@ -190,7 +191,7 @@ export const writeDailyReservationEmailRunState = (
   state: PersistedDailyReservationEmailRunState,
 ) => {
   ensureDataDir();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+  fs.writeFileSync(stateFile(), JSON.stringify(state, null, 2), "utf-8");
 };
 
 export const updateDailyReservationEmailRunState = (

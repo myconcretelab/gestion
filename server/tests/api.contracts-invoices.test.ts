@@ -42,6 +42,63 @@ const restoreEnvVar = (key: string, value: string | undefined) => {
   else process.env[key] = value;
 };
 
+const cleanupGeneratedTestArtifacts = async (storageKeys: string[], idempotencyKeys: string[]) => {
+  const { systemPrisma } = await import("../src/db/prisma.ts");
+  const { HISTORICAL_ORGANIZATION_ID } = await import("../src/services/organizationContext.ts");
+  const events = await systemPrisma.usageEvent.findMany({
+    where: {
+      organization_id: HISTORICAL_ORGANIZATION_ID,
+      idempotency_key: { in: idempotencyKeys },
+    },
+    select: { metric_key: true, period_key: true },
+  });
+
+  await systemPrisma.$transaction([
+    systemPrisma.documentAsset.deleteMany({
+      where: {
+        organization_id: HISTORICAL_ORGANIZATION_ID,
+        storage_key: { in: storageKeys },
+      },
+    }),
+    systemPrisma.usageEvent.deleteMany({
+      where: {
+        organization_id: HISTORICAL_ORGANIZATION_ID,
+        idempotency_key: { in: idempotencyKeys },
+      },
+    }),
+  ]);
+
+  for (const event of events) {
+    const aggregate = await systemPrisma.usageEvent.aggregate({
+      where: {
+        organization_id: HISTORICAL_ORGANIZATION_ID,
+        metric_key: event.metric_key,
+        period_key: event.period_key,
+      },
+      _sum: { amount: true },
+    });
+    const value = aggregate._sum.amount ?? 0;
+    if (value === 0) {
+      await systemPrisma.usageCounter.deleteMany({
+        where: {
+          organization_id: HISTORICAL_ORGANIZATION_ID,
+          metric_key: event.metric_key,
+          period_key: event.period_key,
+        },
+      });
+    } else {
+      await systemPrisma.usageCounter.updateMany({
+        where: {
+          organization_id: HISTORICAL_ORGANIZATION_ID,
+          metric_key: event.metric_key,
+          period_key: event.period_key,
+        },
+        data: { value },
+      });
+    }
+  }
+};
+
 const getRouteHandler = (router: any, method: "get" | "post" | "put" | "patch", routePath: string) => {
   const layer = router.stack.find(
     (item: any) => item.route?.path === routePath && item.route?.methods?.[method]
@@ -351,6 +408,11 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
     restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
 
+    await cleanupGeneratedTestArtifacts(
+      ["contracts/c1.pdf", "invoices/f1.pdf"],
+      ["contract:c1:generated", "invoice:f1:generated"]
+    );
+
     await rm(tempDir, { recursive: true, force: true });
   }
 });
@@ -463,6 +525,10 @@ test("API contrats initialise la date et le mode quand les arrhes sont deja recu
     restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
     restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
     restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
+    await cleanupGeneratedTestArtifacts(
+      ["contracts/c1.pdf"],
+      ["contract:c1:generated"]
+    );
     await rm(tempDir, { recursive: true, force: true });
   }
 });
@@ -598,6 +664,11 @@ test("creation facture complete une reservation existante plutot que d'en creer 
     restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
     restoreEnvVar("BASIC_AUTH_PASSWORD", envBackup.BASIC_AUTH_PASSWORD);
 
+    await cleanupGeneratedTestArtifacts(
+      ["invoices/f-overlap.pdf"],
+      ["invoice:f-overlap:generated"]
+    );
+
     await rm(tempDir, { recursive: true, force: true });
   }
 });
@@ -684,6 +755,10 @@ test("creation facture regroupe plusieurs reservations et fige leurs montants", 
     prisma.facture.create = original.factureCreate;
     restoreEnvVar("DATA_DIR", envBackup.DATA_DIR);
     restoreEnvVar("SKIP_PDF_GENERATION", envBackup.SKIP_PDF_GENERATION);
+    await cleanupGeneratedTestArtifacts(
+      ["invoices/invoice-multi.pdf"],
+      ["invoice:invoice-multi:generated"]
+    );
     await rm(tempDir, { recursive: true, force: true });
   }
 });

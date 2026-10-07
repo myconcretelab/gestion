@@ -20,8 +20,19 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settings    OrganizationSettings?
-  memberships Membership[]
+  settings              OrganizationSettings?
+  memberships           Membership[]
+  runtime_settings      OrganizationRuntimeSetting[]
+  jobs                  OrganizationJob[]
+  job_attempts          OrganizationJobAttempt[]
+  audit_logs            AuditLog[]
+  document_assets       DocumentAsset[]
+  subscriptions         Subscription[]
+  entitlement_overrides OrganizationEntitlementOverride[]
+  usage_counters        UsageCounter[]
+  usage_events          UsageEvent[]
+  billing_events        BillingEvent[]
+  task_leases           OrganizationTaskLease[]
 
   @@map("organizations")
 }
@@ -37,8 +48,9 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  memberships Membership[]
-  profiles    AppUser[]
+  memberships            Membership[]
+  profiles               AppUser[]
+  platform_administrator PlatformAdministrator?
 
   @@map("users")
 }
@@ -79,6 +91,294 @@ model OrganizationSettings {
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
   @@map("organization_settings")
+}
+
+model OrganizationRuntimeSetting {
+  id              String   @id @default(cuid())
+  organization_id String
+  key             String
+  version         Int      @default(1)
+  value_json      Json     @default("{}")
+  is_secret       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, key], map: "organization_runtime_settings_org_key")
+  @@map("organization_runtime_settings")
+}
+
+model OrganizationJob {
+  id              String    @id @default(cuid())
+  organization_id String
+  type            String
+  payload_json    Json      @default("{}")
+  status          String    @default("queued")
+  attempts        Int       @default(0)
+  run_at          DateTime  @default(now())
+  locked_at       DateTime?
+  lock_owner      String?
+  last_error      String?
+  idempotency_key String
+  createdAt       DateTime  @default(now())
+  completed_at    DateTime?
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  attempt_runs OrganizationJobAttempt[]
+
+  @@unique([organization_id, idempotency_key], map: "organization_jobs_org_idempotency_key")
+  @@index([organization_id, status, run_at], map: "organization_jobs_org_status_run_idx")
+  @@map("organization_jobs")
+}
+
+model OrganizationJobAttempt {
+  id              String          @id @default(cuid())
+  organization_id String
+  job_id          String
+  attempt         Int
+  status          String
+  result_json     Json            @default("{}")
+  error_message   String?
+  started_at      DateTime        @default(now())
+  completed_at    DateTime?
+  organization    Organization    @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  job             OrganizationJob @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@unique([job_id, attempt], map: "organization_job_attempts_job_attempt_key")
+  @@index([organization_id, status, started_at], map: "organization_job_attempts_org_status_idx")
+  @@map("organization_job_attempts")
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  organization_id String
+  user_id         String?
+  request_id      String?
+  action          String
+  resource_type   String
+  resource_id     String?
+  metadata_json   Json     @default("{}")
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id, createdAt], map: "audit_logs_org_created_idx")
+  @@index([organization_id, resource_type, resource_id], map: "audit_logs_org_resource_idx")
+  @@map("audit_logs")
+}
+
+model DocumentAsset {
+  id              String    @id @default(cuid())
+  organization_id String
+  storage_key     String
+  legacy_path     String?
+  content_type    String
+  size_bytes      BigInt
+  checksum_sha256 String
+  status          String    @default("active")
+  createdAt       DateTime  @default(now())
+  deleted_at      DateTime?
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, storage_key], map: "document_assets_org_storage_key")
+  @@index([organization_id, status], map: "document_assets_org_status_idx")
+  @@map("document_assets")
+}
+
+model Plan {
+  id              String            @id @default(cuid())
+  code            String            @unique
+  name            String
+  description     String            @default("")
+  billing_periods Json              @default("[]")
+  status          String            @default("active")
+  public_metadata Json              @default("{}")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  entitlements    PlanEntitlement[]
+  subscriptions   Subscription[]
+  billing_prices  BillingPrice[]
+
+  @@map("plans")
+}
+
+model PlanEntitlement {
+  id            String   @id @default(cuid())
+  plan_id       String
+  feature_key   String
+  value_boolean Boolean?
+  limit_value   Int?
+  limit_type    String   @default("hard")
+  plan          Plan     @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+
+  @@unique([plan_id, feature_key], map: "plan_entitlements_plan_feature_key")
+  @@map("plan_entitlements")
+}
+
+model BillingPrice {
+  id                  String   @id @default(cuid())
+  plan_id             String
+  provider            String
+  provider_product_id String
+  provider_price_id   String
+  billing_period      String
+  status              String   @default("active")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  plan                Plan     @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_price_id], map: "billing_prices_provider_price_key")
+  @@unique([plan_id, provider, billing_period], map: "billing_prices_plan_provider_period_key")
+  @@index([provider, provider_product_id], map: "billing_prices_provider_product_idx")
+  @@map("billing_prices")
+}
+
+model Subscription {
+  id                       String         @id @default(cuid())
+  organization_id          String
+  plan_id                  String
+  status                   String         @default("active")
+  trial_start              DateTime?
+  trial_end                DateTime?
+  current_period_start     DateTime?
+  current_period_end       DateTime?
+  cancel_at_period_end     Boolean        @default(false)
+  cancelled_at             DateTime?
+  grace_period_end         DateTime?
+  provider                 String?
+  provider_customer_id     String?
+  provider_subscription_id String?
+  sync_version             Int            @default(0)
+  last_synced_at           DateTime?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  organization             Organization   @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  plan                     Plan           @relation(fields: [plan_id], references: [id], onDelete: Restrict)
+  events                   BillingEvent[]
+
+  @@unique([organization_id], map: "subscriptions_organization_key")
+  @@unique([provider, provider_customer_id], map: "subscriptions_provider_customer_key")
+  @@unique([provider, provider_subscription_id], map: "subscriptions_provider_subscription_key")
+  @@index([status], map: "subscriptions_status_idx")
+  @@map("subscriptions")
+}
+
+model OrganizationEntitlementOverride {
+  id              String       @id @default(cuid())
+  organization_id String
+  feature_key     String
+  value_boolean   Boolean?
+  limit_value     Int?
+  reason          String
+  expires_at      DateTime?
+  author_user_id  String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id, feature_key, expires_at], map: "entitlement_overrides_lookup_idx")
+  @@map("organization_entitlement_overrides")
+}
+
+model UsageCounter {
+  id              String       @id @default(cuid())
+  organization_id String
+  metric_key      String
+  period_key      String
+  value           Int          @default(0)
+  source          String       @default("computed")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, metric_key, period_key], map: "usage_counters_org_metric_period_key")
+  @@map("usage_counters")
+}
+
+model UsageEvent {
+  id              String       @id @default(cuid())
+  organization_id String
+  metric_key      String
+  period_key      String
+  amount          Int          @default(1)
+  idempotency_key String
+  source          String
+  metadata_json   Json         @default("{}")
+  createdAt       DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, idempotency_key], map: "usage_events_org_idempotency_key")
+  @@index([organization_id, metric_key, period_key], map: "usage_events_org_metric_period_idx")
+  @@map("usage_events")
+}
+
+model BillingEvent {
+  id                String        @id @default(cuid())
+  organization_id   String
+  subscription_id   String?
+  provider          String
+  provider_event_id String
+  type              String
+  payload_reference String?
+  payload_json      Json          @default("{}")
+  idempotency_key   String
+  status            String        @default("received")
+  result            String?
+  error_message     String?
+  received_at       DateTime      @default(now())
+  processed_at      DateTime?
+  createdAt         DateTime      @default(now())
+  organization      Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  subscription      Subscription? @relation(fields: [subscription_id], references: [id], onDelete: SetNull)
+
+  @@unique([provider, provider_event_id], map: "billing_events_provider_event_key")
+  @@unique([provider, idempotency_key], map: "billing_events_provider_idempotency_key")
+  @@index([organization_id, received_at], map: "billing_events_org_received_idx")
+  @@map("billing_events")
+}
+
+model PlatformAdministrator {
+  user_id   String   @id
+  role      String   @default("billing_admin")
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("platform_administrators")
+}
+
+model PlatformAdministratorEvent {
+  id            String   @id @default(cuid())
+  user_id       String
+  actor_user_id String?
+  action        String
+  reason        String
+  createdAt     DateTime @default(now())
+
+  @@index([user_id, createdAt], map: "platform_admin_events_user_created_idx")
+  @@map("platform_administrator_events")
+}
+
+model OrganizationTaskLease {
+  id               String        @id @default(cuid())
+  organization_id  String
+  task_key          String
+  lease_owner       String?
+  lease_expires_at  DateTime?
+  last_started_at   DateTime?
+  last_succeeded_at DateTime?
+  last_failed_at    DateTime?
+  last_error        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  organization      Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, task_key], map: "organization_task_leases_org_task_key")
+  @@index([task_key, lease_expires_at], map: "organization_task_leases_task_expiry_idx")
+  @@map("organization_task_leases")
 }
 
 model InstallationConfig {

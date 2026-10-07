@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
+import { organizationDataPath } from "./organizationFiles.js";
 
-const STATE_FILE = path.join(env.DATA_DIR, "ical-cron-state.json");
-const LOCK_FILE = path.join(env.DATA_DIR, "ical-cron.lock");
+const stateFile = () => organizationDataPath("ical-cron-state.json");
+const lockFile = () => organizationDataPath("ical-cron.lock");
 
 export type IcalCronRunStatus = "idle" | "running" | "success" | "error";
 
@@ -61,12 +62,12 @@ export const buildDefaultIcalCronRunState = (): PersistedIcalCronRunState => ({
 export const readIcalCronRunState = (): PersistedIcalCronRunState => {
   ensureDataDir();
 
-  if (!fs.existsSync(STATE_FILE)) {
+  if (!fs.existsSync(stateFile())) {
     return buildDefaultIcalCronRunState();
   }
 
   try {
-    const raw = fs.readFileSync(STATE_FILE, "utf-8");
+    const raw = fs.readFileSync(stateFile(), "utf-8");
     if (!raw.trim()) return buildDefaultIcalCronRunState();
     const parsed = JSON.parse(raw) as Partial<PersistedIcalCronRunState>;
     return {
@@ -84,7 +85,7 @@ export const readIcalCronRunState = (): PersistedIcalCronRunState => {
 
 export const writeIcalCronRunState = (state: PersistedIcalCronRunState) => {
   ensureDataDir();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+  fs.writeFileSync(stateFile(), JSON.stringify(state, null, 2), "utf-8");
 };
 
 export const updateIcalCronRunState = (patch: Partial<PersistedIcalCronRunState>) => {
@@ -104,21 +105,21 @@ export const updateIcalCronRunState = (patch: Partial<PersistedIcalCronRunState>
 
 const readLock = (): IcalCronLock | null => {
   ensureDataDir();
-  if (!fs.existsSync(LOCK_FILE)) return null;
+  if (!fs.existsSync(lockFile())) return null;
 
   try {
-    const raw = fs.readFileSync(LOCK_FILE, "utf-8");
+    const raw = fs.readFileSync(lockFile(), "utf-8");
     const parsed = JSON.parse(raw) as Partial<IcalCronLock>;
     const pid = Number(parsed.pid);
     const startedAt = parseIsoDateTime(parsed.started_at);
     if (!Number.isInteger(pid) || pid <= 0 || !startedAt) {
-      fs.unlinkSync(LOCK_FILE);
+      fs.unlinkSync(lockFile());
       return null;
     }
     return { pid, started_at: startedAt };
   } catch {
     try {
-      fs.unlinkSync(LOCK_FILE);
+      fs.unlinkSync(lockFile());
     } catch {
       // Ignore stale lock cleanup failures.
     }
@@ -141,7 +142,7 @@ export const acquireIcalCronLock = () => {
   if (existing) {
     if (isProcessRunning(existing.pid)) return false;
     try {
-      fs.unlinkSync(LOCK_FILE);
+      fs.unlinkSync(lockFile());
     } catch {
       return false;
     }
@@ -153,7 +154,7 @@ export const acquireIcalCronLock = () => {
   };
 
   try {
-    fs.writeFileSync(LOCK_FILE, JSON.stringify(payload, null, 2), { encoding: "utf-8", flag: "wx" });
+    fs.writeFileSync(lockFile(), JSON.stringify(payload, null, 2), { encoding: "utf-8", flag: "wx" });
     return true;
   } catch (error: any) {
     if (error?.code === "EEXIST") return false;
@@ -163,7 +164,7 @@ export const acquireIcalCronLock = () => {
 
 export const releaseIcalCronLock = () => {
   try {
-    fs.unlinkSync(LOCK_FILE);
+    fs.unlinkSync(lockFile());
   } catch (error: any) {
     if (error?.code !== "ENOENT") {
       throw error;

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
 import { resolveDataDir } from "../utils/paths.js";
+import { organizationDataPath } from "./organizationFiles.js";
 import {
   DEFAULT_PUMP_AUTOMATION_SOURCE_TYPE,
   getPumpAutomationSourceDefinition,
@@ -63,7 +64,7 @@ export const getPumpStorageStateId = (config: Pick<PumpAutomationConfig, "baseUr
   return `${sanitizeSegment(hostname, "site")}__${sanitizeSegment(config.username, "anonymous")}`;
 };
 
-const PUMP_CONFIG_FILE = path.join(resolveDataDir(), "pump-config.json");
+const pumpConfigFile = () => organizationDataPath("pump-config.json");
 const LEGACY_CONFIG_CANDIDATES = [
   path.join(process.cwd(), "..", "pump", "data", "configs", "last.json"),
 ];
@@ -320,9 +321,9 @@ export const readPumpAutomationConfig = (fallback?: PumpAutomationConfig): PumpA
   const defaults = fallback ?? buildDefaultPumpAutomationConfig();
   ensureDataDir();
 
-  if (fs.existsSync(PUMP_CONFIG_FILE)) {
+  if (fs.existsSync(pumpConfigFile())) {
     try {
-      return readConfigFile(PUMP_CONFIG_FILE, defaults);
+      return readConfigFile(pumpConfigFile(), defaults);
     } catch {
       return defaults;
     }
@@ -333,7 +334,7 @@ export const readPumpAutomationConfig = (fallback?: PumpAutomationConfig): PumpA
 
 export const writePumpAutomationConfig = (config: PumpAutomationConfig) => {
   ensureDataDir();
-  fs.writeFileSync(PUMP_CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+  fs.writeFileSync(pumpConfigFile(), JSON.stringify(config, null, 2), "utf-8");
 };
 
-export const getPumpAutomationConfigPath = () => PUMP_CONFIG_FILE;
+export const getPumpAutomationConfigPath = () => pumpConfigFile();

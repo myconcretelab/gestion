@@ -17,6 +17,9 @@ import { SmtpConfigurationError, SmtpDeliveryError } from "../services/mailer.js
 import { toNumber, round2 } from "../utils/money.js";
 import { getPdfPaths } from "../utils/paths.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
+import { recordUsageEvent } from "../modules/billing/service.js";
+import { getOrganizationId } from "../services/organizationContext.js";
+import { registerGeneratedDocumentAsset } from "../modules/documents/storage.js";
 import {
   addDays,
   buildDocumentListWhere,
@@ -684,6 +687,8 @@ router.post("/", async (req, res, next) => {
       totals: invoiceTotals,
       outputPath: pdfAbsolutePath,
     });
+    await registerGeneratedDocumentAsset({ organizationId: getOrganizationId(), storageKey: `invoices/${contrat.id}.pdf`, absolutePath: pdfAbsolutePath, legacyPath: pdfRelativePath });
+    await recordUsageEvent({ organizationId: getOrganizationId(), metricKey: "documents_generated", idempotencyKey: `invoice:${contrat.id}:generated`, source: "invoice_pdf", metadata: { documentType: "invoice" } });
 
     res.status(201).json(hydrateInvoice(contrat));
   } catch (err) {

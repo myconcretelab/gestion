@@ -10,8 +10,8 @@ const TABLES = [
   "reservation_placeholders", "planning_relay_periods", "planning_relay_workers", "intervenant_hour_entries",
   "user_interventions", "intervenant_expenses", "planning_relay_assignments", "reservations", "gite_season_rates",
   "booking_requests", "gite_monthly_energy_readings",
-  "organization_runtime_settings", "organization_jobs", "audit_logs", "document_assets",
-  "plans", "plan_entitlements", "subscriptions", "organization_entitlement_overrides", "usage_counters", "billing_events", "platform_administrators",
+  "organization_runtime_settings", "organization_jobs", "organization_job_attempts", "organization_task_leases", "audit_logs", "document_assets",
+  "plans", "plan_entitlements", "billing_prices", "subscriptions", "organization_entitlement_overrides", "usage_counters", "usage_events", "billing_events", "platform_administrators", "platform_administrator_events",
 ] as const;
 
 const scalar = async (sql: string) => {
@@ -41,10 +41,10 @@ const financialSums = {
   expenseTotal: await scalar('SELECT COALESCE(SUM("amount"), 0) AS value FROM "expense_entries"'),
 };
 
-const documentRows = await prisma.$queryRawUnsafe<Array<{ id: string; file_path: string }>>(`
-  SELECT "id", "pdf_path" AS "file_path" FROM "contrats"
-  UNION ALL SELECT "id", "pdf_path" AS "file_path" FROM "factures"
-  UNION ALL SELECT "id", "signed_document_path" AS "file_path" FROM "contrats" WHERE "signed_document_path" IS NOT NULL
+const documentRows = await prisma.$queryRawUnsafe<Array<{ id: string; file_path: string; organization_id: string }>>(`
+  SELECT "id", "pdf_path" AS "file_path", "organization_id" FROM "contrats"
+  UNION ALL SELECT "id", "pdf_path" AS "file_path", "organization_id" FROM "factures"
+  UNION ALL SELECT "id", "signed_document_path" AS "file_path", "organization_id" FROM "contrats" WHERE "signed_document_path" IS NOT NULL
 `);
 const resolveStoredPath = (storedPath: string) => {
   const direct = path.resolve(process.cwd(), storedPath);
@@ -54,10 +54,14 @@ const resolveStoredPath = (storedPath: string) => {
 const presentDocuments = documentRows.filter((row) => fs.existsSync(resolveStoredPath(row.file_path))).length;
 
 const samples = (await Promise.all([
-  prisma.$queryRawUnsafe<Array<{ kind: string; id: string; invariant: string }>>('SELECT \'reservation\' AS "kind", "id", CAST("prix_total" AS TEXT) || \':\' || CAST("date_entree" AS TEXT) AS "invariant" FROM "reservations" ORDER BY "id" LIMIT 5'),
-  prisma.$queryRawUnsafe<Array<{ kind: string; id: string; invariant: string }>>('SELECT \'contract\' AS "kind", "id", "numero_contrat" || \':\' || CAST("solde_montant" AS TEXT) AS "invariant" FROM "contrats" ORDER BY "id" LIMIT 5'),
-  prisma.$queryRawUnsafe<Array<{ kind: string; id: string; invariant: string }>>('SELECT \'invoice\' AS "kind", "id", "numero_facture" || \':\' || CAST("solde_montant" AS TEXT) AS "invariant" FROM "factures" ORDER BY "id" LIMIT 5'),
+  prisma.$queryRawUnsafe<Array<{ kind: string; id: string; invariant: string }>>('SELECT \'reservation\' AS "kind", "id", CAST("prix_total" AS TEXT) || \':\' || CAST("date_entree" AS TEXT) AS "invariant" FROM "reservations" WHERE "organization_id" = \'org_historical_broceliande\' ORDER BY "id" LIMIT 5'),
+  prisma.$queryRawUnsafe<Array<{ kind: string; id: string; invariant: string }>>('SELECT \'contract\' AS "kind", "id", "numero_contrat" || \':\' || CAST("solde_montant" AS TEXT) AS "invariant" FROM "contrats" WHERE "organization_id" = \'org_historical_broceliande\' ORDER BY "id" LIMIT 5'),
+  prisma.$queryRawUnsafe<Array<{ kind: string; id: string; invariant: string }>>('SELECT \'invoice\' AS "kind", "id", "numero_facture" || \':\' || CAST("solde_montant" AS TEXT) AS "invariant" FROM "factures" WHERE "organization_id" = \'org_historical_broceliande\' ORDER BY "id" LIMIT 5'),
 ])).flat();
+
+const historicalOrganizationId = "org_historical_broceliande";
+const historicalDocuments = documentRows.filter((row) => row.organization_id === historicalOrganizationId);
+const historicalSubscription = await prisma.subscription.findUnique({ where: { organization_id: historicalOrganizationId }, include: { plan: true } });
 
 const report = {
   generatedAt: new Date().toISOString(),
@@ -71,6 +75,27 @@ const report = {
     kind,
     fingerprint: crypto.createHash("sha256").update(`${kind}:${id}:${invariant}`).digest("hex"),
   })),
+  historicalOrganization: {
+    id: historicalOrganizationId,
+    planCode: historicalSubscription?.plan.code ?? null,
+    subscriptionStatus: historicalSubscription?.status ?? null,
+    counts: {
+      gites: await scalar(`SELECT COUNT(*) AS value FROM "gites" WHERE "organization_id" = '${historicalOrganizationId}'`),
+      activeUsers: await scalar(`SELECT COUNT(*) AS value FROM "app_users" WHERE "organization_id" = '${historicalOrganizationId}' AND "is_active" = true`),
+      reservations: await scalar(`SELECT COUNT(*) AS value FROM "reservations" WHERE "organization_id" = '${historicalOrganizationId}'`),
+      contracts: await scalar(`SELECT COUNT(*) AS value FROM "contrats" WHERE "organization_id" = '${historicalOrganizationId}'`),
+      invoices: await scalar(`SELECT COUNT(*) AS value FROM "factures" WHERE "organization_id" = '${historicalOrganizationId}'`),
+    },
+    financialSums: {
+      reservationTotal: await scalar(`SELECT COALESCE(SUM("prix_total"), 0) AS value FROM "reservations" WHERE "organization_id" = '${historicalOrganizationId}'`),
+      contractBalance: await scalar(`SELECT COALESCE(SUM("solde_montant"), 0) AS value FROM "contrats" WHERE "organization_id" = '${historicalOrganizationId}'`),
+      invoiceBalance: await scalar(`SELECT COALESCE(SUM("solde_montant"), 0) AS value FROM "factures" WHERE "organization_id" = '${historicalOrganizationId}'`),
+    },
+    documents: {
+      referenced: historicalDocuments.length,
+      present: historicalDocuments.filter((row) => fs.existsSync(resolveStoredPath(row.file_path))).length,
+    },
+  },
 };
 
 console.log(JSON.stringify(report, null, 2));

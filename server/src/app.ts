@@ -48,6 +48,7 @@ import { systemPrisma } from "./db/prisma.js";
 import billingRouter from "./modules/billing/routes.js";
 import platformBillingRouter from "./modules/billing/platformRoutes.js";
 import { assertCreationQuota, assertSubscriptionWriteAllowed, quotaMetricForRequest } from "./modules/billing/service.js";
+import { stripeWebhookHandler } from "./modules/billing/webhookRoutes.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -93,6 +94,7 @@ export const createApp = () => {
     if (env.NODE_ENV === "production") res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     next();
   });
+  app.post("/api/billing/webhook/stripe", express.raw({ type: "application/json", limit: "2mb" }), stripeWebhookHandler);
   app.use(express.json({ limit: env.REQUEST_BODY_LIMIT, strict: true }));
   app.use(
     cors({
@@ -123,7 +125,6 @@ export const createApp = () => {
   });
 
   app.use("/api/auth", authRouter);
-  app.use("/api/installation", installationRouter);
   app.use("/api/platform/billing", platformBillingRouter);
   app.use("/api", async (req, _res, next) => {
     try {
@@ -142,6 +143,7 @@ export const createApp = () => {
       next(error);
     }
   });
+  app.use("/api/installation", installationRouter);
   app.use("/api", async (req, res, next) => {
     try {
       const requiredModule = getModuleForApiPath(req.path);
@@ -184,7 +186,7 @@ export const createApp = () => {
       const session = await getServerAuthSessionFromRequest(req);
       const user = session ? await getAuthenticatedAppUser(req) : null;
       if (session && user) {
-        if (isWriteMethod(req.method) && !req.path.startsWith("/billing/portal")) {
+        if (isWriteMethod(req.method) && !req.path.startsWith("/billing/portal") && !req.path.startsWith("/billing/checkout")) {
           await assertSubscriptionWriteAllowed(session.organizationId);
           const quotaMetric = quotaMetricForRequest(req.method, req.path, req.body);
           if (quotaMetric) await assertCreationQuota(session.organizationId, quotaMetric);

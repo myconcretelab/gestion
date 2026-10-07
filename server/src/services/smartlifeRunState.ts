@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "../config/env.js";
+import { organizationDataPath } from "./organizationFiles.js";
 import {
   getSmartlifeRuleCommandValue,
   type SmartlifeAutomationRuleAction,
 } from "./smartlifeSettings.js";
 
-const STATE_FILE = path.join(env.DATA_DIR, "smartlife-automation-state.json");
+const stateFile = () => organizationDataPath("smartlife-automation-state.json");
 const EXECUTED_KEYS_MAX_AGE_DAYS = 90;
 const EXECUTED_KEYS_MAX_ITEMS = 20_000;
 
@@ -287,12 +288,12 @@ export const readSmartlifeAutomationRunState =
   (): PersistedSmartlifeAutomationRunState => {
     ensureDataDir();
 
-    if (!fs.existsSync(STATE_FILE)) {
+    if (!fs.existsSync(stateFile())) {
       return buildDefaultSmartlifeAutomationRunState();
     }
 
     try {
-      const raw = fs.readFileSync(STATE_FILE, "utf-8");
+      const raw = fs.readFileSync(stateFile(), "utf-8");
       if (!raw.trim()) return buildDefaultSmartlifeAutomationRunState();
       const parsed = JSON.parse(raw) as Partial<PersistedSmartlifeAutomationRunState>;
       return {
@@ -316,7 +317,7 @@ export const writeSmartlifeAutomationRunState = (
   state: PersistedSmartlifeAutomationRunState,
 ) => {
   ensureDataDir();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+  fs.writeFileSync(stateFile(), JSON.stringify(state, null, 2), "utf-8");
 };
 
 export const updateSmartlifeAutomationRunState = (
