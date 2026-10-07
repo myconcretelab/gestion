@@ -9328,23 +9328,29 @@ body {
 
 .settings-sidebar__nav {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 
 .settings-sidebar__link {
-  padding: 8px 0 8px 12px;
+  display: block;
+  padding: 9px 11px;
   border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: #50575e;
   font: inherit;
   font-size: 0.95rem;
   font-weight: 500;
+  line-height: 1.35;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .settings-sidebar__link:hover {
   color: #1d2327;
+  background: #f6f7f7;
 }
 
 .settings-sidebar__link:focus-visible {
@@ -9353,8 +9359,48 @@ body {
 }
 
 .settings-sidebar__link--active {
-  color: #ff5a5f;
-  font-weight: 600;
+  border-left-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.settings-theme-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 22px;
+  padding: 0 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid #dcdcde;
+  scrollbar-width: thin;
+}
+
+.settings-theme-tabs__link {
+  flex: 0 0 auto;
+  margin-bottom: -1px;
+  padding: 10px 12px 11px;
+  border-bottom: 3px solid transparent;
+  color: #646970;
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.settings-theme-tabs__link:hover {
+  color: #1d2327;
+  background: #f6f7f7;
+}
+
+.settings-theme-tabs__link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.settings-theme-tabs__link--active {
+  border-bottom-color: var(--primary);
+  color: var(--primary);
 }
 
 .settings-cluster {
@@ -10086,17 +10132,28 @@ body {
 
   .settings-sidebar__nav {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px 14px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding-bottom: 3px;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .settings-sidebar__link {
-    padding: 0 0 6px;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    border-left: 0;
     border-bottom: 2px solid transparent;
+    border-radius: 8px 8px 0 0;
+    white-space: nowrap;
   }
 
   .settings-sidebar__link--active {
-    border-bottom-color: #ff5a5f;
+    border-bottom-color: var(--primary);
+  }
+
+  .settings-theme-tabs {
+    margin-bottom: 18px;
   }
 
   .settings-cluster__grid {

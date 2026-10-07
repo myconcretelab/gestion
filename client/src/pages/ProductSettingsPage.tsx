@@ -1,6 +1,7 @@
-import { NavLink, Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import OrganizationSettings from "./settings/OrganizationSettings";
 import { AccommodationsSettings, ChannelsSettings, ConnectionsSettings, DataBackupSettings, DocumentsSettings, SystemDiagnosticsSettings, TeamAccessSettings } from "./settings/CategorySettings";
+import SettingsShell from "./settings/SettingsShell";
 
 const sections = [
   ["organisation", "Organisation"], ["hebergements", "Hébergements"], ["documents", "Documents"],
@@ -11,7 +12,7 @@ const sections = [
 export default function ProductSettingsPage() {
   const segment = useLocation().pathname.split("/")[2] || "";
   if (!sections.some(([id]) => id === segment)) return <Navigate to="/parametres/organisation" replace />;
-  return <div className="settings-page"><div className="settings-layout"><aside className="settings-sidebar"><div className="settings-sidebar__panel"><h1 className="settings-sidebar__title">Paramètres</h1><nav className="settings-sidebar__nav">{sections.map(([id, label]) => <NavLink className={({ isActive }) => `settings-sidebar__link${isActive ? " settings-sidebar__link--active" : ""}`} key={id} to={`/parametres/${id}`}>{label}</NavLink>)}</nav></div></aside><div className="settings-content">
+  return <SettingsShell>
     {segment === "organisation" ? <OrganizationSettings /> : null}
     {segment === "hebergements" ? <AccommodationsSettings /> : null}
     {segment === "documents" ? <DocumentsSettings /> : null}
@@ -20,5 +21,5 @@ export default function ProductSettingsPage() {
     {segment === "equipe-acces" ? <TeamAccessSettings /> : null}
     {segment === "donnees" ? <DataBackupSettings /> : null}
     {segment === "systeme" ? <SystemDiagnosticsSettings /> : null}
-  </div></div></div>;
+  </SettingsShell>;
 }

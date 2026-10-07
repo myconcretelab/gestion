@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { NavLink, Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { apiFetch, buildApiUrl } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -32,6 +32,7 @@ import type {
 
 import AppearanceSettings from "./AppearanceSettings";
 import UserSettings from "./UserSettings";
+import SettingsShell from "./settings/SettingsShell";
 
 type IcalPreviewItem = {
   id: string;
@@ -5191,34 +5192,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
   }
 
   return (
-    <div className="settings-page">
-      <div className="settings-layout">
-        <aside className="settings-sidebar">
-          <div className="settings-sidebar__panel">
-            <h1 className="settings-sidebar__title">Paramètres</h1>
-            <nav
-              className="settings-sidebar__nav"
-              aria-label="Rubriques des paramètres"
-            >
-              {SETTINGS_SECTIONS.filter((section) => !["settings-intervenants", "settings-team"].includes(section.id)).map((section) => (
-                <NavLink
-                  key={section.id}
-                  id={`nav-${section.id}`}
-                  to={`/parametres/${SETTINGS_SECTION_PATHS[section.id]}`}
-                  className={({ isActive }) =>
-                    `settings-sidebar__link${
-                      isActive ? " settings-sidebar__link--active" : ""
-                    }`
-                  }
-                >
-                  {section.label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
-        </aside>
-
-        <div className="settings-content">
+    <SettingsShell>
           {activeSettingsSection === "settings-appearance" ? <AppearanceSettings /> : null}
           {activeSettingsSection === "settings-users" ? (
             currentUser?.permissions.isOwner
@@ -11205,9 +11179,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
             </div>
             </section>
           ) : null}
-        </div>
-      </div>
-    </div>
+    </SettingsShell>
   );
 };
 
