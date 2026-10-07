@@ -2,7 +2,7 @@ import "../config/env.js";
 import fs from "fs";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
-import { getOrganizationId } from "../services/organizationContext.js";
+import { getOrganizationId } from "../modules/organizations/context.js";
 
 const resolveDatabaseUrl = (value: string | undefined) => {
   if (!value) return value;
@@ -43,6 +43,7 @@ const TENANT_MODELS = new Set([
   "PlanningRelayPeriod", "PlanningRelayWorker", "IntervenantHourEntry", "UserIntervention",
   "IntervenantExpense", "PlanningRelayAssignment", "Reservation", "GiteSeasonRate", "BookingRequest",
   "GiteMonthlyEnergyReading",
+  "OrganizationRuntimeSetting", "OrganizationJob", "AuditLog", "DocumentAsset",
 ]);
 
 const withTenantWhere = (where: Record<string, unknown> | undefined, organizationId: string) => ({

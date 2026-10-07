@@ -20,8 +20,12 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settings    OrganizationSettings?
-  memberships Membership[]
+  settings         OrganizationSettings?
+  memberships      Membership[]
+  runtime_settings OrganizationRuntimeSetting[]
+  jobs             OrganizationJob[]
+  audit_logs       AuditLog[]
+  document_assets  DocumentAsset[]
 
   @@map("organizations")
 }
@@ -79,6 +83,81 @@ model OrganizationSettings {
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
   @@map("organization_settings")
+}
+
+model OrganizationRuntimeSetting {
+  id              String   @id @default(cuid())
+  organization_id String
+  key             String
+  version         Int      @default(1)
+  value_json      Json     @default("{}")
+  is_secret       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, key], map: "organization_runtime_settings_org_key")
+  @@map("organization_runtime_settings")
+}
+
+model OrganizationJob {
+  id              String    @id @default(cuid())
+  organization_id String
+  type            String
+  payload_json    Json      @default("{}")
+  status          String    @default("queued")
+  attempts        Int       @default(0)
+  run_at          DateTime  @default(now())
+  locked_at       DateTime?
+  lock_owner      String?
+  last_error      String?
+  idempotency_key String
+  createdAt       DateTime  @default(now())
+  completed_at    DateTime?
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, idempotency_key], map: "organization_jobs_org_idempotency_key")
+  @@index([organization_id, status, run_at], map: "organization_jobs_org_status_run_idx")
+  @@map("organization_jobs")
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  organization_id String
+  user_id         String?
+  request_id      String?
+  action          String
+  resource_type   String
+  resource_id     String?
+  metadata_json   Json     @default("{}")
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id, createdAt], map: "audit_logs_org_created_idx")
+  @@index([organization_id, resource_type, resource_id], map: "audit_logs_org_resource_idx")
+  @@map("audit_logs")
+}
+
+model DocumentAsset {
+  id              String    @id @default(cuid())
+  organization_id String
+  storage_key     String
+  legacy_path     String?
+  content_type    String
+  size_bytes      BigInt
+  checksum_sha256 String
+  status          String    @default("active")
+  createdAt       DateTime  @default(now())
+  deleted_at      DateTime?
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, storage_key], map: "document_assets_org_storage_key")
+  @@index([organization_id, status], map: "document_assets_org_status_idx")
+  @@map("document_assets")
 }
 
 model InstallationConfig {

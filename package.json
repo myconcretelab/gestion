@@ -6,13 +6,18 @@
   },
   "workspaces": [
     "server",
-    "client"
+    "client",
+    "packages/shared"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w client && npm run build -w server",
-    "test": "npm run test -w server && npm run test -w client",
-    "typecheck": "npm run build -w server && npm run typecheck -w client",
+    "build": "npm run build -w @contrats/shared && npm run build -w client && npm run build -w server",
+    "test": "npm run test -w @contrats/shared && npm run test -w server && npm run test -w client",
+    "typecheck": "npm run build -w @contrats/shared && npm run build -w server && npm run typecheck -w client",
+    "lint": "eslint \"server/src/**/*.ts\" \"client/src/**/*.{ts,tsx}\" \"packages/shared/src/**/*.ts\" && npm run lint:architecture -w server && npm run lint -w @contrats/shared",
+    "format": "prettier --write \"server/src/modules/**/*.ts\" \"client/src/features/**/*.ts\" \"packages/shared/**/*.{ts,json}\"",
+    "format:check": "prettier --check \"server/src/modules/**/*.ts\" \"client/src/features/**/*.ts\" \"packages/shared/**/*.{ts,json}\"",
+    "test:e2e": "npm run test:e2e -w server",
     "start": "npm run start -w server",
     "migrate": "npm run migrate -w server",
     "update": "bash ./update",
@@ -49,7 +54,11 @@
     }
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@typescript-eslint/parser": "^8.71.1",
+    "concurrently": "^8.2.2",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.9"
   },
   "dependencies": {
     "body-parser": "1.20.6",

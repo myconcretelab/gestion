@@ -40,6 +40,7 @@ installation-backup-*.tar.gz
 *.pfx
 client/dist
 server/dist
+packages/*/dist
 .cache/
 server/.cache
 server/generated

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import crypto from "node:crypto";
 import { getTenantPrisma, systemPrisma } from "../src/db/prisma.js";
+import { enqueueOrganizationJob, listRunnableOrganizationJobs } from "../src/modules/system/jobs.js";
 
 const suffix = crypto.randomBytes(6).toString("hex");
 const orgA = `org_test_a_${suffix}`;
@@ -61,6 +62,15 @@ test("tenant data is isolated while a global user can have different membership 
 
   const memberships = await systemPrisma.membership.findMany({ where: { user_id: userId }, orderBy: { organization_id: "asc" } });
   assert.deepEqual(memberships.map((membership) => membership.status), ["disabled", "active"]);
+
+  await enqueueOrganizationJob({ organizationId: orgA, type: "sync", idempotencyKey: "same-key", payload: { tenant: "a" } });
+  await enqueueOrganizationJob({ organizationId: orgB, type: "sync", idempotencyKey: "same-key", payload: { tenant: "b" } });
+  const jobsA = await listRunnableOrganizationJobs(orgA);
+  const jobsB = await listRunnableOrganizationJobs(orgB);
+  assert.equal(jobsA.length, 1);
+  assert.equal(jobsB.length, 1);
+  assert.equal(JSON.parse(jobsA[0].payload_json).tenant, "a");
+  assert.equal(JSON.parse(jobsB[0].payload_json).tenant, "b");
 });
 
 after(async () => {

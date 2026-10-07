@@ -6,6 +6,8 @@
     "dev": "npm run dev:db && tsx watch --clear-screen=false src/index.ts",
     "build": "tsc -p tsconfig.json",
     "test": "NODE_ENV=test TEST_FILES=$(find tests -type f -name \"*.test.ts\" 2>/dev/null); if [ -z \"$TEST_FILES\" ]; then echo \"No server test files found. Skipping.\"; exit 0; fi; NODE_ENV=test node --import tsx --test --test-concurrency=1 $TEST_FILES",
+    "test:e2e": "NODE_ENV=test node --import tsx --test --test-concurrency=1 tests/e2e/*.test.ts",
+    "lint:architecture": "tsx scripts/architecture-lint.ts",
     "start": "node dist/index.js",
     "migrate": "npm run dev:db",
     "seed": "node scripts/seed.mjs",

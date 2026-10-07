@@ -6,17 +6,17 @@ import crypto from "node:crypto";
 import { ZodError } from "zod";
 import { env } from "./config/env.js";
 import authRouter from "./routes/auth.js";
-import gitesRouter from "./routes/gites.js";
+import gitesRouter from "./modules/properties/routes.js";
 import publicGitesRouter from "./routes/publicGites.js";
 import publicCleaningCheckRouter from "./routes/publicCleaningCheck.js";
 import managersRouter from "./routes/managers.js";
 import contractsRouter from "./routes/contracts.js";
 import invoicesRouter from "./routes/invoices.js";
-import reservationsRouter from "./routes/reservations.js";
+import reservationsRouter from "./modules/reservations/routes.js";
 import bookedRouter from "./routes/booked.js";
 import bookingRequestsRouter from "./routes/bookingRequests.js";
 import statisticsRouter from "./routes/statistics.js";
-import settingsRouter from "./routes/settings.js";
+import settingsRouter from "./modules/settings/routes.js";
 import usersRouter from "./routes/users.js";
 import intervenantsRouter from "./routes/intervenants.js";
 import intervenantHoursRouter from "./routes/intervenantHours.js";
@@ -44,6 +44,7 @@ import {
 import { canActAsRequestedUser, containsMonetaryFields, getRequiredBusinessPermission, hasBusinessPermission, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
 import { getModuleForApiPath, isModuleEnabled } from "./services/installationConfig.js";
 import { assertRequestedOrganization, HISTORICAL_ORGANIZATION_ID, runWithOrganization } from "./services/organizationContext.js";
+import { systemPrisma } from "./db/prisma.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -107,6 +108,15 @@ export const createApp = () => {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  app.get("/api/ready", async (_req, res) => {
+    try {
+      await systemPrisma.$queryRaw`SELECT 1`;
+      res.json({ ok: true, database: "ready" });
+    } catch {
+      res.status(503).json({ ok: false, database: "unavailable" });
+    }
   });
 
   app.use("/api/auth", authRouter);
@@ -214,6 +224,11 @@ export const createApp = () => {
     } catch (error) {
       return next(error);
     }
+  });
+
+  app.get("/api/metrics", (_req, res) => {
+    const memory = process.memoryUsage();
+    res.json({ uptimeSeconds: Math.round(process.uptime()), memoryRssBytes: memory.rss, heapUsedBytes: memory.heapUsed });
   });
 
   app.use("/api/gites", gitesRouter);

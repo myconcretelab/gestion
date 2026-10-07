@@ -1,9 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { systemPrisma as prisma } from "../src/db/prisma.js";
 const TABLES = [
   "installation_config", "content_template_versions", "gites", "gite_photos", "wordpress_webhook_jobs",
   "gestionnaires", "app_users", "auth_sessions", "password_reset_tokens", "api_tokens", "document_shares",
@@ -12,6 +10,7 @@ const TABLES = [
   "reservation_placeholders", "planning_relay_periods", "planning_relay_workers", "intervenant_hour_entries",
   "user_interventions", "intervenant_expenses", "planning_relay_assignments", "reservations", "gite_season_rates",
   "booking_requests", "gite_monthly_energy_readings",
+  "organization_runtime_settings", "organization_jobs", "audit_logs", "document_assets",
 ] as const;
 
 const scalar = async (sql: string) => {
