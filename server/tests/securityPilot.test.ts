@@ -27,6 +27,47 @@ test("un jeton d'intégration est hashé, limité à ses scopes et révocable", 
   }
 });
 
+test("Booked accepte uniquement un jeton portant son scope dédié", async () => {
+  const previousInstallation = await prisma.installationConfig.findUnique({ where: { id: "default" } });
+  const previousModules = previousInstallation ? JSON.parse(previousInstallation.modules_json) as Record<string, boolean> : {};
+  await prisma.installationConfig.upsert({
+    where: { id: "default" },
+    update: { modules_json: JSON.stringify({ ...previousModules, web_publication: true }) },
+    create: { id: "default", organization_json: "{}", modules_json: JSON.stringify({ web_publication: true }) },
+  });
+  const bookedToken = await createApiToken({ name: "Booked", scopes: ["booked:access"] });
+  const unrelatedToken = await createApiToken({ name: "Réservations", scopes: ["reservations:write"] });
+  const server = createApp().listen(0);
+  try {
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const origin = `http://127.0.0.1:${address.port}`;
+
+    const missing = await fetch(`${origin}/api/booked/gites`);
+    assert.equal(missing.status, 401);
+
+    const unrelated = await fetch(`${origin}/api/booked/gites`, {
+      headers: { authorization: `Bearer ${unrelatedToken.token}` },
+    });
+    assert.equal(unrelated.status, 401);
+
+    const accepted = await fetch(`${origin}/api/booked/gites`, {
+      headers: { authorization: `Bearer ${bookedToken.token}` },
+    });
+    assert.equal(accepted.status, 200);
+    assert.ok(Array.isArray((await accepted.json()).gites));
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await prisma.apiToken.deleteMany({ where: { id: { in: [bookedToken.id, unrelatedToken.id] } } });
+    if (previousInstallation) {
+      await prisma.installationConfig.update({ where: { id: "default" }, data: { modules_json: previousInstallation.modules_json } });
+    } else {
+      await prisma.installationConfig.delete({ where: { id: "default" } });
+    }
+  }
+});
+
 test("un PDF privé, la liste de comptes et les API hors rôle sont refusés", async () => {
   const previousInstallation = await prisma.installationConfig.findUnique({ where: { id: "default" } });
   const previousModules = previousInstallation ? JSON.parse(previousInstallation.modules_json) as Record<string, boolean> : {};

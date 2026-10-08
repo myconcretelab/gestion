@@ -49,6 +49,7 @@ import billingRouter from "./modules/billing/routes.js";
 import platformBillingRouter from "./modules/billing/platformRoutes.js";
 import { assertCreationQuota, assertSubscriptionWriteAllowed, quotaMetricForRequest } from "./modules/billing/service.js";
 import { stripeWebhookHandler } from "./modules/billing/webhookRoutes.js";
+import { verifyScopedApiToken } from "./services/apiTokens.js";
 
 const getHttpErrorPayload = (err: Error) => {
   const maybeHttpError = err as Error & {
@@ -173,6 +174,16 @@ export const createApp = () => {
         ) &&
         hasValidCronTriggerToken(req)
       ) {
+        return next();
+      }
+
+      if (
+        /^\/booked(?:\/|$)/i.test(req.path) &&
+        await verifyScopedApiToken(req, "booked:access")
+      ) {
+        if (requiredModule && !(await isModuleEnabled(requiredModule))) {
+          return res.status(404).json({ error: "Fonctionnalité désactivée.", code: "MODULE_DISABLED", module: requiredModule });
+        }
         return next();
       }
 

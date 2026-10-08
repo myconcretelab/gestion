@@ -6,8 +6,8 @@ import { fromJsonString } from "../utils/jsonFields.js";
 import { parseBearerToken } from "../utils/cronTriggerAuth.js";
 import { enterOrganizationContext } from "./organizationContext.js";
 
-export type ApiTokenScope = "reservations:write" | "cron:run";
-export const API_TOKEN_SCOPES = ["reservations:write", "cron:run"] as const;
+export type ApiTokenScope = "reservations:write" | "booked:access" | "cron:run";
+export const API_TOKEN_SCOPES = ["reservations:write", "booked:access", "cron:run"] as const;
 const hashToken = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
 let bootstrapPromise: Promise<void> | null = null;
 
@@ -15,15 +15,28 @@ export const ensureLegacyIntegrationTokenMigrated = async () => {
   bootstrapPromise ??= (async () => {
     const token = env.INTEGRATION_API_TOKEN.trim();
     if (!token) return;
-    await prisma.apiToken.upsert({
-      where: { token_hash: hashToken(token) },
-      update: {},
-      create: {
-        name: "Jeton d'intégration migré",
-        token_hash: hashToken(token),
-        scopes: JSON.stringify(["reservations:write"] satisfies ApiTokenScope[]),
-      },
-    });
+    const tokenHash = hashToken(token);
+    const existing = await systemPrisma.apiToken.findUnique({ where: { token_hash: tokenHash } });
+    const requiredScopes = ["reservations:write", "booked:access"] satisfies ApiTokenScope[];
+    if (!existing) {
+      await prisma.apiToken.create({
+        data: {
+          name: "Jeton d'intégration migré",
+          token_hash: tokenHash,
+          scopes: JSON.stringify(requiredScopes),
+        },
+      });
+      return;
+    }
+
+    const scopes = fromJsonString<ApiTokenScope[]>(existing.scopes, []);
+    const mergedScopes = [...new Set([...scopes, ...requiredScopes])];
+    if (mergedScopes.length !== scopes.length) {
+      await systemPrisma.apiToken.update({
+        where: { id: existing.id },
+        data: { scopes: JSON.stringify(mergedScopes) },
+      });
+    }
   })().catch((error) => {
     bootstrapPromise = null;
     throw error;
