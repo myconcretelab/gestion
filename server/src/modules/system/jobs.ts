@@ -43,7 +43,11 @@ export type OrganizationJobHandler = (job: {
   id: string;
   organization_id: string;
   type: string;
-  payload_json: string;
+  // SQLite exposes JSON columns as serialized strings while PostgreSQL
+  // exposes the same value as Prisma JsonValue. Handlers must therefore
+  // normalize the payload before consuming it instead of depending on one
+  // database provider's representation.
+  payload_json: unknown;
   attempts: number;
 }) => Promise<Record<string, unknown> | void>;
 
