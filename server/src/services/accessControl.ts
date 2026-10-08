@@ -14,6 +14,7 @@ export type BusinessPermission =
   | "declarations:read" | "declarations:write"
   | "planning:read" | "planning:write"
   | "cleaning:execute"
+  | "actions:execute"
   | "statistics:read"
   | "users:read" | "users:manage"
   | "settings:read" | "settings:write"
@@ -32,6 +33,7 @@ const pageForPermission: Partial<Record<BusinessPermission, AppPageId>> = {
   "declarations:read": "statistics", "declarations:write": "statistics",
   "planning:read": "planning_relay", "planning:write": "planning_relay",
   "cleaning:execute": "planning_relay",
+  "actions:execute": "planning_relay",
   "statistics:read": "statistics",
   "settings:read": "settings", "settings:write": "settings",
 };
@@ -41,7 +43,7 @@ export const hasBusinessPermission = (user: AppUserSummary, permission: Business
   if (permission.startsWith("users:") || permission === "integrations:manage" || permission.endsWith(":share")) return false;
   const page = pageForPermission[permission];
   if (!page || !user.pageAccess.includes(page)) return false;
-  if (permission === "cleaning:execute") return true;
+  if (permission === "cleaning:execute" || permission === "actions:execute") return true;
   return !permission.endsWith(":write") || user.permissions.canWrite;
 };
 
@@ -68,6 +70,7 @@ export const getRequiredBusinessPermission = (method: string, requestPath: strin
   if (/^\/(?:personal-expenses|professional-expenses)/.test(path)) return familyPermission("finances", method);
   if (/^\/(?:guest-night-declarations|urssaf-declarations)/.test(path)) return familyPermission("declarations", method);
   if (path.startsWith("/cleaning-tasks")) return (path.endsWith("/status") || path.endsWith("/note")) && isWriteMethod(method) ? "cleaning:execute" : familyPermission("planning", method);
+  if (path.startsWith("/action-tasks")) return (path.endsWith("/status") || path.endsWith("/note")) && isWriteMethod(method) ? "actions:execute" : familyPermission("planning", method);
   if (/^\/(?:planning-relay-periods|intervenants|interventions)/.test(path)) return familyPermission("planning", method);
   if (path.startsWith("/today/cleaning-readiness") && isWriteMethod(method)) return "cleaning:execute";
   if (path.startsWith("/today")) return familyPermission("today", method);
@@ -156,6 +159,7 @@ const PAGE_API_PREFIXES: Array<[string, AppPageId]> = [
   ["/personal-expenses", "personal_expenses"],
   ["/planning-relay-periods", "planning_relay"],
   ["/cleaning-tasks", "planning_relay"],
+  ["/action-tasks", "planning_relay"],
   ["/intervenants", "planning_relay"],
   ["/interventions", "planning_relay"],
   ["/settings", "settings"],

@@ -7,6 +7,7 @@ import { getAuthenticatedAppUser } from "../../services/serverAuth.js";
 import { canManageCleaning, DEFAULT_CLEANING_RULE, serializeCleaningTask, syncCleaningTasks } from "../../services/cleaningTasks.js";
 import { isCleaningCheckAvailable, loadGiteCleaningReadiness, updateGiteCleaningReadiness } from "../../services/giteCleaningReadiness.js";
 import { notifyCleaningCompletedOnTelegram, notifyGiteCheckedOnTelegram } from "../../services/telegramNotifications.js";
+import { parseRotationAssignees, validateAssignees } from "../../services/assignmentRules.js";
 
 const router = Router();
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -14,6 +15,8 @@ const ruleSchema = z.object({
   generation_mode: z.enum(["always", "option_only", "disabled"]),
   schedule_mode: z.enum(["after_departure", "day_before_arrival", "arrival_day"]),
   default_assignee_id: z.string().nullable(),
+  assignment_mode: z.enum(["unassigned", "fixed", "rotation"]),
+  rotation_assignee_ids: z.array(z.string()).max(50),
   requires_check: z.boolean(),
   notify_on_complete: z.boolean(),
   reminder_minutes: z.number().int().min(0).max(10080),
@@ -70,7 +73,11 @@ router.get("/", async (req, res, next) => {
       }, ruleByGite.get(task.gite_id)?.requires_check ?? true)),
       gites: manager ? gites : [],
       assignees: manager ? users.filter((item) => item.intervenant_id || item.status === "worker").map((item) => ({ id: item.id, name: item.display_name })) : [],
-      rules: manager ? gites.map((gite) => ({ gite_id: gite.id, ...DEFAULT_CLEANING_RULE, ...ruleByGite.get(gite.id) })) : [],
+      rules: manager ? gites.map((gite) => {
+        const rule = ruleByGite.get(gite.id);
+        return { gite_id: gite.id, ...DEFAULT_CLEANING_RULE, ...rule,
+          rotation_assignee_ids: rule ? parseRotationAssignees(rule.rotation_assignee_ids) : [] };
+      }) : [],
       can_manage: manager,
     });
   } catch (error) { next(error); }
@@ -87,9 +94,20 @@ router.put("/rules/:giteId", async (req, res, next) => {
       const assignee = await prisma.appUser.findUnique({ where: { id: payload.default_assignee_id }, select: { id: true, is_active: true, intervenant_id: true } });
       if (!assignee?.is_active || !assignee.intervenant_id) return res.status(400).json({ error: "Intervenant invalide." });
     }
+    if (payload.assignment_mode === "fixed" && !payload.default_assignee_id) return res.status(400).json({ error: "Choisissez un intervenant habituel." });
+    if (payload.assignment_mode === "rotation" && (!payload.rotation_assignee_ids.length || !await validateAssignees(payload.rotation_assignee_ids))) {
+      return res.status(400).json({ error: "Choisissez des intervenants actifs pour la rotation." });
+    }
+    const stored = { ...payload, rotation_assignee_ids: JSON.stringify([...new Set(payload.rotation_assignee_ids)]) };
+    const previous = await prisma.cleaningRule.findUnique({
+      where: { organization_id_gite_id: { organization_id: getOrganizationId(), gite_id: gite.id } },
+      select: { assignment_mode: true, rotation_assignee_ids: true },
+    });
+    const resetRotation = previous?.assignment_mode !== stored.assignment_mode
+      || previous?.rotation_assignee_ids !== stored.rotation_assignee_ids;
     const rule = await prisma.cleaningRule.upsert({
       where: { organization_id_gite_id: { organization_id: getOrganizationId(), gite_id: gite.id } },
-      create: { gite_id: gite.id, ...payload }, update: payload,
+      create: { gite_id: gite.id, ...stored }, update: { ...stored, ...(resetRotation ? { rotation_cursor: 0 } : {}) },
     });
     return res.json(rule);
   } catch (error) { next(error); }

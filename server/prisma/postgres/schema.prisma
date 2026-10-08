@@ -1152,6 +1152,9 @@ model CleaningRule {
   generation_mode     String   @default("always")
   schedule_mode       String   @default("after_departure")
   default_assignee_id String?
+  assignment_mode     String   @default("unassigned")
+  rotation_assignee_ids String @default("[]")
+  rotation_cursor     Int      @default(0)
   requires_check      Boolean  @default(true)
   notify_on_complete  Boolean  @default(false)
   reminder_minutes    Int      @default(60)
@@ -1160,6 +1163,51 @@ model CleaningRule {
 
   @@unique([organization_id, gite_id], map: "cleaning_rules_org_gite_key")
   @@map("cleaning_rules")
+}
+
+model ActionTemplate {
+  id                    String   @id @default(cuid())
+  organization_id       String   @default("org_historical_broceliande")
+  gite_id               String
+  title                 String
+  trigger_event         String
+  starts_offset_days    Int      @default(0)
+  due_offset_days       Int      @default(0)
+  start_time            String   @default("09:00")
+  due_time              String   @default("17:00")
+  assignment_mode       String   @default("unassigned")
+  default_assignee_id   String?
+  rotation_assignee_ids String   @default("[]")
+  rotation_cursor       Int      @default(0)
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([organization_id, gite_id, enabled], map: "action_templates_org_gite_enabled_idx")
+  @@map("action_templates")
+}
+
+model ActionTask {
+  id              String    @id @default(cuid())
+  organization_id String    @default("org_historical_broceliande")
+  template_id     String?
+  reservation_id  String?
+  gite_id         String
+  title           String
+  assignee_id     String?
+  status          String    @default("planned")
+  starts_at       DateTime
+  due_at          DateTime
+  completed_at    DateTime?
+  completed_by_id String?
+  note            String    @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([organization_id, template_id, reservation_id], map: "action_tasks_org_template_reservation_key")
+  @@index([organization_id, starts_at], map: "action_tasks_org_starts_idx")
+  @@index([organization_id, assignee_id, status], map: "action_tasks_org_assignee_status_idx")
+  @@map("action_tasks")
 }
 
 model CleaningTask {

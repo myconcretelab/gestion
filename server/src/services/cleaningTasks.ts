@@ -2,6 +2,7 @@ import prisma from "../db/prisma.js";
 import type { AppUserSummary } from "./appUsers.js";
 import { getOrganizationId } from "./organizationContext.js";
 import { fromJsonString } from "../utils/jsonFields.js";
+import { activeRotationAssignees, rotationAssigneeAt } from "./assignmentRules.js";
 
 export type CleaningGenerationMode = "always" | "option_only" | "disabled";
 export type CleaningScheduleMode = "after_departure" | "day_before_arrival" | "arrival_day";
@@ -10,6 +11,8 @@ export const DEFAULT_CLEANING_RULE = {
   generation_mode: "always" as CleaningGenerationMode,
   schedule_mode: "after_departure" as CleaningScheduleMode,
   default_assignee_id: null as string | null,
+  assignment_mode: "unassigned" as const,
+  rotation_assignee_ids: "[]",
   requires_check: true,
   notify_on_complete: false,
   reminder_minutes: 60,
@@ -93,7 +96,7 @@ export const syncCleaningTasks = async (from: string, to: string) => {
       && candidate.date_entree >= item.date_sortie
       && dateIso(candidate.date_entree) >= from && dateIso(candidate.date_entree) <= to
     );
-  });
+  }).sort((left, right) => left.date_sortie.getTime() - right.date_sortie.getTime() || left.id.localeCompare(right.id));
   if (!departures.length) return;
 
   const existing = await prisma.cleaningTask.findMany({ where: { departure_reservation_id: { in: departures.map((item) => item.id) } } });
@@ -142,18 +145,30 @@ export const syncCleaningTasks = async (from: string, to: string) => {
     }
     const checkedAt = departure.departure_cleaning_checked_at;
     const inherited = inheritedAssignee.get(`${dateIso(departure.date_sortie)}:${giteId}`);
-    await prisma.cleaningTask.upsert({
-      where: { organization_id_departure_reservation_id: { organization_id: getOrganizationId(), departure_reservation_id: departure.id } },
-      update: {},
-      create: {
+    let created;
+    try {
+      created = await prisma.cleaningTask.create({ data: {
         gite_id: giteId, departure_reservation_id: departure.id, arrival_reservation_id: nextArrival?.id ?? null,
-        assignee_id: inherited ?? rule.default_assignee_id,
+        assignee_id: inherited ?? (rule.assignment_mode === "fixed" ? rule.default_assignee_id : null),
         starts_at: window.startsAt, due_at: window.dueAt,
         status: checkedAt ? "verified" : "planned",
         completed_at: checkedAt, completed_by_id: departure.departure_cleaning_checked_by_user_id,
         checked_at: checkedAt, checked_by_id: departure.departure_cleaning_checked_by_user_id,
-      },
-    });
+      } });
+    } catch (error) {
+      if ((error as { code?: string }).code === "P2002") continue;
+      throw error;
+    }
+    if (!inherited && rule.assignment_mode === "rotation" && "id" in rule) {
+      const pool = await activeRotationAssignees(rule.rotation_assignee_ids);
+      if (pool.length) {
+        const rotated = await prisma.cleaningRule.update({
+          where: { organization_id_gite_id: { organization_id: getOrganizationId(), gite_id: giteId } },
+          data: { rotation_cursor: { increment: 1 } }, select: { rotation_cursor: true },
+        });
+        await prisma.cleaningTask.update({ where: { id: created.id }, data: { assignee_id: rotationAssigneeAt(pool, rotated.rotation_cursor) } });
+      }
+    }
   }
 };
 

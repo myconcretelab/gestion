@@ -56,6 +56,9 @@ test("chaque famille de routes reçoit une permission métier explicite", () => 
     ["GET", "/cleaning-tasks", "planning:read"], ["PATCH", "/cleaning-tasks/task-1/status", "cleaning:execute"],
     ["PATCH", "/cleaning-tasks/task-1/note", "cleaning:execute"],
     ["PUT", "/cleaning-tasks/rules/gite-1", "planning:write"],
+    ["GET", "/action-tasks", "planning:read"], ["POST", "/action-tasks/templates", "planning:write"],
+    ["PATCH", "/action-tasks/tasks/task-1/status", "actions:execute"],
+    ["PATCH", "/action-tasks/tasks/task-1/note", "actions:execute"],
     ["PUT", "/today/cleaning-readiness/gite-1", "cleaning:execute"],
     ["GET", "/booking-requests", "booking_requests:read"], ["GET", "/today/overview/primary", "today:read"],
   ];
@@ -72,6 +75,7 @@ test("un intervenant est refusé sur les familles hors rôle et ne peut pas empr
   assert.equal(canActAsRequestedUser(worker, "/intervenants/hours/worker-1", {}), true);
   const readOnlyWorker = { ...worker, permissions: { ...worker.permissions, canWrite: false } };
   assert.equal(hasBusinessPermission(readOnlyWorker, "cleaning:execute"), true);
+  assert.equal(hasBusinessPermission(readOnlyWorker, "actions:execute"), true);
   assert.equal(hasBusinessPermission(readOnlyWorker, "planning:write"), false);
 });
 
@@ -81,6 +85,7 @@ test("les API dédiées respectent le droit de page", () => {
   assert.equal(getRequiredPageForApiPath("/users/owners"), "gites");
   assert.equal(getRequiredPageForApiPath("/users"), "settings");
   assert.equal(getRequiredPageForApiPath("/cleaning-tasks"), "planning_relay");
+  assert.equal(getRequiredPageForApiPath("/action-tasks"), "planning_relay");
   assert.equal(getRequiredPageForApiPath("/reservations/calendar"), null);
 });
 

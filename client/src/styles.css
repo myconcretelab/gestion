@@ -20392,9 +20392,18 @@ button.personal-expenses-status:disabled {
 .cleaning-task__note textarea { display: block; width: 100%; margin: .6rem 0; }
 .cleaning-page__rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .cleaning-page__checkbox { display: flex; align-items: center; gap: .5rem; }
+.actions-panel { display: grid; gap: 1.25rem; }
+.actions-panel__templates { display: grid; gap: .5rem; }
+.actions-panel__template { display: flex; justify-content: space-between; align-items: center; gap: 1rem; border: 1px solid var(--primary-soft); border-radius: 12px; padding: .75rem; }
+.actions-panel__template div { display: grid; gap: .2rem; }
+.actions-panel__template small { color: var(--muted); }
+.actions-panel__pool { display: grid; gap: .4rem; border: 1px solid var(--primary-soft); border-radius: 12px; }
+.actions-panel__pool label { display: flex; gap: .4rem; align-items: center; }
+.cleaning-task__main h3 { margin: 0; font-size: 1.08rem; }
 
 @media (max-width: 760px) {
   .cleaning-page__header, .cleaning-page__toolbar, .cleaning-task { align-items: stretch; flex-direction: column; }
   .cleaning-task__actions { justify-content: flex-start; }
   .cleaning-page__rules { grid-template-columns: 1fr; }
+  .actions-panel__template { align-items: flex-start; flex-direction: column; }
 }

@@ -188,7 +188,7 @@ const ROUTE_MODULES: Array<[RegExp, ModuleKey]> = [
   [/^\/invoices(?:\/|$)/, "invoices"],
   [/^\/(?:statistics|professional-expenses|guest-night-declarations|urssaf-declarations)(?:\/|$)/, "finances"],
   [/^\/personal-expenses(?:\/|$)/, "personal_expenses"],
-  [/^\/(?:planning-relay-periods|cleaning-tasks|intervenants|interventions)(?:\/|$)/, "worker_planning"],
+  [/^\/(?:planning-relay-periods|cleaning-tasks|action-tasks|intervenants|interventions)(?:\/|$)/, "worker_planning"],
   [/^\/(?:booked|public\/gites)(?:\/|$)/, "web_publication"],
   [/^\/settings\/ical(?:\/|$)|^\/gites\/[^/]+\/calendar\.ics$/, "ical"],
   [/^\/settings\/pump(?:\/|$)|^\/reservations\/integrations\/what-today$/, "pump_airbnb"],

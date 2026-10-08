@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../utils/api";
+import ActionsPanel from "./ActionsPanel";
 
 type CleaningStatus = "planned" | "in_progress" | "done" | "verified";
 type CleaningTask = {
@@ -15,6 +16,7 @@ type CleaningRule = {
   gite_id: string; generation_mode: "always" | "option_only" | "disabled";
   schedule_mode: "after_departure" | "day_before_arrival" | "arrival_day";
   default_assignee_id: string | null; requires_check: boolean;
+  assignment_mode: "unassigned" | "fixed" | "rotation"; rotation_assignee_ids: string[];
   notify_on_complete: boolean; reminder_minutes: number;
   buffer_minutes: number;
 };
@@ -52,6 +54,7 @@ export default function CleaningPage() {
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [selectedGite, setSelectedGite] = useState("");
   const [view, setView] = useState<"pending" | "all" | "completed">("pending");
+  const [section, setSection] = useState<"cleaning" | "actions">("cleaning");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export default function CleaningPage() {
         method: "PUT", json: {
           generation_mode: rule.generation_mode, schedule_mode: rule.schedule_mode,
           default_assignee_id: rule.default_assignee_id, requires_check: rule.requires_check,
+          assignment_mode: rule.assignment_mode, rotation_assignee_ids: rule.rotation_assignee_ids,
           notify_on_complete: rule.notify_on_complete, reminder_minutes: Number(rule.reminder_minutes),
           buffer_minutes: Number(rule.buffer_minutes),
         },
@@ -130,12 +134,23 @@ export default function CleaningPage() {
   return <div className="cleaning-page">
     <header className="cleaning-page__header">
       <div><span className="cleaning-page__eyebrow">Organisation</span><h1>Ménages</h1>
-        <p>Planifiez les passages, attribuez-les à votre équipe et suivez la préparation des gîtes.</p></div>
+        <p>Organisez les ménages et les autres actions de votre équipe.</p></div>
       {data?.can_manage ? <Link className="button-secondary" to="/menages/partages">Plannings partagés</Link> : null}
     </header>
 
     {error ? <div className="card" role="alert">{error}</div> : null}
     {notice ? <div className="card" role="status">{notice}</div> : null}
+
+    <div className="cleaning-page__tabs" role="group" aria-label="Type de travail">
+      <button type="button" className={section === "cleaning" ? "is-selected" : ""} onClick={() => setSection("cleaning")}>Ménages</button>
+      <button type="button" className={section === "actions" ? "is-selected" : ""} onClick={() => setSection("actions")}>Autres actions</button>
+    </div>
+    <div className="cleaning-page__dates">
+      <label>Du <input type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)} /></label>
+      <label>Au <input type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} /></label>
+    </div>
+
+    {section === "cleaning" ? <>
 
     <section className="card cleaning-page__section" aria-label="Liste des ménages">
       <div className="cleaning-page__toolbar">
@@ -143,10 +158,6 @@ export default function CleaningPage() {
           {([ ["pending", "À faire"], ["all", "Tous"], ["completed", "Terminés"] ] as const).map(([key, label]) =>
             <button key={key} type="button" className={view === key ? "is-selected" : ""} onClick={() => setView(key)}>{label}</button>
           )}
-        </div>
-        <div className="cleaning-page__dates">
-          <label>Du <input type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)} /></label>
-          <label>Au <input type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} /></label>
         </div>
       </div>
       {loading ? <p>Chargement des ménages…</p> : visibleTasks.length === 0 ?
@@ -202,10 +213,18 @@ export default function CleaningPage() {
         <label className="field">Moment prévu<select value={currentRule.schedule_mode} onChange={(event) => changeRule({ schedule_mode: event.target.value as CleaningRule["schedule_mode"] })}>
           {Object.entries(scheduleLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label>
-        <label className="field">Intervenant habituel<select value={currentRule.default_assignee_id ?? ""} onChange={(event) => changeRule({ default_assignee_id: event.target.value || null })}>
+        <label className="field">Attribution<select value={currentRule.assignment_mode} onChange={(event) => changeRule({ assignment_mode: event.target.value as CleaningRule["assignment_mode"] })}>
+          <option value="unassigned">À attribuer manuellement</option><option value="fixed">Intervenant habituel</option><option value="rotation">Tour de rôle</option>
+        </select></label>
+        {currentRule.assignment_mode === "fixed" ? <label className="field">Intervenant habituel<select value={currentRule.default_assignee_id ?? ""} onChange={(event) => changeRule({ default_assignee_id: event.target.value || null })}>
           <option value="">À attribuer manuellement</option>
           {data.assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select></label>
+        </select></label> : null}
+        {currentRule.assignment_mode === "rotation" ? <fieldset className="actions-panel__pool"><legend>Intervenants du tour de rôle, dans cet ordre</legend>
+          {data.assignees.map((item) => <label key={item.id}><input type="checkbox" checked={currentRule.rotation_assignee_ids.includes(item.id)}
+            onChange={(event) => changeRule({ rotation_assignee_ids: event.target.checked
+              ? [...currentRule.rotation_assignee_ids, item.id] : currentRule.rotation_assignee_ids.filter((id) => id !== item.id) })} /> {item.name}</label>)}
+        </fieldset> : null}
         <label className="field">Terminer avant l’arrivée<select value={currentRule.buffer_minutes} onChange={(event) => changeRule({ buffer_minutes: Number(event.target.value) })}>
           {[0, 30, 60, 120].map((minutes) => <option key={minutes} value={minutes}>{minutes === 0 ? "À l’heure prévue d’arrivée" : `${minutes} min avant l’arrivée`}</option>)}
         </select></label>
@@ -217,5 +236,6 @@ export default function CleaningPage() {
       </div>
       <button type="button" disabled={busyId === `rule:${selectedGite}`} onClick={() => void saveRule()}>{busyId === `rule:${selectedGite}` ? "Enregistrement…" : "Enregistrer la règle"}</button>
     </section> : null}
+    </> : <ActionsPanel from={from} to={to} />}
   </div>;
 }

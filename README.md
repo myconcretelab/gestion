@@ -44,6 +44,10 @@ Le module « planning des intervenants » présente désormais une page **Ménag
 
 Un intervenant ne voit que les ménages qui lui sont attribués. Il peut les démarrer, les terminer et ajouter une note sans droit d'écriture général ; le contrôle final reste réservé au gestionnaire quand la règle l'exige. Les contrôles de la page « Aujourd'hui » et les liens de validation Telegram mettent à jour le même état. L'ancien planning partagé reste accessible sous « Ménages → Plannings partagés » pour conserver ses liens et ses envois existants.
 
+Les règles de ménage peuvent attribuer les nouvelles tâches manuellement, à un intervenant habituel ou à tour de rôle parmi une liste ordonnée. La rotation avance uniquement lors de la création d'un nouveau ménage et ne réattribue pas ceux qui existent déjà.
+
+L'onglet « Autres actions » permet de créer des tâches ponctuelles et des modèles réutilisables par gîte. Un modèle crée une action à chaque arrivée ou départ, avec un début et une échéance exprimés en jours et heures par rapport à cet événement. Il dispose des mêmes modes d'attribution, dont le tour de rôle. Un modèle désactivé ne génère plus de nouvelles tâches ; les tâches déjà créées restent visibles. Les intervenants ne voient et ne peuvent modifier que leurs actions attribuées. Ces actions n'affectent pas l'état « gîte prêt », qui reste propre au ménage.
+
 ## Stripe en mode test
 
 La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.
