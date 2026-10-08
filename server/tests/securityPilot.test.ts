@@ -5,6 +5,7 @@ import prisma from "../src/db/prisma.ts";
 import { createApp } from "../src/app.ts";
 import { shouldRefuseProductionStart, updateUserCredentials } from "../src/services/serverAuth.ts";
 import { createApiToken, revokeApiToken, verifyScopedApiToken } from "../src/services/apiTokens.ts";
+import { HISTORICAL_ORGANIZATION_ID } from "../src/services/organizationContext.ts";
 
 test("une production sans compte protégé reste fermée", () => {
   assert.equal(shouldRefuseProductionStart("production", 0), true);
@@ -29,12 +30,24 @@ test("un jeton d'intégration est hashé, limité à ses scopes et révocable", 
 
 test("Booked accepte uniquement un jeton portant son scope dédié", async () => {
   const previousInstallation = await prisma.installationConfig.findUnique({ where: { id: "default" } });
+  const previousSettings = await prisma.organizationSettings.findUnique({ where: { organization_id: HISTORICAL_ORGANIZATION_ID } });
   const previousModules = previousInstallation ? JSON.parse(previousInstallation.modules_json) as Record<string, boolean> : {};
+  const previousSettingsModules = previousSettings ? JSON.parse(previousSettings.modules_json) as Record<string, boolean> : {};
   await prisma.installationConfig.upsert({
     where: { id: "default" },
     update: { modules_json: JSON.stringify({ ...previousModules, web_publication: true }) },
     create: { id: "default", organization_json: "{}", modules_json: JSON.stringify({ web_publication: true }) },
   });
+  await prisma.organizationSettings.upsert({
+    where: { organization_id: HISTORICAL_ORGANIZATION_ID },
+    update: { modules_json: JSON.stringify({ ...previousSettingsModules, web_publication: true }) },
+    create: { organization_id: HISTORICAL_ORGANIZATION_ID, modules_json: JSON.stringify({ web_publication: true }) },
+  });
+  const protectedLogin = `booked-guard-${crypto.randomUUID()}`;
+  const protectedUser = await prisma.appUser.create({ data: {
+    display_name: "Booked Guard", login_id: protectedLogin, is_owner: true, is_active: true,
+  } });
+  await updateUserCredentials(protectedUser.id, { loginId: protectedLogin, password: "PilotPassword123!" });
   const bookedToken = await createApiToken({ name: "Booked", scopes: ["booked:access"] });
   const unrelatedToken = await createApiToken({ name: "Réservations", scopes: ["reservations:write"] });
   const server = createApp().listen(0);
@@ -60,10 +73,16 @@ test("Booked accepte uniquement un jeton portant son scope dédié", async () =>
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await prisma.apiToken.deleteMany({ where: { id: { in: [bookedToken.id, unrelatedToken.id] } } });
+    await prisma.appUser.delete({ where: { id: protectedUser.id } });
     if (previousInstallation) {
       await prisma.installationConfig.update({ where: { id: "default" }, data: { modules_json: previousInstallation.modules_json } });
     } else {
       await prisma.installationConfig.delete({ where: { id: "default" } });
+    }
+    if (previousSettings) {
+      await prisma.organizationSettings.update({ where: { organization_id: HISTORICAL_ORGANIZATION_ID }, data: { modules_json: previousSettings.modules_json } });
+    } else {
+      await prisma.organizationSettings.delete({ where: { organization_id: HISTORICAL_ORGANIZATION_ID } });
     }
   }
 });
