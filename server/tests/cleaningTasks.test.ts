@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleaningWindow } from "../src/services/cleaningTasks.js";
+import { cleaningWindow, parisWallTime, serializeCleaningTask } from "../src/services/cleaningTasks.js";
 
 test("un ménage peut être prévu la veille de l’arrivée sans commencer avant le départ", () => {
   const window = cleaningWindow({
@@ -30,4 +30,15 @@ test("une marge impossible est signalée pour une arrivée trop proche du dépar
     scheduleMode: "after_departure", bufferMinutes: 60,
   });
   assert.equal(window.impossibleWindow, true);
+});
+
+test("la tâche expose l’arrivée réelle pour sortir les ménages manqués de la liste active", () => {
+  const task = serializeCleaningTask({
+    id: "cleaning-1", gite_id: "gite-1", departure_reservation_id: "departure-1",
+    arrival_reservation_id: "arrival-1", assignee_id: null, status: "planned",
+    starts_at: new Date("2026-10-08T09:00:00.000Z"), due_at: new Date("2026-10-08T15:00:00.000Z"),
+    completed_at: null, checked_at: null, note: "",
+  }, { arrivalAt: parisWallTime("2026-10-08", "18:00") }, true);
+  assert.equal(task.arrival_at, "2026-10-08T16:00:00.000Z");
+  assert.equal(task.due_at, "2026-10-08T15:00:00.000Z");
 });

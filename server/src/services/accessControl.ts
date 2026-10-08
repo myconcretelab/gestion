@@ -41,9 +41,12 @@ const pageForPermission: Partial<Record<BusinessPermission, AppPageId>> = {
 export const hasBusinessPermission = (user: AppUserSummary, permission: BusinessPermission) => {
   if (user.permissions.isOwner) return true;
   if (permission.startsWith("users:") || permission === "integrations:manage" || permission.endsWith(":share")) return false;
+  if (permission === "cleaning:execute") {
+    return user.pageAccess.includes("today") || user.pageAccess.includes("planning_relay");
+  }
   const page = pageForPermission[permission];
   if (!page || !user.pageAccess.includes(page)) return false;
-  if (permission === "cleaning:execute" || permission === "actions:execute") return true;
+  if (permission === "actions:execute") return true;
   return !permission.endsWith(":write") || user.permissions.canWrite;
 };
 

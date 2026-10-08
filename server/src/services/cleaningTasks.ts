@@ -176,12 +176,13 @@ export const serializeCleaningTask = (task: {
   id: string; gite_id: string; departure_reservation_id: string; arrival_reservation_id: string | null;
   assignee_id: string | null; status: string; starts_at: Date; due_at: Date | null;
   completed_at: Date | null; checked_at: Date | null; note: string;
-}, names: { gite?: string; assignee?: string | null }, requiresCheck: boolean) => ({
+}, names: { gite?: string; assignee?: string | null; arrivalAt?: Date | null }, requiresCheck: boolean) => ({
   id: task.id, gite_id: task.gite_id, gite_name: names.gite ?? "Gîte",
   departure_reservation_id: task.departure_reservation_id,
   arrival_reservation_id: task.arrival_reservation_id,
   assignee_id: task.assignee_id, assignee_name: names.assignee ?? null,
   status: task.status, starts_at: task.starts_at.toISOString(), due_at: task.due_at?.toISOString() ?? null,
+  arrival_at: names.arrivalAt?.toISOString() ?? null,
   completed_at: task.completed_at?.toISOString() ?? null, checked_at: task.checked_at?.toISOString() ?? null,
   requires_check: requiresCheck, schedule_conflict: Boolean(task.due_at && task.starts_at >= task.due_at), note: task.note,
 });

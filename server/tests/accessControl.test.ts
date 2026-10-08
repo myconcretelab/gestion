@@ -77,6 +77,10 @@ test("un intervenant est refusé sur les familles hors rôle et ne peut pas empr
   assert.equal(hasBusinessPermission(readOnlyWorker, "cleaning:execute"), true);
   assert.equal(hasBusinessPermission(readOnlyWorker, "actions:execute"), true);
   assert.equal(hasBusinessPermission(readOnlyWorker, "planning:write"), false);
+  const todayOnlyWorker = { ...readOnlyWorker, pageAccess: ["today"] as AppUserSummary["pageAccess"] };
+  assert.equal(hasBusinessPermission(todayOnlyWorker, "cleaning:execute"), true);
+  assert.equal(hasBusinessPermission(todayOnlyWorker, "planning:read"), false);
+  assert.equal(hasBusinessPermission({ ...todayOnlyWorker, pageAccess: [] }, "cleaning:execute"), false);
 });
 
 test("les API dédiées respectent le droit de page", () => {

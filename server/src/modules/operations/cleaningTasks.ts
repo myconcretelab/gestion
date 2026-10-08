@@ -4,7 +4,7 @@ import prisma from "../../db/prisma.js";
 import { getOrganizationId } from "../../services/organizationContext.js";
 import { fromJsonString } from "../../utils/jsonFields.js";
 import { getAuthenticatedAppUser } from "../../services/serverAuth.js";
-import { canManageCleaning, DEFAULT_CLEANING_RULE, serializeCleaningTask, syncCleaningTasks } from "../../services/cleaningTasks.js";
+import { canManageCleaning, DEFAULT_CLEANING_RULE, parisWallTime, serializeCleaningTask, syncCleaningTasks } from "../../services/cleaningTasks.js";
 import { isCleaningCheckAvailable, loadGiteCleaningReadiness, updateGiteCleaningReadiness } from "../../services/giteCleaningReadiness.js";
 import { notifyCleaningCompletedOnTelegram, notifyGiteCheckedOnTelegram } from "../../services/telegramNotifications.js";
 import { parseRotationAssignees, validateAssignees } from "../../services/assignmentRules.js";
@@ -28,12 +28,17 @@ const shiftDate = (date: Date, days: number) => new Date(date.getTime() + days *
 const taskResponse = async (id: string) => {
   const task = await prisma.cleaningTask.findUnique({ where: { id } });
   if (!task) return null;
-  const [gite, assignee, rule] = await Promise.all([
-    prisma.gite.findUnique({ where: { id: task.gite_id }, select: { nom: true } }),
+  const [gite, assignee, rule, arrival] = await Promise.all([
+    prisma.gite.findUnique({ where: { id: task.gite_id }, select: { nom: true, heure_arrivee_defaut: true } }),
     task.assignee_id ? prisma.appUser.findUnique({ where: { id: task.assignee_id }, select: { display_name: true } }) : null,
     prisma.cleaningRule.findUnique({ where: { organization_id_gite_id: { organization_id: getOrganizationId(), gite_id: task.gite_id } } }),
+    task.arrival_reservation_id ? prisma.reservation.findUnique({ where: { id: task.arrival_reservation_id }, select: { date_entree: true } }) : null,
   ]);
-  return serializeCleaningTask(task, { gite: gite?.nom, assignee: assignee?.display_name }, rule?.requires_check ?? true);
+  return serializeCleaningTask(task, {
+    gite: gite?.nom,
+    assignee: assignee?.display_name,
+    arrivalAt: arrival ? parisWallTime(formatDate(arrival.date_entree), gite?.heure_arrivee_defaut || "17:00") : null,
+  }, rule?.requires_check ?? true);
 };
 
 router.get("/", async (req, res, next) => {
@@ -58,19 +63,26 @@ router.get("/", async (req, res, next) => {
       },
       orderBy: [{ starts_at: "asc" }, { createdAt: "asc" }],
     });
-    const [gites, users, rules] = await Promise.all([
-      prisma.gite.findMany({ select: { id: true, nom: true } }),
+    const arrivalIds = [...new Set(tasks.map((task) => task.arrival_reservation_id).filter((id): id is string => Boolean(id)))];
+    const [gites, users, rules, arrivals] = await Promise.all([
+      prisma.gite.findMany({ select: { id: true, nom: true, heure_arrivee_defaut: true } }),
       manager ? prisma.appUser.findMany({ where: { is_active: true }, select: { id: true, display_name: true, status: true, intervenant_id: true } }) : [],
       prisma.cleaningRule.findMany(),
+      arrivalIds.length ? prisma.reservation.findMany({ where: { id: { in: arrivalIds } }, select: { id: true, date_entree: true } }) : [],
     ]);
-    const giteById = new Map(gites.map((item) => [item.id, item.nom]));
+    const giteById = new Map(gites.map((item) => [item.id, item]));
+    const arrivalById = new Map(arrivals.map((item) => [item.id, item]));
     const userById = new Map(users.map((item) => [item.id, item.display_name]));
     const ruleByGite = new Map(rules.map((item) => [item.gite_id, item]));
     return res.json({
-      tasks: tasks.map((task) => serializeCleaningTask(task, {
-        gite: giteById.get(task.gite_id),
-        assignee: userById.get(task.assignee_id ?? "") ?? (task.assignee_id === user?.id ? user.displayName : null),
-      }, ruleByGite.get(task.gite_id)?.requires_check ?? true)),
+      tasks: tasks.map((task) => {
+        const arrival = task.arrival_reservation_id ? arrivalById.get(task.arrival_reservation_id) : null;
+        return serializeCleaningTask(task, {
+          gite: giteById.get(task.gite_id)?.nom,
+          assignee: userById.get(task.assignee_id ?? "") ?? (task.assignee_id === user?.id ? user.displayName : null),
+          arrivalAt: arrival ? parisWallTime(formatDate(arrival.date_entree), giteById.get(task.gite_id)?.heure_arrivee_defaut || "17:00") : null,
+        }, ruleByGite.get(task.gite_id)?.requires_check ?? true);
+      }),
       gites: manager ? gites : [],
       assignees: manager ? users.filter((item) => item.intervenant_id || item.status === "worker").map((item) => ({ id: item.id, name: item.display_name })) : [],
       rules: manager ? gites.map((gite) => {

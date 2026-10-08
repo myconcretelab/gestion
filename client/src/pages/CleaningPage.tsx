@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import ActionsPanel from "./ActionsPanel";
+import { isMissedCleaningTask } from "./cleaningTaskStatus";
 
 type CleaningStatus = "planned" | "in_progress" | "done" | "verified";
 type CleaningTask = {
   id: string; gite_id: string; gite_name: string; departure_reservation_id: string;
   assignee_id: string | null; assignee_name: string | null; status: CleaningStatus;
   starts_at: string; due_at: string | null; completed_at: string | null;
+  arrival_at: string | null;
   checked_at: string | null; requires_check: boolean; note: string;
   schedule_conflict: boolean;
   notification_warning?: string | null;
@@ -47,8 +49,9 @@ const scheduleLabel: Record<CleaningRule["schedule_mode"], string> = {
 
 export default function CleaningPage() {
   const today = parisDay();
-  const [from, setFrom] = useState(addDays(today, -7));
+  const [from, setFrom] = useState(today);
   const [to, setTo] = useState(addDays(today, 45));
+  const [now, setNow] = useState(() => new Date());
   const [data, setData] = useState<CleaningResponse | null>(null);
   const [rules, setRules] = useState<Record<string, CleaningRule>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
@@ -75,6 +78,10 @@ export default function CleaningPage() {
   }, [from, to]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const updateTask = async (task: CleaningTask, kind: "assignment" | "status", value: string | null) => {
     setBusyId(task.id); setError(null); setNotice(null);
@@ -124,8 +131,8 @@ export default function CleaningPage() {
   };
 
   const visibleTasks = useMemo(() => (data?.tasks ?? []).filter((task) =>
-    view === "all" || (view === "pending" ? task.status !== "verified" : task.status === "verified")
-  ), [data?.tasks, view]);
+    view === "all" || (view === "pending" ? task.status !== "verified" && !isMissedCleaningTask(task, now) : task.status === "verified")
+  ), [data?.tasks, view, now]);
   const currentRule = rules[selectedGite];
   const changeRule = (patch: Partial<CleaningRule>) => setRules((current) => ({
     ...current, [selectedGite]: { ...current[selectedGite], ...patch },
@@ -163,28 +170,30 @@ export default function CleaningPage() {
       {loading ? <p>Chargement des ménages…</p> : visibleTasks.length === 0 ?
         <p className="field-hint">Aucun ménage pour cette période et ce filtre.</p> :
         <div className="cleaning-page__list">{visibleTasks.map((task) => {
-          const overdue = task.status !== "verified" && task.due_at && new Date(task.due_at) < new Date();
-          return <article className={`cleaning-task${overdue ? " cleaning-task--overdue" : ""}`} key={task.id}>
+          const missed = isMissedCleaningTask(task, now);
+          const overdue = !missed && task.status !== "verified" && task.due_at && new Date(task.due_at) < now;
+          return <article className={`cleaning-task${overdue ? " cleaning-task--overdue" : ""}${missed ? " cleaning-task--missed" : ""}`} key={task.id}>
             <div className="cleaning-task__main">
-              <span className={`cleaning-task__status cleaning-task__status--${task.status}`}>{statusLabel[task.status]}</span>
+              <span className={`cleaning-task__status cleaning-task__status--${task.status}`}>{missed ? "Non confirmé" : statusLabel[task.status]}</span>
               <h2>{task.gite_name}</h2>
               <p>À partir du {formatDateTime(task.starts_at)}{task.due_at ? ` · À terminer avant le ${formatDateTime(task.due_at)}` : ""}</p>
+              {missed ? <small className="cleaning-task__warning">Heure d’arrivée prévue dépassée : ménage non confirmé.</small> : null}
               {overdue ? <small className="cleaning-task__warning">Échéance dépassée</small> : null}
               {task.schedule_conflict ? <small className="cleaning-task__warning">Créneau impossible : vérifiez les horaires d’arrivée et de départ.</small> : null}
               {task.assignee_name && !data?.can_manage ? <small>Attribué à {task.assignee_name}</small> : null}
             </div>
             <div className="cleaning-task__actions">
               {data?.can_manage ? <label>Intervenant
-                <select value={task.assignee_id ?? ""} disabled={busyId === task.id}
+                <select value={task.assignee_id ?? ""} disabled={busyId === task.id || missed}
                   onChange={(event) => void updateTask(task, "assignment", event.target.value || null)}>
                   <option value="">Non attribué</option>
                   {data.assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select></label> : null}
-              {task.status === "planned" ? <button type="button" disabled={busyId === task.id}
+              {!missed && task.status === "planned" ? <button type="button" disabled={busyId === task.id}
                 onClick={() => void updateTask(task, "status", "in_progress")}>Commencer</button> : null}
-              {task.status === "in_progress" || task.status === "planned" ? <button type="button" disabled={busyId === task.id}
+              {!missed && (task.status === "in_progress" || task.status === "planned") ? <button type="button" disabled={busyId === task.id}
                 onClick={() => void updateTask(task, "status", "done")}>Ménage terminé</button> : null}
-              {task.status === "done" && (data?.can_manage || !task.requires_check) ? <button type="button" disabled={busyId === task.id}
+              {!missed && task.status === "done" && (data?.can_manage || !task.requires_check) ? <button type="button" disabled={busyId === task.id}
                 onClick={() => void updateTask(task, "status", "verified")}>Valider le contrôle</button> : null}
               {task.status === "verified" && data?.can_manage ? <button type="button" className="button-secondary" disabled={busyId === task.id}
                 onClick={() => void updateTask(task, "status", "planned")}>Rouvrir</button> : null}

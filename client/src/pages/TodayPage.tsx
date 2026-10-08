@@ -58,9 +58,12 @@ type GiteCleaningReadiness = {
   checked_at: string | null;
   checked_by_user_id?: string | null;
   checked_by_name?: string | null;
+  task_id?: string | null;
   task_status?: string | null;
+  task_starts_at?: string | null;
   assignee_id?: string | null;
   due_at?: string | null;
+  next_arrival_at?: string | null;
   notification_warning?: string | null;
 };
 
@@ -700,6 +703,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const [trashNow, setTrashNow] = useState(() => new Date());
   const [cleaningReadinessBusyId, setCleaningReadinessBusyId] = useState<string | null>(null);
   const [cleaningReadinessUndo, setCleaningReadinessUndo] = useState<GiteCleaningReadiness | null>(null);
+  const [selectedCleaningGiteId, setSelectedCleaningGiteId] = useState<string | null>(null);
   const primaryRequestIdRef = useRef(0);
   const deferredRequestIdRef = useRef(0);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
@@ -825,7 +829,8 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const cleaningReadiness = primaryOverview?.cleaning_readiness ?? [];
   const pendingCleaningReadiness = useMemo(
     () => cleaningReadiness
-      .filter((item) => !item.checked_at && isCleaningReadinessAvailable(item, trashNow))
+      .filter((item) => !item.checked_at && isCleaningReadinessAvailable(item, trashNow)
+        && (!item.next_arrival_at || new Date(item.next_arrival_at) > trashNow))
       .sort((left, right) => {
         const leftUrgent = left.next_arrival_date === todayIso ? 0 : 1;
         const rightUrgent = right.next_arrival_date === todayIso ? 0 : 1;
@@ -833,6 +838,11 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
       }),
     [cleaningReadiness, todayIso, trashNow]
   );
+  const selectedCleaningReadiness = pendingCleaningReadiness.find((item) => item.gite_id === selectedCleaningGiteId) ?? null;
+  const selectedCleaningAvailable = !selectedCleaningReadiness?.task_starts_at
+    || new Date(selectedCleaningReadiness.task_starts_at) <= trashNow;
+  const canManageCleaningReadiness = !currentUser || currentUser.permissions.isOwner
+    || (currentUser.status !== "worker" && currentUser.permissions.canWrite);
   const cleaningReadinessByArrivalId = useMemo(
     () => new Map(
       cleaningReadiness
@@ -1143,6 +1153,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         ),
       } : previous);
       setCleaningReadinessUndo(checked ? updated : null);
+      setSelectedCleaningGiteId(null);
       dispatchAppNotice({
         label: checked ? `${updated.gite_prefix} est prêt` : `Validation de ${updated.gite_prefix} annulée`,
         message: checked
@@ -1166,6 +1177,50 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
     } catch (err) {
       dispatchAppNotice({
         label: checked ? "Contrôle non enregistré" : "Annulation impossible",
+        message: err instanceof Error ? err.message : "Une erreur est survenue.",
+        tone: "error",
+        timeoutMs: 8000,
+        role: "alert",
+      });
+    } finally {
+      setCleaningReadinessBusyId(null);
+    }
+  };
+
+  const updateCleaningTaskStatus = async (item: GiteCleaningReadiness, status: "in_progress" | "done") => {
+    if (cleaningReadinessBusyId || !item.task_id) return;
+    setCleaningReadinessBusyId(item.gite_id);
+    try {
+      const updated = await apiFetch<{ status: string; checked_at: string | null; notification_warning?: string | null }>(
+        `/cleaning-tasks/${encodeURIComponent(item.task_id)}/status`,
+        { method: "PATCH", json: { status } }
+      );
+      setPrimaryOverview((previous) => previous ? {
+        ...previous,
+        cleaning_readiness: previous.cleaning_readiness.map((candidate) =>
+          candidate.departure_reservation_id === item.departure_reservation_id
+            ? { ...candidate, task_status: updated.status, checked_at: updated.checked_at }
+            : candidate
+        ),
+      } : previous);
+      setSelectedCleaningGiteId(null);
+      dispatchAppNotice({
+        label: updated.status === "verified" ? `${item.gite_prefix} est prêt`
+          : status === "in_progress" ? `Ménage de ${item.gite_prefix} commencé` : `Ménage de ${item.gite_prefix} terminé`,
+        message: updated.status === "done" ? "Le contrôle du gîte reste à valider."
+          : updated.status === "verified" ? "Le gîte a été marqué prêt."
+          : "Le ménage est maintenant en cours.",
+        tone: "success",
+        timeoutMs: 4200,
+        role: "status",
+      });
+      if (updated.notification_warning) {
+        dispatchAppNotice({ label: "Notification non envoyée", message: updated.notification_warning,
+          tone: "warning", timeoutMs: 8000, role: "status" });
+      }
+    } catch (err) {
+      dispatchAppNotice({
+        label: "Ménage non mis à jour",
         message: err instanceof Error ? err.message : "Une erreur est survenue.",
         tone: "error",
         timeoutMs: 8000,
@@ -1274,14 +1329,12 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
           </div>
         </div>
         {pendingCleaningReadiness.length > 0 ? (
-          <div className="today-cleaning-readiness" aria-label="Gîtes à vérifier aujourd’hui">
+          <div className="today-cleaning-readiness" aria-label="Ménages à suivre aujourd’hui">
             <div className="today-cleaning-readiness__label">
               <strong>Ménages</strong>
             </div>
             <div className="today-cleaning-readiness__actions">
               {pendingCleaningReadiness.map((item) => {
-                const canCheck = (!currentUser || currentUser.permissions.isOwner || (currentUser.status !== "worker" && currentUser.permissions.canWrite))
-                  && (!item.task_status || item.task_status === "done");
                 const dueLabel = item.due_at ? new Date(item.due_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).replace(":00", "h") : null;
                 return (
                 <button
@@ -1293,8 +1346,10 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                     item.next_arrival_date === todayIso ? " today-cleaning-readiness__button--urgent" : ""
                   }`}
                   disabled={Boolean(cleaningReadinessBusyId)}
-                  aria-label={canCheck ? `Marquer ${item.gite_name} prêt` : `Ouvrir le ménage de ${item.gite_name}`}
-                  onClick={() => canCheck ? void updateCleaningReadiness(item, true) : navigate("/menages")}
+                  aria-label={`Gérer le ménage de ${item.gite_name}`}
+                  aria-expanded={selectedCleaningGiteId === item.gite_id}
+                  aria-controls={selectedCleaningGiteId === item.gite_id ? "today-cleaning-panel" : undefined}
+                  onClick={() => setSelectedCleaningGiteId((current) => current === item.gite_id ? null : item.gite_id)}
                 >
                   <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>
                   {item.departure_has_cleaning_option ? <small className="today-cleaning-readiness__option-label">M</small> : null}
@@ -1303,6 +1358,39 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               ); })}
             </div>
           </div>
+        ) : null}
+        {selectedCleaningReadiness ? (
+          <section id="today-cleaning-panel" className="today-cleaning-readiness__panel" aria-label={`Ménage de ${selectedCleaningReadiness.gite_name}`}>
+            <div className="today-cleaning-readiness__panel-header">
+              <div>
+                <strong>{selectedCleaningReadiness.gite_name}</strong>
+                <span>Départ du {new Date(`${selectedCleaningReadiness.departure_date}T00:00:00Z`).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "UTC" })}</span>
+              </div>
+              <button type="button" className="secondary" onClick={() => setSelectedCleaningGiteId(null)} aria-label="Fermer les actions du ménage">Fermer</button>
+            </div>
+            {!selectedCleaningAvailable && selectedCleaningReadiness.task_starts_at ? (
+              <p>Ménage prévu à partir du {new Date(selectedCleaningReadiness.task_starts_at).toLocaleString("fr-FR", {
+                day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris",
+              })}.</p>
+            ) : selectedCleaningReadiness.task_status === "in_progress" ? <p>Ménage en cours.</p>
+              : selectedCleaningReadiness.task_status === "done" ? <p>Ménage terminé, en attente de contrôle.</p>
+              : !selectedCleaningReadiness.task_id ? <p>Aucun ménage n’est planifié pour ce départ.</p>
+              : null}
+            <div className="today-cleaning-readiness__panel-actions">
+              {selectedCleaningAvailable && selectedCleaningReadiness.task_id && selectedCleaningReadiness.task_status === "planned" ? (
+                <button type="button" disabled={Boolean(cleaningReadinessBusyId)}
+                  onClick={() => void updateCleaningTaskStatus(selectedCleaningReadiness, "in_progress")}>Commencer le ménage</button>
+              ) : null}
+              {selectedCleaningAvailable && selectedCleaningReadiness.task_id && (selectedCleaningReadiness.task_status === "planned" || selectedCleaningReadiness.task_status === "in_progress") ? (
+                <button type="button" disabled={Boolean(cleaningReadinessBusyId)}
+                  onClick={() => void updateCleaningTaskStatus(selectedCleaningReadiness, "done")}>Ménage terminé</button>
+              ) : null}
+              {canManageCleaningReadiness && (!selectedCleaningReadiness.task_status || selectedCleaningReadiness.task_status === "done") ? (
+                <button type="button" disabled={Boolean(cleaningReadinessBusyId)}
+                  onClick={() => void updateCleaningReadiness(selectedCleaningReadiness, true)}>Valider le contrôle</button>
+              ) : null}
+            </div>
+          </section>
         ) : null}
         {cleaningReadinessUndo ? (
           <div className="today-cleaning-readiness__undo" role="status">

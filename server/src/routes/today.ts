@@ -29,7 +29,7 @@ import {
 } from "../services/giteCleaningReadiness.js";
 import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
-import { canManageCleaning, doesCleaningRequireCheck, getCleaningTaskForDeparture, listCleaningTasksForDepartures, setCleaningTaskReadiness, syncCleaningTasks } from "../services/cleaningTasks.js";
+import { canManageCleaning, doesCleaningRequireCheck, getCleaningTaskForDeparture, listCleaningTasksForDepartures, parisWallTime, setCleaningTaskReadiness, syncCleaningTasks } from "../services/cleaningTasks.js";
 import { isModuleEnabled } from "../services/installationConfig.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
@@ -52,6 +52,7 @@ const todayGiteSelect = {
   nom: true,
   prefixe_contrat: true,
   ordre: true,
+  heure_arrivee_defaut: true,
 } as const;
 
 type TodayRevenueAverageMetric = {
@@ -548,12 +549,18 @@ router.get("/overview/primary", async (req, res, next) => {
       return listCleaningTasksForDepartures(cleaningReadiness.map((item) => item.departure_reservation_id));
     })() : [];
     const taskByDeparture = new Map(cleaningTasks.map((item) => [item.departure_reservation_id, item]));
+    const giteById = new Map(gites.map((gite) => [gite.id, gite]));
     const visibleReadiness = cleaningReadiness
       .filter((item) => canManageCleaning(currentUser) || taskByDeparture.get(item.departure_reservation_id)?.assignee_id === currentUser?.id)
       .map((item) => ({ ...item,
+        task_id: taskByDeparture.get(item.departure_reservation_id)?.id ?? null,
         task_status: taskByDeparture.get(item.departure_reservation_id)?.status ?? null,
+        task_starts_at: taskByDeparture.get(item.departure_reservation_id)?.starts_at?.toISOString() ?? null,
         assignee_id: taskByDeparture.get(item.departure_reservation_id)?.assignee_id ?? null,
         due_at: taskByDeparture.get(item.departure_reservation_id)?.due_at?.toISOString() ?? null,
+        next_arrival_at: item.next_arrival_date
+          ? parisWallTime(item.next_arrival_date, giteById.get(item.gite_id)?.heure_arrivee_defaut || "17:00").toISOString()
+          : null,
       }));
 
     return res.json({
@@ -616,12 +623,17 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
 
     return res.json({
       ...readiness,
+      task_id: cleaningTask?.id ?? currentTask?.id ?? null,
+      task_starts_at: cleaningTask?.starts_at?.toISOString() ?? currentTask?.starts_at?.toISOString() ?? null,
       checked_at: checkedAt,
       checked_by_user_id: checked ? currentUser?.id ?? null : null,
       checked_by_name: checked ? currentUser?.displayName ?? null : null,
       task_status: checked ? "verified" : cleaningTask?.completed_at ? "done" : "planned",
       assignee_id: cleaningTask?.assignee_id ?? null,
       due_at: cleaningTask?.due_at?.toISOString() ?? null,
+      next_arrival_at: readiness.next_arrival_date
+        ? parisWallTime(readiness.next_arrival_date, gite.heure_arrivee_defaut || "17:00").toISOString()
+        : null,
       notification_warning: notificationWarning,
     });
   } catch (error) {
