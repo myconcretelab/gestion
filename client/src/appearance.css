@@ -951,6 +951,15 @@ html:is([data-template=midnight], [data-template=garden]) .app :is(button.second
   border-color: var(--theme-border-soft);
 }
 
+/* Keep inactive cleaning filters readable when a theme styles all buttons as filled. */
+html[data-template] .app .cleaning-page__tabs button:not(.is-selected) {
+  color: var(--ink);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: none;
+  text-shadow: none;
+}
+
 html:is([data-template=midnight], [data-template=garden]) .app :is(input:not([type="range"]), select, textarea) {
   color: var(--theme-text);
   background: var(--theme-surface);
