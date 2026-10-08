@@ -5,6 +5,8 @@ import {
   readTelegramNotificationConfig,
 } from "../services/telegramNotifications.js";
 import { parseCleaningCheckToken } from "../services/telegramDeadlineNotifications.js";
+import { markCleaningTaskCheckedFromPublicLink, syncCleaningTasks } from "../services/cleaningTasks.js";
+import { isModuleEnabled } from "../services/installationConfig.js";
 
 const router = Router();
 
@@ -32,7 +34,7 @@ router.get("/confirm", async (req, res, next) => {
     const [departure, arrival] = await Promise.all([
       prisma.reservation.findUnique({
         where: { id: payload.departureReservationId },
-        select: { id: true, gite_id: true, departure_cleaning_checked_at: true },
+        select: { id: true, gite_id: true, date_sortie: true, departure_cleaning_checked_at: true },
       }),
       prisma.reservation.findUnique({
         where: { id: payload.arrivalReservationId },
@@ -65,6 +67,11 @@ router.get("/confirm", async (req, res, next) => {
           data: { arrival_cleaning_checked_at: checkedAt, arrival_cleaning_checked_by_user_id: null },
         }),
       ]);
+      if (await isModuleEnabled("worker_planning")) {
+        const departureDay = departure.date_sortie.toISOString().slice(0, 10);
+        await syncCleaningTasks(departureDay, departureDay);
+        await markCleaningTaskCheckedFromPublicLink(departure.id, checkedAt);
+      }
       try {
         await notifyGiteCheckedOnTelegram(arrival.gite?.nom ?? "Gîte", checkedAt, "Telegram");
       } catch (error) {

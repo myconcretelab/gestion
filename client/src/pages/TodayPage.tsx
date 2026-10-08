@@ -21,6 +21,7 @@ import {
   RESERVATION_SOURCES,
 } from "./shared/reservationSources";
 import type { Gite, Reservation } from "../utils/types";
+import type { AppUser } from "../utils/auth";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOTAL_DAY_COUNT = 14;
@@ -57,6 +58,9 @@ type GiteCleaningReadiness = {
   checked_at: string | null;
   checked_by_user_id?: string | null;
   checked_by_name?: string | null;
+  task_status?: string | null;
+  assignee_id?: string | null;
+  due_at?: string | null;
   notification_warning?: string | null;
 };
 
@@ -677,7 +681,7 @@ const RevenueTrendIcon = ({ direction }: { direction: "up" | "down" | "flat" }) 
 
 const formatRevenueDifference = (value: number) => `${value > 0 ? "+" : ""}${formatEuro(value)}`;
 
-const TodayPage = () => {
+const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const navigate = useNavigate();
   const [primaryOverview, setPrimaryOverview] = useState<TodayPrimaryOverviewPayload | null>(null);
   const [deferredOverview, setDeferredOverview] = useState<TodayDeferredOverviewPayload | null>(null);
@@ -1272,10 +1276,14 @@ const TodayPage = () => {
         {pendingCleaningReadiness.length > 0 ? (
           <div className="today-cleaning-readiness" aria-label="Gîtes à vérifier aujourd’hui">
             <div className="today-cleaning-readiness__label">
-              <strong>À vérifier</strong>
+              <strong>Ménages</strong>
             </div>
             <div className="today-cleaning-readiness__actions">
-              {pendingCleaningReadiness.map((item) => (
+              {pendingCleaningReadiness.map((item) => {
+                const canCheck = (!currentUser || currentUser.permissions.isOwner || (currentUser.status !== "worker" && currentUser.permissions.canWrite))
+                  && (!item.task_status || item.task_status === "done");
+                const dueLabel = item.due_at ? new Date(item.due_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).replace(":00", "h") : null;
+                return (
                 <button
                   key={item.gite_id}
                   type="button"
@@ -1285,14 +1293,14 @@ const TodayPage = () => {
                     item.next_arrival_date === todayIso ? " today-cleaning-readiness__button--urgent" : ""
                   }`}
                   disabled={Boolean(cleaningReadinessBusyId)}
-                  aria-label={`Marquer ${item.gite_name} prêt${item.departure_has_cleaning_option ? ", option ménage prise" : ""}${item.next_arrival_date === todayIso ? " avant 17 heures" : ""}`}
-                  onClick={() => void updateCleaningReadiness(item, true)}
+                  aria-label={canCheck ? `Marquer ${item.gite_name} prêt` : `Ouvrir le ménage de ${item.gite_name}`}
+                  onClick={() => canCheck ? void updateCleaningReadiness(item, true) : navigate("/menages")}
                 >
                   <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>
                   {item.departure_has_cleaning_option ? <small className="today-cleaning-readiness__option-label">M</small> : null}
-                  {item.next_arrival_date === todayIso ? <small className="today-cleaning-readiness__deadline">17h</small> : null}
+                  {item.next_arrival_date === todayIso && dueLabel ? <small className="today-cleaning-readiness__deadline">{dueLabel}</small> : null}
                 </button>
-              ))}
+              ); })}
             </div>
           </div>
         ) : null}

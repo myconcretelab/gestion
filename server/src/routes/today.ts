@@ -29,6 +29,8 @@ import {
 } from "../services/giteCleaningReadiness.js";
 import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
+import { canManageCleaning, doesCleaningRequireCheck, getCleaningTaskForDeparture, listCleaningTasksForDepartures, setCleaningTaskReadiness, syncCleaningTasks } from "../services/cleaningTasks.js";
+import { isModuleEnabled } from "../services/installationConfig.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 import { extractAirbnbConfirmationCode } from "../utils/airbnbReservationIdentity.js";
@@ -538,6 +540,21 @@ router.get("/overview/primary", async (req, res, next) => {
       buildTodayRevenueAverageMetrics(today),
     ]);
     const cleaningReadiness = await loadGiteCleaningReadiness(gites);
+    const currentUser = await getAuthenticatedAppUser(req);
+    const fromDate = new Date(today.getTime() - 30 * DAY_MS).toISOString().slice(0, 10);
+    const toDate = new Date(today.getTime() + 14 * DAY_MS).toISOString().slice(0, 10);
+    const cleaningTasks = await isModuleEnabled("worker_planning") ? await (async () => {
+      await syncCleaningTasks(fromDate, toDate);
+      return listCleaningTasksForDepartures(cleaningReadiness.map((item) => item.departure_reservation_id));
+    })() : [];
+    const taskByDeparture = new Map(cleaningTasks.map((item) => [item.departure_reservation_id, item]));
+    const visibleReadiness = cleaningReadiness
+      .filter((item) => canManageCleaning(currentUser) || taskByDeparture.get(item.departure_reservation_id)?.assignee_id === currentUser?.id)
+      .map((item) => ({ ...item,
+        task_status: taskByDeparture.get(item.departure_reservation_id)?.status ?? null,
+        assignee_id: taskByDeparture.get(item.departure_reservation_id)?.assignee_id ?? null,
+        due_at: taskByDeparture.get(item.departure_reservation_id)?.due_at?.toISOString() ?? null,
+      }));
 
     return res.json({
       today: toIsoDate(today),
@@ -547,7 +564,7 @@ router.get("/overview/primary", async (req, res, next) => {
       reservations,
       source_colors: readSourceColorSettings().colors,
       revenue_averages: revenueAverages,
-      cleaning_readiness: cleaningReadiness,
+      cleaning_readiness: visibleReadiness,
     });
   } catch (error) {
     return next(error);
@@ -568,12 +585,22 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
     if (!readiness) {
       return res.status(409).json({ error: "Aucun contrôle de préparation n’est disponible pour ce gîte." });
     }
+    const currentTask = await getCleaningTaskForDeparture(readiness.departure_reservation_id);
+    if (!canManageCleaning(currentUser) && (currentTask?.assignee_id !== currentUser?.id || (checked && currentTask?.status !== "done"))) {
+      return res.status(403).json({ error: "Ce contrôle ne vous est pas attribué ou le ménage n’est pas terminé." });
+    }
+    if (checked && !canManageCleaning(currentUser) && currentTask) {
+      if (await doesCleaningRequireCheck(currentTask.gite_id)) return res.status(403).json({ error: "Le contrôle final est réservé au gestionnaire." });
+    }
     if (checked && !isCleaningCheckAvailable(readiness, new Date())) {
       return res.status(409).json({ error: "Le contrôle sera disponible à partir de minuit le jour du départ." });
     }
 
     const wasChecked = Boolean(readiness.checked_at);
     const checkedAt = await updateGiteCleaningReadiness(readiness, checked, currentUser?.id ?? null);
+    const cleaningTask = await isModuleEnabled("worker_planning")
+      ? await setCleaningTaskReadiness(readiness.departure_reservation_id, readiness.departure_date, checked, checkedAt, currentUser?.id ?? null)
+      : null;
     let notificationWarning: string | null = null;
     if (checked && !wasChecked && checkedAt) {
       try {
@@ -592,6 +619,9 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
       checked_at: checkedAt,
       checked_by_user_id: checked ? currentUser?.id ?? null : null,
       checked_by_name: checked ? currentUser?.displayName ?? null : null,
+      task_status: checked ? "verified" : cleaningTask?.completed_at ? "done" : "planned",
+      assignee_id: cleaningTask?.assignee_id ?? null,
+      due_at: cleaningTask?.due_at?.toISOString() ?? null,
       notification_warning: notificationWarning,
     });
   } catch (error) {

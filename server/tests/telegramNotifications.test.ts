@@ -61,6 +61,11 @@ test("le rappel du ménage contient le gîte, le locataire et l'heure", () => {
   assert.match(message, /Gîte &amp; Spa/);
   assert.match(message, /Jean &lt;Test&gt;/);
   assert.match(message, /17:00/);
+  const unfinished = buildCleaningCheckReminderMessage({
+    giteName: "Gîte & Spa", guestName: "Jean", arrivalAt: new Date("2026-07-01T15:00:00.000Z"), pendingKind: "cleaning",
+  });
+  assert.match(unfinished, /ménage à terminer/);
+  assert.doesNotMatch(unfinished, /contrôle ménage à valider/);
 });
 
 test("le jour courant est calculé selon le fuseau de Paris", () => {

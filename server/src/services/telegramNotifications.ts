@@ -332,3 +332,12 @@ export const notifyGiteCheckedOnTelegram = async (name: string, checkedAt: Date,
   if (!config.notify_gite_checked) return { sent_count: 0, skipped_reason: "event_disabled" };
   return sendTelegramMessage(buildGiteCheckedMessage(name, checkedAt, config.gite_check_mentions, checkedBy), config);
 };
+
+export const notifyCleaningCompletedOnTelegram = async (name: string, completedAt: Date, completedBy?: string | null) => {
+  const config = readTelegramNotificationConfig();
+  return sendTelegramMessage([
+    `🧹 <b>Ménage terminé : ${escapeHtml(name)}</b>`,
+    completedBy ? `Par ${escapeHtml(completedBy)}` : "",
+    escapeHtml(formatDateTimeFr(completedAt)),
+  ].filter(Boolean).join("\n"), config);
+};

@@ -1145,6 +1145,47 @@ model PlanningRelayAssignment {
   @@map("planning_relay_assignments")
 }
 
+model CleaningRule {
+  id                  String   @id @default(cuid())
+  organization_id     String   @default("org_historical_broceliande")
+  gite_id             String
+  generation_mode     String   @default("always")
+  schedule_mode       String   @default("after_departure")
+  default_assignee_id String?
+  requires_check      Boolean  @default(true)
+  notify_on_complete  Boolean  @default(false)
+  reminder_minutes    Int      @default(60)
+  buffer_minutes      Int      @default(0)
+  updatedAt           DateTime @updatedAt
+
+  @@unique([organization_id, gite_id], map: "cleaning_rules_org_gite_key")
+  @@map("cleaning_rules")
+}
+
+model CleaningTask {
+  id                       String    @id @default(cuid())
+  organization_id          String    @default("org_historical_broceliande")
+  gite_id                  String
+  departure_reservation_id String
+  arrival_reservation_id   String?
+  assignee_id              String?
+  status                   String    @default("planned")
+  starts_at                DateTime
+  due_at                   DateTime?
+  completed_at             DateTime?
+  completed_by_id          String?
+  checked_at               DateTime?
+  checked_by_id            String?
+  note                     String    @default("")
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@unique([organization_id, departure_reservation_id], map: "cleaning_tasks_org_departure_key")
+  @@index([organization_id, starts_at], map: "cleaning_tasks_org_starts_idx")
+  @@index([organization_id, assignee_id, status], map: "cleaning_tasks_org_assignee_status_idx")
+  @@map("cleaning_tasks")
+}
+
 model SecurityThrottle {
   key               String    @id
   scope             String

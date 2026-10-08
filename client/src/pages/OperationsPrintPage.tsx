@@ -1270,7 +1270,7 @@ const OperationsPrintPage = () => {
             <header className="operations-period-drawer__header">
               <div>
                 <div className="operations-controls__eyebrow">Périodes enregistrées</div>
-                <h2 id="operations-period-drawer-title">Gestion des relais</h2>
+                <h2 id="operations-period-drawer-title">Plannings partagés</h2>
               </div>
               <button type="button" className="operations-period-drawer__close" onClick={closePeriodEditor} aria-label="Fermer">
                 ×

@@ -5,7 +5,7 @@ export const APP_PAGES = [
   { id: "reservations", label: "Réservations" },
   { id: "booking_requests", label: "Demandes" },
   { id: "calendar", label: "Calendrier" },
-  { id: "planning_relay", label: "Planning relais" },
+  { id: "planning_relay", label: "Ménages" },
   { id: "contracts", label: "Contrats" },
   { id: "invoices", label: "Factures" },
   { id: "gites", label: "Gîtes" },

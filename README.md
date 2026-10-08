@@ -38,6 +38,12 @@ Une installation de production refuse de démarrer sans compte protégé, sauf p
 
 Les modules sont désactivés sur une installation vierge : réservations et demandes, contrats, factures, finances et statistiques, frais personnels, planning des intervenants, publication web/WordPress, iCal, Pump/Airbnb, Smart Life, SMS, Telegram et e-mail quotidien. Une fonctionnalité désactivée est masquée, ses API sont fermées et ses tâches ne démarrent pas.
 
+## Ménages
+
+Le module « planning des intervenants » présente désormais une page **Ménages**. Un ménage est créé automatiquement à partir du départ d'une réservation. Pour chaque gîte, le gestionnaire choisit s'il est créé après chaque départ, uniquement si l'option ménage est prise, ou jamais ; il définit aussi le moment prévu (après le départ, la veille ou le jour de l'arrivée suivante), l'intervenant habituel, le délai avant l'arrivée, le contrôle final et les notifications. Les ménages existants gardent leur attribution lors d'un changement de règle. Un créneau impossible est signalé.
+
+Un intervenant ne voit que les ménages qui lui sont attribués. Il peut les démarrer, les terminer et ajouter une note sans droit d'écriture général ; le contrôle final reste réservé au gestionnaire quand la règle l'exige. Les contrôles de la page « Aujourd'hui » et les liens de validation Telegram mettent à jour le même état. L'ancien planning partagé reste accessible sous « Ménages → Plannings partagés » pour conserver ses liens et ses envois existants.
+
 ## Stripe en mode test
 
 La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.

@@ -24,7 +24,6 @@ type NotificationState = {
 
 const STATE_FILE = path.join(env.DATA_DIR, "telegram-deadline-notifications-state.json");
 const CHECK_INTERVAL_MS = 60 * 1000;
-const CLEANING_REMINDER_LEAD_MS = 60 * 60 * 1000;
 const CLEANING_LINK_VALIDITY_MS = 24 * 60 * 60 * 1000;
 
 let timer: NodeJS.Timeout | null = null;
@@ -177,13 +176,14 @@ export const buildCleaningCheckReminderMessage = (params: {
   giteName: string;
   guestName: string;
   arrivalAt: Date;
+  pendingKind?: "cleaning" | "check";
 }) => [
-  "🧹 <b>Rappel : contrôle ménage à valider</b>",
+  params.pendingKind === "cleaning" ? "🧹 <b>Rappel : ménage à terminer</b>" : "🧹 <b>Rappel : contrôle ménage à valider</b>",
   "",
   `<b>Gîte</b>: ${escapeHtml(params.giteName)}`,
   `<b>Locataire</b>: ${escapeHtml(params.guestName)}`,
   `<b>Arrivée</b>: ${escapeHtml(params.arrivalAt.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }))}`,
-  "Le contrôle n'a pas encore été validé.",
+  params.pendingKind === "cleaning" ? "Le ménage n'a pas encore été terminé." : "Le contrôle n'a pas encore été validé.",
 ].join("\n");
 
 const sendCleaningCheckReminders = async (
@@ -201,7 +201,7 @@ const sendCleaningCheckReminders = async (
   if (!readinessRows.length) return { checked: 0, sent: 0, failed: 0 };
 
   const arrivalIds = readinessRows.map((row) => row.next_arrival_reservation_id as string);
-  const [arrivals, contracts] = await Promise.all([
+  const [arrivals, contracts, cleaningRules, cleaningTasks] = await Promise.all([
     prisma.reservation.findMany({
       where: { id: { in: arrivalIds } },
       select: { id: true, hote_nom: true, date_entree: true, gite_id: true },
@@ -211,7 +211,11 @@ const sendCleaningCheckReminders = async (
       select: { reservation_id: true, heure_arrivee: true },
       orderBy: [{ date_creation: "desc" }, { id: "desc" }],
     }),
+    prisma.cleaningRule.findMany({ select: { gite_id: true, reminder_minutes: true } }),
+    prisma.cleaningTask.findMany({ where: { departure_reservation_id: { in: readinessRows.map((row) => row.departure_reservation_id) } }, select: { departure_reservation_id: true, status: true } }),
   ]);
+  const reminderMinutesByGite = new Map(cleaningRules.map((rule) => [rule.gite_id, rule.reminder_minutes]));
+  const taskByDeparture = new Map(cleaningTasks.map((task) => [task.departure_reservation_id, task]));
   const arrivalsById = new Map(arrivals.map((row) => [row.id, row]));
   const contractTimeByReservationId = new Map<string, string>();
   for (const contract of contracts) {
@@ -231,8 +235,8 @@ const sendCleaningCheckReminders = async (
     const configuredTime = contractTimeByReservationId.get(arrivalId) || gite.heure_arrivee_defaut || "17:00";
     const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(configuredTime) ? configuredTime : "17:00";
     const arrivalAt = parisDateTime(arrival.date_entree.toISOString().slice(0, 10), time);
-    const reminderAt = new Date(arrivalAt.getTime() - CLEANING_REMINDER_LEAD_MS);
-    if (now < reminderAt || now >= arrivalAt) continue;
+    const reminderAt = new Date(arrivalAt.getTime() - (reminderMinutesByGite.get(gite.id) ?? 60) * 60_000);
+    if ((reminderMinutesByGite.get(gite.id) ?? 60) === 0 || now < reminderAt || now >= arrivalAt) continue;
     const key = `cleaning:${arrivalId}:${arrivalAt.toISOString()}`;
     if (state.notified[key]) continue;
 
@@ -245,18 +249,21 @@ const sendCleaningCheckReminders = async (
     const confirmationUrl = origin
       ? `${origin}/api/public/cleaning-check/confirm?token=${encodeURIComponent(token)}`
       : "";
+    const pendingKind = ["planned", "in_progress"].includes(taskByDeparture.get(readiness.departure_reservation_id)?.status ?? "") ? "cleaning" : "check";
+    const actionUrl = pendingKind === "cleaning" ? `${origin}/menages` : confirmationUrl;
     try {
       const result = await sendMessage("telegram", {
         message: buildCleaningCheckReminderMessage({
           giteName: gite.nom,
           guestName: arrival.hote_nom,
           arrivalAt,
+          pendingKind,
         }),
         recipients,
         options: {
           ...config,
-          ...(confirmationUrl ? {
-            reply_markup: { inline_keyboard: [[{ text: "✅ C'est fait !", url: confirmationUrl }]] },
+          ...(origin && actionUrl ? {
+            reply_markup: { inline_keyboard: [[{ text: pendingKind === "cleaning" ? "Voir les ménages" : "✅ C'est fait !", url: actionUrl }]] },
           } : {}),
         },
       });

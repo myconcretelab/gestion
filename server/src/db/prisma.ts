@@ -41,7 +41,7 @@ const TENANT_MODELS = new Set([
   "ExpenseCategory", "ExpenseRecurringRule", "ExpenseEntry", "UrssafDeclaration", "GuestNightDeclaration",
   "IcalSource", "Contrat", "ContratCounter", "Facture", "FactureCounter", "ReservationPlaceholder",
   "PlanningRelayPeriod", "PlanningRelayWorker", "IntervenantHourEntry", "UserIntervention",
-  "IntervenantExpense", "PlanningRelayAssignment", "Reservation", "GiteSeasonRate", "BookingRequest",
+  "IntervenantExpense", "PlanningRelayAssignment", "CleaningRule", "CleaningTask", "Reservation", "GiteSeasonRate", "BookingRequest",
   "GiteMonthlyEnergyReading",
   "OrganizationRuntimeSetting", "OrganizationJob", "OrganizationJobAttempt", "OrganizationTaskLease", "AuditLog", "DocumentAsset",
   "Subscription", "OrganizationEntitlementOverride", "UsageCounter", "UsageEvent", "BillingEvent",

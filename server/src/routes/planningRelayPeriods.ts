@@ -37,6 +37,8 @@ import {
   sendPlanningRelayProgramTestSms,
 } from "../services/planningRelaySms.js";
 import { readTelegramNotificationConfig } from "../services/telegramNotifications.js";
+import { applyLegacyCleaningAssignment, canManageCleaning } from "../services/cleaningTasks.js";
+import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import {
   mergePlanningRelayProgrammeTemplates,
   readPlanningRelayProgrammeTemplates,
@@ -45,6 +47,14 @@ import {
 
 const MAX_DAYS = 31;
 const privateRouter = Router();
+privateRouter.use(async (req, res, next) => {
+  try {
+    if (!canManageCleaning(await getAuthenticatedAppUser(req))) {
+      return res.status(403).json({ error: "Gestion des plannings réservée aux gestionnaires." });
+    }
+    return next();
+  } catch (error) { return next(error); }
+});
 
 const summarizeSmsResults = (
   results: Awaited<ReturnType<typeof sendMessage>>[],
@@ -413,7 +423,7 @@ const getRequestOrigin = (req: Request) => {
 };
 
 const buildPlanningRelayMessage = (label: string, publicUrl: string) =>
-  `Planning relais ${label}: ${publicUrl}`;
+  `Planning des ménages ${label}: ${publicUrl}`;
 
 const buildCreateData = (
   payload: z.infer<typeof payloadSchema>,
@@ -776,6 +786,8 @@ privateRouter.patch("/:id/assignments", async (req, res, next) => {
         });
       }
     }
+
+    await applyLegacyCleaningAssignment(payload.gite_id, payload.date, payload.worker_id);
 
     const updated = await getPeriodWithAssignments(current.id);
     return res.json(serializeAssignments(updated));

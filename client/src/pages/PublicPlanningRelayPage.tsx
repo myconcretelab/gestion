@@ -199,7 +199,7 @@ const PublicPlanningRelayPage = () => {
       <header className="public-relay-toolbar no-print">
         {brand?.logoUrl ? <img src={brand.logoUrl} alt={brand.publicDisplayName || brand.tradeName} /> : null}
         <div>
-          <span>Planning relais</span>
+          <span>Planning des ménages</span>
           <h1>{period.label}</h1>
           <p>Mis à jour le {new Date(data.generated_at).toLocaleString("fr-FR")}</p>
         </div>

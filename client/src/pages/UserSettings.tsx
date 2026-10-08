@@ -123,7 +123,7 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
     </div><p className="field-hint">Les propriétaires / administrateurs peuvent définir un nouveau mot de passe pour n’importe quel utilisateur. Le changement révoque toutes les sessions de ce compte.</p></fieldset>
     <fieldset className="user-editor__fieldset"><legend>Statuts</legend><div className="user-role-grid">
       <SwitchRow title="Propriétaire / administrateur" description="Accès complet, gestion des comptes et réinitialisation de tous les mots de passe." checked={owner} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "owner", checked, statusPresets))} />
-      <SwitchRow title="Intervenant" description="Planning relais, saisie des heures et taux horaire." checked={worker} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "worker", checked, statusPresets))} />
+      <SwitchRow title="Intervenant" description="Ménages attribués, saisie des heures et taux horaire." checked={worker} disabled={disabled} onChange={(checked) => onChange(applyRole(draft, "worker", checked, statusPresets))} />
     </div>{draft.roles.length === 0 ? <p className="field-hint">Sans statut métier, cet utilisateur conserve des droits personnalisés.</p> : null}</fieldset>
     {worker ? <fieldset className="user-editor__fieldset"><legend>Paramètres intervenant</legend><div className="grid-2">
       <label className="field">Taux horaire (€)<input inputMode="decimal" value={draft.hourlyRate} disabled={disabled} onChange={(e) => onChange({ ...draft, hourlyRate: e.target.value })} /></label>

@@ -27,6 +27,7 @@ const SettingsPage = lazy(() => import("./features/settings"));
 const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
+const CleaningPage = lazy(() => import("./pages/CleaningPage"));
 const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
 const ProductSettingsPage = lazy(() => import("./pages/ProductSettingsPage"));
@@ -347,8 +348,8 @@ const App = () => {
     location.pathname === "/calendrier" ||
     location.pathname.startsWith("/calendrier/");
   const isOperationsSection =
-    location.pathname === "/planning-relais" ||
-    location.pathname.startsWith("/planning-relais/");
+    location.pathname === "/menages" ||
+    location.pathname.startsWith("/menages/");
   const isStatsSection =
     location.pathname === "/statistiques" ||
     location.pathname.startsWith("/statistiques/");
@@ -399,9 +400,9 @@ const App = () => {
       module: "reservations" as const,
     },
     {
-      to: "/planning-relais",
+      to: "/menages",
       pageId: "planning_relay" as const,
-      label: "Planning relais",
+      label: "Ménages",
       isActive: isOperationsSection,
       desktopOverflow: true,
       module: "worker_planning" as const,
@@ -1037,7 +1038,7 @@ const App = () => {
         <Suspense fallback={<div className="card">Chargement...</div>}>
           <Routes>
             <Route path="/" element={<Navigate to={visibleNavItems[0]?.to ?? "/aujourdhui"} replace />} />
-            <Route path="/aujourdhui" element={<PageAccess allowed={canAccessPage("today")}><TodayPage /></PageAccess>} />
+            <Route path="/aujourdhui" element={<PageAccess allowed={canAccessPage("today")}><TodayPage currentUser={currentUser} /></PageAccess>} />
             <Route path="/gites" element={<PageAccess allowed={canAccessPage("gites")}><AmountsAccess allowed={canViewAmounts}><GitesPage /></AmountsAccess></PageAccess>} />
             <Route path="/demandes" element={<PageAccess allowed={canAccessPage("booking_requests")}><BookingRequestsPage /></PageAccess>} />
             <Route path="/demandes/:requestId" element={<PageAccess allowed={canAccessPage("booking_requests")}><BookingRequestDetailPage /></PageAccess>} />
@@ -1052,7 +1053,9 @@ const App = () => {
             <Route path="/reservations/mobile" element={<PageAccess allowed={canAccessPage("reservations")}><MobileReservationEditorPage /></PageAccess>} />
             <Route path="/reservations" element={<PageAccess allowed={canAccessPage("reservations")}><ReservationsPage /></PageAccess>} />
             <Route path="/calendrier" element={<PageAccess allowed={canAccessPage("calendar")}><CalendrierPage /></PageAccess>} />
-            <Route path="/planning-relais" element={<PageAccess allowed={canAccessPage("planning_relay")}><OperationsPrintPage /></PageAccess>} />
+            <Route path="/planning-relais" element={<Navigate to="/menages" replace />} />
+            <Route path="/menages" element={<PageAccess allowed={canAccessPage("planning_relay")}><CleaningPage /></PageAccess>} />
+            <Route path="/menages/partages" element={<PageAccess allowed={canAccessPage("planning_relay") && (!currentUser || currentUser.permissions.isOwner || (currentUser.status !== "worker" && currentUser.permissions.canWrite))}><OperationsPrintPage /></PageAccess>} />
             <Route path="/statistiques" element={<PageAccess allowed={canAccessPage("statistics")}><AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-personnels" element={<PageAccess allowed={canAccessPage("personal_expenses")}><AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />

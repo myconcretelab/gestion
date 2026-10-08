@@ -28,6 +28,7 @@ import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
 import personalExpensesRouter from "./routes/personalExpenses.js";
 import { planningRelayPeriodsRouter, publicPlanningRelayRouter } from "./routes/planningRelayPeriods.js";
+import cleaningTasksRouter from "./modules/operations/cleaningTasks.js";
 import documentSharesRouter, { publicDocumentSharesRouter } from "./routes/documentShares.js";
 import installationRouter from "./routes/installation.js";
 import productSettingsRouter from "./routes/productSettings.js";
@@ -280,6 +281,7 @@ export const createApp = () => {
   app.use("/api/today", todayRouter);
   app.use("/api/personal-expenses", personalExpensesRouter);
   app.use("/api/planning-relay-periods", planningRelayPeriodsRouter);
+  app.use("/api/cleaning-tasks", cleaningTasksRouter);
   app.use("/api/document-shares", documentSharesRouter);
 
   app.use("/api", (_req, res) => {
