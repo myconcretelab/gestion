@@ -6,6 +6,7 @@ import {
   IMPORT_LOG_LIMIT,
 } from "../services/importLog.js";
 import {
+  IcalSyncAlreadyRunningError,
   getIcalSyncCronConfig,
   getIcalCronState,
   listIcalSources,
@@ -1299,6 +1300,9 @@ router.post("/ical/sync", async (_req, res, next) => {
     const summary = await syncIcalReservations({ log_source: "ical-manual" });
     res.json(summary);
   } catch (error) {
+    if (error instanceof IcalSyncAlreadyRunningError) {
+      return res.status(409).json({ error: error.message, code: "ICAL_SYNC_RUNNING" });
+    }
     next(error);
   }
 });

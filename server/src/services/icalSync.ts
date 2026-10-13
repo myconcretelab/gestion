@@ -1,5 +1,6 @@
 import ical from "node-ical";
 import prisma from "../db/prisma.js";
+import { env } from "../config/env.js";
 import { appendImportLog, buildImportLogEntry, readImportLog } from "./importLog.js";
 import {
   buildDefaultIcalCronConfig,
@@ -62,6 +63,13 @@ const PLATFORM_SOURCES = new Set(["Airbnb", "Abritel", "Gites de France", "HomeE
 const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 const AUTO_SYNC_GUARD_WINDOW_MS = 10 * 60 * 1000;
 const AUTO_SYNC_LOG_SOURCES = new Set(["ical-manual", "ical-cron", "ical-startup"]);
+
+export class IcalSyncAlreadyRunningError extends Error {
+  constructor() {
+    super("Une synchronisation iCal est déjà en cours.");
+    this.name = "IcalSyncAlreadyRunningError";
+  }
+}
 
 export type IcalSourceRow = {
   id: string;
@@ -376,60 +384,117 @@ const dedupeParsedReservations = (items: ParsedIcalReservation[]) => {
   });
 };
 
+const readIcalResponseText = async (response: Response, controller: AbortController) => {
+  const contentLength = Number(response.headers?.get?.("content-length") ?? "");
+  if (Number.isFinite(contentLength) && contentLength > env.ICAL_MAX_RESPONSE_BYTES) {
+    controller.abort();
+    throw new Error(`Flux iCal trop volumineux (maximum ${env.ICAL_MAX_RESPONSE_BYTES} octets).`);
+  }
+
+  // Some test and integration fetch implementations only expose text(). Keep
+  // that fallback, while production reads the stream with a hard byte ceiling.
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > env.ICAL_MAX_RESPONSE_BYTES) {
+      throw new Error(`Flux iCal trop volumineux (maximum ${env.ICAL_MAX_RESPONSE_BYTES} octets).`);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > env.ICAL_MAX_RESPONSE_BYTES) {
+        controller.abort();
+        throw new Error(`Flux iCal trop volumineux (maximum ${env.ICAL_MAX_RESPONSE_BYTES} octets).`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+};
+
 const fetchSourceReservations = async (source: IcalSourceRow): Promise<ParsedIcalReservation[]> => {
-  const response = await fetch(source.url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), env.ICAL_FETCH_TIMEOUT_MS);
+  let response: Response;
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  const text = await response.text();
-  const parsed = ical.parseICS(text) as Record<string, any>;
-  const reservations: ParsedIcalReservation[] = [];
-
-  let fallbackIndex = 0;
-  for (const event of Object.values(parsed)) {
-    if (!event || event.type !== "VEVENT") continue;
-
-    const summary = String(event.summary ?? "").trim();
-    if (!shouldKeepBySummary(summary, source)) continue;
-
-    const date_entree = formatIcalDate(event.start);
-    const date_sortie = formatIcalDate(event.end);
-    if (!date_entree || !date_sortie) continue;
-
-    const start = parseIsoDateToUtc(date_entree);
-    const end = parseIsoDateToUtc(date_sortie);
-    if (!start || !end || end.getTime() <= start.getTime()) continue;
-
-    fallbackIndex += 1;
-    const uid = String(event.uid ?? `event-${fallbackIndex}`);
-    const description = String(event.description ?? "").trim();
-
-    reservations.push({
-      id: `${source.id}|${uid}|${date_entree}|${date_sortie}`,
-      gite_id: source.gite.id,
-      gite_nom: source.gite.nom,
-      source_id: source.id,
-      source_url: source.url,
-      source_type: source.type,
-      uid,
-      summary,
-      description,
-      airbnb_url: source.type.trim().toLowerCase() === "airbnb" ? extractAirbnbReservationUrl(description) : null,
-      date_entree,
-      date_sortie,
-      hote_nom: normalizeImportedHostName(extractHostName(summary)),
-      nb_adultes_habituel: source.gite.nb_adultes_habituel,
+  try {
+    response = await fetch(source.url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+      signal: controller.signal,
     });
+  } catch (error) {
+    clearTimeout(timeout);
+    if (controller.signal.aborted) {
+      throw new Error(`Délai iCal dépassé (${env.ICAL_FETCH_TIMEOUT_MS} ms).`);
+    }
+    throw error;
   }
 
-  return reservations;
+  try {
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const text = await readIcalResponseText(response, controller);
+    const parsed = ical.parseICS(text) as Record<string, any>;
+    const reservations: ParsedIcalReservation[] = [];
+
+    let fallbackIndex = 0;
+    for (const event of Object.values(parsed)) {
+      if (!event || event.type !== "VEVENT") continue;
+
+      const summary = String(event.summary ?? "").trim();
+      if (!shouldKeepBySummary(summary, source)) continue;
+
+      const date_entree = formatIcalDate(event.start);
+      const date_sortie = formatIcalDate(event.end);
+      if (!date_entree || !date_sortie) continue;
+
+      const start = parseIsoDateToUtc(date_entree);
+      const end = parseIsoDateToUtc(date_sortie);
+      if (!start || !end || end.getTime() <= start.getTime()) continue;
+
+      fallbackIndex += 1;
+      const uid = String(event.uid ?? `event-${fallbackIndex}`);
+      const description = String(event.description ?? "").trim();
+
+      reservations.push({
+        id: `${source.id}|${uid}|${date_entree}|${date_sortie}`,
+        gite_id: source.gite.id,
+        gite_nom: source.gite.nom,
+        source_id: source.id,
+        source_url: source.url,
+        source_type: source.type,
+        uid,
+        summary,
+        description,
+        airbnb_url: source.type.trim().toLowerCase() === "airbnb" ? extractAirbnbReservationUrl(description) : null,
+        date_entree,
+        date_sortie,
+        hote_nom: normalizeImportedHostName(extractHostName(summary)),
+        nb_adultes_habituel: source.gite.nb_adultes_habituel,
+      });
+    }
+
+    return reservations;
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 const buildIcalSourceQuery = (onlyActive = true) => ({
@@ -554,8 +619,87 @@ const toOptionalConflictText = (value: string | null | undefined) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+type ExistingIcalReservation = {
+  id: string;
+  gite_id: string;
+  date_entree: Date;
+  date_sortie: Date;
+  airbnb_url: string | null;
+  hote_nom: string | null;
+  source_paiement: string | null;
+  commentaire: string | null;
+  origin_system: string | null;
+  origin_reference: string | null;
+};
+
+const reservationPeriodKey = (giteId: string, dateEntree: Date | string, dateSortie: Date | string) =>
+  `${giteId}|${typeof dateEntree === "string" ? dateEntree.slice(0, 10) : toIsoDate(dateEntree)}|${
+    typeof dateSortie === "string" ? dateSortie.slice(0, 10) : toIsoDate(dateSortie)
+  }`;
+
+const loadExistingIcalReservations = async (parsedReservations: ParsedIcalReservation[]) => {
+  const valid = parsedReservations
+    .map((reservation) => ({
+      reservation,
+      dateEntree: parseIsoDateToUtc(reservation.date_entree),
+      dateSortie: parseIsoDateToUtc(reservation.date_sortie),
+    }))
+    .filter(
+      (item): item is { reservation: ParsedIcalReservation; dateEntree: Date; dateSortie: Date } =>
+        Boolean(item.dateEntree && item.dateSortie),
+    );
+
+  if (valid.length === 0) return [] as ExistingIcalReservation[];
+
+  const firstDate = new Date(Math.min(...valid.map((item) => item.dateEntree.getTime())));
+  const lastDate = new Date(Math.max(...valid.map((item) => item.dateSortie.getTime())));
+  const existing = await prisma.reservation.findMany({
+    where: {
+      gite_id: { in: [...new Set(valid.map((item) => item.reservation.gite_id))] },
+      OR: [
+        {
+          date_entree: { lt: lastDate },
+          date_sortie: { gt: firstDate },
+        },
+        {
+          origin_system: "ical",
+          origin_reference: { in: [...new Set(valid.map((item) => item.reservation.uid))] },
+        },
+      ],
+    },
+    select: {
+      airbnb_url: true,
+      id: true,
+      gite_id: true,
+      hote_nom: true,
+      source_paiement: true,
+      commentaire: true,
+      date_entree: true,
+      date_sortie: true,
+      origin_system: true,
+      origin_reference: true,
+    },
+  });
+
+  return existing as ExistingIcalReservation[];
+};
+
 const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]) => {
   const preview: IcalPreviewItem[] = [];
+  const existingReservations = await loadExistingIcalReservations(parsedReservations);
+  const byExactPeriod = new Map<string, ExistingIcalReservation>();
+  const byIcalOrigin = new Map<string, ExistingIcalReservation>();
+  const byGite = new Map<string, ExistingIcalReservation[]>();
+
+  for (const existing of existingReservations) {
+    byExactPeriod.set(reservationPeriodKey(existing.gite_id, existing.date_entree, existing.date_sortie), existing);
+    if (existing.origin_system === "ical" && existing.origin_reference) {
+      byIcalOrigin.set(`${existing.gite_id}|${existing.origin_reference}`, existing);
+    }
+    const giteReservations = byGite.get(existing.gite_id) ?? [];
+    giteReservations.push(existing);
+    byGite.set(existing.gite_id, giteReservations);
+  }
 
   for (const reservation of parsedReservations) {
     const finalSource = resolveReservationSource(reservation);
@@ -563,20 +707,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
     const dateSortie = parseIsoDateToUtc(reservation.date_sortie);
     if (!dateEntree || !dateSortie) continue;
 
-    const exact = await prisma.reservation.findFirst({
-      where: {
-        gite_id: reservation.gite_id,
-        date_entree: dateEntree,
-        date_sortie: dateSortie,
-      },
-      select: {
-        airbnb_url: true,
-        id: true,
-        hote_nom: true,
-        source_paiement: true,
-        commentaire: true,
-      },
-    });
+    const exact = byExactPeriod.get(reservationPeriodKey(reservation.gite_id, dateEntree, dateSortie));
 
     if (exact) {
       const { fields } = buildUpdateData(exact, reservation);
@@ -591,18 +722,7 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
       continue;
     }
 
-    const modified = await prisma.reservation.findFirst({
-      where: {
-        gite_id: reservation.gite_id,
-        origin_system: "ical",
-        origin_reference: reservation.uid,
-      },
-      select: {
-        id: true,
-        date_entree: true,
-        date_sortie: true,
-      },
-    });
+    const modified = byIcalOrigin.get(`${reservation.gite_id}|${reservation.uid}`);
 
     if (modified) {
       const hasSameDates =
@@ -621,14 +741,9 @@ const buildIcalPreviewItems = async (parsedReservations: ParsedIcalReservation[]
       }
     }
 
-    const conflict = await prisma.reservation.findFirst({
-      where: {
-        gite_id: reservation.gite_id,
-        date_entree: { lt: dateSortie },
-        date_sortie: { gt: dateEntree },
-      },
-      select: { id: true },
-    });
+    const conflict = (byGite.get(reservation.gite_id) ?? []).find(
+      (existing) => existing.date_entree < dateSortie && existing.date_sortie > dateEntree,
+    );
 
     if (conflict) {
       preview.push({
@@ -749,6 +864,7 @@ const toCreatePayload = (reservation: IcalPreviewItem) => {
 
 type SyncOptions = {
   log_source?: "ical-manual" | "ical-cron" | "ical-startup";
+  on_lock_acquired?: () => void;
 };
 
 type PumpFollowUpRunner = () => Promise<{
@@ -1103,6 +1219,19 @@ const runSync = async (): Promise<IcalSyncResult> => {
 export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalSyncResult> => {
   if (activeSyncPromise) return activeSyncPromise;
 
+  // The in-process promise protects concurrent HTTP requests. The lock file
+  // extends that protection to the scheduler and other Alwaysdata processes.
+  if (!acquireIcalCronLock()) {
+    throw new IcalSyncAlreadyRunningError();
+  }
+
+  try {
+    options?.on_lock_acquired?.();
+  } catch (error) {
+    releaseIcalCronLock();
+    throw error;
+  }
+
   activeSyncPromise = (async () => {
     try {
       const synced = await runSync();
@@ -1160,6 +1289,7 @@ export const syncIcalReservations = async (options?: SyncOptions): Promise<IcalS
     }
   })().finally(() => {
     activeSyncPromise = null;
+    releaseIcalCronLock();
   });
 
   return activeSyncPromise;
@@ -1200,7 +1330,19 @@ export const runAppLoadIcalSync = async (): Promise<IcalAutoSyncResponse> => {
     };
   }
 
-  const summary = await syncIcalReservations({ log_source: "ical-startup" });
+  let summary: IcalSyncResult;
+  try {
+    summary = await syncIcalReservations({ log_source: "ical-startup" });
+  } catch (error) {
+    if (error instanceof IcalSyncAlreadyRunningError) {
+      return {
+        status: "shared-running",
+        summary: null,
+        message: buildAutoSyncMessage("shared-running"),
+      };
+    }
+    throw error;
+  }
   return {
     status: "success",
     summary,
@@ -1221,20 +1363,18 @@ export const runScheduledIcalSync = async (options?: { source?: "ical-cron" }): 
     return { status: "skipped-disabled", result: null };
   }
 
-  if (!acquireIcalCronLock()) {
-    return { status: "skipped-running", result: null };
-  }
-
-  const startedAt = new Date().toISOString();
-  updateIcalCronRunState({
-    running: true,
-    last_started_at: startedAt,
-    last_status: "running",
-    last_error: null,
-  });
-
   try {
-    const result = await syncIcalReservations({ log_source: source });
+    const result = await syncIcalReservations({
+      log_source: source,
+      on_lock_acquired: () => {
+        updateIcalCronRunState({
+          running: true,
+          last_started_at: new Date().toISOString(),
+          last_status: "running",
+          last_error: null,
+        });
+      },
+    });
     const finishedAt = new Date().toISOString();
     updateIcalCronRunState({
       running: false,
@@ -1248,6 +1388,9 @@ export const runScheduledIcalSync = async (options?: { source?: "ical-cron" }): 
       result,
     };
   } catch (error) {
+    if (error instanceof IcalSyncAlreadyRunningError) {
+      return { status: "skipped-running", result: null };
+    }
     const finishedAt = new Date().toISOString();
     const message = error instanceof Error ? error.message : "Erreur inconnue lors de la synchronisation iCal.";
     updateIcalCronRunState({
@@ -1257,8 +1400,6 @@ export const runScheduledIcalSync = async (options?: { source?: "ical-cron" }): 
       last_error: message,
     });
     throw error;
-  } finally {
-    releaseIcalCronLock();
   }
 };
 

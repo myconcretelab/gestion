@@ -139,7 +139,10 @@ export const env = {
   ORGANIZATION_JOB_LEASE_MS: parseIntegerEnv(process.env.ORGANIZATION_JOB_LEASE_MS, 60_000, 5000, 3_600_000),
   ORGANIZATION_JOB_MAX_ATTEMPTS: parseIntegerEnv(process.env.ORGANIZATION_JOB_MAX_ATTEMPTS, 5, 1, 20),
   MULTITENANT_AUTOMATION_ENABLED: parseBooleanEnv(process.env.MULTITENANT_AUTOMATION_ENABLED, false),
-  REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT ?? "20mb",
+  // Standard API payloads should stay small. The two base64 upload endpoints use
+  // UPLOAD_BODY_LIMIT explicitly so they do not raise the limit for every route.
+  REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT ?? "2mb",
+  UPLOAD_BODY_LIMIT: process.env.UPLOAD_BODY_LIMIT ?? "18mb",
   PDF_BROWSER_IDLE_MS: parseIntegerEnv(process.env.PDF_BROWSER_IDLE_MS, 60_000, 5_000, 30 * 60_000),
   DATA_DIR: process.env.DATA_DIR ?? path.join(process.cwd(), "data"),
   PDF_SUBDIR: process.env.PDF_SUBDIR ?? "pdfs",
@@ -148,6 +151,8 @@ export const env = {
   ICAL_SYNC_INTERVAL_HOURS: parseIntegerEnv(process.env.ICAL_SYNC_INTERVAL_HOURS, 24, 1, 168),
   ICAL_SYNC_HOUR: parseIntegerEnv(process.env.ICAL_SYNC_HOUR, 3, 0, 23),
   ICAL_SYNC_MINUTE: parseIntegerEnv(process.env.ICAL_SYNC_MINUTE, 15, 0, 59),
+  ICAL_FETCH_TIMEOUT_MS: parseIntegerEnv(process.env.ICAL_FETCH_TIMEOUT_MS, 20_000, 1_000, 120_000),
+  ICAL_MAX_RESPONSE_BYTES: parseIntegerEnv(process.env.ICAL_MAX_RESPONSE_BYTES, 5 * 1024 * 1024, 64 * 1024, 50 * 1024 * 1024),
   PUMP_IMPORT_CRON_ENABLED: parseBooleanEnv(process.env.PUMP_IMPORT_CRON_ENABLED, true),
   PUMP_IMPORT_CRON_SCHEDULER:
     String(process.env.PUMP_IMPORT_CRON_SCHEDULER ?? "internal").trim().toLowerCase() === "external"
@@ -188,6 +193,7 @@ const startupSchema = z.object({
   CLIENT_ORIGIN: z.string().url(),
   APP_PUBLIC_URL: z.string().url(),
   REQUEST_BODY_LIMIT: z.string().regex(/^\d+(?:kb|mb)$/i, "format attendu: 512kb ou 2mb"),
+  UPLOAD_BODY_LIMIT: z.string().regex(/^\d+(?:kb|mb)$/i, "format attendu: 512kb ou 2mb"),
 });
 
 export const validateEnvironment = () => {

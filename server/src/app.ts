@@ -98,6 +98,16 @@ export const createApp = () => {
     next();
   });
   app.post("/api/billing/webhook/stripe", express.raw({ type: "application/json", limit: "2mb" }), stripeWebhookHandler);
+  const uploadJsonParser = express.json({ limit: env.UPLOAD_BODY_LIMIT, strict: true });
+  app.use((req, res, next) => {
+    // These endpoints carry a base64-encoded file. Keep their higher limit
+    // isolated instead of allowing every API request to allocate up to 20 MB.
+    const isLargeUpload =
+      req.method === "POST" &&
+      (/^\/api\/contracts\/[^/]+\/signed-document$/.test(req.path) || /^\/api\/gites\/[^/]+\/photos\/upload$/.test(req.path));
+    if (isLargeUpload) return uploadJsonParser(req, res, next);
+    return next();
+  });
   app.use(express.json({ limit: env.REQUEST_BODY_LIMIT, strict: true }));
   app.use(
     cors({
