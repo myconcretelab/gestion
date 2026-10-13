@@ -24,7 +24,7 @@ jobs:
       - run: npm ci --include=optional
       - run: npm run prisma:generate
       - run: npm run typecheck
-      - run: npm run prisma -w server -- db push --skip-generate
+      - run: npm run prisma -w server -- migrate deploy
       - run: npm run test
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
