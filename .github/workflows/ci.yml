@@ -11,6 +11,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # The server test suite records generated-document usage through Prisma.
+      # Keep that state in an isolated SQLite database for each CI run.
+      DATABASE_URL: file:./server/prisma/ci.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,6 +24,7 @@ jobs:
       - run: npm ci --include=optional
       - run: npm run prisma:generate
       - run: npm run typecheck
+      - run: npm run prisma -w server -- db push --skip-generate
       - run: npm run test
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
