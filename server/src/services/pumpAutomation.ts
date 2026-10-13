@@ -424,6 +424,7 @@ const executeSession = async (sessionId: string, password: string) => {
     );
 
     sessionData.results = persistCapturedSession(saver, networkCapture, [], Date.now() - startedAt);
+    networkCapture.releaseCapturedData();
     setSessionStatus(sessionData, "completed");
     logInfo("Local Pump session completed.", { sessionId });
   } catch (error) {
@@ -439,6 +440,7 @@ const executeSession = async (sessionId: string, password: string) => {
 
     await networkCapture.waitForSettled({ idleMs: 250, timeoutMs: 3_000 }).catch(() => false);
     sessionData.results = persistCapturedSession(saver, networkCapture, sessionData.errors, Date.now() - startedAt);
+    networkCapture.releaseCapturedData();
     setSessionStatus(sessionData, sessionData.cancelRequested ? "stopped" : "failed", { error: message });
   } finally {
     await playwright.close();

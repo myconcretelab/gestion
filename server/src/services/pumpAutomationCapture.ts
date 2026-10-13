@@ -32,6 +32,9 @@ const DEFAULT_MULTI_STEP_SELECTORS = {
   ],
 };
 
+const MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024;
+const MAX_SESSION_BODY_BYTES = 8 * 1024 * 1024;
+
 type CapturedResponse = {
   url: string;
   method: string;
@@ -626,39 +629,62 @@ const getFilterExplanation = (
 };
 
 const readResponseBodyWithTimeout = async (response: PlaywrightResponse, contentType: string, timeoutMs = 3_000) => {
-  let bodyPromise: Promise<{ value: unknown; isJson: boolean }> | null = null;
-  if (contentType.includes("application/json")) {
-    bodyPromise = response.json().then((value) => ({ value, isJson: true }));
-  } else if (contentType.includes("text/")) {
-    bodyPromise = response.text().then((value) => ({ value, isJson: false }));
-  } else {
-    return { body: null, isJson: false, timedOut: false };
+  const isJson = contentType.includes("application/json");
+  if (!isJson && !contentType.includes("text/")) {
+    return { body: null, isJson: false, timedOut: false, byteLength: 0 };
   }
+
+  const bodyPromise = response.body().then((buffer) => {
+    if (buffer.byteLength > MAX_RESPONSE_BODY_BYTES) {
+      return { value: null, isJson, byteLength: buffer.byteLength, tooLarge: true };
+    }
+    const text = buffer.toString("utf-8");
+    return {
+      value: isJson ? JSON.parse(text) : text,
+      isJson,
+      byteLength: buffer.byteLength,
+      tooLarge: false,
+    };
+  });
 
   const result = (await Promise.race([
     bodyPromise.then((value) => ({ timedOut: false, ...value })).catch((error) => ({ error })),
     wait(timeoutMs).then(() => ({ timedOut: true })),
-  ])) as { timedOut: false; value: unknown; isJson: boolean } | { timedOut: true } | { error: unknown };
+  ])) as
+    | { timedOut: false; value: unknown; isJson: boolean; byteLength: number; tooLarge: boolean }
+    | { timedOut: true }
+    | { error: unknown };
 
   if ("error" in result) {
     throw result.error;
   }
   if (result.timedOut) {
-    return { body: null, isJson: false, timedOut: true };
+    return { body: null, isJson: false, timedOut: true, byteLength: 0, tooLarge: false };
   }
 
   return {
     body: result.value ?? null,
     isJson: Boolean(result.isJson),
     timedOut: false,
+    byteLength: result.byteLength,
+    tooLarge: result.tooLarge,
   };
 };
+
+const hasBodyDependentFilter = (filters: PumpAutomationConfig["filterRules"]) =>
+  [...(filters?.inclusive ?? []), ...(filters?.exclusive ?? [])].some((rule) => rule.type === "response-contains");
+
+const hasConfiguredFilters = (filters: PumpAutomationConfig["filterRules"]) =>
+  (filters?.inclusive?.length ?? 0) > 0 || (filters?.exclusive?.length ?? 0) > 0;
 
 export class PumpNetworkCapture {
   page: Page | null;
   filters: PumpAutomationConfig["filterRules"];
   capturedResponses: CapturedResponse[];
-  capturedRequests: Map<string, Record<string, unknown>>;
+  totalRequests: number;
+  filteredResponseCount: number;
+  capturedBodyBytes: number;
+  omittedResponseCount: number;
   context: string;
   isListening: boolean;
   pendingResponses: Map<Promise<void>, PendingResponse>;
@@ -670,7 +696,10 @@ export class PumpNetworkCapture {
     this.page = page;
     this.filters = filters;
     this.capturedResponses = [];
-    this.capturedRequests = new Map();
+    this.totalRequests = 0;
+    this.filteredResponseCount = 0;
+    this.capturedBodyBytes = 0;
+    this.omittedResponseCount = 0;
     this.context = "before-scroll";
     this.isListening = false;
     this.pendingResponses = new Map();
@@ -707,14 +736,8 @@ export class PumpNetworkCapture {
   }
 
   handleRequest(request: PlaywrightRequest) {
-    const key = `${request.method()}:${request.url()}:${this.capturedRequests.size}`;
-    this.capturedRequests.set(key, {
-      url: request.url(),
-      method: request.method(),
-      headers: request.headers(),
-      timestamp: new Date().toISOString(),
-      context: this.context,
-    });
+    void request;
+    this.totalRequests += 1;
   }
 
   async waitForSettled(options: { idleMs?: number; timeoutMs?: number; pollMs?: number; stalePendingMs?: number } = {}) {
@@ -764,25 +787,50 @@ export class PumpNetworkCapture {
       const status = response.status();
       const headers = response.headers();
       const contentType = headers["content-type"] || "";
+      const request = { url, method };
+      const filtersConfigured = hasConfiguredFilters(this.filters);
+      const needsBodyForFilters = hasBodyDependentFilter(this.filters);
+      const isJson = contentType.includes("application/json");
+      const isText = contentType.includes("text/");
+
+      if ((!filtersConfigured && !isJson) || (!isJson && !isText)) {
+        this.filteredResponseCount += 1;
+        return;
+      }
+
+      if (!needsBodyForFilters && !shouldKeepResponse(request, { status, headers, body: null }, this.filters)) {
+        this.filteredResponseCount += 1;
+        return;
+      }
 
       let body: unknown = null;
-      let isJson = false;
+      let responseIsJson = false;
+      let bodyByteLength = 0;
       try {
         const bodyResult = await readResponseBodyWithTimeout(response, contentType);
-        if (!bodyResult.timedOut) {
+        if (!bodyResult.timedOut && !bodyResult.tooLarge) {
           body = bodyResult.body;
-          isJson = bodyResult.isJson;
+          responseIsJson = bodyResult.isJson;
+          bodyByteLength = bodyResult.byteLength;
+        } else {
+          this.omittedResponseCount += 1;
+          this.filteredResponseCount += 1;
+          return;
         }
       } catch {
         // Body parsing is best-effort.
+        this.omittedResponseCount += 1;
+        this.filteredResponseCount += 1;
+        return;
       }
 
-      const request = {
-        url,
-        method,
-      };
-
       const shouldKeep = shouldKeepResponse(request, { status, headers, body }, this.filters);
+      if (!shouldKeep || this.capturedBodyBytes + bodyByteLength > MAX_SESSION_BODY_BYTES) {
+        this.filteredResponseCount += 1;
+        if (shouldKeep) this.omittedResponseCount += 1;
+        return;
+      }
+      this.capturedBodyBytes += bodyByteLength;
       this.capturedResponses.push({
         url,
         method,
@@ -790,12 +838,12 @@ export class PumpNetworkCapture {
         headers,
         contentType,
         body,
-        isJson,
+        isJson: responseIsJson,
         timestamp: new Date().toISOString(),
         context: this.context,
         keptByFilters: shouldKeep,
         filterExplanation: getFilterExplanation(request, { status, headers, body }, this.filters),
-        requestHeaders: response.request().headers(),
+        requestHeaders: {},
       });
     } catch (error) {
       logWarn("Error handling captured response", error);
@@ -811,7 +859,7 @@ export class PumpNetworkCapture {
   }
 
   getResponseCount() {
-    return this.capturedResponses.length;
+    return this.capturedResponses.length + this.filteredResponseCount;
   }
 
   getKeptResponses() {
@@ -823,11 +871,11 @@ export class PumpNetworkCapture {
   }
 
   getFilteredResponseCount() {
-    return this.capturedResponses.filter((response) => !response.keptByFilters).length;
+    return this.filteredResponseCount;
   }
 
   getTotalRequestsCount() {
-    return this.capturedRequests.size;
+    return this.totalRequests;
   }
 
   getSummary() {
@@ -836,7 +884,14 @@ export class PumpNetworkCapture {
       totalResponses: this.getResponseCount(),
       keptResponses: this.getKeptResponseCount(),
       filteredResponses: this.getFilteredResponseCount(),
+      omittedResponses: this.omittedResponseCount,
+      capturedBodyBytes: this.capturedBodyBytes,
     };
+  }
+
+  releaseCapturedData() {
+    this.capturedResponses = [];
+    this.capturedBodyBytes = 0;
   }
 
   stop() {

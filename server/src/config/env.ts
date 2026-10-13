@@ -140,6 +140,7 @@ export const env = {
   ORGANIZATION_JOB_MAX_ATTEMPTS: parseIntegerEnv(process.env.ORGANIZATION_JOB_MAX_ATTEMPTS, 5, 1, 20),
   MULTITENANT_AUTOMATION_ENABLED: parseBooleanEnv(process.env.MULTITENANT_AUTOMATION_ENABLED, false),
   REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT ?? "20mb",
+  PDF_BROWSER_IDLE_MS: parseIntegerEnv(process.env.PDF_BROWSER_IDLE_MS, 60_000, 5_000, 30 * 60_000),
   DATA_DIR: process.env.DATA_DIR ?? path.join(process.cwd(), "data"),
   PDF_SUBDIR: process.env.PDF_SUBDIR ?? "pdfs",
   ICAL_SYNC_ENABLED: parseBooleanEnv(process.env.ICAL_SYNC_ENABLED, true),

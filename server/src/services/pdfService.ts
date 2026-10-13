@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
+import { env } from "../config/env.js";
 import { renderTemplate } from "./template.js";
 import { getInstallationConfig } from "./installationConfig.js";
 import { formatDate } from "../utils/dates.js";
@@ -14,6 +15,8 @@ import {
 
 let browser: Browser | null = null;
 let browserLaunchPromise: Promise<Browser> | null = null;
+let browserIdleCloseTimer: NodeJS.Timeout | null = null;
+let pageQueue: Promise<void> = Promise.resolve();
 let templateCache: { contractHtml: string; conditionsHtml: string } | null = null;
 let invoiceTemplateCache: string | null = null;
 const MAX_BROWSER_ATTEMPTS = 3;
@@ -172,7 +175,14 @@ const getBrowser = async () => {
   return browserLaunchPromise;
 };
 
+const cancelBrowserIdleClose = () => {
+  if (!browserIdleCloseTimer) return;
+  clearTimeout(browserIdleCloseTimer);
+  browserIdleCloseTimer = null;
+};
+
 const resetBrowserState = async () => {
+  cancelBrowserIdleClose();
   const activeBrowser = browser ?? (browserLaunchPromise ? await browserLaunchPromise.catch(() => null) : null);
   browser = null;
   browserLaunchPromise = null;
@@ -185,6 +195,32 @@ export const closeBrowser = async () => {
   await resetBrowserState();
 };
 
+const scheduleBrowserIdleClose = () => {
+  cancelBrowserIdleClose();
+  browserIdleCloseTimer = setTimeout(() => {
+    browserIdleCloseTimer = null;
+    void resetBrowserState();
+  }, env.PDF_BROWSER_IDLE_MS);
+  browserIdleCloseTimer.unref();
+};
+
+const withExclusivePage = async <T>(operation: () => Promise<T>) => {
+  let releaseQueue!: () => void;
+  const previous = pageQueue;
+  pageQueue = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+
+  await previous.catch(() => undefined);
+  cancelBrowserIdleClose();
+  try {
+    return await operation();
+  } finally {
+    scheduleBrowserIdleClose();
+    releaseQueue();
+  }
+};
+
 const isClosedBrowserError = (error: unknown) => {
   if (!(error instanceof Error)) return false;
   return /Target page, context or browser has been closed|Browser has been closed|has been closed/i.test(
@@ -192,27 +228,28 @@ const isClosedBrowserError = (error: unknown) => {
   );
 };
 
-const withPageRetry = async <T>(operation: (page: Page) => Promise<T>): Promise<T> => {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_BROWSER_ATTEMPTS; attempt += 1) {
-    let page: Page | null = null;
-    try {
-      const activeBrowser = await getBrowser();
-      page = await activeBrowser.newPage();
-      return await operation(page);
-    } catch (error) {
-      lastError = error;
-      const canRetry = isClosedBrowserError(error) && attempt < MAX_BROWSER_ATTEMPTS;
-      if (!canRetry) throw error;
-      await resetBrowserState();
-    } finally {
-      if (page) {
-        await page.close().catch(() => undefined);
+const withPageRetry = async <T>(operation: (page: Page) => Promise<T>): Promise<T> =>
+  withExclusivePage(async () => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_BROWSER_ATTEMPTS; attempt += 1) {
+      let page: Page | null = null;
+      try {
+        const activeBrowser = await getBrowser();
+        page = await activeBrowser.newPage();
+        return await operation(page);
+      } catch (error) {
+        lastError = error;
+        const canRetry = isClosedBrowserError(error) && attempt < MAX_BROWSER_ATTEMPTS;
+        if (!canRetry) throw error;
+        await resetBrowserState();
+      } finally {
+        if (page) {
+          await page.close().catch(() => undefined);
+        }
       }
     }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Erreur Playwright inconnue");
-};
+    throw lastError instanceof Error ? lastError : new Error("Erreur Playwright inconnue");
+  });
 
 const escapeHtml = (value: string) =>
   value
