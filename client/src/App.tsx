@@ -311,6 +311,8 @@ const App = () => {
   const location = useLocation();
   const [authSession, setAuthSession] = useState<ServerAuthSession | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   const [authPassword, setAuthPassword] = useState("");
   const [authLoginId, setAuthLoginId] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -512,14 +514,6 @@ const App = () => {
       id: Date.now() + Math.random(),
     });
   }, []);
-  const loadAuthSession = async () => {
-    setAuthError(null);
-    const payload = await apiFetch<ServerAuthSession>("/auth/session");
-    setCurrentAuthUser(payload.user);
-    setAuthSession(payload);
-    return payload;
-  };
-
   const submitLogin = async () => {
     if (!authLoginId.trim() || !authPassword.trim()) {
       setAuthError("Renseigne ton identifiant ou ton e-mail et ton mot de passe.");
@@ -646,16 +640,30 @@ const App = () => {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20_000);
     setAuthLoading(true);
+    setStartupError(null);
     Promise.all([
-      loadAuthSession(),
-      apiFetch<PublicInstallationConfig>("/installation/public-config").then((config) => { if (active) setInstallationConfig(config); }),
+      apiFetch<ServerAuthSession>("/auth/session", { signal: controller.signal }),
+      apiFetch<PublicInstallationConfig>("/installation/public-config", { signal: controller.signal }),
     ])
+      .then(([session, config]) => {
+        if (!active) return;
+        setCurrentAuthUser(session.user);
+        setAuthSession(session);
+        setInstallationConfig(config);
+        setAuthError(null);
+      })
       .catch((error) => {
-        if (!active || isAbortError(error)) return;
-        setAuthError(error instanceof Error ? error.message : "Impossible de vérifier la session.");
+        if (!active) return;
+        setStartupError(isAbortError(error)
+          ? "Le serveur met trop de temps à répondre. Réessayez dans quelques instants."
+          : "Impossible de vérifier la session pour le moment. Réessayez dans quelques instants.");
       })
       .finally(() => {
+        window.clearTimeout(timeout);
+        controller.abort();
         if (active) {
           setAuthLoading(false);
         }
@@ -663,8 +671,10 @@ const App = () => {
 
     return () => {
       active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
-  }, []);
+  }, [startupAttempt]);
 
   useEffect(() => {
     const handleAuthRequired = () => {
@@ -870,13 +880,20 @@ const App = () => {
     );
   }
 
-  if (authLoading || !installationConfig) {
+  if (authLoading || startupError || !installationConfig) {
     return (
       <main className="auth-shell">
         <section className="card auth-card">
           <div className="auth-card__eyebrow">Protection serveur</div>
-          <h1 className="auth-card__title">Vérification de session</h1>
-          <p className="auth-card__text">Le serveur vérifie si une session valide existe déjà.</p>
+          <h1 className="auth-card__title">{startupError ? "Connexion au serveur interrompue" : "Vérification de session"}</h1>
+          {startupError ? <>
+            <p className="auth-card__text" role="alert">{startupError}</p>
+            <button type="button" onClick={() => {
+              setStartupError(null);
+              setAuthLoading(true);
+              setStartupAttempt((attempt) => attempt + 1);
+            }}>Réessayer</button>
+          </> : <p className="auth-card__text">Le serveur vérifie si une session valide existe déjà.</p>}
         </section>
       </main>
     );
