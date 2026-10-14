@@ -25,6 +25,13 @@ const sqlitePath = () => {
   return path.resolve(root, raw.replace(/^\.\//, ""));
 };
 
+const postgresDumpUrl = () => {
+  const url = new URL(databaseUrl);
+  // `schema` is a Prisma-only option; libpq (and therefore pg_dump) rejects it.
+  url.searchParams.delete("schema");
+  return url.toString();
+};
+
 const postgresBackupPassphrase = () => {
   const value = process.env.INSTALLATION_BACKUP_PASSPHRASE || "";
   if (value.length < 24) {
@@ -68,7 +75,7 @@ const backup = () => {
       postgresBackupPassphrase();
       const clearDump = path.join(staging, "database.clear.dump");
       try {
-        run("pg_dump", ["--format=custom", "--no-owner", "--no-acl", "--file", clearDump, databaseUrl]);
+        run("pg_dump", ["--format=custom", "--no-owner", "--no-acl", "--file", clearDump, postgresDumpUrl()]);
         cryptPostgresDump("encrypt", clearDump, path.join(dbDir, "database.dump.enc"));
       } finally {
         fs.rmSync(clearDump, { force: true });
