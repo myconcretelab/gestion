@@ -83,6 +83,7 @@ test("un utilisateur cumule les rôles et porte ses propres coordonnées", () =>
     hourly_rate: 18,
     cleaning_check_rate: 7.5,
     full_cleaning_rate: 42,
+    direct_cleaning_validation: true,
     gestionnaire_id: "manager-1",
     intervenant_id: "worker-1",
     status: "owner",
@@ -98,6 +99,7 @@ test("un utilisateur cumule les rôles et porte ses propres coordonnées", () =>
   assert.equal(user.hourlyRate, 18);
   assert.equal(user.cleaningCheckRate, 7.5);
   assert.equal(user.fullCleaningRate, 42);
+  assert.equal(user.directCleaningValidation, true);
   assert.equal(user.permissions.isOwner, true);
   assert.deepEqual(user.pageAccess, [...APP_PAGE_IDS]);
 });

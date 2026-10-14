@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../utils/api";
-import { APP_PAGES, type AppPageId, type AppUser, type AppUserRole, type AppUserStatus } from "../utils/auth";
+import { APP_PAGES, type AppPageId, type AppUser, type AppUserRole, type AppUserStatus, type ServerAuthSession } from "../utils/auth";
 import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 
 type WorkerProfile = { id?: string; showOnToday: boolean };
@@ -12,7 +12,7 @@ type UserDraft = {
   firstName: string; lastName: string; roles: AppUserRole[]; canWrite: boolean;
   canViewAmounts: boolean; isActive: boolean; pageAccess: AppPageId[]; telephone: string;
   email: string; adresse: string; telegramChatId: string; hourlyRate: string;
-  cleaningCheckRate: string; fullCleaningRate: string; showOnToday: boolean;
+  cleaningCheckRate: string; fullCleaningRate: string; showOnToday: boolean; directCleaningValidation: boolean;
   loginId: string; password: string;
 };
 type StatusPreset = {
@@ -32,7 +32,7 @@ const emptyDraft = (presets: StatusPresetMap = DEFAULT_STATUS_PRESETS): UserDraf
   firstName: "", lastName: "", roles: [], isActive: true,
   canWrite: presets.custom.canWrite, canViewAmounts: presets.custom.canViewAmounts, pageAccess: presets.custom.pageAccess,
   telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "",
-  cleaningCheckRate: "", fullCleaningRate: "", showOnToday: true,
+  cleaningCheckRate: "", fullCleaningRate: "", showOnToday: true, directCleaningValidation: false,
   loginId: "", password: "",
 });
 const toDraft = (user: ManagedUser): UserDraft => ({
@@ -44,6 +44,7 @@ const toDraft = (user: ManagedUser): UserDraft => ({
   cleaningCheckRate: user.cleaningCheckRate ? String(user.cleaningCheckRate).replace(".", ",") : "",
   fullCleaningRate: user.fullCleaningRate ? String(user.fullCleaningRate).replace(".", ",") : "",
   showOnToday: user.intervenant?.showOnToday ?? true,
+  directCleaningValidation: user.directCleaningValidation,
   loginId: user.loginId ?? "", password: "",
 });
 const buildPayload = (draft: UserDraft) => ({
@@ -53,6 +54,7 @@ const buildPayload = (draft: UserDraft) => ({
   hourlyRate: Number(draft.hourlyRate.replace(",", ".")) || 0,
   cleaningCheckRate: Number(draft.cleaningCheckRate.replace(",", ".")) || 0,
   fullCleaningRate: Number(draft.fullCleaningRate.replace(",", ".")) || 0,
+  directCleaningValidation: draft.directCleaningValidation,
   canWrite: draft.roles.includes("owner") ? true : draft.canWrite, canViewAmounts: draft.roles.includes("owner") ? true : draft.canViewAmounts,
   isActive: draft.isActive, pageAccess: draft.roles.includes("owner") ? ALL_PAGES : draft.pageAccess,
   workerProfile: draft.roles.includes("worker") ? {
@@ -70,6 +72,7 @@ const applyRole = (draft: UserDraft, role: AppUserRole, checked: boolean, preset
     canWrite: presets[status].canWrite,
     canViewAmounts: presets[status].canViewAmounts,
     pageAccess: presets[status].pageAccess,
+    directCleaningValidation: checked && role === "owner" ? true : draft.directCleaningValidation,
   };
 };
 
@@ -131,6 +134,9 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
       <label className="field">Forfait par ménage complet (€)<input inputMode="decimal" value={draft.fullCleaningRate} disabled={disabled} onChange={(e) => onChange({ ...draft, fullCleaningRate: e.target.value })} /></label>
       <SwitchRow title="Afficher sur Aujourd’hui" description="Permettre la saisie rapide des heures." checked={draft.showOnToday} disabled={disabled} onChange={(checked) => onChange({ ...draft, showOnToday: checked })} />
     </div></fieldset> : null}
+    <fieldset className="user-editor__fieldset"><legend>Raccourcis ménage</legend><div className="user-permissions">
+      <SwitchRow title="Validation directe dans Aujourd’hui" description="Un clic sur un raccourci ménage marque immédiatement le gîte prêt. Disponible pour les gestionnaires." checked={draft.directCleaningValidation} disabled={disabled} onChange={(checked) => onChange({ ...draft, directCleaningValidation: checked })} />
+    </div></fieldset>
     <fieldset className="user-editor__fieldset"><legend>Droits</legend><div className="user-permissions">
       <SwitchRow title="Écriture" description="Créer, modifier et supprimer." checked={owner || draft.canWrite} disabled={disabled || owner} onChange={(checked) => onChange({ ...draft, canWrite: checked })} />
       <SwitchRow title="Montants en euros" description="Afficher tous les chiffres financiers." checked={owner || draft.canViewAmounts} disabled={disabled || owner} onChange={(checked) => onChange({ ...draft, canViewAmounts: checked })} />
@@ -145,7 +151,10 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
 const isUserDraftValid = (draft: UserDraft) =>
   Boolean(draft.firstName.trim()) && Boolean(draft.loginId.trim()) && (!draft.password || draft.password.length >= 12) && (!draft.roles.includes("worker") || Boolean(draft.telephone.trim()));
 
-const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
+const UserSettings = ({ currentUserId, onAuthSessionUpdated }: {
+  currentUserId: string | null;
+  onAuthSessionUpdated?: (session: ServerAuthSession) => void;
+}) => {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [statusPresets, setStatusPresets] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS);
   const [presetDrafts, setPresetDrafts] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS); const [selectedStatus, setSelectedStatus] = useState<AppUserStatus | null>(null);
@@ -174,12 +183,21 @@ const UserSettings = ({ currentUserId }: { currentUserId: string | null }) => {
     finally { setBusyId(null); }
   };
   useEffect(() => { void load(); }, []);
+  const refreshCurrentSession = async (id: string) => {
+    if (id !== currentUserId || !onAuthSessionUpdated) return;
+    try {
+      onAuthSessionUpdated(await apiFetch<ServerAuthSession>("/auth/session"));
+    } catch {
+      // The save is still valid when the current session was revoked by a password change.
+    }
+  };
   const save = async (id: string) => {
     setBusyId(id); setError(null); setNotice(null);
     try {
       const draft = drafts[id];
       await apiFetch(`/users/${id}`, { method: "PUT", json: buildPayload(draft) });
       await apiFetch(`/users/${id}/credentials`, { method: "PUT", json: { loginId: draft.loginId.trim(), ...(draft.password ? { password: draft.password } : {}) } });
+      await refreshCurrentSession(id);
       setSelectedId(null); setNotice("Utilisateur mis à jour."); await load();
     }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible d’enregistrer l’utilisateur."); } finally { setBusyId(null); }

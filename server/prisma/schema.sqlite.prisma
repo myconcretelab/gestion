@@ -612,6 +612,7 @@ model AppUser {
   hourly_rate         Float     @default(0)
   cleaning_check_rate Float     @default(0)
   full_cleaning_rate  Float     @default(0)
+  direct_cleaning_validation Boolean @default(false)
   gestionnaire_id     String?   @unique
   intervenant_id      String?   @unique
   status              String    @default("custom")

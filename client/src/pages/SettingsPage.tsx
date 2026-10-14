@@ -5196,7 +5196,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
           {activeSettingsSection === "settings-appearance" ? <AppearanceSettings /> : null}
           {activeSettingsSection === "settings-users" ? (
             currentUser?.permissions.isOwner
-              ? <UserSettings currentUserId={currentUser.id} />
+              ? <UserSettings currentUserId={currentUser.id} onAuthSessionUpdated={onAuthSessionUpdated} />
               : <section className="card access-restricted"><h2>Accès restreint</h2><p>Le privilège propriétaire est requis pour gérer les utilisateurs.</p></section>
           ) : null}
           {activeSettingsSection === "settings-security" ? (

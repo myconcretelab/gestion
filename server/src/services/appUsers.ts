@@ -78,6 +78,7 @@ export type AppUserSummary = {
   hourlyRate: number;
   cleaningCheckRate: number;
   fullCleaningRate: number;
+  directCleaningValidation: boolean;
   pageAccess: AppPageId[];
   isActive: boolean;
   permissions: AppUserPermissions;
@@ -157,6 +158,7 @@ export const serializeAppUser = (user: {
   hourly_rate?: unknown;
   cleaning_check_rate?: unknown;
   full_cleaning_rate?: unknown;
+  direct_cleaning_validation?: boolean;
   page_access: unknown;
   can_write: boolean;
   can_view_amounts: boolean;
@@ -192,6 +194,7 @@ export const serializeAppUser = (user: {
     hourlyRate: Number(user.hourly_rate ?? 0),
     cleaningCheckRate: Number(user.cleaning_check_rate ?? 0),
     fullCleaningRate: Number(user.full_cleaning_rate ?? 0),
+    directCleaningValidation: Boolean(user.direct_cleaning_validation),
     pageAccess: normalizePageAccess(user.page_access, owner),
     isActive: user.is_active,
     permissions: {

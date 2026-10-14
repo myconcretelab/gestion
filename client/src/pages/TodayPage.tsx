@@ -843,6 +843,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
     || new Date(selectedCleaningReadiness.task_starts_at) <= trashNow;
   const canManageCleaningReadiness = !currentUser || currentUser.permissions.isOwner
     || (currentUser.status !== "worker" && currentUser.permissions.canWrite);
+  const usesDirectCleaningValidation = Boolean(currentUser?.directCleaningValidation && canManageCleaningReadiness);
   const cleaningReadinessByArrivalId = useMemo(
     () => new Map(
       cleaningReadiness
@@ -1346,10 +1347,12 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                     item.next_arrival_date === todayIso ? " today-cleaning-readiness__button--urgent" : ""
                   }`}
                   disabled={Boolean(cleaningReadinessBusyId)}
-                  aria-label={`Gérer le ménage de ${item.gite_name}`}
-                  aria-expanded={selectedCleaningGiteId === item.gite_id}
-                  aria-controls={selectedCleaningGiteId === item.gite_id ? "today-cleaning-panel" : undefined}
-                  onClick={() => setSelectedCleaningGiteId((current) => current === item.gite_id ? null : item.gite_id)}
+                  aria-label={usesDirectCleaningValidation ? `Valider le ménage de ${item.gite_name}` : `Gérer le ménage de ${item.gite_name}`}
+                  aria-expanded={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id}
+                  aria-controls={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id ? "today-cleaning-panel" : undefined}
+                  onClick={() => usesDirectCleaningValidation
+                    ? void updateCleaningReadiness(item, true)
+                    : setSelectedCleaningGiteId((current) => current === item.gite_id ? null : item.gite_id)}
                 >
                   <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>
                   {item.departure_has_cleaning_option ? <small className="today-cleaning-readiness__option-label">M</small> : null}

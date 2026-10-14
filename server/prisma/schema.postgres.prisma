@@ -612,6 +612,7 @@ model AppUser {
   hourly_rate         Decimal   @default(0) @db.Decimal(10, 2)
   cleaning_check_rate Decimal   @default(0) @db.Decimal(10, 2)
   full_cleaning_rate  Decimal   @default(0) @db.Decimal(10, 2)
+  direct_cleaning_validation Boolean @default(false)
   gestionnaire_id     String?   @unique
   intervenant_id      String?   @unique
   status              String    @default("custom")
