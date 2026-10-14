@@ -350,6 +350,13 @@ const StatisticsPage = () => {
   const allEntries = useMemo(() => Object.values(entriesByGite).flat(), [entriesByGite]);
 
   const globalStats = useMemo(() => computeGlobalStats(entriesByGite, selectedYear, selectedMonth), [entriesByGite, selectedMonth, selectedYear]);
+  const reservedYearCA = useMemo(() => {
+    if (typeof selectedYear !== "number") return null;
+    return getMonthlyCAByYear(entriesByGite)[selectedYear]?.total ?? 0;
+  }, [entriesByGite, selectedYear]);
+  const realizedCALabel = selectedYear === currentYear && !selectedMonth
+    ? "CA réalisé à ce jour"
+    : "CA réalisé";
   const averageReservations = useMemo(() => computeAverageReservations(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
   const averageNights = useMemo(() => computeAverageNights(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
   const averageCA = useMemo(() => computeAverageCA(allEntries, selectedYear, selectedMonth), [allEntries, selectedMonth, selectedYear]);
@@ -631,7 +638,7 @@ const StatisticsPage = () => {
           </div>
         ) : null}
 
-        <div className="stats-global-cards">
+        <div className={`stats-global-cards${reservedYearCA !== null ? " stats-global-cards--with-reserved" : ""}`}>
           <article>
             <p>Total réservations</p>
             <strong>{globalStats.totalReservations}</strong>
@@ -643,7 +650,7 @@ const StatisticsPage = () => {
             {showStats ? renderTrend(globalStats.totalNights, averageNights) : null}
           </article>
           <article>
-            <p>Chiffre d'affaire brut</p>
+            <p>{realizedCALabel}</p>
             <strong>{formatEuro(globalStats.totalCA)}</strong>
             {selectedYear !== "all" && !selectedMonth ? (
               <span className="stats-monthly-average">
@@ -652,6 +659,13 @@ const StatisticsPage = () => {
             ) : null}
             {showStats ? renderTrend(globalStats.totalCA, averageCA, true) : null}
           </article>
+          {reservedYearCA !== null ? (
+            <article className="stats-global-cards__reserved">
+              <p>CA réservé sur toute l’année {selectedYear}</p>
+              <strong>{formatEuro(reservedYearCA)}</strong>
+              <span className="stats-monthly-average">Inclut les séjours à venir</span>
+            </article>
+          ) : null}
         </div>
 
         <div className="stats-tax-bar stats-tax-bar--header">

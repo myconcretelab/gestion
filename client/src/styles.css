@@ -16489,6 +16489,10 @@ button.personal-expenses-status:disabled {
   padding-top: 26px;
 }
 
+.stats-global-cards--with-reserved {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .stats-global-cards article {
   border: none;
   border-radius: 0;
@@ -16516,6 +16520,10 @@ button.personal-expenses-status:disabled {
 
 .stats-global-cards article:nth-child(3) strong {
   color: #43b77d;
+}
+
+.stats-global-cards__reserved strong {
+  color: var(--primary-strong);
 }
 
 .stats-monthly-average {
