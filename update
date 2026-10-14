@@ -55,6 +55,10 @@ load_env_file "$ROOT_DIR/.env"
 load_env_file "$ROOT_DIR/.env.production"
 load_env_file "$ROOT_DIR/.env.update"
 
+# Vite can otherwise exceed Alwaysdata's per-process memory limit during builds.
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
+echo "==> Node memory limit: ${NODE_OPTIONS}"
+
 format_elapsed() {
   local total_seconds="$1"
   local minutes=$((total_seconds / 60))
@@ -91,6 +95,38 @@ resolve_playwright_browsers_path() {
     value="$ROOT_DIR/$value"
   fi
   echo "$value"
+}
+
+ensure_production_backup_prerequisites() {
+  local backup_passphrase="${INSTALLATION_BACKUP_PASSPHRASE:-}"
+
+  if [[ "$LIGHT_MODE" == "1" ]]; then
+    return
+  fi
+
+  if [[ ! "${DATABASE_URL:-}" =~ ^postgres(ql)?:// ]]; then
+    echo "DATABASE_URL must be a PostgreSQL URL before a full deployment."
+    exit 1
+  fi
+
+  if [[ ${#backup_passphrase} -lt 24 ]]; then
+    echo "INSTALLATION_BACKUP_PASSPHRASE (24 characters minimum) is required before a full deployment."
+    exit 1
+  fi
+
+  if ! command -v pg_dump >/dev/null 2>&1; then
+    echo "pg_dump is required to create the mandatory PostgreSQL backup."
+    exit 1
+  fi
+}
+
+create_production_backup() {
+  local backup_dir="$ROOT_DIR/server/data/backups"
+  local backup_path="$backup_dir/predeploy-$(date +%Y%m%dT%H%M%S%z).tar.gz"
+
+  mkdir -p "$backup_dir"
+  run_step "Create encrypted PostgreSQL backup" npm run backup -- "$backup_path"
+  echo "==> Backup archive created: ${backup_path}"
 }
 
 has_local_changes() {
@@ -160,6 +196,7 @@ restart_server() {
 }
 
 reset_generated_prisma_schema
+ensure_production_backup_prerequisites
 
 STASH_CREATED=0
 if has_local_changes; then
@@ -256,6 +293,7 @@ fi
 if [[ "$LIGHT_MODE" == "1" ]]; then
   echo "==> Light mode: skip PostgreSQL migrations"
 else
+  create_production_backup
   run_step "Apply database migrations (PostgreSQL)" npm run prod:migrate
 fi
 
