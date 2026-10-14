@@ -26,9 +26,14 @@ test("le service expose une santé exploitable sans fuite d'information", async 
   assert.equal(response.headers()["x-frame-options"], "DENY");
   assert.match(response.headers()["content-security-policy"] ?? "", /frame-ancestors 'none'/);
 
-  const contractPdf = await api.get("/api/contracts/not-a-real-contract/pdf");
-  assert.equal(contractPdf.headers()["x-frame-options"], "SAMEORIGIN");
-  assert.match(contractPdf.headers()["content-security-policy"] ?? "", /frame-ancestors 'self'/);
+  for (const documentPdfPath of [
+    "/api/contracts/not-a-real-contract/pdf",
+    "/api/invoices/not-a-real-invoice/pdf",
+  ]) {
+    const documentPdf = await api.get(documentPdfPath);
+    assert.equal(documentPdf.headers()["x-frame-options"], "SAMEORIGIN");
+    assert.match(documentPdf.headers()["content-security-policy"] ?? "", /frame-ancestors 'self'/);
+  }
 
   const ready = await api.get("/api/ready");
   assert.equal(ready.status(), 200);

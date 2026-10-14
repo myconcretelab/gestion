@@ -87,15 +87,15 @@ export const createApp = () => {
   if (env.TRUST_PROXY) app.set("trust proxy", 1);
 
   app.use((req, res, next) => {
-    // The contract preview is a same-origin iframe. Keep every other response
-    // non-embeddable, while allowing this PDF to render inside its detail page.
-    const isContractPdfPreview =
-      req.method === "GET" && /^\/api\/contracts\/[^/]+\/pdf$/.test(req.path);
-    const frameAncestors = isContractPdfPreview ? "'self'" : "'none'";
+    // Document previews are same-origin iframes. Keep every other response
+    // non-embeddable, while allowing these PDFs to render inside their detail pages.
+    const isDocumentPdfPreview =
+      req.method === "GET" && /^\/api\/(?:contracts|invoices)\/[^/]+\/pdf$/.test(req.path);
+    const frameAncestors = isDocumentPdfPreview ? "'self'" : "'none'";
     const requestId = String(req.headers["x-request-id"] ?? "").trim().slice(0, 128) || crypto.randomUUID();
     res.setHeader("X-Request-Id", requestId);
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", isContractPdfPreview ? "SAMEORIGIN" : "DENY");
+    res.setHeader("X-Frame-Options", isDocumentPdfPreview ? "SAMEORIGIN" : "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     res.setHeader("Content-Security-Policy", `default-src 'self'; base-uri 'self'; frame-ancestors ${frameAncestors}; object-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'`);
