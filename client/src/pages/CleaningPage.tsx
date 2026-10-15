@@ -157,7 +157,7 @@ export default function CleaningPage() {
       <label>Au <input type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} /></label>
     </div>
 
-    {section === "cleaning" ? <>
+    {section === "cleaning" ? <div className="cleaning-page__layout">
 
     <section className="card cleaning-page__section" aria-label="Liste des ménages">
       <div className="cleaning-page__toolbar">
@@ -245,6 +245,6 @@ export default function CleaningPage() {
       </div>
       <button type="button" disabled={busyId === `rule:${selectedGite}`} onClick={() => void saveRule()}>{busyId === `rule:${selectedGite}` ? "Enregistrement…" : "Enregistrer la règle"}</button>
     </section> : null}
-    </> : <ActionsPanel from={from} to={to} />}
+    </div> : <ActionsPanel from={from} to={to} />}
   </div>;
 }
