@@ -71,6 +71,7 @@ Omit `--light` for the full deployment.
 
 ### Configuration and restart
 - The remote script loads `.env`, `.env.production`, then `.env.update` (later files override earlier ones).
+- Keep application secrets in a non-versioned env file with mode `600`, not in the Alwaysdata site's Environment setting: Alwaysdata may include site environment values in startup logs. The update script enforces mode `600` on loaded env files.
 - Restart uses `RESTART_CMD`, or the Alwaysdata API with `ALWAYSDATA_API_TOKEN`, `ALWAYSDATA_ACCOUNT` and `ALWAYSDATA_SITE_ID`. Restart configuration can live in `.env.update`.
 - Never print or commit these files or credential values. Do not enable shell tracing while loading them.
 - Do not routinely set `SKIP_BUILD`, `SKIP_TESTS`, or `SKIP_RESTART`. A message saying no restart is configured does not confirm a successful restart, even if the script exits successfully.

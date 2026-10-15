@@ -41,6 +41,8 @@ done
 load_env_file() {
   local file="$1"
   if [[ -f "$file" ]]; then
+    # These files may contain application credentials. Keep them private before sourcing.
+    chmod 600 "$file"
     local label="${file#$ROOT_DIR/}"
     echo "==> Load env from ${label}"
     set -a
