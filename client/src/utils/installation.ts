@@ -16,6 +16,7 @@ export type OrganizationProfile = {
 
 export type PublicInstallationConfig = {
   setupComplete: boolean;
+  existingInstallation?: boolean;
   organization: Pick<OrganizationProfile, "tradeName" | "publicDisplayName" | "logoUrl" | "faviconUrl" | "primaryColor" | "locale" | "country" | "currency" | "timezone" | "website">;
   modules: ModuleSettings;
 };

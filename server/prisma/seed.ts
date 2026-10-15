@@ -19,7 +19,7 @@ const seed = async () => {
   await prisma.gite.deleteMany();
   await prisma.gestionnaire.deleteMany();
 
-  await prisma.installationConfig.create({
+  const installation = await prisma.installationConfig.create({
     data: {
       id: "default",
       setup_completed: true,
@@ -57,6 +57,18 @@ const seed = async () => {
         ical: false, pump_airbnb: false, smart_life: false, sms: false,
         telegram: false, daily_email: false,
       }),
+    },
+  });
+  await prisma.organizationSettings.upsert({
+    where: { organization_id: "org_historical_broceliande" },
+    update: {
+      profile_json: installation.organization_json, modules_json: installation.modules_json,
+      branding_json: installation.organization_json, documents_json: installation.organization_json, setup_completed: true,
+    },
+    create: {
+      organization_id: "org_historical_broceliande", profile_json: installation.organization_json,
+      modules_json: installation.modules_json, branding_json: installation.organization_json,
+      documents_json: installation.organization_json, setup_completed: true,
     },
   });
 

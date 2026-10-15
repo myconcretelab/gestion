@@ -84,6 +84,17 @@ export type InstallationConfig = {
 export const getInstallationConfig = async (): Promise<InstallationConfig> => {
   const organizationId = getOrganizationId();
   const settings = await prisma.organizationSettings.findUnique({ where: { organization_id: organizationId } });
+  if (settings && !settings.setup_completed && organizationId === HISTORICAL_ORGANIZATION_ID) {
+    const [legacy, protectedUsers] = await Promise.all([
+      prisma.installationConfig.findUnique({ where: { id: "default" } }),
+      prisma.appUser.count({ where: { password_hash: { not: null }, password_salt: { not: null } } }),
+    ]);
+    if (legacy?.setup_completed && protectedUsers > 0) return {
+      organization: parseOrganization(legacy.organization_json),
+      modules: normalizeModules(legacy.modules_json),
+      setupComplete: true,
+    };
+  }
   if (settings) return {
     organization: parseOrganization(settings.profile_json),
     modules: normalizeModules(settings.modules_json),

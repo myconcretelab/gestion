@@ -900,7 +900,7 @@ const App = () => {
   }
 
   if (!installationConfig.setupComplete) {
-    return <Suspense fallback={<main className="auth-shell">Chargement de l’assistant…</main>}><OnboardingPage onComplete={() => window.location.reload()} /></Suspense>;
+    return <Suspense fallback={<main className="auth-shell">Chargement de l’assistant…</main>}><OnboardingPage existingInstallation={installationConfig.existingInstallation === true} onComplete={() => window.location.reload()} /></Suspense>;
   }
 
   if (isAuthRequired && !isAuthenticated) {

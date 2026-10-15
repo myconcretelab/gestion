@@ -3,7 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
-import { createFirstAdministrator } from "../services/serverAuth.js";
+import { claimExistingInstallation, createFirstAdministrator } from "../services/serverAuth.js";
 import {
   completeInstallation,
   getInstallationConfig,
@@ -11,6 +11,7 @@ import {
 } from "../services/installationConfig.js";
 import { generateIcalExportToken } from "../utils/reservationOrigin.js";
 import { provisionGlobalIdentityForProfile } from "../services/globalIdentity.js";
+import { HISTORICAL_ORGANIZATION_ID, getOrganizationId } from "../services/organizationContext.js";
 
 const router = Router();
 
@@ -30,11 +31,17 @@ const setupSchema = z.object({
     contractPrefix: z.string().trim().min(1).max(12).regex(/^[A-Za-z0-9_-]+$/),
   }),
 });
+const administratorSchema = setupSchema.shape.administrator;
 
 const safePublicConfig = async () => {
   const config = await getInstallationConfig();
+  const existingInstallation = !config.setupComplete && getOrganizationId() === HISTORICAL_ORGANIZATION_ID &&
+    await prisma.gite.count() > 0 &&
+    await prisma.appUser.count({ where: { password_hash: { not: null }, password_salt: { not: null } } }) === 0 &&
+    Boolean((await prisma.installationConfig.findUnique({ where: { id: "default" } }))?.setup_completed);
   return {
     setupComplete: config.setupComplete,
+    existingInstallation,
     organization: {
       tradeName: config.organization.tradeName,
       publicDisplayName: config.organization.publicDisplayName || config.organization.tradeName,
@@ -68,9 +75,13 @@ router.post("/setup", async (req, res, next) => {
     if (!env.SETUP_TOKEN || suppliedToken.length !== env.SETUP_TOKEN.length || !crypto.timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(env.SETUP_TOKEN))) {
       return res.status(403).json({ error: "Jeton d'installation invalide.", code: "SETUP_TOKEN_REQUIRED" });
     }
-    const payload = setupSchema.parse(req.body);
     const giteCount = await prisma.gite.count();
-    if (giteCount > 0) return res.status(409).json({ error: "Une installation contenant déjà des hébergements doit utiliser la migration existante.", code: "SETUP_DATA_PRESENT" });
+    if (giteCount > 0) {
+      const administrator = administratorSchema.parse(req.body?.administrator);
+      const result = await claimExistingInstallation(administrator);
+      return res.status(201).json({ ...result, smtpConfigured: Boolean(env.SMTP_HOST && env.SMTP_FROM) });
+    }
+    const payload = setupSchema.parse(req.body);
 
     const administrator = await createFirstAdministrator(payload.administrator);
     await provisionGlobalIdentityForProfile(administrator.id);

@@ -58,6 +58,54 @@ test("l'assistant crée une installation complète depuis une base vide", () => 
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 
+test("la reprise d'une installation existante conserve les gîtes et les réglages", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "contrats-existing-install-"));
+  const database = path.join(temp, "existing.db");
+  fs.writeFileSync(database, "");
+  const childEnv = { ...process.env, NODE_ENV: "test", DATABASE_URL: `file:${database}`, DATA_DIR: path.join(temp, "data"), SETUP_TOKEN: "existing-install-token-32-characters" };
+  try {
+    const migrate = spawnSync(process.execPath, ["scripts/prisma.mjs", "migrate", "deploy"], { cwd: serverRoot, env: childEnv, encoding: "utf8" });
+    assert.equal(migrate.status, 0, migrate.stderr || migrate.stdout);
+    const script = `
+      import assert from "node:assert/strict";
+      import { createApp } from "./src/app.ts";
+      import prisma from "./src/db/prisma.ts";
+      const profile = { tradeName: "Gîtes conservés", legalName: "Propriétaire existant" };
+      const modules = { reservations: true, contracts: true, worker_planning: true };
+      await prisma.installationConfig.create({ data: { id: "default", organization_json: JSON.stringify(profile), modules_json: JSON.stringify(modules), setup_completed: true } });
+      const gite = await prisma.gite.create({ data: {
+        nom: "Gîte conservé", prefixe_contrat: "OLD", adresse_ligne1: "Rue ancienne", capacite_max: 2,
+        proprietaires_noms: "Propriétaire existant", proprietaires_adresse: "Rue ancienne", telephones: "[]",
+        taxe_sejour_par_personne_par_nuit: 0, iban: "", titulaire: "Propriétaire existant"
+      } });
+      await prisma.appUser.create({ data: { display_name: "Ancien propriétaire", is_owner: true } });
+      const server = createApp().listen(0);
+      await new Promise((resolve) => server.once("listening", resolve));
+      const origin = "http://127.0.0.1:" + server.address().port;
+      const before = await fetch(origin + "/api/installation/public-config").then((r) => r.json());
+      assert.equal(before.setupComplete, false);
+      assert.equal(before.existingInstallation, true);
+      const body = JSON.stringify({ administrator: { displayName: "Nouvel admin", loginId: "nouvel-admin", password: "A-secure-demo-password!" } });
+      const denied = await fetch(origin + "/api/installation/setup", { method: "POST", headers: { "content-type": "application/json", "x-setup-token": "wrong" }, body });
+      assert.equal(denied.status, 403);
+      const response = await fetch(origin + "/api/installation/setup", { method: "POST", headers: { "content-type": "application/json", "x-setup-token": process.env.SETUP_TOKEN }, body });
+      assert.equal(response.status, 201, await response.text());
+      assert.equal(await prisma.gite.count(), 1);
+      assert.equal((await prisma.gite.findUniqueOrThrow({ where: { id: gite.id } })).nom, "Gîte conservé");
+      const settings = await prisma.organizationSettings.findUniqueOrThrow({ where: { organization_id: "org_historical_broceliande" } });
+      assert.equal(settings.setup_completed, true);
+      assert.equal(JSON.parse(settings.profile_json).tradeName, profile.tradeName);
+      assert.equal(JSON.parse(settings.modules_json).worker_planning, true);
+      const login = await fetch(origin + "/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ loginId: "nouvel-admin", password: "A-secure-demo-password!" }) });
+      assert.equal(login.status, 200, await login.text());
+      await prisma.$disconnect();
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    `;
+    const run = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { cwd: serverRoot, env: childEnv, encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
 test("une sauvegarde standard est validée puis restaurée sans secrets", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "contrats-backup-test-"));
   const database = path.join(temp, "source.db"); const dataDir = path.join(temp, "data"); const archive = path.join(temp, "backup.tar.gz");

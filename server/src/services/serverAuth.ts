@@ -8,6 +8,9 @@ import { APP_PAGE_IDS, ensureAppUsersInitialized, serializeAppUser, type AppUser
 import { getInstallationConfig } from "./installationConfig.js";
 import { getSmtpConfigIssues, sendSmtpMail } from "./mailer.js";
 import { provisionGlobalIdentityForProfile } from "./globalIdentity.js";
+import { getOrganizationId, HISTORICAL_ORGANIZATION_ID } from "./organizationContext.js";
+import { organizationProfileSchema, normalizeModules } from "./installationConfig.js";
+import { encodeJsonField } from "../utils/jsonFields.js";
 
 const SETTINGS_FILE = path.join(env.DATA_DIR, "server-auth-settings.json");
 const SESSION_COOKIE_NAME = "contrats_session";
@@ -270,6 +273,80 @@ export const createFirstAdministrator = async (input: {
       : await prisma.appUser.create({ data });
   } catch (error) {
     if ((error as { code?: string }).code === "P2002") throw Object.assign(new Error("Cet identifiant est déjà utilisé."), { status: 409 });
+    throw error;
+  }
+};
+
+export const claimExistingInstallation = async (input: {
+  loginId: string;
+  password: string;
+  displayName: string;
+  email?: string;
+}) => {
+  const organizationId = getOrganizationId();
+  if (organizationId !== HISTORICAL_ORGANIZATION_ID) {
+    throw Object.assign(new Error("Cette installation ne peut pas être reprise ici."), { status: 409 });
+  }
+  const loginId = normalizeLoginId(input.loginId);
+  const displayName = input.displayName.trim();
+  if (!loginId || loginId.length > 180 || !displayName || input.password.length < PASSWORD_MIN_LENGTH) {
+    throw Object.assign(new Error("Les informations du premier administrateur sont invalides."), { status: 400 });
+  }
+  const hash = await hashPassword(input.password);
+  try {
+    return await systemPrisma.$transaction(async (tx) => {
+      const [settings, legacy, giteCount, protectedUsers] = await Promise.all([
+        tx.organizationSettings.findUnique({ where: { organization_id: organizationId } }),
+        tx.installationConfig.findUnique({ where: { id: "default" } }),
+        tx.gite.count({ where: { organization_id: organizationId } }),
+        tx.appUser.count({ where: { organization_id: organizationId, password_hash: { not: null }, password_salt: { not: null } } }),
+      ]);
+      if (settings?.setup_completed || !legacy?.setup_completed || !giteCount || protectedUsers) {
+        throw Object.assign(new Error("Cette installation ne peut pas être reprise avec l’assistant."), { status: 409, code: "SETUP_DATA_PRESENT" });
+      }
+      const organization = organizationProfileSchema.parse(JSON.parse(legacy.organization_json));
+      const modules = normalizeModules(legacy.modules_json);
+      const existingOwner = await tx.appUser.findFirst({ where: { organization_id: organizationId, is_owner: true }, orderBy: { createdAt: "asc" } });
+      const data = {
+        display_name: displayName, first_name: displayName, last_name: "", email: input.email?.trim() || null,
+        roles: JSON.stringify(["owner"]), status: "owner", page_access: JSON.stringify(APP_PAGE_IDS),
+        can_write: true, can_view_amounts: true, is_owner: true, is_active: true, login_id: loginId,
+        password_hash: hash.passwordHash, password_salt: hash.passwordSalt, password_updated_at: new Date(),
+      };
+      const administrator = existingOwner
+        ? await tx.appUser.update({ where: { id: existingOwner.id }, data })
+        : await tx.appUser.create({ data: { ...data, organization_id: organizationId } });
+      const globalUserId = administrator.user_id ?? administrator.id;
+      await tx.user.upsert({
+        where: { id: globalUserId },
+        update: { login_id: loginId, password_hash: hash.passwordHash, password_salt: hash.passwordSalt, password_updated_at: administrator.password_updated_at },
+        create: { id: globalUserId, login_id: loginId, email: administrator.email?.trim().toLowerCase() || null, password_hash: hash.passwordHash, password_salt: hash.passwordSalt, password_updated_at: administrator.password_updated_at },
+      });
+      await tx.membership.upsert({
+        where: { user_id_organization_id: { user_id: globalUserId, organization_id: organizationId } },
+        update: { role: "owner", status: "active", permissions: encodeJsonField({ roles: administrator.roles, pageAccess: administrator.page_access, canWrite: true, canViewAmounts: true }) },
+        create: { user_id: globalUserId, organization_id: organizationId, role: "owner", status: "active", permissions: encodeJsonField({ roles: administrator.roles, pageAccess: administrator.page_access, canWrite: true, canViewAmounts: true }), accepted_at: administrator.createdAt },
+      });
+      if (!administrator.user_id) await tx.appUser.update({ where: { id: administrator.id }, data: { user_id: globalUserId } });
+      await tx.organizationSettings.upsert({
+        where: { organization_id: organizationId },
+        update: {
+          profile_json: JSON.stringify(organization), modules_json: JSON.stringify(modules),
+          locale: organization.locale, currency: organization.currency, timezone: organization.timezone,
+          branding_json: JSON.stringify(organization), documents_json: JSON.stringify(organization), setup_completed: true,
+        },
+        create: {
+          organization_id: organizationId, profile_json: JSON.stringify(organization), modules_json: JSON.stringify(modules),
+          locale: organization.locale, currency: organization.currency, timezone: organization.timezone,
+          branding_json: JSON.stringify(organization), documents_json: JSON.stringify(organization), setup_completed: true,
+        },
+      });
+      return { organization, modules, setupComplete: true };
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "P2002") {
+      throw Object.assign(new Error("Cet identifiant ou cet e-mail est déjà utilisé."), { status: 409 });
+    }
     throw error;
   }
 };
