@@ -36,6 +36,7 @@ export type AppUser = {
   hourlyRate: number;
   cleaningCheckRate: number;
   fullCleaningRate: number;
+  fullCleaningRates: Record<string, number>;
   directCleaningValidation: boolean;
   pageAccess: AppPageId[];
   isActive: boolean;

@@ -131,7 +131,7 @@ router.post("/", async (req, res, next) => {
         display_name: payload.nom,
         first_name: payload.nom,
         last_name: "",
-        roles: encodeJsonField(["worker"]),
+        roles: JSON.stringify(["worker"]),
         telephone: payload.telephone,
         email: payload.email ?? null,
         adresse: payload.adresse ?? null,

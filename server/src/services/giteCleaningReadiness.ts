@@ -1,6 +1,6 @@
 import prisma from "../db/prisma.js";
 import { fromJsonString } from "../utils/jsonFields.js";
-import { recordCleaningCheckIntervention, removeUnpaidCleaningCheckIntervention } from "./userInterventions.js";
+import { recordCleaningCheckIntervention, recordFullCleaningIntervention, removeUnpaidAutomaticFullCleaningIntervention, removeUnpaidCleaningCheckIntervention } from "./userInterventions.js";
 
 export const CLEANING_CHECK_START_MINUTES = 0;
 
@@ -129,6 +129,7 @@ export const updateGiteCleaningReadiness = async (
   checked: boolean,
   checkedByUserId: string | null,
   checkedAt = new Date(),
+  fullCleaningUserId: string | null = null,
 ) => {
   const value = checked ? readiness.checked_at ?? checkedAt : null;
   await prisma.$transaction([
@@ -151,8 +152,12 @@ export const updateGiteCleaningReadiness = async (
   ]);
   if (checked) {
     await recordCleaningCheckIntervention(readiness.departure_reservation_id, checkedByUserId, value ?? checkedAt);
+    if (readiness.departure_has_cleaning_option && fullCleaningUserId) {
+      await recordFullCleaningIntervention(readiness.departure_reservation_id, fullCleaningUserId, readiness.departure_date, true);
+    }
   } else {
     await removeUnpaidCleaningCheckIntervention(readiness.departure_reservation_id);
+    await removeUnpaidAutomaticFullCleaningIntervention(readiness.departure_reservation_id);
   }
   return value;
 };

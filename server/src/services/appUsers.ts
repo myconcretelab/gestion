@@ -78,6 +78,7 @@ export type AppUserSummary = {
   hourlyRate: number;
   cleaningCheckRate: number;
   fullCleaningRate: number;
+  fullCleaningRates: Record<string, number>;
   directCleaningValidation: boolean;
   pageAccess: AppPageId[];
   isActive: boolean;
@@ -158,6 +159,7 @@ export const serializeAppUser = (user: {
   hourly_rate?: unknown;
   cleaning_check_rate?: unknown;
   full_cleaning_rate?: unknown;
+  full_cleaning_rates?: unknown;
   direct_cleaning_validation?: boolean;
   page_access: unknown;
   can_write: boolean;
@@ -194,6 +196,7 @@ export const serializeAppUser = (user: {
     hourlyRate: Number(user.hourly_rate ?? 0),
     cleaningCheckRate: Number(user.cleaning_check_rate ?? 0),
     fullCleaningRate: Number(user.full_cleaning_rate ?? 0),
+    fullCleaningRates: fromJsonString<Record<string, number>>(user.full_cleaning_rates, {}),
     directCleaningValidation: Boolean(user.direct_cleaning_validation),
     pageAccess: normalizePageAccess(user.page_access, owner),
     isActive: user.is_active,
@@ -234,7 +237,7 @@ export const ensureAppUsersInitialized = async () => {
             first_name: manager.prenom,
             last_name: manager.nom,
             gestionnaire_id: manager.id,
-            roles: encodeJsonField(["owner"]),
+            roles: JSON.stringify(["owner"]),
             status: "owner",
             page_access: encodeJsonField(APP_PAGE_IDS),
             can_write: true,
@@ -270,7 +273,7 @@ export const ensureAppUsersInitialized = async () => {
             where: { id: matchingOwners[0].id },
             data: {
               intervenant_id: worker.id,
-              roles: encodeJsonField([...new Set([...roles, "worker"])]),
+              roles: JSON.stringify([...new Set([...roles, "worker"])]),
               telephone: worker.telephone,
               email: worker.email,
               adresse: worker.adresse,
@@ -286,7 +289,7 @@ export const ensureAppUsersInitialized = async () => {
             first_name: worker.nom,
             last_name: "",
             intervenant_id: worker.id,
-            roles: encodeJsonField(["worker"]),
+            roles: JSON.stringify(["worker"]),
             telephone: worker.telephone,
             email: worker.email,
             adresse: worker.adresse,

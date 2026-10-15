@@ -1139,13 +1139,13 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
     void loadDeferredData({ notificationDays: nextValue });
   };
 
-  const updateCleaningReadiness = async (item: GiteCleaningReadiness, checked: boolean) => {
+  const updateCleaningReadiness = async (item: GiteCleaningReadiness, checked: boolean, direct = false) => {
     if (cleaningReadinessBusyId) return;
     setCleaningReadinessBusyId(item.gite_id);
     try {
       const updated = await apiFetch<GiteCleaningReadiness>(
         `/today/cleaning-readiness/${encodeURIComponent(item.gite_id)}`,
-        { method: "PUT", json: { checked } }
+        { method: "PUT", json: { checked, direct } }
       );
       setPrimaryOverview((previous) => previous ? {
         ...previous,
@@ -1351,7 +1351,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                   aria-expanded={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id}
                   aria-controls={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id ? "today-cleaning-panel" : undefined}
                   onClick={() => usesDirectCleaningValidation
-                    ? void updateCleaningReadiness(item, true)
+                    ? void updateCleaningReadiness(item, true, true)
                     : setSelectedCleaningGiteId((current) => current === item.gite_id ? null : item.gite_id)}
                 >
                   <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>

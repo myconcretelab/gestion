@@ -5,6 +5,7 @@ import { getOrganizationId } from "../services/organizationContext.js";
 import { normalizeAppUserRoles } from "../services/appUsers.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { isValidWorkDate } from "../utils/intervenantHours.js";
+import { recordFullCleaningIntervention } from "../services/userInterventions.js";
 
 const router = Router();
 const workDate = z.string().refine(isValidWorkDate, "Date invalide.");
@@ -85,19 +86,8 @@ router.post("/", async (req, res, next) => {
     const sourceKey = `full-cleaning:${reservation.id}`;
     const existing = await prisma.userIntervention.findUnique({ where: { organization_id_source_key: { organization_id: getOrganizationId(), source_key: sourceKey } } });
     if (existing) return res.status(409).json({ error: "Ce ménage complet est déjà comptabilisé." });
-    const entry = await prisma.userIntervention.create({
-      data: {
-        user_id: user.id,
-        user_name: user.display_name,
-        kind: "full_cleaning",
-        occurred_on: payload.occurredOn,
-        gite_id: gite.id,
-        gite_name: gite.nom,
-        reservation_id: reservation.id,
-        source_key: sourceKey,
-        amount_snapshot: Number(user.full_cleaning_rate ?? 0),
-      },
-    });
+    const entry = await recordFullCleaningIntervention(reservation.id, user.id, payload.occurredOn, false);
+    if (!entry) return res.status(409).json({ error: "Cet intervenant ne peut pas recevoir de ménage." });
     res.status(201).json(serialize(entry));
   } catch (error) { next(error); }
 });

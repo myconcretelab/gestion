@@ -39,7 +39,7 @@ const worker = {
   id: "user-1", loginId: "worker", displayName: "Worker", firstName: "Work", lastName: "Er",
   gestionnaireId: null, intervenantId: "worker-1", roles: ["worker"], status: "worker",
   telephone: null, email: null, adresse: null, telegramChatId: null, hourlyRate: 0,
-  cleaningCheckRate: 0, fullCleaningRate: 0, pageAccess: ["today", "reservations", "calendar", "planning_relay"],
+  cleaningCheckRate: 0, fullCleaningRate: 0, fullCleaningRates: {}, pageAccess: ["today", "reservations", "calendar", "planning_relay"],
   isActive: true, permissions: { canWrite: true, canViewAmounts: false, isOwner: false },
 } as AppUserSummary;
 

@@ -200,11 +200,13 @@ export const doesCleaningRequireCheck = async (giteId: string) => {
 
 export const setCleaningTaskReadiness = async (
   departureId: string, departureDate: string, checked: boolean, checkedAt: Date | null, userId: string | null,
+  fullCleaningUserId: string | null = null,
 ) => {
   await syncCleaningTasks(departureDate, departureDate);
   const task = await getCleaningTaskForDeparture(departureId);
   if (!task) return null;
   await prisma.cleaningTask.update({ where: { id: task.id }, data: checked ? {
+    ...(fullCleaningUserId ? { assignee_id: fullCleaningUserId } : {}),
     status: "verified", completed_at: task.completed_at ?? checkedAt,
     completed_by_id: task.completed_by_id ?? userId,
     checked_at: checkedAt, checked_by_id: userId,

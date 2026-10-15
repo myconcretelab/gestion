@@ -179,7 +179,7 @@ export default function IntervenantsPage() {
         <th>Intervenant</th><th>Tarifs</th><th>Heures</th><th>Contrôles</th><th>Ménages</th><th>Total</th><th></th>
       </tr></thead><tbody>{summaries.map(({ worker, minutes, checks, cleanings, total }) => <tr key={worker.id}>
         <td><strong>{worker.nom}</strong><small>{worker.is_active ? "Actif" : "Inactif"}</small></td>
-        <td><small>{formatEuro(worker.hourly_rate)}/h · {formatEuro(worker.cleaning_check_rate ?? 0)}/contrôle · {formatEuro(worker.full_cleaning_rate ?? 0)}/ménage</small></td>
+        <td><small>{formatEuro(worker.hourly_rate)}/h · {formatEuro(worker.cleaning_check_rate ?? 0)}/contrôle · ménage selon gîte</small></td>
         <td>{formatWorkMinutes(minutes)}</td><td>{checks}</td><td>{cleanings}</td><td><strong>{formatEuro(total)}</strong></td>
         <td><button type="button" disabled={!total || busyId === worker.id} onClick={() => void settleWorker(worker)}>Marquer payé</button></td>
       </tr>)}</tbody></table></div>

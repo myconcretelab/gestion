@@ -13,6 +13,7 @@ import {
   serializeStatusPreset,
 } from "../services/appUsers.js";
 import { encodeJsonField } from "../utils/jsonFields.js";
+import { listCleaningRateGites, validateCleaningRateGites } from "../services/userInterventions.js";
 
 const router = Router();
 
@@ -27,6 +28,7 @@ const userSchema = z.object({
   hourlyRate: z.coerce.number().min(0).max(10_000).default(0),
   cleaningCheckRate: z.coerce.number().min(0).max(10_000).default(0),
   fullCleaningRate: z.coerce.number().min(0).max(10_000).default(0),
+  fullCleaningRates: z.record(z.coerce.number().min(0).max(10_000)).optional(),
   directCleaningValidation: z.boolean().optional(),
   canWrite: z.boolean().default(false),
   canViewAmounts: z.boolean().default(false),
@@ -211,6 +213,12 @@ router.get("/", async (_req, res, next) => {
   }
 });
 
+router.get("/cleaning-rate-gites", async (_req, res, next) => {
+  try {
+    res.json(await listCleaningRateGites());
+  } catch (error) { next(error); }
+});
+
 router.put("/:id/credentials", async (req, res, next) => {
   try {
     const payload = credentialsSchema.parse(req.body);
@@ -235,6 +243,7 @@ router.post("/", async (req, res, next) => {
   try {
     const payload = userSchema.parse(req.body);
     const permissions = resolvedPermissions(payload);
+    if (!await validateCleaningRateGites(payload.fullCleaningRates)) return res.status(400).json({ error: "Un tarif concerne un gîte introuvable." });
     const displayName = displayNameFor(payload);
     if (permissions.roles.includes("worker") && (!payload.workerProfile || !payload.telephone)) {
       return res.status(400).json({ error: "Le téléphone et les informations de l’intervenant sont requis." });
@@ -261,7 +270,7 @@ router.post("/", async (req, res, next) => {
         display_name: displayName,
         first_name: payload.firstName,
         last_name: payload.lastName,
-        roles: encodeJsonField(permissions.roles),
+        roles: JSON.stringify(permissions.roles),
         telephone: payload.telephone || null,
         email: payload.email ?? null,
         adresse: payload.adresse ?? null,
@@ -269,6 +278,7 @@ router.post("/", async (req, res, next) => {
         hourly_rate: payload.hourlyRate,
         cleaning_check_rate: payload.cleaningCheckRate,
         full_cleaning_rate: payload.fullCleaningRate,
+        full_cleaning_rates: encodeJsonField(payload.fullCleaningRates ?? {}),
         direct_cleaning_validation: payload.directCleaningValidation ?? permissions.isOwner,
         gestionnaire_id: manager?.id ?? null,
         intervenant_id: worker?.id ?? null,
@@ -291,6 +301,7 @@ router.put("/:id", async (req, res, next) => {
   try {
     const payload = userSchema.parse(req.body);
     const permissions = resolvedPermissions(payload);
+    if (!await validateCleaningRateGites(payload.fullCleaningRates)) return res.status(400).json({ error: "Un tarif concerne un gîte introuvable." });
     const displayName = displayNameFor(payload);
     const currentUser = await getAuthenticatedAppUser(req);
     const existing = await prisma.appUser.findUnique({
@@ -372,14 +383,14 @@ router.put("/:id", async (req, res, next) => {
         display_name: displayName,
         first_name: payload.firstName,
         last_name: payload.lastName,
-        roles: encodeJsonField(permissions.roles),
+        roles: JSON.stringify(permissions.roles),
         telephone: payload.telephone || null,
         email: payload.email ?? null,
         adresse: payload.adresse ?? null,
         telegram_chat_id: payload.telegramChatId ?? null,
         hourly_rate: payload.hourlyRate,
         cleaning_check_rate: payload.cleaningCheckRate,
-        full_cleaning_rate: payload.fullCleaningRate,
+        ...(payload.fullCleaningRates ? { full_cleaning_rates: encodeJsonField(payload.fullCleaningRates) } : {}),
         direct_cleaning_validation: payload.directCleaningValidation ?? existing.direct_cleaning_validation,
         gestionnaire_id: gestionnaireId,
         intervenant_id: intervenantId,

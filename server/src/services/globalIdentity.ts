@@ -1,4 +1,5 @@
 import { systemPrisma } from "../db/prisma.js";
+import { encodeJsonField } from "../utils/jsonFields.js";
 
 export const provisionGlobalIdentityForProfile = async (profileId: string) => {
   const profile = await systemPrisma.appUser.findUnique({ where: { id: profileId } });
@@ -30,7 +31,7 @@ export const provisionGlobalIdentityForProfile = async (profileId: string) => {
       update: {
         role: profile.is_owner ? "owner" : profile.status,
         status: profile.is_active ? "active" : "disabled",
-        permissions: JSON.stringify({
+        permissions: encodeJsonField({
           roles: profile.roles, pageAccess: profile.page_access,
           canWrite: profile.can_write, canViewAmounts: profile.can_view_amounts,
         }),
@@ -42,7 +43,7 @@ export const provisionGlobalIdentityForProfile = async (profileId: string) => {
         organization_id: profile.organization_id,
         role: profile.is_owner ? "owner" : profile.status,
         status: profile.is_active ? "active" : "disabled",
-        permissions: JSON.stringify({
+        permissions: encodeJsonField({
           roles: profile.roles, pageAccess: profile.page_access,
           canWrite: profile.can_write, canViewAmounts: profile.can_view_amounts,
         }),

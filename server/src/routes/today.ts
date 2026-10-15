@@ -31,6 +31,7 @@ import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.j
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { canManageCleaning, doesCleaningRequireCheck, getCleaningTaskForDeparture, listCleaningTasksForDepartures, parisWallTime, setCleaningTaskReadiness, syncCleaningTasks } from "../services/cleaningTasks.js";
 import { isModuleEnabled } from "../services/installationConfig.js";
+import { isActiveCleaningWorker } from "../services/userInterventions.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 import { extractAirbnbConfirmationCode } from "../utils/airbnbReservationIdentity.js";
@@ -581,7 +582,7 @@ router.get("/overview/primary", async (req, res, next) => {
 router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
   try {
     const currentUser = req.headers ? await getAuthenticatedAppUser(req) : null;
-    const { checked } = z.object({ checked: z.boolean() }).parse(req.body ?? {});
+    const { checked, direct } = z.object({ checked: z.boolean(), direct: z.boolean().default(false) }).parse(req.body ?? {});
     const gite = await prisma.gite.findUnique({
       where: { id: req.params.giteId },
       select: todayGiteSelect,
@@ -604,9 +605,23 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
     }
 
     const wasChecked = Boolean(readiness.checked_at);
-    const checkedAt = await updateGiteCleaningReadiness(readiness, checked, currentUser?.id ?? null);
+    if (direct && (!currentUser?.directCleaningValidation || !canManageCleaning(currentUser))) {
+      return res.status(403).json({ error: "La validation directe n’est pas autorisée pour cet utilisateur." });
+    }
+    const fullCleaningUserId = checked && direct && readiness.departure_has_cleaning_option
+      ? currentTask?.assignee_id ?? (currentUser?.roles.includes("worker") && currentUser.intervenantId ? currentUser.id : null)
+      : null;
+    if (checked && direct && readiness.departure_has_cleaning_option && !fullCleaningUserId) {
+      return res.status(409).json({ error: "Attribuez d’abord ce ménage à un intervenant." });
+    }
+    if (fullCleaningUserId) {
+      if (!await isActiveCleaningWorker(fullCleaningUserId)) {
+        return res.status(409).json({ error: "L’intervenant attribué à ce ménage est inactif ou introuvable." });
+      }
+    }
+    const checkedAt = await updateGiteCleaningReadiness(readiness, checked, currentUser?.id ?? null, new Date(), fullCleaningUserId);
     const cleaningTask = await isModuleEnabled("worker_planning")
-      ? await setCleaningTaskReadiness(readiness.departure_reservation_id, readiness.departure_date, checked, checkedAt, currentUser?.id ?? null)
+      ? await setCleaningTaskReadiness(readiness.departure_reservation_id, readiness.departure_date, checked, checkedAt, currentUser?.id ?? null, fullCleaningUserId)
       : null;
     let notificationWarning: string | null = null;
     if (checked && !wasChecked && checkedAt) {

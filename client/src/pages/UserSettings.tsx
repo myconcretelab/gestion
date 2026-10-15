@@ -4,6 +4,7 @@ import { APP_PAGES, type AppPageId, type AppUser, type AppUserRole, type AppUser
 import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 
 type WorkerProfile = { id?: string; showOnToday: boolean };
+type CleaningRateGite = { id: string; nom: string; cleaningRate: number };
 type ManagedUser = AppUser & {
   gestionnaire?: { id: string; prenom: string; nom: string; gitesCount: number } | null;
   intervenant?: WorkerProfile | null;
@@ -12,7 +13,7 @@ type UserDraft = {
   firstName: string; lastName: string; roles: AppUserRole[]; canWrite: boolean;
   canViewAmounts: boolean; isActive: boolean; pageAccess: AppPageId[]; telephone: string;
   email: string; adresse: string; telegramChatId: string; hourlyRate: string;
-  cleaningCheckRate: string; fullCleaningRate: string; showOnToday: boolean; directCleaningValidation: boolean;
+  cleaningCheckRate: string; fullCleaningRates: Record<string, string>; showOnToday: boolean; directCleaningValidation: boolean;
   loginId: string; password: string;
 };
 type StatusPreset = {
@@ -32,17 +33,19 @@ const emptyDraft = (presets: StatusPresetMap = DEFAULT_STATUS_PRESETS): UserDraf
   firstName: "", lastName: "", roles: [], isActive: true,
   canWrite: presets.custom.canWrite, canViewAmounts: presets.custom.canViewAmounts, pageAccess: presets.custom.pageAccess,
   telephone: "", email: "", adresse: "", telegramChatId: "", hourlyRate: "",
-  cleaningCheckRate: "", fullCleaningRate: "", showOnToday: true, directCleaningValidation: false,
+  cleaningCheckRate: "", fullCleaningRates: {}, showOnToday: true, directCleaningValidation: false,
   loginId: "", password: "",
 });
-const toDraft = (user: ManagedUser): UserDraft => ({
+const toDraft = (user: ManagedUser, gites: CleaningRateGite[]): UserDraft => ({
   firstName: user.firstName, lastName: user.lastName, roles: user.roles,
   canWrite: user.permissions.canWrite, canViewAmounts: user.permissions.canViewAmounts, isActive: user.isActive,
   pageAccess: user.permissions.isOwner ? ALL_PAGES : user.pageAccess, telephone: user.telephone ?? "",
   email: user.email ?? "", adresse: user.adresse ?? "", telegramChatId: user.telegramChatId ?? "",
   hourlyRate: user.hourlyRate ? String(user.hourlyRate).replace(".", ",") : "",
   cleaningCheckRate: user.cleaningCheckRate ? String(user.cleaningCheckRate).replace(".", ",") : "",
-  fullCleaningRate: user.fullCleaningRate ? String(user.fullCleaningRate).replace(".", ",") : "",
+  fullCleaningRates: Object.fromEntries(gites
+    .filter((gite) => Object.prototype.hasOwnProperty.call(user.fullCleaningRates ?? {}, gite.id))
+    .map((gite) => [gite.id, String(user.fullCleaningRates[gite.id]).replace(".", ",")])),
   showOnToday: user.intervenant?.showOnToday ?? true,
   directCleaningValidation: user.directCleaningValidation,
   loginId: user.loginId ?? "", password: "",
@@ -53,7 +56,9 @@ const buildPayload = (draft: UserDraft) => ({
   telegramChatId: draft.telegramChatId.trim() || null,
   hourlyRate: Number(draft.hourlyRate.replace(",", ".")) || 0,
   cleaningCheckRate: Number(draft.cleaningCheckRate.replace(",", ".")) || 0,
-  fullCleaningRate: Number(draft.fullCleaningRate.replace(",", ".")) || 0,
+  fullCleaningRates: Object.fromEntries(Object.entries(draft.fullCleaningRates)
+    .filter(([, rate]) => rate.trim() !== "")
+    .map(([id, rate]) => [id, Number(rate.replace(",", "."))])),
   directCleaningValidation: draft.directCleaningValidation,
   canWrite: draft.roles.includes("owner") ? true : draft.canWrite, canViewAmounts: draft.roles.includes("owner") ? true : draft.canViewAmounts,
   isActive: draft.isActive, pageAccess: draft.roles.includes("owner") ? ALL_PAGES : draft.pageAccess,
@@ -100,9 +105,9 @@ function StatusPresetEditor({ preset, disabled, onChange }: {
   </div>;
 }
 
-function UserEditor({ draft, statusPresets, disabled, onChange }: {
+function UserEditor({ draft, statusPresets, cleaningRateGites, disabled, onChange }: {
   draft: UserDraft; disabled: boolean;
-  statusPresets: StatusPresetMap; onChange: (draft: UserDraft) => void;
+  statusPresets: StatusPresetMap; cleaningRateGites: CleaningRateGite[]; onChange: (draft: UserDraft) => void;
 }) {
   const owner = draft.roles.includes("owner");
   const worker = draft.roles.includes("worker");
@@ -131,11 +136,18 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
     {worker ? <fieldset className="user-editor__fieldset"><legend>Paramètres intervenant</legend><div className="grid-2">
       <label className="field">Taux horaire (€)<input inputMode="decimal" value={draft.hourlyRate} disabled={disabled} onChange={(e) => onChange({ ...draft, hourlyRate: e.target.value })} /></label>
       <label className="field">Forfait par contrôle ménage (€)<input inputMode="decimal" value={draft.cleaningCheckRate} disabled={disabled} onChange={(e) => onChange({ ...draft, cleaningCheckRate: e.target.value })} /></label>
-      <label className="field">Forfait par ménage complet (€)<input inputMode="decimal" value={draft.fullCleaningRate} disabled={disabled} onChange={(e) => onChange({ ...draft, fullCleaningRate: e.target.value })} /></label>
       <SwitchRow title="Afficher sur Aujourd’hui" description="Permettre la saisie rapide des heures." checked={draft.showOnToday} disabled={disabled} onChange={(checked) => onChange({ ...draft, showOnToday: checked })} />
+    </div>
+    <p className="field-hint">Ménage complet : le forfait de la fiche du gîte s’applique. Renseignez un montant uniquement pour le remplacer pour cet intervenant.</p>
+    <div className="grid-2 user-settings-form">
+      {cleaningRateGites.map((gite) => <label className="field" key={gite.id}>Ménage complet · {gite.nom} (€)
+        <input inputMode="decimal" value={draft.fullCleaningRates[gite.id] ?? ""} disabled={disabled}
+          placeholder={`Tarif du gîte : ${gite.cleaningRate.toLocaleString("fr-FR")} €`}
+          onChange={(e) => onChange({ ...draft, fullCleaningRates: { ...draft.fullCleaningRates, [gite.id]: e.target.value } })} />
+      </label>)}
     </div></fieldset> : null}
     <fieldset className="user-editor__fieldset"><legend>Raccourcis ménage</legend><div className="user-permissions">
-      <SwitchRow title="Validation directe dans Aujourd’hui" description="Un clic sur un raccourci ménage marque immédiatement le gîte prêt. Disponible pour les gestionnaires." checked={draft.directCleaningValidation} disabled={disabled} onChange={(checked) => onChange({ ...draft, directCleaningValidation: checked })} />
+      <SwitchRow title="Validation directe dans Aujourd’hui" description="Un clic marque le gîte prêt et comptabilise le ménage pour l’intervenant si l’option ménage du séjour sortant est cochée. Disponible pour les gestionnaires." checked={draft.directCleaningValidation} disabled={disabled} onChange={(checked) => onChange({ ...draft, directCleaningValidation: checked })} />
     </div></fieldset>
     <fieldset className="user-editor__fieldset"><legend>Droits</legend><div className="user-permissions">
       <SwitchRow title="Écriture" description="Créer, modifier et supprimer." checked={owner || draft.canWrite} disabled={disabled || owner} onChange={(checked) => onChange({ ...draft, canWrite: checked })} />
@@ -149,13 +161,17 @@ function UserEditor({ draft, statusPresets, disabled, onChange }: {
 }
 
 const isUserDraftValid = (draft: UserDraft) =>
-  Boolean(draft.firstName.trim()) && Boolean(draft.loginId.trim()) && (!draft.password || draft.password.length >= 12) && (!draft.roles.includes("worker") || Boolean(draft.telephone.trim()));
+  Boolean(draft.firstName.trim()) && Boolean(draft.loginId.trim()) && (!draft.password || draft.password.length >= 12)
+  && (!draft.roles.includes("worker") || Boolean(draft.telephone.trim()))
+  && Object.values(draft.fullCleaningRates).every((rate) => rate.trim() === ""
+    || (Number.isFinite(Number(rate.replace(",", "."))) && Number(rate.replace(",", ".")) >= 0));
 
 const UserSettings = ({ currentUserId, onAuthSessionUpdated }: {
   currentUserId: string | null;
   onAuthSessionUpdated?: (session: ServerAuthSession) => void;
 }) => {
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [cleaningRateGites, setCleaningRateGites] = useState<CleaningRateGite[]>([]);
   const [statusPresets, setStatusPresets] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS);
   const [presetDrafts, setPresetDrafts] = useState<StatusPresetMap>(DEFAULT_STATUS_PRESETS); const [selectedStatus, setSelectedStatus] = useState<AppUserStatus | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({}); const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -165,9 +181,12 @@ const UserSettings = ({ currentUserId, onAuthSessionUpdated }: {
   const load = async () => {
     setLoading(true); setError(null);
     try {
-      const [userRows, presetRows] = await Promise.all([apiFetch<ManagedUser[]>("/users"), apiFetch<StatusPreset[]>("/users/status-presets")]);
+      const [userRows, presetRows, giteRows] = await Promise.all([
+        apiFetch<ManagedUser[]>("/users"), apiFetch<StatusPreset[]>("/users/status-presets"),
+        apiFetch<CleaningRateGite[]>("/users/cleaning-rate-gites"),
+      ]);
       const nextPresets = { ...DEFAULT_STATUS_PRESETS, ...Object.fromEntries(presetRows.map((preset) => [preset.status, preset])) } as StatusPresetMap;
-      setUsers(userRows); setStatusPresets(nextPresets); setPresetDrafts(nextPresets); setNewDraft(emptyDraft(nextPresets)); setDrafts(Object.fromEntries(userRows.map((user) => [user.id, toDraft(user)])));
+      setUsers(userRows); setCleaningRateGites(giteRows); setStatusPresets(nextPresets); setPresetDrafts(nextPresets); setNewDraft(emptyDraft(nextPresets)); setDrafts(Object.fromEntries(userRows.map((user) => [user.id, toDraft(user, giteRows)])));
       setSelectedId((current) => current && userRows.some((user) => user.id === current) ? current : null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible de charger les utilisateurs."); }
     finally { setLoading(false); }
@@ -260,7 +279,7 @@ const UserSettings = ({ currentUserId, onAuthSessionUpdated }: {
       </>}
     >
       {error ? <div className="note">{error}</div> : null}
-      <UserEditor draft={newDraft} statusPresets={statusPresets} disabled={busyId === "new"} onChange={setNewDraft} />
+      <UserEditor draft={newDraft} statusPresets={statusPresets} cleaningRateGites={cleaningRateGites} disabled={busyId === "new"} onChange={setNewDraft} />
     </ReservationDetailsDrawer>
     <ReservationDetailsDrawer
       open={Boolean(selected)}
@@ -271,11 +290,11 @@ const UserSettings = ({ currentUserId, onAuthSessionUpdated }: {
       onClose={() => setSelectedId(null)}
       footer={selected ? <>
         <button type="button" className="secondary" disabled={busyId === selected.id} onClick={() => setSelectedId(null)}>Annuler</button>
-        <button type="button" disabled={busyId === selected.id || !isUserDraftValid(drafts[selected.id] ?? toDraft(selected))} onClick={() => void save(selected.id)}>{busyId === selected.id ? "Enregistrement…" : "Enregistrer"}</button>
+        <button type="button" disabled={busyId === selected.id || !isUserDraftValid(drafts[selected.id] ?? toDraft(selected, cleaningRateGites))} onClick={() => void save(selected.id)}>{busyId === selected.id ? "Enregistrement…" : "Enregistrer"}</button>
       </> : null}
     >
       {error ? <div className="note">{error}</div> : null}
-      {selected ? <UserEditor draft={drafts[selected.id] ?? toDraft(selected)} statusPresets={statusPresets} disabled={busyId === selected.id} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} /> : null}
+      {selected ? <UserEditor draft={drafts[selected.id] ?? toDraft(selected, cleaningRateGites)} statusPresets={statusPresets} cleaningRateGites={cleaningRateGites} disabled={busyId === selected.id} onChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} /> : null}
     </ReservationDetailsDrawer>
   </section>;
 };
