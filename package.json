@@ -20,6 +20,7 @@
     "test:e2e": "npm run test:e2e -w server",
     "start": "npm run start -w server",
     "migrate": "npm run migrate -w server",
+    "migrate:dev": "npm run migrate:dev -w server",
     "update": "bash ./update",
     "seed": "npm run seed -w server",
     "dev:db": "npm run dev:db -w server",

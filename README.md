@@ -91,7 +91,8 @@ Le `Dockerfile` fournit l'image de production. `docker compose -f compose.demo.y
 ## Commandes
 
 - `npm run dev` : développement ;
-- `npm run migrate` : migrations SQLite locales ;
+- `npm run migrate` : applique les migrations SQLite locales et génère le client Prisma ;
+- `npm run migrate:dev` : crée une migration lors d'une modification volontaire du schéma ;
 - `npm run prod:migrate` : migrations PostgreSQL ;
 - `npm run test`, `npm run typecheck`, `npm run build` : validation ;
 - `npm audit --omit=dev` : audit des dépendances de production ;
