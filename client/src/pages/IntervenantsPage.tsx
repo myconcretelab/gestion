@@ -25,6 +25,14 @@ const formatEuro = (value: number) => new Intl.NumberFormat("fr-FR", {
 const formatDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString("fr-FR", {
   day: "2-digit", month: "2-digit", year: "numeric",
 });
+const daysBetween = (from: string, to: string) =>
+  Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000);
+const unpaidAgeLabel = (firstUnpaidOn: string, today: string) => {
+  const days = daysBetween(firstUnpaidOn, today);
+  if (days < 0) return `Activité prévue le ${formatDate(firstUnpaidOn)}`;
+  if (days === 0) return "En attente depuis aujourd’hui";
+  return `En attente depuis le ${formatDate(firstUnpaidOn)} (${days} ${days === 1 ? "jour" : "jours"})`;
+};
 
 export default function IntervenantsPage() {
   const [workers, setWorkers] = useState<Intervenant[]>([]);
@@ -88,15 +96,23 @@ export default function IntervenantsPage() {
 
   const summaries = useMemo(() => workers.map((worker) => {
     const workerHours = allUnpaidHours.filter((entry) => entry.intervenant_id === worker.id);
-    const workerInterventions = allUnpaidInterventions.filter((entry) => entry.user_id === worker.user_id);
+    const workerInterventions = worker.user_id
+      ? allUnpaidInterventions.filter((entry) => entry.user_id === worker.user_id)
+      : [];
     const minutes = workerHours.reduce((sum, entry) => sum + entry.minutes, 0);
     const hoursAmount = minutes / 60 * Number(worker.hourly_rate ?? 0);
     const checks = workerInterventions.filter((entry) => entry.kind === "cleaning_check");
     const cleanings = workerInterventions.filter((entry) => entry.kind === "full_cleaning");
     const interventionAmount = workerInterventions.reduce((sum, entry) => sum + Number(entry.amount), 0);
+    const unpaidDates = [
+      ...workerHours.map((entry) => entry.worked_on),
+      ...workerInterventions.map((entry) => entry.occurred_on),
+    ].sort();
     return {
       worker, minutes, checks: checks.length, cleanings: cleanings.length,
       hoursAmount, interventionAmount, total: hoursAmount + interventionAmount,
+      firstUnpaidOn: unpaidDates[0] ?? null,
+      lastUnpaidOn: unpaidDates.at(-1) ?? null,
     };
   }), [allUnpaidHours, allUnpaidInterventions, workers]);
   const totalMinutes = summaries.reduce((sum, row) => sum + row.minutes, 0);
@@ -176,10 +192,15 @@ export default function IntervenantsPage() {
     <section className="card intervenants-summary">
       <div className="intervenants-history__header"><div><span className="intervenants-hero__eyebrow">Synthèse</span><h2>À payer par intervenant</h2></div></div>
       <div className="intervenants-history__table-wrap"><table className="table intervenants-summary__table"><thead><tr>
-        <th>Intervenant</th><th>Tarifs</th><th>Heures</th><th>Contrôles</th><th>Ménages</th><th>Total</th><th></th>
-      </tr></thead><tbody>{summaries.map(({ worker, minutes, checks, cleanings, total }) => <tr key={worker.id}>
+        <th>Intervenant</th><th>Période à payer</th><th>Heures</th><th>Contrôles</th><th>Ménages</th><th>Total</th><th></th>
+      </tr></thead><tbody>{summaries.map(({ worker, minutes, checks, cleanings, total, firstUnpaidOn, lastUnpaidOn }) => <tr key={worker.id}>
         <td><strong>{worker.nom}</strong><small>{worker.is_active ? "Actif" : "Inactif"}</small></td>
-        <td><small>{formatEuro(worker.hourly_rate)}/h · {formatEuro(worker.cleaning_check_rate ?? 0)}/contrôle · ménage selon gîte</small></td>
+        <td>{firstUnpaidOn && lastUnpaidOn ? <div className="intervenants-summary__period">
+          <strong>{firstUnpaidOn === lastUnpaidOn ? <>Le <time dateTime={firstUnpaidOn}>{formatDate(firstUnpaidOn)}</time></> : <>
+            Du <time dateTime={firstUnpaidOn}>{formatDate(firstUnpaidOn)}</time> au <time dateTime={lastUnpaidOn}>{formatDate(lastUnpaidOn)}</time>
+          </>}</strong>
+          <small>{unpaidAgeLabel(firstUnpaidOn, todayIso())}</small>
+        </div> : <small>Rien à payer</small>}</td>
         <td>{formatWorkMinutes(minutes)}</td><td>{checks}</td><td>{cleanings}</td><td><strong>{formatEuro(total)}</strong></td>
         <td><button type="button" disabled={!total || busyId === worker.id} onClick={() => void settleWorker(worker)}>Marquer payé</button></td>
       </tr>)}</tbody></table></div>
