@@ -648,6 +648,47 @@ test("administrateur authentifié, origine obligatoire, isolement des comptes et
   assert.equal((await request(invoice.id, "prepare", input)).status, 503);
   runtime.env.SUPERPDP_SANDBOX_EMISSION_ENABLED = true;
 });
+test("une connexion OAuth sandbox sans SIREN ne permet aucune préparation de facture", async () => {
+  const invoice = await newInvoice();
+  const connection = await db.systemPrisma.superPdpConnection.findFirstOrThrow({
+    where: { fiscal_entity_id: "entity-a" },
+  });
+  const beforeCalls = calls.length;
+  const beforeJobs = await db.systemPrisma.organizationJob.count();
+  await db.systemPrisma.superPdpConnection.update({
+    where: { id: connection.id },
+    data: { local_siren: null },
+  });
+  try {
+    // Also reject a malformed historical snapshot with a missing SIREN: null must not match null.
+    for (const siren of ["732829320", null]) {
+      const stored = await db.systemPrisma.facture.findUniqueOrThrow({
+        where: { id: invoice.id },
+      });
+      const snapshot = JSON.parse(stored.immutable_snapshot!);
+      snapshot.issuer.entity.siren = siren;
+      await db.systemPrisma.facture.update({
+        where: { id: invoice.id },
+        data: { immutable_snapshot: JSON.stringify(snapshot) },
+      });
+      assert.equal((await request(invoice.id, "prepare", input)).status, 409);
+    }
+    assert.equal(calls.length, beforeCalls);
+    assert.equal(await db.systemPrisma.organizationJob.count(), beforeJobs);
+    assert.equal(
+      await db.systemPrisma.electronicInvoiceTransmission.count({
+        where: { invoice_id: invoice.id },
+      }),
+      0,
+    );
+  } finally {
+    await db.systemPrisma.superPdpConnection.update({
+      where: { id: connection.id },
+      data: { local_siren: connection.local_siren },
+    });
+  }
+});
+
 test("préparation asynchrone : PDF source inchangé, projection figée, validation et empreinte de l’archive", async () => {
   const invoice = await newInvoice();
   const before = await db.systemPrisma.facture.findUnique({

@@ -35,8 +35,10 @@ const statusLabels: Record<string, string> = {
 
 export default function SuperPdpConnectionSettings({
   entityId,
+  hasLocalSiren,
 }: {
   entityId: string;
+  hasLocalSiren: boolean;
 }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [clientId, setClientId] = useState("");
@@ -159,6 +161,16 @@ export default function SuperPdpConnectionSettings({
         vérifie son identité. Elle ne transmet aucune facture automatiquement ;
         les dépôts de test se préparent séparément depuis la fiche facture.
       </p>
+      {!hasLocalSiren && (
+        <p className="note">
+          Connexion au bac à sable uniquement : vous pouvez laisser le SIREN et
+          le SIRET vides et utiliser le numéro de l’entreprise fictive SuperPDP
+          ci-dessous. N’inventez pas d’identité légale. L’émission de factures
+          françaises reste bloquée tant que les informations fiscales requises
+          ne sont pas renseignées. Avant d’ajouter un SIREN à une entreprise
+          déjà configurée, déconnectez-la puis reconfigurez sa connexion.
+        </p>
+      )}
       {error && (
         <p role="alert" className="note">
           {error}
@@ -255,7 +267,7 @@ export default function SuperPdpConnectionSettings({
                   />
                 </label>
                 <label className="field">
-                  Identifiant de l’entreprise fictive SuperPDP
+                  Numéro sandbox de l’entreprise fictive SuperPDP
                   <input
                     required
                     value={sandboxNumber}
@@ -268,9 +280,10 @@ export default function SuperPdpConnectionSettings({
               </div>
               <p className="field-hint">
                 Cet identifiant est le champ « number » de l’entreprise fictive
-                dans SuperPDP (Burger Queen, Tricatel…). Ce n’est pas le SIREN
-                de votre entreprise réelle. Le serveur vérifiera cette
-                correspondance après le consentement.
+                dans SuperPDP (Burger Queen, Tricatel…). Conservez les éventuels
+                zéros au début. Ce n’est ni un SIREN, ni un SIRET, ni une
+                adresse Peppol. Le serveur vérifiera cette correspondance après
+                le consentement.
               </p>
               <div className="actions">
                 <button type="submit">

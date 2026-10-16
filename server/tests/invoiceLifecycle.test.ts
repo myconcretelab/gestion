@@ -230,6 +230,55 @@ test("un brouillon ne consomme aucun numéro et ne peut pas être envoyé avant 
   assert.equal(await db.systemPrisma.invoiceSequence.count(), 0);
 });
 
+test("une entreprise sandbox sans SIREN/SIRET ne peut pas émettre de facture française", async () => {
+  const entity = await db.systemPrisma.fiscalEntity.create({
+    data: {
+      organization_id: orgA,
+      legal_name: "Entreprise fictive sans identité légale",
+      vat_regime: "franchise_en_base",
+      address_line1: "1 rue fictive",
+      postal_code: "12100",
+      city: "Millau",
+    },
+  });
+  const establishment = await db.systemPrisma.fiscalEstablishment.create({
+    data: {
+      organization_id: orgA,
+      fiscal_entity_id: entity.id,
+      name: "Établissement fictif",
+    },
+  });
+  await db.systemPrisma.gite.update({
+    where: { id: "gite-a" },
+    data: { fiscal_establishment_id: establishment.id },
+  });
+  try {
+    const draft = await createDraft();
+    const beforeSequences = await db.systemPrisma.invoiceSequence.count();
+    const result = await request(`/invoices/${draft.id}/issue`, "POST", {
+      revision: draft.revision,
+    });
+    assert.equal(result.status, 409);
+    assert.match(result.body.error, /SIREN/);
+    assert.match(result.body.error, /SIRET/);
+    const stored = await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    assert.equal(stored.lifecycle_status, "draft");
+    assert.equal(stored.immutable_snapshot, null);
+    assert.equal(
+      await db.systemPrisma.invoiceSequence.count(),
+      beforeSequences,
+    );
+    await request(`/invoices/${draft.id}`, "DELETE");
+  } finally {
+    await db.systemPrisma.gite.update({
+      where: { id: "gite-a" },
+      data: { fiscal_establishment_id: "establishment-a" },
+    });
+  }
+});
+
 test("la validation fige l’émetteur, les montants et les octets PDF ; les retry sont idempotents", async () => {
   let invoice = await createDraft();
   const saved = await request(`/invoices/${invoice.id}`, "PUT", {

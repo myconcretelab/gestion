@@ -314,6 +314,8 @@ export class SuperPdpEmission {
     if (
       connection?.status !== "connected" ||
       !connection.remote_company_id ||
+      !connection.local_siren ||
+      !snapshot.issuer.entity.siren ||
       connection.local_siren !== snapshot.issuer.entity.siren
     ) {
       throw failure(

@@ -157,11 +157,8 @@ export class SuperPdpService {
               "Entreprise introuvable.",
               404,
             );
-          if (!entity.siren)
-            throw superPdpError(
-              "SUPERPDP_LOCAL_IDENTITY",
-              "Renseignez d’abord le SIREN de l’entreprise locale.",
-            );
+          // Sandbox OAuth uses expected_number, not a fabricated French registration number.
+          // Snapshot the nullable local SIREN so adding/changing it still requires reconfiguration.
           const old = await tx.superPdpConnection.findUnique({
             where: {
               organization_id_fiscal_entity_id_environment: {
@@ -184,7 +181,8 @@ export class SuperPdpService {
           if (
             old?.encrypted_tokens &&
             (old.client_id !== data.client_id ||
-              old.expected_number !== data.sandbox_number)
+              old.expected_number !== data.sandbox_number ||
+              old.local_siren !== entity.siren)
           )
             throw superPdpError(
               "SUPERPDP_DISCONNECT_FIRST",

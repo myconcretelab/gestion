@@ -220,7 +220,7 @@ export class SuperPdpReadiness {
             ? "observed"
             : "action_required",
         detail: missing.length
-          ? `Informations à compléter : ${missing.join(", ")}.`
+          ? `Informations à compléter pour émettre des factures françaises : ${missing.join(", ")}. L’absence de SIREN/SIRET n’empêche pas la connexion OAuth au bac à sable ; le numéro sandbox ne remplace pas une identité légale.`
           : establishments === 0
             ? "Aucun établissement avec SIRET rattaché au SIREN de cette entreprise."
             : entity.country_code !== "FR"

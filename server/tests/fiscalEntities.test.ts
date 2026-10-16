@@ -87,14 +87,16 @@ before(async () => {
     path.join(temp, "prisma", "migrations"),
     {
       recursive: true,
-      filter: (file) =>
-        !file.includes("20261016100000_fiscal_entities") &&
-        !file.includes("20261016120000_invoice_lifecycle") &&
-        !file.includes("20261016150000_invoice_fiscal_data") &&
-        !file.includes("20261016170000_superpdp_oauth") &&
-        !file.includes("20261016190000_superpdp_emission") &&
-        !file.includes("20261016210000_superpdp_reception") &&
-        !file.includes("20261016230000_superpdp_b2c_payments"),
+      filter: (file) => {
+        const migration = path
+          .relative(path.join(serverRoot, "prisma", "migrations"), file)
+          .split(path.sep)[0];
+        // Freeze the pre-fiscal baseline, including when later dependent migrations are added.
+        return (
+          !/^\d{14}_/.test(migration) ||
+          migration < "20261016100000_fiscal_entities"
+        );
+      },
     },
   );
   migrate(oldSchema);

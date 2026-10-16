@@ -402,6 +402,14 @@ export default function FiscalEntitiesSettings() {
                   />
                 </label>
               </div>
+              <p className="field-hint">
+                Pour connecter une entreprise fictive au bac à sable SuperPDP,
+                la raison sociale suffit à créer cette fiche : laissez le SIREN
+                vide si aucun identifiant légal de test n’est fourni. Son numéro
+                sandbox sera renseigné séparément après l’enregistrement. Les
+                informations fiscales restent nécessaires pour émettre des
+                factures.
+              </p>
               <p className="section-subtitle">Adresse du siège</p>
               <AddressFields
                 value={entityDraft}
@@ -420,6 +428,7 @@ export default function FiscalEntitiesSettings() {
             <SuperPdpConnectionSettings
               key={selected.id}
               entityId={selected.id}
+              hasLocalSiren={!!selected.siren}
             />
           )}
           {selected && (

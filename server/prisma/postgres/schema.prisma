@@ -620,7 +620,7 @@ model SuperPdpConnection {
   environment              String   @default("sandbox")
   status                   String   @default("configured")
   generation               Int      @default(1)
-  local_siren              String
+  local_siren              String?
   client_id                String?
   encrypted_client_secret  String?
   expected_number          String?

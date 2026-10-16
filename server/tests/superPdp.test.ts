@@ -35,6 +35,7 @@ let serial = 0;
 type Grant = {
   clientId: string;
   number: string;
+  numberScheme: string;
   environment: string;
   verification: string;
   challenge: string;
@@ -143,7 +144,7 @@ const fakeFetch: typeof fetch = async (input, init) => {
   );
   // Deliberately serialize a 64-bit integer without rounding it through a JS Number.
   return new Response(
-    `{"id":${grant.companyId},"env":"${grant.environment}","number_scheme":"sandbox","number":"${grant.number}","formal_name":"Entreprise fictive ${grant.number}"}`,
+    `{"id":${grant.companyId},"env":"${grant.environment}","number_scheme":"${grant.numberScheme}","number":"${grant.number}","formal_name":"Entreprise fictive ${grant.number}"}`,
     { headers: { "content-type": "application/json" } },
   );
 };
@@ -216,6 +217,7 @@ const begin = async (
   options: {
     cookie?: string;
     environment?: string;
+    numberScheme?: string;
     number?: string;
     companyId?: string;
     verification?: string;
@@ -233,6 +235,7 @@ const begin = async (
   const grant: Grant = {
     clientId: url.searchParams.get("client_id")!,
     number: options.number ?? url.searchParams.get("superpdp_company_number")!,
+    numberScheme: options.numberScheme ?? "sandbox",
     environment: options.environment ?? "sandbox",
     verification: options.verification ?? "verified",
     challenge: url.searchParams.get("code_challenge")!,
@@ -457,6 +460,176 @@ test("configuration chiffrée, désactivation par défaut et administration auth
     environment: "production",
   });
   assert.equal(unsafe.status, 400);
+});
+
+test("OAuth sandbox sans SIREN : numéro exact, secrets chiffrés et identité fiscale toujours incomplète", async () => {
+  const created = await request("/api/fiscal-entities", "POST", {
+    legal_name: "Burger Queen — entreprise fictive",
+    address_line1: "809 avenue du Languedoc",
+    postal_code: "12100",
+    city: "Millau",
+  });
+  assert.equal(created.status, 201);
+  const entity = created.body;
+  assert.equal(entity.siren, null);
+  const before = calls.length;
+  const configured = await configure(entity.id, { number: "000000002" });
+  assert.equal(configured.status, "configured");
+  assert.equal(configured.sandbox_number, "000000002");
+  assert.equal(
+    calls.length,
+    before,
+    "Configurer ne contacte pas le fournisseur.",
+  );
+  const row = await stored(entity.id);
+  assert.equal(row.local_siren, null);
+  assert.equal(row.expected_number, "000000002");
+  assert.ok(row.encrypted_client_secret?.startsWith("v1."));
+  assert.equal(row.encrypted_tokens, null);
+  assert.throws(() =>
+    secrets.unseal(
+      row.encrypted_client_secret!,
+      {
+        ...row,
+        organization_id: orgB,
+      },
+      "client_secret",
+    ),
+  );
+  assert.equal(
+    (await request(endpoint(entity.id), "GET", undefined, cookieB)).status,
+    404,
+  );
+  const connected = await connect(entity.id);
+  assert.equal(
+    connected.url.searchParams.get("superpdp_company_number"),
+    "000000002",
+  );
+  assert.equal(
+    connected.url.searchParams.get("superpdp_company_number_scheme"),
+    "sandbox",
+  );
+  assert.equal(connected.view.status, "connected");
+  assert.equal(connected.view.remote_company.number, "000000002");
+  assert.equal((await stored(entity.id)).local_siren, null);
+  assert.equal(
+    (
+      await database.systemPrisma.fiscalEntity.findUniqueOrThrow({
+        where: { id: entity.id },
+      })
+    ).siren,
+    null,
+  );
+  const report = await request(endpoint(entity.id) + "/readiness");
+  assert.equal(report.status, 200);
+  assert.equal(
+    report.body.checks.find((c: { id: string }) => c.id === "connection").state,
+    "observed",
+  );
+  assert.equal(
+    report.body.checks.find((c: { id: string }) => c.id === "identity").state,
+    "action_required",
+  );
+  assert.match(
+    report.body.checks.find((c: { id: string }) => c.id === "identity").detail,
+    /SIREN/,
+  );
+  assert.equal(report.body.production.enabled, false);
+  assert.equal(
+    JSON.stringify(connected.view).includes("fake-client-secret"),
+    false,
+  );
+  assert.equal(JSON.stringify(connected.view).includes("fake-access"), false);
+
+  const changed = await request(`/api/fiscal-entities/${entity.id}`, "PUT", {
+    legal_name: entity.legal_name,
+    siren: "732829320",
+  });
+  assert.equal(
+    changed.status,
+    409,
+    "Ajouter un SIREN exige aussi une déconnexion.",
+  );
+  await database.systemPrisma.fiscalEntity.update({
+    where: { id: entity.id },
+    data: { siren: "732829320" },
+  });
+  const reconfigured = await request(endpoint(entity.id) + "/config", "PUT", {
+    revision: connected.view.revision,
+    client_id: connected.view.client_id,
+    sandbox_number: "000000002",
+  });
+  assert.equal(reconfigured.status, 409);
+  assert.equal(reconfigured.body.code, "SUPERPDP_DISCONNECT_FIRST");
+  await database.systemPrisma.fiscalEntity.update({
+    where: { id: entity.id },
+    data: { siren: null },
+  });
+  assert.equal(
+    (await request(endpoint(entity.id), "DELETE")).body.status,
+    "disconnected",
+  );
+  assert.equal(
+    (
+      await request(`/api/fiscal-entities/${entity.id}`, "PUT", {
+        legal_name: entity.legal_name,
+        siren: "732829320",
+      })
+    ).status,
+    200,
+  );
+  await configure(entity.id, { number: "000000002" });
+  assert.equal((await stored(entity.id)).local_siren, "732829320");
+});
+
+test("sans SIREN, production, schéma français et mauvaise entreprise distante restent refusés", async () => {
+  for (const options of [
+    { environment: "production" },
+    { numberScheme: "fr_siren" },
+    { number: "another-sandbox-company" },
+  ]) {
+    const entity = await createEntity();
+    await database.systemPrisma.fiscalEntity.update({
+      where: { id: entity.id },
+      data: { siren: null },
+    });
+    await configure(entity.id, { number: "000000002" });
+    const result = await connect(entity.id, options);
+    assert.equal(result.view.status, "identity_rejected");
+    assert.equal((await stored(entity.id)).encrypted_tokens, null);
+  }
+});
+
+test("un SIREN ajouté hors parcours invalide aussi un retour OAuth commencé sans SIREN", async () => {
+  const entity = await createEntity();
+  await database.systemPrisma.fiscalEntity.update({
+    where: { id: entity.id },
+    data: { siren: null },
+  });
+  await configure(entity.id);
+  const pending = await begin(entity.id);
+  await database.systemPrisma.fiscalEntity.update({
+    where: { id: entity.id },
+    data: { siren: "987654321" },
+  });
+  const before = calls.length;
+  assert.ok((await request(pending.path)).location?.includes("superpdp=error"));
+  assert.equal(calls.length, before);
+  assert.equal((await stored(entity.id)).encrypted_tokens, null);
+});
+
+test("la base n’accepte pas de connexion sans SIREN hors sandbox", async () => {
+  const entity = await createEntity();
+  await assert.rejects(() =>
+    database.systemPrisma.superPdpConnection.create({
+      data: {
+        organization_id: orgA,
+        fiscal_entity_id: entity.id,
+        environment: "production",
+        local_siren: null,
+      },
+    }),
+  );
 });
 
 test("chiffrement authentifié lié au compte, à l’entreprise, à l’environnement et au champ", async () => {
