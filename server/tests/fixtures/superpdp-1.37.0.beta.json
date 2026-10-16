@@ -1,0 +1,887 @@
+{
+  "source": "https://api.superpdp.tech/openapi/superpdp.json",
+  "reviewed_at": "2026-10-16",
+  "version": "1.37.0.beta",
+  "paths": {
+    "/v1.beta/invoices/convert": {
+      "post": {
+        "operationId": "ConvertInvoice",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/convert_invoice_format"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/convert_invoice_format"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/en_invoice"
+              }
+            },
+            "application/xml": {},
+            "multipart/form-data": {
+              "encoding": {
+                "invoice": {
+                  "contentType": "application/json, application/xml"
+                },
+                "pdf": {
+                  "contentType": "application/pdf"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "invoice": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/en_invoice"
+                      },
+                      {
+                        "format": "binary",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "pdf": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "pdf",
+                  "invoice"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/en_invoice"
+                }
+              },
+              "application/xml": {}
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1.beta/validation_reports": {
+      "post": {
+        "operationId": "ValidationReports",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file_name": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/validation_report"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1.beta/invoices": {
+      "get": {
+        "operationId": "InvoicesList",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "direction",
+            "schema": {
+              "$ref": "#/components/schemas/direction"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "starting_after_id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ending_before_id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expand[]",
+            "schema": {
+              "items": {
+                "enum": [
+                  "en_invoice",
+                  "en_invoice.invoice",
+                  "en_invoice.seller",
+                  "en_invoice.buyer",
+                  "en_invoice.notes",
+                  "en_invoice.preceding_invoice_references",
+                  "en_invoice.buyer_agent",
+                  "en_invoice.payee",
+                  "en_invoice.payer",
+                  "en_invoice.seller_agent",
+                  "en_invoice.addressed_to",
+                  "en_invoice.third_party_biller",
+                  "en_invoice.delivery_information",
+                  "en_invoice.deliver_to_address",
+                  "en_invoice.payment_instructions",
+                  "en_invoice.document_level_allowances",
+                  "en_invoice.document_level_charges",
+                  "en_invoice.vat_break_down",
+                  "en_invoice.additional_supporting_documents",
+                  "en_invoice.lines",
+                  "events"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/list_invoices"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "InvoicesCreate",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "external_id",
+            "schema": {
+              "maxLength": 36,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disable_pre_check",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "processing_rule",
+            "schema": {
+              "$ref": "#/components/schemas/processing_rule"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/pdf": {},
+            "application/xml": {},
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file_name": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/invoice"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        }
+      }
+    },
+    "/v1.beta/invoices/{id}": {
+      "get": {
+        "operationId": "InvoicesGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "default": "en16931",
+              "enum": [
+                "en16931",
+                "original",
+                "cii",
+                "ubl",
+                "factur-x"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force_superpdp_pdf_renderer",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/invoice"
+                }
+              },
+              "application/pdf": {},
+              "application/xml": {}
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        }
+      }
+    },
+    "/v1.beta/invoice_events": {
+      "get": {
+        "operationId": "InvoiceEventsList",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "invoice_id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "starting_after_id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/list_events"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "InvoiceEventsCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "attachments": {
+                    "items": {
+                      "$ref": "#/components/schemas/invoice_event_attachment"
+                    },
+                    "type": "array"
+                  },
+                  "details": {
+                    "items": {
+                      "$ref": "#/components/schemas/invoice_event_detail"
+                    },
+                    "type": "array"
+                  },
+                  "invoice_id": {
+                    "type": "integer"
+                  },
+                  "status_code": {
+                    "$ref": "#/components/schemas/status_code_create"
+                  }
+                },
+                "required": [
+                  "invoice_id",
+                  "status_code"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/event"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        }
+      }
+    },
+    "/v1.beta/directory_entries": {
+      "get": {
+        "operationId": "DirectoryEntriesList",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/list_directory_entries"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "DirectoryEntryCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/create_directory_entry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/directory_entry"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/bad_request"
+          },
+          "500": {
+            "$ref": "#/components/responses/internal_server_error"
+          }
+        }
+      }
+    }
+  },
+  "schemas": {
+    "report": {
+      "properties": {
+        "conformance_level": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "integer"
+        },
+        "error": {
+          "type": "string"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "file_size": {
+          "type": "integer"
+        },
+        "format": {
+          "type": "string"
+        },
+        "is_valid": {
+          "type": "boolean"
+        },
+        "subreports": {
+          "items": {
+            "$ref": "#/components/schemas/subreport"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "file_name",
+        "file_size",
+        "is_valid",
+        "duration",
+        "format",
+        "conformance_level",
+        "subreports"
+      ],
+      "type": "object"
+    },
+    "subreport": {
+      "properties": {
+        "checks_count": {
+          "type": "integer"
+        },
+        "failures": {
+          "items": {
+            "$ref": "#/components/schemas/message"
+          },
+          "type": "array"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/components/schemas/message"
+          },
+          "type": "array"
+        },
+        "validator": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "validator",
+        "checks_count",
+        "messages",
+        "failures"
+      ],
+      "type": "object"
+    },
+    "message": {
+      "properties": {
+        "location": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message",
+        "raw"
+      ],
+      "type": "object"
+    },
+    "validation_report": {
+      "properties": {
+        "data": {
+          "items": {
+            "$ref": "#/components/schemas/report"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "invoice": {
+      "properties": {
+        "company_id": {
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/components/schemas/direction"
+        },
+        "en_invoice": {
+          "$ref": "#/components/schemas/en_invoice"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/components/schemas/event"
+          },
+          "type": "array"
+        },
+        "external_id": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "processing_rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "company_id",
+        "created_at",
+        "direction"
+      ],
+      "type": "object"
+    },
+    "invoice_overview": {
+      "properties": {
+        "company_id": {
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/components/schemas/direction"
+        },
+        "en_invoice": {
+          "$ref": "#/components/schemas/en_invoice_overview"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/components/schemas/event"
+          },
+          "type": "array"
+        },
+        "external_id": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "processing_rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "company_id",
+        "created_at",
+        "direction"
+      ],
+      "type": "object"
+    },
+    "list_invoices": {
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "data": {
+          "items": {
+            "$ref": "#/components/schemas/invoice_overview"
+          },
+          "type": "array"
+        },
+        "has_after": {
+          "type": "boolean"
+        },
+        "has_before": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "data",
+        "count",
+        "has_after",
+        "has_before"
+      ],
+      "type": "object"
+    },
+    "event": {
+      "properties": {
+        "attachments": {
+          "items": {
+            "properties": {
+              "file_name": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/components/schemas/event_data"
+        },
+        "details": {
+          "items": {
+            "$ref": "#/components/schemas/invoice_event_detail"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "invoice_id": {
+          "type": "integer"
+        },
+        "status_code": {
+          "$ref": "#/components/schemas/status_code"
+        },
+        "status_text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "invoice_id",
+        "status_code",
+        "created_at",
+        "status_text"
+      ],
+      "type": "object"
+    },
+    "list_events": {
+      "properties": {
+        "data": {
+          "items": {
+            "$ref": "#/components/schemas/event"
+          },
+          "type": "array"
+        },
+        "has_after": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "data",
+        "has_after"
+      ],
+      "type": "object"
+    },
+    "directory_entry": {
+      "properties": {
+        "company": {
+          "$ref": "#/components/schemas/company"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "directory": {
+          "$ref": "#/components/schemas/directory"
+        },
+        "effective_date": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "identifier": {
+          "type": "string"
+        },
+        "is_replyto": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/components/schemas/directory_entry_status"
+        },
+        "status_message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "company",
+        "created_at",
+        "directory",
+        "id",
+        "identifier",
+        "status"
+      ],
+      "type": "object"
+    },
+    "list_directory_entries": {
+      "properties": {
+        "data": {
+          "items": {
+            "$ref": "#/components/schemas/directory_entry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "electronic_address": {
+      "properties": {
+        "scheme": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "scheme"
+      ],
+      "type": "object"
+    },
+    "process_control": {
+      "properties": {
+        "business_process_type": {
+          "type": "string"
+        },
+        "specification_identifier": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "specification_identifier"
+      ],
+      "type": "object"
+    }
+  },
+  "en_invoice_required": [
+    "number",
+    "issue_date",
+    "type_code",
+    "currency_code",
+    "process_control",
+    "seller",
+    "buyer",
+    "totals",
+    "vat_break_down",
+    "lines"
+  ]
+}

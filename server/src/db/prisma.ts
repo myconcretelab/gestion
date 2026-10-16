@@ -37,7 +37,7 @@ export const systemPrisma = new PrismaClient();
 
 const TENANT_MODELS = new Set([
   "InstallationConfig", "ContentTemplateVersion", "Gite", "GitePhoto", "WordPressWebhookJob",
-  "Gestionnaire", "FiscalEntity", "FiscalEstablishment", "SuperPdpConnection", "SuperPdpOAuthState", "AppUser", "Membership", "OrganizationSettings", "ApiToken", "DocumentShare",
+  "Gestionnaire", "FiscalEntity", "FiscalEstablishment", "SuperPdpConnection", "SuperPdpOAuthState", "ElectronicInvoiceTransmission", "ElectronicInvoiceEvent", "AppUser", "Membership", "OrganizationSettings", "ApiToken", "DocumentShare",
   "ExpenseCategory", "ExpenseRecurringRule", "ExpenseEntry", "UrssafDeclaration", "GuestNightDeclaration",
   "IcalSource", "Contrat", "ContratCounter", "Facture", "FactureCounter", "InvoiceSequence", "ReservationPlaceholder",
   "PlanningRelayPeriod", "PlanningRelayWorker", "IntervenantHourEntry", "UserIntervention",

@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { assertProductionAuthConfigured } from "./services/serverAuth.js";
 import { ensureLegacyIntegrationTokenMigrated } from "./services/apiTokens.js";
 import { startBillingJobWorker } from "./modules/billing/worker.js";
+import { startSuperPdpJobWorker } from "./modules/superpdp/worker.js";
 import { startMultiTenantAutomationScheduler } from "./services/multiTenantAutomation.js";
 
 await assertProductionAuthConfigured();
@@ -12,6 +13,7 @@ const app = createApp();
 
 if (env.NODE_ENV !== "test") {
   startBillingJobWorker();
+  startSuperPdpJobWorker();
   startMultiTenantAutomationScheduler();
 }
 

@@ -13,6 +13,8 @@ import {
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import { invoiceDisplayNumber, invoiceLifecycleLabel } from "../utils/invoiceLifecycle";
+import { canCurrentUserManageIntegrations } from "../utils/auth";
+import ElectronicInvoicePanel from "./shared/ElectronicInvoicePanel";
 
 type EmailComposerState = {
   recipient: string;
@@ -264,7 +266,8 @@ const FactureDetailPage = () => {
         {facture.issued_at && <p>Émis le {formatDate(facture.issued_at)}. Le suivi du paiement ne modifie pas le PDF archivé.</p>}
         {facture.lifecycle_status === "draft" && !!facture.fiscal_issues?.length && <div className="note"><p>À compléter avant validation :</p><ul>{facture.fiscal_issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
         {facture.fiscal_totals && <p>Détail fiscal : HT {formatEuro(facture.fiscal_totals.net_cents / 100)} · TVA {formatEuro(facture.fiscal_totals.vat_cents / 100)} · TTC {formatEuro(facture.fiscal_totals.gross_cents / 100)}{facture.document_kind === "credit_note" ? " (montants annulés par l’avoir)" : ""}.</p>}
-        {facture.structured_available && <p><a href={`/api/invoices/${facture.id}/structured`} target="_blank" rel="noreferrer">Exporter l’instantané fiscal structuré</a> · Préparation locale, non transmise à SuperPDP.</p>}
+        {facture.structured_available && <p><a href={`/api/invoices/${facture.id}/structured`} target="_blank" rel="noreferrer">Exporter l’instantané fiscal structuré</a> · Données figées à l’émission, distinctes du suivi SuperPDP.</p>}
+        {facture.lifecycle_status === "issued" && canCurrentUserManageIntegrations() && <ElectronicInvoicePanel key={facture.id} invoiceId={facture.id} />}
         {facture.lifecycle_status === "legacy" && <p className="note">Document historique conservé avec son numéro et son PDF d’origine. Les corrections nécessitent une reprise vérifiée de son émetteur et de ses montants.</p>}
         {facture.original_invoice && <p>Avoir de la <Link to={`/factures/${facture.original_invoice.id}`}>facture {facture.original_invoice.numero_facture}</Link>.</p>}
         {facture.credit_notes?.map((credit) => <p key={credit.id}><Link to={`/factures/${credit.id}`}>{credit.lifecycle_status === "draft" ? "Consulter le brouillon d’avoir" : `Consulter l’avoir ${credit.numero_facture}`}</Link></p>)}

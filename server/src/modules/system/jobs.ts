@@ -61,7 +61,8 @@ export const claimNextOrganizationJob = async (input: {
   const now = input.now ?? new Date();
   const expired = new Date(now.getTime() - input.leaseMs);
   const expiredJobs = await systemPrisma.organizationJob.findMany({
-    where: { status: "running", locked_at: { lt: expired } },
+    // Workers may use different lease durations: never reclaim another family's active job.
+    where: { status: "running", locked_at: { lt: expired }, ...(input.types?.length ? { type: { in: input.types } } : {}) },
     select: { id: true },
   });
   if (expiredJobs.length) {

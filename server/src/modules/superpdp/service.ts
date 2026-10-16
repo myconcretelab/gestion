@@ -748,4 +748,63 @@ export class SuperPdpService {
       );
     }
   }
+
+  /** Serialize transport and refresh/revocation on the same durable connection lock.
+   * Never return a token to a route, a job payload, or a stored result.
+   */
+  async withSandboxAccess<T>(
+    entityId: string,
+    expected: { connectionId: string; companyId: string },
+    actor: OAuthActor,
+    work: (accessToken: string) => Promise<T>,
+  ): Promise<T> {
+    const connection = await this.required(entityId);
+    if (
+      connection.id !== expected.connectionId ||
+      connection.remote_company_id !== expected.companyId ||
+      connection.status !== "connected" ||
+      !connection.encrypted_tokens
+    ) {
+      throw superPdpError(
+        "SUPERPDP_CONNECTION_CHANGED",
+        "La connexion de test doit être vérifiée et correspondre à celle du document.",
+      );
+    }
+    const operationId = await this.acquire(connection);
+    let tokens: Tokens;
+    let verified: Awaited<ReturnType<SuperPdpService["probe"]>>;
+    try {
+      tokens = this.tokens(connection);
+      // A transport operation can perform several bounded requests while holding the lease.
+      if (tokens.expires_at <= Date.now() + 120_000) {
+        tokens = await this.provider.refresh(
+          connection.client_id!,
+          this.secret(connection),
+          tokens.refresh_token,
+        );
+        await this.saveTokens(connection, operationId, tokens);
+      }
+      verified = await this.probe(connection, tokens);
+      if (verified.status !== "connected")
+        throw superPdpError(
+          "SUPERPDP_NOT_VERIFIED",
+          "La vérification SuperPDP de l’entreprise est en attente.",
+        );
+    } catch (error) {
+      await this.failure(connection, operationId, error, actor);
+      throw error;
+    }
+    try {
+      return await work(tokens.access_token);
+    } finally {
+      // Transport failures must not turn a valid OAuth grant into an authentication failure.
+      await this.finish(
+        connection,
+        operationId,
+        verified,
+        actor,
+        "superpdp.transport_access",
+      );
+    }
+  }
 }

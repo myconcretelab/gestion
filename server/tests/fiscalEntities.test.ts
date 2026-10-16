@@ -91,7 +91,8 @@ before(async () => {
         !file.includes("20261016100000_fiscal_entities") &&
         !file.includes("20261016120000_invoice_lifecycle") &&
         !file.includes("20261016150000_invoice_fiscal_data") &&
-        !file.includes("20261016170000_superpdp_oauth"),
+        !file.includes("20261016170000_superpdp_oauth") &&
+        !file.includes("20261016190000_superpdp_emission"),
     },
   );
   migrate(oldSchema);

@@ -9,6 +9,14 @@ const root = path.resolve(process.cwd().endsWith(`${path.sep}server`) ? path.joi
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(root, "server", "data"));
 const databaseUrl = process.env.DATABASE_URL || `file:${path.join(root, "server", "prisma", "dev.db")}`;
 const allowedAssetRoots = ["pdfs", "uploads", "signed", "photos"];
+const tenantAssetRoots = ["pdfs", "uploads", "signed", "signed-contracts", "photos"];
+// Include tenant-scoped electronic archives, without exporting arbitrary configuration files.
+const tenantAssetPaths = (base) => {
+  const organizations = path.join(base, "organizations");
+  if (!fs.existsSync(organizations)) return [];
+  return fs.readdirSync(organizations, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+    .flatMap((entry) => tenantAssetRoots.map((name) => path.join("organizations", entry.name, name)));
+};
 
 const fail = (message) => { console.error(message); process.exit(1); };
 const run = (bin, args, options = {}) => {
@@ -70,11 +78,16 @@ const backup = () => {
         "UPDATE planning_relay_periods SET share_nonce = lower(hex(randomblob(32))), public_code_hash = NULL, public_origin = NULL;",
         "DELETE FROM auth_sessions; DELETE FROM api_tokens; DELETE FROM document_shares; DELETE FROM password_reset_tokens; DELETE FROM security_throttles;",
       ].join(" ")]);
-      const oauthTables = spawnSync("sqlite3", [copiedDatabase, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('superpdp_connections', 'superpdp_oauth_states');"], { encoding: "utf8" });
+      const oauthTables = spawnSync("sqlite3", [copiedDatabase, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('superpdp_connections', 'superpdp_oauth_states', 'electronic_invoice_transmissions');"], { encoding: "utf8" });
       if (oauthTables.status !== 0) fail("Impossible de vérifier les tables OAuth de la copie de sauvegarde.");
       const presentOauthTables = new Set(oauthTables.stdout.trim().split("\n"));
+      if (presentOauthTables.has("electronic_invoice_transmissions")) {
+        run("sqlite3", [copiedDatabase, "UPDATE electronic_invoice_transmissions SET status='paused_after_restore', operation_id=NULL, operation_expires_at=NULL, next_sync_at=NULL; UPDATE organization_jobs SET status='failed', locked_at=NULL, lock_owner=NULL, last_error='SUPERPDP_DATABASE_MOVED' WHERE type IN ('superpdp.prepare','superpdp.send','superpdp.reconcile') AND status IN ('queued','running');"]);
+        // Keep non-secret connection keys referenced by immutable transmission history.
+        run("sqlite3", [copiedDatabase, "UPDATE superpdp_connections SET encrypted_client_secret=NULL, encrypted_tokens=NULL, client_id=NULL, expected_number=NULL, access_expires_at=NULL, operation_id=NULL, operation_expires_at=NULL, generation=generation+1, status='disconnected';"]);
+      }
       for (const table of ["superpdp_oauth_states", "superpdp_connections"]) {
-        if (presentOauthTables.has(table)) run("sqlite3", [copiedDatabase, `DELETE FROM "${table}";`]);
+        if (presentOauthTables.has(table)) run("sqlite3", [copiedDatabase, `DELETE FROM "${table}"${table === "superpdp_connections" && presentOauthTables.has("electronic_invoice_transmissions") ? " WHERE id NOT IN (SELECT connection_id FROM electronic_invoice_transmissions)" : ""};`]);
       }
       databaseFormat = "sqlite-sanitized";
     } else {
@@ -89,7 +102,7 @@ const backup = () => {
       databaseFormat = "postgresql-custom-encrypted";
     }
     const assetsDir = path.join(staging, "files"); fs.mkdirSync(assetsDir, { recursive: true });
-    for (const name of allowedAssetRoots) {
+    for (const name of [...allowedAssetRoots, ...tenantAssetPaths(dataDir)]) {
       const source = path.join(dataDir, name);
       if (fs.existsSync(source)) fs.cpSync(source, path.join(assetsDir, name), { recursive: true });
     }
@@ -110,6 +123,7 @@ const backup = () => {
     };
     fs.writeFileSync(path.join(staging, "manifest.json"), JSON.stringify(manifest, null, 2));
     run("tar", ["-czf", destination, "-C", staging, "."]);
+    fs.chmodSync(destination, 0o600);
     console.log(JSON.stringify({ archive: destination, databaseFormat, files: files.length, secretsIncluded: false }, null, 2));
   } finally { fs.rmSync(staging, { recursive: true, force: true }); }
 };
@@ -150,6 +164,8 @@ const restore = () => {
       if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(schemaName)) fail("Nom de schéma PostgreSQL non pris en charge pour une restauration sécurisée.");
       const oauthStatesTable = `"${schemaName}"."superpdp_oauth_states"`;
       const oauthConnectionsTable = `"${schemaName}"."superpdp_connections"`;
+      const transmissionsTable = `"${schemaName}"."electronic_invoice_transmissions"`;
+      const jobsTable = `"${schemaName}"."organization_jobs"`;
       const clearDump = path.join(result.staging, "database", "database.restore.clear.dump");
       try {
         cryptPostgresDump("decrypt", path.join(result.staging, "database", "database.dump.enc"), clearDump);
@@ -165,12 +181,17 @@ const restore = () => {
                 "generation" = "generation" + 1, "status" = 'reauthorization_required', "last_error_code" = 'SUPERPDP_DATABASE_MOVED'
                 WHERE "encrypted_tokens" IS NOT NULL;
             END IF;
+            IF to_regclass('${transmissionsTable}') IS NOT NULL THEN
+              UPDATE ${transmissionsTable} SET "status"='paused_after_restore', "operation_id"=NULL, "operation_expires_at"=NULL, "next_sync_at"=NULL;
+              UPDATE ${jobsTable} SET "status"='failed', "locked_at"=NULL, "lock_owner"=NULL, "last_error"='SUPERPDP_DATABASE_MOVED'
+                WHERE "type" IN ('superpdp.prepare','superpdp.send','superpdp.reconcile') AND "status" IN ('queued','running');
+            END IF;
           END $oauth_restore$;`]);
       } finally {
         fs.rmSync(clearDump, { force: true });
       }
     } else fail("Le type de base de l'archive ne correspond pas à l'installation cible.");
-    for (const name of allowedAssetRoots) {
+    for (const name of [...allowedAssetRoots, ...tenantAssetPaths(path.join(result.staging, "files"))]) {
       const source = path.join(result.staging, "files", name); if (!fs.existsSync(source)) continue;
       const target = path.join(dataDir, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.cpSync(source, target, { recursive: true, force: true });
     }

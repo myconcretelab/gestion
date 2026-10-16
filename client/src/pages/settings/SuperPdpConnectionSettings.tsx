@@ -149,8 +149,8 @@ export default function SuperPdpConnectionSettings({
       </h3>
       <p>
         La production est désactivée. Cette étape connecte l’entreprise et
-        vérifie son identité ; elle n’envoie, ne reçoit et ne déclare aucune
-        facture.
+        vérifie son identité. Elle ne transmet aucune facture automatiquement ;
+        les dépôts de test se préparent séparément depuis la fiche facture.
       </p>
       {error && (
         <p role="alert" className="note">

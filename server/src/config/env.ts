@@ -129,6 +129,7 @@ export const env = {
   APP_PUBLIC_URL: process.env.APP_PUBLIC_URL ?? process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   STRIPE_MODE: String(process.env.STRIPE_MODE ?? "test").trim().toLowerCase(),
   SUPERPDP_SANDBOX_ENABLED: parseBooleanEnv(process.env.SUPERPDP_SANDBOX_ENABLED, false),
+  SUPERPDP_SANDBOX_EMISSION_ENABLED: parseBooleanEnv(process.env.SUPERPDP_SANDBOX_EMISSION_ENABLED, false),
   SUPERPDP_SECRETS_KEY: process.env.SUPERPDP_SECRETS_KEY ?? "",
   SUPERPDP_SANDBOX_REDIRECT_URI: process.env.SUPERPDP_SANDBOX_REDIRECT_URI ?? "",
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "",

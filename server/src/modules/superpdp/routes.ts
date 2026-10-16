@@ -8,7 +8,7 @@ import { getOrganizationId } from "../organizations/context.js";
 import { SuperPdpService, type OAuthActor } from "./service.js";
 import { digest, superPdpError } from "./secrets.js";
 
-const actorFor = async (req: Request): Promise<OAuthActor> => {
+export const actorFor = async (req: Request): Promise<OAuthActor> => {
   const session = await getServerAuthSessionFromRequest(req);
   const user = session ? await getAuthenticatedAppUser(req) : null;
   if (!session || !user || session.organizationId !== getOrganizationId())
@@ -37,7 +37,7 @@ const actorFor = async (req: Request): Promise<OAuthActor> => {
   }
   return { userId: user.id, sessionHash: digest(session.id) };
 };
-const safeErrorResponse = (error: unknown) => {
+export const safeErrorResponse = (error: unknown) => {
   const value = error as {
     code?: string;
     message?: string;

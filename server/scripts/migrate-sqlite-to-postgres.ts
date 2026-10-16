@@ -184,6 +184,8 @@ const main = async () => {
       console.log("Suppression des donnees cibles...");
       await postgres.$transaction([
         postgres.securityThrottle.deleteMany(),
+        postgres.electronicInvoiceEvent.deleteMany(),
+        postgres.electronicInvoiceTransmission.deleteMany(),
         postgres.superPdpOAuthState.deleteMany(),
         postgres.superPdpConnection.deleteMany(),
         postgres.planningRelayAssignment.deleteMany(),
@@ -307,6 +309,18 @@ const main = async () => {
         create: data,
         update,
       });
+    }
+
+    if (tableNames.has("electronic_invoice_transmissions")) {
+      for (const row of await sqlite.electronicInvoiceTransmission.findMany()) {
+        const { id, ...rest } = row;
+        const data = { ...rest, status: "paused_after_restore", operation_id: null, operation_expires_at: null, next_sync_at: null };
+        await postgres.electronicInvoiceTransmission.upsert({ where: { id }, create: { id, ...data }, update: data });
+      }
+      for (const row of await sqlite.electronicInvoiceEvent.findMany()) {
+        const { id, ...rest } = row;
+        await postgres.electronicInvoiceEvent.upsert({ where: { id }, create: { id, ...rest }, update: {} });
+      }
     }
 
     for (const placeholder of placeholders) {

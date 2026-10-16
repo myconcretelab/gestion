@@ -1,0 +1,8 @@
+.electronic-invoice-panel {
+  overflow-wrap: anywhere;
+}
+
+.electronic-invoice-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

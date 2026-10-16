@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Response } from "express";
+import { createSuperPdpEmissionRouter } from "../modules/superpdp/emissionRoutes.js";
 import { z } from "zod";
 import { invoiceFiscalInputSchema, invoiceFiscalIssues, computeInvoiceFiscal } from "@contrats/shared";
 import { parseInvoiceFiscal, proposeInvoiceFiscal } from "../modules/documents/invoiceFiscal.js";
@@ -42,6 +43,7 @@ import {
 } from "./shared/rentalDocument.js";
 
 const router = Router();
+router.use(createSuperPdpEmissionRouter());
 
 const emptyStringToNull = (value: unknown) => {
   if (value === null || value === undefined) return null;

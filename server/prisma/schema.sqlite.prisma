@@ -639,7 +639,9 @@ model SuperPdpConnection {
 
   fiscal_entity FiscalEntity @relation(fields: [fiscal_entity_id, organization_id], references: [id, organization_id], onDelete: Restrict)
   oauth_states SuperPdpOAuthState[]
+  transmissions ElectronicInvoiceTransmission[]
 
+  @@unique([id, fiscal_entity_id, organization_id], map: "superpdp_connections_id_entity_org_key")
   @@unique([id, organization_id], map: "superpdp_connections_id_org_key")
   @@unique([organization_id, fiscal_entity_id, environment], map: "superpdp_connections_org_entity_env_key")
   @@unique([organization_id, environment, remote_company_id], map: "superpdp_connections_org_remote_env_key")
@@ -662,6 +664,67 @@ model SuperPdpOAuthState {
   @@index([organization_id, connection_id], map: "superpdp_oauth_states_org_connection_idx")
   @@index([expires_at], map: "superpdp_oauth_states_expires_idx")
   @@map("superpdp_oauth_states")
+}
+
+model ElectronicInvoiceTransmission {
+  id                  String   @id @default(uuid())
+  organization_id     String   @default("org_historical_broceliande")
+  invoice_id          String
+  fiscal_entity_id    String
+  connection_id       String
+  environment         String   @default("sandbox")
+  remote_company_id   String
+  remote_invoice_id   String?
+  external_id         String   @unique
+  revision            Int      @default(1)
+  status              String   @default("queued_prepare")
+  preparation_id      String
+  payload_json        String
+  payload_sha256      String
+  snapshot_sha256     String
+  original_pdf_sha256 String
+  artifact_path       String?
+  artifact_sha256     String?
+  validation_json     String?
+  validation_valid    Boolean  @default(false)
+  operation_id        String?
+  operation_expires_at DateTime?
+  post_started_at     DateTime?
+  events_cursor       String?
+  reconcile_cursor    String?
+  next_sync_at        DateTime?
+  last_synced_at      DateTime?
+  last_error_code     String?
+  requested_by        String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  invoice Facture @relation(fields: [invoice_id, fiscal_entity_id, organization_id], references: [id, fiscal_entity_id, organization_id], onDelete: Restrict)
+  connection SuperPdpConnection @relation(fields: [connection_id, fiscal_entity_id, organization_id], references: [id, fiscal_entity_id, organization_id], onDelete: Restrict)
+  events ElectronicInvoiceEvent[]
+
+  @@unique([id, organization_id], map: "electronic_transmissions_id_org_key")
+  @@unique([organization_id, invoice_id, environment], map: "electronic_transmissions_invoice_env_key")
+  @@unique([organization_id, connection_id, remote_invoice_id], map: "electronic_transmissions_remote_key")
+  @@index([status, next_sync_at], map: "electronic_transmissions_sync_idx")
+  @@map("electronic_invoice_transmissions")
+}
+
+model ElectronicInvoiceEvent {
+  id              String   @id @default(cuid())
+  organization_id String   @default("org_historical_broceliande")
+  transmission_id String
+  event_key       String
+  status_code     String
+  occurred_at     DateTime
+  payload_json    String
+  createdAt       DateTime @default(now())
+
+  transmission ElectronicInvoiceTransmission @relation(fields: [transmission_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+
+  @@unique([organization_id, transmission_id, event_key], map: "electronic_events_dedup_key")
+  @@index([organization_id, transmission_id, occurred_at], map: "electronic_events_history_idx")
+  @@map("electronic_invoice_events")
 }
 
 model FiscalEstablishment {
@@ -1098,7 +1161,9 @@ model Facture {
   fiscal_establishment FiscalEstablishment? @relation(fields: [fiscal_establishment_id, organization_id], references: [id, organization_id], onDelete: Restrict)
   original_invoice Facture? @relation("InvoiceCredits", fields: [credited_invoice_id, organization_id], references: [id, organization_id], onDelete: Restrict)
   credit_notes Facture[] @relation("InvoiceCredits")
+  electronic_transmissions ElectronicInvoiceTransmission[]
 
+  @@unique([id, fiscal_entity_id, organization_id], map: "factures_id_entity_org_key")
   @@unique([organization_id, numero_facture], map: "factures_org_numero_key")
   @@unique([id, organization_id], map: "factures_id_org_key")
   @@unique([organization_id, credited_invoice_id], map: "factures_org_credited_invoice_key")
