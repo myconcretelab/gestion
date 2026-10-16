@@ -1,6 +1,44 @@
 import { z } from "zod";
 
 const text = z.string().trim().max(500);
+export const invoiceOperationKindSchema = z.enum([
+  "unknown",
+  "goods",
+  "services",
+  "mixed",
+]);
+export const invoiceOperationChoices = [
+  { value: "goods", label: "Biens" },
+  { value: "services", label: "Services" },
+  { value: "mixed", label: "Mixte — biens et services distincts" },
+] as const;
+
+/** Ordinary invoices/credits only. Special frames (advances, prior reporting, etc.) need a dedicated workflow. */
+export const invoiceBusinessProcessType = (
+  operation: unknown,
+  amounts: { paid_cents: number; due_cents: number },
+  credit = false,
+) => {
+  const prefix =
+    operation === "goods"
+      ? "B"
+      : operation === "services"
+        ? "S"
+        : operation === "mixed"
+          ? "M"
+          : null;
+  if (
+    !prefix ||
+    !Number.isSafeInteger(amounts.paid_cents) ||
+    !Number.isSafeInteger(amounts.due_cents) ||
+    amounts.paid_cents < 0 ||
+    amounts.due_cents < 0 ||
+    (credit && amounts.paid_cents !== 0) ||
+    (amounts.paid_cents > 0 && amounts.due_cents > 0)
+  )
+    return null;
+  return `${prefix}${!credit && amounts.paid_cents > 0 && amounts.due_cents === 0 ? "2" : "1"}`;
+};
 export const b2bPaymentMentionsSchema = z.object({
   late_payment_penalties: text.default(""),
   recovery_fee: text.default(""),
@@ -44,6 +82,8 @@ const isoDate = z
   );
 export const invoiceFiscalInputSchema = z.object({
   version: z.literal(1),
+  // Legacy data remains readable, never automatically classified from the gîte or its VAT rate.
+  operation_kind: invoiceOperationKindSchema.default("unknown"),
   buyer: z.object({
     kind: z.enum(["unknown", "individual", "business"]),
     address_line1: text,
@@ -315,6 +355,16 @@ export const invoiceFiscalIssues = (
       );
   }
   const totals = computeInvoiceFiscal(input);
+  if (buyer.kind === "business" && !options.credit) {
+    if (!input.operation_kind || input.operation_kind === "unknown")
+      issues.push(
+        "Choisissez la nature de l’opération : biens, services ou mixte, après qualification.",
+      );
+    if (totals.paid_cents > 0 && totals.due_cents > 0)
+      issues.push(
+        "Les paiements partiels à l’émission nécessitent la qualification du cadre de facturation, notamment en présence d’un acompte. Ce cas reste hors du lot B2B actuel.",
+      );
+  }
   if (
     !Number.isSafeInteger(totals.gross_cents) ||
     totals.gross_cents > 1_000_000_000
@@ -352,6 +402,7 @@ export const invoiceFiscalIssues = (
 
 export const emptyInvoiceFiscalInput = (): InvoiceFiscalInput => ({
   version: 1,
+  operation_kind: "unknown",
   buyer: {
     kind: "unknown",
     address_line1: "",

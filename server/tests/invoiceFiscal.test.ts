@@ -37,6 +37,7 @@ const establishment: FiscalEstablishment = {
 };
 const fiscal = () => {
   const input = emptyInvoiceFiscalInput();
+  input.operation_kind = "services";
   input.buyer.kind = "business";
   input.b2b_payment_mentions = {
     late_payment_penalties: "Pénalités fictives <recette>.",
@@ -149,4 +150,51 @@ test("le bloc PDF reprend les mentions structurées, échappe le HTML et préser
   );
   input.buyer.kind = "individual";
   assert.ok(!buildInvoicePaymentTermsHtml(input).includes("Pénalités"));
+});
+
+test("le choix et le mode sont figés pour biens, services et mixte ; aucun mode absent ou partiel n’est inventé", () => {
+  for (const [operation_kind, prefix] of [
+    ["goods", "B"],
+    ["services", "S"],
+    ["mixed", "M"],
+  ] as const) {
+    const input = fiscal();
+    input.operation_kind = operation_kind;
+    for (const [paid, code] of [
+      [0, `${prefix}1`],
+      [120, `${prefix}2`],
+    ] as const) {
+      input.paid_amount = paid;
+      const result = build(input);
+      assert.equal(result.operation_kind, operation_kind);
+      assert.equal(
+        result.en_invoice_candidate.process_control.business_process_type,
+        code,
+      );
+    }
+    input.paid_amount = 0;
+    assert.equal(
+      build(input, true).en_invoice_candidate.process_control
+        .business_process_type,
+      `${prefix}1`,
+    );
+    input.paid_amount = 30;
+    assert.equal(
+      build(input).en_invoice_candidate.process_control.business_process_type,
+      undefined,
+    );
+  }
+  const input = fiscal();
+  input.operation_kind = "unknown";
+  assert.equal(
+    build(input).en_invoice_candidate.process_control.business_process_type,
+    undefined,
+  );
+  input.operation_kind = "services";
+  input.buyer.kind = "individual";
+  assert.equal(
+    build(input).en_invoice_candidate.process_control.business_process_type,
+    undefined,
+    "le mode B2C reste du ressort de son profil spécifique",
+  );
 });

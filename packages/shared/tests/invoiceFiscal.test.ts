@@ -6,6 +6,7 @@ import {
   invoiceFiscalInputSchema,
   invoiceFiscalIssues,
   invoicePaymentNotes,
+  invoiceBusinessProcessType,
 } from "../src/invoiceFiscal.js";
 
 const sample = () => {
@@ -48,6 +49,107 @@ const sample = () => {
   input.tourist_tax_reviewed = true;
   return input;
 };
+
+test("le type d’opération reste inconnu sur les anciens brouillons et les valeurs non prévues sont refusées", () => {
+  const { operation_kind: _operation, ...legacy } = sample();
+  assert.equal(
+    invoiceFiscalInputSchema.parse(legacy).operation_kind,
+    "unknown",
+  );
+  for (const operation_kind of [null, "", "S1", "rental", "Services", 1])
+    assert.equal(
+      invoiceFiscalInputSchema.safeParse({ ...sample(), operation_kind })
+        .success,
+      false,
+    );
+  for (const operation_kind of ["unknown", "goods", "services", "mixed"])
+    assert.ok(
+      invoiceFiscalInputSchema.safeParse({ ...sample(), operation_kind })
+        .success,
+    );
+});
+
+test("le cadre ordinaire découle du choix explicite et des seuls montants figés, sans supposer un règlement", () => {
+  for (const [operation, prefix] of [
+    ["goods", "B"],
+    ["services", "S"],
+    ["mixed", "M"],
+  ]) {
+    assert.equal(
+      invoiceBusinessProcessType(operation, { paid_cents: 0, due_cents: 100 }),
+      `${prefix}1`,
+    );
+    assert.equal(
+      invoiceBusinessProcessType(operation, { paid_cents: 100, due_cents: 0 }),
+      `${prefix}2`,
+    );
+    assert.equal(
+      invoiceBusinessProcessType(operation, { paid_cents: 0, due_cents: 0 }),
+      `${prefix}1`,
+    );
+    assert.equal(
+      invoiceBusinessProcessType(
+        operation,
+        { paid_cents: 0, due_cents: 100 },
+        true,
+      ),
+      `${prefix}1`,
+    );
+    assert.equal(
+      invoiceBusinessProcessType(operation, { paid_cents: 50, due_cents: 50 }),
+      null,
+    );
+    assert.equal(
+      invoiceBusinessProcessType(
+        operation,
+        { paid_cents: 100, due_cents: 0 },
+        true,
+      ),
+      null,
+    );
+  }
+  for (const operation of [undefined, null, "unknown", "rental", "toString"])
+    assert.equal(
+      invoiceBusinessProcessType(operation, { paid_cents: 0, due_cents: 100 }),
+      null,
+    );
+  for (const paid_cents of [-1, NaN, 0.1, Infinity])
+    assert.equal(
+      invoiceBusinessProcessType("services", { paid_cents, due_cents: 100 }),
+      null,
+    );
+});
+
+test("qualification B2B requise avant émission, pas déduite des lignes ni exigée pour le parcours B2C existant", () => {
+  const input = sample();
+  input.buyer.kind = "business";
+  input.buyer.siren = "732829320";
+  input.paid_amount = 0;
+  assert.match(invoiceFiscalIssues(input, 134).join(), /nature de l’opération/);
+  input.operation_kind = "services";
+  assert.ok(
+    !invoiceFiscalIssues(input, 134).some((i) =>
+      /nature de l’opération/.test(i),
+    ),
+  );
+  input.paid_amount = 30;
+  assert.match(invoiceFiscalIssues(input, 134).join(), /paiements partiels/);
+  input.operation_kind = "unknown";
+  input.paid_amount = 0;
+  assert.ok(
+    !invoiceFiscalIssues(input, -134, { credit: true }).some((i) =>
+      /nature de l’opération/.test(i),
+    ),
+    "un avoir d’une ancienne facture peut rester non qualifié et non transmissible",
+  );
+  input.buyer.kind = "individual";
+  input.buyer.siren = "";
+  input.paid_amount = 30;
+  assert.deepEqual(
+    invoiceFiscalIssues(input, 134, { sellerVatNumber: "FR01732829320" }),
+    [],
+  );
+});
 
 test("calcul TTC conservé, plusieurs taux et sommes réellement reçues", () => {
   const input = sample();
@@ -218,6 +320,8 @@ test("anciens brouillons lisibles, mais aucune mention B2B inventée ni déduite
 
 test("mentions B2B explicites, bornées et normalisées, sans application aux particuliers", () => {
   const input = sample();
+  input.operation_kind = "services";
+  input.paid_amount = 0;
   input.buyer.kind = "business";
   input.buyer.siren = "732829320";
   input.b2b_payment_mentions = {

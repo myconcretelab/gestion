@@ -9,6 +9,7 @@ import {
 import { apiFetch } from "../../utils/api";
 import { formatEuro } from "../../utils/format";
 import "./invoiceFiscal.css";
+import InvoiceOperationEditor from "./InvoiceOperationEditor";
 
 export default function InvoiceFiscalEditor({
   value,
@@ -191,6 +192,12 @@ export default function InvoiceFiscalEditor({
               </>
             )}
           </div>
+          {value.buyer.kind === "business" && (
+            <InvoiceOperationEditor
+              value={value.operation_kind ?? "unknown"}
+              onChange={(operation_kind) => update({ operation_kind })}
+            />
+          )}
           <h3>Lignes de facture</h3>
           <p>
             La remise est déjà déduite de la location. Pour une réservation

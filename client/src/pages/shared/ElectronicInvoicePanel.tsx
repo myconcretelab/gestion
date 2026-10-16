@@ -19,6 +19,8 @@ type ElectronicView = {
   environment: "sandbox";
   revision: number;
   processing_rule?: string | null;
+  operation_kind?: "unknown" | "goods" | "services" | "mixed";
+  business_process_type?: string | null;
   issuer_vat_regime?: string | null;
   reporting_profile?: {
     operation: "goods" | "services";
@@ -227,6 +229,7 @@ export default function ElectronicInvoicePanel({
               ? (labels[row.status] ?? "État à vérifier")
               : "Aucune préparation électronique"}
           </p>
+          {data.processing_rule === "B2B" && <p>Mode de facturation figé : {data.business_process_type ?? "Non qualifié — préparation bloquée"}. Il provient du brouillon émis et ne peut pas être choisi au moment du dépôt.</p>}
           <form onSubmit={prepare}>
             <fieldset
               disabled={busy || !data.available || (!!row && !row.can_prepare)}

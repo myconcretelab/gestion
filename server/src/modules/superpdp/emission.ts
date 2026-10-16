@@ -2,7 +2,11 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { b2bPaymentMentionFields } from "@contrats/shared";
+import {
+  b2bPaymentMentionFields,
+  invoiceBusinessProcessType,
+  invoiceCents,
+} from "@contrats/shared";
 import type {
   ElectronicInvoiceTransmission as Transmission,
   Prisma,
@@ -74,6 +78,48 @@ const sourceSnapshot = (value: unknown) =>
   } | null>(value, null);
 const snapshotHash = (value: unknown) =>
   digest(typeof value === "string" ? value : JSON.stringify(value));
+const frozenBusinessProcessSchema = z.object({
+  type_code: z.union([z.literal(380), z.literal(381)]),
+  process_control: z.object({
+    specification_identifier: z.literal("urn:cen.eu:en16931:2017"),
+    business_process_type: z.string(),
+  }),
+  totals: z.object({
+    paid_amount: z.string().regex(/^\d{1,8}\.\d{2}$/),
+    amount_due_for_payment: z.string().regex(/^\d{1,8}\.\d{2}$/),
+  }),
+});
+const hasFrozenBusinessProcess = (
+  structured: ReturnType<typeof buildStructuredInvoice>,
+) => {
+  const source = frozenBusinessProcessSchema.safeParse(
+    structured.en_invoice_candidate,
+  );
+  if (!source.success) return false;
+  const expected = invoiceBusinessProcessType(
+    structured.operation_kind,
+    {
+      paid_cents: invoiceCents(Number(source.data.totals.paid_amount)),
+      due_cents: invoiceCents(
+        Number(source.data.totals.amount_due_for_payment),
+      ),
+    },
+    source.data.type_code === 381,
+  );
+  return (
+    expected !== null &&
+    source.data.process_control.business_process_type === expected
+  );
+};
+const assertFrozenBusinessProcess = (
+  structured: ReturnType<typeof buildStructuredInvoice>,
+) => {
+  if (!hasFrozenBusinessProcess(structured))
+    throw failure(
+      "SUPERPDP_BUSINESS_PROCESS_REQUIRED",
+      "La nature de l’opération ou le mode B2B figé est absent, incohérent ou hors du lot actuel. Aucun choix rétroactif n’est permis ; faites examiner la facture avant de poursuivre.",
+    );
+};
 const actorOf = (row: Transmission): OAuthActor => ({
   userId: row.requested_by,
   sessionHash: "background-job",
@@ -222,6 +268,16 @@ export class SuperPdpEmission {
       reason =
         "Ce lot accepte seulement les factures/avoirs émis avec données structurées B2B ou B2C France. Les historiques, brouillons et opérations internationales restent exclus.";
     }
+    if (
+      available &&
+      !row?.post_started_at &&
+      structured?.processing_rule_candidate === "B2B" &&
+      !hasFrozenBusinessProcess(structured)
+    ) {
+      available = false;
+      reason =
+        "La nature de l’opération ou le mode B2B n’est pas qualifié dans la facture figée. Aucun ajout automatique n’est autorisé.";
+    }
     const events = row
       ? await prisma.electronicInvoiceEvent.findMany({
           where: { transmission_id: row.id },
@@ -235,6 +291,10 @@ export class SuperPdpEmission {
       environment: "sandbox",
       revision: row?.revision ?? 0,
       processing_rule: structured?.processing_rule_candidate ?? null,
+      operation_kind: structured?.operation_kind ?? "unknown",
+      business_process_type:
+        structured?.en_invoice_candidate.process_control
+          ?.business_process_type ?? null,
       issuer_vat_regime:
         sourceSnapshot(invoice.immutable_snapshot)?.issuer.entity.vat_regime ??
         null,
@@ -327,6 +387,7 @@ export class SuperPdpEmission {
     const source = snapshot.structured_invoice.en_invoice_candidate;
     const isB2c =
       snapshot.structured_invoice.processing_rule_candidate === "B2C";
+    if (!isB2c) assertFrozenBusinessProcess(snapshot.structured_invoice);
     // Never patch an already-issued PDF/snapshot with newly invented payment terms.
     if (
       !isB2c &&
@@ -392,6 +453,7 @@ export class SuperPdpEmission {
     const candidate = JSON.stringify({
       ...source,
       process_control: {
+        ...source.process_control,
         specification_identifier: "urn:cen.eu:en16931:2017",
         ...(isB2c
           ? {
@@ -511,6 +573,12 @@ export class SuperPdpEmission {
   async send(invoiceId: string, payload: unknown, actor: OAuthActor) {
     emissionEnabled();
     const input = revisionSchema.parse(payload);
+    const invoice = await this.invoice(invoiceId);
+    const structured = sourceSnapshot(
+      invoice.immutable_snapshot,
+    )?.structured_invoice;
+    if (structured?.processing_rule_candidate === "B2B")
+      assertFrozenBusinessProcess(structured);
     await prisma.$transaction(
       async (tx) => {
         const row = await tx.electronicInvoiceTransmission.findUnique({
@@ -633,6 +701,21 @@ export class SuperPdpEmission {
         "SUPERPDP_IMMUTABLE_MISMATCH",
         "L’instantané ou l’archive ne correspond plus à la préparation. Aucun dépôt n’est autorisé.",
       );
+    }
+    const structured = sourceSnapshot(
+      invoice.immutable_snapshot,
+    )?.structured_invoice;
+    if (structured?.processing_rule_candidate === "B2B") {
+      assertFrozenBusinessProcess(structured);
+      const projected = JSON.parse(row.payload_json);
+      if (
+        projected.process_control?.business_process_type !==
+        structured.en_invoice_candidate.process_control.business_process_type
+      )
+        throw failure(
+          "SUPERPDP_IMMUTABLE_MISMATCH",
+          "Le mode de facturation préparé ne correspond pas à la facture figée. Aucun dépôt n’est autorisé.",
+        );
     }
     return readArchivedInvoicePdf(invoice);
   }

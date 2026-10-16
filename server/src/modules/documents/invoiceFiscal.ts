@@ -5,6 +5,7 @@ import {
   invoiceFiscalInputSchema,
   invoiceFiscalIssues,
   invoicePaymentNotes,
+  invoiceBusinessProcessType,
   type InvoiceFiscalInput,
 } from "@contrats/shared";
 import type { FiscalEntity, FiscalEstablishment } from "@prisma/client";
@@ -150,7 +151,19 @@ export const buildStructuredInvoice = (params: {
   const computed = computeInvoiceFiscal(input);
   const buyer = input.buyer;
   const amount = decimalAmount;
+  const businessProcess =
+    buyer.kind === "business"
+      ? invoiceBusinessProcessType(
+          input.operation_kind,
+          computed,
+          params.credit,
+        )
+      : null;
   const payload = {
+    process_control: {
+      specification_identifier: "urn:cen.eu:en16931:2017",
+      ...(businessProcess ? { business_process_type: businessProcess } : {}),
+    },
     number: params.number,
     issue_date: localDate(params.issuedAt),
     type_code: params.credit ? 381 : 380,
@@ -260,6 +273,7 @@ export const buildStructuredInvoice = (params: {
     currency: "EUR",
     document_sign: params.credit ? -1 : 1,
     customer_kind: buyer.kind,
+    operation_kind: input.operation_kind ?? "unknown",
     processing_rule_candidate:
       buyer.kind === "individual"
         ? "B2C"

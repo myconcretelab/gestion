@@ -110,6 +110,10 @@ const fakeFetch: typeof fetch = async (input, init) => {
     );
     const form = init?.body as FormData;
     const candidate = JSON.parse(await (form.get("invoice") as Blob).text());
+    assert.match(
+      candidate.process_control.business_process_type,
+      /^[BSM][12]$/,
+    );
     assert.equal(
       candidate.process_control.specification_identifier,
       "urn:cen.eu:en16931:2017",
@@ -322,6 +326,7 @@ const newInvoice = async (
     paid?: number;
     credit?: boolean;
     category?: "E" | "O";
+    operation?: "goods" | "services" | "mixed";
   } = {},
 ) => {
   mode = "ok";
@@ -338,6 +343,7 @@ const newInvoice = async (
       where: { id: "establishment-a" },
     });
   const fiscal = emptyInvoiceFiscalInput();
+  fiscal.operation_kind = options.operation ?? "services";
   Object.assign(fiscal.buyer, {
     kind: "business",
     siren: "552100554",
@@ -440,6 +446,152 @@ const prepare = async (id: string) => {
   );
   return within(() => service.view(id));
 };
+
+test("B2B : la préparation conserve le mode figé pour biens/services/mixte, indépendamment du statut de paiement courant", async () => {
+  const beforeSend = sendCount;
+  for (const [operation, prefix] of [
+    ["goods", "B"],
+    ["services", "S"],
+    ["mixed", "M"],
+  ] as const) {
+    for (const paid of [0, 120]) {
+      const invoice = await newInvoice(
+        { statut_paiement: paid ? "non_reglee" : "reglee" },
+        { operation, paid },
+      );
+      const before = await db.systemPrisma.facture.findUniqueOrThrow({
+        where: { id: invoice.id },
+      });
+      const prepared = await prepare(invoice.id);
+      const projected = JSON.parse((await row(invoice.id)).payload_json);
+      const code = `${prefix}${paid ? "2" : "1"}`;
+      assert.equal(projected.process_control.business_process_type, code);
+      assert.equal(prepared.business_process_type, code);
+      assert.equal(prepared.operation_kind, operation);
+      assert.deepEqual(
+        projected.process_control,
+        invoice.structured.en_invoice_candidate.process_control,
+      );
+      assert.deepEqual(
+        await db.systemPrisma.facture.findUniqueOrThrow({
+          where: { id: invoice.id },
+        }),
+        before,
+      );
+      assert.deepEqual(fs.readFileSync(invoice.pdfPath), invoice.pdf);
+    }
+  }
+  assert.equal(sendCount, beforeSend);
+});
+
+test("B2B : ancien choix absent, mode incohérent, cadre particulier et acompte partiel bloqués avant tout effet distant", async () => {
+  for (const variant of [
+    "legacy",
+    "unknown",
+    "missing",
+    "wrong-prefix",
+    "wrong-paid",
+    "special",
+    "partial",
+  ]) {
+    const invoice = await newInvoice();
+    const original = await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: invoice.id },
+    });
+    const snapshot = JSON.parse(original.immutable_snapshot!);
+    const structured = snapshot.structured_invoice;
+    const source = structured.en_invoice_candidate;
+    if (variant === "legacy") {
+      delete structured.operation_kind;
+      delete source.process_control;
+    }
+    if (variant === "unknown") structured.operation_kind = "unknown";
+    if (variant === "missing")
+      delete source.process_control.business_process_type;
+    if (variant === "wrong-prefix")
+      source.process_control.business_process_type = "B1";
+    if (variant === "wrong-paid")
+      source.process_control.business_process_type = "S2";
+    if (variant === "special")
+      source.process_control.business_process_type = "S4";
+    if (variant === "partial") {
+      source.totals.paid_amount = "30.00";
+      source.totals.amount_due_for_payment = "90.00";
+    }
+    await db.systemPrisma.facture.update({
+      where: { id: invoice.id },
+      data: { immutable_snapshot: JSON.stringify(snapshot) },
+    });
+    const before = await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: invoice.id },
+    });
+    const beforeCalls = calls.length;
+    const view = await within(() => service.view(invoice.id));
+    assert.equal(view.available, false);
+    assert.match(view.reason!, /mode B2B/);
+    await assert.rejects(
+      within(() => service.prepare(invoice.id, input, actor)),
+      { code: "SUPERPDP_BUSINESS_PROCESS_REQUIRED" },
+    );
+    assert.equal(calls.length, beforeCalls);
+    assert.equal(
+      await db.systemPrisma.electronicInvoiceTransmission.count({
+        where: { invoice_id: invoice.id },
+      }),
+      0,
+    );
+    assert.deepEqual(
+      await db.systemPrisma.facture.findUniqueOrThrow({
+        where: { id: invoice.id },
+      }),
+      before,
+    );
+    assert.deepEqual(fs.readFileSync(invoice.pdfPath), invoice.pdf);
+  }
+});
+
+test("B2B : le worker refuse aussi une ancienne préparation sans mode, sans réparer les données figées", async () => {
+  const invoice = await newInvoice();
+  const queued = await within(() => service.prepare(invoice.id, input, actor));
+  const original = await db.systemPrisma.facture.findUniqueOrThrow({
+    where: { id: invoice.id },
+  });
+  const snapshot = JSON.parse(original.immutable_snapshot!);
+  delete snapshot.structured_invoice.operation_kind;
+  delete snapshot.structured_invoice.en_invoice_candidate.process_control;
+  const immutable_snapshot = JSON.stringify(snapshot);
+  await db.systemPrisma.facture.update({
+    where: { id: invoice.id },
+    data: { immutable_snapshot },
+  });
+  await db.systemPrisma.electronicInvoiceTransmission.update({
+    where: { id: queued.transmission!.id },
+    data: {
+      snapshot_sha256: crypto
+        .createHash("sha256")
+        .update(immutable_snapshot)
+        .digest("hex"),
+    },
+  });
+  const beforeCalls = calls.length;
+  await assert.rejects(
+    within(() =>
+      service.processPrepare(queued.transmission!.id, queued.revision),
+    ),
+    { code: "SUPERPDP_BUSINESS_PROCESS_REQUIRED" },
+  );
+  assert.equal(calls.length, beforeCalls);
+  assert.equal((await row(invoice.id)).status, "prepare_failed");
+  assert.equal(
+    (
+      await db.systemPrisma.facture.findUniqueOrThrow({
+        where: { id: invoice.id },
+      })
+    ).immutable_snapshot,
+    immutable_snapshot,
+  );
+  assert.deepEqual(fs.readFileSync(invoice.pdfPath), invoice.pdf);
+});
 
 test("les anciennes factures B2B sans mentions figées restent intactes et ne sont pas préparées", async () => {
   for (const missing of ["all", "PMD", "PMT", "AAB", "blank"]) {

@@ -691,6 +691,8 @@ test("le détail fiscal incomplet ou déséquilibré bloque avant le compteur et
 test("une mention B2B manquante bloque avant numérotation sans empêcher de sauver le brouillon", async () => {
   const draft = await createDraft();
   const fiscal = draft.fiscal_input;
+  fiscal.operation_kind = "services";
+  fiscal.paid_amount = 0;
   Object.assign(fiscal.buyer, { kind: "business", siren: "552100554" });
   fiscal.b2b_payment_mentions = {
     late_payment_penalties: "Pénalités fictives de recette.",
@@ -725,6 +727,61 @@ test("une mention B2B manquante bloque avant numérotation sans empêcher de sau
     }),
     before,
   );
+});
+
+test("le choix B2B est enregistré au brouillon et exigé avant numérotation sans être inventé", async () => {
+  const draft = await createDraft();
+  const fiscal = draft.fiscal_input;
+  Object.assign(fiscal.buyer, { kind: "business", siren: "552100554" });
+  fiscal.b2b_payment_mentions = {
+    late_payment_penalties: "Pénalités de recette.",
+    recovery_fee: "Indemnité de recette.",
+    early_payment_discount: "Aucun escompte de recette.",
+  };
+  let revision = draft.revision;
+  for (const [operation_kind, paid_amount] of [
+    ["unknown", 0],
+    ["services", 30],
+  ] as const) {
+    const saved = await request(`/invoices/${draft.id}`, "PUT", {
+      ...payload,
+      revision,
+      fiscal_input: { ...fiscal, operation_kind, paid_amount },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    revision = saved.body.revision;
+    assert.equal(saved.body.fiscal_input.operation_kind, operation_kind);
+    const before = await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: draft.id },
+    });
+    const sequences = await db.systemPrisma.invoiceSequence.findMany();
+    const rejected = await request(`/invoices/${draft.id}/issue`, "POST", {
+      revision,
+    });
+    assert.equal(rejected.status, 409);
+    assert.match(
+      JSON.stringify(rejected.body),
+      operation_kind === "unknown"
+        ? /nature de l’opération/
+        : /paiements partiels/,
+    );
+    assert.deepEqual(
+      await db.systemPrisma.invoiceSequence.findMany(),
+      sequences,
+    );
+    assert.deepEqual(
+      await db.systemPrisma.facture.findUniqueOrThrow({
+        where: { id: draft.id },
+      }),
+      before,
+    );
+  }
+  const malformed = await request(`/invoices/${draft.id}`, "PUT", {
+    ...payload,
+    revision,
+    fiscal_input: { ...fiscal, operation_kind: "S1", paid_amount: 0 },
+  });
+  assert.equal(malformed.status, 400);
 });
 
 test("TVA multi-taux, adresse structurée, encaissements explicites et export figé", async () => {
@@ -762,6 +819,7 @@ test("TVA multi-taux, adresse structurée, encaissements explicites et export fi
     vat_number: "FR00123456789",
     address_line1: "Adresse fiscale différente",
   };
+  fiscal.operation_kind = "services";
   fiscal.b2b_payment_mentions = {
     late_payment_penalties: "Pénalités convenues pour la recette.",
     recovery_fee: "Indemnité convenue pour la recette.",
@@ -793,6 +851,21 @@ test("TVA multi-taux, adresse structurée, encaissements explicites et export fi
   );
   assert.equal(exported.body.en_invoice_candidate.vat_break_down.length, 2);
   assert.equal(exported.body.processing_rule_candidate, "B2B");
+  assert.equal(exported.body.operation_kind, "services");
+  assert.equal(
+    exported.body.en_invoice_candidate.process_control.business_process_type,
+    "S1",
+  );
+  assert.equal(
+    (
+      await request(`/invoices/${draft.id}`, "PUT", {
+        ...payload,
+        revision: issued.body.revision,
+        fiscal_input: { ...fiscal, operation_kind: "goods" },
+      })
+    ).status,
+    409,
+  );
   assert.deepEqual(exported.body.en_invoice_candidate.notes, [
     {
       subject_code: "PMD",
@@ -839,9 +912,83 @@ test("TVA multi-taux, adresse structurée, encaissements explicites et export fi
     exported.body.en_invoice_candidate.vat_break_down,
   );
   assert.equal(creditExport.body.document_sign, -1);
+  assert.equal(creditExport.body.operation_kind, "services");
+  assert.equal(
+    creditExport.body.en_invoice_candidate.process_control
+      .business_process_type,
+    "S1",
+  );
   assert.deepEqual(
     creditExport.body.en_invoice_candidate.notes,
     exported.body.en_invoice_candidate.notes,
+  );
+});
+
+test("un avoir d’ancienne facture B2B reste localement possible sans requalifier sa nature rétroactivement", async () => {
+  const draft = await createDraft();
+  const fiscal = draft.fiscal_input;
+  Object.assign(fiscal.buyer, { kind: "business", siren: "552100554" });
+  Object.assign(fiscal, {
+    operation_kind: "goods",
+    paid_amount: 0,
+    b2b_payment_mentions: {
+      late_payment_penalties: "Pénalités de recette.",
+      recovery_fee: "Indemnité de recette.",
+      early_payment_discount: "Aucun escompte de recette.",
+    },
+  });
+  const saved = await request(`/invoices/${draft.id}`, "PUT", {
+    ...payload,
+    revision: draft.revision,
+    fiscal_input: fiscal,
+  });
+  assert.equal(saved.status, 200);
+  const issued = await request(`/invoices/${draft.id}/issue`, "POST", {
+    revision: saved.body.revision,
+  });
+  assert.equal(issued.status, 200, JSON.stringify(issued.body));
+  const current = await db.systemPrisma.facture.findUniqueOrThrow({
+    where: { id: draft.id },
+  });
+  // Represent an actual pre-change immutable snapshot; never modify a user's issued document.
+  const legacyFiscal = JSON.parse(current.fiscal_data!);
+  const legacySnapshot = JSON.parse(current.immutable_snapshot!);
+  delete legacyFiscal.operation_kind;
+  delete legacySnapshot.invoice.fiscal.operation_kind;
+  delete legacySnapshot.structured_invoice.operation_kind;
+  delete legacySnapshot.structured_invoice.en_invoice_candidate.process_control;
+  await db.systemPrisma.facture.update({
+    where: { id: draft.id },
+    data: {
+      fiscal_data: JSON.stringify(legacyFiscal),
+      immutable_snapshot: JSON.stringify(legacySnapshot),
+    },
+  });
+  const before = await db.systemPrisma.facture.findUniqueOrThrow({
+    where: { id: draft.id },
+  });
+  const credit = await request(`/invoices/${draft.id}/credit-note`, "POST", {
+    reason: "Annulation de recette d’un ancien document",
+  });
+  assert.equal(credit.status, 201);
+  assert.equal(credit.body.fiscal_input.operation_kind, "unknown");
+  const issuedCredit = await request(
+    `/invoices/${credit.body.id}/issue`,
+    "POST",
+    { revision: credit.body.revision },
+  );
+  assert.equal(issuedCredit.status, 200, JSON.stringify(issuedCredit.body));
+  const structured = await request(`/invoices/${credit.body.id}/structured`);
+  assert.equal(structured.body.operation_kind, "unknown");
+  assert.equal(
+    structured.body.en_invoice_candidate.process_control.business_process_type,
+    undefined,
+  );
+  assert.deepEqual(
+    await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: draft.id },
+    }),
+    before,
   );
 });
 

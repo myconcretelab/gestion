@@ -116,6 +116,24 @@ Les nouveaux tests couvrent notamment les requêtes multipart réelles au niveau
 
 Vérification finale : suite complète réussie (14 tests partagés, 385 serveur et 102 client, soit 501), compilation complète réussie et lint sans erreur (36 avertissements de hooks préexistants). La suite a été exécutée avec une base de repli temporaire et sans alias `DATABASE_URL_SQLITE` hérité, afin que les scénarios d'installation puissent migrer leurs propres bases isolées. Aucun reset ni seed de la base utilisateur n'a été exécuté.
 
+### Nature d'opération B2B — ajout autorisé du 16/10/2026
+
+Le prérequis BT-23 ci-dessus est désormais pris en charge pour le lot B2B ordinaire. Dans le brouillon, après le choix d'un client entreprise, un sélecteur permet de qualifier explicitement **biens**, **services** ou **mixte** (biens et services distincts, non simplement plusieurs taux de TVA). La valeur initiale et la lecture des anciens JSON restent `unknown` ; rien n'est déduit du gîte, du libellé, du gestionnaire ou des taux. Reproposer les lignes ne remplace pas le choix déjà saisi et toute modification du choix retire la confirmation de revue fiscale.
+
+Le champ `operation_kind` est conservé dans les données fiscales existantes et dans l'instantané structuré à l'émission, sans nouvelle table ni migration. Un choix absent bloque l'émission d'une nouvelle facture B2B avant numérotation. Les cadres ordinaires B1/S1/M1 ou entièrement payés B2/S2/M2 sont déterminés à partir du choix et des seuls montants réellement reçus figés à l'émission. Un solde nul sans somme reçue ne suffit pas à déclarer une facture « déjà payée ». Le statut de paiement courant et les encaissements ultérieurs ne recalculent jamais ce cadre.
+
+Les avoirs du nouveau parcours reprennent la nature de leur facture source ; l'avoir intégral sans paiement utilise le cadre ordinaire correspondant. Les avoirs d'anciens documents peuvent rester possibles localement sans inventer une nature absente, mais ils ne deviennent pas transmissibles pour autant. Les factures déjà émises et leurs PDF ne sont pas modifiés. La fiche de facture et le panneau SuperPDP présentent les informations figées ; aucun choix de nature n'est accepté au moment du dépôt.
+
+La préparation B2B exige une nature figée et un mode compatible avec elle, le type de document et les montants. Un cadre absent, incohérent ou particulier est bloqué avant conversion ; le contrôle est également appliqué aux tâches de préparation/dépôt et aux demandes directes de dépôt. Une ancienne préparation ne reçoit pas de valeur de repli. Le suivi d'un dépôt déjà tenté reste consultable sans réautoriser son renvoi.
+
+Ce lot ne qualifie pas les factures de solde après acompte, les opérations déjà déclarées, la sous-traitance, les factures multi-vendeurs ou les autres cadres particuliers. Les paiements partiels à l'émission sont bloqués pour une nouvelle facture B2B et pour sa préparation, au lieu de leur attribuer un cadre ordinaire par défaut. Faire examiner ces cas avant de développer leur parcours. Le choix B2B ne détermine pas le profil de e-reporting B2C ; ses confirmations, régimes, limites et exclusion du mixte restent inchangés.
+
+Références techniques consultées : [OpenAPI SuperPDP](https://api.superpdp.tech/openapi/superpdp.json) `1.37.0.beta`, schéma `process_control` (BT-23), et nomenclature BR-FR-08 des cadres de facturation de la norme AFNOR XP Z12-012, référencée par la [DGFiP](https://www.impots.gouv.fr/specifications-externes-b2b). La validation fournisseur complète reste requise pour chaque document préparé : ces mappings ne certifient pas la qualification fiscale d'une location.
+
+Les tests couvrent les trois choix, les factures ordinaires/payées/à total nul, les avoirs, les valeurs malformées, l'enregistrement des brouillons, le refus avant numérotation, le gel après émission, le transport du cadre sans recalcul, les anciennes données/tâches et le parcours B2C inchangé. Les fournisseurs sont simulés dans les tests automatisés, avec bases temporaires ; aucun consentement, dépôt réel ou activation de worker n'est impliqué par cette livraison.
+
+Vérification finale de cet ajout : 512 tests réussis (17 partagés, 391 serveur, 104 client), compilation complète réussie, lint sans erreur et 36 avertissements de hooks préexistants. Le serveur localhost répond au contrôle de santé ; la base utilisateur ne contient toujours aucune facture, transmission ni réception. Aucun appel réel à SuperPDP, modification des identités locales, déploiement ou activation des lots n'a été effectué pendant cet ajout.
+
 ## Matrice de recette avec preuves
 
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
