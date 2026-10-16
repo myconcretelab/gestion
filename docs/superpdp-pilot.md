@@ -36,6 +36,26 @@ Les validations humaines ne peuvent pas être cochées pour « débloquer » la 
 
 Les valeurs réelles ne doivent pas être inscrites dans ce guide. Les accès de `.PDP` restent locaux et ignorés par Git ; leur présence n’est pas une autorisation de les utiliser automatiquement. Un consentement humain et une autorisation explicite de recette réelle sont encore nécessaires.
 
+## Variante locale sur localhost:5173
+
+La recette peut commencer sur `http://localhost:5173/`, sans site Alwaysdata supplémentaire ni déploiement. Vite transmet `/api` au serveur Node local sur le port `4000`. Le callback repasse par ce proxy ; conserver le même navigateur, la même session propriétaire et le même nom d’hôte pendant tout le consentement. `localhost` et `127.0.0.1` ne sont pas interchangeables pour la session et l’URL enregistrée.
+
+Avant d’utiliser les données présentes, vérifier le fichier SQLite réellement ouvert par le processus Node, le `DATA_DIR` résolu et les éventuels liens symboliques. Une URL locale ne garantit pas une base locale. Faire une sauvegarde SQLite cohérente et privée avant les migrations ; appliquer les migrations existantes sur cette seule base, sans reset ni seed, puis vérifier l’intégrité, les clés étrangères et la conservation des données métier. La présence du code dans Git ne signifie pas que ces migrations ont été appliquées à la base utilisée par le serveur de développement.
+
+En développement uniquement, le connecteur accepte ce retour HTTP local, à enregistrer **à l’identique** dans l’application OAuth SuperPDP :
+
+```text
+http://localhost:5173/api/fiscal-entities/superpdp/oauth/callback
+```
+
+La configuration Node doit employer `APP_PUBLIC_URL=http://localhost:5173`, `CLIENT_ORIGIN=http://localhost:5173` et cette valeur pour `SUPERPDP_SANDBOX_REDIRECT_URI`, avec une clé cryptographique propre à ce serveur dans `SUPERPDP_SECRETS_KEY`. Ne jamais afficher cette clé ni les valeurs de `.PDP`. Protéger les fichiers d’environnement et les sauvegardes avec le mode `600`. Les modifications d’environnement nécessitent un redémarrage maîtrisé du serveur ; ne pas arrêter un processus ni activer des automatisations annexes sans vérifier son rôle.
+
+Commencer avec tous les lots désactivés. Après configuration et autorisation de la recette, activer seulement la connexion sandbox, faire le consentement humain et contrôler l’identité attendue ; l’émission, la réception et le B2C s’activent séparément quand leur scénario est prêt. Leur activation n’est pas un effet implicite de la migration ou de l’ajout de données de démonstration.
+
+Si aucune entreprise fiscale n’est encore enregistrée, renseigner les identités de test vérifiées, les établissements et les rattachements des gîtes avant la première émission. Ne pas déduire un SIREN/SIRET légal du seul champ `number` d’une entreprise sandbox ni de son adresse d’annuaire. Utiliser un exemple fournisseur cohérent ou des identités fictives explicitement qualifiées pour la recette ; ne pas figer un PDF sous une identité inventée puis essayer de la remplacer pour le dépôt. Aucun brouillon ne doit être émis automatiquement pour simplement tester l’interface.
+
+La réception actuelle interroge l’API depuis Node : aucun webhook ni tunnel public n’est nécessaire pour ce parcours. Le serveur local doit rester démarré pendant le retour OAuth et les traitements ; un redémarrage ne doit pas rejouer un dépôt ou un encaissement incertain.
+
 ## Matrice de recette avec preuves
 
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
