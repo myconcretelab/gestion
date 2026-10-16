@@ -1,0 +1,40 @@
+.superpdp-readiness {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--primary-soft);
+  overflow-wrap: anywhere;
+}
+.superpdp-readiness-counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 12px;
+  margin-block: 16px;
+}
+.superpdp-readiness-counters > div {
+  background: var(--primary-soft);
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 0;
+}
+.superpdp-readiness h4 {
+  margin-block: 12px;
+}
+.superpdp-readiness-checks {
+  list-style: none;
+  padding: 0;
+}
+.superpdp-readiness-checks > li {
+  padding: 12px;
+  margin-block: 8px;
+  border: 1px solid var(--primary-soft);
+  border-radius: 10px;
+}
+.superpdp-readiness-state {
+  display: inline-block;
+  padding: 4px 8px;
+  margin-right: 6px;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: 0.85em;
+}

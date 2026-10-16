@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../../utils/api";
+import SuperPdpReadinessPanel from "./SuperPdpReadinessPanel";
 
 type Connection = {
   fiscal_entity_id: string | null;
@@ -331,6 +332,7 @@ export default function SuperPdpConnectionSettings({
           </p>
         </>
       )}
+      <SuperPdpReadinessPanel key={entityId} entityId={entityId} />
     </section>
   );
 }

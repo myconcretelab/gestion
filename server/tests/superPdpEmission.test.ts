@@ -612,6 +612,12 @@ before(async () => {
     "/api/invoices",
     createSuperPdpEmissionRouter(service, paymentsService),
   );
+  const { createSuperPdpRouter } =
+    await import("../src/modules/superpdp/routes.js");
+  app.use(
+    "/api/fiscal-entities",
+    createSuperPdpRouter(new SuperPdpService(new SuperPdpProvider(fakeFetch))),
+  );
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
@@ -1803,6 +1809,257 @@ test("encaissements : un avoir local émis bloque les nouveaux mouvements et les
     "SUPERPDP_PAYMENT_CREDITED",
   );
   assert.equal(paymentSendCount, before);
+});
+
+const readiness = async (entityId = "entity-a", cookie = cookieA) => {
+  const response = await fetch(
+    `${origin}/api/fiscal-entities/${entityId}/superpdp/readiness`,
+    { headers: cookie ? { cookie } : {} },
+  );
+  return {
+    status: response.status,
+    headers: response.headers,
+    body: await response.json(),
+  };
+};
+
+test("bilan de recette : lecture propriétaire, isolement des comptes et réponses privées", async () => {
+  assert.equal((await readiness("entity-a", "")).status, 401);
+  assert.equal((await readiness("entity-a", cookieWorker)).status, 403);
+  assert.equal((await readiness("entity-a", cookieB)).status, 404);
+  assert.equal((await readiness("entity-b", cookieA)).status, 404);
+  const own = await readiness("entity-b", cookieB);
+  assert.equal(own.status, 200);
+  assert.equal(own.headers.get("cache-control"), "no-store");
+  assert.equal(own.headers.get("referrer-policy"), "no-referrer");
+  assert.equal(own.body.fiscal_entity_id, "entity-b");
+  assert.equal(own.body.counts.transmissions.total, 0);
+  assert.equal(own.body.counts.payments.total, 0);
+  assert.equal(own.body.production.enabled, false);
+  assert.equal(own.body.read_only, true);
+});
+
+test("bilan de recette : aucun appel fournisseur, aucun déchiffrement requis ni écriture métier", async () => {
+  const originalFetch = globalThis.fetch;
+  const providerCalls = calls.length;
+  const before = await db.systemPrisma.superPdpConnection.findUniqueOrThrow({
+    where: { id: "connection-a" },
+  });
+  const jobs = await db.systemPrisma.organizationJob.count();
+  const audits = await db.systemPrisma.auditLog.count();
+  let result: Awaited<ReturnType<typeof readiness>>;
+  try {
+    globalThis.fetch = async (input, init) => {
+      assert.equal(
+        new URL(String(input)).origin,
+        origin,
+        "Readiness must never call a provider endpoint",
+      );
+      return originalFetch(input, init);
+    };
+    result = await readiness();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(result!.status, 200);
+  assert.equal(calls.length, providerCalls);
+  assert.deepEqual(
+    await db.systemPrisma.superPdpConnection.findUniqueOrThrow({
+      where: { id: "connection-a" },
+    }),
+    before,
+  );
+  assert.equal(await db.systemPrisma.organizationJob.count(), jobs);
+  assert.equal(await db.systemPrisma.auditLog.count(), audits);
+  const serialized = JSON.stringify(result!.body);
+  for (const secret of [
+    "fake-secret",
+    "fake-access",
+    "fake-refresh",
+    "encrypted_tokens",
+    "encrypted_client_secret",
+    "client_id",
+    "payload_json",
+    companyId,
+  ])
+    assert.equal(serialized.includes(secret), false);
+  assert.equal(
+    result!.body.manual_checks.every(
+      (c: { state: string }) => c.state === "not_verified",
+    ),
+    true,
+  );
+  assert.equal(result!.body.production.status, "blocked");
+});
+
+test("bilan de recette : comptages par entreprise, incertitudes et suspensions jamais transformées en feu vert", async () => {
+  const transmission =
+    await db.systemPrisma.electronicInvoiceTransmission.findFirstOrThrow({
+      where: { organization_id: orgA, fiscal_entity_id: "entity-a" },
+    });
+  await db.systemPrisma.electronicInvoiceEvent.create({
+    data: {
+      organization_id: orgA,
+      transmission_id: transmission.id,
+      event_key: "remote:999999",
+      status_code: "api:invalid",
+      occurred_at: new Date(),
+      payload_json: "{}",
+    },
+  });
+  // Explicit fixture: the SQLite-only backup scenario must not be a dependency of this test.
+  const pausedPayment =
+    await db.systemPrisma.electronicInvoicePayment.findFirstOrThrow({
+      where: { organization_id: orgA },
+    });
+  await db.systemPrisma.electronicInvoicePayment.update({
+    where: { id: pausedPayment.id },
+    data: { status: "paused_after_restore" },
+  });
+  const report = (await readiness()).body;
+  assert.equal(
+    report.counts.transmissions.total,
+    await db.systemPrisma.electronicInvoiceTransmission.count({
+      where: {
+        organization_id: orgA,
+        fiscal_entity_id: "entity-a",
+        environment: "sandbox",
+      },
+    }),
+  );
+  assert.ok(report.counts.transmissions.uncertain > 0);
+  assert.ok(report.counts.transmissions.paused > 0);
+  assert.ok(report.counts.payments.uncertain > 0);
+  assert.ok(report.counts.payments.paused > 0);
+  assert.ok(report.counts.transmissions.historical_remote_errors > 0);
+  assert.equal(
+    report.checks.find((c: { id: string }) => c.id === "transmissions").state,
+    "action_required",
+  );
+  assert.equal(
+    report.checks.find((c: { id: string }) => c.id === "payments").state,
+    "action_required",
+  );
+  assert.equal(report.production.enabled, false);
+});
+
+test("bilan de recette : gardes désactivées et clé invalide restent consultables sans dévoiler la configuration", async () => {
+  const saved = {
+    key: runtime.env.SUPERPDP_SECRETS_KEY,
+    sandbox: runtime.env.SUPERPDP_SANDBOX_ENABLED,
+    worker: runtime.env.ORGANIZATION_JOB_WORKER_ENABLED,
+  };
+  try {
+    runtime.env.SUPERPDP_SANDBOX_ENABLED = false;
+    runtime.env.ORGANIZATION_JOB_WORKER_ENABLED = false;
+    let result = await readiness();
+    assert.equal(result.status, 200);
+    assert.equal(result.body.capabilities.sandbox_enabled, false);
+    assert.equal(
+      result.body.checks.find((c: { id: string }) => c.id === "configuration")
+        .state,
+      "action_required",
+    );
+    assert.equal(
+      result.body.checks.find((c: { id: string }) => c.id === "worker").state,
+      "action_required",
+    );
+    runtime.env.SUPERPDP_SANDBOX_ENABLED = true;
+    runtime.env.SUPERPDP_SECRETS_KEY = "INVALID-SECRET-MUST-NOT-APPEAR";
+    result = await readiness();
+    assert.equal(result.status, 200);
+    assert.equal(
+      JSON.stringify(result.body).includes(runtime.env.SUPERPDP_SECRETS_KEY),
+      false,
+    );
+    assert.equal(result.body.production.enabled, false);
+  } finally {
+    runtime.env.SUPERPDP_SECRETS_KEY = saved.key;
+    runtime.env.SUPERPDP_SANDBOX_ENABLED = saved.sandbox;
+    runtime.env.ORGANIZATION_JOB_WORKER_ENABLED = saved.worker;
+  }
+});
+
+test("bilan de recette : une configuration locale sans anomalie ne certifie jamais la production", async () => {
+  const entityId = "readiness-clean-entity";
+  await db.systemPrisma.fiscalEntity.create({
+    data: {
+      id: entityId,
+      organization_id: orgA,
+      siren: "552100554",
+      legal_name: "Recette fictive",
+      vat_regime: "reel_normal",
+      vat_number: "FR80552100554",
+      address_line1: "1 rue fictive",
+      postal_code: "35000",
+      city: "Rennes",
+    },
+  });
+  await db.systemPrisma.fiscalEstablishment.create({
+    data: {
+      organization_id: orgA,
+      fiscal_entity_id: entityId,
+      name: "Siège fictif",
+      siret: "55210055400013",
+    },
+  });
+  await db.systemPrisma.superPdpConnection.create({
+    data: {
+      organization_id: orgA,
+      fiscal_entity_id: entityId,
+      local_siren: "552100554",
+      client_id: "fake-client",
+      expected_number: "fake-number",
+      encrypted_client_secret: "UNREADABLE-SECRET-NOT-LOADED",
+      encrypted_tokens: "UNREADABLE-TOKENS-NOT-LOADED",
+      status: "connected",
+      remote_company_id: "99991",
+      verification_status: "verified",
+      last_checked_at: new Date(),
+    },
+  });
+  const worker = runtime.env.ORGANIZATION_JOB_WORKER_ENABLED;
+  runtime.env.ORGANIZATION_JOB_WORKER_ENABLED = true;
+  try {
+    const report = (await readiness(entityId)).body;
+    assert.equal(report.summary.local_actions, 0);
+    assert.equal(report.summary.state, "manual_checks_required");
+    assert.equal(report.production.enabled, false);
+    assert.equal(report.production.status, "blocked");
+    assert.equal(
+      report.manual_checks.every(
+        (c: { state: string }) => c.state === "not_verified",
+      ),
+      true,
+    );
+    assert.equal(
+      report.checks.find((c: { id: string }) => c.id === "connection").state,
+      "observed",
+    );
+    assert.equal(JSON.stringify(report).includes("UNREADABLE-"), false);
+    await db.systemPrisma.superPdpConnection.updateMany({
+      where: { fiscal_entity_id: entityId },
+      data: { last_checked_at: new Date(Date.now() - 25 * 3_600_000) },
+    });
+    assert.equal(
+      (await readiness(entityId)).body.checks.find(
+        (c: { id: string }) => c.id === "connection",
+      ).state,
+      "action_required",
+    );
+    await db.systemPrisma.superPdpConnection.updateMany({
+      where: { fiscal_entity_id: entityId },
+      data: { last_checked_at: new Date(), encrypted_tokens: null },
+    });
+    assert.equal(
+      (await readiness(entityId)).body.checks.find(
+        (c: { id: string }) => c.id === "connection",
+      ).state,
+      "action_required",
+    );
+  } finally {
+    runtime.env.ORGANIZATION_JOB_WORKER_ENABLED = worker;
+  }
 });
 
 test("une entreprise de production retournée lors de l’exécution reste refusée avant conversion ou dépôt", async () => {

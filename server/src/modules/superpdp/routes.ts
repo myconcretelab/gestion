@@ -7,6 +7,7 @@ import {
 import { getOrganizationId } from "../organizations/context.js";
 import { SuperPdpService, type OAuthActor } from "./service.js";
 import { digest, superPdpError } from "./secrets.js";
+import { SuperPdpReadiness } from "./readiness.js";
 
 export const actorFor = async (req: Request): Promise<OAuthActor> => {
   const session = await getServerAuthSessionFromRequest(req);
@@ -61,7 +62,10 @@ export const safeErrorResponse = (error: unknown) => {
   };
 };
 
-export const createSuperPdpRouter = (service = new SuperPdpService()) => {
+export const createSuperPdpRouter = (
+  service = new SuperPdpService(),
+  readiness = new SuperPdpReadiness(),
+) => {
   const router = Router();
   router.use((_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
@@ -96,6 +100,15 @@ export const createSuperPdpRouter = (service = new SuperPdpService()) => {
     try {
       await actorFor(req);
       res.json(await service.status(req.params.entityId));
+    } catch (error) {
+      const safe = safeErrorResponse(error);
+      res.status(safe.status).json(safe.body);
+    }
+  });
+  router.get("/:entityId/superpdp/readiness", async (req, res) => {
+    try {
+      await actorFor(req);
+      res.json(await readiness.view(req.params.entityId));
     } catch (error) {
       const safe = safeErrorResponse(error);
       res.status(safe.status).json(safe.body);

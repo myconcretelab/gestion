@@ -267,6 +267,14 @@ API réservée au propriétaire authentifié et au bon compte, origine obligatoi
 
 La migration additive `20261016230000_superpdp_b2c_payments` est fournie pour SQLite/PostgreSQL. Les sauvegardes et la conversion conservent le profil et les encaissements, suspendent les messages et neutralisent leurs tâches ; aucun ancien paiement ne repart après restauration, même si la copie précède sa tentative réelle. Les tests utilisent uniquement un fournisseur simulé et des bases temporaires, jamais les accès `.PDP` ni une entreprise réelle. Avant toute activation future : faire la recette sandbox avec validation Factur-X réelle, vérifier l’extraction des transactions, le résultat des 212 dans SuperPDP et l’absence de doublons, puis qualifier séparément les cas exclus. Aucun déploiement n’est requis pour poursuivre les développements locaux.
 
+## Préparation de la recette et du pilote SuperPDP (étape 8)
+
+Dans la fiche de connexion d’une entreprise, **Établir le bilan local de préparation** donne un état en lecture seule : configuration, inventaire fiscal, dernière observation OAuth, historiques d’émission/encaissement et réception. `GET /api/fiscal-entities/:entityId/superpdp/readiness` exige le propriétaire authentifié du même compte. Aucun appel fournisseur, déchiffrement de secret, écriture métier ou lancement de tâche n’est effectué. Les consultations restent possibles avec les connecteurs désactivés ; aucun nouveau schéma, secret ou interrupteur de production n’est ajouté.
+
+Les observations locales sont séparées des validations humaines non attestées. Un dépôt, un reçu 212, une présence de jetons en base ou des tests simulés ne prouvent pas la recette réelle. La réponse reste toujours `production.enabled=false` et `production.status=blocked`, même sans anomalie locale : **le connecteur de production n’est pas implémenté et aucun déploiement n’est autorisé par le bilan**.
+
+Le [guide de recette et de préparation du pilote](docs/superpdp-pilot.md) fournit les prérequis, les scénarios/preuves, les exclusions fiscales, le chantier de production restant, les conditions d’autorisation d’un futur déploiement complet Alwaysdata et la procédure d’arrêt sans rejeu. La recette réelle avec consentement humain et les validations de périmètre restent à faire ; cette étape ne les exécute pas.
+
 ## Stripe en mode test
 
 La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.
