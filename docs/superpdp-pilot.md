@@ -80,6 +80,26 @@ Sur l’installation localhost, cette migration a été appliquée après sauveg
 
 La suite automatisée complète, la compilation et le lint ont réussi (36 avertissements de hooks préexistants, aucune erreur). Les tests renforcés couvrent notamment le numéro sandbox avec zéros initiaux, le chiffrement et l’isolement sans SIREN, les identités distantes inattendues, le changement d’identité après configuration et le refus d’émission locale/de préparation de transport. La migration a également été vérifiée sur une base PostgreSQL temporaire isolée : chaîne complète, conservation de lignes préexistantes, acceptation du SIREN absent uniquement en sandbox et maintien des clés étrangères. Ce serveur temporaire a été arrêté ; aucun déploiement ni modification de production n’a été effectué.
 
+### Reprise des contrôles réels du 16/10/2026 — sans dépôt
+
+Contrôles réalisés sur localhost à partir de la révision `92fd5e6`, avec l'entreprise fictive Burger Queen et sa connexion sandbox existante. La vérification normale depuis l'interface a confirmé l'identité attendue et renouvelé les accès via le backend. La session fournisseur, l'entreprise sandbox et ses deux adresses Peppol ont été contrôlées en lecture seule. Aucun secret ni jeton n'a été affiché ou versionné.
+
+Un exemple Factur-X généré par l'API fournisseur, sans création de facture distante, a passé les 182 contrôles de son rapport de validation. Une seconde preuve isolée a réutilisé le moteur PDF de l'application et son constructeur de données structurées avec des identités fictives fournies explicitement par l'exemple SuperPDP : deux lignes, deux taux, 150 EUR HT, 25 EUR de TVA et 175 EUR TTC. Elle n'a créé ni facture locale, ni numéro officiel, ni transmission, ni paiement.
+
+Cette preuve a identifié trois écarts à corriger dans le connecteur applicatif avant de poursuivre :
+
+- aligner le format source de conversion sur `from=en16931`, au lieu de `from=json`, conformément au contrat OpenAPI vérifié ;
+- limiter les prix unitaires nets à six décimales au maximum, au lieu des huit actuellement générées (`BR-FR-DEC-03 / BT-146`) ;
+- fournir les notes structurées de paiement B2B requises, notamment l'indemnité de recouvrement (`BR-FR-05 / BT-22`, code PMT), avec des conditions qualifiées et cohérentes avec le PDF. Les valeurs de démonstration du fournisseur ne constituent pas des paramètres métier à reprendre automatiquement.
+
+Ces adaptations ont été appliquées uniquement au script de diagnostic temporaire, pas au code applicatif. L'exemple fournisseur n'ayant pas de SIRET, ses identifiants optionnels ont également été repris sans fabriquer de SIRET ; cette facilité du test isolé ne modifie pas les contrôles d'émission locale.
+
+Avec ces adaptations, la conversion réelle et la validation réelle ont réussi : Factur-X EN16931, 191 contrôles, zéro échec. L'XML embarqué contient les totaux attendus. Les rendus raster du PDF source et du Factur-X sont identiques ; le document d'une page a été inspecté visuellement. Les PDF et preuves expurgées sont conservés hors Git. Cette preuve confirme la réutilisation du rendu actuel, **pas** le succès du parcours complet R03 : aucune émission figée, aucun dépôt ni suivi de facture distante n'a été effectué.
+
+Le contrôle final de la base locale retrouve zéro facture, transmission, facture reçue et paiement électronique. L'identité fiscale locale est inchangée : SIREN/SIRET absents, régime TVA et adresse à compléter après qualification. Ne pas remplacer le SIREN par le numéro sandbox ni modifier une identité connectée sans suivre le parcours de déconnexion/reconfiguration. Émission, réception, B2C et workers restent désactivés. Aucun déploiement, changement de production ou modification du connecteur n'a été réalisé pendant cette reprise. Les corrections ci-dessus restent à autoriser et à intégrer avec leurs tests avant la suite de la recette.
+
+Références du contrat consulté : [documentation officielle](https://www.superpdp.tech/openapi/) et [OpenAPI JSON](https://api.superpdp.tech/openapi/superpdp.json), version observée `1.37.0.beta`. Les rapports et empreintes de cette exécution restent privés conformément au modèle de preuve ci-dessous.
+
 ## Matrice de recette avec preuves
 
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
