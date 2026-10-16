@@ -36,9 +36,13 @@ const statusLabels: Record<string, string> = {
 export default function SuperPdpConnectionSettings({
   entityId,
   hasLocalSiren,
+  onDirtyChange,
+  onBusyChange,
 }: {
   entityId: string;
   hasLocalSiren: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [clientId, setClientId] = useState("");
@@ -47,6 +51,7 @@ export default function SuperPdpConnectionSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [configurationOpen, setConfigurationOpen] = useState(false);
   const endpoint = `/fiscal-entities/${encodeURIComponent(entityId)}/superpdp`;
   const apply = (value: Connection) => {
     setConnection(value);
@@ -54,9 +59,23 @@ export default function SuperPdpConnectionSettings({
     setSandboxNumber(value.sandbox_number ?? "");
   };
   useEffect(() => {
+    onDirtyChange?.(
+      !!clientSecret ||
+        (!!connection &&
+          (clientId !== (connection.client_id ?? "") ||
+            sandboxNumber !== (connection.sandbox_number ?? ""))),
+    );
+  }, [clientSecret, clientId, sandboxNumber, connection, onDirtyChange]);
+  useEffect(() => {
+    onBusyChange?.(busy || !!connection?.busy);
+  }, [busy, connection?.busy, onBusyChange]);
+  useEffect(() => {
     const controller = new AbortController();
     apiFetch<Connection>(endpoint, { signal: controller.signal })
-      .then(apply)
+      .then((value) => {
+        apply(value);
+        setConfigurationOpen(!value.configured);
+      })
       .catch((err) => {
         if (!isAbortError(err))
           setError(
@@ -87,6 +106,7 @@ export default function SuperPdpConnectionSettings({
       setNotice(
         "Configuration de test enregistrée. Le secret n’est jamais renvoyé par le serveur.",
       );
+      setConfigurationOpen(false);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Enregistrement impossible.",
@@ -146,29 +166,14 @@ export default function SuperPdpConnectionSettings({
   return (
     <section
       aria-label="Connexion SuperPDP de test"
-      style={{ margin: "24px 0" }}
+      className="fiscal-superpdp"
     >
-      <h3 className="section-subtitle">
-        SuperPDP — environnement de test uniquement
-      </h3>
-      <p>
-        <Link to={`/factures-achat?entreprise=${encodeURIComponent(entityId)}`}>
-          Ouvrir les factures d’achat de test de cette entreprise
-        </Link>
-      </p>
-      <p>
-        La production est désactivée. Cette étape connecte l’entreprise et
-        vérifie son identité. Elle ne transmet aucune facture automatiquement ;
-        les dépôts de test se préparent séparément depuis la fiche facture.
-      </p>
       {!hasLocalSiren && (
-        <p className="note">
-          Connexion au bac à sable uniquement : vous pouvez laisser le SIREN et
-          le SIRET vides et utiliser le numéro de l’entreprise fictive SuperPDP
-          ci-dessous. N’inventez pas d’identité légale. L’émission de factures
-          françaises reste bloquée tant que les informations fiscales requises
-          ne sont pas renseignées. Avant d’ajouter un SIREN à une entreprise
-          déjà configurée, déconnectez-la puis reconfigurez sa connexion.
+        <p className="fiscal-callout">
+          <strong>Connexion de test possible, émission encore bloquée.</strong>{" "}
+          L’identité fiscale est à compléter. Pour ajouter un SIREN à une
+          entreprise déjà configurée, déconnectez-la puis reconfigurez sa
+          connexion.
         </p>
       )}
       {error && (
@@ -177,152 +182,201 @@ export default function SuperPdpConnectionSettings({
         </p>
       )}
       {notice && (
-        <p role="status" className="note">
+        <p role="status" className="fiscal-feedback">
           {notice}
         </p>
       )}
       {!connection && !error && <p>Chargement de la connexion…</p>}
       {connection && (
         <>
-          <p>
-            <strong>
-              {statusLabels[connection.status] ?? "État à vérifier"}
-            </strong>
-            {connection.busy ? " — opération en cours" : ""}
-          </p>
-          {!connection.available && (
-            <p className="note">
-              {connection.reason} Aucun identifiant ne peut être enregistré tant
-              que le serveur n’est pas configuré.
-            </p>
-          )}
-          {connection.remote_company && (
+          <div
+            className="fiscal-connection-status"
+            data-connected={connection.status === "connected"}
+          >
             <p>
-              Entreprise SuperPDP de test : {connection.remote_company.name} ·
-              Identifiant {connection.remote_company.number}
+              <strong>
+                {statusLabels[connection.status] ?? "État à vérifier"}
+              </strong>
+              {connection.busy ? " — opération en cours" : ""}
             </p>
-          )}
-          {connection.verification_status === "failed" && (
-            <p className="note">
-              La vérification de l’entreprise a été refusée par SuperPDP.
-              Corrigez la situation dans votre compte SuperPDP avant de vérifier
-              de nouveau.
-            </p>
-          )}
-          {connection.status === "operation_interrupted" && (
-            <p className="note">
-              Le résultat précédent est incertain. Lancez une déconnexion ; une
-              première tentative peut sécuriser le verrou avant de permettre la
-              révocation.
-            </p>
-          )}
-          {connection.last_error_code && (
-            <p className="field-hint">
-              Dernière opération non confirmée : {connection.last_error_code}
-            </p>
-          )}
-          {connection.last_checked_at && (
-            <p className="field-hint">
-              Dernière vérification :{" "}
-              {new Date(connection.last_checked_at).toLocaleString("fr-FR")}
-            </p>
-          )}
-          <form onSubmit={(event) => void save(event)} autoComplete="off">
-            <fieldset
-              disabled={busy || connection.busy || !connection.available}
-              style={{ border: 0, padding: 0, margin: 0 }}
-            >
-              <legend>Application OAuth SuperPDP</legend>
+            {!connection.available && (
+              <p className="note">
+                {connection.reason} Aucun identifiant ne peut être enregistré
+                tant que le serveur n’est pas configuré.
+              </p>
+            )}
+            {connection.remote_company && (
               <p>
-                Récupérez les identifiants depuis une application SuperPDP et
-                enregistrez l’URL de retour indiquée dans la documentation
-                d’installation. Le consentement sera demandé à l’administrateur
-                de l’entreprise.
+                Entreprise SuperPDP de test : {connection.remote_company.name} ·
+                Identifiant {connection.remote_company.number}
               </p>
-              <div className="grid-2">
-                <label className="field">
-                  Identifiant d’application (client_id)
-                  <input
-                    required
-                    value={clientId}
-                    maxLength={250}
-                    onChange={(e) => setClientId(e.target.value)}
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </label>
-                <label className="field">
-                  Secret d’application
-                  {connection.configured
-                    ? " (laisser vide pour le conserver)"
-                    : ""}
-                  <input
-                    type="password"
-                    required={!connection.configured}
-                    value={clientSecret}
-                    maxLength={4096}
-                    onChange={(e) => setClientSecret(e.target.value)}
-                    autoComplete="new-password"
-                    spellCheck={false}
-                  />
-                </label>
-                <label className="field">
-                  Numéro sandbox de l’entreprise fictive SuperPDP
-                  <input
-                    required
-                    value={sandboxNumber}
-                    maxLength={100}
-                    onChange={(e) => setSandboxNumber(e.target.value)}
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </label>
-              </div>
+            )}
+            {connection.verification_status === "failed" && (
+              <p className="note">
+                La vérification de l’entreprise a été refusée par SuperPDP.
+                Corrigez la situation dans votre compte SuperPDP avant de
+                vérifier de nouveau.
+              </p>
+            )}
+            {connection.status === "operation_interrupted" && (
+              <p className="note">
+                Le résultat précédent est incertain. Lancez une déconnexion ;
+                une première tentative peut sécuriser le verrou avant de
+                permettre la révocation.
+              </p>
+            )}
+            {connection.last_error_code && (
               <p className="field-hint">
-                Cet identifiant est le champ « number » de l’entreprise fictive
-                dans SuperPDP (Burger Queen, Tricatel…). Conservez les éventuels
-                zéros au début. Ce n’est ni un SIREN, ni un SIRET, ni une
-                adresse Peppol. Le serveur vérifiera cette correspondance après
-                le consentement.
+                Dernière opération non confirmée : {connection.last_error_code}
               </p>
-              <div className="actions">
-                <button type="submit">
-                  {busy ? "Opération…" : "Enregistrer la configuration de test"}
-                </button>
-              </div>
-            </fieldset>
-          </form>
-          <div className="actions" style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              disabled={
-                busy ||
-                connection.busy ||
-                !connection.available ||
-                !connection.configured ||
-                [
-                  "connected",
-                  "verification_pending",
-                  "revocation_pending",
-                ].includes(connection.status)
-              }
-              onClick={() => void action("connect")}
-            >
-              Autoriser l’entreprise dans SuperPDP
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={
-                busy ||
-                connection.busy ||
-                !connection.available ||
-                !connection.configured
-              }
-              onClick={() => void action("check")}
-            >
-              Vérifier la connexion
-            </button>
+            )}
+            {connection.last_checked_at && (
+              <p className="field-hint">
+                Dernière vérification :{" "}
+                {new Date(connection.last_checked_at).toLocaleString("fr-FR")}
+              </p>
+            )}
+          </div>
+          <details
+            className="fiscal-connection-step"
+            open={configurationOpen}
+            onToggle={(event) => setConfigurationOpen(event.currentTarget.open)}
+          >
+            <summary>
+              <span className="fiscal-step-label">
+                A · Accès de l’application
+              </span>
+              <span className="fiscal-step-description">
+                {connection.configured
+                  ? "Enregistrés — cliquer pour les modifier"
+                  : "À renseigner avant l’autorisation"}
+              </span>
+            </summary>
+            <form onSubmit={(event) => void save(event)} autoComplete="off">
+              <fieldset
+                disabled={busy || connection.busy || !connection.available}
+                className="fiscal-form-fieldset"
+              >
+                <legend className="sr-only">Application OAuth SuperPDP</legend>
+                <p className="fiscal-hint">
+                  Copiez les accès de l’application depuis votre compte
+                  SuperPDP. Le secret reste chiffré sur le serveur, jamais dans
+                  le stockage du navigateur.
+                </p>
+                <div className="fiscal-form-grid">
+                  <label className="field">
+                    Identifiant d’application (client_id)
+                    <input
+                      required
+                      value={clientId}
+                      maxLength={250}
+                      onChange={(e) => setClientId(e.target.value)}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="field">
+                    Secret d’application
+                    {connection.configured
+                      ? " (laisser vide pour le conserver)"
+                      : ""}
+                    <input
+                      type="password"
+                      required={!connection.configured}
+                      value={clientSecret}
+                      maxLength={4096}
+                      onChange={(e) => setClientSecret(e.target.value)}
+                      autoComplete="new-password"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="field">
+                    Numéro sandbox de l’entreprise fictive SuperPDP
+                    <input
+                      required
+                      value={sandboxNumber}
+                      maxLength={100}
+                      onChange={(e) => setSandboxNumber(e.target.value)}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+                <p className="fiscal-hint">
+                  Le numéro sandbox correspond au champ « number » de
+                  l’entreprise fictive SuperPDP. Conservez les zéros initiaux.
+                  Ce n’est ni un SIREN, ni un SIRET, ni une adresse Peppol.
+                </p>
+                <details className="fiscal-help">
+                  <summary>Aide pour l’URL de retour et l’autorisation</summary>
+                  <p>
+                    Enregistrez dans l’application OAuth SuperPDP l’URL de
+                    retour exacte indiquée dans la documentation d’installation.
+                    L’autorisation sera donnée séparément par l’administrateur
+                    de l’entreprise.
+                  </p>
+                </details>
+                <div className="actions">
+                  <button type="submit">
+                    {busy
+                      ? "Opération…"
+                      : "Enregistrer la configuration de test"}
+                  </button>
+                </div>
+              </fieldset>
+            </form>
+          </details>
+          <section
+            className="fiscal-connection-step"
+            aria-labelledby="fiscal-authorization-title"
+          >
+            <h4 id="fiscal-authorization-title">
+              B · Autorisation et vérification
+            </h4>
+            <p className="fiscal-hint">
+              {connection.status === "connected"
+                ? "Cette entreprise a été vérifiée. Vous pouvez contrôler à nouveau sa connexion."
+                : "Après avoir enregistré les accès, autorisez cette entreprise dans SuperPDP, puis vérifiez sa connexion."}
+            </p>
+            <div className="actions fiscal-connection-actions">
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  connection.busy ||
+                  !connection.available ||
+                  !connection.configured ||
+                  [
+                    "connected",
+                    "verification_pending",
+                    "revocation_pending",
+                  ].includes(connection.status)
+                }
+                onClick={() => void action("connect")}
+              >
+                Autoriser l’entreprise dans SuperPDP
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={
+                  busy ||
+                  connection.busy ||
+                  !connection.available ||
+                  !connection.configured
+                }
+                onClick={() => void action("check")}
+              >
+                Vérifier la connexion
+              </button>
+            </div>
+          </section>
+          <details className="fiscal-help fiscal-disconnect">
+            <summary>Déconnexion et retrait des accès</summary>
+            <p>
+              Révoque le consentement et retire les secrets enregistrés. Les
+              factures existantes ne sont pas modifiées.
+            </p>
             <button
               type="button"
               className="secondary"
@@ -336,16 +390,32 @@ export default function SuperPdpConnectionSettings({
             >
               Déconnecter et retirer les secrets
             </button>
-          </div>
-          <p className="field-hint">
-            Les secrets et jetons restent chiffrés sur le serveur Node.js. Aucun
-            secret n’est placé dans le stockage du navigateur. Aucune
-            inscription à un annuaire de réception n’est demandée
-            automatiquement.
+          </details>
+          <p className="fiscal-hint">
+            Aucune inscription d’annuaire ni aucun mandat n’est créé
+            automatiquement. Les dépôts se préparent séparément depuis la fiche
+            facture.
+          </p>
+          <p>
+            <Link
+              to={`/factures-achat?entreprise=${encodeURIComponent(entityId)}`}
+            >
+              Consulter les factures d’achat de test de cette entreprise →
+            </Link>
           </p>
         </>
       )}
-      <SuperPdpReadinessPanel key={entityId} entityId={entityId} />
+      <details className="fiscal-connection-step fiscal-readiness-details">
+        <summary>
+          <span className="fiscal-step-label">
+            C · Bilan de préparation des tests
+          </span>
+          <span className="fiscal-step-description">
+            Contrôles locaux, sans contact avec SuperPDP ni envoi
+          </span>
+        </summary>
+        <SuperPdpReadinessPanel key={entityId} entityId={entityId} />
+      </details>
     </section>
   );
 }

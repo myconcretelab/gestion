@@ -122,13 +122,11 @@ export default function SuperPdpReadinessPanel({
       aria-label="Préparation de la recette SuperPDP"
       className="superpdp-readiness"
     >
-      <h3 className="section-subtitle">
-        Dernière étape — préparation de la recette
-      </h3>
+      <h3 className="section-subtitle">Vérifier la préparation locale</h3>
       <p>
-        Ce bilan examine uniquement les données locales de cette entreprise. Il
-        ne contacte pas SuperPDP, ne renouvelle pas les accès et n’envoie rien.
-        La production reste non activable dans cette version.
+        Ce bilan lit les données de cette entreprise sans contacter SuperPDP,
+        renouveler les accès ni envoyer de facture. Il n’autorise pas la
+        production.
       </p>
       <button
         className="secondary"

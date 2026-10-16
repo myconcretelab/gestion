@@ -3,12 +3,19 @@ import {
   fiscalEntitySchema,
   fiscalEstablishmentSchema,
   vatRegimeLabels,
+  fiscalEntityMissingFields,
   type VatRegime,
 } from "@contrats/shared";
 import { apiFetch } from "../../utils/api";
 import type { FiscalEntity, FiscalEstablishment } from "../../utils/types";
 import { canCurrentUserManageIntegrations } from "../../utils/auth";
 import SuperPdpConnectionSettings from "./SuperPdpConnectionSettings";
+import FiscalSettingsNavigation, {
+  type FiscalSettingsSection,
+} from "./FiscalSettingsNavigation";
+import "./fiscalEntitiesSettings.css";
+import FiscalUnsavedChangesNotice from "./FiscalUnsavedChangesNotice";
+import { isFiscalDraftDirty } from "./fiscalSettingsState";
 
 const emptyAddress = {
   address_line1: "",
@@ -74,7 +81,7 @@ function AddressFields({
   onChange: (key: keyof AddressDraft, value: string) => void;
 }) {
   return (
-    <div className="grid-2">
+    <div className="fiscal-form-grid fiscal-address-grid">
       {(
         [
           ["address_line1", "Adresse"],
@@ -115,6 +122,18 @@ export default function FiscalEntitiesSettings() {
     useState(emptyEstablishment);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [section, setSection] = useState<FiscalSettingsSection>(() =>
+    new URLSearchParams(window.location.search).has("superpdp")
+      ? "superpdp"
+      : "company",
+  );
+  const [showAllGites, setShowAllGites] = useState(false);
+  const [connectionDirty, setConnectionDirty] = useState(false);
+  const [connectionBusy, setConnectionBusy] = useState(false);
+  const [pendingSelection, setPendingSelection] = useState<{
+    target: "company" | "establishment";
+    id: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(() => {
     const result = new URLSearchParams(window.location.search).get("superpdp");
@@ -127,6 +146,43 @@ export default function FiscalEntitiesSettings() {
           : null;
   });
   const selected = entities.find((entity) => entity.id === entityId);
+  const canManageIntegrations = canCurrentUserManageIntegrations();
+  const entityDirty = isFiscalDraftDirty(
+    entityDraft,
+    selected ? entityToDraft(selected) : emptyEntity(),
+  );
+  const currentEstablishment = selected?.establishments.find(
+    (item) => item.id === establishmentId,
+  );
+  const establishmentDirty = isFiscalDraftDirty(
+    establishmentDraft,
+    currentEstablishment
+      ? {
+          ...addressDraft(currentEstablishment),
+          name: currentEstablishment.name,
+          siret: currentEstablishment.siret ?? "",
+        }
+      : emptyEstablishment(),
+  );
+  const unsaved = entityDirty || establishmentDirty || connectionDirty;
+  const selectedGiteIds = new Set(
+    selected?.establishments.flatMap((item) =>
+      item.gites.map((gite) => gite.id),
+    ) ?? [],
+  );
+  const visibleGites =
+    inventory?.gites.filter(
+      (gite) => showAllGites || selectedGiteIds.has(gite.id),
+    ) ?? [];
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
 
   const load = async () => {
     const [data, overview] = await Promise.all([
@@ -149,11 +205,22 @@ export default function FiscalEntitiesSettings() {
           const returnedId = new URLSearchParams(window.location.search).get(
             "entreprise",
           );
-          const returned = data.find((entity) => entity.id === returnedId);
+          const returned = returnedId
+            ? data.find((entity) => entity.id === returnedId)
+            : data[0];
           if (returned) {
             setEntityId(returned.id);
             setEntityDraft(entityToDraft(returned));
+          } else {
+            setSection("company");
+            if (returnedId) {
+              setNotice(null);
+              setError(
+                "L’entreprise indiquée dans le retour n’est pas accessible. Sélectionnez une entreprise pour continuer.",
+              );
+            }
           }
+          if (!canManageIntegrations) setSection("company");
         }
       })
       .catch((error: Error) => {
@@ -165,9 +232,15 @@ export default function FiscalEntitiesSettings() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [canManageIntegrations]);
 
-  const chooseEntity = (id: string) => {
+  const chooseEntity = (id: string, discard = false) => {
+    if (id === entityId) return;
+    if (unsaved && !discard) {
+      setPendingSelection({ target: "company", id });
+      return;
+    }
+    setPendingSelection(null);
     const entity = entities.find((item) => item.id === id);
     setEntityId(id);
     setEntityDraft(
@@ -185,10 +258,19 @@ export default function FiscalEntitiesSettings() {
     );
     setEstablishmentId("");
     setEstablishmentDraft(emptyEstablishment());
+    setConnectionDirty(false);
+    setShowAllGites(false);
+    if (!id) setSection("company");
     setError(null);
     setNotice(null);
   };
-  const chooseEstablishment = (id: string) => {
+  const chooseEstablishment = (id: string, discard = false) => {
+    if (id === establishmentId) return;
+    if (establishmentDirty && !discard) {
+      setPendingSelection({ target: "establishment", id });
+      return;
+    }
+    setPendingSelection(null);
     const item = selected?.establishments.find((item) => item.id === id);
     setEstablishmentId(id);
     setEstablishmentDraft(
@@ -217,8 +299,9 @@ export default function FiscalEntitiesSettings() {
         },
       );
       setEntityId(saved.id);
+      setEntityDraft(entityToDraft(saved));
       setNotice(
-        "Entreprise enregistrée. Vous pouvez renseigner ses établissements ci-dessous.",
+        "Entreprise enregistrée. Le volet Établissements permet de poursuivre la préparation.",
       );
       await load();
     } catch (error) {
@@ -248,6 +331,11 @@ export default function FiscalEntitiesSettings() {
         },
       );
       setEstablishmentId(saved.id);
+      setEstablishmentDraft({
+        ...addressDraft(saved),
+        name: saved.name,
+        siret: saved.siret ?? "",
+      });
       await load();
       setNotice(
         "Établissement enregistré. Sélectionnez-le dans la fiche des gîtes concernés.",
@@ -262,17 +350,26 @@ export default function FiscalEntitiesSettings() {
   };
 
   return (
-    <div className="card settings-card settings-card--neutral">
-      <h2 className="section-title">Entreprises et facturation</h2>
-      <p>
-        Renseignez l’entreprise qui facture et ses établissements, puis
-        choisissez l’établissement facturant dans chaque fiche gîte.
-      </p>
-      <p className="field-hint">
-        Le gestionnaire est un contact de l’entreprise. Le régime de TVA doit
-        être renseigné selon votre situation ; ces informations ne garantissent
-        pas à elles seules une conformité fiscale ou une connexion à SuperPDP.
-      </p>
+    <div className="fiscal-settings">
+      <header className="fiscal-page-header">
+        <div className="fiscal-eyebrow">Organisation · Facturation</div>
+        <h2>Entreprises et facturation</h2>
+        <p>
+          Une entreprise, ses établissements, puis les gîtes qu’elle facture.
+          Avancez à votre rythme, volet par volet.
+        </p>
+      </header>
+      {pendingSelection && (
+        <FiscalUnsavedChangesNotice
+          target={pendingSelection.target}
+          onCancel={() => setPendingSelection(null)}
+          onDiscard={() =>
+            pendingSelection.target === "company"
+              ? chooseEntity(pendingSelection.id, true)
+              : chooseEstablishment(pendingSelection.id, true)
+          }
+        />
+      )}
       {error && (
         <div className="note" role="alert">
           {error}
@@ -287,283 +384,475 @@ export default function FiscalEntitiesSettings() {
         <p>Chargement des entreprises…</p>
       ) : (
         <>
-          <label className="field">
-            Entreprise à modifier
-            <select
-              value={entityId}
-              onChange={(event) => chooseEntity(event.target.value)}
-              disabled={saving}
+          <div className="fiscal-company-picker">
+            <label className="field">
+              Entreprise sélectionnée
+              <select
+                value={entityId}
+                onChange={(event) => chooseEntity(event.target.value)}
+                disabled={saving || connectionBusy}
+              >
+                <option value="">Nouvelle entreprise</option>
+                {entities.map((entity) => (
+                  <option key={entity.id} value={entity.id}>
+                    {entity.legal_name}
+                    {entity.siren
+                      ? ` — ${entity.siren}`
+                      : " — SIREN à compléter"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="secondary"
+              disabled={saving || connectionBusy || !entityId}
+              onClick={() => chooseEntity("")}
             >
-              <option value="">Nouvelle entreprise</option>
-              {entities.map((entity) => (
-                <option key={entity.id} value={entity.id}>
-                  {entity.legal_name}
-                  {entity.siren ? ` — ${entity.siren}` : " — SIREN à compléter"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <form onSubmit={saveEntity}>
-            <fieldset
-              disabled={saving}
-              style={{ border: 0, padding: 0, margin: 0 }}
-            >
-              <legend className="section-subtitle">
-                {entityId ? "Modifier l’entreprise" : "Ajouter une entreprise"}
-              </legend>
-              <div className="grid-2">
-                <label className="field">
-                  Raison sociale
-                  <input
-                    required
-                    maxLength={250}
-                    value={entityDraft.legal_name}
-                    onChange={(event) =>
-                      setEntityDraft({
-                        ...entityDraft,
-                        legal_name: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  Gestionnaire associé
-                  <select
-                    value={entityDraft.gestionnaire_id}
-                    onChange={(event) =>
-                      setEntityDraft({
-                        ...entityDraft,
-                        gestionnaire_id: event.target.value,
-                      })
-                    }
-                  >
-                    <option value="">À associer</option>
-                    {inventory?.managers.map((manager) => (
-                      <option key={manager.id} value={manager.id}>
-                        {manager.prenom} {manager.nom}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  SIREN (9 chiffres)
-                  <input
-                    inputMode="numeric"
-                    value={entityDraft.siren}
-                    onChange={(event) =>
-                      setEntityDraft({
-                        ...entityDraft,
-                        siren: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  Numéro de TVA intracommunautaire
-                  <input
-                    value={entityDraft.vat_number}
-                    onChange={(event) =>
-                      setEntityDraft({
-                        ...entityDraft,
-                        vat_number: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  Régime de TVA
-                  <select
-                    value={entityDraft.vat_regime}
-                    onChange={(event) =>
-                      setEntityDraft({
-                        ...entityDraft,
-                        vat_regime: event.target.value as VatRegime,
-                      })
-                    }
-                  >
-                    {Object.entries(vatRegimeLabels).map(([key, label]) => (
-                      <option value={key} key={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  Email de facturation
-                  <input
-                    type="email"
-                    value={entityDraft.email}
-                    onChange={(event) =>
-                      setEntityDraft({
-                        ...entityDraft,
-                        email: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <p className="field-hint">
-                Pour connecter une entreprise fictive au bac à sable SuperPDP,
-                la raison sociale suffit à créer cette fiche : laissez le SIREN
-                vide si aucun identifiant légal de test n’est fourni. Son numéro
-                sandbox sera renseigné séparément après l’enregistrement. Les
-                informations fiscales restent nécessaires pour émettre des
+              + Ajouter une entreprise
+            </button>
+          </div>
+          <div className="fiscal-company-summary">
+            <div>
+              <strong>{selected?.legal_name || "Nouvelle entreprise"}</strong>
+              <span>
+                {selected
+                  ? `${selected.establishments.length} établissement(s) · ${selectedGiteIds.size} gîte(s) rattaché(s)`
+                  : "Commencez par la raison sociale, puis enregistrez la fiche."}
+              </span>
+            </div>
+            <span className="fiscal-badge">
+              {unsaved
+                ? "Modifications non enregistrées"
+                : selected
+                  ? fiscalEntityMissingFields(selected).length
+                    ? "Fiche à compléter"
+                    : "Informations de base renseignées"
+                  : "À créer"}
+            </span>
+          </div>
+          <FiscalSettingsNavigation
+            active={section}
+            hasCompany={!!selected}
+            canManageIntegrations={canManageIntegrations}
+            disabled={saving}
+            onChange={setSection}
+          />
+          <section
+            id="fiscal-panel-company"
+            role="tabpanel"
+            aria-labelledby="fiscal-tab-company"
+            hidden={section !== "company"}
+            className="fiscal-panel"
+          >
+            <div className="fiscal-panel-header">
+              <h3>1. L’entreprise qui facture</h3>
+              <p>
+                Les coordonnées et informations fiscales utilisées pour vos
                 factures.
               </p>
-              <p className="section-subtitle">Adresse du siège</p>
-              <AddressFields
-                value={entityDraft}
-                onChange={(key, value) =>
-                  setEntityDraft({ ...entityDraft, [key]: value })
-                }
-              />
-              <div className="actions">
-                <button type="submit">
-                  {saving ? "Enregistrement…" : "Enregistrer l’entreprise"}
-                </button>
-              </div>
-            </fieldset>
-          </form>
-          {selected && canCurrentUserManageIntegrations() && (
-            <SuperPdpConnectionSettings
-              key={selected.id}
-              entityId={selected.id}
-              hasLocalSiren={!!selected.siren}
-            />
-          )}
-          {selected && (
-            <form onSubmit={saveEstablishment}>
-              <fieldset
-                disabled={saving}
-                style={{ border: 0, padding: 0, margin: "24px 0" }}
-              >
-                <legend className="section-subtitle">
-                  Établissements de {selected.legal_name}
+            </div>
+            <form onSubmit={saveEntity}>
+              <fieldset disabled={saving} className="fiscal-form-fieldset">
+                <legend className="sr-only">
+                  {entityId
+                    ? "Modifier l’entreprise"
+                    : "Ajouter une entreprise"}
                 </legend>
-                <label className="field">
-                  Établissement à modifier
-                  <select
-                    value={establishmentId}
-                    onChange={(event) =>
-                      chooseEstablishment(event.target.value)
-                    }
-                  >
-                    <option value="">Nouvel établissement</option>
-                    {selected.establishments.map((item) => (
-                      <option value={item.id} key={item.id}>
-                        {item.name} — {item.siret || "SIRET à compléter"} (
-                        {item.gites.length} gîte(s))
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="grid-2">
+                <h4 className="fiscal-group-title">Identité et contact</h4>
+                <div className="fiscal-form-grid fiscal-form-grid--identity">
                   <label className="field">
-                    Nom de l’établissement
+                    Raison sociale
                     <input
                       required
                       maxLength={250}
-                      value={establishmentDraft.name}
+                      value={entityDraft.legal_name}
                       onChange={(event) =>
-                        setEstablishmentDraft({
-                          ...establishmentDraft,
-                          name: event.target.value,
+                        setEntityDraft({
+                          ...entityDraft,
+                          legal_name: event.target.value,
                         })
                       }
                     />
                   </label>
                   <label className="field">
-                    SIRET (14 chiffres)
-                    <input
-                      inputMode="numeric"
-                      value={establishmentDraft.siret}
+                    Gestionnaire associé
+                    <select
+                      value={entityDraft.gestionnaire_id}
                       onChange={(event) =>
-                        setEstablishmentDraft({
-                          ...establishmentDraft,
-                          siret: event.target.value,
+                        setEntityDraft({
+                          ...entityDraft,
+                          gestionnaire_id: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="">À associer</option>
+                      {inventory?.managers.map((manager) => (
+                        <option key={manager.id} value={manager.id}>
+                          {manager.prenom} {manager.nom}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    Email de facturation
+                    <input
+                      type="email"
+                      value={entityDraft.email}
+                      onChange={(event) =>
+                        setEntityDraft({
+                          ...entityDraft,
+                          email: event.target.value,
                         })
                       }
                     />
                   </label>
                 </div>
+                <h4 className="fiscal-group-title">Informations fiscales</h4>
+                <p className="fiscal-hint">
+                  À renseigner selon votre situation, sans choisir un régime de
+                  TVA par défaut.
+                </p>
+                <div className="fiscal-form-grid fiscal-form-grid--tax">
+                  <label className="field">
+                    SIREN (9 chiffres)
+                    <input
+                      inputMode="numeric"
+                      value={entityDraft.siren}
+                      onChange={(event) =>
+                        setEntityDraft({
+                          ...entityDraft,
+                          siren: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    Numéro de TVA intracommunautaire
+                    <input
+                      value={entityDraft.vat_number}
+                      onChange={(event) =>
+                        setEntityDraft({
+                          ...entityDraft,
+                          vat_number: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    Régime de TVA
+                    <select
+                      value={entityDraft.vat_regime}
+                      onChange={(event) =>
+                        setEntityDraft({
+                          ...entityDraft,
+                          vat_regime: event.target.value as VatRegime,
+                        })
+                      }
+                    >
+                      {Object.entries(vatRegimeLabels).map(([key, label]) => (
+                        <option value={key} key={key}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <details className="fiscal-help">
+                  <summary>Je prépare seulement une connexion de test</summary>
+                  <p>
+                    La raison sociale suffit à créer la fiche. Laissez le SIREN
+                    vide si aucune identité légale de test n’est fournie : le
+                    numéro sandbox se saisit dans le volet SuperPDP. N’inventez
+                    pas de SIREN/SIRET. L’émission reste bloquée tant que les
+                    informations fiscales requises ne sont pas qualifiées.
+                  </p>
+                </details>
+                <h4 className="fiscal-group-title">Adresse du siège</h4>
                 <AddressFields
-                  value={establishmentDraft}
+                  value={entityDraft}
                   onChange={(key, value) =>
-                    setEstablishmentDraft({
-                      ...establishmentDraft,
-                      [key]: value,
-                    })
+                    setEntityDraft({ ...entityDraft, [key]: value })
                   }
                 />
-                <div className="actions">
+                <div className="fiscal-save-bar">
+                  <span>
+                    {entityDirty
+                      ? "Les modifications de cette fiche ne sont pas encore enregistrées."
+                      : "Enregistrez cette fiche indépendamment des autres volets."}
+                  </span>
                   <button type="submit">
-                    {saving ? "Enregistrement…" : "Enregistrer l’établissement"}
+                    {saving ? "Enregistrement…" : "Enregistrer l’entreprise"}
                   </button>
                 </div>
               </fieldset>
             </form>
-          )}
-          {inventory && (
-            <>
-              <h3 className="section-subtitle">État des rattachements</h3>
+          </section>
+          <section
+            id="fiscal-panel-establishments"
+            role="tabpanel"
+            aria-labelledby="fiscal-tab-establishments"
+            hidden={section !== "establishments"}
+            className="fiscal-panel"
+          >
+            <div className="fiscal-panel-header">
+              <h3>2. Les établissements de l’entreprise</h3>
               <p>
-                {
-                  inventory.gites.filter(
-                    (gite) => gite.missing_fields.length > 0,
-                  ).length
-                }{" "}
-                gîte(s) à compléter sur {inventory.gites.length}.
+                Chaque établissement porte un SIRET. Vous pourrez ensuite le
+                sélectionner dans les fiches des gîtes concernés.
               </p>
-              <div style={{ overflowX: "auto" }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Gîte</th>
-                      <th>Entreprise / établissement</th>
-                      <th>Informations à compléter</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inventory.gites.map((gite) => (
-                      <tr key={gite.id}>
-                        <td>
-                          <a
-                            href={`/gites?gite=${encodeURIComponent(gite.id)}&section=base-fiche`}
-                          >
-                            {gite.nom}
-                          </a>
-                        </td>
-                        <td>
-                          {gite.fiscal_establishment
-                            ? `${gite.fiscal_establishment.fiscal_entity.legal_name} / ${gite.fiscal_establishment.name}`
-                            : "À rattacher"}
-                        </td>
-                        <td>
-                          {gite.missing_fields.join(", ") ||
-                            "Informations de base renseignées"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="field-hint">
-                Ce relevé vérifie la présence des informations de base, pas
-                l’éligibilité fiscale ni la conformité à SuperPDP.
+            </div>
+            {selected && (
+              <>
+                <div
+                  className="fiscal-establishment-list"
+                  aria-label="Établissements enregistrés"
+                >
+                  {selected.establishments.map((item) => (
+                    <button
+                      type="button"
+                      className="fiscal-establishment-item"
+                      aria-pressed={establishmentId === item.id}
+                      disabled={saving}
+                      key={item.id}
+                      onClick={() => chooseEstablishment(item.id)}
+                    >
+                      <strong>{item.name}</strong>
+                      <span>
+                        {item.siret
+                          ? `SIRET ${item.siret}`
+                          : "SIRET à compléter"}{" "}
+                        · {item.gites.length} gîte(s)
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="fiscal-establishment-item fiscal-establishment-item--add"
+                    disabled={saving}
+                    aria-pressed={!establishmentId}
+                    onClick={() => chooseEstablishment("")}
+                  >
+                    + Nouvel établissement
+                  </button>
+                </div>
+                <form onSubmit={saveEstablishment}>
+                  <fieldset disabled={saving} className="fiscal-form-fieldset">
+                    <legend className="section-subtitle">
+                      {establishmentId
+                        ? "Modifier l’établissement"
+                        : "Ajouter un établissement"}
+                    </legend>
+                    <div className="fiscal-form-grid">
+                      <label className="field">
+                        Nom de l’établissement
+                        <input
+                          required
+                          maxLength={250}
+                          value={establishmentDraft.name}
+                          onChange={(event) =>
+                            setEstablishmentDraft({
+                              ...establishmentDraft,
+                              name: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        SIRET (14 chiffres)
+                        <input
+                          inputMode="numeric"
+                          value={establishmentDraft.siret}
+                          onChange={(event) =>
+                            setEstablishmentDraft({
+                              ...establishmentDraft,
+                              siret: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <h4 className="fiscal-group-title">
+                      Adresse de l’établissement
+                    </h4>
+                    <AddressFields
+                      value={establishmentDraft}
+                      onChange={(key, value) =>
+                        setEstablishmentDraft({
+                          ...establishmentDraft,
+                          [key]: value,
+                        })
+                      }
+                    />
+                    <div className="fiscal-save-bar">
+                      <span>
+                        Le rattachement des gîtes se fait depuis leur fiche.
+                      </span>
+                      <button type="submit">
+                        {saving
+                          ? "Enregistrement…"
+                          : "Enregistrer l’établissement"}
+                      </button>
+                    </div>
+                  </fieldset>
+                </form>
+              </>
+            )}
+          </section>
+          <section
+            id="fiscal-panel-gites"
+            role="tabpanel"
+            aria-labelledby="fiscal-tab-gites"
+            hidden={section !== "gites"}
+            className="fiscal-panel"
+          >
+            <div className="fiscal-panel-header">
+              <h3>3. Les gîtes et leur entreprise facturante</h3>
+              <p>
+                Ouvrez une fiche gîte pour choisir son établissement facturant.
+                Le gestionnaire de contact ne détermine pas à lui seul qui
+                facture.
               </p>
-              {inventory.managers.filter(
-                (manager) => !manager._count.fiscal_entities,
-              ).length > 0 && (
+            </div>
+            {inventory && (
+              <>
+                <div className="fiscal-inventory-toolbar">
+                  <strong>
+                    {visibleGites.length} gîte(s){" "}
+                    {showAllGites
+                      ? "dans l’application"
+                      : "pour cette entreprise"}
+                  </strong>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={showAllGites}
+                      onChange={(event) =>
+                        setShowAllGites(event.target.checked)
+                      }
+                    />{" "}
+                    Afficher tous les gîtes
+                  </label>
+                </div>
+                {!visibleGites.length && (
+                  <div className="fiscal-empty">
+                    <strong>
+                      Aucun gîte rattaché à cette entreprise pour le moment.
+                    </strong>
+                    <p>
+                      Créez un établissement, puis associez-le au gîte concerné.
+                    </p>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setShowAllGites(true)}
+                    >
+                      Voir les gîtes à rattacher
+                    </button>
+                  </div>
+                )}
+                {!!visibleGites.length && (
+                  <div className="fiscal-table-scroll">
+                    <table className="table">
+                      <caption className="sr-only">
+                        Rattachements des gîtes et informations de base à
+                        compléter
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th>Gîte</th>
+                          <th>Entreprise / établissement</th>
+                          <th>Informations à compléter</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleGites.map((gite) => (
+                          <tr key={gite.id}>
+                            <td>
+                              <a
+                                href={`/gites?gite=${encodeURIComponent(gite.id)}&section=base-fiche`}
+                              >
+                                {gite.nom}
+                              </a>
+                            </td>
+                            <td>
+                              {gite.fiscal_establishment
+                                ? `${gite.fiscal_establishment.fiscal_entity.legal_name} / ${gite.fiscal_establishment.name}`
+                                : "À rattacher"}
+                            </td>
+                            <td>
+                              {gite.missing_fields.length ? (
+                                <details className="fiscal-missing">
+                                  <summary>
+                                    {gite.missing_fields.length} information(s)
+                                    à compléter
+                                  </summary>
+                                  <ul>
+                                    {gite.missing_fields.map((field) => (
+                                      <li key={field}>{field}</li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              ) : (
+                                "Informations de base renseignées"
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 <p className="field-hint">
-                  Gestionnaires sans entreprise associée :{" "}
-                  {inventory.managers
-                    .filter((manager) => !manager._count.fiscal_entities)
-                    .map((manager) => `${manager.prenom} ${manager.nom}`)
-                    .join(", ")}
-                  .
+                  Ce relevé vérifie la présence des informations de base, pas
+                  l’éligibilité fiscale ni la conformité à SuperPDP.
                 </p>
+                {inventory.managers.filter(
+                  (manager) => !manager._count.fiscal_entities,
+                ).length > 0 && (
+                  <details className="fiscal-help">
+                    <summary>Gestionnaires sans entreprise associée</summary>
+                    <p>
+                      {inventory.managers
+                        .filter((manager) => !manager._count.fiscal_entities)
+                        .map((manager) => `${manager.prenom} ${manager.nom}`)
+                        .join(", ")}
+                      .
+                    </p>
+                  </details>
+                )}
+              </>
+            )}
+          </section>
+          {canManageIntegrations && (
+            <section
+              id="fiscal-panel-superpdp"
+              role="tabpanel"
+              aria-labelledby="fiscal-tab-superpdp"
+              hidden={section !== "superpdp"}
+              className="fiscal-panel"
+            >
+              <div className="fiscal-panel-header">
+                <div className="fiscal-heading-line">
+                  <h3>4. La facturation électronique</h3>
+                  <span className="fiscal-badge">Bac à sable uniquement</span>
+                </div>
+                <p>
+                  Connectez cette entreprise à SuperPDP, puis vérifiez la
+                  préparation des tests. Aucun envoi automatique ni activation
+                  de production.
+                </p>
+              </div>
+              {selected && (
+                <SuperPdpConnectionSettings
+                  key={selected.id}
+                  entityId={selected.id}
+                  hasLocalSiren={!!selected.siren}
+                  onDirtyChange={setConnectionDirty}
+                  onBusyChange={setConnectionBusy}
+                />
               )}
-            </>
+            </section>
           )}
         </>
       )}
