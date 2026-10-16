@@ -7,7 +7,10 @@ import FiscalSettingsNavigation, {
   type FiscalSettingsSection,
 } from "../src/pages/settings/FiscalSettingsNavigation.tsx";
 import FiscalUnsavedChangesNotice from "../src/pages/settings/FiscalUnsavedChangesNotice.tsx";
-import { isFiscalDraftDirty } from "../src/pages/settings/fiscalSettingsState.ts";
+import {
+  isFiscalDraftDirty,
+  nextFiscalSettingsSection,
+} from "../src/pages/settings/fiscalSettingsState.ts";
 
 const props = {
   active: "company" as FiscalSettingsSection,
@@ -25,6 +28,20 @@ const nativeElements = (node: ReactNode, type: string): any[] => {
     ),
   ];
 };
+
+test("le parcours avance entreprise → établissements → gîtes → SuperPDP, sans boucler", () => {
+  assert.equal(nextFiscalSettingsSection("company", true), "establishments");
+  assert.equal(nextFiscalSettingsSection("establishments", true), "gites");
+  assert.equal(nextFiscalSettingsSection("gites", true), "superpdp");
+  assert.equal(nextFiscalSettingsSection("superpdp", true), null);
+});
+
+test("le parcours sans droit d’intégration s’arrête aux gîtes", () => {
+  assert.equal(nextFiscalSettingsSection("company", false), "establishments");
+  assert.equal(nextFiscalSettingsSection("establishments", false), "gites");
+  assert.equal(nextFiscalSettingsSection("gites", false), null);
+  assert.equal(nextFiscalSettingsSection("superpdp", false), null);
+});
 
 test("quatre volets identifiés, une sélection et un seul point d’entrée clavier", () => {
   for (const section of fiscalSettingsSections) {

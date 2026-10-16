@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   fiscalEntitySchema,
   fiscalEstablishmentSchema,
@@ -15,7 +15,10 @@ import FiscalSettingsNavigation, {
 } from "./FiscalSettingsNavigation";
 import "./fiscalEntitiesSettings.css";
 import FiscalUnsavedChangesNotice from "./FiscalUnsavedChangesNotice";
-import { isFiscalDraftDirty } from "./fiscalSettingsState";
+import {
+  isFiscalDraftDirty,
+  nextFiscalSettingsSection,
+} from "./fiscalSettingsState";
 
 const emptyAddress = {
   address_line1: "",
@@ -113,6 +116,8 @@ function AddressFields({
 }
 
 export default function FiscalEntitiesSettings() {
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const focusNextSection = useRef(false);
   const [entities, setEntities] = useState<FiscalEntity[]>([]);
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [entityId, setEntityId] = useState("");
@@ -175,6 +180,19 @@ export default function FiscalEntitiesSettings() {
       (gite) => showAllGites || selectedGiteIds.has(gite.id),
     ) ?? [];
   useEffect(() => {
+    if (!focusNextSection.current || saving) return;
+    focusNextSection.current = false;
+    settingsRef.current
+      ?.querySelector<HTMLButtonElement>(`#fiscal-tab-${section}`)
+      ?.focus();
+  }, [section, saving]);
+  const advanceFrom = (current: FiscalSettingsSection) => {
+    const next = nextFiscalSettingsSection(current, canManageIntegrations);
+    if (!next) return;
+    focusNextSection.current = true;
+    setSection(next);
+  };
+  useEffect(() => {
     if (!unsaved) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -191,6 +209,7 @@ export default function FiscalEntitiesSettings() {
     ]);
     setEntities(data);
     setInventory(overview);
+    return data;
   };
   useEffect(() => {
     let active = true;
@@ -300,10 +319,26 @@ export default function FiscalEntitiesSettings() {
       );
       setEntityId(saved.id);
       setEntityDraft(entityToDraft(saved));
+      const data = await load();
+      if (!establishmentId && !establishmentDirty) {
+        const existing = data.find((entity) => entity.id === saved.id)
+          ?.establishments[0];
+        if (existing) {
+          setEstablishmentId(existing.id);
+          setEstablishmentDraft({
+            ...addressDraft(existing),
+            name: existing.name,
+            siret: existing.siret ?? "",
+          });
+        }
+      }
       setNotice(
-        "Entreprise enregistrée. Le volet Établissements permet de poursuivre la préparation.",
+        "Entreprise enregistrée. Étape suivante : ses établissements." +
+          (fiscalEntityMissingFields(saved).length
+            ? " Des informations fiscales restent à compléter avant l’émission de factures."
+            : ""),
       );
-      await load();
+      advanceFrom("company");
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Enregistrement impossible.",
@@ -338,8 +373,10 @@ export default function FiscalEntitiesSettings() {
       });
       await load();
       setNotice(
-        "Établissement enregistré. Sélectionnez-le dans la fiche des gîtes concernés.",
+        "Établissement enregistré. Étape suivante : les gîtes à rattacher." +
+          (!saved.siret ? " Le SIRET reste à compléter avant émission." : ""),
       );
+      advanceFrom("establishments");
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Enregistrement impossible.",
@@ -349,8 +386,38 @@ export default function FiscalEntitiesSettings() {
     }
   };
 
+  const continueFromGites = async () => {
+    if (!selected || !canManageIntegrations) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const data = await load();
+      const refreshed = data.find((entity) => entity.id === entityId);
+      if (!refreshed)
+        throw new Error("Cette entreprise n’est plus accessible.");
+      const linked = new Set(
+        refreshed.establishments.flatMap((item) =>
+          item.gites.map((gite) => gite.id),
+        ),
+      ).size;
+      setNotice(
+        linked
+          ? "Rattachements actualisés. Étape suivante : la connexion SuperPDP de test. Cette étape ne déclenche ni autorisation ni envoi de facture."
+          : "Aucun gîte n’est encore rattaché. Vous pouvez néanmoins préparer la connexion SuperPDP de test, sans autorisation ni envoi automatique.",
+      );
+      advanceFrom("gites");
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Actualisation impossible.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="fiscal-settings">
+    <div className="fiscal-settings" ref={settingsRef}>
       <header className="fiscal-page-header">
         <div className="fiscal-eyebrow">Organisation · Facturation</div>
         <h2>Entreprises et facturation</h2>
@@ -579,10 +646,10 @@ export default function FiscalEntitiesSettings() {
                   <span>
                     {entityDirty
                       ? "Les modifications de cette fiche ne sont pas encore enregistrées."
-                      : "Enregistrez cette fiche indépendamment des autres volets."}
+                      : "Après l’enregistrement, vous passerez au volet Établissements."}
                   </span>
                   <button type="submit">
-                    {saving ? "Enregistrement…" : "Enregistrer l’entreprise"}
+                    {saving ? "Enregistrement…" : "Enregistrer et continuer"}
                   </button>
                 </div>
               </fieldset>
@@ -691,7 +758,7 @@ export default function FiscalEntitiesSettings() {
                       <button type="submit">
                         {saving
                           ? "Enregistrement…"
-                          : "Enregistrer l’établissement"}
+                          : "Enregistrer et continuer"}
                       </button>
                     </div>
                   </fieldset>
@@ -820,6 +887,23 @@ export default function FiscalEntitiesSettings() {
                       .
                     </p>
                   </details>
+                )}
+                {canManageIntegrations && (
+                  <div className="fiscal-save-bar">
+                    <span>
+                      Les rattachements sont enregistrés dans les fiches gîtes.
+                      Continuer actualise cette liste sans modifier les gîtes.
+                    </span>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void continueFromGites()}
+                    >
+                      {saving
+                        ? "Actualisation…"
+                        : "Actualiser et continuer vers SuperPDP"}
+                    </button>
+                  </div>
                 )}
               </>
             )}

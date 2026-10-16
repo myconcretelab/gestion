@@ -149,6 +149,18 @@ Le contrôle de santé localhost est positif. La lecture de la base utilisateur 
 
 La prochaine étape du parcours réel multi-entreprise est de configurer et autoriser Tricatel avec les accès adaptés et son numéro sandbox, sans réutiliser ce numéro comme SIREN. Avant R03, qualifier séparément les identités de test (dont le SIRET), les données fiscales et le document à émettre ; ne pas contourner les gardes pour obtenir un dépôt. Aucun déploiement ni passage en production n'a été réalisé.
 
+### Parcours guidé et contrôle des deux connexions — 16/10/2026
+
+Les boutons des volets Entreprise et Établissements deviennent **Enregistrer et continuer**. Après validation du formulaire, confirmation serveur et actualisation des données, ils ouvrent respectivement les volets Établissements et Gîtes rattachés. En cas d'échec, le volet reste ouvert pour correction. L'arrivée sur les établissements reprend le premier établissement existant si aucune sélection ni saisie d'établissement n'est en cours ; un brouillon déjà saisi n'est pas remplacé.
+
+Le volet Gîtes ne possède pas de sauvegarde propre : les liens s'enregistrent dans les fiches gîtes. Son bouton **Actualiser et continuer vers SuperPDP** relit les rattachements avant d'ouvrir le dernier volet, uniquement pour les utilisateurs autorisés à gérer les intégrations. Une absence de gîte est signalée mais n'empêche pas la préparation d'une connexion sandbox. Le parcours s'arrête à SuperPDP : aucune configuration OAuth, autorisation, émission ni activation n'est déclenchée par cette navigation. L'avancement confirme un enregistrement, pas la complétude fiscale ; les contrôles de facturation restent inchangés.
+
+Recette manuelle sur Tricatel, après sauvegarde SQLite privée : un SIREN trop court est refusé sans changement de volet, puis le champ est remis à sa valeur vide initiale. Le réenregistrement de la fiche existante ouvre son établissement déjà créé ; le réenregistrement de cet établissement ouvre le gîte rattaché ; la continuation ouvre SuperPDP. Les champs métier des entreprises, établissements et gîtes sont identiques à la sauvegarde avant test, hors dates de mise à jour.
+
+Les deux connexions déjà consenties par l'utilisateur ont ensuite été vérifiées séparément depuis l'interface : Tricatel, numéro sandbox `000000001`, puis Burger Queen, numéro `000000002`, avec confirmation de leurs identités attendues par le backend. Cela constitue un contrôle réel des connexions, pas une preuve de recette complète d'échange ou du cycle OAuth. Aucun nouveau consentement ni changement d'annuaire/mandat n'a été réalisé ; les jetons restent gérés par le backend sans être exposés. Aucune facture, transmission, réception ni paiement électronique n'a été créé.
+
+Les 113 tests client réussissent, dont les transitions du parcours et son arrêt selon les droits. La compilation complète et le lint réussissent (36 avertissements de hooks préexistants, aucune erreur). Aucun changement serveur, migration ou déploiement n'est impliqué. La centralisation des identifiants OAuth de l'éditeur pour un futur SaaS reste un chantier distinct de cette amélioration de navigation.
+
 ## Matrice de recette avec preuves
 
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
