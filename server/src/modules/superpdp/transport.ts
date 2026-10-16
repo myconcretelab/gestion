@@ -52,6 +52,28 @@ export const remoteInvoiceSchema = z.object({
   external_id: z.string().max(64).optional(),
   processing_rule: z.string().optional(),
 });
+const decimal = z.string().regex(/^-?\d{1,14}(?:\.\d{1,8})?$/);
+export const incomingStructuredSchema = z
+  .object({
+    number: z.string().min(1).max(500),
+    issue_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    type_code: z.number().int(),
+    currency_code: z.string().regex(/^[A-Z]{3}$/),
+    seller: z.object({ name: z.string().min(1).max(500) }).passthrough(),
+    totals: z
+      .object({
+        total_without_vat: decimal,
+        total_with_vat: decimal,
+        total_vat_amount: z.object({ value: decimal }).passthrough().optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+export const incomingInvoiceSchema = remoteInvoiceSchema.extend({
+  created_at: z.string().datetime({ offset: true }),
+  // A just-created remote document may not have completed semantic extraction yet.
+  en_invoice: z.record(z.unknown()).nullable().optional(),
+});
 export const eventSchema = z.object({
   id: remoteId,
   invoice_id: remoteId,
@@ -280,6 +302,67 @@ export class SuperPdpTransport {
       invoice_id: remoteId.parse(id),
       limit: "100",
     });
+    if (cursor) query.set("starting_after_id", remoteId.parse(cursor));
+    return this.json(
+      `/v1.beta/invoice_events?${query}`,
+      { headers: this.headers(token) },
+      z.object({ data: z.array(eventSchema).max(100), has_after: z.boolean() }),
+    );
+  }
+  incoming(token: string, cursor: string | null) {
+    const query = new URLSearchParams({
+      direction: "in",
+      order: "asc",
+      limit: "1",
+    });
+    if (cursor) query.set("starting_after_id", remoteId.parse(cursor));
+    return this.json(
+      `/v1.beta/invoices?${query}`,
+      { headers: this.headers(token) },
+      z.object({
+        data: z.array(remoteInvoiceSchema).max(1),
+        has_after: z.boolean(),
+      }),
+    );
+  }
+  incomingDetail(token: string, id: string) {
+    return this.json(
+      `/v1.beta/invoices/${remoteId.parse(id)}?format=en16931`,
+      { headers: this.headers(token) },
+      incomingInvoiceSchema,
+    );
+  }
+  async incomingOriginal(token: string, id: string) {
+    const contents = await this.request(
+      `/v1.beta/invoices/${remoteId.parse(id)}?format=original`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/pdf, application/xml",
+        },
+      },
+      MAX_DOCUMENT_BYTES,
+    );
+    const prefix = contents
+      .subarray(0, 512)
+      .toString("utf8")
+      .replace(/^\uFEFF/, "")
+      .trimStart();
+    const format = prefix.startsWith("%PDF-")
+      ? "pdf"
+      : prefix.startsWith("<")
+        ? "xml"
+        : null;
+    if (!format)
+      throw superPdpError(
+        "SUPERPDP_INCOMING_FORMAT",
+        "Le document original n’est pas un fichier PDF/XML exploitable.",
+        502,
+      );
+    return { contents, format };
+  }
+  incomingEvents(token: string, cursor: string | null) {
+    const query = new URLSearchParams({ limit: "100" });
     if (cursor) query.set("starting_after_id", remoteId.parse(cursor));
     return this.json(
       `/v1.beta/invoice_events?${query}`,

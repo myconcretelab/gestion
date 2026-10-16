@@ -1,4 +1,6 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { canCurrentUserManageIntegrations } from "../utils/auth";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch, formatApiErrorMessage } from "../utils/api";
 import { formatEuro } from "../utils/format";
@@ -255,6 +257,7 @@ const ProfessionalExpensesPage = () => {
 
   return (
     <div className="professional-expenses-page">
+      {canCurrentUserManageIntegrations() && <p><Link to="/factures-achat">Factures d’achat SuperPDP de test</Link></p>}
       <header className="professional-expenses-hero">
         <div><span>Gestion financière</span><h1>Frais professionnels</h1><p>Centralisez les charges récurrentes, les règles automatiques et les dépenses ponctuelles de tous les gîtes.</p></div>
         <label className="field">Année<select value={year} onChange={(event) => setYear(Number(event.target.value))}>{years.map((item) => <option key={item}>{item}</option>)}</select></label>

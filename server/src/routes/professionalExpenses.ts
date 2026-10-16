@@ -152,6 +152,7 @@ router.delete("/one-off/:id", async (req, res, next) => {
     await prisma.intervenantExpense.delete({ where: { id: current.id } });
     res.status(204).end();
   } catch (error) {
+    if ((error as { code?: string })?.code === "P2003") return res.status(409).json({ error: "Cette dépense est rapprochée d’une facture d’achat. Retirez d’abord le rapprochement depuis la facture reçue." });
     next(error);
   }
 });

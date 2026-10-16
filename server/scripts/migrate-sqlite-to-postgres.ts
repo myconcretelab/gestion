@@ -184,12 +184,16 @@ const main = async () => {
       console.log("Suppression des donnees cibles...");
       await postgres.$transaction([
         postgres.securityThrottle.deleteMany(),
+        postgres.superPdpInboxEvent.deleteMany(),
+        postgres.incomingInvoice.deleteMany(),
+        postgres.superPdpInboxSync.deleteMany(),
         postgres.electronicInvoiceEvent.deleteMany(),
         postgres.electronicInvoiceTransmission.deleteMany(),
         postgres.superPdpOAuthState.deleteMany(),
         postgres.superPdpConnection.deleteMany(),
         postgres.planningRelayAssignment.deleteMany(),
         postgres.planningRelayWorker.deleteMany(),
+        postgres.intervenantExpense.deleteMany(),
         postgres.reservation.deleteMany(),
         postgres.reservationPlaceholder.deleteMany(),
         postgres.planningRelayPeriod.deleteMany(),
@@ -399,6 +403,26 @@ const main = async () => {
       });
     }
 
+    if (tableNames.has("superpdp_inbox_syncs")) {
+      // Imported documentary links require their existing professional ledger targets.
+      for (const expense of await sqlite.intervenantExpense.findMany()) {
+        const { id, ...rest } = expense;
+        await postgres.intervenantExpense.upsert({ where: { id }, create: { id, ...rest }, update: rest });
+      }
+      for (const sync of await sqlite.superPdpInboxSync.findMany()) {
+        const { id, ...rest } = sync;
+        const data = { ...rest, enabled: false, revision: rest.revision + 1, operation_id: null, operation_expires_at: null, next_sync_at: null, last_error_code: "SUPERPDP_DATABASE_MOVED" };
+        await postgres.superPdpInboxSync.upsert({ where: { id }, create: { id, ...data }, update: data });
+      }
+      for (const invoice of await sqlite.incomingInvoice.findMany()) {
+        const { id, ...rest } = invoice;
+        await postgres.incomingInvoice.upsert({ where: { id }, create: { id, ...rest }, update: {} });
+      }
+      for (const event of await sqlite.superPdpInboxEvent.findMany()) {
+        const { id, ...rest } = event;
+        await postgres.superPdpInboxEvent.upsert({ where: { id }, create: { id, ...rest }, update: {} });
+      }
+    }
     console.log("Migration terminee.");
   } finally {
     await sqlite.$disconnect();

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../../utils/api";
 
 type Connection = {
@@ -147,6 +148,11 @@ export default function SuperPdpConnectionSettings({
       <h3 className="section-subtitle">
         SuperPDP — environnement de test uniquement
       </h3>
+      <p>
+        <Link to={`/factures-achat?entreprise=${encodeURIComponent(entityId)}`}>
+          Ouvrir les factures d’achat de test de cette entreprise
+        </Link>
+      </p>
       <p>
         La production est désactivée. Cette étape connecte l’entreprise et
         vérifie son identité. Elle ne transmet aucune facture automatiquement ;

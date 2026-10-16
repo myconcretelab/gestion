@@ -190,6 +190,48 @@ La migration additive `20261016190000_superpdp_emission` est fournie pour SQLite
 
 Référence : [OpenAPI SuperPDP](https://www.superpdp.tech/openapi/), version `1.37.0.beta` consultée le 16/10/2026. Un sous-ensemble structurel versionné est conservé dans `server/tests/fixtures/superpdp-1.37.0.beta.json` pour les tests de contrat ; ce n’est pas une copie complète ni une spécification OpenAPI autonome.
 
+## Réception des factures d’achat SuperPDP de test (étape 6)
+
+La boîte **Frais professionnels → Factures d’achat SuperPDP de test** est accessible à `/factures-achat`, ainsi que depuis la connexion de chaque entreprise. Son accès et ses téléchargements exigent une session d’administrateur du compte. La consultation des archives reste possible si le connecteur est arrêté. Aucun déploiement ni appel réel n’est nécessaire pour développer/tester ce lot avec le simulateur local.
+
+### Activation locale et limites
+
+Dans une **installation de test distincte**, ajouter `SUPERPDP_SANDBOX_RECEPTION_ENABLED=true` à la configuration OAuth de l’étape 4. Cette option est désactivée par défaut et indépendante de `SUPERPDP_SANDBOX_EMISSION_ENABLED`. Le worker commun démarre si l’un des deux lots est activé et si `ORGANIZATION_JOB_WORKER_ENABLED=true` ; il ne démarre pas en `NODE_ENV=test`. Sélectionner ensuite une entreprise dont la connexion sandbox est vérifiée, puis confirmer **Activer la synchronisation de test**. L’arrêt local reste possible même lorsque le connecteur serveur est désactivé ; il conserve les archives et invalide les tâches devenues périmées.
+
+Cette activation ne crée **aucune** ligne d’annuaire, mandat ou entreprise chez SuperPDP. Elle récupère uniquement les factures déjà reçues par l’entreprise connectée. Le parcours OAuth reste sans inscription automatique à un annuaire : les conditions de réception et adresses de test doivent être configurées/vérifiées séparément côté SuperPDP, avec le consentement approprié. Aucun événement d’accusé, acceptation, refus, paiement ou e-reporting n’est envoyé par ce lot. Les accès réels présents dans un fichier local ignoré ne sont pas chargés automatiquement par le connecteur.
+
+### Synchronisation fiable par entreprise
+
+`SuperPdpInboxSync` fige le compte, l’entité fiscale, la connexion, le `company_id` et l’environnement sandbox. Il porte deux curseurs indépendants : `invoices_cursor` et `events_cursor`. Les identifiants 64 bits restent des chaînes, comparées en `BigInt`. La synchronisation suit le [guide officiel SuperPDP](https://www.superpdp.tech/documentation/14/) et la référence `1.37.0.beta` consultée le 16/10/2026.
+
+Chaque tâche `superpdp.inbox` récupère une page de **une facture** avec `GET /v1.beta/invoices?direction=in&order=asc&limit=1&starting_after_id=…`, son détail `format=en16931` et son fichier `format=original`, puis une page de 100 événements globaux avec `GET /v1.beta/invoice_events?starting_after_id=…`. Une facture précédente dont l’extraction est incomplète peut également être revérifiée. Ce découpage borne le nombre d’appels à l’intérieur du verrou OAuth et évite qu’un lot long utilise des jetons concurrents. Les deux verrous persistants — connexion OAuth et synchronisation — protègent les renouvellements et les imports ; le verrou de synchronisation vérifie aussi les curseurs lus afin qu’une tâche périmée ne les fasse pas reculer.
+
+Originals, données et événements doivent être enregistrés avant la progression des curseurs. La transaction de fin archive les lignes reçues et les événements, avance les deux curseurs et programme la suite. Une coupure, une identité/direction inattendue, une page incohérente ou un téléchargement refusé bloque cette progression et permet une reprise sans saut. Des fichiers conservés après un échec de transaction peuvent être réutilisés par leur empreinte, sans écrasement. Une erreur persistante doit être examinée : aucun document problématique n’est ignoré silencieusement.
+
+Le journal `SuperPdpInboxEvent` conserve les événements globaux de l’entreprise, y compris ceux dont la facture n’est pas encore importée ou qui concernent une vente. Ils ne sont pas appliqués aux factures de vente : seuls les événements correspondant à l’identifiant de la facture d’achat consultée sont affichés. Les doublons sont dédupliqués, les codes inconnus conservés et le curseur est enregistré atomiquement avec le journal. Le suivi reprend rapidement quand `has_after=true`, sinon après cinq minutes. **Synchroniser maintenant** demande une tâche ; **Actualiser la boîte locale** ne contacte pas SuperPDP.
+
+Une reconnexion doit retrouver la même entreprise distante pour reprendre une boîte historique. Le remplacement du `company_id` ne déplace pas les achats vers une autre identité ; la reprise est alors bloquée jusqu’à vérification de la configuration. Le SIREN local reste verrouillé dès qu’un historique de synchronisation lui est rattaché, y compris après déconnexion OAuth.
+
+### Archives et données extraites
+
+`IncomingInvoice` est distinct de `Facture` : la réception ne modifie ni la numérotation, ni les ventes, ni les PDF existants. L’original est stocké sous `DATA_DIR/organizations/{compte}/{PDF_SUBDIR}/incoming/sandbox/{synchronisation}/{id distant}/{sha256}.pdf|xml`, avec un `DocumentAsset`, des permissions locales restreintes et un SHA-256 revérifié au téléchargement. Les liens entre facture reçue, entreprise distante et synchronisation sont protégés par une clé étrangère composite.
+
+Le téléchargement est servi en pièce jointe `application/octet-stream` avec `nosniff` ; aucun XML n’est exécuté ou affiché comme page HTML, et aucun lien externe extrait de la facture n’est suivi. Les fichiers fournisseurs restent des contenus non fiables à ouvrir avec précaution. Les réponses sont bornées et les corps d’erreur bruts ne sont ni affichés ni journalisés.
+
+Le JSON EN16931 retourné est conservé avec son empreinte ; les champs exploités (fournisseur, numéro/date, devise, montants HT/TVA/TTC et type) sont extraits sans conversion ni arrondi des décimaux. Ce lot ne constitue pas un validateur indépendant de la conformité d’une facture fournisseur. Si l’extraction n’est pas encore exploitable, l’original reste visible et les détails sont revérifiés ultérieurement. Une fois exploitable, cette projection n’est plus écrasée automatiquement.
+
+### Rapprochement documentaire, sans comptabilisation automatique
+
+L’interface professionnelle actuelle utilise **`IntervenantExpense`** pour les frais ponctuels ; `ExpenseEntry` sert aujourd’hui aux frais personnels. Contrairement à la première piste du diagnostic, le rapprochement réutilise donc le premier modèle pour ne pas mélanger ces deux domaines. Il propose des dépenses existantes de même montant TTC et de même compte, puis exige une confirmation humaine du fournisseur, de la période et du périmètre. Aucune dépense, catégorie, écriture TVA ou opération de paiement n’est créée par l’import.
+
+Le premier lot gère le rapprochement intégral d’une facture de type `380`, positive, en EUR, d’un montant représentable exactement en centimes et inférieur ou égal à 1 000 000 €. Les avoirs, autres devises, paiements partiels et répartitions multiples restent hors rapprochement automatisé. Une dépense affectée à un gîte doit appartenir à la même entité fiscale ; une dépense « tous gîtes » exige une vérification humaine supplémentaire puisqu’elle peut couvrir plusieurs entreprises. Les propositions par montant ne prouvent pas qu’il s’agit de la bonne dépense.
+
+Une dépense ne peut être associée qu’à une facture reçue. Le lien conserve un instantané de la dépense et vérifie la révision de la facture ainsi que la version et le contenu de la dépense au moment de la confirmation. La dépense elle-même reste inchangée. Si elle est modifiée ensuite, la boîte signale un rapprochement à revérifier ; retirer puis refaire le lien après contrôle. La suppression d’une dépense liée est refusée tant que le rapprochement n’a pas été retiré. Retirer le lien ne supprime aucun document ni aucune dépense ; ces actions sont auditées.
+
+API administrateur : `GET /api/purchase-invoices?entity_id=…&page=…` (50 documents/page), `GET /api/purchase-invoices/:id`, `GET /api/purchase-invoices/:id/original`, `GET /api/purchase-invoices/:id/structured`, `GET /api/purchase-invoices/:id/expense-candidates`, `PUT /api/purchase-invoices/:id/match` (`revision`, `expense_id`, `expense_updated_at`, `confirm_match:true`), `DELETE /api/purchase-invoices/:id/match` (`revision`, `confirm_unlink:true`). La configuration utilise `GET|PUT /api/fiscal-entities/:id/superpdp/inbox` (`revision`, `enabled`, `confirm_sandbox:true`) et `POST …/inbox/sync`. Les mutations contrôlent l’origine et toutes les réponses sont privées/non mises en cache.
+
+La migration additive `20261016210000_superpdp_reception` est fournie pour SQLite/PostgreSQL. Les sauvegardes conservent les originaux, les données structurées, les événements et les rapprochements ; elles arrêtent les synchronisations dans la copie, neutralisent les tâches et protègent/retirent les secrets selon le format. Après restauration ou conversion SQLite → PostgreSQL, reconnecter la bonne entreprise et réactiver explicitement les imports. Les curseurs conservés permettent de reprendre les achats postérieurs sans saut. Le convertisseur transporte aussi les frais ponctuels nécessaires aux rapprochements ; les fichiers du `DATA_DIR` doivent être transférés séparément, comme pour les autres documents. L’émission reste suspendue selon les règles de l’étape 5.
+
 ## Stripe en mode test
 
 La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.

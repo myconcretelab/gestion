@@ -2,6 +2,31 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 
+test("contrat de réception : pagination globale, filtre de direction et téléchargement original", () => {
+  const contract = JSON.parse(
+    fs.readFileSync(
+      new URL("./fixtures/superpdp-1.37.0.beta.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const name of ["direction", "starting_after_id", "limit", "order"])
+    assert.ok(
+      contract.paths["/v1.beta/invoices"].get.parameters.some(
+        (parameter: { name: string }) => parameter.name === name,
+      ),
+    );
+  assert.ok(
+    contract.paths["/v1.beta/invoice_events"].get.parameters.some(
+      (parameter: { name: string }) => parameter.name === "starting_after_id",
+    ),
+  );
+  const format = contract.paths["/v1.beta/invoices/{id}"].get.parameters.find(
+    (parameter: { name: string }) => parameter.name === "format",
+  ).schema.enum;
+  assert.ok(format.includes("original"));
+  assert.ok(format.includes("en16931"));
+});
+
 test("contrat officiel SuperPDP versionné : conversion multipart, validation et dépôt non idempotent", () => {
   // A curated, unmodified structural subset, not a complete or self-contained OpenAPI document.
   const contract = JSON.parse(

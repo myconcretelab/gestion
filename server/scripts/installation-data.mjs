@@ -78,16 +78,19 @@ const backup = () => {
         "UPDATE planning_relay_periods SET share_nonce = lower(hex(randomblob(32))), public_code_hash = NULL, public_origin = NULL;",
         "DELETE FROM auth_sessions; DELETE FROM api_tokens; DELETE FROM document_shares; DELETE FROM password_reset_tokens; DELETE FROM security_throttles;",
       ].join(" ")]);
-      const oauthTables = spawnSync("sqlite3", [copiedDatabase, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('superpdp_connections', 'superpdp_oauth_states', 'electronic_invoice_transmissions');"], { encoding: "utf8" });
+      const oauthTables = spawnSync("sqlite3", [copiedDatabase, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('superpdp_connections', 'superpdp_oauth_states', 'electronic_invoice_transmissions', 'superpdp_inbox_syncs');"], { encoding: "utf8" });
       if (oauthTables.status !== 0) fail("Impossible de vérifier les tables OAuth de la copie de sauvegarde.");
       const presentOauthTables = new Set(oauthTables.stdout.trim().split("\n"));
       if (presentOauthTables.has("electronic_invoice_transmissions")) {
-        run("sqlite3", [copiedDatabase, "UPDATE electronic_invoice_transmissions SET status='paused_after_restore', operation_id=NULL, operation_expires_at=NULL, next_sync_at=NULL; UPDATE organization_jobs SET status='failed', locked_at=NULL, lock_owner=NULL, last_error='SUPERPDP_DATABASE_MOVED' WHERE type IN ('superpdp.prepare','superpdp.send','superpdp.reconcile') AND status IN ('queued','running');"]);
+        run("sqlite3", [copiedDatabase, "UPDATE electronic_invoice_transmissions SET status='paused_after_restore', operation_id=NULL, operation_expires_at=NULL, next_sync_at=NULL; UPDATE organization_jobs SET status='failed', locked_at=NULL, lock_owner=NULL, last_error='SUPERPDP_DATABASE_MOVED' WHERE type IN ('superpdp.prepare','superpdp.send','superpdp.reconcile','superpdp.inbox') AND status IN ('queued','running');"]);
         // Keep non-secret connection keys referenced by immutable transmission history.
         run("sqlite3", [copiedDatabase, "UPDATE superpdp_connections SET encrypted_client_secret=NULL, encrypted_tokens=NULL, client_id=NULL, expected_number=NULL, access_expires_at=NULL, operation_id=NULL, operation_expires_at=NULL, generation=generation+1, status='disconnected';"]);
       }
+      if (presentOauthTables.has("superpdp_inbox_syncs")) run("sqlite3", [copiedDatabase, "UPDATE superpdp_inbox_syncs SET enabled=0, revision=revision+1, operation_id=NULL, operation_expires_at=NULL, next_sync_at=NULL, last_error_code='SUPERPDP_DATABASE_MOVED';"]);
       for (const table of ["superpdp_oauth_states", "superpdp_connections"]) {
-        if (presentOauthTables.has(table)) run("sqlite3", [copiedDatabase, `DELETE FROM "${table}"${table === "superpdp_connections" && presentOauthTables.has("electronic_invoice_transmissions") ? " WHERE id NOT IN (SELECT connection_id FROM electronic_invoice_transmissions)" : ""};`]);
+        const references = ["electronic_invoice_transmissions", "superpdp_inbox_syncs"].filter((name) => presentOauthTables.has(name));
+        const where = table === "superpdp_connections" && references.length ? ` WHERE ${references.map((name) => `id NOT IN (SELECT connection_id FROM ${name})`).join(" AND ")}` : "";
+        if (presentOauthTables.has(table)) run("sqlite3", [copiedDatabase, `DELETE FROM "${table}"${where};`]);
       }
       databaseFormat = "sqlite-sanitized";
     } else {
@@ -166,6 +169,7 @@ const restore = () => {
       const oauthConnectionsTable = `"${schemaName}"."superpdp_connections"`;
       const transmissionsTable = `"${schemaName}"."electronic_invoice_transmissions"`;
       const jobsTable = `"${schemaName}"."organization_jobs"`;
+      const inboxSyncTable = `"${schemaName}"."superpdp_inbox_syncs"`;
       const clearDump = path.join(result.staging, "database", "database.restore.clear.dump");
       try {
         cryptPostgresDump("decrypt", path.join(result.staging, "database", "database.dump.enc"), clearDump);
@@ -184,7 +188,10 @@ const restore = () => {
             IF to_regclass('${transmissionsTable}') IS NOT NULL THEN
               UPDATE ${transmissionsTable} SET "status"='paused_after_restore', "operation_id"=NULL, "operation_expires_at"=NULL, "next_sync_at"=NULL;
               UPDATE ${jobsTable} SET "status"='failed', "locked_at"=NULL, "lock_owner"=NULL, "last_error"='SUPERPDP_DATABASE_MOVED'
-                WHERE "type" IN ('superpdp.prepare','superpdp.send','superpdp.reconcile') AND "status" IN ('queued','running');
+                WHERE "type" IN ('superpdp.prepare','superpdp.send','superpdp.reconcile','superpdp.inbox') AND "status" IN ('queued','running');
+            END IF;
+            IF to_regclass('${inboxSyncTable}') IS NOT NULL THEN
+              UPDATE ${inboxSyncTable} SET "enabled"=false, "revision"="revision"+1, "operation_id"=NULL, "operation_expires_at"=NULL, "next_sync_at"=NULL, "last_error_code"='SUPERPDP_DATABASE_MOVED';
             END IF;
           END $oauth_restore$;`]);
       } finally {

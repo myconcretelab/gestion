@@ -6,6 +6,7 @@ import {
 } from "@contrats/shared";
 import prisma from "../../db/prisma.js";
 import { createSuperPdpRouter } from "../superpdp/routes.js";
+import { createInboxConfigRouter } from "../superpdp/inboxRoutes.js";
 import {
   assertSiretMatchesSiren,
   fiscalError,
@@ -13,6 +14,7 @@ import {
 
 const router = Router();
 router.use(createSuperPdpRouter());
+router.use(createInboxConfigRouter());
 const entityInclude = {
   gestionnaire: { select: { id: true, prenom: true, nom: true } },
   establishments: {
@@ -123,7 +125,7 @@ router.put("/:id", async (req, res, next) => {
           where: { id: req.params.id },
           include: {
             establishments: true,
-            superpdp_connections: { select: { status: true } },
+            superpdp_connections: { select: { status: true, _count: { select: { inbox_syncs: true } } } },
             _count: { select: { invoices: true, sequences: true } },
           },
         });
@@ -141,11 +143,11 @@ router.put("/:id", async (req, res, next) => {
           data.siren !== entity.siren &&
           (entity.establishments.some((item) => item.siret) ||
             entity._count.invoices > 0 ||
-            entity.superpdp_connections.some((connection) => connection.status !== "disconnected") ||
+            entity.superpdp_connections.some((connection) => connection.status !== "disconnected" || connection._count.inbox_syncs > 0) ||
             entity._count.sequences > 0)
         ) {
           throw fiscalError(
-            "Le SIREN est lié à des établissements, des documents émis ou une connexion SuperPDP. Déconnectez l’intégration ou créez une autre entreprise pour une nouvelle identité légale.",
+            "Le SIREN est lié à des établissements, des documents émis, une connexion SuperPDP ou un historique de réception. Une déconnexion ne permet pas de réattribuer les documents historiques à une nouvelle identité légale.",
             409,
           );
         }

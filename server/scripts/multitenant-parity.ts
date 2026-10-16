@@ -7,6 +7,7 @@ const TABLES = [
   "gestionnaires", "app_users", "auth_sessions", "password_reset_tokens", "api_tokens", "document_shares",
   "fiscal_entities", "fiscal_establishments", "invoice_sequences",
   "superpdp_connections", "superpdp_oauth_states",
+  "superpdp_inbox_syncs", "incoming_invoices", "superpdp_inbox_events",
   "electronic_invoice_transmissions", "electronic_invoice_events",
   "expense_categories", "expense_recurring_rules", "expense_entries", "urssaf_declarations",
   "guest_night_declarations", "ical_sources", "contrats", "contrat_counters", "factures", "facture_counters",

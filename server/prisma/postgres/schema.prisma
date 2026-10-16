@@ -640,6 +640,7 @@ model SuperPdpConnection {
   fiscal_entity FiscalEntity @relation(fields: [fiscal_entity_id, organization_id], references: [id, organization_id], onDelete: Restrict)
   oauth_states SuperPdpOAuthState[]
   transmissions ElectronicInvoiceTransmission[]
+  inbox_syncs SuperPdpInboxSync[]
 
   @@unique([id, fiscal_entity_id, organization_id], map: "superpdp_connections_id_entity_org_key")
   @@unique([id, organization_id], map: "superpdp_connections_id_org_key")
@@ -664,6 +665,95 @@ model SuperPdpOAuthState {
   @@index([organization_id, connection_id], map: "superpdp_oauth_states_org_connection_idx")
   @@index([expires_at], map: "superpdp_oauth_states_expires_idx")
   @@map("superpdp_oauth_states")
+}
+
+model SuperPdpInboxSync {
+  id                     String   @id @default(uuid())
+  organization_id        String   @default("org_historical_broceliande")
+  fiscal_entity_id       String
+  connection_id          String
+  remote_company_id      String
+  environment            String   @default("sandbox")
+  enabled                Boolean  @default(false)
+  revision               Int      @default(1)
+  invoices_cursor        String?
+  events_cursor          String?
+  operation_id           String?
+  operation_expires_at   DateTime?
+  next_sync_at           DateTime?
+  last_synced_at         DateTime?
+  last_error_code        String?
+  requested_by           String
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  connection SuperPdpConnection @relation(fields: [connection_id, fiscal_entity_id, organization_id], references: [id, fiscal_entity_id, organization_id], onDelete: Restrict)
+  invoices IncomingInvoice[]
+  events SuperPdpInboxEvent[]
+
+  @@unique([id, organization_id], map: "superpdp_inbox_sync_id_org_key")
+  @@unique([id, remote_company_id, organization_id], map: "superpdp_inbox_sync_id_company_org_key")
+  @@unique([organization_id, connection_id, remote_company_id, environment], map: "superpdp_inbox_sync_company_key")
+  @@index([enabled, next_sync_at], map: "superpdp_inbox_sync_due_idx")
+  @@map("superpdp_inbox_syncs")
+}
+
+model IncomingInvoice {
+  id                    String   @id @default(uuid())
+  organization_id       String   @default("org_historical_broceliande")
+  sync_id               String
+  remote_company_id     String
+  remote_invoice_id     String
+  environment           String   @default("sandbox")
+  remote_created_at     DateTime
+  invoice_number        String?
+  supplier_name         String?
+  issue_date            String?
+  type_code             Int?
+  currency              String?
+  total_without_vat     String?
+  total_vat             String?
+  total_with_vat        String?
+  structured_json       String?
+  structured_sha256     String?
+  details_next_check_at DateTime?
+  original_path         String
+  original_sha256       String
+  original_format       String
+  expense_id            String?
+  expense_snapshot_json String?
+  matched_at            DateTime?
+  matched_by            String?
+  revision              Int      @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  sync SuperPdpInboxSync @relation(fields: [sync_id, remote_company_id, organization_id], references: [id, remote_company_id, organization_id], onDelete: Restrict)
+  expense IntervenantExpense? @relation(fields: [expense_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+
+  @@unique([id, organization_id], map: "incoming_invoices_id_org_key")
+  @@unique([organization_id, remote_company_id, remote_invoice_id, environment], map: "incoming_invoices_remote_key")
+  @@unique([organization_id, expense_id], map: "incoming_invoices_expense_key")
+  @@index([organization_id, sync_id, remote_created_at], map: "incoming_invoices_list_idx")
+  @@map("incoming_invoices")
+}
+
+model SuperPdpInboxEvent {
+  id                String   @id @default(cuid())
+  organization_id   String   @default("org_historical_broceliande")
+  sync_id           String
+  remote_event_id   String
+  remote_invoice_id String
+  status_code       String
+  occurred_at       DateTime
+  payload_json      String
+  createdAt         DateTime @default(now())
+
+  sync SuperPdpInboxSync @relation(fields: [sync_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+
+  @@unique([organization_id, sync_id, remote_event_id], map: "superpdp_inbox_events_remote_key")
+  @@index([organization_id, sync_id, remote_invoice_id, occurred_at], map: "superpdp_inbox_events_invoice_idx")
+  @@map("superpdp_inbox_events")
 }
 
 model ElectronicInvoiceTransmission {
@@ -1312,6 +1402,8 @@ model UserIntervention {
 }
 
 model IntervenantExpense {
+  incoming_invoices IncomingInvoice[]
+  @@unique([id, organization_id], map: "intervenant_expenses_id_org_key")
   id              String   @id @default(cuid())
   intervenant_id  String?
   intervenant_nom String?

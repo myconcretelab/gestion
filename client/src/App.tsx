@@ -22,6 +22,7 @@ const CalendrierPage = lazy(() => import("./pages/CalendrierPage"));
 const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
 const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const ProfessionalExpensesPage = lazy(() => import("./pages/ProfessionalExpensesPage"));
+const PurchaseInvoicesPage = lazy(() => import("./pages/PurchaseInvoicesPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./features/settings"));
 const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
@@ -1076,6 +1077,7 @@ const App = () => {
             <Route path="/statistiques" element={<PageAccess allowed={canAccessPage("statistics")}><AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-personnels" element={<PageAccess allowed={canAccessPage("personal_expenses")}><AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />
+            <Route path="/factures-achat" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><PurchaseInvoicesPage /></AmountsAccess></PageAccess>} />
             <Route path="/tarifs" element={<PageAccess allowed={canAccessPage("rates")}><AmountsAccess allowed={canViewAmounts}><SeasonRatesPage /></AmountsAccess></PageAccess>} />
             <Route path="/interventions" element={<PageAccess allowed={canAccessPage("settings")}><AmountsAccess allowed={canViewAmounts}><IntervenantsPage /></AmountsAccess></PageAccess>} />
             <Route path="/parametres/intervenants" element={<Navigate to="/interventions" replace />} />

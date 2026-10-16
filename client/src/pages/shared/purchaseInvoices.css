@@ -1,0 +1,30 @@
+.purchase-invoices-page {
+  display: grid;
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+.purchase-invoices-page .card {
+  padding: 20px;
+}
+.purchase-invoices-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.purchase-invoice-choice {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+.purchase-invoices-page button.purchase-invoice-choice.is-selected {
+  background: var(--primary-soft);
+  color: var(--ink);
+  outline: 2px solid var(--primary);
+}
+.purchase-invoices-page button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
