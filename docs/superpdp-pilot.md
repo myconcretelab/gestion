@@ -175,9 +175,19 @@ Ce test valide un échange du **document généré par SuperPDP**, pas l'émissi
 
 Aucun code applicatif n'a été modifié pour cet échange, aucun worker ni interrupteur applicatif d'émission/réception/B2C n'a été activé, et aucun déploiement n'a été réalisé. Les parcours natifs de R03/R06, l'avoir, le e-reporting B2C, les incidents et les conditions SaaS/production ne sont pas attestés par cette seule preuve.
 
+### Réception native et parcours fictif isolé — 16/10/2026
+
+La recette réelle a été prolongée avec l'autorisation explicite de l'utilisateur. Le document du générateur précédemment échangé est maintenant archivé dans les achats de Tricatel avec ses événements et son original intact ; une seconde lecture n'a créé aucun doublon.
+
+Un [parcours opérateur sandbox distinct](superpdp-sandbox-recipe.md) a ensuite été développé pour les seules entreprises fictives du fournisseur. Il réutilise le calcul fiscal, le constructeur EN16931 et le générateur PDF de l'application, sans inventer de SIRET ni modifier les SIREN locaux, et sans assouplir les contrôles des factures normales. Il ne crée pas de facture métier et n'utilise aucune séquence comptable. Ce parcours est local, manuel et hors des routes HTTP/automatisations ; ce n'est pas une nouvelle interface de facturation client.
+
+Sa facture de test de 175 EUR TTC a passé la validation réelle (191 contrôles, zéro échec) et la vérification visuelle de sa page unique. Un unique dépôt a été confirmé, suivi d'une réception correspondante chez Tricatel et d'un import natif dans les achats de l'application. L'original est identique au Factur-X envoyé, les valeurs structurées concordent après normalisation de représentation du fournisseur, et le deuxième passage ne crée aucun doublon. Les références et preuves privées sont précisées dans le guide dédié : **ne pas rejouer ces dépôts**.
+
+Les deux achats reçus restent non rapprochés ; aucun enregistrement de dépense ou de paiement n'a été créé. La réception n'a été activée que dans les processus de recette ciblés, puis arrêtée ; aucun worker général ni fichier de configuration n'a été activé. Les données fiscales légales, rattachements, factures et séquences restent inchangés. Aucun déploiement n'a été réalisé. R06 bénéficie ainsi d'une preuve d'import réel ; R03 reste partiel tant que le cycle brouillon/émission métier avec ses identités légales propres n'a pas été qualifié. L'avoir, le B2C, les incidents et la production restent distincts.
+
 ## Matrice de recette avec preuves
 
-Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
+Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Les résultats effectivement observés sont ceux des comptes rendus datés ci-dessus ; cette matrice décrit les contrôles attendus, pas une liste de réussites. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
 
 | Scénario | Contrôle attendu | Preuve à conserver hors du dépôt |
 | --- | --- | --- |

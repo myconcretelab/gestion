@@ -137,7 +137,20 @@ const netPriceDetails = (netCents: number, quantity: number) => {
  */
 export const buildStructuredInvoice = (params: {
   input: InvoiceFiscalInput;
-  issuer: { entity: FiscalEntity; establishment: FiscalEstablishment };
+  issuer: {
+    entity: Pick<
+      FiscalEntity,
+      | "legal_name"
+      | "siren"
+      | "vat_number"
+      | "address_line1"
+      | "address_line2"
+      | "postal_code"
+      | "city"
+      | "country_code"
+    >;
+    establishment: Pick<FiscalEstablishment, "siret">;
+  };
   number: string;
   issuedAt: Date;
   buyerName: string;

@@ -102,6 +102,8 @@ export type ContractRenderInput = {
 };
 
 export type InvoiceRenderInput = {
+  /** Operator-only recipe. Never populated from ordinary invoice input. */
+  test_environment?: "superpdp-sandbox";
   fiscal?: InvoiceFiscalInput | null;
   numero_facture: string;
   lifecycle_status?: string;
@@ -1298,7 +1300,7 @@ export const buildInvoicePaymentTermsHtml = (fiscal: InvoiceFiscalInput | null |
     : "";
 };
 
-const buildInvoiceHtml = async (params: {
+export const buildInvoiceHtml = async (params: {
   invoice: InvoiceRenderInput;
   gite: GiteLike;
   totals: ContractTotals;
@@ -1373,8 +1375,10 @@ const buildInvoiceHtml = async (params: {
   const fiscalSummary = fiscalTotals ? `<tr><td>Total HT</td><td>${fiscalMoney(fiscalTotals.net_cents)}</td></tr>${fiscalTotals.breakdown.map((group) => `<tr><td>TVA ${escapeHtml(group.category === "unknown" ? "à préciser" : group.category)}${group.category === "S" ? ` · ${escapeHtml(String(group.rate))} %` : ""}${group.reason ? `<div class="invoice-item-meta">${escapeHtml(group.reason)}</div>` : ""}</td><td>${fiscalMoney(group.vat_cents)}</td></tr>`).join("")}${fiscalTotals.rounding_cents ? `<tr><td>Arrondi TTC</td><td>${fiscalMoney(fiscalTotals.rounding_cents)}</td></tr>` : ""}` : "";
 
   return renderTemplate(template, {
+    sandboxNoticeHtml: params.invoice.test_environment === "superpdp-sandbox"
+      ? '<div class="sandbox-notice">TEST SUPERPDP - BAC À SABLE<br>Entreprises et identifiants fictifs. Aucune valeur comptable.</div>' : "",
     organizationName: params.invoice.seller?.legal_name || organization?.publicDisplayName || organization?.tradeName || params.gite.proprietaires_noms,
-    documentTitle: params.invoice.lifecycle_status === "draft" ? params.invoice.document_kind === "credit_note" ? "BROUILLON D’AVOIR" : "BROUILLON" : params.invoice.document_kind === "credit_note" ? "AVOIR" : "FACTURE",
+    documentTitle: params.invoice.test_environment === "superpdp-sandbox" ? "FACTURE TEST" : params.invoice.lifecycle_status === "draft" ? params.invoice.document_kind === "credit_note" ? "BROUILLON D’AVOIR" : "BROUILLON" : params.invoice.document_kind === "credit_note" ? "AVOIR" : "FACTURE",
     sellerIdentifiers: params.invoice.seller ? [params.invoice.seller.siren && `SIREN : ${params.invoice.seller.siren}`, params.invoice.seller.siret && `SIRET : ${params.invoice.seller.siret}`, params.invoice.seller.vat_number && `TVA : ${params.invoice.seller.vat_number}`].filter(Boolean).join(" · ") : "",
     bodyAttrs: params.bodyAttrs ?? "",
     invoiceNumber: params.invoice.lifecycle_status === "draft" ? "Non émis — sans numéro définitif" : params.invoice.numero_facture,
