@@ -56,6 +56,20 @@ Si aucune entreprise fiscale n’est encore enregistrée, renseigner les identit
 
 La réception actuelle interroge l’API depuis Node : aucun webhook ni tunnel public n’est nécessaire pour ce parcours. Le serveur local doit rester démarré pendant le retour OAuth et les traitements ; un redémarrage ne doit pas rejouer un dépôt ou un encaissement incertain.
 
+### Préparation locale du 16/10/2026
+
+Sur l’installation de développement locale uniquement, l’URL de retour ci-dessus a été enregistrée dans l’application OAuth **Burger Queen — bac à sable**, après autorisation, puis vérifiée en rouvrant son formulaire. Cela ne constitue pas un consentement OAuth.
+
+La configuration privée du serveur est préparée dans le fichier racine `.env.update`, ignoré par Git et protégé en mode `600`. Ce fichier est chargé en dernier lorsque le serveur est lancé depuis `server/`. Il fixe les deux origines à `http://localhost:5173`, le retour OAuth exact et une clé aléatoire locale de 32 octets, encodée en base64. Conserver cette clé : ne pas la régénérer après enregistrement de secrets chiffrés, ni copier ce fichier vers une autre installation.
+
+Seule la disponibilité de la connexion sandbox est activée (`SUPERPDP_SANDBOX_ENABLED=true`). Les interrupteurs d’émission, de réception et B2C restent `false`. Les workers de tâches et le planificateur multi-comptes sont également désactivés dans cette configuration locale afin de ne pas démarrer de traitements annexes pendant la préparation. Les lots et workers nécessaires à une future recette devront être réactivés explicitement, après revue du périmètre.
+
+Le contrôle local du chargement de configuration et du chiffrement/déchiffrement a réussi, y compris le refus de déchiffrement sous un autre compte. Les 80 tests ciblés OAuth, émission et réception ont réussi avec un fournisseur simulé : ils ne constituent pas une recette avec SuperPDP. Aucune valeur secrète n’a été affichée ou versionnée et le fichier `.PDP` n’a pas été utilisé.
+
+Le serveur de développement a été redémarré par son superviseur existant, sans migration ni réinitialisation. Le contrôle de santé via le proxy `localhost:5173` est positif ; le nouveau processus utilise toujours la base SQLite locale initiale et son contrôle d’intégrité est positif.
+
+Il reste à qualifier l’identité de l’entreprise fictive locale (SIREN et, pour l’établissement, SIRET), puis à enregistrer ses accès OAuth chiffrés côté backend. Le numéro sandbox fournisseur ne remplace pas ces identités légales. Aucune entreprise, facture, connexion, demande OAuth ou tâche SuperPDP n’a été créée par cette préparation ; aucun consentement, appel fournisseur ou déploiement n’a été réalisé.
+
 ## Matrice de recette avec preuves
 
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
