@@ -688,6 +688,45 @@ test("le détail fiscal incomplet ou déséquilibré bloque avant le compteur et
   assert.equal(malformed.status, 400);
 });
 
+test("une mention B2B manquante bloque avant numérotation sans empêcher de sauver le brouillon", async () => {
+  const draft = await createDraft();
+  const fiscal = draft.fiscal_input;
+  Object.assign(fiscal.buyer, { kind: "business", siren: "552100554" });
+  fiscal.b2b_payment_mentions = {
+    late_payment_penalties: "Pénalités fictives de recette.",
+    recovery_fee: "",
+    early_payment_discount: "Aucun escompte (recette).",
+  };
+  const saved = await request(`/invoices/${draft.id}`, "PUT", {
+    ...payload,
+    revision: draft.revision,
+    fiscal_input: fiscal,
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const beforeSequence = await db.systemPrisma.invoiceSequence.findMany();
+  const before = await db.systemPrisma.facture.findUniqueOrThrow({
+    where: { id: draft.id },
+  });
+  const issued = await request(`/invoices/${draft.id}/issue`, "POST", {
+    revision: saved.body.revision,
+  });
+  assert.equal(issued.status, 409);
+  assert.match(
+    JSON.stringify(issued.body),
+    /Indemnité forfaitaire de recouvrement/,
+  );
+  assert.deepEqual(
+    await db.systemPrisma.invoiceSequence.findMany(),
+    beforeSequence,
+  );
+  assert.deepEqual(
+    await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: draft.id },
+    }),
+    before,
+  );
+});
+
 test("TVA multi-taux, adresse structurée, encaissements explicites et export figé", async () => {
   await db.systemPrisma.fiscalEntity.update({
     where: { id: "entity-a" },
@@ -723,6 +762,11 @@ test("TVA multi-taux, adresse structurée, encaissements explicites et export fi
     vat_number: "FR00123456789",
     address_line1: "Adresse fiscale différente",
   };
+  fiscal.b2b_payment_mentions = {
+    late_payment_penalties: "Pénalités convenues pour la recette.",
+    recovery_fee: "Indemnité convenue pour la recette.",
+    early_payment_discount: "Aucun escompte (recette).",
+  };
   const saved = await request(`/invoices/${draft.id}`, "PUT", {
     ...payload,
     revision: draft.revision,
@@ -749,6 +793,17 @@ test("TVA multi-taux, adresse structurée, encaissements explicites et export fi
   );
   assert.equal(exported.body.en_invoice_candidate.vat_break_down.length, 2);
   assert.equal(exported.body.processing_rule_candidate, "B2B");
+  assert.deepEqual(exported.body.en_invoice_candidate.notes, [
+    {
+      subject_code: "PMD",
+      note: fiscal.b2b_payment_mentions.late_payment_penalties,
+    },
+    { subject_code: "PMT", note: fiscal.b2b_payment_mentions.recovery_fee },
+    {
+      subject_code: "AAB",
+      note: fiscal.b2b_payment_mentions.early_payment_discount,
+    },
+  ]);
   assert.equal(
     (await request(`/invoices/${draft.id}/structured`, "GET", undefined, orgB))
       .status,
@@ -784,6 +839,10 @@ test("TVA multi-taux, adresse structurée, encaissements explicites et export fi
     exported.body.en_invoice_candidate.vat_break_down,
   );
   assert.equal(creditExport.body.document_sign, -1);
+  assert.deepEqual(
+    creditExport.body.en_invoice_candidate.notes,
+    exported.body.en_invoice_candidate.notes,
+  );
 });
 
 test("les avoirs des factures émises avant le modèle fiscal restent possibles sans inventer de TVA", async () => {

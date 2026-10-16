@@ -224,7 +224,7 @@ export class SuperPdpTransport {
       "original.pdf",
     );
     const result = await this.request(
-      "/v1.beta/invoices/convert?from=json&to=factur-x",
+      "/v1.beta/invoices/convert?from=en16931&to=factur-x",
       { method: "POST", body: form },
       MAX_DOCUMENT_BYTES,
     );

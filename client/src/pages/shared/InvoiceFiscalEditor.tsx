@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   computeInvoiceFiscal,
   invoiceFiscalInputSchema,
+  b2bPaymentMentionFields,
   type InvoiceFiscalInput,
   type InvoiceFiscalLine,
 } from "@contrats/shared";
@@ -378,6 +379,40 @@ export default function InvoiceFiscalEditor({
               />
             </label>
           </div>
+          {value.buyer.kind === "business" && (
+            <fieldset>
+              <legend>Mentions de paiement — client professionnel</legend>
+              <p>
+                Renseignez les textes complets après vérification de vos
+                conditions avec votre comptable. Aucun montant ni taux n’est
+                proposé automatiquement. Ces mêmes mentions figureront sur le
+                PDF et dans les données électroniques, y compris pour un avoir.
+              </p>
+              <div className="grid-2">
+                {b2bPaymentMentionFields.map(({ key, label }) => (
+                  <label className="field" key={key}>
+                    {label}
+                    <textarea
+                      value={value.b2b_payment_mentions?.[key] ?? ""}
+                      maxLength={500}
+                      onChange={(e) =>
+                        update({
+                          b2b_payment_mentions: {
+                            ...(value.b2b_payment_mentions ?? {
+                              late_payment_penalties: "",
+                              recovery_fee: "",
+                              early_payment_discount: "",
+                            }),
+                            [key]: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           {totals && (
             <div className="note" aria-live="polite">
               <p>

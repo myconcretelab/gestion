@@ -1,6 +1,28 @@
 import { z } from "zod";
 
 const text = z.string().trim().max(500);
+export const b2bPaymentMentionsSchema = z.object({
+  late_payment_penalties: text.default(""),
+  recovery_fee: text.default(""),
+  early_payment_discount: text.default(""),
+});
+export const b2bPaymentMentionFields = [
+  {
+    key: "late_payment_penalties",
+    subject_code: "PMD",
+    label: "Pénalités de retard",
+  },
+  {
+    key: "recovery_fee",
+    subject_code: "PMT",
+    label: "Indemnité forfaitaire de recouvrement",
+  },
+  {
+    key: "early_payment_discount",
+    subject_code: "AAB",
+    label: "Escompte pour paiement anticipé",
+  },
+] as const;
 const amount = z
   .number()
   .finite()
@@ -89,11 +111,22 @@ export const invoiceFiscalInputSchema = z.object({
   paid_amount: amount,
   payment_due_date: isoDate,
   payment_terms: z.string().trim().max(2000),
+  // Existing drafts remain readable; missing mentions must be completed before B2B issuance.
+  b2b_payment_mentions: b2bPaymentMentionsSchema.default({}),
   reviewed: z.boolean(),
   tourist_tax_reviewed: z.boolean(),
 });
 export type InvoiceFiscalInput = z.infer<typeof invoiceFiscalInputSchema>;
 export type InvoiceFiscalLine = InvoiceFiscalInput["lines"][number];
+
+/** One source for the PDF and EN16931 notes, never inferred from free-form payment terms. */
+export const invoicePaymentNotes = (input: InvoiceFiscalInput) =>
+  input.buyer.kind === "business"
+    ? b2bPaymentMentionFields.flatMap(({ key, subject_code }) => {
+        const note = input.b2b_payment_mentions?.[key]?.trim();
+        return note ? [{ subject_code, note }] : [];
+      })
+    : [];
 
 // All arithmetic uses scaled integers. Inputs are TTC, like the existing rental calculator.
 export const invoiceCents = (value: number) => Math.round(value * 100);
@@ -183,6 +216,12 @@ export const invoiceFiscalIssues = (
       "Le total d’une facture doit être positif ou nul. Utilisez un avoir pour une annulation.",
     );
   const buyer = input.buyer;
+  if (buyer.kind === "business")
+    for (const { key, label } of b2bPaymentMentionFields)
+      if (!input.b2b_payment_mentions?.[key]?.trim())
+        issues.push(
+          `Client professionnel : renseignez la mention « ${label} » après vérification de vos conditions.`,
+        );
   if (buyer.kind === "unknown")
     issues.push("Précisez si le client est un particulier ou une entreprise.");
   if (
@@ -327,6 +366,7 @@ export const emptyInvoiceFiscalInput = (): InvoiceFiscalInput => ({
   paid_amount: 0,
   payment_due_date: "",
   payment_terms: "",
+  b2b_payment_mentions: b2bPaymentMentionsSchema.parse({}),
   reviewed: false,
   tourist_tax_reviewed: false,
 });

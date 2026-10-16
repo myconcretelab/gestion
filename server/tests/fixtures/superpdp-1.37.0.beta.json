@@ -2,6 +2,10 @@
   "source": "https://api.superpdp.tech/openapi/superpdp.json",
   "reviewed_at": "2026-10-16",
   "version": "1.37.0.beta",
+  "convert_invoice_format": {
+    "enum": ["cii", "ubl", "en16931", "factur-x"],
+    "type": "string"
+  },
   "paths": {
     "/v1.beta/invoices/convert": {
       "post": {

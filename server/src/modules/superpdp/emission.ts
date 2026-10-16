@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { b2bPaymentMentionFields } from "@contrats/shared";
 import type {
   ElectronicInvoiceTransmission as Transmission,
   Prisma,
@@ -326,6 +327,24 @@ export class SuperPdpEmission {
     const source = snapshot.structured_invoice.en_invoice_candidate;
     const isB2c =
       snapshot.structured_invoice.processing_rule_candidate === "B2C";
+    // Never patch an already-issued PDF/snapshot with newly invented payment terms.
+    if (
+      !isB2c &&
+      b2bPaymentMentionFields.some(
+        ({ subject_code }) =>
+          !Array.isArray(source.notes) ||
+          !source.notes.some(
+            (note) =>
+              note?.subject_code === subject_code &&
+              typeof note.note === "string" &&
+              note.note.trim(),
+          ),
+      )
+    )
+      throw failure(
+        "SUPERPDP_PAYMENT_MENTIONS_REQUIRED",
+        "Les mentions de paiement B2B manquent dans la facture figée. Aucun ajout automatique n’est permis ; faites examiner le document avant de poursuivre.",
+      );
     if (isB2c) {
       b2cEnabled();
       if (

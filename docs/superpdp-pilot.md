@@ -100,6 +100,22 @@ Le contrôle final de la base locale retrouve zéro facture, transmission, factu
 
 Références du contrat consulté : [documentation officielle](https://www.superpdp.tech/openapi/) et [OpenAPI JSON](https://api.superpdp.tech/openapi/superpdp.json), version observée `1.37.0.beta`. Les rapports et empreintes de cette exécution restent privés conformément au modèle de preuve ci-dessous.
 
+### Corrections autorisées après le diagnostic du 16/10/2026
+
+Les trois corrections ci-dessus sont désormais intégrées au code de travail, sans déploiement ni activation de lot : conversion `from=en16931`, prix nets limités à six décimales et mentions de paiement B2B explicites. Pour les grandes quantités, lorsque l'arrondi du prix unitaire modifierait le montant de ligne, le prix est exprimé pour la quantité totale via la quantité de base EN16931 ; les totaux monétaires existants restent inchangés.
+
+Le brouillon fiscal conserve les textes de pénalités de retard, d'indemnité de recouvrement et d'escompte. Ils sont saisis dans l'éditeur de facture pour un client entreprise, sans taux ni montant prérempli, après qualification des conditions applicables. Les mêmes textes alimentent le PDF et les notes structurées PMD, PMT et AAB, y compris pour un avoir. Le bloc imprimé conserve des sauts de ligne sans multiplier les marges des paragraphes. Le particulier n'hérite pas de ces mentions B2B et le traitement BAR/B2C existant est conservé.
+
+Le champ JSON ajouté est rétrocompatible à la lecture des anciens brouillons et ne demande pas de migration. Une mention manquante bloque l'émission B2B avant toute attribution de numéro. Une facture B2B déjà figée sans ces mentions ne peut pas être préparée pour SuperPDP et n'est jamais corrigée automatiquement : son PDF et son instantané restent intacts. Faire examiner ce document avant de choisir un parcours de correction approprié.
+
+Une nouvelle preuve isolée réutilise le PDF et le constructeur corrigés, puis le transport réel sans réécriture de requête, de prix ni de notes. Résultat observé : Factur-X valide, 189 contrôles, zéro échec ; PDF source d'une page inspecté visuellement. Comme précédemment, cette preuve utilise les identités fictives explicitement données par SuperPDP et omet uniquement le SIRET optionnel absent de son exemple, sans toucher aux fiches locales ni aux gardes d'émission. Elle ne constitue pas une émission depuis l'application ni un dépôt de facture.
+
+**Prérequis B2B supplémentaire découvert pendant cette preuve :** le validateur exige le mode de facturation BT-23 (`business_process_type`, règle BR-FR-08). Le parcours de préparation B2B actuel ne le renseigne pas ; la preuve isolée fixe explicitement `S1` pour sa prestation fictive non payée. Cette valeur ne doit pas être appliquée par défaut aux factures métier. Il reste à concevoir et autoriser la sélection/qualification biens, services ou mixte, avec le mode correspondant et ses contrôles, avant de considérer R03 prêt à être poursuivi. Le traitement B2C existant renseigne déjà son propre mode et n'est pas élargi par ces corrections.
+
+Les nouveaux tests couvrent notamment les requêtes multipart réelles au niveau du contrat simulé, la précision et les quantités extrêmes, la lecture des anciens brouillons, les mentions absentes/vides/trop longues, l'échappement HTML, la cohérence PDF/notes, la conservation dans l'avoir et le refus de réécrire une facture figée. Les tests d'intégration utilisent des bases temporaires ; aucune facture, transmission ou réception n'a été ajoutée à la base localhost de l'utilisateur. Les interrupteurs d'émission/réception/B2C restent désactivés.
+
+Vérification finale : suite complète réussie (14 tests partagés, 385 serveur et 102 client, soit 501), compilation complète réussie et lint sans erreur (36 avertissements de hooks préexistants). La suite a été exécutée avec une base de repli temporaire et sans alias `DATABASE_URL_SQLITE` hérité, afin que les scénarios d'installation puissent migrer leurs propres bases isolées. Aucun reset ni seed de la base utilisateur n'a été exécuté.
+
 ## Matrice de recette avec preuves
 
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.

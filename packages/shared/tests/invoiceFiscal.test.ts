@@ -5,6 +5,7 @@ import {
   emptyInvoiceFiscalInput,
   invoiceFiscalInputSchema,
   invoiceFiscalIssues,
+  invoicePaymentNotes,
 } from "../src/invoiceFiscal.js";
 
 const sample = () => {
@@ -192,6 +193,73 @@ test("clients professionnels français : SIREN et cohérence TVA obligatoires", 
   assert.ok(
     !invoiceFiscalIssues(input, 134).some((issue) => /SIREN/.test(issue)),
   );
+});
+
+test("anciens brouillons lisibles, mais aucune mention B2B inventée ni déduite des conditions libres", () => {
+  const { b2b_payment_mentions: _mentions, ...legacy } = sample();
+  const parsed = invoiceFiscalInputSchema.parse(legacy);
+  assert.deepEqual(parsed.b2b_payment_mentions, {
+    late_payment_penalties: "",
+    recovery_fee: "",
+    early_payment_discount: "",
+  });
+  assert.deepEqual(invoicePaymentNotes(parsed), []);
+  parsed.buyer.kind = "business";
+  parsed.buyer.siren = "732829320";
+  for (const credit of [false, true])
+    assert.equal(
+      invoiceFiscalIssues(parsed, 134, { credit }).filter((i) =>
+        /mention «/.test(i),
+      ).length,
+      3,
+    );
+  assert.deepEqual(invoicePaymentNotes(parsed), []);
+});
+
+test("mentions B2B explicites, bornées et normalisées, sans application aux particuliers", () => {
+  const input = sample();
+  input.buyer.kind = "business";
+  input.buyer.siren = "732829320";
+  input.b2b_payment_mentions = {
+    late_payment_penalties: " Pénalités convenues (recette). ",
+    recovery_fee: "Indemnité convenue (recette).",
+    early_payment_discount: "Aucun escompte (recette).",
+  };
+  const parsed = invoiceFiscalInputSchema.parse(input);
+  assert.deepEqual(invoicePaymentNotes(parsed), [
+    { subject_code: "PMD", note: "Pénalités convenues (recette)." },
+    { subject_code: "PMT", note: "Indemnité convenue (recette)." },
+    { subject_code: "AAB", note: "Aucun escompte (recette)." },
+  ]);
+  assert.deepEqual(
+    invoiceFiscalIssues(parsed, 134, { sellerVatNumber: "FR01732829320" }),
+    [],
+  );
+  for (const key of [
+    "late_payment_penalties",
+    "recovery_fee",
+    "early_payment_discount",
+  ] as const) {
+    const incomplete = structuredClone(parsed);
+    incomplete.b2b_payment_mentions[key] = " \n ";
+    assert.equal(
+      invoiceFiscalIssues(incomplete, 134).filter((i) => /mention «/.test(i))
+        .length,
+      1,
+    );
+    assert.equal(
+      invoiceFiscalInputSchema.safeParse({
+        ...parsed,
+        b2b_payment_mentions: {
+          ...parsed.b2b_payment_mentions,
+          [key]: "x".repeat(501),
+        },
+      }).success,
+      false,
+    );
+  }
+  parsed.buyer.kind = "individual";
+  assert.deepEqual(invoicePaymentNotes(parsed), []);
 });
 
 test("aucune TVA ni taxe de séjour supposée et revue explicite avant émission", () => {

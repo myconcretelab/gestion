@@ -4,6 +4,7 @@ import {
   emptyInvoiceFiscalInput,
   invoiceFiscalInputSchema,
   invoiceFiscalIssues,
+  invoicePaymentNotes,
   type InvoiceFiscalInput,
 } from "@contrats/shared";
 import type { FiscalEntity, FiscalEstablishment } from "@prisma/client";
@@ -111,6 +112,24 @@ export const validateInvoiceFiscal = (
 const localDate = (value: Date) =>
   new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(value);
 
+const netPriceDetails = (netCents: number, quantity: number) => {
+  const quantityMilli = BigInt(Math.round(quantity * 1000));
+  const microPrice =
+    (BigInt(netCents) * 10_000_000n + quantityMilli / 2n) / quantityMilli;
+  // Six decimal places (BR-FR-DEC-03). For large quantities, a rounded unit
+  // price can alter the line total: quote the exact price for the whole quantity instead.
+  const reconstructedCents =
+    (microPrice * quantityMilli + 5_000_000n) / 10_000_000n;
+  return {
+    item_net_price:
+      reconstructedCents === BigInt(netCents)
+        ? `${microPrice / 1_000_000n}.${String(microPrice % 1_000_000n).padStart(6, "0")}`
+        : decimalAmount(netCents),
+    item_price_base_quantity:
+      reconstructedCents === BigInt(netCents) ? "1" : String(quantity),
+  };
+};
+
 /** Versioned local semantic snapshot, not a validated transmission payload.
  * API reference: SUPER PDP 1.37.0.beta, en_invoice, reviewed 2026-10-16.
  * Directory addresses/profile, conversion and Schematron validation belong to the transport layer.
@@ -193,6 +212,7 @@ export const buildStructuredInvoice = (params: {
       ? { payment_due_date: input.payment_due_date }
       : {}),
     ...(input.payment_terms ? { payment_terms: input.payment_terms } : {}),
+    notes: invoicePaymentNotes(input),
     lines: computed.lines.map((line, index) => ({
       identifier: String(index + 1),
       invoiced_quantity: String(line.quantity),
@@ -200,8 +220,7 @@ export const buildStructuredInvoice = (params: {
       net_amount: amount(line.net_cents),
       item_information: { name: line.label },
       price_details: {
-        item_net_price: (line.net_cents / 100 / line.quantity).toFixed(8),
-        item_price_base_quantity: "1",
+        ...netPriceDetails(line.net_cents, line.quantity),
         quantity_unit_code: line.unit,
       },
       vat_information: {

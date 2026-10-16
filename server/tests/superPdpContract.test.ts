@@ -72,6 +72,12 @@ test("contrat officiel SuperPDP versionné : conversion multipart, validation et
     ),
   );
   assert.equal(contract.version, "1.37.0.beta");
+  assert.deepEqual(contract.convert_invoice_format.enum, [
+    "cii",
+    "ubl",
+    "en16931",
+    "factur-x",
+  ]);
   assert.deepEqual(
     contract.paths["/v1.beta/invoices/convert"].post.requestBody.content[
       "multipart/form-data"
@@ -105,6 +111,36 @@ test("contrat officiel SuperPDP versionné : conversion multipart, validation et
   assert.ok(contract.en_invoice_required.includes("process_control"));
   assert.ok(contract.schemas.report.required.includes("is_valid"));
   assert.equal(contract.schemas.invoice.properties.id.type, "integer");
+});
+
+test("la conversion utilise le format EN16931 officiel et conserve les deux fichiers sans jeton OAuth", async () => {
+  const { SuperPdpTransport } =
+    await import("../src/modules/superpdp/transport.js");
+  const payload = JSON.stringify({ number: "RECETTE-NON-EMISE" });
+  const original = Buffer.from("%PDF-1.4\nORIGINAL\n%%EOF");
+  const converted = Buffer.from("%PDF-1.7\nFACTUR-X FICTIF\n%%EOF");
+  let calls = 0;
+  const transport = new SuperPdpTransport(async (input, init) => {
+    calls++;
+    const url = new URL(String(input));
+    assert.equal(url.origin, "https://api.superpdp.tech");
+    assert.equal(url.pathname, "/v1.beta/invoices/convert");
+    assert.equal(url.searchParams.get("from"), "en16931");
+    assert.equal(url.searchParams.get("to"), "factur-x");
+    assert.equal(init?.method, "POST");
+    assert.equal(init?.redirect, "error");
+    assert.equal(new Headers(init?.headers).has("authorization"), false);
+    const form = init?.body as FormData;
+    const invoice = form.get("invoice") as File;
+    const pdf = form.get("pdf") as File;
+    assert.equal(invoice.type, "application/json");
+    assert.equal(await invoice.text(), payload);
+    assert.equal(pdf.type, "application/pdf");
+    assert.deepEqual(Buffer.from(await pdf.arrayBuffer()), original);
+    return new Response(converted);
+  });
+  assert.deepEqual(await transport.convert(payload, original), converted);
+  assert.equal(calls, 1);
 });
 
 test("les motifs techniques, notes et données d’événements restent disponibles pour le suivi", async () => {

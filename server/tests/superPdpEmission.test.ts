@@ -101,7 +101,7 @@ const fakeFetch: typeof fetch = async (input, init) => {
   if (url.pathname === "/oauth2/revoke") return json({});
   if (url.pathname === "/v1.beta/invoices/convert") {
     assert.equal(init?.method, "POST");
-    assert.equal(url.searchParams.get("from"), "json");
+    assert.equal(url.searchParams.get("from"), "en16931");
     assert.equal(url.searchParams.get("to"), "factur-x");
     assert.equal(
       new Headers(init?.headers).has("authorization"),
@@ -374,6 +374,11 @@ const newInvoice = async (
       exemption_reason: "Exonération fictive",
     });
   fiscal.paid_amount = options.paid ?? 0;
+  fiscal.b2b_payment_mentions = {
+    late_payment_penalties: "Pénalités de retard fictives de recette.",
+    recovery_fee: "Indemnité forfaitaire de recouvrement fictive de recette.",
+    early_payment_discount: "Aucun escompte pour paiement anticipé (recette).",
+  };
   const structured = buildStructuredInvoice({
     input: fiscal,
     issuer: { entity, establishment },
@@ -435,6 +440,49 @@ const prepare = async (id: string) => {
   );
   return within(() => service.view(id));
 };
+
+test("les anciennes factures B2B sans mentions figées restent intactes et ne sont pas préparées", async () => {
+  for (const missing of ["all", "PMD", "PMT", "AAB", "blank"]) {
+    const invoice = await newInvoice();
+    const original = await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: invoice.id },
+    });
+    const snapshot = JSON.parse(original.immutable_snapshot!);
+    const source = snapshot.structured_invoice.en_invoice_candidate;
+    if (missing === "all") delete source.notes;
+    else if (missing === "blank") source.notes[0].note = " \n ";
+    else
+      source.notes = source.notes.filter(
+        (note: { subject_code: string }) => note.subject_code !== missing,
+      );
+    await db.systemPrisma.facture.update({
+      where: { id: invoice.id },
+      data: { immutable_snapshot: JSON.stringify(snapshot) },
+    });
+    const before = await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: invoice.id },
+    });
+    const beforeCalls = calls.length;
+    await assert.rejects(
+      within(() => service.prepare(invoice.id, input, actor)),
+      { code: "SUPERPDP_PAYMENT_MENTIONS_REQUIRED" },
+    );
+    assert.equal(calls.length, beforeCalls);
+    assert.equal(
+      await db.systemPrisma.electronicInvoiceTransmission.count({
+        where: { invoice_id: invoice.id },
+      }),
+      0,
+    );
+    assert.deepEqual(
+      await db.systemPrisma.facture.findUniqueOrThrow({
+        where: { id: invoice.id },
+      }),
+      before,
+    );
+    assert.deepEqual(fs.readFileSync(invoice.pdfPath), invoice.pdf);
+  }
+});
 const enqueueSend = (id: string, revision: number) =>
   within(() => service.send(id, { revision, confirm_test_data: true }, actor));
 const row = (id: string) =>

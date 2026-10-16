@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { computeInvoiceFiscal, type InvoiceFiscalInput } from "@contrats/shared";
+import { computeInvoiceFiscal, invoicePaymentNotes, type InvoiceFiscalInput } from "@contrats/shared";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
 import { env } from "../config/env.js";
@@ -1287,6 +1287,17 @@ const buildInvoiceNotesHtml = (params: {
   return parts.map((part) => `<p>${escapeHtml(part)}</p>`).join("");
 };
 
+export const buildInvoicePaymentTermsHtml = (fiscal: InvoiceFiscalInput | null | undefined, credit = false) => {
+  if (!fiscal) return "";
+  const parts = [
+    ...(!credit && fiscal.payment_terms ? [fiscal.payment_terms] : []),
+    ...invoicePaymentNotes(fiscal).map(({ note }) => note),
+  ];
+  return parts.length
+    ? `<div class="box"><div class="section-title">Conditions de paiement</div><p>${parts.map((part) => escapeHtml(part)).join("<br>")}</p></div>`
+    : "";
+};
+
 const buildInvoiceHtml = async (params: {
   invoice: InvoiceRenderInput;
   gite: GiteLike;
@@ -1400,7 +1411,7 @@ const buildInvoiceHtml = async (params: {
     iban: params.gite.iban,
     bic: params.gite.bic ?? "—",
     titulaire: params.gite.titulaire,
-    notesBlockHtml: `${notesBlockHtml}${fiscal?.payment_terms && sign > 0 ? `<div class="box"><div class="section-title">Conditions de paiement</div><p>${escapeHtml(fiscal.payment_terms)}</p></div>` : ""}`,
+    notesBlockHtml: `${notesBlockHtml}${buildInvoicePaymentTermsHtml(fiscal, sign < 0)}`,
   });
 };
 
