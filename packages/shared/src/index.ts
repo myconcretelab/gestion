@@ -1,4 +1,5 @@
 import { z } from "zod";
+export * from "./fiscal.js";
 
 export const organizationIdSchema = z
   .string()

@@ -1,4 +1,34 @@
 import type { SchoolHoliday } from "./schoolHolidays";
+import type { VatRegime } from "@contrats/shared";
+
+export type FiscalAddress = {
+  address_line1: string | null;
+  address_line2: string | null;
+  postal_code: string | null;
+  city: string | null;
+  country_code: string;
+};
+export type FiscalEstablishment = FiscalAddress & {
+  id: string;
+  name: string;
+  siret: string | null;
+  gites: Array<{ id: string; nom: string }>;
+};
+export type FiscalEntity = FiscalAddress & {
+  id: string;
+  legal_name: string;
+  gestionnaire_id: string | null;
+  siren: string | null;
+  vat_number: string | null;
+  vat_regime: VatRegime;
+  email: string | null;
+  establishments: FiscalEstablishment[];
+  missing_fields: string[];
+};
+export type FiscalEstablishmentOption = {
+  id: string; name: string; siret: string | null;
+  fiscal_entity: { id: string; legal_name: string };
+};
 
 export type Gestionnaire = {
   id: string;
@@ -94,6 +124,7 @@ export type Gite = {
   prix_nuit_liste?: number[];
   caracteristiques?: string | null;
   gestionnaire_id?: string | null;
+  fiscal_establishment_id?: string | null;
   date_debut_activite?: string | null;
   gestionnaire?: Pick<Gestionnaire, "id" | "prenom" | "nom"> | null;
   photos?: GitePhoto[];

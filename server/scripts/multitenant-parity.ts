@@ -5,6 +5,7 @@ import { systemPrisma as prisma } from "../src/db/prisma.js";
 const TABLES = [
   "installation_config", "content_template_versions", "gites", "gite_photos", "wordpress_webhook_jobs",
   "gestionnaires", "app_users", "auth_sessions", "password_reset_tokens", "api_tokens", "document_shares",
+  "fiscal_entities", "fiscal_establishments",
   "expense_categories", "expense_recurring_rules", "expense_entries", "urssaf_declarations",
   "guest_night_declarations", "ical_sources", "contrats", "contrat_counters", "factures", "facture_counters",
   "reservation_placeholders", "planning_relay_periods", "planning_relay_workers", "intervenant_hour_entries",
@@ -25,6 +26,9 @@ const rowCounts = Object.fromEntries(await Promise.all(TABLES.map(async (table) 
 ])));
 
 const orphanChecks = {
+  gitesWithoutFiscalEstablishment: await scalar('SELECT COUNT(*) AS value FROM "gites" g LEFT JOIN "fiscal_establishments" e ON e."id" = g."fiscal_establishment_id" AND e."organization_id" = g."organization_id" WHERE g."fiscal_establishment_id" IS NOT NULL AND e."id" IS NULL'),
+  establishmentsWithoutFiscalEntity: await scalar('SELECT COUNT(*) AS value FROM "fiscal_establishments" e LEFT JOIN "fiscal_entities" f ON f."id" = e."fiscal_entity_id" AND f."organization_id" = e."organization_id" WHERE f."id" IS NULL'),
+  fiscalEntitiesWithoutManager: await scalar('SELECT COUNT(*) AS value FROM "fiscal_entities" f LEFT JOIN "gestionnaires" m ON m."id" = f."gestionnaire_id" AND m."organization_id" = f."organization_id" WHERE f."gestionnaire_id" IS NOT NULL AND m."id" IS NULL'),
   reservationsWithoutGite: await scalar('SELECT COUNT(*) AS value FROM "reservations" r LEFT JOIN "gites" g ON g."id" = r."gite_id" WHERE r."gite_id" IS NOT NULL AND g."id" IS NULL'),
   contractsWithoutGite: await scalar('SELECT COUNT(*) AS value FROM "contrats" c LEFT JOIN "gites" g ON g."id" = c."gite_id" WHERE g."id" IS NULL'),
   invoicesWithoutGite: await scalar('SELECT COUNT(*) AS value FROM "factures" f LEFT JOIN "gites" g ON g."id" = f."gite_id" WHERE g."id" IS NULL'),

@@ -504,12 +504,14 @@ model Gite {
   airbnb_listing_id                   String?
   ical_export_token                   String?
   gestionnaire_id                     String?
+  fiscal_establishment_id             String?
   date_debut_activite                 DateTime?
   createdAt                           DateTime  @default(now())
   updatedAt                           DateTime  @updatedAt
   organization_id                     String    @default("org_historical_broceliande")
 
   gestionnaire             Gestionnaire?              @relation(fields: [gestionnaire_id], references: [id], onDelete: SetNull)
+  fiscal_establishment     FiscalEstablishment?       @relation(fields: [fiscal_establishment_id, organization_id], references: [id, organization_id], onDelete: Restrict)
   ical_sources             IcalSource[]
   contrats                 Contrat[]
   factures                 Facture[]
@@ -529,6 +531,7 @@ model Gite {
 
   @@unique([organization_id, public_slug], map: "gites_org_public_slug_key")
   @@index([gestionnaire_id], map: "gites_gestionnaire_id_idx")
+  @@index([organization_id, fiscal_establishment_id], map: "gites_org_fiscal_establishment_idx")
   @@index([ical_export_token], map: "gites_ical_export_token_idx")
   @@index([ordre], map: "gites_ordre_idx")
   @@index([public_is_published, ordre], map: "gites_public_published_ordre_idx")
@@ -581,6 +584,55 @@ model WordPressWebhookJob {
   @@map("wordpress_webhook_jobs")
 }
 
+model FiscalEntity {
+  id              String   @id @default(cuid())
+  organization_id String   @default("org_historical_broceliande")
+  gestionnaire_id String?
+  legal_name      String
+  siren           String?
+  vat_number      String?
+  vat_regime      String   @default("unknown")
+  address_line1   String?
+  address_line2   String?
+  postal_code     String?
+  city            String?
+  country_code    String   @default("FR")
+  email           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  gestionnaire   Gestionnaire?         @relation(fields: [gestionnaire_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+  establishments FiscalEstablishment[]
+
+  @@unique([id, organization_id], map: "fiscal_entities_id_org_key")
+  @@unique([organization_id, siren], map: "fiscal_entities_org_siren_key")
+  @@index([organization_id, gestionnaire_id], map: "fiscal_entities_org_manager_idx")
+  @@map("fiscal_entities")
+}
+
+model FiscalEstablishment {
+  id               String   @id @default(cuid())
+  organization_id  String   @default("org_historical_broceliande")
+  fiscal_entity_id  String
+  name             String
+  siret            String?
+  address_line1    String?
+  address_line2    String?
+  postal_code      String?
+  city             String?
+  country_code     String   @default("FR")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  fiscal_entity FiscalEntity @relation(fields: [fiscal_entity_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+  gites         Gite[]
+
+  @@unique([id, organization_id], map: "fiscal_establishments_id_org_key")
+  @@unique([organization_id, siret], map: "fiscal_establishments_org_siret_key")
+  @@index([organization_id, fiscal_entity_id], map: "fiscal_establishments_org_entity_idx")
+  @@map("fiscal_establishments")
+}
+
 model Gestionnaire {
   id              String   @id @default(cuid())
   prenom          String
@@ -594,7 +646,9 @@ model Gestionnaire {
   expense_recurring_rules ExpenseRecurringRule[]
   expense_entries         ExpenseEntry[]
   app_user                AppUser?
+  fiscal_entities         FiscalEntity[]
 
+  @@unique([id, organization_id], map: "gestionnaires_id_org_key")
   @@unique([organization_id, prenom, nom])
   @@map("gestionnaires")
 }
@@ -613,6 +667,7 @@ model AppUser {
   cleaning_check_rate Decimal   @default(0) @db.Decimal(10, 2)
   full_cleaning_rate  Decimal   @default(0) @db.Decimal(10, 2)
   full_cleaning_rates Json      @default("{}")
+  direct_cleaning_validation Boolean @default(false)
   gestionnaire_id     String?   @unique
   intervenant_id      String?   @unique
   status              String    @default("custom")

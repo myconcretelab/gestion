@@ -130,6 +130,14 @@ test("un PDF privé, la liste de comptes et les API hors rôle sont refusés", a
     const forbiddenPage = await fetch(`${origin}/api/contracts`, { headers: { cookie } });
     assert.equal(forbiddenPage.status, 403);
 
+    const fiscalRead = await fetch(`${origin}/api/fiscal-entities`, { headers: { cookie } });
+    assert.equal(fiscalRead.status, 403);
+    const fiscalWrite = await fetch(`${origin}/api/fiscal-entities`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ legal_name: "Entreprise interdite" }),
+    });
+    assert.equal(fiscalWrite.status, 403);
+
     const borrowedIdentity = await fetch(`${origin}/api/interventions`, {
       method: "POST", headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ userId: "another-user" }),

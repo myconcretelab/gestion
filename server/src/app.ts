@@ -10,6 +10,7 @@ import gitesRouter from "./modules/properties/routes.js";
 import publicGitesRouter from "./routes/publicGites.js";
 import publicCleaningCheckRouter from "./routes/publicCleaningCheck.js";
 import managersRouter from "./routes/managers.js";
+import fiscalEntitiesRouter from "./modules/fiscal/routes.js";
 import contractsRouter from "./routes/contracts.js";
 import invoicesRouter from "./routes/invoices.js";
 import reservationsRouter from "./modules/reservations/routes.js";
@@ -278,6 +279,7 @@ export const createApp = () => {
   app.use("/api/public/planning-relay", publicPlanningRelayRouter);
   app.use("/api/public/documents", publicDocumentSharesRouter);
   app.use("/api/managers", managersRouter);
+  app.use("/api/fiscal-entities", fiscalEntitiesRouter);
   app.use("/api/contracts", contractsRouter);
   app.use("/api/invoices", invoicesRouter);
   app.use("/api/reservations", reservationsRouter);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
-import type { Gite, GitePhoto, ReservationPlaceholder } from "../utils/types";
+import type { Gite, GitePhoto, ReservationPlaceholder, FiscalEstablishmentOption } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
 import {
   getEntryUrssafBase,
@@ -119,6 +119,7 @@ const emptyForm = {
   min_nuits_juillet_aout: 1,
   prix_nuit_liste: "",
   gestionnaire_id: "",
+  fiscal_establishment_id: "",
 };
 
 type BaseFormState = typeof emptyForm;
@@ -1564,6 +1565,7 @@ const GitesPage = () => {
   const [reordering, setReordering] = useState(false);
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [ownerUsers, setOwnerUsers] = useState<OwnerUserOption[]>([]);
+  const [fiscalEstablishments, setFiscalEstablishments] = useState<FiscalEstablishmentOption[]>([]);
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [revenueAverageDataset, setRevenueAverageDataset] = useState<ParsedStatisticsPayload | null>(null);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(DEFAULT_EXPENSE_CATEGORIES);
@@ -1629,17 +1631,19 @@ const GitesPage = () => {
   }, [activeEditorSection, searchParams, selectedId, setSearchParams]);
 
   const load = async () => {
-    const [gitesData, placeholdersData, ownerUserData, statisticsData, revenueAverageData, expenseCategoryData] = await Promise.all([
+    const [gitesData, placeholdersData, ownerUserData, statisticsData, revenueAverageData, expenseCategoryData, fiscalEstablishmentData] = await Promise.all([
       apiFetch<Gite[]>("/gites"),
       apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
       apiFetch<OwnerUserOption[]>("/users/owners"),
       apiFetch<StatisticsPayload>(`/statistics?year=${expenseStatisticsYear}`),
       apiFetch<StatisticsPayload>("/statistics?year=all"),
       apiFetch<ExpenseCategorySettings>("/gites/expense-categories"),
+      apiFetch<FiscalEstablishmentOption[]>("/gites/fiscal-establishments"),
     ]);
     setGites(gitesData);
     setPlaceholders(placeholdersData);
     setOwnerUsers(ownerUserData);
+    setFiscalEstablishments(fiscalEstablishmentData);
     setStatisticsDataset(parseStatisticsPayload(statisticsData));
     setRevenueAverageDataset(parseStatisticsPayload(revenueAverageData));
     setExpenseCategories(normalizeExpenseManagement({ categories: expenseCategoryData.categories, expenses: [] }).categories);
@@ -1733,6 +1737,7 @@ const GitesPage = () => {
       min_nuits_juillet_aout: selected.min_nuits_juillet_aout ?? 1,
       prix_nuit_liste: Array.isArray(selected.prix_nuit_liste) ? selected.prix_nuit_liste.join(", ") : "",
       gestionnaire_id: selected.gestionnaire_id ?? "",
+      fiscal_establishment_id: selected.fiscal_establishment_id ?? "",
     });
     setPhotoDrafts(
       Object.fromEntries(
@@ -2099,6 +2104,7 @@ const GitesPage = () => {
         heure_arrivee_defaut: form.heure_arrivee_defaut || "17:00",
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
         gestionnaire_id: form.gestionnaire_id || null,
+        fiscal_establishment_id: form.fiscal_establishment_id || null,
         date_debut_activite: form.date_debut_activite || null,
         capacite_max: Math.max(1, Math.trunc(toNumberOrDefault(form.capacite_max, 1))),
         nb_adultes_max: Math.max(1, Math.trunc(toNumberOrDefault(form.nb_adultes_max, 1))),
@@ -3016,6 +3022,21 @@ const GitesPage = () => {
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="field">
+              Établissement facturant
+              <select
+                value={form.fiscal_establishment_id}
+                onChange={(e) => handleChange("fiscal_establishment_id", e.target.value)}
+              >
+                <option value="">À rattacher</option>
+                {fiscalEstablishments.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.fiscal_entity.legal_name} — {item.name}{item.siret ? ` (${item.siret})` : " — SIRET à compléter"}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">Entreprises et établissements à renseigner dans Paramètres → Organisation → Entreprises.</span>
             </label>
             <label className="field">
               ID Airbnb

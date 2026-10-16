@@ -35,6 +35,7 @@ import {
   writeGiteExpenseCategorySettings,
 } from "../services/giteExpenseCategorySettings.js";
 import { ensureAppUsersInitialized } from "../services/appUsers.js";
+import { assertFiscalEstablishment, fiscalEstablishmentOptions } from "../services/fiscalEntities.js";
 
 const router = Router();
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -181,6 +182,7 @@ const giteSchemaShape = {
   min_nuits_juillet_aout: z.coerce.number().int().min(1).default(1),
   prix_nuit_liste: z.array(z.coerce.number().min(0)).optional().default([]),
   gestionnaire_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional().default(null),
+  fiscal_establishment_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
   date_debut_activite: z.preprocess(
     emptyStringToNull,
     activityStartDateSchema.nullable()
@@ -573,6 +575,10 @@ const buildInitialExpenseCategorySettings = async () => {
   return settings;
 };
 
+router.get("/fiscal-establishments", async (_req, res, next) => {
+  try { res.json(await fiscalEstablishmentOptions()); } catch (error) { next(error); }
+});
+
 router.get("/expense-categories", async (_req, res, next) => {
   try {
     res.json(await buildInitialExpenseCategorySettings());
@@ -671,6 +677,7 @@ router.post("/reorder", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
+    await assertFiscalEstablishment(parsed.fiscal_establishment_id);
     if (!(await ownerExists(parsed.gestionnaire_id))) {
       return res.status(400).json({ error: "Propriétaire introuvable ou inactif." });
     }
@@ -695,6 +702,7 @@ router.post("/", async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
+    await assertFiscalEstablishment(parsed.fiscal_establishment_id);
     if (!(await ownerExists(parsed.gestionnaire_id))) {
       return res.status(400).json({ error: "Propriétaire introuvable ou inactif." });
     }
@@ -973,6 +981,9 @@ router.post("/import", async (req, res, next) => {
       }
       seenPrefixes.add(row.prefixe_contrat);
     }
+
+    const establishmentIds = [...new Set(normalized.map((row) => row.fiscal_establishment_id).filter(Boolean))] as string[];
+    for (const id of establishmentIds) await assertFiscalEstablishment(id);
 
     const gestionnaireIds = [...new Set(normalized.map((row) => row.gestionnaire_id).filter(Boolean))] as string[];
     if (gestionnaireIds.length > 0) {
@@ -1372,6 +1383,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         frais_gestion: encodeJsonField(fromJsonString<unknown>(existing.frais_gestion, { version: 1, categories: [], expenses: [] })),
         prix_nuit_liste: encodeJsonField(fromJsonString<number[]>(existing.prix_nuit_liste, [])),
         gestionnaire_id: existing.gestionnaire_id,
+        fiscal_establishment_id: existing.fiscal_establishment_id,
       },
       include: {
         gestionnaire: { select: { id: true, prenom: true, nom: true } },

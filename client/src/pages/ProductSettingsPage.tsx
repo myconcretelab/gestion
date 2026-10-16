@@ -2,11 +2,12 @@ import { Navigate, useLocation } from "react-router-dom";
 import OrganizationSettings from "./settings/OrganizationSettings";
 import { AccommodationsSettings, ChannelsSettings, ConnectionsSettings, DataBackupSettings, DocumentsSettings, SystemDiagnosticsSettings, TeamAccessSettings } from "./settings/CategorySettings";
 import SettingsShell from "./settings/SettingsShell";
+import FiscalEntitiesSettings from "./settings/FiscalEntitiesSettings";
 
 const sections = [
   ["organisation", "Organisation"], ["hebergements", "Hébergements"], ["documents", "Documents"],
   ["canaux", "Canaux de communication"], ["connexions", "Connexions"], ["equipe-acces", "Équipe et accès"],
-  ["donnees", "Données et sauvegardes"], ["systeme", "Système et diagnostics"],
+  ["donnees", "Données et sauvegardes"], ["systeme", "Système et diagnostics"], ["entreprises", "Entreprises"],
 ] as const;
 
 export default function ProductSettingsPage() {
@@ -14,6 +15,7 @@ export default function ProductSettingsPage() {
   if (!sections.some(([id]) => id === segment)) return <Navigate to="/parametres/organisation" replace />;
   return <SettingsShell>
     {segment === "organisation" ? <OrganizationSettings /> : null}
+    {segment === "entreprises" ? <FiscalEntitiesSettings /> : null}
     {segment === "hebergements" ? <AccommodationsSettings /> : null}
     {segment === "documents" ? <DocumentsSettings /> : null}
     {segment === "canaux" ? <ChannelsSettings /> : null}

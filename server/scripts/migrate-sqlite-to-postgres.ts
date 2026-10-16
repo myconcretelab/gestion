@@ -141,7 +141,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -156,9 +156,13 @@ const main = async () => {
         tableNames.has("planning_relay_assignments") ? sqlite.planningRelayAssignment.findMany() : Promise.resolve([]),
         tableNames.has("guest_night_declarations") ? sqlite.guestNightDeclaration.findMany() : Promise.resolve([]),
         tableNames.has("urssaf_declarations") ? sqlite.urssafDeclaration.findMany() : Promise.resolve([]),
+        tableNames.has("fiscal_entities") ? sqlite.fiscalEntity.findMany() : Promise.resolve([]),
+        tableNames.has("fiscal_establishments") ? sqlite.fiscalEstablishment.findMany() : Promise.resolve([]),
       ]);
 
     console.log(`Gestionnaires: ${gestionnaires.length}`);
+    console.log(`Entreprises fiscales: ${fiscalEntities.length}`);
+    console.log(`Etablissements fiscaux: ${fiscalEstablishments.length}`);
     console.log(`Gites: ${gites.length}`);
     console.log(`Compteurs: ${counters.length}`);
     console.log(`Contrats: ${contrats.length}`);
@@ -190,6 +194,8 @@ const main = async () => {
         postgres.contrat.deleteMany(),
         postgres.contratCounter.deleteMany(),
         postgres.gite.deleteMany(),
+        postgres.fiscalEstablishment.deleteMany(),
+        postgres.fiscalEntity.deleteMany(),
         postgres.gestionnaire.deleteMany(),
       ]);
     }
@@ -201,6 +207,16 @@ const main = async () => {
         create: { id, ...rest },
         update: rest,
       });
+    }
+
+    for (const entity of fiscalEntities) {
+      const { id, ...rest } = entity;
+      await postgres.fiscalEntity.upsert({ where: { id }, create: { id, ...rest }, update: rest });
+    }
+
+    for (const establishment of fiscalEstablishments) {
+      const { id, ...rest } = establishment;
+      await postgres.fiscalEstablishment.upsert({ where: { id }, create: { id, ...rest }, update: rest });
     }
 
     for (const gite of gites) {

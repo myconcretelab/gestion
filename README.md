@@ -48,6 +48,18 @@ Les règles de ménage peuvent attribuer les nouvelles tâches manuellement, à 
 
 L'onglet « Autres actions » permet de créer des tâches ponctuelles et des modèles réutilisables par gîte. Un modèle crée une action à chaque arrivée ou départ, avec un début et une échéance exprimés en jours et heures par rapport à cet événement. Il dispose des mêmes modes d'attribution, dont le tour de rôle. Un modèle désactivé ne génère plus de nouvelles tâches ; les tâches déjà créées restent visibles. Les intervenants ne voient et ne peuvent modifier que leurs actions attribuées. Ces actions n'affectent pas l'état « gîte prêt », qui reste propre au ménage.
 
+## Entreprises et établissements de facturation
+
+Dans **Paramètres → Organisation → Entreprises** (`/parametres/entreprises`), renseigner les entreprises qui émettent les factures : raison sociale, SIREN, régime et numéro de TVA, adresse du siège et contact. Une entreprise peut être associée à un gestionnaire ; un gestionnaire peut avoir plusieurs entreprises. Ajouter ensuite les établissements (SIRET et adresse), puis sélectionner l’**établissement facturant** dans chaque fiche gîte.
+
+`Organization` reste le compte applicatif qui isole les données. `FiscalEntity` représente une entreprise juridique (un SIREN par compte) et `FiscalEstablishment` un établissement (un SIRET par compte). Les liens gestionnaire → entreprise → établissement → gîte sont protégés par des clés étrangères comprenant l’identifiant de compte. Aucun rattachement automatique n’est déduit des propriétaires historiques.
+
+Les fiches peuvent être enregistrées progressivement. L’inventaire liste les gîtes sans établissement, les informations de base manquantes et les gestionnaires sans entreprise. Le régime de TVA reste « À préciser » jusqu’à sa saisie explicite. La validation contrôle les formats et la cohérence SIREN/SIRET/TVA ; elle ne vérifie pas l’existence des identifiants dans un registre ni l’éligibilité à la facturation électronique.
+
+API : `GET/POST /api/fiscal-entities`, `PUT /api/fiscal-entities/:id`, `GET /api/fiscal-entities/inventory`, `POST /api/fiscal-entities/:id/establishments` et `PUT /api/fiscal-entities/:id/establishments/:establishmentId`. Elles nécessitent les droits de lecture/écriture des paramètres. La liste minimale `GET /api/gites/fiscal-establishments` utilise le droit de lecture des gîtes. La création, modification, duplication et l’import des gîtes acceptent `fiscal_establishment_id` ; l’omission préserve le rattachement existant, `null` le retire.
+
+La migration `20261016100000_fiscal_entities` est fournie pour SQLite et PostgreSQL. Elle conserve les documents, les montants et les compteurs historiques ; les nouveaux rattachements sont initialement vides. Après sauvegarde, elle s’applique par les commandes de migration habituelles dans l’environnement choisi. Cette première étape prépare les données : elle n’active pas SuperPDP et ne modifie pas les calculs, la numérotation ou les PDF actuels.
+
 ## Stripe en mode test
 
 La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.

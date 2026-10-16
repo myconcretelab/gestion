@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { deleteManager, getManagerDeletionDependencies } from "../modules/identity/managerRepository.js";
 
 const router = Router();
 
@@ -48,16 +49,12 @@ router.post("/", async (req, res, next) => {
 
 router.delete("/:id", async (req, res, next) => {
   try {
-    const manager = await prisma.gestionnaire.findUnique({
-      where: { id: req.params.id },
-      include: {
-        _count: {
-          select: { gites: true, expense_recurring_rules: true, expense_entries: true },
-        },
-      },
-    });
+    const manager = await getManagerDeletionDependencies(req.params.id);
 
     if (!manager) return res.status(404).json({ error: "Gestionnaire introuvable." });
+    if (manager._count.fiscal_entities > 0) {
+      return res.status(409).json({ error: "Ce gestionnaire est associé à une entreprise. Modifiez ce rattachement avant de le supprimer." });
+    }
     if ((manager._count?.gites ?? 0) > 0) {
       return res
         .status(409)
@@ -68,7 +65,7 @@ router.delete("/:id", async (req, res, next) => {
       return res.status(409).json({ error: `Ce gestionnaire possède ${expenseCount} frais personnel(s).` });
     }
 
-    await prisma.gestionnaire.delete({ where: { id: req.params.id } });
+    await deleteManager(req.params.id);
     res.status(204).end();
   } catch (err) {
     next(err);

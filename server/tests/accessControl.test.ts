@@ -52,6 +52,9 @@ test("chaque famille de routes reçoit une permission métier explicite", () => 
     ["GET", "/invoices", "invoices:read"], ["GET", "/statistics", "statistics:read"],
     ["GET", "/personal-expenses", "finances:read"], ["POST", "/urssaf-declarations", "declarations:write"],
     ["GET", "/users", "users:read"], ["PUT", "/settings/security", "settings:write"],
+    ["GET", "/fiscal-entities", "settings:read"], ["GET", "/fiscal-entities/inventory", "settings:read"],
+    ["POST", "/fiscal-entities/1/establishments", "settings:write"],
+    ["GET", "/gites/fiscal-establishments", "gites:read"],
     ["GET", "/settings/pump/status", "integrations:manage"], ["GET", "/planning-relay-periods", "planning:read"],
     ["GET", "/cleaning-tasks", "planning:read"], ["PATCH", "/cleaning-tasks/task-1/status", "cleaning:execute"],
     ["PATCH", "/cleaning-tasks/task-1/note", "cleaning:execute"],
@@ -70,6 +73,8 @@ test("un intervenant est refusé sur les familles hors rôle et ne peut pas empr
   assert.equal(hasBusinessPermission(worker, "contracts:read"), false);
   assert.equal(hasBusinessPermission(worker, "users:read"), false);
   assert.equal(hasBusinessPermission(worker, "integrations:manage"), false);
+  assert.equal(hasBusinessPermission(worker, "settings:read"), false);
+  assert.equal(hasBusinessPermission(worker, "settings:write"), false);
   assert.equal(canActAsRequestedUser(worker, "/interventions", { userId: "user-2" }), false);
   assert.equal(canActAsRequestedUser(worker, "/intervenants/hours/worker-2", {}), false);
   assert.equal(canActAsRequestedUser(worker, "/intervenants/hours/worker-1", {}), true);
@@ -88,6 +93,7 @@ test("les API dédiées respectent le droit de page", () => {
   assert.equal(getRequiredPageForApiPath("/contracts/abc"), "contracts");
   assert.equal(getRequiredPageForApiPath("/users/owners"), "gites");
   assert.equal(getRequiredPageForApiPath("/users"), "settings");
+  assert.equal(getRequiredPageForApiPath("/fiscal-entities/inventory"), "settings");
   assert.equal(getRequiredPageForApiPath("/cleaning-tasks"), "planning_relay");
   assert.equal(getRequiredPageForApiPath("/action-tasks"), "planning_relay");
   assert.equal(getRequiredPageForApiPath("/reservations/calendar"), null);

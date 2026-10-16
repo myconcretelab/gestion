@@ -17,6 +17,8 @@ const seed = async () => {
   await prisma.contrat.deleteMany();
   await prisma.contratCounter.deleteMany();
   await prisma.gite.deleteMany();
+  await prisma.fiscalEstablishment.deleteMany();
+  await prisma.fiscalEntity.deleteMany();
   await prisma.gestionnaire.deleteMany();
 
   const installation = await prisma.installationConfig.create({

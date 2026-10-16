@@ -55,6 +55,7 @@ const familyPermission = (family: string, method: string): BusinessPermission =>
 
 export const getRequiredBusinessPermission = (method: string, requestPath: string): BusinessPermission | null => {
   const path = requestPath.toLowerCase();
+  if (path.startsWith("/fiscal-entities")) return familyPermission("settings", method);
   if (path.startsWith("/users/owners")) return familyPermission("gites", method);
   if (path.startsWith("/document-shares")) return "contracts:share";
   if (path.startsWith("/users") || path.startsWith("/managers")) return isWriteMethod(method) ? "users:manage" : "users:read";
@@ -166,6 +167,7 @@ const PAGE_API_PREFIXES: Array<[string, AppPageId]> = [
   ["/intervenants", "planning_relay"],
   ["/interventions", "planning_relay"],
   ["/settings", "settings"],
+  ["/fiscal-entities", "settings"],
   ["/users/owners", "gites"],
   ["/users", "settings"],
   ["/managers", "settings"],
