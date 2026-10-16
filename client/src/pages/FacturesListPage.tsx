@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Facture, Gite } from "../utils/types";
+import { invoiceDisplayNumber, invoiceLifecycleLabel } from "../utils/invoiceLifecycle";
 import { formatDate, formatEuro } from "../utils/format";
 import {
   buildDocumentEmailDraft,
@@ -219,7 +220,7 @@ const FacturesListPage = () => {
 
   const remove = async (facture: Facture) => {
     const confirmed = window.confirm(
-      `Supprimer la facture ${facture.numero_facture} (${facture.locataire_nom}) ?`,
+      `Supprimer le brouillon de ${facture.locataire_nom} ?`,
     );
     if (!confirmed) return;
     setDeletingId(facture.id);
@@ -342,6 +343,7 @@ const FacturesListPage = () => {
         <table className="table">
           <thead>
             <tr>
+              <th>Document</th>
               <th>Dates</th>
               <th>Gîte</th>
               <th>Client</th>
@@ -358,6 +360,7 @@ const FacturesListPage = () => {
                 Number(facture.arrhes_montant ?? 0);
               return (
                 <tr key={facture.id}>
+                  <td><Link to={`/factures/${facture.id}`}>{invoiceDisplayNumber(facture)}</Link><br />{facture.document_kind === "credit_note" ? "Avoir · " : ""}{invoiceLifecycleLabel(facture)}</td>
                   <td>
                     {facture.reservation_items?.length >= 2
                       ? `${facture.reservation_items.length} réservations`
@@ -399,7 +402,7 @@ const FacturesListPage = () => {
                       >
                         Détails
                       </Link>
-                      {facture.locataire_email ? (
+                      {facture.lifecycle_status !== "draft" && facture.locataire_email ? (
                         <button
                           type="button"
                           className="table-action table-action--neutral"
@@ -413,18 +416,18 @@ const FacturesListPage = () => {
                           type="button"
                           className="table-action table-action--neutral"
                           disabled
-                          title="Email client non renseigné"
+                          title={facture.lifecycle_status === "draft" ? "Validez le brouillon avant envoi" : "Email client non renseigné"}
                         >
                           Email
                         </button>
                       )}
-                      <button
+                      {facture.lifecycle_status === "draft" && <button
                         className="table-action table-action--danger"
                         onClick={() => remove(facture)}
                         disabled={deletingId === facture.id}
                       >
                         Supprimer
-                      </button>
+                      </button>}
                     </div>
                   </td>
                 </tr>

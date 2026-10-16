@@ -6,6 +6,7 @@ import { z } from "zod";
 import prisma, { systemPrisma } from "../db/prisma.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { enterOrganizationContext } from "../services/organizationContext.js";
+import { readArchivedInvoicePdf, shareableInvoice } from "../modules/documents/invoiceLifecycle.js";
 
 const router = Router();
 const publicRouter = Router();
@@ -23,7 +24,7 @@ router.post("/", async (req, res, next) => {
     const payload = createSchema.parse(req.body);
     const exists = payload.documentType === "contract"
       ? await prisma.contrat.count({ where: { id: payload.documentId } })
-      : await prisma.facture.count({ where: { id: payload.documentId } });
+      : await shareableInvoice(payload.documentId);
     if (!exists) return res.status(404).json({ error: "Document introuvable." });
     const token = crypto.randomBytes(32).toString("base64url");
     const share = await prisma.documentShare.create({ data: {
@@ -57,8 +58,14 @@ publicRouter.get("/:token", async (req, res, next) => {
     enterOrganizationContext({ organizationId: share.organization_id, source: "public-token" });
     const record = share.document_type === "contract"
       ? await prisma.contrat.findUnique({ where: { id: share.document_id }, select: { pdf_path: true, pdf_sent_path: true } })
-      : await prisma.facture.findUnique({ where: { id: share.document_id }, select: { pdf_path: true } });
+      : await shareableInvoice(share.document_id);
     if (!record) return res.status(404).json({ error: "Document introuvable." });
+    if (share.document_type === "invoice") {
+      const { contents } = await readArchivedInvoicePdf(record as NonNullable<Awaited<ReturnType<typeof shareableInvoice>>>);
+      await prisma.documentShare.update({ where: { id: share.id }, data: { access_count: { increment: 1 }, last_access_at: new Date() } });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      return res.type("application/pdf").send(contents);
+    }
     const relativePath = "pdf_sent_path" in record && record.pdf_sent_path ? record.pdf_sent_path : record.pdf_path;
     const absolutePath = path.resolve(process.cwd(), String(relativePath));
     await fs.access(absolutePath);

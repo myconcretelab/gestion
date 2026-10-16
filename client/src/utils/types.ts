@@ -580,6 +580,17 @@ export type Contrat = {
 
 export type Facture = {
   id: string;
+  lifecycle_status: "draft" | "issued" | "legacy";
+  document_kind: "invoice" | "credit_note";
+  revision: number;
+  issued_at?: string | null;
+  fiscal_entity_id?: string | null;
+  fiscal_establishment_id?: string | null;
+  pdf_sha256?: string | null;
+  credited_invoice_id?: string | null;
+  original_invoice?: { id: string; numero_facture: string } | null;
+  credit_notes?: Array<{ id: string; numero_facture: string; lifecycle_status: string }>;
+  issuer?: { legal_name: string; siren: string | null; siret: string | null } | null;
   numero_facture: string;
   gite_id: string;
   date_creation: string;

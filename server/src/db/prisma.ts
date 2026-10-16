@@ -39,7 +39,7 @@ const TENANT_MODELS = new Set([
   "InstallationConfig", "ContentTemplateVersion", "Gite", "GitePhoto", "WordPressWebhookJob",
   "Gestionnaire", "FiscalEntity", "FiscalEstablishment", "AppUser", "Membership", "OrganizationSettings", "ApiToken", "DocumentShare",
   "ExpenseCategory", "ExpenseRecurringRule", "ExpenseEntry", "UrssafDeclaration", "GuestNightDeclaration",
-  "IcalSource", "Contrat", "ContratCounter", "Facture", "FactureCounter", "ReservationPlaceholder",
+  "IcalSource", "Contrat", "ContratCounter", "Facture", "FactureCounter", "InvoiceSequence", "ReservationPlaceholder",
   "PlanningRelayPeriod", "PlanningRelayWorker", "IntervenantHourEntry", "UserIntervention",
   "IntervenantExpense", "PlanningRelayAssignment", "CleaningRule", "CleaningTask", "ActionTemplate", "ActionTask", "Reservation", "GiteSeasonRate", "BookingRequest",
   "GiteMonthlyEnergyReading",
@@ -87,5 +87,6 @@ const extendForTenant = (organizationId: () => string) => systemPrisma.$extends(
 export const getTenantPrisma = (organizationId: string) => extendForTenant(() => organizationId);
 
 const prisma = extendForTenant(getOrganizationId);
+export type TenantTransactionClient = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends" | "$use">;
 
 export default prisma;

@@ -82,7 +82,7 @@ const normalizeAdditionalFees = (fees: SyncReservationFromDocumentParams["additi
 
 const isSameDate = (left: Date | string, right: Date | string) => new Date(left).getTime() === new Date(right).getTime();
 
-export const syncReservationFromDocument = async (params: SyncReservationFromDocumentParams) => {
+export const syncReservationFromDocument = async (params: SyncReservationFromDocumentParams, database: Pick<typeof prisma, "reservation"> = prisma) => {
   const {
     explicitReservationId,
     existingReservationId,
@@ -108,7 +108,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
 
   let targetReservationId: string | null = null;
   if (sourceReservationId) {
-    const linked = await prisma.reservation.findUnique({
+    const linked = await database.reservation.findUnique({
       where: { id: sourceReservationId },
       select: {
         id: true,
@@ -121,7 +121,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
   }
 
   if (!targetReservationId) {
-    const overlaps = await prisma.reservation.findMany({
+    const overlaps = await database.reservation.findMany({
       where: {
         gite_id: giteId,
         date_entree: { lt: dateFin },
@@ -187,7 +187,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
   };
 
   if (targetReservationId) {
-    const updated = await prisma.reservation.update({
+    const updated = await database.reservation.update({
       where: { id: targetReservationId },
       data: reservationData,
       select: { id: true },
@@ -195,7 +195,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
     return updated.id;
   }
 
-  const created = await prisma.reservation.create({
+  const created = await database.reservation.create({
     data: {
       ...buildReservationOriginData({ originSystem: "app", exportToIcal: true }),
       ...reservationData,

@@ -2,11 +2,17 @@ import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import path from "path";
 import fs from "fs/promises";
+import crypto from "node:crypto";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { computeTotals, type ContractTotals, type OptionsInput } from "../services/contractCalculator.js";
 import { syncReservationFromDocument } from "../services/documentReservationSync.js";
-import { generateInvoiceNumber } from "../services/invoiceNumber.js";
+import {
+  assertEditableInvoice, buildInvoiceCalculation, createFullCreditNote, deleteInvoiceDraft,
+  invoiceError, invoiceReadInclude, invoiceRenderInput, issueInvoice, parseInvoiceCalculation,
+  readArchivedInvoicePdf, withEditableInvoice, updateInvoicePayment,
+} from "../modules/documents/invoiceLifecycle.js";
+import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import {
   generateInvoicePdf,
   generateInvoicePreviewHtml,
@@ -85,6 +91,7 @@ const addInvoiceExtraFeesToTotals = (totals: ContractTotals, fees: InvoiceExtraF
 };
 
 const invoiceSchema = z.object({
+  revision: z.number().int().nonnegative().optional(),
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
   locataire_adresse: z.string().optional().default(""),
@@ -116,6 +123,8 @@ const invoiceSchema = z.object({
 const paymentStatusSchema = z.object({
   statut_paiement: z.enum(["non_reglee", "reglee"]),
 });
+const issuanceSchema = z.object({ revision: z.number().int().nonnegative() });
+const creditNoteSchema = z.object({ reason: z.string().trim().min(1).max(2000) });
 
 const sendEmailSchema = z.object({
   recipient: z.preprocess(emptyStringToNull, z.string().trim().email().nullable()).optional(),
@@ -166,41 +175,34 @@ const hydrateInvoiceMoneyFields = (invoice: any) => ({
   cheque_menage_montant: toNumber(invoice.cheque_menage_montant),
 });
 
+const invoiceSeller = (invoice: any) => {
+  const archived = fromJsonString<any>(invoice.immutable_snapshot, null)?.invoice?.seller;
+  if (archived) return archived;
+  if (invoice.document_kind === "credit_note") return fromJsonString<any>(invoice.original_invoice?.immutable_snapshot, null)?.invoice?.seller;
+  const establishment = invoice.gite?.fiscal_establishment;
+  if (invoice.lifecycle_status !== "draft" || !establishment) return undefined;
+  const entity = establishment.fiscal_entity;
+  return { legal_name: entity.legal_name, siren: entity.siren, siret: establishment.siret, vat_number: entity.vat_number, email: entity.email,
+    address: [entity.address_line1, entity.address_line2, entity.postal_code, entity.city, entity.country_code].filter(Boolean).join(" · ") };
+};
+
 const hydrateInvoice = (contrat: any) => ({
   ...hydrateInvoiceMoneyFields(contrat),
   frais_supplementaires: fromJsonString<InvoiceExtraFee[]>(contrat.frais_supplementaires, []),
   reservation_items: fromJsonString<InvoiceReservationItem[]>(contrat.reservation_items, []),
   options: fromJsonString<OptionsInput>(contrat.options, {}),
   clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
-  gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
+  gite: contrat.gite ? { ...hydrateGite(contrat.gite), ...fromJsonString<any>(contrat.immutable_snapshot, null)?.calculation?.gite } : undefined,
+  calculation_snapshot: undefined,
+  immutable_snapshot: undefined,
+  original_invoice: contrat.original_invoice ? { id: contrat.original_invoice.id, numero_facture: contrat.original_invoice.numero_facture } : null,
+  issuer: invoiceSeller(contrat) ?? null,
 });
 
-const toInvoiceRenderInput = (contrat: any): InvoiceRenderInput => ({
-  numero_facture: contrat.numero_facture,
-  locataire_nom: contrat.locataire_nom,
-  locataire_adresse: contrat.locataire_adresse,
-  locataire_tel: contrat.locataire_tel,
-  nb_adultes: contrat.nb_adultes,
-  nb_enfants_2_17: contrat.nb_enfants_2_17,
-  date_debut: contrat.date_debut,
-  heure_arrivee: contrat.heure_arrivee,
-  date_fin: contrat.date_fin,
-  heure_depart: contrat.heure_depart,
-  prix_par_nuit: contrat.prix_par_nuit,
-  remise_montant: contrat.remise_montant,
-  frais_supplementaires: fromJsonString<InvoiceExtraFee[]>(contrat.frais_supplementaires, []),
-  reservation_items: fromJsonString<InvoiceReservationItem[]>(contrat.reservation_items, []),
-  arrhes_montant: contrat.arrhes_montant,
-  arrhes_date_limite: contrat.arrhes_date_limite,
-  solde_montant: contrat.solde_montant,
-  cheque_menage_montant: contrat.cheque_menage_montant,
-  caution_montant: contrat.caution_montant,
-  afficher_caution_phrase: contrat.afficher_caution_phrase,
-  afficher_cheque_menage_phrase: contrat.afficher_cheque_menage_phrase,
-  options: fromJsonString<OptionsInput>(contrat.options, {}),
-  clauses: fromJsonString<Record<string, unknown>>(contrat.clauses, {}),
-  statut_paiement: contrat.statut_paiement,
-  notes: contrat.notes ?? null,
+const toInvoiceRenderInput = (invoice: any): InvoiceRenderInput => ({
+  ...invoiceRenderInput(invoice),
+  source_invoice_number: invoice.original_invoice?.numero_facture,
+  seller: invoiceSeller(invoice),
 });
 
 const invoiceTemplatePaths = [
@@ -208,78 +210,28 @@ const invoiceTemplatePaths = [
   path.join(process.cwd(), "templates/invoice.html"),
 ];
 
-const regenerateStoredInvoicePdf = async (contrat: any) => {
-  const options = normalizeOptions(fromJsonString<OptionsInput>(contrat.options, {}), contrat.gite);
-
-  const totalsBase = computeTotals({
-    dateDebut: contrat.date_debut,
-    dateFin: contrat.date_fin,
-    prixParNuit: toNumber(contrat.prix_par_nuit),
-    remiseMontant: toNumber(contrat.remise_montant),
-    nbAdultes: contrat.nb_adultes,
-    nbEnfants: contrat.nb_enfants_2_17,
-    arrhesMontant: toNumber(contrat.arrhes_montant),
-    options,
-    gite: contrat.gite,
-  });
-  const fraisSupplementaires = normalizeInvoiceExtraFees(
-    fromJsonString<InvoiceExtraFeeInput[]>(contrat.frais_supplementaires, [])
-  );
-  const reservationItems = fromJsonString<InvoiceReservationItem[]>(contrat.reservation_items, []);
-  const totals = applyReservationItemsToTotals(
-    totalsBase,
-    reservationItems,
-    toNumber(contrat.arrhes_montant),
-    fraisSupplementaires
-  );
-
-  const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
-    contrat.numero_facture,
-    contrat.date_debut
-  );
-
-  await prisma.facture.update({
-    where: { id: contrat.id },
-    data: {
-      nb_nuits: totals.nbNuits,
-      taxe_sejour_calculee: totals.taxeSejourCalculee,
-      solde_montant: totals.solde,
-      pdf_path: pdfRelativePath,
-      options: encodeJsonField(options),
-      frais_supplementaires: encodeJsonField(fraisSupplementaires),
-    },
-  });
-
-  const invoiceForPdf = {
-    ...toInvoiceRenderInput(contrat),
-    solde_montant: totals.solde,
-    options,
-    frais_supplementaires: fraisSupplementaires,
-    reservation_items: reservationItems,
-  };
+const regenerateStoredInvoicePdf = async (invoice: any) => {
+  assertEditableInvoice(invoice);
+  const calculation = parseInvoiceCalculation(invoice.calculation_snapshot);
+  const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(invoice.numero_facture, invoice.date_debut);
   await generateInvoicePdf({
-    invoice: invoiceForPdf,
-    gite: contrat.gite,
-    totals,
+    invoice: toInvoiceRenderInput(invoice),
+    gite: calculation.gite,
+    totals: calculation.totals,
     outputPath: pdfAbsolutePath,
   });
-
   return { pdfRelativePath, pdfAbsolutePath };
 };
 
-const shouldRegenerateInvoicePdf = async (contrat: any, absolutePath: string) => {
+const shouldRegenerateInvoicePdf = async (invoice: any, absolutePath: string) => {
+  if (invoice.lifecycle_status !== "draft") return false;
+  if (!invoice.pdf_path) return true;
   const [pdfStat, latestTemplateMtimeMs] = await Promise.all([
     fs.stat(absolutePath).catch(() => null),
     getLatestTemplateMtimeMs(invoiceTemplatePaths),
   ]);
-  if (!pdfStat) return true;
-
-  const contractMtimeMs =
-    contrat.date_derniere_modif instanceof Date
-      ? contrat.date_derniere_modif.getTime()
-      : new Date(contrat.date_derniere_modif).getTime();
-  const latestSourceMtimeMs = Math.max(contractMtimeMs, latestTemplateMtimeMs);
-  return pdfStat.mtimeMs + 1 < latestSourceMtimeMs;
+  if (!pdfStat?.isFile()) return true;
+  return pdfStat.mtimeMs + 1 < Math.max(new Date(invoice.date_derniere_modif).getTime(), latestTemplateMtimeMs);
 };
 
 const handleDocumentEmailError = (err: unknown, res: Response, next: NextFunction) => {
@@ -344,6 +296,7 @@ const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise
 const ensureReservationsCanBeInvoiced = async (reservationIds: string[], excludedInvoiceId?: string) => {
   if (reservationIds.length < 2) return;
   const invoices = await prisma.facture.findMany({
+    where: { document_kind: "invoice" },
     select: { id: true, numero_facture: true, reservation_id: true, reservation_items: true },
   });
   const requested = new Set(reservationIds);
@@ -398,7 +351,7 @@ type PreviewError = { error: { status: number; message: string } };
 const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | PreviewError> => {
   const data = previewSchema.parse(payload);
   const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
-  const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
+  const gite = await prisma.gite.findUnique({ where: { id: data.gite_id }, include: invoiceReadInclude.gite.include });
   if (!gite) return { error: { status: 404, message: "Gîte introuvable" } };
 
   const dateDebut = data.date_debut ? parseDate(data.date_debut) : null;
@@ -452,6 +405,8 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
 
   const invoiceForPdf: InvoiceRenderInput = {
     numero_facture: "BROUILLON",
+    lifecycle_status: "draft",
+    seller: invoiceSeller({ lifecycle_status: "draft", gite }),
     locataire_nom: data.locataire_nom ?? "",
     locataire_adresse: data.locataire_adresse ?? "",
     locataire_tel: data.locataire_tel ?? "",
@@ -500,7 +455,7 @@ router.get("/", async (req, res, next) => {
     const factures = await prisma.facture.findMany({
       where,
       orderBy: { date_creation: "desc" },
-      include: { gite: true },
+      include: invoiceReadInclude,
     });
     res.json(factures.map(hydrateInvoice));
   } catch (err) {
@@ -534,7 +489,7 @@ router.get("/:id", async (req, res, next) => {
   try {
     const contrat = await prisma.facture.findUnique({
       where: { id: req.params.id },
-      include: { gite: true },
+      include: invoiceReadInclude,
     });
     if (!contrat) return res.status(404).json({ error: "Facture introuvable" });
     res.json(hydrateInvoice(contrat));
@@ -610,11 +565,7 @@ router.post("/", async (req, res, next) => {
     const fraisSupplementaires = normalizeInvoiceExtraFees(data.frais_supplementaires);
     const invoiceTotals = applyReservationItemsToTotals(totals, reservationItems, arrhesMontant, fraisSupplementaires);
 
-    const numeroFacture = await generateInvoiceNumber(
-      data.gite_id,
-      gite.prefixe_contrat,
-      dateDebut.getFullYear()
-    );
+    const numeroFacture = `BROUILLON-${new Date().getFullYear()}-${crypto.randomUUID()}`;
 
     const { relativePath: pdfRelativePath, absolutePath: pdfAbsolutePath } = getPdfPaths(
       numeroFacture,
@@ -646,6 +597,8 @@ router.post("/", async (req, res, next) => {
     const contrat = await prisma.facture.create({
       data: {
         numero_facture: numeroFacture,
+        lifecycle_status: "draft",
+        calculation_snapshot: buildInvoiceCalculation(gite, invoiceTotals),
         gite_id: data.gite_id,
         locataire_nom: data.locataire_nom,
         locataire_adresse: data.locataire_adresse,
@@ -677,7 +630,7 @@ router.post("/", async (req, res, next) => {
         notes: data.notes ?? null,
         reservation_id: reservationId,
       },
-      include: { gite: true },
+      include: invoiceReadInclude,
     });
 
     const invoiceForPdf = toInvoiceRenderInput(contrat);
@@ -699,10 +652,12 @@ router.post("/", async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const data = invoiceSchema.parse(req.body);
-    const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
-    await ensureReservationsCanBeInvoiced(data.reservation_ids, req.params.id);
     const existing = await prisma.facture.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Facture introuvable" });
+    assertEditableInvoice(existing);
+    if (existing.document_kind === "credit_note") throw invoiceError("Un avoir intégral ne peut pas être édité.");
+    const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
+    await ensureReservationsCanBeInvoiced(data.reservation_ids, req.params.id);
 
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
@@ -757,64 +712,68 @@ router.put("/:id", async (req, res, next) => {
       dateDebut
     );
 
-    const reservationId = reservationItems.length >= 2 ? reservationItems[0].reservation_id : await syncReservationFromDocument({
-      explicitReservationId: data.reservation_id ?? null,
-      existingReservationId: existing.reservation_id ?? null,
-      giteId: data.gite_id,
-      locataireNom: data.locataire_nom,
-      locataireTel: data.locataire_tel,
-      locataireEmail: data.locataire_email ?? null,
-      dateDebut,
-      dateFin,
-      nbNuits: totals.nbNuits,
-      nbAdultes: data.nb_adultes,
-      nbEnfants: data.nb_enfants_2_17,
-      prixParNuit: data.prix_par_nuit,
-      prixTotal: totals.montantBase,
-      remiseMontant: data.remise_montant ?? 0,
-      options,
-      optionsTotal: totals.optionsTotal,
-      additionalFees: fraisSupplementaires.map((fee) => ({
-        label: fee.libelle,
-        amount: fee.montant,
-      })),
-    });
+    const contrat = await withEditableInvoice(req.params.id, data.revision ?? existing.revision, async (tx) => {
+      const reservationId = reservationItems.length >= 2 ? reservationItems[0].reservation_id : await syncReservationFromDocument({
+        explicitReservationId: data.reservation_id ?? null,
+        existingReservationId: existing.reservation_id ?? null,
+        giteId: data.gite_id,
+        locataireNom: data.locataire_nom,
+        locataireTel: data.locataire_tel,
+        locataireEmail: data.locataire_email ?? null,
+        dateDebut,
+        dateFin,
+        nbNuits: totals.nbNuits,
+        nbAdultes: data.nb_adultes,
+        nbEnfants: data.nb_enfants_2_17,
+        prixParNuit: data.prix_par_nuit,
+        prixTotal: totals.montantBase,
+        remiseMontant: data.remise_montant ?? 0,
+        options,
+        optionsTotal: totals.optionsTotal,
+        additionalFees: fraisSupplementaires.map((fee) => ({
+          label: fee.libelle,
+          amount: fee.montant,
+        })),
+      }, tx);
 
-    const contrat = await prisma.facture.update({
-      where: { id: req.params.id },
-      data: {
-        gite_id: data.gite_id,
-        locataire_nom: data.locataire_nom,
-        locataire_adresse: data.locataire_adresse,
-        locataire_tel: data.locataire_tel,
-        locataire_email: data.locataire_email ?? null,
-        nb_adultes: data.nb_adultes,
-        nb_enfants_2_17: data.nb_enfants_2_17,
-        date_debut: dateDebut,
-        heure_arrivee: data.heure_arrivee,
-        date_fin: dateFin,
-        heure_depart: data.heure_depart,
-        nb_nuits: invoiceTotals.nbNuits,
-        prix_par_nuit: data.prix_par_nuit,
-        remise_montant: data.remise_montant ?? 0,
-        taxe_sejour_calculee: invoiceTotals.taxeSejourCalculee,
-        options: encodeJsonField(options),
-        arrhes_montant: arrhesMontant,
-        arrhes_date_limite: parseDate(data.arrhes_date_limite),
-        frais_supplementaires: encodeJsonField(fraisSupplementaires),
-        reservation_items: encodeJsonField(reservationItems),
-        solde_montant: invoiceTotals.solde,
-        caution_montant: data.caution_montant,
-        cheque_menage_montant: data.cheque_menage_montant,
-        afficher_caution_phrase: data.afficher_caution_phrase ?? true,
-        afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
-        clauses: encodeJsonField(data.clauses ?? {}),
-        pdf_path: pdfRelativePath,
-        statut_paiement: data.statut_paiement ?? "non_reglee",
-        notes: data.notes ?? null,
-        reservation_id: reservationId,
-      },
-      include: { gite: true },
+      return tx.facture.update({
+        where: { id: req.params.id },
+        data: {
+          gite_id: data.gite_id,
+          locataire_nom: data.locataire_nom,
+          locataire_adresse: data.locataire_adresse,
+          locataire_tel: data.locataire_tel,
+          locataire_email: data.locataire_email ?? null,
+          nb_adultes: data.nb_adultes,
+          nb_enfants_2_17: data.nb_enfants_2_17,
+          date_debut: dateDebut,
+          heure_arrivee: data.heure_arrivee,
+          date_fin: dateFin,
+          heure_depart: data.heure_depart,
+          nb_nuits: invoiceTotals.nbNuits,
+          prix_par_nuit: data.prix_par_nuit,
+          remise_montant: data.remise_montant ?? 0,
+          taxe_sejour_calculee: invoiceTotals.taxeSejourCalculee,
+          options: encodeJsonField(options),
+          arrhes_montant: arrhesMontant,
+          arrhes_date_limite: parseDate(data.arrhes_date_limite),
+          frais_supplementaires: encodeJsonField(fraisSupplementaires),
+          reservation_items: encodeJsonField(reservationItems),
+          solde_montant: invoiceTotals.solde,
+          caution_montant: data.caution_montant,
+          cheque_menage_montant: data.cheque_menage_montant,
+          afficher_caution_phrase: data.afficher_caution_phrase ?? true,
+          afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
+          clauses: encodeJsonField(data.clauses ?? {}),
+          pdf_path: pdfRelativePath,
+          calculation_snapshot: buildInvoiceCalculation(gite, invoiceTotals),
+          revision: { increment: 1 },
+          statut_paiement: data.statut_paiement ?? "non_reglee",
+          notes: data.notes ?? null,
+          reservation_id: reservationId,
+        },
+        include: invoiceReadInclude,
+      });
     });
 
     const invoiceForPdf = toInvoiceRenderInput(contrat);
@@ -834,15 +793,30 @@ router.put("/:id", async (req, res, next) => {
 router.patch("/:id/payment", async (req, res, next) => {
   try {
     const data = paymentStatusSchema.parse(req.body);
-    const contrat = await prisma.facture.update({
-      where: { id: req.params.id },
-      data: { statut_paiement: data.statut_paiement },
-      include: { gite: true },
-    });
+    const contrat = await updateInvoicePayment(req.params.id, data.statut_paiement);
     res.json(hydrateInvoice(contrat));
   } catch (err) {
     next(err);
   }
+});
+
+router.post("/:id/issue", async (req, res, next) => {
+  try {
+    const { revision } = issuanceSchema.parse(req.body);
+    const user = await getAuthenticatedAppUser(req);
+    const invoice = await issueInvoice(req.params.id, revision, { userId: user?.id, requestId: String(res.getHeader("X-Request-Id") ?? "") });
+    await recordUsageEvent({ organizationId: getOrganizationId(), metricKey: "documents_generated", idempotencyKey: `invoice:${invoice.id}:generated`, source: "invoice_pdf", metadata: { documentType: invoice.document_kind } });
+    res.json(hydrateInvoice(invoice));
+  } catch (error) { next(error); }
+});
+
+router.post("/:id/credit-note", async (req, res, next) => {
+  try {
+    const { reason } = creditNoteSchema.parse(req.body);
+    const user = await getAuthenticatedAppUser(req);
+    const invoice = await createFullCreditNote(req.params.id, reason, { userId: user?.id, requestId: String(res.getHeader("X-Request-Id") ?? "") });
+    res.status(201).json(hydrateInvoice(invoice));
+  } catch (error) { next(error); }
 });
 
 router.post("/:id/send-email", async (req, res, next) => {
@@ -850,18 +824,14 @@ router.post("/:id/send-email", async (req, res, next) => {
     const emailDraft = sendEmailSchema.parse(req.body ?? {});
     const contrat = await prisma.facture.findUnique({
       where: { id: req.params.id },
-      include: { gite: true },
+      include: invoiceReadInclude,
     });
     if (!contrat) return res.status(404).json({ error: "Facture introuvable" });
 
-    let absolutePath = path.join(process.cwd(), contrat.pdf_path);
-    if (await shouldRegenerateInvoicePdf(contrat, absolutePath)) {
-      const regenerated = await regenerateStoredInvoicePdf(contrat);
-      absolutePath = regenerated.pdfAbsolutePath;
-    }
+    const { absolutePath } = await readArchivedInvoicePdf(contrat);
 
     const documentUrl = new URL(`/api/invoices/${req.params.id}/pdf`, `${req.protocol}://${req.get("host")}`).toString();
-    await sendInvoiceEmail(contrat, absolutePath, {
+    await sendInvoiceEmail(hydrateInvoice(contrat), absolutePath, {
       documentUrl,
       deliveryMode: emailDraft.deliveryMode,
       customMessage: emailDraft,
@@ -870,7 +840,7 @@ router.post("/:id/send-email", async (req, res, next) => {
     const updated = await prisma.facture.update({
       where: { id: req.params.id },
       data: { date_envoi_email: new Date() },
-      include: { gite: true },
+      include: invoiceReadInclude,
     });
 
     res.json(hydrateInvoice(updated));
@@ -883,7 +853,7 @@ router.post("/:id/regenerate", async (req, res, next) => {
   try {
     const contrat = await prisma.facture.findUnique({
       where: { id: req.params.id },
-      include: { gite: true },
+      include: invoiceReadInclude,
     });
     if (!contrat) return res.status(404).json({ error: "Facture introuvable" });
     await regenerateStoredInvoicePdf(contrat);
@@ -896,11 +866,8 @@ router.post("/:id/regenerate", async (req, res, next) => {
 
 router.delete("/:id", async (req, res, next) => {
   try {
-    const contrat = await prisma.facture.findUnique({ where: { id: req.params.id } });
-    if (!contrat) return res.status(404).json({ error: "Facture introuvable" });
-    await prisma.facture.delete({ where: { id: req.params.id } });
-    const absolutePath = path.join(process.cwd(), contrat.pdf_path);
-    await fs.unlink(absolutePath).catch(() => undefined);
+    const storedPath = await deleteInvoiceDraft(req.params.id);
+    if (storedPath) await fs.unlink(path.resolve(process.cwd(), storedPath)).catch(() => undefined);
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -911,9 +878,15 @@ router.get("/:id/pdf", async (req, res, next) => {
   try {
     const contrat = await prisma.facture.findUnique({
       where: { id: req.params.id },
-      include: { gite: true },
+      include: invoiceReadInclude,
     });
     if (!contrat) return res.status(404).json({ error: "Facture introuvable" });
+
+    if (contrat.lifecycle_status !== "draft") {
+      const { contents } = await readArchivedInvoicePdf(contrat);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.type("application/pdf").send(contents);
+    }
 
     let absolutePath = path.join(process.cwd(), contrat.pdf_path);
     if (await shouldRegenerateInvoicePdf(contrat, absolutePath)) {

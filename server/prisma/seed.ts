@@ -12,12 +12,14 @@ const seed = async () => {
   await prisma.appUser.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.reservationPlaceholder.deleteMany();
+  await prisma.facture.deleteMany({ where: { document_kind: "credit_note" } });
   await prisma.facture.deleteMany();
   await prisma.factureCounter.deleteMany();
   await prisma.contrat.deleteMany();
   await prisma.contratCounter.deleteMany();
   await prisma.gite.deleteMany();
   await prisma.fiscalEstablishment.deleteMany();
+  await prisma.invoiceSequence.deleteMany();
   await prisma.fiscalEntity.deleteMany();
   await prisma.gestionnaire.deleteMany();
 

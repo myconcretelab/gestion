@@ -87,7 +87,9 @@ before(async () => {
     path.join(temp, "prisma", "migrations"),
     {
       recursive: true,
-      filter: (file) => !file.includes("20261016100000_fiscal_entities"),
+      filter: (file) =>
+        !file.includes("20261016100000_fiscal_entities") &&
+        !file.includes("20261016120000_invoice_lifecycle"),
     },
   );
   migrate(oldSchema);
@@ -118,33 +120,40 @@ before(async () => {
     },
     select: { id: true },
   });
-  await db.facture.create({
-    data: {
-      id: "invoice-old",
-      organization_id: orgA,
-      numero_facture: "OLD-2026-001",
-      gite_id: "gite-old",
-      locataire_nom: "Client historique",
-      locataire_adresse: "Adresse client",
-      locataire_tel: "0102030405",
-      nb_adultes: 2,
-      nb_enfants_2_17: 0,
-      date_debut: new Date("2026-10-01"),
-      date_fin: new Date("2026-10-04"),
-      heure_arrivee: "17:00",
-      heure_depart: "12:00",
-      nb_nuits: 3,
-      prix_par_nuit: 100,
-      options: "{}",
-      arrhes_montant: 60,
-      arrhes_date_limite: new Date("2026-09-01"),
-      solde_montant: 240,
-      caution_montant: 300,
-      cheque_menage_montant: 0,
-      clauses: "[]",
-      pdf_path: "pdfs/2026/10/historical.pdf",
-    },
-  });
+  const historicalInvoiceData = {
+    id: "invoice-old",
+    organization_id: orgA,
+    numero_facture: "OLD-2026-001",
+    gite_id: "gite-old",
+    locataire_nom: "Client historique",
+    locataire_adresse: "Adresse client",
+    locataire_tel: "0102030405",
+    nb_adultes: 2,
+    nb_enfants_2_17: 0,
+    date_debut: new Date("2026-10-01"),
+    date_fin: new Date("2026-10-04"),
+    heure_arrivee: "17:00",
+    heure_depart: "12:00",
+    nb_nuits: 3,
+    prix_par_nuit: 100,
+    options: "{}",
+    arrhes_montant: 60,
+    arrhes_date_limite: new Date("2026-09-01"),
+    solde_montant: 240,
+    caution_montant: 300,
+    cheque_menage_montant: 0,
+    clauses: "[]",
+    pdf_path: "pdfs/2026/10/historical.pdf",
+  };
+  const historicalRow = {
+    ...historicalInvoiceData,
+    date_derniere_modif: new Date(),
+  };
+  const columns = Object.keys(historicalRow);
+  await db.$executeRawUnsafe(
+    `INSERT INTO "factures" (${columns.map((column) => `"${column}"`).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+    ...Object.values(historicalRow),
+  );
   await db.factureCounter.create({
     data: {
       id: "counter-old",
@@ -215,14 +224,17 @@ test("la migration conserve les propriétaires, factures, PDF référencés et c
   const { fiscal_establishment_id, ...existing } = gite;
   assert.equal(fiscal_establishment_id, null);
   assert.deepEqual(existing, priorGite);
+  const [migratedInvoice] = await db.$queryRawUnsafe<
+    Array<Record<string, unknown>>
+  >('SELECT * FROM "factures" WHERE "id" = \'invoice-old\'');
   assert.deepEqual(
-    (
-      await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        'SELECT * FROM "factures" WHERE "id" = \'invoice-old\'',
-      )
-    )[0],
+    Object.fromEntries(
+      Object.keys(priorInvoice).map((key) => [key, migratedInvoice[key]]),
+    ),
     priorInvoice,
   );
+  assert.equal(migratedInvoice.lifecycle_status, "legacy");
+  assert.equal(migratedInvoice.issued_at, null);
   assert.deepEqual(
     (
       await db.$queryRawUnsafe<Array<Record<string, unknown>>>(

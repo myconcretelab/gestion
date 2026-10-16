@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import type { Facture } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
@@ -12,6 +12,7 @@ import {
   type DocumentEmailTemplateSettings,
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
+import { invoiceDisplayNumber, invoiceLifecycleLabel } from "../utils/invoiceLifecycle";
 
 type EmailComposerState = {
   recipient: string;
@@ -26,11 +27,15 @@ type EmailComposerState = {
 
 const FactureDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [facture, setFacture] = useState<Facture | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pdfNonce] = useState(() => Date.now());
   const [emailSending, setEmailSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [issuing, setIssuing] = useState(false);
+  const [creditReason, setCreditReason] = useState("");
+  const [showCreditForm, setShowCreditForm] = useState(false);
   const [emailComposer, setEmailComposer] = useState<EmailComposerState | null>(
     null,
   );
@@ -47,8 +52,33 @@ const FactureDetailPage = () => {
 
   const regenerate = async () => {
     if (!id) return;
-    await apiFetch(`/invoices/${id}/regenerate`, { method: "POST" });
-    await load();
+    try {
+      await apiFetch(`/invoices/${id}/regenerate`, { method: "POST" });
+      await load();
+    } catch (error) { setError((error as Error).message); }
+  };
+
+  const issue = async () => {
+    if (!facture || !confirm("Valider définitivement ce document ? Son numéro et son PDF seront figés. Le document ne pourra plus être modifié ou supprimé.")) return;
+    setIssuing(true); setError(null); setNotice(null);
+    try {
+      const saved = await apiFetch<Facture>(`/invoices/${facture.id}/issue`, { method: "POST", json: { revision: facture.revision } });
+      setFacture(saved);
+      setNotice("Document validé et PDF archivé.");
+    } catch (error) { setError((error as Error).message); }
+    finally { setIssuing(false); }
+  };
+
+  const createCredit = async () => {
+    if (!facture || !creditReason.trim()) return;
+    setIssuing(true); setError(null);
+    try {
+      const saved = await apiFetch<Facture>(`/invoices/${facture.id}/credit-note`, { method: "POST", json: { reason: creditReason } });
+      setShowCreditForm(false);
+      navigate(`/factures/${saved.id}`);
+      setFacture(null);
+    } catch (error) { setError((error as Error).message); }
+    finally { setIssuing(false); }
   };
 
   const openEmailComposer = async () => {
@@ -201,12 +231,13 @@ const FactureDetailPage = () => {
       <div className="card detail-card">
         <div className="detail-header">
           <div>
-            <div className="detail-kicker">Facture</div>
-            <div className="detail-number">{facture.numero_facture}</div>
+            <div className="detail-kicker">{facture.document_kind === "credit_note" ? "Avoir intégral" : "Facture"} · {invoiceLifecycleLabel(facture)}</div>
+            <div className="detail-number">{invoiceDisplayNumber(facture)}</div>
           </div>
           <div className="actions">
-            <Link to={`/factures/${facture.id}/edition`}>Éditer</Link>
-            {facture.locataire_email ? (
+            {facture.lifecycle_status === "draft" && facture.document_kind !== "credit_note" && <Link to={`/factures/${facture.id}/edition`}>Éditer le brouillon</Link>}
+            {facture.lifecycle_status === "draft" && <button type="button" onClick={() => void issue()} disabled={issuing}>{issuing ? "Validation…" : "Valider définitivement"}</button>}
+            {facture.lifecycle_status !== "draft" && facture.locataire_email ? (
               <button
                 type="button"
                 onClick={() => void openEmailComposer()}
@@ -220,11 +251,25 @@ const FactureDetailPage = () => {
               </button>
             )}
             <button onClick={downloadPdf}>Télécharger PDF</button>
-            <button className="secondary" onClick={regenerate}>
+            {facture.lifecycle_status === "draft" && <button className="secondary" onClick={() => void regenerate()}>
               Régénérer
-            </button>
+            </button>}
+            {facture.lifecycle_status === "issued" && facture.document_kind === "invoice" && !facture.credit_notes?.length && totalMontant > 0 &&
+              <button type="button" className="secondary" onClick={() => setShowCreditForm(true)}>Créer un avoir intégral</button>}
           </div>
         </div>
+
+        {facture.lifecycle_status === "draft" && <p className="note">Ce document est un brouillon. Sa validation lui attribuera un numéro définitif et figera son contenu. L’envoi par e-mail sera alors disponible.</p>}
+        {facture.issuer && <p>{facture.lifecycle_status === "draft" ? "Émetteur prévu" : "Émetteur"} : {facture.issuer.legal_name} · SIREN {facture.issuer.siren || "à compléter"} · SIRET {facture.issuer.siret || "à compléter"}</p>}
+        {facture.issued_at && <p>Émis le {formatDate(facture.issued_at)}. Le suivi du paiement ne modifie pas le PDF archivé.</p>}
+        {facture.lifecycle_status === "legacy" && <p className="note">Document historique conservé avec son numéro et son PDF d’origine. Les corrections nécessitent une reprise vérifiée de son émetteur et de ses montants.</p>}
+        {facture.original_invoice && <p>Avoir de la <Link to={`/factures/${facture.original_invoice.id}`}>facture {facture.original_invoice.numero_facture}</Link>.</p>}
+        {facture.credit_notes?.map((credit) => <p key={credit.id}><Link to={`/factures/${credit.id}`}>{credit.lifecycle_status === "draft" ? "Consulter le brouillon d’avoir" : `Consulter l’avoir ${credit.numero_facture}`}</Link></p>)}
+        {showCreditForm && <div className="form-section"><p>L’avoir annulera l’intégralité du montant de cette facture. La facture d’origine sera conservée. L’avoir sera d’abord enregistré en brouillon.</p>
+          <label className="field">Motif de l’avoir<textarea value={creditReason} maxLength={2000} onChange={(event) => setCreditReason(event.target.value)} /></label>
+          <div className="actions"><button type="button" disabled={issuing || !creditReason.trim()} onClick={() => void createCredit()}>Enregistrer le brouillon d’avoir</button>
+            <button type="button" className="secondary" onClick={() => setShowCreditForm(false)}>Annuler</button></div>
+        </div>}
 
         <div className="detail-grid">
           <div className="detail-block">
@@ -276,12 +321,12 @@ const FactureDetailPage = () => {
           <div
             className={`arrhes-card ${isPaid ? "arrhes-card--paid" : "arrhes-card--pending"}`}
           >
-            <div className="arrhes-label">Paiement</div>
+            <div className="arrhes-label">{facture.document_kind === "credit_note" ? "Suivi de l’avoir" : "Paiement"}</div>
             <div className="arrhes-amount">{formatEuro(totalMontant)}</div>
             <div
               className={`arrhes-status ${isPaid ? "arrhes-status--paid" : "arrhes-status--pending"}`}
             >
-              {isPaid ? "Réglée" : "En attente"}
+              {isPaid ? facture.document_kind === "credit_note" ? "Traité" : "Réglée" : "En attente"}
             </div>
             <div className="arrhes-meta">
               Acompte: {formatEuro(facture.arrhes_montant)}
@@ -324,12 +369,12 @@ const FactureDetailPage = () => {
                 <span className="detail-value">—</span>
               )}
             </div>
-            <div className="detail-item">
+            {facture.document_kind !== "credit_note" && <div className="detail-item">
               <span className="detail-label">Échéance</span>
               <span className="detail-value">
                 {formatDate(facture.arrhes_date_limite)}
               </span>
-            </div>
+            </div>}
           </div>
         </div>
       </div>

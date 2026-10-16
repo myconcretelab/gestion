@@ -60,6 +60,20 @@ API : `GET/POST /api/fiscal-entities`, `PUT /api/fiscal-entities/:id`, `GET /api
 
 La migration `20261016100000_fiscal_entities` est fournie pour SQLite et PostgreSQL. Elle conserve les documents, les montants et les compteurs historiques ; les nouveaux rattachements sont initialement vides. Après sauvegarde, elle s’applique par les commandes de migration habituelles dans l’environnement choisi. Cette première étape prépare les données : elle n’active pas SuperPDP et ne modifie pas les calculs, la numérotation ou les PDF actuels.
 
+## Cycle de vie des factures
+
+Une nouvelle facture est enregistrée en **brouillon**, avec une référence technique et un PDF portant la mention « Brouillon ». Ce brouillon reste modifiable et supprimable. Son envoi par e-mail et la création d’un lien de partage sont bloqués avant validation. Sur sa fiche, **Valider définitivement** attribue le numéro officiel, enregistre la date d’émission et verrouille le document.
+
+La série `F-AAAA-SIREN-NNNNNN` est commune aux gîtes et aux établissements d’une même entreprise, avec un compteur annuel. L’année et la date d’émission suivent le fuseau Europe/Paris et ne dépendent pas des dates du séjour. Les anciens compteurs par gîte sont conservés pour l’historique. La nouvelle série commence à 1 ; elle ne reprend pas une séquence provenant d’un autre logiciel. Les règles de numérotation et de correction retenues s’appuient sur [Service Public Entreprendre](https://entreprendre.service-public.gouv.fr/vosdroits/F23208).
+
+La validation conserve un instantané de l’émetteur, du client, des tarifs et des montants enregistrés dans le brouillon. Elle refuse un émetteur incomplet, une adresse client vide ou un regroupement de gîtes appartenant à des entreprises différentes. Numéro, instantané, référence PDF, empreinte SHA-256 et événement d’audit sont enregistrés dans une transaction. Une nouvelle tentative sur la même facture retourne le document déjà émis. Un échec avant validation de la transaction ne consomme pas de numéro ; si le résultat de la transaction ne peut pas être vérifié, le fichier de tentative est conservé pour éviter d’effacer une archive potentiellement validée.
+
+Le PDF émis est servi tel quel, même après un changement de modèle, de coordonnées ou de tarifs. Les changements de paiement restent possibles et sont audités, sans réécrire le PDF. Un PDF archivé absent ou dont l’empreinte a changé doit être restauré depuis une sauvegarde ; il n’est pas recalculé. Les factures verrouillées ne sont plus supprimables, y compris par suppression du gîte.
+
+Une facture émise par ce nouveau cycle peut donner lieu à un **avoir intégral**, avec un motif obligatoire. L’avoir reprend l’émetteur et le total figés, référence sa facture source et reçoit son propre numéro dans la même séquence lors de sa validation. Un seul avoir intégral est possible par facture ; les avoirs partiels ne sont pas pris en charge dans cette étape. Les factures existantes deviennent `legacy` : numéro, montants et PDF restent inchangés et verrouillés, sans date d’émission inventée. Leur correction automatique est bloquée tant que leur émetteur et leurs montants n’ont pas fait l’objet d’une reprise vérifiée.
+
+API complémentaires : `POST /api/invoices/:id/issue` avec `{ revision }`, `POST /api/invoices/:id/credit-note` avec `{ reason }`. Une modification de brouillon accepte sa `revision` pour détecter un formulaire périmé. Cette étape ne calcule pas de nouvelles lignes de TVA, ne certifie pas la conformité réglementaire complète et n’envoie rien à SuperPDP.
+
 ## Stripe en mode test
 
 La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.

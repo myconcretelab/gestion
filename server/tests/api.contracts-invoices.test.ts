@@ -124,6 +124,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
 
   const original = {
     giteFindUnique: prisma.gite.findUnique,
+    transaction: prisma.$transaction,
     contratCounterUpsert: prisma.contratCounter.upsert,
     factureCounterUpsert: prisma.factureCounter.upsert,
     contratCreate: prisma.contrat.create,
@@ -139,6 +140,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
   };
 
   try {
+    prisma.$transaction = async (work: any) => work(prisma);
     const mockedGite = {
       id: "g1",
       prefixe_contrat: "GT",
@@ -173,6 +175,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     prisma.facture.create = async ({ data }: any) => ({ id: "f1", ...data });
     prisma.facture.findUnique = async () => ({
       id: "f1",
+      lifecycle_status: "draft", document_kind: "invoice", revision: 0,
       numero_facture: "GT-2026-01",
       arrhes_montant: 100,
       reservation_id: "r-invoice",
@@ -391,6 +394,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     );
   } finally {
     prisma.gite.findUnique = original.giteFindUnique;
+    prisma.$transaction = original.transaction;
     prisma.contratCounter.upsert = original.contratCounterUpsert;
     prisma.factureCounter.upsert = original.factureCounterUpsert;
     prisma.contrat.create = original.contratCreate;

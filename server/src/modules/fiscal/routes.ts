@@ -119,7 +119,10 @@ router.put("/:id", async (req, res, next) => {
       async (tx) => {
         const entity = await tx.fiscalEntity.findUnique({
           where: { id: req.params.id },
-          include: { establishments: true },
+          include: {
+            establishments: true,
+            _count: { select: { invoices: true, sequences: true } },
+          },
         });
         if (!entity) throw fiscalError("Entreprise introuvable.", 404);
         if (
@@ -133,10 +136,12 @@ router.put("/:id", async (req, res, next) => {
         // Identity changes require a new record once an establishment has a SIRET.
         if (
           data.siren !== entity.siren &&
-          entity.establishments.some((item) => item.siret)
+          (entity.establishments.some((item) => item.siret) ||
+            entity._count.invoices > 0 ||
+            entity._count.sequences > 0)
         ) {
           throw fiscalError(
-            "Le SIREN est lié aux SIRET existants. Créez une autre entreprise pour une nouvelle identité légale.",
+            "Le SIREN est lié à des établissements ou documents émis. Créez une autre entreprise pour une nouvelle identité légale.",
             409,
           );
         }
@@ -186,10 +191,22 @@ router.put("/:id/establishments/:establishmentId", async (req, res, next) => {
             id: req.params.establishmentId,
             fiscal_entity_id: req.params.id,
           },
-          include: { fiscal_entity: true },
+          include: {
+            fiscal_entity: true,
+            _count: { select: { invoices: true } },
+          },
         });
         if (!establishment)
           throw fiscalError("Établissement introuvable.", 404);
+        if (
+          establishment._count.invoices > 0 &&
+          data.siret !== establishment.siret
+        ) {
+          throw fiscalError(
+            "Ce SIRET est lié à des documents émis. Créez un autre établissement pour un nouveau SIRET.",
+            409,
+          );
+        }
         assertSiretMatchesSiren(data.siret, establishment.fiscal_entity.siren);
         return tx.fiscalEstablishment.update({
           where: { id: establishment.id },
@@ -207,20 +224,16 @@ router.put("/:id/establishments/:establishmentId", async (req, res, next) => {
 // Return useful conflicts, including concurrent duplicate creations, without leaking another tenant.
 const handleFiscalError: ErrorRequestHandler = (error, _req, res, next) => {
   if (error?.code === "P2002") {
-    res
-      .status(409)
-      .json({
-        error: "Ce SIREN ou SIRET est déjà enregistré dans votre organisation.",
-      });
+    res.status(409).json({
+      error: "Ce SIREN ou SIRET est déjà enregistré dans votre organisation.",
+    });
     return;
   }
   if (error?.code === "P2003" || error?.code === "P2034") {
-    res
-      .status(409)
-      .json({
-        error:
-          "Ce rattachement fiscal a changé. Rechargez la page puis réessayez.",
-      });
+    res.status(409).json({
+      error:
+        "Ce rattachement fiscal a changé. Rechargez la page puis réessayez.",
+    });
     return;
   }
   next(error);

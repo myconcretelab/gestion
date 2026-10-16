@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Facture, ContratOptions, Reservation } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
@@ -160,6 +160,7 @@ const FactureFormPage = () => {
   const invoiceByReservationId = useMemo(() => {
     const links = new Map<string, Facture>();
     existingInvoices.forEach((invoice) => {
+      if (invoice.document_kind === "credit_note") return;
       if (invoice.id === id) return;
       if (invoice.reservation_id) links.set(invoice.reservation_id, invoice);
       invoice.reservation_items?.forEach((item) => links.set(item.reservation_id, invoice));
@@ -653,7 +654,7 @@ const FactureFormPage = () => {
     id,
     isEdit,
     canSubmit: Boolean(giteId),
-    payload: previewPayload,
+    payload: { ...previewPayload, ...(isEdit ? { revision: editingContract?.revision } : {}) },
     payloadKey,
     getValidationFieldErrors,
     setSaving,
@@ -684,10 +685,14 @@ const FactureFormPage = () => {
   };
 
   if (isEdit && loadingContract && !editingContract) return <div>Chargement...</div>;
+  if (isEdit && editingContract && (editingContract.lifecycle_status !== "draft" || editingContract.document_kind === "credit_note")) {
+    return <div className="card"><p>Le contenu de ce document est verrouillé.</p><Link to={`/factures/${editingContract.id}`}>Consulter le document</Link></div>;
+  }
 
   return (
     <div>
       {error && <div className="note">{error}</div>}
+      <p className="note">Enregistrez d’abord un brouillon, puis vérifiez-le sur sa fiche avant validation définitive. Le numéro de facture sera attribué à cette validation.</p>
       {!isEdit && loadingFromContract && <div className="note">Préremplissage depuis le contrat...</div>}
       {!isEdit && loadingFromReservation && <div className="note">Préremplissage depuis la réservation...</div>}
       {!isEdit && !loadingFromContract && sourceContractNumber && (
@@ -1409,8 +1414,8 @@ const FactureFormPage = () => {
       <div className="card">
         <div className="section-title">{isEdit ? "Mise à jour" : "Création"}</div>
         <div className="actions">
-          <button onClick={submit} disabled={saving}>
-            {saving ? (isEdit ? "Mise à jour..." : "Création...") : isEdit ? "Mettre à jour la facture" : "Créer la facture"}
+          <button onClick={submit} disabled={saving || Boolean(createdContract && createdPayloadKey === payloadKey)}>
+            {saving ? "Enregistrement..." : "Enregistrer le brouillon"}
           </button>
           {createdContract && (
             <button className="secondary" onClick={downloadPdf}>
@@ -1420,7 +1425,7 @@ const FactureFormPage = () => {
         </div>
         {createdContract && (
           <div className="note note--success" style={{ marginTop: 12 }}>
-            Facture {createdContract.numero_facture} {isEdit ? "mise à jour" : "créée"}.
+            Brouillon enregistré. <Link to={`/factures/${createdContract.id}`}>Vérifier et valider définitivement</Link>.
           </div>
         )}
       </div>

@@ -137,6 +137,10 @@ test("un PDF privé, la liste de comptes et les API hors rôle sont refusés", a
       body: JSON.stringify({ legal_name: "Entreprise interdite" }),
     });
     assert.equal(fiscalWrite.status, 403);
+    const invoiceIssue = await fetch(`${origin}/api/invoices/private-id/issue`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ revision: 0 }),
+    });
+    assert.equal(invoiceIssue.status, 403);
 
     const borrowedIdentity = await fetch(`${origin}/api/interventions`, {
       method: "POST", headers: { cookie, "content-type": "application/json" },

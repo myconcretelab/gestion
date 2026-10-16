@@ -141,7 +141,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments, invoiceSequences] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -158,6 +158,7 @@ const main = async () => {
         tableNames.has("urssaf_declarations") ? sqlite.urssafDeclaration.findMany() : Promise.resolve([]),
         tableNames.has("fiscal_entities") ? sqlite.fiscalEntity.findMany() : Promise.resolve([]),
         tableNames.has("fiscal_establishments") ? sqlite.fiscalEstablishment.findMany() : Promise.resolve([]),
+        tableNames.has("invoice_sequences") ? sqlite.invoiceSequence.findMany() : Promise.resolve([]),
       ]);
 
     console.log(`Gestionnaires: ${gestionnaires.length}`);
@@ -189,12 +190,14 @@ const main = async () => {
         postgres.planningRelayPeriod.deleteMany(),
         postgres.guestNightDeclaration.deleteMany(),
         postgres.urssafDeclaration.deleteMany(),
+        postgres.facture.deleteMany({ where: { document_kind: "credit_note" } }),
         postgres.facture.deleteMany(),
         postgres.factureCounter.deleteMany(),
         postgres.contrat.deleteMany(),
         postgres.contratCounter.deleteMany(),
         postgres.gite.deleteMany(),
         postgres.fiscalEstablishment.deleteMany(),
+        postgres.invoiceSequence.deleteMany(),
         postgres.fiscalEntity.deleteMany(),
         postgres.gestionnaire.deleteMany(),
       ]);
@@ -272,7 +275,13 @@ const main = async () => {
       });
     }
 
-    for (const facture of factures) {
+    for (const sequence of invoiceSequences) {
+      const { id, ...rest } = sequence;
+      await postgres.invoiceSequence.upsert({ where: { id }, create: { id, ...rest }, update: rest });
+    }
+
+    // An original invoice must exist before its credit note's foreign key can be inserted.
+    for (const facture of factures.sort((a, b) => Number(Boolean(a.credited_invoice_id)) - Number(Boolean(b.credited_invoice_id)))) {
       const { id, options, clauses, ...rest } = facture;
       const data = {
         id,

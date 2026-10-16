@@ -44,7 +44,7 @@ const writePlaceholderPdf = async (outputPath: string) => {
   await fs.writeFile(outputPath, MINIMAL_PDF_BUFFER);
 };
 
-type GiteLike = {
+export type GiteLike = {
   nom: string;
   adresse_ligne1: string;
   adresse_ligne2?: string | null;
@@ -102,6 +102,11 @@ export type ContractRenderInput = {
 
 export type InvoiceRenderInput = {
   numero_facture: string;
+  lifecycle_status?: string;
+  document_kind?: string;
+  issued_at?: Date | string | null;
+  source_invoice_number?: string;
+  seller?: { legal_name: string; siren: string | null; siret: string | null; vat_number: string | null; address: string; email: string | null };
   locataire_nom: string;
   locataire_adresse: string;
   locataire_tel: string;
@@ -1284,7 +1289,7 @@ const buildInvoiceHtml = async (params: {
   totals: ContractTotals;
   bodyAttrs?: string;
 }) => {
-  const { organization } = await getInstallationConfig();
+  const organization = params.invoice.seller ? null : (await getInstallationConfig()).organization;
   const template = await loadInvoiceTemplate();
   const options = parseJsonField<OptionsInput>(params.invoice.options, {});
   const clauses = parseJsonField<Record<string, unknown>>(params.invoice.clauses ?? {}, {});
@@ -1314,7 +1319,7 @@ const buildInvoiceHtml = async (params: {
   const acompteRowHtml =
     acompteMontantValue > 0 ? `<tr><td>Acompte reçu</td><td>- ${formatEuro(acompteMontantValue)}</td></tr>` : "";
   const notesBlockHtml = notesHtml ? `<div class="box"><div class="section-title">Notes</div>${notesHtml}</div>` : "";
-  const soldeLabel = statutPaiement === "reglee" ? "Montant déjà payé" : "Reste à régler";
+  const soldeLabel = params.invoice.document_kind === "credit_note" ? "Montant de l’avoir" : statutPaiement === "reglee" ? "Montant déjà payé" : "Reste à régler";
   const nbNuits = params.totals.nbNuits;
   const nightsLabel = formatCountLabel(nbNuits, "nuit");
   const clientTel = params.invoice.locataire_tel.trim();
@@ -1330,22 +1335,26 @@ const buildInvoiceHtml = async (params: {
       return `<tr><td><strong>${escapeHtml(item.gite_nom)}</strong> · ${escapeHtml(item.hote_nom)}<div class="invoice-item-meta">Du ${escapeHtml(formatDate(new Date(item.date_debut)))} au ${escapeHtml(formatDate(new Date(item.date_fin)))} · ${escapeHtml(formatCountLabel(item.nb_nuits, "nuit"))} · ${escapeHtml(occupancy)}</div></td><td>${formatEuro(toNumber(item.montant))}</td></tr>`;
     })
     .join("");
-  const invoiceRowsHtml = isMultiReservation
+  const invoiceRowsHtml = params.invoice.document_kind === "credit_note"
+    ? `<tr><td>Annulation intégrale de la facture ${escapeHtml(params.invoice.source_invoice_number ?? "")}</td><td>${formatEuro(params.totals.totalGlobal)}</td></tr>`
+    : isMultiReservation
     ? reservationRowsHtml
     : `<tr><td>${escapeHtml(locationLineLabel)}</td><td>${formatEuro(params.totals.montantBase)}</td></tr><tr class="invoice-row-taxe-sejour"><td>Dont taxe de séjour</td><td>${formatEuro(params.totals.taxeSejourCalculee)}</td></tr>${remiseRowHtml}${optionsRowsHtml}`;
-  const metaGridClass = statutPaiement === "reglee" ? "meta-grid--single" : "";
+  const metaGridClass = statutPaiement === "reglee" || params.invoice.document_kind === "credit_note" ? "meta-grid--single" : "";
   const echeanceMetaHtml =
-    statutPaiement === "reglee"
+    statutPaiement === "reglee" || params.invoice.document_kind === "credit_note"
       ? ""
       : `<div><span class="meta-label">Échéance</span><span class="meta-value">${formatDate(
           params.invoice.arrhes_date_limite
         )}</span></div>`;
 
   return renderTemplate(template, {
-    organizationName: organization.publicDisplayName || organization.tradeName || params.gite.proprietaires_noms,
+    organizationName: params.invoice.seller?.legal_name || organization?.publicDisplayName || organization?.tradeName || params.gite.proprietaires_noms,
+    documentTitle: params.invoice.lifecycle_status === "draft" ? params.invoice.document_kind === "credit_note" ? "BROUILLON D’AVOIR" : "BROUILLON" : params.invoice.document_kind === "credit_note" ? "AVOIR" : "FACTURE",
+    sellerIdentifiers: params.invoice.seller ? [params.invoice.seller.siren && `SIREN : ${params.invoice.seller.siren}`, params.invoice.seller.siret && `SIRET : ${params.invoice.seller.siret}`, params.invoice.seller.vat_number && `TVA : ${params.invoice.seller.vat_number}`].filter(Boolean).join(" · ") : "",
     bodyAttrs: params.bodyAttrs ?? "",
-    invoiceNumber: params.invoice.numero_facture,
-    emissionDate: formatDate(new Date()),
+    invoiceNumber: params.invoice.lifecycle_status === "draft" ? "Non émis — sans numéro définitif" : params.invoice.numero_facture,
+    emissionDate: new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris" }).format(params.invoice.issued_at ? new Date(params.invoice.issued_at) : new Date()),
     metaGridClass,
     echeanceMetaHtml,
     giteName: isMultiReservation
@@ -1354,8 +1363,8 @@ const buildInvoiceHtml = async (params: {
         : `${reservationGiteCount} gîtes`
       : params.gite.nom,
     giteAdresse: [params.gite.adresse_ligne1, params.gite.adresse_ligne2].filter(Boolean).join(" - "),
-    proprietairesNoms: params.gite.proprietaires_noms,
-    proprietairesAdresse: params.gite.proprietaires_adresse,
+    proprietairesNoms: params.invoice.seller?.legal_name ?? params.gite.proprietaires_noms,
+    proprietairesAdresse: params.invoice.seller?.address ?? params.gite.proprietaires_adresse,
     proprietairesContactHtml: buildProprietairesContactHtml(params.gite),
     clientNom: params.invoice.locataire_nom,
     clientAdresseHtml: buildLocataireAdresseHtml(params.invoice.locataire_adresse),

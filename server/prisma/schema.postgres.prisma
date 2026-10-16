@@ -603,6 +603,8 @@ model FiscalEntity {
 
   gestionnaire   Gestionnaire?         @relation(fields: [gestionnaire_id, organization_id], references: [id, organization_id], onDelete: Restrict)
   establishments FiscalEstablishment[]
+  invoices       Facture[]
+  sequences      InvoiceSequence[]
 
   @@unique([id, organization_id], map: "fiscal_entities_id_org_key")
   @@unique([organization_id, siren], map: "fiscal_entities_org_siren_key")
@@ -626,6 +628,7 @@ model FiscalEstablishment {
 
   fiscal_entity FiscalEntity @relation(fields: [fiscal_entity_id, organization_id], references: [id, organization_id], onDelete: Restrict)
   gites         Gite[]
+  invoices      Facture[]
 
   @@unique([id, organization_id], map: "fiscal_establishments_id_org_key")
   @@unique([organization_id, siret], map: "fiscal_establishments_org_siret_key")
@@ -975,8 +978,32 @@ model ContratCounter {
   @@map("contrat_counters")
 }
 
+model InvoiceSequence {
+  id              String   @id @default(cuid())
+  organization_id String   @default("org_historical_broceliande")
+  fiscal_entity_id String
+  year            Int
+  last_number     Int      @default(0)
+  last_issued_at  DateTime
+
+  fiscal_entity FiscalEntity @relation(fields: [fiscal_entity_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+
+  @@unique([organization_id, fiscal_entity_id, year], map: "invoice_sequences_org_entity_year_key")
+  @@map("invoice_sequences")
+}
+
 model Facture {
   id                            String    @id @default(cuid())
+  lifecycle_status              String    @default("legacy")
+  document_kind                 String    @default("invoice")
+  revision                      Int       @default(0)
+  issued_at                     DateTime?
+  fiscal_entity_id              String?
+  fiscal_establishment_id       String?
+  calculation_snapshot          String?
+  immutable_snapshot            String?
+  pdf_sha256                    String?
+  credited_invoice_id           String?
   numero_facture                String
   gite_id                       String
   date_creation                 DateTime  @default(now())
@@ -1014,8 +1041,15 @@ model Facture {
   organization_id               String    @default("org_historical_broceliande")
 
   gite Gite @relation(fields: [gite_id], references: [id])
+  fiscal_entity FiscalEntity? @relation(fields: [fiscal_entity_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+  fiscal_establishment FiscalEstablishment? @relation(fields: [fiscal_establishment_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+  original_invoice Facture? @relation("InvoiceCredits", fields: [credited_invoice_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+  credit_notes Facture[] @relation("InvoiceCredits")
 
   @@unique([organization_id, numero_facture], map: "factures_org_numero_key")
+  @@unique([id, organization_id], map: "factures_id_org_key")
+  @@unique([organization_id, credited_invoice_id], map: "factures_org_credited_invoice_key")
+  @@index([organization_id, lifecycle_status, issued_at], map: "factures_org_lifecycle_issued_idx")
   @@index([reservation_id], map: "factures_reservation_id_idx")
   @@map("factures")
 }
