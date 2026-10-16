@@ -540,3 +540,128 @@ test("l’isolation est vérifiée par les API et les clés étrangères composi
     { code: "P2003" },
   );
 });
+
+test("un même compte gère quatre gîtes et deux émetteurs sans confondre contact et entreprise facturante", async () => {
+  // Synthetic identities live only in this test's temporary database, never in localhost.
+  const secondManagerId = "manager-shared-account";
+  await database.systemPrisma.gestionnaire.create({
+    data: {
+      id: secondManagerId,
+      organization_id: orgA,
+      prenom: "Contact",
+      nom: "Fictif",
+    },
+  });
+  const companies: Array<{
+    id: string;
+    establishmentId: string;
+    name: string;
+  }> = [];
+  for (const [index, managerId] of ["manager-a", secondManagerId].entries()) {
+    const siren = index === 0 ? "222222222" : "333333333";
+    const name = `Émetteur fictif ${index + 1}`;
+    const entity = await request("/fiscal-entities", "POST", {
+      legal_name: name,
+      gestionnaire_id: managerId,
+      siren,
+      vat_regime: "franchise_en_base",
+      address_line1: "1 rue Exemple",
+      postal_code: "35000",
+      city: "Rennes",
+    });
+    assert.equal(entity.status, 201);
+    const establishment = await request(
+      `/fiscal-entities/${entity.body.id}/establishments`,
+      "POST",
+      { name: `Siège fictif ${index + 1}`, siret: `${siren}00001` },
+    );
+    assert.equal(establishment.status, 201);
+    companies.push({
+      id: entity.body.id,
+      establishmentId: establishment.body.id,
+      name,
+    });
+  }
+
+  const gites: Array<{
+    id: string;
+    companyIndex: number;
+    payload: Record<string, unknown>;
+  }> = [];
+  for (let index = 0; index < 4; index++) {
+    const companyIndex = index < 2 ? 0 : 1;
+    const payload = {
+      ...gitePayload,
+      nom: `Gîte fictif partagé ${index + 1}`,
+      prefixe_contrat: `SHARED${index + 1}`,
+      // A common contact for all four gîtes must not make them share one issuer.
+      gestionnaire_id: "manager-a",
+      fiscal_establishment_id: companies[companyIndex].establishmentId,
+    };
+    const created = await request("/gites", "POST", payload);
+    assert.equal(created.status, 201);
+    gites.push({ id: created.body.id, companyIndex, payload });
+  }
+
+  const updated = await request(`/gites/${gites[0].id}`, "PUT", {
+    ...gites[0].payload,
+    gestionnaire_id: secondManagerId,
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.gestionnaire_id, secondManagerId);
+  assert.equal(
+    updated.body.fiscal_establishment_id,
+    companies[0].establishmentId,
+  );
+
+  const listed = await request("/fiscal-entities");
+  assert.equal(listed.status, 200);
+  for (const [index, company] of companies.entries()) {
+    const actual = listed.body.find(
+      (item: { id: string }) => item.id === company.id,
+    );
+    assert.ok(actual);
+    assert.deepEqual(
+      actual.establishments
+        .flatMap((item: { gites: Array<{ id: string }> }) =>
+          item.gites.map((gite) => gite.id),
+        )
+        .sort(),
+      gites
+        .filter((gite) => gite.companyIndex === index)
+        .map((gite) => gite.id)
+        .sort(),
+    );
+  }
+  const inventory = await request("/fiscal-entities/inventory");
+  assert.equal(inventory.status, 200);
+  for (const gite of gites) {
+    const actual = inventory.body.gites.find(
+      (item: { id: string }) => item.id === gite.id,
+    );
+    assert.equal(
+      actual.fiscal_establishment_id,
+      companies[gite.companyIndex].establishmentId,
+    );
+    assert.equal(
+      actual.fiscal_establishment.fiscal_entity.legal_name,
+      companies[gite.companyIndex].name,
+    );
+    assert.deepEqual(actual.missing_fields, []);
+  }
+  const foreignInventory = await request(
+    "/fiscal-entities/inventory",
+    "GET",
+    undefined,
+    orgB,
+  );
+  assert.ok(
+    foreignInventory.body.gites.every(
+      (item: { id: string }) => !gites.some((gite) => gite.id === item.id),
+    ),
+  );
+  assert.deepEqual(
+    await database.systemPrisma.$queryRawUnsafe("PRAGMA foreign_key_check"),
+    [],
+  );
+});

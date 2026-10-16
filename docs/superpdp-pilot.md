@@ -10,7 +10,7 @@ Références vérifiées le 16/10/2026 : [OpenAPI officielle](https://www.superp
 
 ## Bilan local dans l’application
 
-Ouvrir **Paramètres → Organisation → Entreprises → entreprise → Dernière étape — préparation de la recette**, puis **Établir le bilan local de préparation**. Seul un propriétaire authentifié du même compte y accède. Le bilan est disponible même lorsque les connecteurs sont désactivés.
+Ouvrir **Paramètres → Organisation → Entreprises → entreprise → SuperPDP → C · Bilan de préparation des tests**, puis **Établir le bilan local de préparation**. Seul un propriétaire authentifié du même compte y accède. Le bilan est disponible même lorsque les connecteurs sont désactivés.
 
 L’API `GET /api/fiscal-entities/:entityId/superpdp/readiness` porte `Cache-Control: no-store` et `Referrer-Policy: no-referrer`. Elle lit les données du compte et de l’entité demandés : inventaire fiscal, dernière observation de connexion, réglages serveur, compteurs d’émission/encaissement/réception et anomalies historiques. Elle n’appelle ni OAuth ni SuperPDP, ne lit aucun fichier d’accès, ne déchiffre aucun secret, ne crée aucune tâche et ne modifie aucun document, curseur ou paiement. Elle n’expose ni secrets/jetons, même chiffrés, ni contenu de facture, ni URL de configuration.
 
@@ -133,6 +133,21 @@ Références techniques consultées : [OpenAPI SuperPDP](https://api.superpdp.te
 Les tests couvrent les trois choix, les factures ordinaires/payées/à total nul, les avoirs, les valeurs malformées, l'enregistrement des brouillons, le refus avant numérotation, le gel après émission, le transport du cadre sans recalcul, les anciennes données/tâches et le parcours B2C inchangé. Les fournisseurs sont simulés dans les tests automatisés, avec bases temporaires ; aucun consentement, dépôt réel ou activation de worker n'est impliqué par cette livraison.
 
 Vérification finale de cet ajout : 512 tests réussis (17 partagés, 391 serveur, 104 client), compilation complète réussie, lint sans erreur et 36 avertissements de hooks préexistants. Le serveur localhost répond au contrôle de santé ; la base utilisateur ne contient toujours aucune facture, transmission ni réception. Aucun appel réel à SuperPDP, modification des identités locales, déploiement ou activation des lots n'a été effectué pendant cet ajout.
+
+### Reprise après réorganisation de la page — 16/10/2026
+
+Contrôles effectués sur localhost après la révision `5477da5`, sans dépôt ni appel OAuth/fournisseur :
+
+- Le bilan de Burger Queen retrouve sa dernière observation de connexion sandbox vérifiée. Sa fiche reste sans SIREN, régime de TVA ni adresse de siège ; l'établissement reste sans SIRET. Ce constat ne valide pas l'identité fiscale et ne justifie pas une émission.
+- Le passage à Tricatel montre une configuration OAuth vide et un bilan distinct, sans reprendre la connexion de Burger Queen. Aucun consentement Tricatel n'a été réalisé. Le scénario multi-entreprise R01 n'est donc pas encore terminé avec le fournisseur.
+- Les bilans propres à chaque entreprise sont accessibles depuis le nouveau volet SuperPDP. Émission, réception, B2C et worker restent désactivés ; aucun interrupteur n'a été modifié pour la recette.
+- Un nouveau test d'API reproduit quatre gîtes dans un même compte, répartis entre deux entreprises et deux contacts. Il vérifie les rattachements par identifiants, leur conservation lors d'un changement de gestionnaire, l'inventaire et l'absence d'accès depuis un autre compte. Ses identités synthétiques restent dans sa base temporaire, pas dans les fiches localhost ni chez SuperPDP.
+
+La suite complète réussit : **520 tests (17 partagés, 392 serveur, 111 client)**, sans échec ni test ignoré. La compilation complète réussit et le lint ne relève aucune erreur (36 avertissements de hooks préexistants). Les scénarios SuperPDP utilisent un fournisseur simulé ; ils ne prouvent pas la réussite des échanges réels. Le premier lancement général avait une base temporaire de repli vide : les tests historiques qui l'utilisent échouaient faute de tables. Après application des migrations à cette seule base temporaire, le lancement complet réussit. Aucun reset/seed ni migration de la base utilisateur n'a été effectué.
+
+Le contrôle de santé localhost est positif. La lecture de la base utilisateur retrouve toujours zéro facture, transmission, achat reçu et paiement électronique. Aucune identité ni connexion locale n'a été modifiée pendant ces contrôles. L'autorisation de modifier les fiches de test ne dispense pas de disposer d'identités fictives cohérentes pour une future émission ni du consentement humain requis pour une nouvelle connexion.
+
+La prochaine étape du parcours réel multi-entreprise est de configurer et autoriser Tricatel avec les accès adaptés et son numéro sandbox, sans réutiliser ce numéro comme SIREN. Avant R03, qualifier séparément les identités de test (dont le SIRET), les données fiscales et le document à émettre ; ne pas contourner les gardes pour obtenir un dépôt. Aucun déploiement ni passage en production n'a été réalisé.
 
 ## Matrice de recette avec preuves
 
