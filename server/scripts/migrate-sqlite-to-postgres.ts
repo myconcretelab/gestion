@@ -141,7 +141,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments, invoiceSequences] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments, invoiceSequences, superPdpConnections] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -159,6 +159,7 @@ const main = async () => {
         tableNames.has("fiscal_entities") ? sqlite.fiscalEntity.findMany() : Promise.resolve([]),
         tableNames.has("fiscal_establishments") ? sqlite.fiscalEstablishment.findMany() : Promise.resolve([]),
         tableNames.has("invoice_sequences") ? sqlite.invoiceSequence.findMany() : Promise.resolve([]),
+        tableNames.has("superpdp_connections") ? sqlite.superPdpConnection.findMany() : Promise.resolve([]),
       ]);
 
     console.log(`Gestionnaires: ${gestionnaires.length}`);
@@ -183,6 +184,8 @@ const main = async () => {
       console.log("Suppression des donnees cibles...");
       await postgres.$transaction([
         postgres.securityThrottle.deleteMany(),
+        postgres.superPdpOAuthState.deleteMany(),
+        postgres.superPdpConnection.deleteMany(),
         postgres.planningRelayAssignment.deleteMany(),
         postgres.planningRelayWorker.deleteMany(),
         postgres.reservation.deleteMany(),
@@ -220,6 +223,15 @@ const main = async () => {
     for (const establishment of fiscalEstablishments) {
       const { id, ...rest } = establishment;
       await postgres.fiscalEstablishment.upsert({ where: { id }, create: { id, ...rest }, update: rest });
+    }
+
+    // Never clone a live rotating grant into two active servers. No OAuth states/sessions are copied.
+    // Keep ciphertext for explicit revocation; the same separately backed-up encryption key is required.
+    for (const connection of superPdpConnections) {
+      const { id, ...rest } = connection;
+      const data = { ...rest, operation_id: null, operation_expires_at: null, generation: rest.generation + 1,
+        ...(rest.encrypted_tokens ? { status: "reauthorization_required", last_error_code: "SUPERPDP_DATABASE_MOVED" } : {}) };
+      await postgres.superPdpConnection.upsert({ where: { id }, create: { id, ...data }, update: data });
     }
 
     for (const gite of gites) {

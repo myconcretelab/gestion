@@ -98,6 +98,63 @@ API : `POST /api/invoices/fiscal-preview` (même contexte que l’aperçu, droit
 
 **Limite explicite :** cet export est un modèle sémantique local et un **candidat**, pas un fichier Factur-X ni une attestation de conformité EN16931. Il porte `transport_ready: false`. Il reste à résoudre les adresses électroniques dans l’annuaire, choisir le profil, convertir et valider CII/UBL ou Factur-X, puis tester les règles françaises dans le bac à sable. SuperPDP documente `POST /v1.beta/invoices/convert?from=json&to=...`, y compris une requête multipart avec le PDF existant et la facture JSON pour produire Factur-X. L’émission utilise ensuite `/v1.beta/invoices` avec XML ou Factur-X, pas ce JSON directement. Aucun appel de conversion, d’envoi, OAuth, secret, e-reporting ou déploiement n’est réalisé par cette étape. Le routage B2C/B2B/B2BInt proposé n’est qu’un candidat basé sur le type de client et le pays, pas une décision d’assujettissement réglementaire.
 
+## Connexion OAuth SuperPDP en bac à sable (étape 4)
+
+Dans **Paramètres → Organisation → Entreprises**, sélectionner une entreprise déjà enregistrée avec son SIREN. Un administrateur authentifié peut alors configurer sa connexion **SuperPDP — environnement de test uniquement**. Les autres rôles, les jetons d’intégration et l’ancien mode sans authentification ne peuvent pas gérer cette connexion.
+
+Cette étape utilise **Authorization Code avec PKCE S256**, adapté à la délégation entreprise par entreprise. Elle n’utilise ni l’enrôlement réservé aux experts-comptables, ni un mandat de facturation, ni un jeton commun à toutes les entreprises. Le même `client_id` peut servir à plusieurs consentements si l’application OAuth l’autorise, mais chaque entreprise locale conserve sa propre configuration et ses propres jetons. La documentation d’[authentification SuperPDP](https://www.superpdp.tech/documentation/4/) et le [schéma officiel](https://api.superpdp.tech/openapi/superpdp.json) ont été consultés le 16/10/2026. La bibliothèque serveur `oauth4webapi` traite les échanges, les réponses OAuth, le PKCE et la révocation ; les secrets ne sont pas intégrés au client React.
+
+### Préparer un environnement de test distinct
+
+Créer un site de préproduction ou une installation locale avec sa propre base et son propre `DATA_DIR`. Ne pas copier les secrets ni les consentements d’un serveur actif. Sur Alwaysdata, utiliser un autre site et une autre base que `gestion.gites-broceliande.com`. Aucun site n’est créé ou déployé automatiquement par cette étape.
+
+Dans un fichier d’environnement **non versionné**, de mode `600`, renseigner :
+
+```dotenv
+SUPERPDP_SANDBOX_ENABLED=true
+SUPERPDP_SECRETS_KEY=<cle-aleatoire-de-32-octets-encodee-en-base64>
+SUPERPDP_SANDBOX_REDIRECT_URI=https://votre-site-de-test.example/api/fiscal-entities/superpdp/oauth/callback
+```
+
+`APP_PUBLIC_URL` et `CLIENT_ORIGIN` doivent désigner cette installation de test. La clé doit être générée cryptographiquement, conservée séparément de la base et sauvegardée dans un emplacement sûr ; ne pas l’afficher dans les journaux ou la transmettre dans le chat. Ne jamais utiliser de variable `VITE_*` pour ces valeurs. Le connecteur est **désactivé par défaut** ; une clé ou une URL incorrecte laisse les actions indisponibles avec un message explicite. HTTPS est exigé ; HTTP est accepté uniquement sur localhost/127.0.0.1 en développement ou test. En mode serveur `production`, l’origine de retour doit être celle de `APP_PUBLIC_URL`.
+
+Dans l’interface SuperPDP, créer/configurer l’application OAuth et y enregistrer **exactement** cette URL de retour. Dans la fiche entreprise locale, saisir son `client_id`, son `client_secret` et le champ `number` de l’entreprise fictive SuperPDP attendue. Le numéro de l’entreprise fictive **n’est pas déduit du SIREN local**. Le champ secret est vidé après enregistrement ; laisser ce champ vide lors d’une modification conserve le secret existant. Un changement d’application ou de numéro de test impose d’abord une déconnexion. Le remplacement du seul secret de la même application est possible sans changer l’identité liée.
+
+Cliquer ensuite **Autoriser l’entreprise dans SuperPDP**, effectuer le consentement dans la même session applicative et attendre le retour. Aucun scope n’est demandé, conformément à la documentation. Le paramètre `superpdp_send_and_receive=send` masque l’inscription à un annuaire de réception dans ce parcours : cette phase ne doit pas créer de ligne d’annuaire ou activer une réception par inadvertance. Le raccordement de la réception viendra dans l’étape dédiée.
+
+### Vérification et séparation des environnements
+
+SuperPDP utilise **le même domaine API** pour les entreprises de test et de production. Le serveur n’accepte donc pas un simple succès OAuth comme preuve d’environnement. Il lit d’abord `GET /v1.beta/oauth2_sessions/me` et contrôle le `client_id` retourné. Si `company_verification_status` n’est pas `verified`, les jetons restent en attente, sans lecture des données de l’entreprise. Le bouton **Vérifier la connexion** permet de reprendre cette vérification, sans synchronisation automatique en arrière-plan.
+
+Une fois la session vérifiée, `GET /v1.beta/companies/me` doit retourner `env=sandbox`, `number_scheme=sandbox`, le numéro fictif explicitement attendu, et le même identifiant distant lors des vérifications suivantes. Une identité de production ou inattendue est refusée ; une révocation du jeton connu est demandée. Un identifiant distant ne peut être attaché à deux entreprises locales du même compte. Les identifiants 64 bits sont stockés comme chaînes pour éviter leur arrondi par JavaScript. Tant qu’une connexion non déconnectée existe, le SIREN local est verrouillé contre un changement d’identité.
+
+Les lignes sont séparées par `(organization_id, fiscal_entity_id, environment)` avec clés étrangères composites. Le modèle prévoit un futur enregistrement `production`, mais **aucune route ni aucun réglage utilisateur ne l’active**. Les seuls appels distants implémentés sont le consentement, l’échange/renouvellement/révocation de jetons et les deux lectures d’identité. Aucune facture, conversion, ligne d’annuaire ou donnée d’e-reporting n’est envoyée par cette étape.
+
+### Protection et cycle des secrets
+
+Le secret client, la paire de jetons et le vérificateur PKCE sont chiffrés en AES-256-GCM avec un IV aléatoire et une authentification liée au compte, à l’entreprise, à l’environnement et au type de secret. Le `state` aléatoire est uniquement stocké sous forme de SHA-256 ; il est lié à l’utilisateur et à sa session, expire après dix minutes, n’est utilisable qu’une fois et voit son vérificateur effacé lors de sa consommation. Un nouveau consentement invalide le précédent. Les modifications de configuration invalident également les retours encore en attente.
+
+Les actions demandent une session d’administrateur et une origine de requête autorisée. Le retour OAuth exige la même session et le même compte, sans réactivation implicite après déconnexion. Il redirige ensuite vers une URL fixe de l’application, sans code, jeton, `state` ou description d’erreur du fournisseur. Les réponses de gestion portent `Cache-Control: no-store`. Les erreurs OAuth brutes ne sont ni propagées ni journalisées ; l’audit contient seulement l’action, les identifiants locaux, l’environnement et un code d’erreur contrôlé. Les identifiants `client_id` sont publics, mais les secrets, leurs versions chiffrées et les jetons ne sont jamais retournés par les API de consultation.
+
+Le renouvellement est déclenché au besoin pendant une vérification, selon `expires_in`, avec une marge de soixante secondes. Un verrou persistant empêche deux processus d’utiliser simultanément le même refresh token. La nouvelle paire rotative est sauvegardée avant les lectures suivantes. Une rotation non confirmée ou un verrou abandonné exige une nouvelle autorisation : l’ancien refresh token n’est **pas réessayé automatiquement**. Le premier appel après un verrou expiré sécurise l’état ; la déconnexion peut alors être relancée.
+
+**Déconnecter et retirer les secrets** demande la révocation RFC 7009 du refresh token connu, puis efface les secrets et jetons locaux après confirmation. Si la révocation n’est pas confirmée, les données chiffrées restent disponibles pour réessayer, mais leur utilisation est bloquée. Après une réponse de renouvellement perdue ou un crash, une nouvelle paire peut avoir été émise sans avoir été sauvegardée : révoquer aussi l’application/le consentement dans le compte SuperPDP avant de repartir. Une confirmation de révocation du jeton connu ne prouve pas à elle seule la révocation de jetons devenus inconnus du serveur.
+
+La rotation du **secret de l’application OAuth** est distincte du remplacement de la **clé de chiffrement du serveur**. Pour cette dernière, déconnecter les entreprises avec l’ancienne clé avant d’en changer, ou prévoir une migration de rechiffrement dédiée. Perdre cette clé rend les données indéchiffrables ; restaurer la bonne clé depuis sa sauvegarde. À défaut, révoquer les consentements côté SuperPDP puis faire retirer les enregistrements devenus inutilisables par une intervention d’administration vérifiée ; le connecteur ne contourne pas le chiffrement.
+
+Les sauvegardes SQLite assainies retirent les connexions et états OAuth de la copie, sans modifier la base source. Les dumps PostgreSQL restent chiffrés par le mécanisme de sauvegarde existant ; conserver séparément la phrase de sauvegarde et la clé SuperPDP. Une restauration PostgreSQL ou une conversion SQLite → PostgreSQL invalide les états en attente et place les grants copiés en réautorisation obligatoire. Arrêter le serveur source avant de migrer/restaurer et révoquer puis renouveler le consentement pour ne pas exploiter la même paire rotative sur deux serveurs.
+
+API (toutes réservées à l’administrateur du compte courant) :
+
+- `GET /api/fiscal-entities/:id/superpdp` : état non sensible et disponibilité du connecteur.
+- `PUT /api/fiscal-entities/:id/superpdp/config` : `{ revision, client_id, client_secret?, sandbox_number }` ; la révision empêche l’écrasement d’une configuration périmée.
+- `POST /api/fiscal-entities/:id/superpdp/connect` : URL de consentement avec protection de session.
+- `GET /api/fiscal-entities/superpdp/oauth/callback` : retour OAuth, à enregistrer à l’identique chez SuperPDP.
+- `POST /api/fiscal-entities/:id/superpdp/check` : vérification d’identité et renouvellement si nécessaire.
+- `DELETE /api/fiscal-entities/:id/superpdp` : révocation du jeton connu et retrait des secrets après confirmation.
+
+La migration additive `20261016170000_superpdp_oauth` est fournie pour SQLite et PostgreSQL. Elle n’altère aucune facture, aucun PDF et aucun calcul. Prévoir une sauvegarde récupérable et un déploiement complet **uniquement lorsqu’il sera autorisé**. Vérifier aussi la politique de journalisation du proxy et du serveur : les URL de callback contiennent transitoirement un code OAuth et un `state`, qui ne doivent pas être conservés dans des journaux d’accès non expurgés. Les tests automatisés utilisent un fournisseur simulé ; la recette réelle exige les identifiants et le consentement de test de l’utilisateur, qui ne sont pas fournis par le dépôt.
+
 ## Stripe en mode test
 
 La dépendance Stripe est installée uniquement côté serveur. Pendant le pilote, le serveur refuse toute clé qui ne commence pas par `sk_test_`.

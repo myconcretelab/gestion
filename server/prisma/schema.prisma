@@ -605,11 +605,63 @@ model FiscalEntity {
   establishments FiscalEstablishment[]
   invoices       Facture[]
   sequences      InvoiceSequence[]
+  superpdp_connections SuperPdpConnection[]
 
   @@unique([id, organization_id], map: "fiscal_entities_id_org_key")
   @@unique([organization_id, siren], map: "fiscal_entities_org_siren_key")
   @@index([organization_id, gestionnaire_id], map: "fiscal_entities_org_manager_idx")
   @@map("fiscal_entities")
+}
+
+model SuperPdpConnection {
+  id                       String   @id @default(cuid())
+  organization_id          String   @default("org_historical_broceliande")
+  fiscal_entity_id          String
+  environment              String   @default("sandbox")
+  status                   String   @default("configured")
+  generation               Int      @default(1)
+  local_siren              String
+  client_id                String?
+  encrypted_client_secret  String?
+  expected_number          String?
+  encrypted_tokens         String?
+  access_expires_at        DateTime?
+  remote_company_id        String?
+  remote_company_number    String?
+  remote_company_name      String?
+  verification_status      String?
+  last_checked_at          DateTime?
+  last_error_code          String?
+  operation_id             String?
+  operation_expires_at     DateTime?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  fiscal_entity FiscalEntity @relation(fields: [fiscal_entity_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+  oauth_states SuperPdpOAuthState[]
+
+  @@unique([id, organization_id], map: "superpdp_connections_id_org_key")
+  @@unique([organization_id, fiscal_entity_id, environment], map: "superpdp_connections_org_entity_env_key")
+  @@unique([organization_id, environment, remote_company_id], map: "superpdp_connections_org_remote_env_key")
+  @@map("superpdp_connections")
+}
+
+model SuperPdpOAuthState {
+  id                       String   @id
+  organization_id          String   @default("org_historical_broceliande")
+  connection_id            String
+  generation               Int
+  user_id                  String
+  session_hash             String
+  encrypted_verifier       String?
+  expires_at               DateTime
+  consumed_at              DateTime?
+  createdAt                DateTime @default(now())
+
+  connection SuperPdpConnection @relation(fields: [connection_id, organization_id], references: [id, organization_id], onDelete: Cascade)
+  @@index([organization_id, connection_id], map: "superpdp_oauth_states_org_connection_idx")
+  @@index([expires_at], map: "superpdp_oauth_states_expires_idx")
+  @@map("superpdp_oauth_states")
 }
 
 model FiscalEstablishment {

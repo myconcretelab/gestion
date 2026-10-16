@@ -7,6 +7,8 @@ import {
 } from "@contrats/shared";
 import { apiFetch } from "../../utils/api";
 import type { FiscalEntity, FiscalEstablishment } from "../../utils/types";
+import { canCurrentUserManageIntegrations } from "../../utils/auth";
+import SuperPdpConnectionSettings from "./SuperPdpConnectionSettings";
 
 const emptyAddress = {
   address_line1: "",
@@ -34,6 +36,15 @@ const addressDraft = (
   postal_code: value.postal_code ?? "",
   city: value.city ?? "",
   country_code: value.country_code,
+});
+const entityToDraft = (entity: FiscalEntity) => ({
+  ...addressDraft(entity),
+  legal_name: entity.legal_name,
+  gestionnaire_id: entity.gestionnaire_id ?? "",
+  siren: entity.siren ?? "",
+  vat_number: entity.vat_number ?? "",
+  vat_regime: entity.vat_regime,
+  email: entity.email ?? "",
 });
 type Inventory = {
   managers: Array<{
@@ -105,7 +116,16 @@ export default function FiscalEntitiesSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() => {
+    const result = new URLSearchParams(window.location.search).get("superpdp");
+    return result === "connected"
+      ? "Connexion SuperPDP de test vérifiée."
+      : result === "pending"
+        ? "Consentement reçu. L’entreprise reste bloquée jusqu’à sa vérification par SuperPDP."
+        : result === "error"
+          ? "Le retour OAuth n’a pas été confirmé. Sélectionnez l’entreprise pour consulter son état ; reconnectez-vous à l’application si nécessaire."
+          : null;
+  });
   const selected = entities.find((entity) => entity.id === entityId);
 
   const load = async () => {
@@ -126,6 +146,14 @@ export default function FiscalEntitiesSettings() {
         if (active) {
           setEntities(data);
           setInventory(overview);
+          const returnedId = new URLSearchParams(window.location.search).get(
+            "entreprise",
+          );
+          const returned = data.find((entity) => entity.id === returnedId);
+          if (returned) {
+            setEntityId(returned.id);
+            setEntityDraft(entityToDraft(returned));
+          }
         }
       })
       .catch((error: Error) => {
@@ -242,8 +270,8 @@ export default function FiscalEntitiesSettings() {
       </p>
       <p className="field-hint">
         Le gestionnaire est un contact de l’entreprise. Le régime de TVA doit
-        être renseigné selon votre situation ; ces informations ne changent pas
-        encore le calcul ni les PDF des factures.
+        être renseigné selon votre situation ; ces informations ne garantissent
+        pas à elles seules une conformité fiscale ou une connexion à SuperPDP.
       </p>
       {error && (
         <div className="note" role="alert">
@@ -388,6 +416,12 @@ export default function FiscalEntitiesSettings() {
               </div>
             </fieldset>
           </form>
+          {selected && canCurrentUserManageIntegrations() && (
+            <SuperPdpConnectionSettings
+              key={selected.id}
+              entityId={selected.id}
+            />
+          )}
           {selected && (
             <form onSubmit={saveEstablishment}>
               <fieldset

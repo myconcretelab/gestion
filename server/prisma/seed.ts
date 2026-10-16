@@ -7,6 +7,8 @@ import { encodeJsonField } from "../src/utils/jsonFields.js";
 import { generateIcalExportToken } from "../src/utils/reservationOrigin.js";
 
 const seed = async () => {
+  await prisma.superPdpOAuthState.deleteMany();
+  await prisma.superPdpConnection.deleteMany();
   await prisma.contentTemplateVersion.deleteMany();
   await prisma.installationConfig.deleteMany();
   await prisma.appUser.deleteMany();

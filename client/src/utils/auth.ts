@@ -55,6 +55,7 @@ export const setCurrentAuthUser = (user: AppUser | null) => {
 
 export const canCurrentUserViewAmounts = () =>
   currentUser?.permissions.canViewAmounts ?? true;
+export const canCurrentUserManageIntegrations = () => currentUser?.permissions.isOwner ?? false;
 
 export const canCurrentUserAccessPage = (page: AppPageId) =>
   !currentUser || currentUser.permissions.isOwner || currentUser.pageAccess.includes(page);

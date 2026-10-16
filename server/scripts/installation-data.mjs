@@ -70,6 +70,12 @@ const backup = () => {
         "UPDATE planning_relay_periods SET share_nonce = lower(hex(randomblob(32))), public_code_hash = NULL, public_origin = NULL;",
         "DELETE FROM auth_sessions; DELETE FROM api_tokens; DELETE FROM document_shares; DELETE FROM password_reset_tokens; DELETE FROM security_throttles;",
       ].join(" ")]);
+      const oauthTables = spawnSync("sqlite3", [copiedDatabase, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('superpdp_connections', 'superpdp_oauth_states');"], { encoding: "utf8" });
+      if (oauthTables.status !== 0) fail("Impossible de vérifier les tables OAuth de la copie de sauvegarde.");
+      const presentOauthTables = new Set(oauthTables.stdout.trim().split("\n"));
+      for (const table of ["superpdp_oauth_states", "superpdp_connections"]) {
+        if (presentOauthTables.has(table)) run("sqlite3", [copiedDatabase, `DELETE FROM "${table}";`]);
+      }
       databaseFormat = "sqlite-sanitized";
     } else {
       postgresBackupPassphrase();
@@ -140,10 +146,26 @@ const restore = () => {
       if (fs.existsSync(sqlite)) fs.copyFileSync(sqlite, path.join(safetyDir, `database-${Date.now()}.sqlite`));
       fs.copyFileSync(path.join(result.staging, "database", "database.sqlite"), sqlite);
     } else if (result.manifest.databaseFormat === "postgresql-custom-encrypted" && !sqlite) {
+      const schemaName = new URL(databaseUrl).searchParams.get("schema") || "public";
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(schemaName)) fail("Nom de schéma PostgreSQL non pris en charge pour une restauration sécurisée.");
+      const oauthStatesTable = `"${schemaName}"."superpdp_oauth_states"`;
+      const oauthConnectionsTable = `"${schemaName}"."superpdp_connections"`;
       const clearDump = path.join(result.staging, "database", "database.restore.clear.dump");
       try {
         cryptPostgresDump("decrypt", path.join(result.staging, "database", "database.dump.enc"), clearDump);
-        run("pg_restore", ["--clean", "--if-exists", "--no-owner", "--no-acl", "--dbname", databaseUrl, clearDump]);
+        run("pg_restore", ["--clean", "--if-exists", "--no-owner", "--no-acl", "--dbname", postgresDumpUrl(), clearDump]);
+        // A restored rotating grant must not run simultaneously with its source server.
+        run("psql", ["--dbname", postgresDumpUrl(), "--set", "ON_ERROR_STOP=1", "--command", `DO $oauth_restore$
+          BEGIN
+            IF to_regclass('${oauthStatesTable}') IS NOT NULL THEN
+              DELETE FROM ${oauthStatesTable};
+            END IF;
+            IF to_regclass('${oauthConnectionsTable}') IS NOT NULL THEN
+              UPDATE ${oauthConnectionsTable} SET "operation_id" = NULL, "operation_expires_at" = NULL,
+                "generation" = "generation" + 1, "status" = 'reauthorization_required', "last_error_code" = 'SUPERPDP_DATABASE_MOVED'
+                WHERE "encrypted_tokens" IS NOT NULL;
+            END IF;
+          END $oauth_restore$;`]);
       } finally {
         fs.rmSync(clearDump, { force: true });
       }

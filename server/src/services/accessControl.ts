@@ -55,6 +55,7 @@ const familyPermission = (family: string, method: string): BusinessPermission =>
 
 export const getRequiredBusinessPermission = (method: string, requestPath: string): BusinessPermission | null => {
   const path = requestPath.toLowerCase();
+  if (/^\/fiscal-entities\/(?:superpdp\/oauth\/callback|[^/]+\/superpdp(?:\/|$))/.test(path)) return "integrations:manage";
   if (path.startsWith("/fiscal-entities")) return familyPermission("settings", method);
   if (path.startsWith("/users/owners")) return familyPermission("gites", method);
   if (path.startsWith("/document-shares")) return "contracts:share";

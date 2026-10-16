@@ -5,12 +5,14 @@ import {
   fiscalEntityMissingFields,
 } from "@contrats/shared";
 import prisma from "../../db/prisma.js";
+import { createSuperPdpRouter } from "../superpdp/routes.js";
 import {
   assertSiretMatchesSiren,
   fiscalError,
 } from "../../services/fiscalEntities.js";
 
 const router = Router();
+router.use(createSuperPdpRouter());
 const entityInclude = {
   gestionnaire: { select: { id: true, prenom: true, nom: true } },
   establishments: {
@@ -121,6 +123,7 @@ router.put("/:id", async (req, res, next) => {
           where: { id: req.params.id },
           include: {
             establishments: true,
+            superpdp_connections: { select: { status: true } },
             _count: { select: { invoices: true, sequences: true } },
           },
         });
@@ -138,10 +141,11 @@ router.put("/:id", async (req, res, next) => {
           data.siren !== entity.siren &&
           (entity.establishments.some((item) => item.siret) ||
             entity._count.invoices > 0 ||
+            entity.superpdp_connections.some((connection) => connection.status !== "disconnected") ||
             entity._count.sequences > 0)
         ) {
           throw fiscalError(
-            "Le SIREN est lié à des établissements ou documents émis. Créez une autre entreprise pour une nouvelle identité légale.",
+            "Le SIREN est lié à des établissements, des documents émis ou une connexion SuperPDP. Déconnectez l’intégration ou créez une autre entreprise pour une nouvelle identité légale.",
             409,
           );
         }
