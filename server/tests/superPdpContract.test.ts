@@ -2,6 +2,42 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 
+test("contrat e-reporting : détail MEN explicite, date, note BAR et TVA entreprise, sans idempotence documentée", () => {
+  const contract = JSON.parse(
+    fs.readFileSync(
+      new URL("./fixtures/superpdp-1.37.0.beta.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const body =
+    contract.event_post.requestBody.content["application/json"].schema;
+  assert.deepEqual(body.required, ["invoice_id", "status_code"]);
+  assert.ok(body.properties.details);
+  assert.equal(body.properties.invoice_id.type, "integer");
+  assert.ok(
+    !contract.event_post.parameters?.some((p: { name: string }) =>
+      /idempotency/.test(p.name),
+    ),
+  );
+  const schemas = contract.reporting_schemas;
+  for (const key of [
+    "amount",
+    "type_code",
+    "value_percent",
+    "currency_code",
+    "date",
+  ])
+    assert.ok(schemas.invoice_event_reported_data.properties[key]);
+  assert.ok(schemas.invoice_note.properties.subject_code);
+  assert.deepEqual(schemas.vat_regime.enum, [
+    "monthly",
+    "quarterly",
+    "simplified",
+    "vat_exemption",
+  ]);
+  assert.equal(schemas.has_vat_on_debits.type, "boolean");
+});
+
 test("contrat de réception : pagination globale, filtre de direction et téléchargement original", () => {
   const contract = JSON.parse(
     fs.readFileSync(

@@ -259,10 +259,15 @@ export class SuperPdpTransport {
       );
     return report;
   }
-  send(token: string, pdf: Buffer, externalId: string) {
+  send(
+    token: string,
+    pdf: Buffer,
+    externalId: string,
+    rule: "B2B" | "B2C" = "B2B",
+  ) {
     const query = new URLSearchParams({
       external_id: externalId,
-      processing_rule: "B2B",
+      processing_rule: rule,
     });
     return this.json(
       `/v1.beta/invoices?${query}`,
@@ -272,6 +277,36 @@ export class SuperPdpTransport {
         body: new Uint8Array(pdf),
       },
       remoteInvoiceSchema,
+    );
+  }
+  reportingCompany(token: string) {
+    return this.json(
+      "/v1.beta/companies/me",
+      { headers: this.headers(token) },
+      z.object({
+        id: remoteId,
+        env: z.literal("sandbox"),
+        vat_regime: z.enum([
+          "monthly",
+          "quarterly",
+          "simplified",
+          "vat_exemption",
+        ]),
+        has_vat_on_debits: z.boolean(),
+      }),
+    );
+  }
+  payment(token: string, invoiceId: string, details: unknown) {
+    // The API expects a JSON number. Do not pass a 64-bit identifier through Number.
+    const body = `{"invoice_id":${remoteId.parse(invoiceId)},"status_code":"fr:212","details":${JSON.stringify(details)}}`;
+    return this.json(
+      "/v1.beta/invoice_events",
+      {
+        method: "POST",
+        headers: { ...this.headers(token), "Content-Type": "application/json" },
+        body,
+      },
+      eventSchema,
     );
   }
   list(token: string, cursor: string | null) {

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, isAbortError } from "../../utils/api";
 import "./electronicInvoice.css";
+import ElectronicPaymentsPanel from "./ElectronicPaymentsPanel";
 
 type Validation = {
   data: Array<{
@@ -17,6 +18,13 @@ type ElectronicView = {
   reason: string | null;
   environment: "sandbox";
   revision: number;
+  processing_rule?: string | null;
+  issuer_vat_regime?: string | null;
+  reporting_profile?: {
+    operation: "goods" | "services";
+    vat_regime: string;
+    has_vat_on_debits: boolean;
+  } | null;
   transmission: null | {
     id: string;
     status: string;
@@ -76,8 +84,20 @@ export default function ElectronicInvoicePanel({
   const [seller, setSeller] = useState("");
   const [buyer, setBuyer] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [operation, setOperation] = useState("");
+  const [vatRegime, setVatRegime] = useState("");
+  const [vatTiming, setVatTiming] = useState("");
+  const [noOtherReporting, setNoOtherReporting] = useState(false);
   const apply = (value: ElectronicView) => {
     setData(value);
+    if (value.reporting_profile) {
+      setOperation(value.reporting_profile.operation);
+      setVatRegime(value.reporting_profile.vat_regime);
+      setVatTiming(
+        value.reporting_profile.has_vat_on_debits ? "debits" : "receipts",
+      );
+      setNoOtherReporting(true);
+    }
     if (value.transmission) {
       setSeller(value.transmission.seller_address);
       setBuyer(value.transmission.buyer_address);
@@ -125,7 +145,7 @@ export default function ElectronicInvoicePanel({
     if (
       kind === "send" &&
       !window.confirm(
-        "Déposer ce Factur-X B2B dans SuperPDP de TEST ? Le dépôt est distinct de l’envoi par email. En cas de résultat inconnu, tout renvoi sera bloqué.",
+        "Déposer ce Factur-X dans SuperPDP de TEST ? Pour le B2C, les transactions alimentent le e-reporting mais la facture n’est pas acheminée au particulier. En cas de résultat inconnu, tout renvoi sera bloqué.",
       )
     )
       return;
@@ -142,7 +162,19 @@ export default function ElectronicInvoicePanel({
                   revision: data.revision,
                   confirm_test_data: confirmed,
                   ...(kind === "prepare"
-                    ? { seller_address: seller, buyer_address: buyer }
+                    ? {
+                        seller_address: seller,
+                        ...(data.processing_rule === "B2C"
+                          ? {
+                              b2c: {
+                                operation,
+                                vat_regime: vatRegime,
+                                has_vat_on_debits: vatTiming === "debits",
+                                confirm_no_other_reporting: noOtherReporting,
+                              },
+                            }
+                          : { buyer_address: buyer }),
+                      }
                     : {}),
                 },
         }),
@@ -166,7 +198,10 @@ export default function ElectronicInvoicePanel({
       className="form-section electronic-invoice-panel"
       style={{ marginTop: 24 }}
     >
-      <h3>SuperPDP — émission B2B de test</h3>
+      <h3>
+        SuperPDP — émission {data?.processing_rule === "B2C" ? "B2C" : "B2B"} de
+        test
+      </h3>
       <p>
         Le PDF original et la facture émise sont conservés. La préparation
         produit une archive Factur-X distincte et un rapport de validation ;
@@ -175,8 +210,8 @@ export default function ElectronicInvoicePanel({
       <p className="note">
         Utiliser uniquement une installation de test et des données fictives
         cohérentes avec les entreprises SuperPDP. Aucun SIREN, nom ou montant
-        n’est remplacé automatiquement. Le B2C, le B2B international et les
-        déclarations d’encaissement ne sont pas activés dans ce lot.
+        n’est remplacé automatiquement. Les opérations internationales restent
+        exclues.
       </p>
       {error && (
         <p className="note" role="alert">
@@ -209,23 +244,103 @@ export default function ElectronicInvoicePanel({
                     onChange={(e) => setSeller(e.target.value)}
                   />
                 </label>
-                <label className="field">
-                  Adresse de destination de l’acheteur
-                  <input
-                    required
-                    value={buyer}
-                    maxLength={185}
-                    placeholder="schéma:identifiant"
-                    onChange={(e) => setBuyer(e.target.value)}
-                  />
-                </label>
+                {data.processing_rule !== "B2C" && (
+                  <label className="field">
+                    Adresse de destination de l’acheteur
+                    <input
+                      required
+                      value={buyer}
+                      maxLength={185}
+                      placeholder="schéma:identifiant"
+                      onChange={(e) => setBuyer(e.target.value)}
+                    />
+                  </label>
+                )}
               </div>
+              {data.processing_rule === "B2C" && (
+                <>
+                  <p>
+                    Le particulier n’a pas d’adresse d’annuaire à renseigner. La
+                    note BAR/B2C sera ajoutée à l’archive électronique, sans
+                    modifier le PDF original. La facture n’est pas acheminée au
+                    particulier par SuperPDP.
+                  </p>
+                  <div className="grid-2">
+                    <label className="field">
+                      Nature de l’opération
+                      <select
+                        required
+                        value={operation}
+                        onChange={(e) => setOperation(e.target.value)}
+                      >
+                        <option value="">À vérifier</option>
+                        <option value="services">
+                          Uniquement des services
+                        </option>
+                        <option value="goods">Uniquement des biens</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      Régime TVA dans SuperPDP
+                      <select
+                        required
+                        value={vatRegime}
+                        onChange={(e) => setVatRegime(e.target.value)}
+                      >
+                        <option value="">
+                          À vérifier dans l’entreprise de test
+                        </option>
+                        <option value="monthly">Réel normal mensuel</option>
+                        <option value="quarterly">
+                          Réel normal trimestriel
+                        </option>
+                        <option value="simplified">Réel simplifié</option>
+                        <option value="vat_exemption">Franchise en base</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      Option TVA sur les débits dans SuperPDP
+                      <select
+                        required
+                        value={vatTiming}
+                        onChange={(e) => setVatTiming(e.target.value)}
+                      >
+                        <option value="">À vérifier</option>
+                        <option value="receipts">Non</option>
+                        <option value="debits">Oui</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p className="note">
+                    Les factures mixtes biens/services ne sont pas prises en
+                    charge. Vérifiez cette qualification et la TVA avec votre
+                    conseil. Le serveur vérifie les paramètres distants sans les
+                    modifier.
+                  </p>
+                  <label className="field">
+                    <span>
+                      <input
+                        type="checkbox"
+                        required
+                        checked={noOtherReporting}
+                        onChange={(e) => setNoOtherReporting(e.target.checked)}
+                      />{" "}
+                      Je confirme l’absence de déclaration parallèle de cette
+                      transaction ou de ses encaissements (caisse, autre outil
+                      ou API B2C).
+                    </span>
+                  </label>
+                </>
+              )}
               <p className="field-hint">
                 Copier les adresses complètes depuis les annuaires SuperPDP de
                 test (schéma numérique sur quatre chiffres, puis deux-points et
                 identifiant). L’adresse du vendeur est contrôlée dans son
-                annuaire ; le destinataire est contrôlé lors du dépôt. Aucun
-                annuaire ni mandat n’est créé.
+                annuaire
+                {data.processing_rule !== "B2C"
+                  ? " ; le destinataire B2B est contrôlé lors du dépôt"
+                  : " ; aucun annuaire n’est demandé au particulier"}
+                . Aucun annuaire ni mandat n’est créé.
               </p>
               <button type="submit" disabled={!confirmed}>
                 {row
@@ -317,6 +432,12 @@ export default function ElectronicInvoicePanel({
               ne trouve rien, un nouveau dépôt n’est pas autorisé : une
               vérification dans SuperPDP est nécessaire.
             </p>
+          )}
+          {data.processing_rule === "B2C" && (
+            <ElectronicPaymentsPanel
+              key={`${invoiceId}:${row?.status}`}
+              invoiceId={invoiceId}
+            />
           )}
           {row?.remote_invoice_id && (
             <p>

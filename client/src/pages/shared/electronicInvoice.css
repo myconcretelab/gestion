@@ -6,3 +6,13 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.electronic-payments-panel {
+  border-top: 1px solid var(--primary-soft);
+  margin-top: 24px;
+  padding-top: 16px;
+}
+.electronic-payments-panel .field input,
+.electronic-invoice-panel select { max-width: 100%; min-width: 0; }
+.electronic-payments-list { padding-left: 20px; }
+.electronic-payments-list li { padding-block: 8px; }

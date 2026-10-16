@@ -10,6 +10,7 @@ const seed = async () => {
   await prisma.superPdpInboxEvent.deleteMany();
   await prisma.incomingInvoice.deleteMany();
   await prisma.superPdpInboxSync.deleteMany();
+  await prisma.electronicInvoicePayment.deleteMany();
   await prisma.electronicInvoiceEvent.deleteMany();
   await prisma.electronicInvoiceTransmission.deleteMany();
   await prisma.superPdpOAuthState.deleteMany();

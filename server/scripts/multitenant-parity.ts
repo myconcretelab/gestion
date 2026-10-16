@@ -8,6 +8,7 @@ const TABLES = [
   "fiscal_entities", "fiscal_establishments", "invoice_sequences",
   "superpdp_connections", "superpdp_oauth_states",
   "superpdp_inbox_syncs", "incoming_invoices", "superpdp_inbox_events",
+  "electronic_invoice_payments",
   "electronic_invoice_transmissions", "electronic_invoice_events",
   "expense_categories", "expense_recurring_rules", "expense_entries", "urssaf_declarations",
   "guest_night_declarations", "ical_sources", "contrats", "contrat_counters", "factures", "facture_counters",
@@ -29,6 +30,7 @@ const rowCounts = Object.fromEntries(await Promise.all(TABLES.map(async (table) 
 ])));
 
 const orphanChecks = {
+  paymentsWithoutTenantTransmission: await scalar('SELECT COUNT(*) AS value FROM "electronic_invoice_payments" p LEFT JOIN "electronic_invoice_transmissions" t ON t."id" = p."transmission_id" AND t."organization_id" = p."organization_id" WHERE t."id" IS NULL'),
   gitesWithoutFiscalEstablishment: await scalar('SELECT COUNT(*) AS value FROM "gites" g LEFT JOIN "fiscal_establishments" e ON e."id" = g."fiscal_establishment_id" AND e."organization_id" = g."organization_id" WHERE g."fiscal_establishment_id" IS NOT NULL AND e."id" IS NULL'),
   establishmentsWithoutFiscalEntity: await scalar('SELECT COUNT(*) AS value FROM "fiscal_establishments" e LEFT JOIN "fiscal_entities" f ON f."id" = e."fiscal_entity_id" AND f."organization_id" = e."organization_id" WHERE f."id" IS NULL'),
   fiscalEntitiesWithoutManager: await scalar('SELECT COUNT(*) AS value FROM "fiscal_entities" f LEFT JOIN "gestionnaires" m ON m."id" = f."gestionnaire_id" AND m."organization_id" = f."organization_id" WHERE f."gestionnaire_id" IS NOT NULL AND m."id" IS NULL'),

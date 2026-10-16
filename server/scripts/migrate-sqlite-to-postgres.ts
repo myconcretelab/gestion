@@ -187,6 +187,7 @@ const main = async () => {
         postgres.superPdpInboxEvent.deleteMany(),
         postgres.incomingInvoice.deleteMany(),
         postgres.superPdpInboxSync.deleteMany(),
+        postgres.electronicInvoicePayment.deleteMany(),
         postgres.electronicInvoiceEvent.deleteMany(),
         postgres.electronicInvoiceTransmission.deleteMany(),
         postgres.superPdpOAuthState.deleteMany(),
@@ -327,6 +328,13 @@ const main = async () => {
       }
     }
 
+    if (tableNames.has("electronic_invoice_payments")) {
+      for (const row of await sqlite.electronicInvoicePayment.findMany()) {
+        const { id, ...rest } = row;
+        const data = { ...rest, status: "paused_after_restore", operation_id: null, operation_expires_at: null, last_error_code: "SUPERPDP_DATABASE_MOVED" };
+        await postgres.electronicInvoicePayment.upsert({ where: { id }, create: { id, ...data }, update: data });
+      }
+    }
     for (const placeholder of placeholders) {
       const { id, ...rest } = placeholder;
       await postgres.reservationPlaceholder.upsert({

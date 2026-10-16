@@ -9,6 +9,7 @@ import {
 } from "../system/jobs.js";
 import { SuperPdpEmission } from "./emission.js";
 import { SuperPdpInbox } from "./inbox.js";
+import { SuperPdpPayments } from "./payments.js";
 
 export const createEmissionJobHandlers = (
   service = new SuperPdpEmission(),
@@ -136,6 +137,10 @@ export const runSuperPdpJobBatch = async (
       ...(env.SUPERPDP_SANDBOX_RECEPTION_ENABLED
         ? createInboxJobHandlers()
         : {}),
+      ...(env.SUPERPDP_SANDBOX_EMISSION_ENABLED &&
+      env.SUPERPDP_SANDBOX_B2C_ENABLED
+        ? createPaymentJobHandlers()
+        : {}),
     },
     limit: 5,
   });
@@ -188,5 +193,22 @@ export const createInboxJobHandlers = (
       );
     await service.process(payload.sync_id, payload.revision);
     return { sync_id: payload.sync_id, environment: "sandbox" };
+  },
+});
+
+export const createPaymentJobHandlers = (
+  service = new SuperPdpPayments(),
+): Record<string, OrganizationJobHandler> => ({
+  "superpdp.payment": async (job) => {
+    const payload = z
+      .object({ payment_id: z.string().uuid() })
+      .strict()
+      .parse(
+        typeof job.payload_json === "string"
+          ? JSON.parse(job.payload_json)
+          : job.payload_json,
+      );
+    await service.process(payload.payment_id);
+    return { payment_id: payload.payment_id, environment: "sandbox" };
   },
 });

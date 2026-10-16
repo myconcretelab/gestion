@@ -17,6 +17,12 @@ import { registerGeneratedDocumentAsset } from "../documents/storage.js";
 import { SuperPdpService, type OAuthActor } from "./service.js";
 import { digest, sandboxConfig, superPdpError } from "./secrets.js";
 import {
+  b2cEnabled,
+  reportingProfileSchema,
+  assertLocalRegime,
+  assertRemoteProfile,
+} from "./reporting.js";
+import {
   SuperPdpTransport,
   MAX_DOCUMENT_BYTES,
   type RemoteInvoice,
@@ -31,7 +37,8 @@ export const preparationSchema = z
   .object({
     revision: z.number().int().nonnegative(),
     seller_address: electronicAddress,
-    buyer_address: electronicAddress,
+    buyer_address: electronicAddress.optional(),
+    b2c: reportingProfileSchema.optional(),
     confirm_test_data: z.literal(true),
   })
   .strict();
@@ -61,7 +68,7 @@ const addressObject = (address: string) => ({
 });
 const sourceSnapshot = (value: unknown) =>
   fromJsonString<{
-    issuer: { entity: { id: string; siren: string } };
+    issuer: { entity: { id: string; siren: string; vat_regime: string } };
     structured_invoice: ReturnType<typeof buildStructuredInvoice>;
   } | null>(value, null);
 const snapshotHash = (value: unknown) =>
@@ -193,14 +200,26 @@ export class SuperPdpEmission {
     const structured = sourceSnapshot(
       invoice.immutable_snapshot,
     )?.structured_invoice;
+    const isB2c = structured?.processing_rule_candidate === "B2C";
+    if (available && isB2c) {
+      try {
+        b2cEnabled();
+      } catch (error) {
+        available = false;
+        reason = (error as Error).message;
+      }
+    }
     if (
       available &&
       (invoice.lifecycle_status !== "issued" ||
-        structured?.processing_rule_candidate !== "B2B")
+        !["B2B", "B2C"].includes(structured?.processing_rule_candidate ?? "") ||
+        (isB2c &&
+          structured?.en_invoice_candidate.buyer.postal_address.country_code !==
+            "FR"))
     ) {
       available = false;
       reason =
-        "Ce lot accepte seulement les factures/avoirs émis avec données structurées B2B France. Les historiques, brouillons, B2C et B2B international restent exclus.";
+        "Ce lot accepte seulement les factures/avoirs émis avec données structurées B2B ou B2C France. Les historiques, brouillons et opérations internationales restent exclus.";
     }
     const events = row
       ? await prisma.electronicInvoiceEvent.findMany({
@@ -214,6 +233,13 @@ export class SuperPdpEmission {
       reason,
       environment: "sandbox",
       revision: row?.revision ?? 0,
+      processing_rule: structured?.processing_rule_candidate ?? null,
+      issuer_vat_regime:
+        sourceSnapshot(invoice.immutable_snapshot)?.issuer.entity.vat_regime ??
+        null,
+      reporting_profile: row?.reporting_profile_json
+        ? reportingProfileSchema.parse(JSON.parse(row.reporting_profile_json))
+        : null,
       transmission: row
         ? {
             id: row.id,
@@ -234,7 +260,7 @@ export class SuperPdpEmission {
             })(),
             buyer_address: (() => {
               const a = JSON.parse(row.payload_json).buyer.electronic_address;
-              return `${a.scheme}:${a.value}`;
+              return a ? `${a.scheme}:${a.value}` : "";
             })(),
             can_prepare:
               !row.post_started_at &&
@@ -267,11 +293,13 @@ export class SuperPdpEmission {
       !invoice.pdf_sha256 ||
       snapshot?.issuer?.entity?.id !== invoice.fiscal_entity_id ||
       snapshot.structured_invoice?.version !== 1 ||
-      snapshot.structured_invoice.processing_rule_candidate !== "B2B"
+      !["B2B", "B2C"].includes(
+        snapshot.structured_invoice.processing_rule_candidate,
+      )
     ) {
       throw failure(
         "SUPERPDP_INVOICE_INELIGIBLE",
-        "Seul un document émis et structuré B2B France peut être préparé. Aucun document historique ne sera transmis.",
+        "Seul un document émis et structuré B2B/B2C France peut être préparé. Aucun document historique ne sera transmis.",
       );
     }
     const connection = await prisma.superPdpConnection.findUnique({
@@ -294,8 +322,35 @@ export class SuperPdpEmission {
       );
     }
     const source = snapshot.structured_invoice.en_invoice_candidate;
+    const isB2c =
+      snapshot.structured_invoice.processing_rule_candidate === "B2C";
+    if (isB2c) {
+      b2cEnabled();
+      if (
+        !input.b2c ||
+        input.buyer_address ||
+        source.buyer.postal_address.country_code !== "FR"
+      )
+        throw failure(
+          "SUPERPDP_B2C_PROFILE",
+          "Confirmez le profil B2C France sans adresse d’annuaire de particulier.",
+        );
+      assertLocalRegime(snapshot.issuer.entity.vat_regime, input.b2c);
+      if (
+        Number(source.totals.paid_amount) > 0 &&
+        Number(source.totals.amount_due_for_payment) > 0
+      )
+        throw failure(
+          "SUPERPDP_B2C_ADVANCE",
+          "Le traitement des acomptes déduits à l’émission nécessite une recette dédiée. Ce document ne sera pas déposé dans ce lot.",
+        );
+    } else if (!input.buyer_address || input.b2c)
+      throw failure(
+        "SUPERPDP_BUYER_ADDRESS",
+        "Une adresse d’acheteur B2B est obligatoire ; le profil B2C ne peut pas être appliqué à une entreprise.",
+      );
     if (
-      input.buyer_address.startsWith("0225:") &&
+      input.buyer_address?.startsWith("0225:") &&
       !input.buyer_address
         .slice(5)
         .startsWith(
@@ -315,14 +370,34 @@ export class SuperPdpEmission {
       );
     const candidate = JSON.stringify({
       ...source,
-      process_control: { specification_identifier: "urn:cen.eu:en16931:2017" },
+      process_control: {
+        specification_identifier: "urn:cen.eu:en16931:2017",
+        ...(isB2c
+          ? {
+              business_process_type: `${input.b2c!.operation === "goods" ? "B" : "S"}${Number(source.totals.amount_due_for_payment) === 0 ? "2" : "1"}`,
+            }
+          : {}),
+      },
+      ...(isB2c
+        ? {
+            notes: [{ subject_code: "BAR", note: "B2C" }],
+            vat_point_date_code:
+              input.b2c!.operation === "goods"
+                ? "35"
+                : input.b2c!.has_vat_on_debits
+                  ? "3"
+                  : "432",
+          }
+        : {}),
       seller: {
         ...source.seller,
         electronic_address: addressObject(input.seller_address),
       },
       buyer: {
         ...source.buyer,
-        electronic_address: addressObject(input.buyer_address),
+        ...(!isB2c
+          ? { electronic_address: addressObject(input.buyer_address!) }
+          : {}),
       },
     });
     if (Buffer.byteLength(candidate) > 512 * 1024)
@@ -360,6 +435,7 @@ export class SuperPdpEmission {
           preparation_id: crypto.randomUUID(),
           payload_json: candidate,
           payload_sha256: digest(candidate),
+          reporting_profile_json: isB2c ? JSON.stringify(input.b2c) : null,
           snapshot_sha256: snapshotHash(invoice.immutable_snapshot),
           original_pdf_sha256: invoice.pdf_sha256!,
           artifact_path: null,
@@ -565,6 +641,15 @@ export class SuperPdpEmission {
     }
   }
   private async directoryCheck(row: Transmission, token: string) {
+    if (row.reporting_profile_json) {
+      b2cEnabled();
+      await assertRemoteProfile(
+        this.transport,
+        token,
+        row.remote_company_id,
+        reportingProfileSchema.parse(JSON.parse(row.reporting_profile_json)),
+      );
+    }
     const address = JSON.parse(row.payload_json).seller.electronic_address;
     const entries = await this.transport.directory(token);
     if (
@@ -747,7 +832,10 @@ export class SuperPdpEmission {
       remote.company_id !== row.remote_company_id ||
       remote.direction !== "out" ||
       remote.external_id !== row.external_id ||
-      (remote.processing_rule && remote.processing_rule !== "B2B") ||
+      (row.reporting_profile_json && remote.processing_rule !== "B2C") ||
+      (remote.processing_rule &&
+        remote.processing_rule !==
+          (row.reporting_profile_json ? "B2C" : "B2B")) ||
       (row.remote_invoice_id && remote.id !== row.remote_invoice_id)
     ) {
       throw failure(
@@ -819,7 +907,12 @@ export class SuperPdpEmission {
               "SUPERPDP_EMISSION_CONFLICT",
               "Le dépôt a déjà été tenté ou la préparation a changé.",
             );
-          const remote = await this.transport.send(token, pdf, row.external_id);
+          const remote = await this.transport.send(
+            token,
+            pdf,
+            row.external_id,
+            row.reporting_profile_json ? "B2C" : "B2B",
+          );
           this.assertRemote(row, remote);
           await this.saveResult(
             row,

@@ -771,6 +771,8 @@ model ElectronicInvoiceTransmission {
   preparation_id      String
   payload_json        String
   payload_sha256      String
+  reporting_profile_json String?
+  payments_revision   Int @default(0)
   snapshot_sha256     String
   original_pdf_sha256 String
   artifact_path       String?
@@ -792,12 +794,40 @@ model ElectronicInvoiceTransmission {
   invoice Facture @relation(fields: [invoice_id, fiscal_entity_id, organization_id], references: [id, fiscal_entity_id, organization_id], onDelete: Restrict)
   connection SuperPdpConnection @relation(fields: [connection_id, fiscal_entity_id, organization_id], references: [id, fiscal_entity_id, organization_id], onDelete: Restrict)
   events ElectronicInvoiceEvent[]
+  payments ElectronicInvoicePayment[]
 
   @@unique([id, organization_id], map: "electronic_transmissions_id_org_key")
   @@unique([organization_id, invoice_id, environment], map: "electronic_transmissions_invoice_env_key")
   @@unique([organization_id, connection_id, remote_invoice_id], map: "electronic_transmissions_remote_key")
   @@index([status, next_sync_at], map: "electronic_transmissions_sync_idx")
   @@map("electronic_invoice_transmissions")
+}
+
+model ElectronicInvoicePayment {
+  id                   String @id @default(uuid())
+  organization_id      String @default("org_historical_broceliande")
+  transmission_id      String
+  reference            String
+  payment_date         String
+  amount_cents         Int
+  allocations_json     String
+  payload_json         String
+  payload_sha256       String
+  status               String @default("recorded")
+  post_started_at      DateTime?
+  remote_event_id      String?
+  operation_id         String?
+  operation_expires_at DateTime?
+  last_error_code      String?
+  requested_by         String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  transmission ElectronicInvoiceTransmission @relation(fields: [transmission_id, organization_id], references: [id, organization_id], onDelete: Restrict)
+
+  @@unique([organization_id, transmission_id, reference], map: "electronic_payments_reference_key")
+  @@unique([organization_id, transmission_id, remote_event_id], map: "electronic_payments_remote_key")
+  @@map("electronic_invoice_payments")
 }
 
 model ElectronicInvoiceEvent {

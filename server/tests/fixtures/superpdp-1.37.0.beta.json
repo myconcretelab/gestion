@@ -59,10 +59,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "pdf",
-                  "invoice"
-                ],
+                "required": ["pdf", "invoice"],
                 "type": "object"
               }
             }
@@ -152,10 +149,7 @@
             "name": "order",
             "schema": {
               "default": "asc",
-              "enum": [
-                "asc",
-                "desc"
-              ],
+              "enum": ["asc", "desc"],
               "type": "string"
             }
           },
@@ -314,13 +308,7 @@
             "name": "format",
             "schema": {
               "default": "en16931",
-              "enum": [
-                "en16931",
-                "original",
-                "cii",
-                "ubl",
-                "factur-x"
-              ],
+              "enum": ["en16931", "original", "cii", "ubl", "factur-x"],
               "type": "string"
             }
           },
@@ -426,10 +414,7 @@
                     "$ref": "#/components/schemas/status_code_create"
                   }
                 },
-                "required": [
-                  "invoice_id",
-                  "status_code"
-                ],
+                "required": ["invoice_id", "status_code"],
                 "type": "object"
               }
             }
@@ -571,12 +556,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "validator",
-        "checks_count",
-        "messages",
-        "failures"
-      ],
+      "required": ["validator", "checks_count", "messages", "failures"],
       "type": "object"
     },
     "message": {
@@ -591,10 +571,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "message",
-        "raw"
-      ],
+      "required": ["message", "raw"],
       "type": "object"
     },
     "validation_report": {
@@ -606,9 +583,7 @@
           "type": "array"
         }
       },
-      "required": [
-        "data"
-      ],
+      "required": ["data"],
       "type": "object"
     },
     "invoice": {
@@ -643,12 +618,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "id",
-        "company_id",
-        "created_at",
-        "direction"
-      ],
+      "required": ["id", "company_id", "created_at", "direction"],
       "type": "object"
     },
     "invoice_overview": {
@@ -683,12 +653,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "id",
-        "company_id",
-        "created_at",
-        "direction"
-      ],
+      "required": ["id", "company_id", "created_at", "direction"],
       "type": "object"
     },
     "list_invoices": {
@@ -709,12 +674,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "data",
-        "count",
-        "has_after",
-        "has_before"
-      ],
+      "required": ["data", "count", "has_after", "has_before"],
       "type": "object"
     },
     "event": {
@@ -780,10 +740,7 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "data",
-        "has_after"
-      ],
+      "required": ["data", "has_after"],
       "type": "object"
     },
     "directory_entry": {
@@ -837,9 +794,7 @@
           "type": "array"
         }
       },
-      "required": [
-        "data"
-      ],
+      "required": ["data"],
       "type": "object"
     },
     "electronic_address": {
@@ -851,10 +806,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "value",
-        "scheme"
-      ],
+      "required": ["value", "scheme"],
       "type": "object"
     },
     "process_control": {
@@ -866,10 +818,187 @@
           "type": "string"
         }
       },
-      "required": [
-        "specification_identifier"
-      ],
+      "required": ["specification_identifier"],
       "type": "object"
+    }
+  },
+  "event_post": {
+    "description": "Create an invoice event message and place it in a queue to be sent asynchronously. If the status_code is 'fr:212' without details, the amount will be the invoice total.",
+    "operationId": "InvoiceEventsCreate",
+    "requestBody": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "properties": {
+              "attachments": {
+                "items": {
+                  "$ref": "#/components/schemas/invoice_event_attachment"
+                },
+                "type": "array"
+              },
+              "details": {
+                "items": {
+                  "$ref": "#/components/schemas/invoice_event_detail"
+                },
+                "type": "array"
+              },
+              "invoice_id": {
+                "type": "integer"
+              },
+              "status_code": {
+                "$ref": "#/components/schemas/status_code_create"
+              }
+            },
+            "required": ["invoice_id", "status_code"],
+            "type": "object"
+          }
+        }
+      },
+      "required": true
+    },
+    "responses": {
+      "200": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/event"
+            }
+          }
+        },
+        "description": "Event created"
+      },
+      "400": {
+        "$ref": "#/components/responses/bad_request"
+      },
+      "500": {
+        "$ref": "#/components/responses/internal_server_error"
+      }
+    },
+    "summary": "Create an invoice event",
+    "tags": ["invoice_events"]
+  },
+  "reporting_schemas": {
+    "invoice_note": {
+      "properties": {
+        "note": {
+          "description": "BT-22\n\nInvoice note\nA textual note that gives unstructured information that is relevant to the Invoice as a whole.\nSuch as the reason for any correction or assignment note in case the invoice has been factored",
+          "type": "string"
+        },
+        "subject_code": {
+          "$ref": "#/components/schemas/invoice_note_code"
+        }
+      },
+      "required": ["note"],
+      "type": "object"
+    },
+    "invoice_event_detail": {
+      "properties": {
+        "amounts": {
+          "deprecated": true,
+          "description": "Deprecated: Use reported_data instead",
+          "items": {
+            "$ref": "#/components/schemas/invoice_event_amount"
+          },
+          "type": "array"
+        },
+        "notes": {
+          "description": "status notes",
+          "items": {
+            "$ref": "#/components/schemas/invoice_event_note"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "description": "ReasonCode (MDT-113). See AFNOR XP Z12-012 for the list of allowed values.",
+          "type": "string"
+        },
+        "reported_data": {
+          "description": "Data expected or to report. Correspond to MDG-43",
+          "items": {
+            "$ref": "#/components/schemas/invoice_event_reported_data"
+          },
+          "type": "array"
+        }
+      }
+    },
+    "invoice_event_reported_data": {
+      "properties": {
+        "amount": {
+          "description": "amount to report, qualified by the `type_code`",
+          "format": "decimal",
+          "type": "string"
+        },
+        "change": {
+          "description": "used to say if the data referenced by `name` must replace the current values. For example change an IBAN for a factor, internal routing…",
+          "type": "boolean"
+        },
+        "change_direction_code": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "currency_code": {
+          "type": "string"
+        },
+        "date": {
+          "description": "indicates an expected date value, particularly the date of the receipt of payment",
+          "format": "date",
+          "type": "string"
+        },
+        "description": {
+          "description": "description of the data",
+          "type": "string"
+        },
+        "id": {
+          "description": "id of the data to be replaced. For example 'BT-84' to replace an IBAN",
+          "type": "string"
+        },
+        "location": {
+          "description": "XPath of the data in the XML",
+          "type": "string"
+        },
+        "name": {
+          "description": "name of the data referenced by `id`",
+          "type": "string"
+        },
+        "quantity": {
+          "format": "decimal",
+          "type": "string"
+        },
+        "type_code": {
+          "description": "code type of the data",
+          "type": "string"
+        },
+        "unit_code": {
+          "description": "unit code of the measure",
+          "type": "string"
+        },
+        "value": {
+          "description": "new value to take into account",
+          "type": "string"
+        },
+        "value_numeric": {
+          "format": "decimal",
+          "type": "string"
+        },
+        "value_percent": {
+          "description": "used to indicate a percentage. For example the VAT percentage",
+          "format": "decimal",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "vat_regime": {
+      "description": "The company's VAT regime, one of: `monthly` (réel normal mensuel), `quarterly` (réel normal trimestriel), `simplified` (simplifié d'imposition TVA), `vat_exemption` (franchise en base de TVA).",
+      "enum": ["monthly", "quarterly", "simplified", "vat_exemption"],
+      "type": "string"
+    },
+    "has_vat_on_debits": {
+      "default": false,
+      "description": "If the company has opted for the VAT on the debits",
+      "type": "boolean"
     }
   },
   "en_invoice_required": [

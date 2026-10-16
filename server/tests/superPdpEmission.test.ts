@@ -27,6 +27,9 @@ let runtime: typeof import("../src/config/env.js");
 let service: InstanceType<
   typeof import("../src/modules/superpdp/emission.js").SuperPdpEmission
 >;
+let paymentsService: InstanceType<
+  typeof import("../src/modules/superpdp/payments.js").SuperPdpPayments
+>;
 let runWithOrganization: typeof import("../src/modules/organizations/context.js").runWithOrganization;
 let server: Server,
   origin: string,
@@ -53,14 +56,12 @@ let serial = 0,
   mode = "ok",
   sendCount = 0,
   eventsMode = "normal";
-let remoteEvents: Array<{
-  id: string;
-  invoice_id: string;
-  status_code: string;
-  created_at: string;
-  status_text: string;
-  details?: Array<{ reason: string }>;
-}> = [];
+let vatRegime = "monthly",
+  onDebits = false,
+  paymentSendCount = 0;
+let remoteEvents: Array<
+  import("../src/modules/superpdp/transport.js").RemoteEvent
+> = [];
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -83,6 +84,8 @@ const fakeFetch: typeof fetch = async (input, init) => {
       number_scheme: "sandbox",
       number: "fake-company-a",
       formal_name: "Entreprise fictive A",
+      vat_regime: vatRegime,
+      has_vat_on_debits: onDebits,
     });
   if (url.pathname === "/v1.beta/directory_entries")
     return json({
@@ -159,7 +162,9 @@ const fakeFetch: typeof fetch = async (input, init) => {
   }
   if (url.pathname === "/v1.beta/invoices" && init?.method === "POST") {
     ++sendCount;
-    assert.equal(url.searchParams.get("processing_rule"), "B2B");
+    assert.ok(
+      ["B2B", "B2C"].includes(url.searchParams.get("processing_rule")!),
+    );
     assert.equal(url.searchParams.has("disable_pre_check"), false);
     assert.equal(
       new Headers(init.headers).get("content-type"),
@@ -173,7 +178,7 @@ const fakeFetch: typeof fetch = async (input, init) => {
       company_id: companyId,
       direction: "out" as const,
       external_id: externalId,
-      processing_rule: "B2B",
+      processing_rule: url.searchParams.get("processing_rule")!,
     };
     remoteInvoices.set(remote.id, remote);
     if (mode === "lost-send")
@@ -202,6 +207,55 @@ const fakeFetch: typeof fetch = async (input, init) => {
   if (/^\/v1.beta\/invoices\/\d+$/.test(url.pathname))
     return json(remoteInvoices.get(url.pathname.split("/").at(-1)!) ?? {});
   if (url.pathname === "/v1.beta/invoice_events") {
+    if (init?.method === "POST") {
+      paymentSendCount++;
+      const raw = String(init.body);
+      const body = JSON.parse(
+        raw.replace(/"invoice_id":(\d+)/, '"invoice_id":"$1"'),
+      );
+      assert.match(raw, new RegExp(`"invoice_id":${body.invoice_id},`));
+      assert.equal(body.status_code, "fr:212");
+      assert.ok(body.details[0].reported_data.length);
+      for (const data of body.details[0].reported_data) {
+        assert.equal(data.type_code, "MEN");
+        assert.equal(data.currency_code, "EUR");
+      }
+      const event = {
+        id: String(9007199254740993300n + BigInt(++serial)),
+        invoice_id: body.invoice_id,
+        status_code: "fr:212",
+        status_text: "Encaissée",
+        created_at: "2026-10-16T10:00:00Z",
+        details: body.details,
+      };
+      remoteEvents.push(event);
+      if (mode === "lost-payment") throw new Error("private-response-lost");
+      if (mode === "mismatch-payment")
+        return json({ ...event, invoice_id: "1" });
+      if (mode === "normalized-payment")
+        return json({
+          ...event,
+          details: [
+            {
+              reported_data: body.details[0].reported_data.map(
+                (d: Record<string, string>) => ({
+                  date: d.date,
+                  value_percent: String(Number(d.value_percent)),
+                  type_code: d.type_code,
+                  currency_code: d.currency_code,
+                  amount: `${d.amount}00`,
+                }),
+              ),
+            },
+          ],
+        });
+      return new Response(
+        JSON.stringify(event)
+          .replace(`"${event.id}"`, event.id)
+          .replace(`"${body.invoice_id}"`, body.invoice_id),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
     const cursor = url.searchParams.get("starting_after_id");
     const rows = remoteEvents.filter(
       (event) =>
@@ -260,7 +314,16 @@ const input = {
   buyer_address: "9999:fake-buyer",
   confirm_test_data: true,
 };
-const newInvoice = async (overrides: Record<string, unknown> = {}) => {
+const newInvoice = async (
+  overrides: Record<string, unknown> = {},
+  options: {
+    b2c?: boolean;
+    multi?: boolean;
+    paid?: number;
+    credit?: boolean;
+    category?: "E" | "O";
+  } = {},
+) => {
   mode = "ok";
   eventsMode = "normal";
   const id = `invoice-${++serial}`;
@@ -295,13 +358,29 @@ const newInvoice = async (overrides: Record<string, unknown> = {}) => {
       exemption_reason: "",
     },
   ];
+  if (options.b2c)
+    Object.assign(fiscal.buyer, { kind: "individual", siren: "" });
+  if (options.multi)
+    fiscal.lines.push({
+      ...fiscal.lines[0],
+      id: "2",
+      unit_price_ttc: 55,
+      vat_rate: 10,
+    });
+  if (options.category)
+    Object.assign(fiscal.lines[0], {
+      vat_category: options.category,
+      vat_rate: 0,
+      exemption_reason: "Exonération fictive",
+    });
+  fiscal.paid_amount = options.paid ?? 0;
   const structured = buildStructuredInvoice({
     input: fiscal,
     issuer: { entity, establishment },
     number: `F-2026-732829320-${serial}`,
     issuedAt: new Date("2026-10-16T08:00:00Z"),
     buyerName: "Client fictif",
-    credit: false,
+    credit: options.credit ?? false,
     periodStart: new Date("2026-10-01"),
     periodEnd: new Date("2026-10-02"),
   });
@@ -512,6 +591,12 @@ before(async () => {
     new SuperPdpService(new SuperPdpProvider(fakeFetch)),
     new SuperPdpTransport(fakeFetch),
   );
+  const { SuperPdpPayments } =
+    await import("../src/modules/superpdp/payments.js");
+  paymentsService = new SuperPdpPayments(
+    new SuperPdpService(new SuperPdpProvider(fakeFetch)),
+    new SuperPdpTransport(fakeFetch),
+  );
   const { createSuperPdpEmissionRouter } =
     await import("../src/modules/superpdp/emissionRoutes.js");
   const app = express();
@@ -523,7 +608,10 @@ before(async () => {
       next,
     );
   });
-  app.use("/api/invoices", createSuperPdpEmissionRouter(service));
+  app.use(
+    "/api/invoices",
+    createSuperPdpEmissionRouter(service, paymentsService),
+  );
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
@@ -630,7 +718,7 @@ test("rejet des brouillons, historiques, données manquantes, B2C et B2B interna
     });
     await assert.rejects(
       within(() => service.prepare(invoice.id, input, actor)),
-      /Seul un document/,
+      /Seul un document|B2C de test|profil B2C/,
     );
   }
 });
@@ -1084,6 +1172,637 @@ test("une préparation restaurée reste bloquée même sans marqueur de dépôt 
   );
   await within(() => service.processSend(view.transmission!.id, view.revision));
   assert.equal(calls.length, before);
+});
+
+const b2cProfile = {
+  operation: "services" as const,
+  vat_regime: "monthly" as const,
+  has_vat_on_debits: false,
+  confirm_no_other_reporting: true as const,
+};
+const b2cInput = {
+  revision: 0,
+  seller_address: input.seller_address,
+  confirm_test_data: true,
+  b2c: b2cProfile,
+};
+const b2cInvoice = async (
+  options: Parameters<typeof newInvoice>[1] = {},
+  profile = b2cProfile,
+) => {
+  runtime.env.SUPERPDP_SANDBOX_B2C_ENABLED = true;
+  vatRegime = profile.vat_regime;
+  onDebits = profile.has_vat_on_debits;
+  const invoice = await newInvoice({}, { ...options, b2c: true });
+  const prepared = await within(() =>
+    service.prepare(invoice.id, { ...b2cInput, b2c: profile }, actor),
+  );
+  await within(() =>
+    service.processPrepare(prepared.transmission!.id, prepared.revision),
+  );
+  assert.equal((await row(invoice.id)).status, "ready");
+  await enqueueSend(invoice.id, prepared.revision);
+  await within(() =>
+    service.processSend(prepared.transmission!.id, prepared.revision),
+  );
+  assert.equal((await row(invoice.id)).status, "submitted");
+  return invoice;
+};
+const receipt = (
+  revision = 0,
+  reference = "BANK-FAKE-1",
+  amount = "60.00",
+) => ({
+  revision,
+  reference,
+  payment_date: "2026-10-15",
+  allocations: [{ vat_rate: "20.00", amount }],
+  confirm_received: true,
+  confirm_test_data: true,
+});
+const recordReceipt = async (id: string, data = receipt()) =>
+  within(() => paymentsService.record(id, data, actor));
+const sendReceipt = async (id: string, paymentId: string) => {
+  await within(() => paymentsService.send(id, paymentId, actor));
+  await within(() => paymentsService.process(paymentId));
+  return within(() => paymentsService.view(id));
+};
+
+test("B2C : confirmation explicite, note BAR, cadre S1/B1, pas d’adresse de particulier ni mutation du PDF", async () => {
+  runtime.env.SUPERPDP_SANDBOX_B2C_ENABLED = true;
+  const invoice = await newInvoice({}, { b2c: true });
+  const before = await db.systemPrisma.facture.findUniqueOrThrow({
+    where: { id: invoice.id },
+  });
+  for (const invalid of [
+    input,
+    { ...b2cInput, buyer_address: input.buyer_address },
+    { ...b2cInput, b2c: { ...b2cProfile, operation: "mixed" } },
+    { ...b2cInput, b2c: { ...b2cProfile, confirm_no_other_reporting: false } },
+    { ...b2cInput, b2c: { ...b2cProfile, vat_regime: "simplified" } },
+  ])
+    await assert.rejects(
+      within(() => service.prepare(invoice.id, invalid, actor)),
+    );
+  const prepared = await within(() =>
+    service.prepare(invoice.id, b2cInput, actor),
+  );
+  const stored = await row(invoice.id);
+  const candidate = JSON.parse(stored.payload_json);
+  assert.deepEqual(candidate.notes, [{ subject_code: "BAR", note: "B2C" }]);
+  assert.equal(candidate.process_control.business_process_type, "S1");
+  assert.equal(candidate.vat_point_date_code, "432");
+  assert.equal(candidate.buyer.electronic_address, undefined);
+  assert.equal(prepared.processing_rule, "B2C");
+  assert.equal(prepared.transmission!.buyer_address, "");
+  assert.deepEqual(
+    await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: invoice.id },
+    }),
+    before,
+  );
+  assert.deepEqual(fs.readFileSync(invoice.pdfPath), invoice.pdf);
+  runtime.env.SUPERPDP_SANDBOX_B2C_ENABLED = false;
+  const beforeCalls = calls.length;
+  await assert.rejects(
+    within(() => service.processPrepare(stored.id, stored.revision)),
+  );
+  assert.equal(calls.length, beforeCalls + 2); // OAuth identity probe precedes the guarded converter.
+  assert.equal((await within(() => service.view(invoice.id))).available, false);
+  runtime.env.SUPERPDP_SANDBOX_B2C_ENABLED = true;
+});
+
+test("B2C : vérification distante du régime et de l’option débits avant conversion et dépôt", async () => {
+  const invoice = await newInvoice({}, { b2c: true });
+  const prepared = await within(() =>
+    service.prepare(invoice.id, b2cInput, actor),
+  );
+  vatRegime = "";
+  const count = calls.filter((c) => c.endsWith("/convert")).length;
+  await assert.rejects(
+    within(() =>
+      service.processPrepare(prepared.transmission!.id, prepared.revision),
+    ),
+  );
+  assert.equal(calls.filter((c) => c.endsWith("/convert")).length, count);
+  vatRegime = "monthly";
+  const reprepare = await within(() =>
+    service.prepare(
+      invoice.id,
+      { ...b2cInput, revision: prepared.revision },
+      actor,
+    ),
+  );
+  await within(() =>
+    service.processPrepare(reprepare.transmission!.id, reprepare.revision),
+  );
+  await enqueueSend(invoice.id, reprepare.revision);
+  onDebits = true;
+  const before = sendCount;
+  await within(() =>
+    service.processSend(reprepare.transmission!.id, reprepare.revision),
+  );
+  assert.equal(sendCount, before);
+  assert.equal((await row(invoice.id)).post_started_at, null);
+  onDebits = false;
+});
+
+test("B2C : encaissements partiels TTC multi-taux, centimes exacts, reçu 64 bits et aucune modification comptable", async () => {
+  const invoice = await b2cInvoice({ multi: true });
+  const before = await db.systemPrisma.facture.findUniqueOrThrow({
+    where: { id: invoice.id },
+  });
+  const local = await recordReceipt(invoice.id, {
+    ...receipt(),
+    allocations: [
+      { vat_rate: "20.00", amount: "60.00" },
+      { vat_rate: "10.00", amount: "27.50" },
+    ],
+  });
+  assert.equal(local.payments[0].amount, "87.50");
+  assert.equal(local.needs_reporting, true);
+  assert.equal(paymentSendCount, 0);
+  const submitted = await sendReceipt(invoice.id, local.payments[0].id);
+  assert.equal(submitted.payments[0].status, "submitted");
+  assert.ok(submitted.payments[0].remote_event_id);
+  assert.ok(
+    BigInt(submitted.payments[0].remote_event_id!) >
+      BigInt(Number.MAX_SAFE_INTEGER),
+  );
+  const stored = await row(invoice.id);
+  const wire = await db.systemPrisma.electronicInvoicePayment.findUniqueOrThrow(
+    { where: { id: local.payments[0].id } },
+  );
+  assert.deepEqual(JSON.parse(wire.payload_json)[0].reported_data, [
+    {
+      amount: "27.50",
+      currency_code: "EUR",
+      type_code: "MEN",
+      value_percent: "10.00",
+      date: "2026-10-15",
+    },
+    {
+      amount: "60.00",
+      currency_code: "EUR",
+      type_code: "MEN",
+      value_percent: "20.00",
+      date: "2026-10-15",
+    },
+  ]);
+  await within(() => service.processReconcile(stored.id));
+  assert.equal(
+    await db.systemPrisma.electronicInvoiceEvent.count({
+      where: {
+        transmission_id: stored.id,
+        event_key: `remote:${submitted.payments[0].remote_event_id}`,
+      },
+    }),
+    1,
+  );
+  const next = await recordReceipt(invoice.id, {
+    ...receipt(1, "BANK-FAKE-2"),
+    allocations: [
+      { vat_rate: "20.00", amount: "60.00" },
+      { vat_rate: "10.00", amount: "27.50" },
+    ],
+  });
+  assert.equal(
+    (await sendReceipt(invoice.id, next.payments[1].id)).payments[1].status,
+    "submitted",
+  );
+  await assert.rejects(
+    recordReceipt(invoice.id, receipt(2, "BANK-EXCESS", "0.01")),
+    /dépasse/,
+  );
+  assert.deepEqual(
+    await db.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: invoice.id },
+    }),
+    before,
+  );
+  assert.deepEqual(fs.readFileSync(invoice.pdfPath), invoice.pdf);
+});
+
+test("encaissements : idempotence locale, références uniques, dates explicites et validation stricte", async () => {
+  const invoice = await b2cInvoice();
+  for (const payload of [
+    { ...receipt(), payment_date: "2026-02-30" },
+    { ...receipt(), payment_date: "2099-01-01" },
+    { ...receipt(), allocations: [] },
+    { ...receipt(), confirm_received: false },
+    { ...receipt(), allocations: [{ vat_rate: "20.00", amount: "0.001" }] },
+    { ...receipt(), allocations: [{ vat_rate: "20.00", amount: "-1.00" }] },
+    { ...receipt(), allocations: [{ vat_rate: "5.50", amount: "1.00" }] },
+    {
+      ...receipt(),
+      allocations: [
+        { vat_rate: "20.00", amount: "1.00" },
+        { vat_rate: "20.00", amount: "1.00" },
+      ],
+    },
+  ])
+    await assert.rejects(
+      within(() => paymentsService.record(invoice.id, payload, actor)),
+    );
+  const first = await recordReceipt(invoice.id);
+  const twice = await recordReceipt(invoice.id);
+  assert.equal(twice.payments.length, 1);
+  assert.equal(twice.payments[0].id, first.payments[0].id);
+  await assert.rejects(
+    recordReceipt(invoice.id, receipt(1, "BANK-FAKE-1", "59.00")),
+    /référence/,
+  );
+  await assert.rejects(
+    recordReceipt(invoice.id, receipt(0, "BANK-NEW", "1.00")),
+    /journal a changé/,
+  );
+  assert.equal(
+    (await within(() => paymentsService.view(invoice.id))).payments.length,
+    1,
+  );
+});
+
+test("encaissements : authentification propriétaire, origine, absence de secrets et isolement des comptes", async () => {
+  const invoice = await b2cInvoice();
+  assert.equal(
+    (await request(invoice.id, "payments", undefined, "")).status,
+    401,
+  );
+  assert.equal(
+    (await request(invoice.id, "payments", undefined, cookieWorker)).status,
+    403,
+  );
+  assert.equal(
+    (await request(invoice.id, "payments", undefined, cookieB)).status,
+    404,
+  );
+  assert.equal(
+    (await request(invoice.id, "payments", receipt(), cookieA, false)).status,
+    403,
+  );
+  const recorded = await request(invoice.id, "payments", receipt());
+  assert.equal(recorded.status, 201);
+  const id = recorded.body.payments[0].id;
+  assert.equal(
+    (
+      await request(invoice.id, `payments/${id}/send`, {
+        confirm_send: false,
+        confirm_test_data: true,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(
+        invoice.id,
+        `payments/${id}/send`,
+        { confirm_send: true, confirm_test_data: true },
+        cookieB,
+      )
+    ).status,
+    404,
+  );
+  assert.equal(JSON.stringify(recorded.body).includes("fake-access"), false);
+  assert.equal(
+    await within(() => db.default.electronicInvoicePayment.count(), orgB),
+    0,
+  );
+  await assert.rejects(
+    db.systemPrisma.electronicInvoicePayment.create({
+      data: {
+        organization_id: orgB,
+        transmission_id: (await row(invoice.id)).id,
+        reference: "TENANT-ATTACK",
+        payment_date: "2026-10-15",
+        amount_cents: 1,
+        allocations_json: "[]",
+        payload_json: "[]",
+        payload_sha256: "fake",
+        requested_by: "emission-owner-b",
+      },
+    }),
+    /Foreign key|foreign key/,
+  );
+  const wrongTransmission = await b2cInvoice();
+  await assert.rejects(
+    within(() => paymentsService.send(wrongTransmission.id, id, actor)),
+  );
+});
+
+test("encaissements : option débits et biens restent dans le journal local, sans appel 212", async () => {
+  const before = paymentSendCount;
+  for (const profile of [
+    { ...b2cProfile, has_vat_on_debits: true },
+    { ...b2cProfile, operation: "goods" as const },
+  ]) {
+    const invoice = await b2cInvoice({}, profile as typeof b2cProfile);
+    const journal = await recordReceipt(invoice.id);
+    assert.equal(journal.needs_reporting, false);
+    await assert.rejects(
+      within(() =>
+        paymentsService.send(invoice.id, journal.payments[0].id, actor),
+      ),
+    );
+    const projected = JSON.parse((await row(invoice.id)).payload_json);
+    assert.equal(
+      projected.process_control.business_process_type,
+      profile.operation === "goods" ? "B1" : "S1",
+    );
+    assert.equal(
+      projected.vat_point_date_code,
+      profile.operation === "goods" ? "35" : "3",
+    );
+  }
+  assert.equal(paymentSendCount, before);
+});
+
+test("B2C : franchise et simplifié vérifiés, avoirs/exonérations/hors TVA/acompte déduit bloqués pour le journal", async () => {
+  for (const [local, remote] of [
+    ["franchise_en_base", "vat_exemption"],
+    ["reel_simplifie", "simplified"],
+    ["reel_normal", "quarterly"],
+  ]) {
+    const { assertLocalRegime } =
+      await import("../src/modules/superpdp/reporting.js");
+    assert.doesNotThrow(() =>
+      assertLocalRegime(local, {
+        ...b2cProfile,
+        vat_regime: remote as typeof b2cProfile.vat_regime,
+      }),
+    );
+  }
+  for (const options of [
+    { credit: true },
+    { category: "E" as const },
+    { category: "O" as const },
+  ]) {
+    const invoice = await b2cInvoice(options);
+    assert.equal(
+      (await within(() => paymentsService.view(invoice.id))).available,
+      false,
+    );
+    await assert.rejects(recordReceipt(invoice.id));
+  }
+  const paid = await b2cInvoice({ paid: 120 });
+  assert.equal(
+    JSON.parse((await row(paid.id)).payload_json).process_control
+      .business_process_type,
+    "S2",
+  );
+  assert.equal(
+    (await within(() => paymentsService.view(paid.id))).payments.length,
+    0,
+    "paid_amount is never an automatic receipt",
+  );
+  const advance = await newInvoice({}, { b2c: true, paid: 30 });
+  await assert.rejects(
+    within(() => service.prepare(advance.id, b2cInput, actor)),
+    /acomptes/,
+  );
+});
+
+test("encaissements : réponse perdue ou reçue pour une autre facture bloque définitivement le POST et les doublons", async () => {
+  for (const failureMode of ["lost-payment", "mismatch-payment"]) {
+    const invoice = await b2cInvoice();
+    const recorded = await recordReceipt(invoice.id);
+    const id = recorded.payments[0].id;
+    const before = paymentSendCount;
+    mode = failureMode;
+    const unknown = await sendReceipt(invoice.id, id);
+    assert.equal(unknown.payments[0].status, "send_unknown");
+    assert.equal(paymentSendCount, before + 1);
+    mode = "ok";
+    await within(() => paymentsService.process(id));
+    await assert.rejects(
+      within(() => paymentsService.send(invoice.id, id, actor)),
+    );
+    await within(async () =>
+      service.processReconcile((await row(invoice.id)).id),
+    );
+    assert.equal(
+      (await within(() => paymentsService.view(invoice.id))).payments[0].status,
+      "send_unknown",
+      "a similar amount/date is never sufficient proof",
+    );
+    const second = await recordReceipt(
+      invoice.id,
+      receipt(1, "BANK-FAKE-SECOND", "10.00"),
+    );
+    const blocked = await sendReceipt(invoice.id, second.payments[1].id);
+    assert.equal(blocked.payments[1].status, "recorded");
+    assert.equal(
+      blocked.payments[1].last_error_code,
+      "SUPERPDP_PAYMENT_HISTORY",
+    );
+    assert.equal(paymentSendCount, before + 1);
+  }
+});
+
+test("encaissements : crash après intention durable, administrateur désactivé et paramètres distants modifiés", async () => {
+  const invoice = await b2cInvoice();
+  const view = await recordReceipt(invoice.id);
+  const id = view.payments[0].id;
+  const before = paymentSendCount;
+  await within(() => paymentsService.send(invoice.id, id, actor));
+  onDebits = true;
+  await within(() => paymentsService.process(id));
+  assert.equal(
+    (await within(() => paymentsService.view(invoice.id))).payments[0].status,
+    "recorded",
+  );
+  onDebits = false;
+  await within(() => paymentsService.send(invoice.id, id, actor));
+  await db.systemPrisma.appUser.update({
+    where: { id: actor.userId },
+    data: { is_active: false },
+  });
+  await within(() => paymentsService.process(id));
+  await db.systemPrisma.appUser.update({
+    where: { id: actor.userId },
+    data: { is_active: true },
+  });
+  assert.equal(
+    (await within(() => paymentsService.view(invoice.id))).payments[0]
+      .last_error_code,
+    "SUPERPDP_OWNER_REQUIRED",
+  );
+  await db.systemPrisma.electronicInvoicePayment.update({
+    where: { id },
+    data: {
+      status: "sending",
+      post_started_at: new Date(),
+      operation_id: "crashed",
+      operation_expires_at: new Date(0),
+    },
+  });
+  await within(() => paymentsService.process(id));
+  assert.equal(
+    (await within(() => paymentsService.view(invoice.id))).payments[0].status,
+    "send_unknown",
+  );
+  assert.equal(paymentSendCount, before);
+});
+
+test(
+  "encaissements : sauvegarde assainie conserve le journal mais suspend les messages et tâches",
+  { skip: !!postgresUrl },
+  async () => {
+    const invoice = await b2cInvoice();
+    const recorded = await recordReceipt(invoice.id);
+    const id = recorded.payments[0].id;
+    await within(() => paymentsService.send(invoice.id, id, actor));
+    const archive = path.join(temp, "b2c-backup.tar.gz");
+    const backup = spawnSync(
+      process.execPath,
+      ["scripts/installation-data.mjs", "backup", archive],
+      { cwd: root, env: process.env, encoding: "utf8" },
+    );
+    assert.equal(backup.status, 0, backup.stderr + backup.stdout);
+    const extracted = path.join(temp, "b2c-extracted");
+    fs.mkdirSync(extracted);
+    assert.equal(
+      spawnSync("tar", ["-xzf", archive, "-C", extracted]).status,
+      0,
+    );
+    const query = spawnSync(
+      "sqlite3",
+      [
+        path.join(extracted, "database", "database.sqlite"),
+        `SELECT reference,status FROM electronic_invoice_payments WHERE id='${id}'; SELECT count(*) FROM organization_jobs WHERE type='superpdp.payment' AND status IN ('queued','running'); PRAGMA foreign_key_check;`,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(query.status, 0, query.stderr);
+    assert.equal(query.stdout.trim(), "BANK-FAKE-1|paused_after_restore\n0");
+    assert.equal(
+      (await within(() => paymentsService.view(invoice.id))).payments[0].status,
+      "queued",
+      "source database is unchanged",
+    );
+    await db.systemPrisma.electronicInvoicePayment.update({
+      where: { id },
+      data: { status: "paused_after_restore" },
+    });
+    const before = calls.length;
+    await within(() => paymentsService.process(id));
+    await assert.rejects(
+      within(() => paymentsService.send(invoice.id, id, actor)),
+    );
+    assert.equal(calls.length, before);
+  },
+);
+
+test("encaissements : garde serveur B2C et tâche versionnée sans secret ni appel automatique désactivé", async () => {
+  const invoice = await b2cInvoice();
+  const recorded = await recordReceipt(invoice.id);
+  const id = recorded.payments[0].id;
+  const { createPaymentJobHandlers } =
+    await import("../src/modules/superpdp/worker.js");
+  const handlers = createPaymentJobHandlers(paymentsService);
+  await within(() => paymentsService.send(invoice.id, id, actor));
+  const job = await db.systemPrisma.organizationJob.findFirstOrThrow({
+    where: {
+      type: "superpdp.payment",
+      idempotency_key: { startsWith: `superpdp.payment:${id}:` },
+    },
+  });
+  assert.equal(JSON.stringify(job).includes("fake-access"), false);
+  runtime.env.SUPERPDP_SANDBOX_B2C_ENABLED = false;
+  const before = calls.length;
+  await assert.rejects(within(() => handlers["superpdp.payment"](job)));
+  assert.equal(calls.length, before);
+  assert.equal(
+    (await within(() => paymentsService.view(invoice.id))).available,
+    false,
+  );
+  runtime.env.SUPERPDP_SANDBOX_B2C_ENABLED = true;
+  await within(() => handlers["superpdp.payment"](job));
+  assert.equal(
+    (await within(() => paymentsService.view(invoice.id))).payments[0].status,
+    "submitted",
+  );
+  assert.equal(
+    calls.some((c) => /b2c_transactions|b2c_payments/.test(c)),
+    false,
+    "no duplicate direct e-reporting path",
+  );
+});
+
+test("encaissements : réponse normalisée sémantiquement, pas dépendante de l’ordre JSON ou des zéros décimaux", async () => {
+  const invoice = await b2cInvoice();
+  const recorded = await recordReceipt(invoice.id);
+  mode = "normalized-payment";
+  assert.equal(
+    (await sendReceipt(invoice.id, recorded.payments[0].id)).payments[0].status,
+    "submitted",
+  );
+  mode = "ok";
+});
+
+test("encaissements : deux saisies concurrentes ne peuvent dépasser le total TTC", async () => {
+  const invoice = await b2cInvoice();
+  const results = await Promise.allSettled([
+    recordReceipt(invoice.id, receipt(0, "BANK-CONCURRENT-A", "70.00")),
+    recordReceipt(invoice.id, receipt(0, "BANK-CONCURRENT-B", "70.00")),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  const journal = await within(() => paymentsService.view(invoice.id));
+  assert.equal(journal.payments.length, 1);
+  assert.equal(journal.payments[0].amount, "70.00");
+});
+
+test("encaissements : rejet distant et message 212 externe bloquent un nouveau paiement sans effet distant", async () => {
+  for (const status of [
+    "api:invalid",
+    "fr:213",
+    "ppf:payment-received-rejected",
+    "fr:212",
+  ]) {
+    const invoice = await b2cInvoice();
+    const recorded = await recordReceipt(invoice.id);
+    const stored = await row(invoice.id);
+    remoteEvents.push({
+      id: String(9007199254740993300n + BigInt(++serial)),
+      invoice_id: stored.remote_invoice_id!,
+      status_code: status,
+      created_at: "2026-10-16T10:00:00Z",
+      status_text: "Événement fictif",
+    });
+    const before = paymentSendCount;
+    const blocked = await sendReceipt(invoice.id, recorded.payments[0].id);
+    assert.equal(blocked.payments[0].status, "recorded");
+    assert.equal(
+      blocked.payments[0].last_error_code,
+      "SUPERPDP_PAYMENT_HISTORY",
+    );
+    assert.equal(paymentSendCount, before);
+  }
+});
+
+test("encaissements : un avoir local émis bloque les nouveaux mouvements et les envois en attente", async () => {
+  const invoice = await b2cInvoice();
+  const recorded = await recordReceipt(invoice.id);
+  const id = recorded.payments[0].id;
+  await within(() => paymentsService.send(invoice.id, id, actor));
+  await newInvoice({ credited_invoice_id: invoice.id }, { credit: true });
+  const before = paymentSendCount;
+  assert.equal(
+    (await within(() => paymentsService.view(invoice.id))).available,
+    false,
+  );
+  await assert.rejects(
+    recordReceipt(invoice.id, receipt(1, "BANK-AFTER-CREDIT", "1.00")),
+    /avoir/,
+  );
+  await within(() => paymentsService.process(id));
+  const journal = await within(() => paymentsService.view(invoice.id));
+  assert.equal(journal.payments[0].status, "recorded");
+  assert.equal(
+    journal.payments[0].last_error_code,
+    "SUPERPDP_PAYMENT_CREDITED",
+  );
+  assert.equal(paymentSendCount, before);
 });
 
 test("une entreprise de production retournée lors de l’exécution reste refusée avant conversion ou dépôt", async () => {

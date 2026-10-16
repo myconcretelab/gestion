@@ -36,6 +36,7 @@ if (databaseUrl) {
 export const systemPrisma = new PrismaClient();
 
 const TENANT_MODELS = new Set([
+  "ElectronicInvoicePayment",
   "InstallationConfig", "ContentTemplateVersion", "Gite", "GitePhoto", "WordPressWebhookJob",
   "Gestionnaire", "FiscalEntity", "FiscalEstablishment", "SuperPdpConnection", "SuperPdpOAuthState", "ElectronicInvoiceTransmission", "ElectronicInvoiceEvent", "SuperPdpInboxSync", "IncomingInvoice", "SuperPdpInboxEvent", "AppUser", "Membership", "OrganizationSettings", "ApiToken", "DocumentShare",
   "ExpenseCategory", "ExpenseRecurringRule", "ExpenseEntry", "UrssafDeclaration", "GuestNightDeclaration",
