@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { InvoiceFiscalInput } from "@contrats/shared";
+import InvoiceFiscalEditor from "./shared/InvoiceFiscalEditor";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Facture, ContratOptions, Reservation } from "../utils/types";
@@ -88,6 +90,8 @@ const getValidationFieldErrors = (error: unknown): FieldErrors =>
   extractValidationFieldErrors(error, contractFieldKeySet, "date_fin");
 
 const FactureFormPage = () => {
+  const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput | null>(null);
+  const fiscalContextRef = useRef<string | null>(null);
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
@@ -245,6 +249,7 @@ const FactureFormPage = () => {
       .then((data) => {
         if (!active) return;
         setEditingContract(data);
+        setFiscalInput(data.fiscal_input ?? null);
         setGiteId(data.gite_id);
         setLocataireNom(data.locataire_nom);
         setLocataireAdresse(data.locataire_adresse);
@@ -564,6 +569,7 @@ const FactureFormPage = () => {
 
   const previewPayload = useMemo(() => {
     const payload: any = {
+      fiscal_input: fiscalInput,
       gite_id: giteId,
       locataire_nom: locataireNom,
       locataire_adresse: locataireAdresse,
@@ -593,6 +599,7 @@ const FactureFormPage = () => {
 
     return payload;
   }, [
+    fiscalInput,
     giteId,
     locataireNom,
     locataireAdresse,
@@ -617,6 +624,14 @@ const FactureFormPage = () => {
   ]);
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
+  const fiscalContextKey = JSON.stringify({ ...previewPayload, fiscal_input: undefined });
+  useEffect(() => {
+    if (isEdit && !editingContract) return;
+    if (fiscalContextRef.current !== null && fiscalContextRef.current !== fiscalContextKey) {
+      setFiscalInput((previous) => previous ? { ...previous, reviewed: false, tourist_tax_reviewed: false } : null);
+    }
+    fiscalContextRef.current = fiscalContextKey;
+  }, [fiscalContextKey, isEdit, editingContract]);
 
   const previewDatesValid = useMemo(() => {
     return isDocumentDateRangeValid(dateDebut, dateFin);
@@ -633,7 +648,9 @@ const FactureFormPage = () => {
   });
 
   const previewOverflowStatus =
-    !previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after
+    !previewLoading && !previewError && previewOverflow?.after
+      ? { tone: "error" as const, message: "Le détail dépasse une page : réduisez le texte ou répartissez les réservations avant validation." }
+      : !previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after
         ? {
             tone: "ok" as const,
             message: "Dépassement détecté puis corrigé : après ajustement, la page 1 ne dépasse plus.",
@@ -1410,6 +1427,8 @@ const FactureFormPage = () => {
           </label>
         </div>
       </div>
+
+      <InvoiceFiscalEditor value={fiscalInput} onChange={setFiscalInput} payload={previewPayload} expectedTotal={(isMultiReservation ? selectedReservationsTotal : totals?.totalGlobal ?? 0) + fraisSupplementairesTotal} />
 
       <div className="card">
         <div className="section-title">{isEdit ? "Mise à jour" : "Création"}</div>

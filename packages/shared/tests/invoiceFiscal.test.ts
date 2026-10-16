@@ -1,0 +1,223 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  computeInvoiceFiscal,
+  emptyInvoiceFiscalInput,
+  invoiceFiscalInputSchema,
+  invoiceFiscalIssues,
+} from "../src/invoiceFiscal.js";
+
+const sample = () => {
+  const input = emptyInvoiceFiscalInput();
+  input.buyer = {
+    kind: "individual",
+    address_line1: "1 rue Exemple",
+    address_line2: "",
+    postal_code: "35000",
+    city: "Rennes",
+    country_code: "FR",
+    siren: "",
+    vat_number: "",
+  };
+  input.lines = [
+    {
+      id: "stay",
+      label: "Location remise déduite",
+      quantity: 1,
+      unit: "C62",
+      unit_price_ttc: 110,
+      vat_category: "S",
+      vat_rate: 10,
+      exemption_reason: "",
+    },
+    {
+      id: "clean",
+      label: "Ménage",
+      quantity: 1,
+      unit: "C62",
+      unit_price_ttc: 24,
+      vat_category: "S",
+      vat_rate: 20,
+      exemption_reason: "",
+    },
+  ];
+  input.paid_amount = 30;
+  input.payment_terms = "À réception";
+  input.reviewed = true;
+  input.tourist_tax_reviewed = true;
+  return input;
+};
+
+test("calcul TTC conservé, plusieurs taux et sommes réellement reçues", () => {
+  const input = sample();
+  const result = computeInvoiceFiscal(input);
+  assert.equal(result.net_cents, 12000);
+  assert.equal(result.vat_cents, 1400);
+  assert.equal(result.gross_cents, 13400);
+  assert.equal(result.due_cents, 10400);
+  assert.deepEqual(
+    result.breakdown.map((group) => group.vat_cents),
+    [1000, 400],
+  );
+  assert.deepEqual(
+    invoiceFiscalIssues(input, 134, {
+      sellerVatNumber: "FR01732829320",
+      vatRegime: "reel_normal",
+    }),
+    [],
+  );
+});
+
+test("arrondis monétaires déterministes et TVA arrondie par catégorie/taux", () => {
+  const input = sample();
+  input.lines = Array.from({ length: 3 }, (_, i) => ({
+    ...input.lines[0],
+    id: String(i),
+    unit_price_ttc: 0.03,
+    vat_rate: 20,
+  }));
+  input.paid_amount = 0;
+  const totals = computeInvoiceFiscal(input);
+  assert.equal(totals.net_cents, 9);
+  assert.equal(totals.vat_cents, 2);
+  assert.equal(totals.rounding_cents, -2);
+  assert.equal(
+    totals.total_with_vat_cents + totals.rounding_cents,
+    totals.gross_cents,
+  );
+  assert.equal(totals.due_cents, 9);
+  input.lines = [{ ...input.lines[0], quantity: 1.125, unit_price_ttc: 0.04 }];
+  assert.equal(computeInvoiceFiscal(input).gross_cents, 5);
+});
+
+test("les brouillons sont partiels, les valeurs malformées sont refusées sans exception inattendue", () => {
+  assert.ok(
+    invoiceFiscalInputSchema.safeParse(emptyInvoiceFiscalInput()).success,
+  );
+  for (const date of ["2026-02-30", "2026-99-99", "pas une date"])
+    assert.equal(
+      invoiceFiscalInputSchema.safeParse({
+        ...sample(),
+        payment_due_date: date,
+      }).success,
+      false,
+    );
+  assert.equal(
+    invoiceFiscalInputSchema.safeParse({ ...sample(), paid_amount: 0.001 })
+      .success,
+    false,
+  );
+  assert.equal(
+    invoiceFiscalInputSchema.safeParse({
+      ...sample(),
+      lines: [sample().lines[0], sample().lines[0]],
+    }).success,
+    false,
+  );
+  assert.equal(
+    invoiceFiscalInputSchema.safeParse({
+      ...sample(),
+      lines: [{ ...sample().lines[0], quantity: -1 }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    invoiceFiscalInputSchema.safeParse({
+      ...sample(),
+      lines: [{ ...sample().lines[0], vat_category: "AE" }],
+    }).success,
+    false,
+  );
+});
+
+test("le rapprochement bloque tout écart de TTC et les trop-perçus", () => {
+  const input = sample();
+  assert.match(invoiceFiscalIssues(input, 133.99).join(), /total TTC/);
+  input.paid_amount = 135;
+  assert.match(invoiceFiscalIssues(input, 134).join(), /réellement reçu/);
+});
+
+test("franchise, exonération et taux zéro restent des catégories distinctes", () => {
+  const input = sample();
+  assert.match(
+    invoiceFiscalIssues(input, 134, { vatRegime: "franchise_en_base" }).join(),
+    /franchise/,
+  );
+  input.lines = [
+    {
+      ...input.lines[0],
+      unit_price_ttc: 134,
+      vat_category: "E",
+      vat_rate: 0,
+      exemption_reason: "TVA non applicable, article 293 B du CGI",
+    },
+  ];
+  assert.deepEqual(
+    invoiceFiscalIssues(input, 134, { vatRegime: "franchise_en_base" }),
+    [],
+  );
+  assert.equal(computeInvoiceFiscal(input).vat_cents, 0);
+  input.lines[0].exemption_reason = "";
+  assert.match(invoiceFiscalIssues(input, 134).join(), /motif/);
+});
+
+test("hors champ ne se mélange pas avec d’autres catégories ni des identifiants TVA", () => {
+  const input = sample();
+  input.lines[0] = {
+    ...input.lines[0],
+    vat_category: "O",
+    vat_rate: 0,
+    exemption_reason: "Hors champ vérifié",
+  };
+  assert.match(invoiceFiscalIssues(input, 134).join(), /mélangé/);
+  input.lines = [input.lines[0]];
+  assert.match(
+    invoiceFiscalIssues(input, 110, {
+      sellerVatNumber: "FR01732829320",
+    }).join(),
+    /numéros de TVA/,
+  );
+});
+
+test("clients professionnels français : SIREN et cohérence TVA obligatoires", () => {
+  const input = sample();
+  input.buyer.kind = "business";
+  assert.match(invoiceFiscalIssues(input, 134).join(), /SIREN/);
+  input.buyer.siren = "732829320";
+  input.buyer.vat_number = "FR00123456789";
+  assert.match(invoiceFiscalIssues(input, 134).join(), /correspondre/);
+  input.buyer.country_code = "BE";
+  input.buyer.siren = "";
+  input.buyer.vat_number = "BE0123456789";
+  assert.ok(
+    !invoiceFiscalIssues(input, 134).some((issue) => /SIREN/.test(issue)),
+  );
+});
+
+test("aucune TVA ni taxe de séjour supposée et revue explicite avant émission", () => {
+  const input = sample();
+  input.reviewed = false;
+  input.tourist_tax_reviewed = false;
+  input.lines[0].vat_category = "unknown";
+  const issues = invoiceFiscalIssues(input, 134, { touristTax: 4 });
+  assert.match(issues.join(), /traitement de TVA/);
+  assert.match(issues.join(), /taxe de séjour/);
+  assert.match(issues.join(), /Confirmez/);
+  assert.match(invoiceFiscalIssues(null, 10).join(), /Préparez/);
+});
+
+test("les avoirs utilisent des montants positifs EN16931 sans acompte de la source", () => {
+  const input = sample();
+  assert.match(
+    invoiceFiscalIssues(input, -134, { credit: true }).join(),
+    /avoir intégral/,
+  );
+  input.paid_amount = 0;
+  assert.deepEqual(
+    invoiceFiscalIssues(input, -134, {
+      credit: true,
+      sellerVatNumber: "FR01732829320",
+    }),
+    [],
+  );
+});

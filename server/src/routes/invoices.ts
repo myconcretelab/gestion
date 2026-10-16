@@ -1,5 +1,7 @@
 import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
+import { invoiceFiscalInputSchema, invoiceFiscalIssues, computeInvoiceFiscal } from "@contrats/shared";
+import { parseInvoiceFiscal, proposeInvoiceFiscal } from "../modules/documents/invoiceFiscal.js";
 import path from "path";
 import fs from "fs/promises";
 import crypto from "node:crypto";
@@ -91,6 +93,7 @@ const addInvoiceExtraFeesToTotals = (totals: ContractTotals, fees: InvoiceExtraF
 };
 
 const invoiceSchema = z.object({
+  fiscal_input: invoiceFiscalInputSchema.nullable().optional(),
   revision: z.number().int().nonnegative().optional(),
   gite_id: z.string().min(1),
   locataire_nom: z.string().min(1),
@@ -134,6 +137,7 @@ const sendEmailSchema = z.object({
 });
 
 const previewSchema = z.object({
+  fiscal_input: invoiceFiscalInputSchema.nullable().optional(),
   gite_id: z.string().min(1),
   locataire_nom: z.string().optional().default(""),
   locataire_adresse: z.string().optional().default(""),
@@ -197,6 +201,15 @@ const hydrateInvoice = (contrat: any) => ({
   immutable_snapshot: undefined,
   original_invoice: contrat.original_invoice ? { id: contrat.original_invoice.id, numero_facture: contrat.original_invoice.numero_facture } : null,
   issuer: invoiceSeller(contrat) ?? null,
+  fiscal_data: undefined,
+  fiscal_input: parseInvoiceFiscal(contrat.fiscal_data),
+  fiscal_totals: parseInvoiceFiscal(contrat.fiscal_data) ? computeInvoiceFiscal(parseInvoiceFiscal(contrat.fiscal_data)!) : null,
+  fiscal_issues: contrat.document_kind === "credit_note" && !parseInvoiceFiscal(contrat.fiscal_data) && !fromJsonString<any>(contrat.original_invoice?.immutable_snapshot, null)?.structured_invoice ? [] : invoiceFiscalIssues(parseInvoiceFiscal(contrat.fiscal_data), toNumber(contrat.solde_montant) + toNumber(contrat.arrhes_montant), {
+    vatRegime: fromJsonString<any>(contrat.immutable_snapshot, null)?.issuer?.entity?.vat_regime ?? fromJsonString<any>(contrat.original_invoice?.immutable_snapshot, null)?.issuer?.entity?.vat_regime ?? contrat.gite?.fiscal_establishment?.fiscal_entity?.vat_regime,
+    sellerVatNumber: invoiceSeller(contrat)?.vat_number,
+    touristTax: Math.abs(toNumber(contrat.taxe_sejour_calculee ?? 0)) || (fromJsonString<unknown[]>(contrat.reservation_items, []).length >= 2 ? 1 : 0), credit: contrat.document_kind === "credit_note",
+  }),
+  structured_available: !!fromJsonString<any>(contrat.immutable_snapshot, null)?.structured_invoice,
 });
 
 const toInvoiceRenderInput = (invoice: any): InvoiceRenderInput => ({
@@ -404,6 +417,7 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
   if (data.arrhes_date_limite) ensureValidDate(arrhesDateLimite, "arrhes_date_limite");
 
   const invoiceForPdf: InvoiceRenderInput = {
+    fiscal: data.fiscal_input ?? null,
     numero_facture: "BROUILLON",
     lifecycle_status: "draft",
     seller: invoiceSeller({ lifecycle_status: "draft", gite }),
@@ -483,6 +497,27 @@ router.post("/preview-html", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+router.post("/fiscal-preview", async (req, res, next) => {
+  try {
+    const context = await buildPreviewContext(req.body);
+    if ("error" in context) return res.status(context.error.status).json({ error: context.error.message });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ fiscal_input: proposeInvoiceFiscal(context.invoiceForPdf, context.totals), total_ttc: context.totals.totalGlobal, tourist_tax: context.totals.taxeSejourCalculee });
+  } catch (error) { next(error); }
+});
+
+router.get("/:id/structured", async (req, res, next) => {
+  try {
+    const invoice = await prisma.facture.findUnique({ where: { id: req.params.id } });
+    if (!invoice) return res.status(404).json({ error: "Facture introuvable" });
+    const structured = fromJsonString<any>(invoice.immutable_snapshot, null)?.structured_invoice;
+    if (invoice.lifecycle_status !== "issued" || !structured) throw invoiceError("Aucun instantané fiscal structuré émis n’est disponible pour ce document.");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Disposition", `attachment; filename="${invoice.id}-structured.json"`);
+    res.json(structured);
+  } catch (error) { next(error); }
 });
 
 router.get("/:id", async (req, res, next) => {
@@ -599,6 +634,7 @@ router.post("/", async (req, res, next) => {
         numero_facture: numeroFacture,
         lifecycle_status: "draft",
         calculation_snapshot: buildInvoiceCalculation(gite, invoiceTotals),
+        fiscal_data: data.fiscal_input ? JSON.stringify(data.fiscal_input) : null,
         gite_id: data.gite_id,
         locataire_nom: data.locataire_nom,
         locataire_adresse: data.locataire_adresse,
@@ -767,6 +803,7 @@ router.put("/:id", async (req, res, next) => {
           clauses: encodeJsonField(data.clauses ?? {}),
           pdf_path: pdfRelativePath,
           calculation_snapshot: buildInvoiceCalculation(gite, invoiceTotals),
+          fiscal_data: data.fiscal_input ? JSON.stringify(data.fiscal_input) : null,
           revision: { increment: 1 },
           statut_paiement: data.statut_paiement ?? "non_reglee",
           notes: data.notes ?? null,

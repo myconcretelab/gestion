@@ -89,7 +89,8 @@ before(async () => {
       recursive: true,
       filter: (file) =>
         !file.includes("20261016100000_fiscal_entities") &&
-        !file.includes("20261016120000_invoice_lifecycle"),
+        !file.includes("20261016120000_invoice_lifecycle") &&
+        !file.includes("20261016150000_invoice_fiscal_data"),
     },
   );
   migrate(oldSchema);
@@ -234,6 +235,7 @@ test("la migration conserve les propriétaires, factures, PDF référencés et c
     priorInvoice,
   );
   assert.equal(migratedInvoice.lifecycle_status, "legacy");
+  assert.equal(migratedInvoice.fiscal_data, null);
   assert.equal(migratedInvoice.issued_at, null);
   assert.deepEqual(
     (

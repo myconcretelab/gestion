@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import { computeInvoiceFiscal, type InvoiceFiscalInput } from "@contrats/shared";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
 import { env } from "../config/env.js";
@@ -101,6 +102,7 @@ export type ContractRenderInput = {
 };
 
 export type InvoiceRenderInput = {
+  fiscal?: InvoiceFiscalInput | null;
   numero_facture: string;
   lifecycle_status?: string;
   document_kind?: string;
@@ -1038,6 +1040,8 @@ const prepareContractPage = async (page: Page, html: string) => {
   await page.setViewportSize(viewport);
   await page.setContent(html, { waitUntil: "load" });
   await page.emulateMedia({ media: "print" });
+  // Stabilize font metrics before measuring/compacting, not only when Chromium prints.
+  await page.evaluate(async () => { await document.fonts.ready; });
   return applyCompactionIfOverflow(page);
 };
 
@@ -1318,7 +1322,8 @@ const buildInvoiceHtml = async (params: {
     remiseMontantValue > 0 ? `<tr><td>${remiseLabelHtml}</td><td>- ${formatEuro(remiseMontantValue)}</td></tr>` : "";
   const acompteRowHtml =
     acompteMontantValue > 0 ? `<tr><td>Acompte reçu</td><td>- ${formatEuro(acompteMontantValue)}</td></tr>` : "";
-  const notesBlockHtml = notesHtml ? `<div class="box"><div class="section-title">Notes</div>${notesHtml}</div>` : "";
+  const creditReferenceHtml = params.invoice.document_kind === "credit_note" ? `<p>Annulation intégrale de la facture ${escapeHtml(params.invoice.source_invoice_number ?? "")}</p>` : "";
+  const notesBlockHtml = notesHtml || creditReferenceHtml ? `<div class="box"><div class="section-title">Notes</div>${notesHtml}${creditReferenceHtml}</div>` : "";
   const soldeLabel = params.invoice.document_kind === "credit_note" ? "Montant de l’avoir" : statutPaiement === "reglee" ? "Montant déjà payé" : "Reste à régler";
   const nbNuits = params.totals.nbNuits;
   const nightsLabel = formatCountLabel(nbNuits, "nuit");
@@ -1348,6 +1353,14 @@ const buildInvoiceHtml = async (params: {
           params.invoice.arrhes_date_limite
         )}</span></div>`;
 
+  const fiscal = params.invoice.fiscal;
+  const sign = params.invoice.document_kind === "credit_note" ? -1 : 1;
+  const fiscalTotals = fiscal ? computeInvoiceFiscal(fiscal) : null;
+  const fiscalMoney = (cents: number) => formatEuro(cents === 0 ? 0 : sign * cents / 100);
+  const fiscalUnitLabels = { C62: "forfait(s)", DAY: "jour(s)", E48: "prestation(s)" };
+  const fiscalRows = fiscalTotals?.lines.map((line) => `<tr><td>${escapeHtml(line.label)}<div class="invoice-item-meta">${escapeHtml(String(line.quantity))} ${escapeHtml(fiscalUnitLabels[line.unit])} · HT ${fiscalMoney(line.net_cents)} · ${line.vat_category === "unknown" ? "TVA à préciser" : line.vat_category === "S" ? `TVA ${escapeHtml(String(line.vat_rate))} %` : escapeHtml(line.vat_category)}${line.exemption_reason ? ` · ${escapeHtml(line.exemption_reason)}` : ""}</div></td><td>${fiscalMoney(line.gross_cents)}</td></tr>`).join("");
+  const fiscalSummary = fiscalTotals ? `<tr><td>Total HT</td><td>${fiscalMoney(fiscalTotals.net_cents)}</td></tr>${fiscalTotals.breakdown.map((group) => `<tr><td>TVA ${escapeHtml(group.category === "unknown" ? "à préciser" : group.category)}${group.category === "S" ? ` · ${escapeHtml(String(group.rate))} %` : ""}${group.reason ? `<div class="invoice-item-meta">${escapeHtml(group.reason)}</div>` : ""}</td><td>${fiscalMoney(group.vat_cents)}</td></tr>`).join("")}${fiscalTotals.rounding_cents ? `<tr><td>Arrondi TTC</td><td>${fiscalMoney(fiscalTotals.rounding_cents)}</td></tr>` : ""}` : "";
+
   return renderTemplate(template, {
     organizationName: params.invoice.seller?.legal_name || organization?.publicDisplayName || organization?.tradeName || params.gite.proprietaires_noms,
     documentTitle: params.invoice.lifecycle_status === "draft" ? params.invoice.document_kind === "credit_note" ? "BROUILLON D’AVOIR" : "BROUILLON" : params.invoice.document_kind === "credit_note" ? "AVOIR" : "FACTURE",
@@ -1356,7 +1369,7 @@ const buildInvoiceHtml = async (params: {
     invoiceNumber: params.invoice.lifecycle_status === "draft" ? "Non émis — sans numéro définitif" : params.invoice.numero_facture,
     emissionDate: new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris" }).format(params.invoice.issued_at ? new Date(params.invoice.issued_at) : new Date()),
     metaGridClass,
-    echeanceMetaHtml,
+    echeanceMetaHtml: fiscal && !params.invoice.document_kind?.includes("credit") ? fiscal.payment_due_date ? `<div><span class="meta-label">Échéance du solde</span><span class="meta-value">${escapeHtml(fiscal.payment_due_date.split("-").reverse().join("/"))}</span></div>` : "" : echeanceMetaHtml,
     giteName: isMultiReservation
       ? reservationGiteCount === 1
         ? reservationItems[0].gite_nom
@@ -1367,7 +1380,7 @@ const buildInvoiceHtml = async (params: {
     proprietairesAdresse: params.invoice.seller?.address ?? params.gite.proprietaires_adresse,
     proprietairesContactHtml: buildProprietairesContactHtml(params.gite),
     clientNom: params.invoice.locataire_nom,
-    clientAdresseHtml: buildLocataireAdresseHtml(params.invoice.locataire_adresse),
+    clientAdresseHtml: fiscal ? buildLocataireAdresseHtml([fiscal.buyer.address_line1, fiscal.buyer.address_line2, `${fiscal.buyer.postal_code} ${fiscal.buyer.city}`.trim(), fiscal.buyer.country_code, fiscal.buyer.siren ? `SIREN : ${fiscal.buyer.siren}` : "", fiscal.buyer.vat_number ? `TVA : ${fiscal.buyer.vat_number}` : ""].filter(Boolean).join("\n")) : buildLocataireAdresseHtml(params.invoice.locataire_adresse),
     clientTelLineHtml,
     periodStart: formatOptionalDate(params.invoice.date_debut),
     periodEnd: formatOptionalDate(params.invoice.date_fin),
@@ -1375,16 +1388,19 @@ const buildInvoiceHtml = async (params: {
     occupancyLabel: isMultiReservation
       ? `${reservationGiteCount} gîte${reservationGiteCount > 1 ? "s" : ""}`
       : occupancyLabel,
-    invoiceRowsHtml: `${invoiceRowsHtml}${extraFeesRowsHtml}`,
+    invoiceRowsHtml: fiscalRows ?? `${invoiceRowsHtml}${extraFeesRowsHtml}`,
+    fiscalSummaryHtml: fiscalSummary,
+    invoiceAmountHeading: fiscal ? "Montant TTC" : "Montant",
+    invoiceSubtotalLabel: fiscal ? "Total TTC" : "Sous-total",
     taxeSejour: formatEuro(params.totals.taxeSejourCalculee),
     totalGlobal: formatEuro(params.totals.totalGlobal),
-    acompteRowHtml,
-    soldeLabel,
-    soldeMontant: formatEuro(toNumber(params.invoice.solde_montant)),
+    acompteRowHtml: fiscalTotals ? fiscalTotals.paid_cents ? `<tr><td>Sommes réellement reçues</td><td>- ${formatEuro(fiscalTotals.paid_cents / 100)}</td></tr>` : "" : acompteRowHtml,
+    soldeLabel: fiscalTotals && sign > 0 ? "Reste à régler à l’émission" : soldeLabel,
+    soldeMontant: fiscalTotals ? fiscalMoney(fiscalTotals.due_cents) : formatEuro(toNumber(params.invoice.solde_montant)),
     iban: params.gite.iban,
     bic: params.gite.bic ?? "—",
     titulaire: params.gite.titulaire,
-    notesBlockHtml,
+    notesBlockHtml: `${notesBlockHtml}${fiscal?.payment_terms && sign > 0 ? `<div class="box"><div class="section-title">Conditions de paiement</div><p>${escapeHtml(fiscal.payment_terms)}</p></div>` : ""}`,
   });
 };
 
@@ -1403,7 +1419,8 @@ export const generateInvoicePdf = async (params: {
 
   await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
   await withPageRetry(async (page) => {
-    await prepareContractPage(page, html);
+    const layout = await prepareContractPage(page, html);
+    if (layout.overflowAfter) throw Object.assign(new Error("Le détail de cette facture dépasse la page imprimable, même après ajustement. Réduisez le texte ou répartissez les réservations entre plusieurs factures avant validation."), { status: 409 });
     await page.pdf({
       path: params.outputPath,
       ...pdfBaseOptions,

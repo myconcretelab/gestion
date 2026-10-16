@@ -262,6 +262,9 @@ const FactureDetailPage = () => {
         {facture.lifecycle_status === "draft" && <p className="note">Ce document est un brouillon. Sa validation lui attribuera un numéro définitif et figera son contenu. L’envoi par e-mail sera alors disponible.</p>}
         {facture.issuer && <p>{facture.lifecycle_status === "draft" ? "Émetteur prévu" : "Émetteur"} : {facture.issuer.legal_name} · SIREN {facture.issuer.siren || "à compléter"} · SIRET {facture.issuer.siret || "à compléter"}</p>}
         {facture.issued_at && <p>Émis le {formatDate(facture.issued_at)}. Le suivi du paiement ne modifie pas le PDF archivé.</p>}
+        {facture.lifecycle_status === "draft" && !!facture.fiscal_issues?.length && <div className="note"><p>À compléter avant validation :</p><ul>{facture.fiscal_issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+        {facture.fiscal_totals && <p>Détail fiscal : HT {formatEuro(facture.fiscal_totals.net_cents / 100)} · TVA {formatEuro(facture.fiscal_totals.vat_cents / 100)} · TTC {formatEuro(facture.fiscal_totals.gross_cents / 100)}{facture.document_kind === "credit_note" ? " (montants annulés par l’avoir)" : ""}.</p>}
+        {facture.structured_available && <p><a href={`/api/invoices/${facture.id}/structured`} target="_blank" rel="noreferrer">Exporter l’instantané fiscal structuré</a> · Préparation locale, non transmise à SuperPDP.</p>}
         {facture.lifecycle_status === "legacy" && <p className="note">Document historique conservé avec son numéro et son PDF d’origine. Les corrections nécessitent une reprise vérifiée de son émetteur et de ses montants.</p>}
         {facture.original_invoice && <p>Avoir de la <Link to={`/factures/${facture.original_invoice.id}`}>facture {facture.original_invoice.numero_facture}</Link>.</p>}
         {facture.credit_notes?.map((credit) => <p key={credit.id}><Link to={`/factures/${credit.id}`}>{credit.lifecycle_status === "draft" ? "Consulter le brouillon d’avoir" : `Consulter l’avoir ${credit.numero_facture}`}</Link></p>)}
@@ -329,17 +332,17 @@ const FactureDetailPage = () => {
               {isPaid ? facture.document_kind === "credit_note" ? "Traité" : "Réglée" : "En attente"}
             </div>
             <div className="arrhes-meta">
-              Acompte: {formatEuro(facture.arrhes_montant)}
+              {facture.fiscal_totals ? `Sommes reçues à l’émission : ${formatEuro(facture.fiscal_totals.paid_cents / 100)}` : `Acompte : ${formatEuro(facture.arrhes_montant)}`}
             </div>
             <div className="arrhes-meta">
-              Solde: {formatEuro(facture.solde_montant)}
+              {facture.fiscal_totals ? `Reste à régler à l’émission : ${formatEuro((facture.document_kind === "credit_note" ? -1 : 1) * facture.fiscal_totals.due_cents / 100)}` : `Solde : ${formatEuro(facture.solde_montant)}`}
             </div>
           </div>
 
           <div className="detail-block detail-block--contact">
             <div className="detail-item">
               <span className="detail-label">Adresse</span>
-              <span className="detail-value">{facture.locataire_adresse}</span>
+              <span className="detail-value">{facture.fiscal_input ? [facture.fiscal_input.buyer.address_line1, facture.fiscal_input.buyer.address_line2, facture.fiscal_input.buyer.postal_code, facture.fiscal_input.buyer.city, facture.fiscal_input.buyer.country_code].filter(Boolean).join(" · ") : facture.locataire_adresse}</span>
             </div>
             <div className="detail-item">
               <span className="detail-label">Email</span>
@@ -372,7 +375,7 @@ const FactureDetailPage = () => {
             {facture.document_kind !== "credit_note" && <div className="detail-item">
               <span className="detail-label">Échéance</span>
               <span className="detail-value">
-                {formatDate(facture.arrhes_date_limite)}
+                {facture.fiscal_input ? facture.fiscal_input.payment_due_date ? formatDate(facture.fiscal_input.payment_due_date) : "Voir les conditions de paiement" : formatDate(facture.arrhes_date_limite)}
               </span>
             </div>}
           </div>

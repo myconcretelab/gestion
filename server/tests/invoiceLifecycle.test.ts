@@ -68,10 +68,38 @@ const createDraft = async (
   overrides: Record<string, unknown> = {},
   organizationId = orgA,
 ) => {
+  const prepared = await request(
+    "/invoices/fiscal-preview",
+    "POST",
+    { ...payload, ...overrides },
+    organizationId,
+  );
+  assert.equal(prepared.status, 200, JSON.stringify(prepared.body));
+  const fiscal = prepared.body.fiscal_input;
+  fiscal.buyer = {
+    kind: "individual",
+    address_line1: overrides.locataire_adresse === "" ? "" : "2 rue Client",
+    address_line2: "",
+    postal_code: "35000",
+    city: "Rennes",
+    country_code: "FR",
+    siren: "",
+    vat_number: "",
+  };
+  fiscal.lines = fiscal.lines.map((line: Record<string, unknown>) => ({
+    ...line,
+    vat_category: "E",
+    vat_rate: 0,
+    exemption_reason: "TVA non applicable, article 293 B du CGI",
+  }));
+  fiscal.reviewed = true;
+  fiscal.tourist_tax_reviewed = true;
+  fiscal.paid_amount = 60;
+  fiscal.payment_terms = "Solde avant l’arrivée";
   const result = await request(
     "/invoices",
     "POST",
-    { ...payload, ...overrides },
+    { ...payload, fiscal_input: fiscal, ...overrides },
     organizationId,
   );
   assert.equal(result.status, 201, JSON.stringify(result.body));
@@ -207,6 +235,7 @@ test("la validation fige l’émetteur, les montants et les octets PDF ; les ret
   const saved = await request(`/invoices/${invoice.id}`, "PUT", {
     ...payload,
     revision: invoice.revision,
+    fiscal_input: invoice.fiscal_input,
     locataire_nom: "Client modifié",
   });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
@@ -262,6 +291,14 @@ test("la validation fige l’émetteur, les montants et les octets PDF ; les ret
   const archive = JSON.parse(row.immutable_snapshot!);
   assert.equal(archive.calculation.totals.totalGlobal, 330);
   assert.equal(archive.issuer.entity.legal_name, "Entreprise a");
+  assert.equal(archive.structured_invoice.en_invoice_candidate.type_code, 380);
+  assert.equal(
+    archive.structured_invoice.en_invoice_candidate.totals.total_with_vat,
+    "330.00",
+  );
+  assert.equal(archive.structured_invoice.transport_ready, false);
+  const structured = await request(`/invoices/${invoice.id}/structured`);
+  assert.equal(structured.status, 200);
   assert.equal(row.immutable_snapshot!.includes("never-in-snapshot"), false);
   const pdf = await request(`/invoices/${invoice.id}/pdf`);
   assert.equal(pdf.status, 200);
@@ -375,6 +412,18 @@ test("un avoir intégral conserve la source et utilise l’émetteur et les mont
   assert.equal(issued.status, 200, JSON.stringify(issued.body));
   assert.match(issued.body.numero_facture, /000002$/);
   assert.equal(issued.body.issuer.legal_name, "Entreprise a");
+  const structured = await request(`/invoices/${credit.body.id}/structured`);
+  assert.equal(structured.body.en_invoice_candidate.type_code, 381);
+  assert.equal(
+    structured.body.en_invoice_candidate.totals.total_with_vat,
+    "330.00",
+  );
+  assert.equal(structured.body.en_invoice_candidate.totals.paid_amount, "0.00");
+  assert.equal(
+    structured.body.en_invoice_candidate.preceding_invoice_references[0]
+      .reference,
+    original.numero_facture,
+  );
   assert.equal(
     (await request(`/invoices/${original.id}`)).body.credit_notes[0].id,
     credit.body.id,
@@ -529,5 +578,207 @@ test("les contrôles d’émetteur et d’adresse client précèdent l’attribu
       })
     ).last_number,
     counterBefore,
+  );
+});
+
+test("le détail fiscal incomplet ou déséquilibré bloque avant le compteur et reste modifiable", async () => {
+  const previous = await db.systemPrisma.invoiceSequence.findFirstOrThrow({
+    where: { organization_id: orgA },
+  });
+  let draft = await createDraft({ fiscal_input: null });
+  assert.equal(
+    (await request(`/invoices/${draft.id}/issue`, "POST", { revision: 0 }))
+      .status,
+    409,
+  );
+  assert.equal((await request(`/invoices/${draft.id}/structured`)).status, 409);
+  draft = await createDraft();
+  for (const patch of [
+    { reviewed: false },
+    { tourist_tax_reviewed: false },
+    { buyer: { ...draft.fiscal_input.buyer, kind: "business", siren: "" } },
+    {
+      lines: draft.fiscal_input.lines.map((line: Record<string, unknown>) => ({
+        ...line,
+        vat_category: "unknown",
+        exemption_reason: "",
+      })),
+    },
+    {
+      lines: draft.fiscal_input.lines.map((line: Record<string, unknown>) => ({
+        ...line,
+        unit_price_ttc: Number(line.unit_price_ttc) + 0.01,
+      })),
+    },
+  ]) {
+    const changed = await request(`/invoices/${draft.id}`, "PUT", {
+      ...payload,
+      revision: draft.revision,
+      fiscal_input: { ...draft.fiscal_input, ...patch },
+    });
+    assert.equal(changed.status, 200, JSON.stringify(changed.body));
+    const rejected = await request(`/invoices/${draft.id}/issue`, "POST", {
+      revision: changed.body.revision,
+    });
+    assert.equal(rejected.status, 409, JSON.stringify(rejected.body));
+    draft.revision = changed.body.revision;
+  }
+  assert.equal(
+    (
+      await db.systemPrisma.invoiceSequence.findFirstOrThrow({
+        where: { organization_id: orgA },
+      })
+    ).last_number,
+    previous.last_number,
+  );
+  const malformed = await request(`/invoices/${draft.id}`, "PUT", {
+    ...payload,
+    revision: draft.revision,
+    fiscal_input: { ...draft.fiscal_input, payment_due_date: "2026-99-99" },
+  });
+  assert.equal(malformed.status, 400);
+});
+
+test("TVA multi-taux, adresse structurée, encaissements explicites et export figé", async () => {
+  await db.systemPrisma.fiscalEntity.update({
+    where: { id: "entity-a" },
+    data: { vat_regime: "reel_normal", vat_number: "FR01732829320" },
+  });
+  const draft = await createDraft();
+  const fiscal = draft.fiscal_input;
+  fiscal.lines = [
+    {
+      ...fiscal.lines[0],
+      id: "stay",
+      label: "Location",
+      unit_price_ttc: 300,
+      vat_category: "S",
+      vat_rate: 10,
+      exemption_reason: "",
+    },
+    {
+      ...fiscal.lines[0],
+      id: "clean",
+      label: "Ménage",
+      unit_price_ttc: 999,
+      vat_category: "S",
+      vat_rate: 20,
+      exemption_reason: "",
+    },
+  ];
+  fiscal.paid_amount = 0;
+  fiscal.buyer = {
+    ...fiscal.buyer,
+    kind: "business",
+    siren: "123456789",
+    vat_number: "FR00123456789",
+    address_line1: "Adresse fiscale différente",
+  };
+  const saved = await request(`/invoices/${draft.id}`, "PUT", {
+    ...payload,
+    revision: draft.revision,
+    fiscal_input: fiscal,
+  });
+  assert.equal(saved.status, 200);
+  const issued = await request(`/invoices/${draft.id}/issue`, "POST", {
+    revision: saved.body.revision,
+  });
+  assert.equal(issued.status, 200, JSON.stringify(issued.body));
+  const exported = await request(`/invoices/${draft.id}/structured`);
+  assert.equal(
+    exported.body.en_invoice_candidate.totals.total_with_vat,
+    "1299.00",
+  );
+  assert.equal(exported.body.en_invoice_candidate.totals.paid_amount, "0.00");
+  assert.equal(
+    exported.body.en_invoice_candidate.totals.amount_due_for_payment,
+    "1299.00",
+  );
+  assert.equal(
+    exported.body.en_invoice_candidate.buyer.postal_address.address_line1,
+    "Adresse fiscale différente",
+  );
+  assert.equal(exported.body.en_invoice_candidate.vat_break_down.length, 2);
+  assert.equal(exported.body.processing_rule_candidate, "B2B");
+  assert.equal(
+    (await request(`/invoices/${draft.id}/structured`, "GET", undefined, orgB))
+      .status,
+    404,
+  );
+  await db.systemPrisma.fiscalEntity.update({
+    where: { id: "entity-a" },
+    data: {
+      vat_regime: "franchise_en_base",
+      vat_number: null,
+      legal_name: "Encore un nouveau nom",
+    },
+  });
+  await request(`/invoices/${draft.id}/payment`, "PATCH", {
+    statut_paiement: "reglee",
+  });
+  assert.deepEqual(
+    (await request(`/invoices/${draft.id}/structured`)).body,
+    exported.body,
+  );
+  const credit = await request(`/invoices/${draft.id}/credit-note`, "POST", {
+    reason: "Annulation multi-taux",
+  });
+  const issuedCredit = await request(
+    `/invoices/${credit.body.id}/issue`,
+    "POST",
+    { revision: 0 },
+  );
+  assert.equal(issuedCredit.status, 200, JSON.stringify(issuedCredit.body));
+  const creditExport = await request(`/invoices/${credit.body.id}/structured`);
+  assert.deepEqual(
+    creditExport.body.en_invoice_candidate.vat_break_down,
+    exported.body.en_invoice_candidate.vat_break_down,
+  );
+  assert.equal(creditExport.body.document_sign, -1);
+});
+
+test("les avoirs des factures émises avant le modèle fiscal restent possibles sans inventer de TVA", async () => {
+  const draft = await createDraft();
+  const legacyArchive = {
+    version: 1,
+    issuer: {
+      entity: await db.systemPrisma.fiscalEntity.findUniqueOrThrow({
+        where: { id: "entity-a" },
+      }),
+      establishment:
+        await db.systemPrisma.fiscalEstablishment.findUniqueOrThrow({
+          where: { id: "establishment-a" },
+        }),
+    },
+    calculation: JSON.parse(
+      (
+        await db.systemPrisma.facture.findUniqueOrThrow({
+          where: { id: draft.id },
+        })
+      ).calculation_snapshot!,
+    ),
+    invoice: { issued_at: new Date().toISOString() },
+  };
+  await db.systemPrisma.facture.update({
+    where: { id: draft.id },
+    data: {
+      lifecycle_status: "issued",
+      issued_at: new Date(),
+      fiscal_data: null,
+      immutable_snapshot: JSON.stringify(legacyArchive),
+    },
+  });
+  const credit = await request(`/invoices/${draft.id}/credit-note`, "POST", {
+    reason: "Source étape 2",
+  });
+  assert.equal(credit.status, 201, JSON.stringify(credit.body));
+  assert.deepEqual(credit.body.fiscal_issues, []);
+  const issued = await request(`/invoices/${credit.body.id}/issue`, "POST", {
+    revision: 0,
+  });
+  assert.equal(issued.status, 200, JSON.stringify(issued.body));
+  assert.equal(
+    (await request(`/invoices/${credit.body.id}/structured`)).status,
+    409,
   );
 });

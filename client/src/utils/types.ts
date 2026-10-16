@@ -579,6 +579,10 @@ export type Contrat = {
 };
 
 export type Facture = {
+  fiscal_input?: import("@contrats/shared").InvoiceFiscalInput | null;
+  fiscal_totals?: ReturnType<typeof import("@contrats/shared").computeInvoiceFiscal> | null;
+  fiscal_issues?: string[];
+  structured_available?: boolean;
   id: string;
   lifecycle_status: "draft" | "issued" | "legacy";
   document_kind: "invoice" | "credit_note";

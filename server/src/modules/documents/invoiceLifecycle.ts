@@ -27,6 +27,11 @@ import {
 } from "../../utils/paths.js";
 import { encodeJsonField, fromJsonString } from "../../utils/jsonFields.js";
 import { round2, toNumber } from "../../utils/money.js";
+import {
+  buildStructuredInvoice,
+  parseInvoiceFiscal,
+  validateInvoiceFiscal,
+} from "./invoiceFiscal.js";
 
 export const invoiceReadInclude = {
   gite: {
@@ -80,6 +85,7 @@ export const invoiceRenderInput = (invoice: Facture): InvoiceRenderInput => ({
   clauses: fromJsonString(invoice.clauses, {}),
   statut_paiement: invoice.statut_paiement as "reglee" | "non_reglee",
   notes: invoice.notes,
+  fiscal: parseInvoiceFiscal(invoice.fiscal_data),
 });
 
 // Only rendering/pricing fields: never retain iCal export tokens or integration configuration.
@@ -160,6 +166,7 @@ type Archive = {
   calculation: InvoiceCalculation;
   invoice: InvoiceRenderInput;
   buyer: { name: string; address: string; email: string | null; phone: string };
+  structured_invoice?: ReturnType<typeof buildStructuredInvoice>;
 };
 const parseArchive = (value: unknown): Archive => {
   const snapshot = fromJsonString<Archive | null>(value, null);
@@ -245,7 +252,10 @@ const issuerForInvoice = async (
     throw invoiceError(
       `Complétez l’entreprise avant validation : ${missing.join(", ")}.`,
     );
-  if (!invoice.locataire_adresse.trim())
+  if (
+    !parseInvoiceFiscal(invoice.fiscal_data) &&
+    !invoice.locataire_adresse.trim()
+  )
     throw invoiceError(
       "L’adresse du client est nécessaire pour valider la facture.",
     );
@@ -323,6 +333,27 @@ export const issueInvoice = async (
             );
           }
           const organizationId = getOrganizationId();
+          const fiscal = parseInvoiceFiscal(invoice.fiscal_data);
+          if (!invoice.locataire_nom.trim())
+            throw invoiceError("Le nom du destinataire est nécessaire.");
+          // Credits for a pre-structured source remain possible, without inventing missing tax data.
+          const oldCredit =
+            invoice.document_kind === "credit_note" &&
+            !fiscal &&
+            !parseArchive(invoice.original_invoice?.immutable_snapshot)
+              .structured_invoice;
+          const grouped =
+            fromJsonString<unknown[]>(invoice.reservation_items, []).length >=
+            2;
+          if (!oldCredit)
+            validateInvoiceFiscal(
+              fiscal,
+              calculation.totals.totalGlobal,
+              issuer.entity,
+              Math.abs(calculation.totals.taxeSejourCalculee) ||
+                (grouped ? 1 : 0),
+              invoice.document_kind === "credit_note",
+            );
           const now = new Date();
           const year = Number(
             new Intl.DateTimeFormat("fr", {
@@ -389,10 +420,43 @@ export const issueInvoice = async (
             },
             buyer: {
               name: invoice.locataire_nom,
-              address: invoice.locataire_adresse,
+              address: fiscal
+                ? [
+                    fiscal.buyer.address_line1,
+                    fiscal.buyer.address_line2,
+                    fiscal.buyer.postal_code,
+                    fiscal.buyer.city,
+                    fiscal.buyer.country_code,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : invoice.locataire_adresse,
               email: invoice.locataire_email,
               phone: invoice.locataire_tel,
             },
+            ...(fiscal
+              ? {
+                  structured_invoice: buildStructuredInvoice({
+                    input: fiscal,
+                    issuer,
+                    number,
+                    issuedAt,
+                    buyerName: invoice.locataire_nom,
+                    credit: invoice.document_kind === "credit_note",
+                    periodStart: invoice.date_debut,
+                    periodEnd: invoice.date_fin,
+                    sourceNumber: invoice.original_invoice?.numero_facture,
+                    sourceIssuedAt:
+                      invoice.document_kind === "credit_note"
+                        ? new Date(
+                            parseArchive(
+                              invoice.original_invoice?.immutable_snapshot,
+                            ).invoice.issued_at!,
+                          )
+                        : undefined,
+                  }),
+                }
+              : {}),
           };
           const absolutePath = path.join(
             resolveDataDir(),
@@ -573,6 +637,7 @@ export const createFullCreditNote = async (
           );
         if (source.credit_notes[0]) return source.credit_notes[0];
         const archive = parseArchive(source.immutable_snapshot);
+        const fiscal = parseInvoiceFiscal(source.fiscal_data);
         const total = round2(
           toNumber(source.solde_montant) + toNumber(source.arrhes_montant),
         );
@@ -632,6 +697,15 @@ export const createFullCreditNote = async (
               ...archive.calculation,
               totals,
             }),
+            fiscal_data: fiscal
+              ? JSON.stringify({
+                  ...fiscal,
+                  paid_amount: 0,
+                  payment_due_date: "",
+                  payment_terms:
+                    "Avoir intégral de la facture " + source.numero_facture,
+                })
+              : null,
             pdf_path: "",
           },
         });

@@ -1,0 +1,31 @@
+.invoice-fiscal fieldset {
+  min-width: 0;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--primary-soft);
+  border-radius: 12px;
+}
+
+.invoice-fiscal legend {
+  color: var(--primary-strong);
+  padding: 0 0.4rem;
+}
+
+.invoice-fiscal .checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.invoice-fiscal .checkbox input {
+  width: auto;
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+}
+
+.invoice-fiscal input,
+.invoice-fiscal select,
+.invoice-fiscal textarea {
+  max-width: 100%;
+}

@@ -57,6 +57,7 @@
       .page > * {
         position: relative;
         z-index: 1;
+        flex-shrink: 0;
       }
 
       .motif {
@@ -78,6 +79,7 @@
       }
 
       .hero {
+        break-inside: avoid;
         display: grid;
         grid-template-columns: minmax(0, 1.5fr) 69mm;
         gap: 7.2mm;
@@ -705,7 +707,7 @@
           <thead>
             <tr>
               <th>Description</th>
-              <th>Montant</th>
+              <th>{{invoiceAmountHeading}}</th>
             </tr>
           </thead>
           <tbody>
@@ -714,8 +716,9 @@
         </table>
 
         <table class="totals">
+          {{{fiscalSummaryHtml}}}
           <tr>
-            <td>Sous-total</td>
+            <td>{{invoiceSubtotalLabel}}</td>
             <td>{{totalGlobal}}</td>
           </tr>
           {{{acompteRowHtml}}}

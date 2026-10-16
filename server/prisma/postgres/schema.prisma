@@ -1001,6 +1001,7 @@ model Facture {
   fiscal_entity_id              String?
   fiscal_establishment_id       String?
   calculation_snapshot          String?
+  fiscal_data                   String?
   immutable_snapshot            String?
   pdf_sha256                    String?
   credited_invoice_id           String?
