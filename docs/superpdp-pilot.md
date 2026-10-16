@@ -161,6 +161,20 @@ Les deux connexions déjà consenties par l'utilisateur ont ensuite été vérif
 
 Les 113 tests client réussissent, dont les transitions du parcours et son arrêt selon les droits. La compilation complète et le lint réussissent (36 avertissements de hooks préexistants, aucune erreur). Aucun changement serveur, migration ou déploiement n'est impliqué. La centralisation des identifiants OAuth de l'éditeur pour un futur SaaS reste un chantier distinct de cette amélioration de navigation.
 
+### Échange réel avec le générateur fournisseur — 16/10/2026
+
+Après autorisation explicite de l'utilisateur, une facture Factur-X a été téléchargée depuis le générateur officiel SuperPDP pour Burger Queen, puis sa destination Tricatel a été confirmée contre les adresses d'annuaire des deux connexions sandbox. Le PDF et ses identités n'ont pas été modifiés. Ses deux pages ont été inspectées visuellement ; le rapport réel fournisseur est positif : **182 contrôles, zéro erreur**.
+
+Un dépôt B2B unique a été effectué avec le transport Node existant, après création d'une référence externe unique et d'une intention d'envoi durable dans les preuves privées. Le contrôle synchrone n'a pas été désactivé. Les accès ont utilisé le service OAuth existant, ses verrous et ses contrôles d'identité/environnement, dans le contexte du compte et d'une session propriétaire locale active. Aucun secret ni jeton n'a été affiché et `.PDP` n'a pas été utilisé.
+
+Le suivi réel relève les événements `api:uploaded`, `fr:200`, `fr:201`, `fr:203` et `fr:202`. Une seule facture correspond à la référence côté émetteur et une réception correspondante existe côté Tricatel. Les trois PDF comparés (générateur, original émetteur, original destinataire) ont la même empreinte SHA-256. Cela confirme la réception technique de cet exemple ; les événements ne prouvent ni paiement ni acceptation par l'administration.
+
+Les références exactes, empreintes, rapports, intentions, réponses et observations restent hors Git dans le dossier privé `server/data/superpdp-recette/20261016-generator-3d76375a/`. **Ne jamais rejouer ce dépôt** : se référer à son compte rendu et à son journal privé, y compris après une restauration ou depuis un autre poste. Le PDF témoin est disponible localement dans `output/pdf/superpdp-echange-sandbox-20261016.pdf`, hors Git.
+
+Ce test valide un échange du **document généré par SuperPDP**, pas l'émission depuis les factures propres de l'application ni l'import métier de ses achats. L'original reçu est archivé dans les preuves, sans créer d'achat dans l'application. Les tables métier, identités, rattachements, compteurs, séquences et tâches ont été comparés à la sauvegarde antérieure et sont inchangés ; les mises à jour OAuth et leur audit sont attendus. Factures, transmissions, réceptions et paiements électroniques locaux restent à zéro. Les contrôles SQLite sont positifs.
+
+Aucun code applicatif n'a été modifié pour cet échange, aucun worker ni interrupteur applicatif d'émission/réception/B2C n'a été activé, et aucun déploiement n'a été réalisé. Les parcours natifs de R03/R06, l'avoir, le e-reporting B2C, les incidents et les conditions SaaS/production ne sont pas attestés par cette seule preuve.
+
 ## Matrice de recette avec preuves
 
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Rien n’est attesté comme réalisé par ce document. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
