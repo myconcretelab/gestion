@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InvoiceFiscalInput } from "@contrats/shared";
 import InvoiceFiscalEditor from "./shared/InvoiceFiscalEditor";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Facture, ContratOptions, Reservation } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
@@ -92,6 +92,8 @@ const getValidationFieldErrors = (error: unknown): FieldErrors =>
 const FactureFormPage = () => {
   const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput | null>(null);
   const fiscalContextRef = useRef<string | null>(null);
+  const handledHashNavigationRef = useRef<string | null>(null);
+  const location = useLocation();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const isEdit = Boolean(id);
@@ -667,15 +669,22 @@ const FactureFormPage = () => {
   }, [payloadKey, createdContract, createdPayloadKey]);
 
   useEffect(() => {
-    const targetId = window.location.hash.slice(1);
-    if (!targetId) return;
+    const targetId = location.hash.slice(1);
+    if (!targetId) {
+      handledHashNavigationRef.current = null;
+      return;
+    }
+    const navigationKey = `${id ?? "new"}:${location.hash}`;
+    if (handledHashNavigationRef.current === navigationKey) return;
     const frame = window.requestAnimationFrame(() => {
       const target = document.getElementById(decodeURIComponent(targetId));
-      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (!target) return;
+      handledHashNavigationRef.current = navigationKey;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
       if (target instanceof HTMLElement) target.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [fiscalInput]);
+  }, [fiscalInput, id, location.hash]);
 
   const submit = useDocumentSubmit<Facture, ContractFieldKey>({
     endpointBase: "/invoices",
