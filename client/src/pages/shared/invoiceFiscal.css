@@ -22,18 +22,12 @@
 }
 
 .invoice-fiscal__required {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 0.35rem;
-  padding: 0.12rem 0.48rem;
-  border-radius: 999px;
-  border: 1px solid var(--primary);
-  background: var(--primary-soft);
-  color: var(--ink);
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1.4;
-  vertical-align: middle;
+  align-self: flex-start;
+  margin: 0.05rem 0 0.12rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .invoice-fiscal [id="payment-details"] {
