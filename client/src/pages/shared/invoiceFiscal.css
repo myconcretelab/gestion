@@ -7,12 +7,12 @@
 }
 
 .invoice-fiscal legend {
-  color: var(--primary-strong);
+  color: var(--ink);
   padding: 0 0.4rem;
 }
 
 .invoice-fiscal__legend {
-  color: var(--primary-strong);
+  color: var(--ink);
   font-size: 0.92rem;
 }
 
@@ -27,8 +27,9 @@
   margin-left: 0.35rem;
   padding: 0.12rem 0.48rem;
   border-radius: 999px;
+  border: 1px solid var(--primary);
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--ink);
   font-size: 0.72rem;
   font-weight: 700;
   line-height: 1.4;
