@@ -15481,6 +15481,50 @@ button.personal-expenses-status:disabled {
   overflow: hidden;
 }
 
+.invoice-completion-note {
+  border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+  background: color-mix(in srgb, var(--primary-soft) 68%, white);
+}
+
+.invoice-completion-note ul {
+  display: grid;
+  gap: 0.55rem;
+  padding-left: 0;
+  list-style: none;
+}
+
+.invoice-completion-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, white 74%, var(--primary-soft));
+  color: var(--primary-strong);
+  text-decoration: none;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.invoice-completion-link > span:last-child {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.invoice-completion-link:hover,
+.invoice-completion-link:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  transform: translateY(-1px);
+}
+
+.invoice-completion-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .detail-header {
   display: flex;
   align-items: flex-start;

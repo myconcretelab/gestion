@@ -11,6 +11,40 @@
   padding: 0 0.4rem;
 }
 
+.invoice-fiscal__legend {
+  color: var(--primary-strong);
+  font-size: 0.92rem;
+}
+
+.invoice-fiscal__legend > span {
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.invoice-fiscal__required {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.35rem;
+  padding: 0.12rem 0.48rem;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+.invoice-fiscal [id="payment-details"] {
+  scroll-margin-top: 2rem;
+}
+
+.invoice-fiscal [id="payment-details"]:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 0.4rem;
+  border-radius: 4px;
+}
+
 .invoice-fiscal .checkbox {
   display: flex;
   align-items: flex-start;

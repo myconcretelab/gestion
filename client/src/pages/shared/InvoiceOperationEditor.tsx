@@ -14,8 +14,9 @@ export default function InvoiceOperationEditor({
     <fieldset>
       <legend>Nature de l’opération facturée — B2B</legend>
       <label className="field">
-        Biens, services ou mixte
+        Biens, services ou mixte <span className="invoice-fiscal__required">Requis</span>
         <select
+          id="invoice-operation-kind"
           value={value}
           onChange={(event) =>
             onChange(event.target.value as InvoiceFiscalInput["operation_kind"])

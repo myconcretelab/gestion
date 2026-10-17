@@ -666,6 +666,17 @@ const FactureFormPage = () => {
     }
   }, [payloadKey, createdContract, createdPayloadKey]);
 
+  useEffect(() => {
+    const targetId = window.location.hash.slice(1);
+    if (!targetId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(decodeURIComponent(targetId));
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [fiscalInput]);
+
   const submit = useDocumentSubmit<Facture, ContractFieldKey>({
     endpointBase: "/invoices",
     id,

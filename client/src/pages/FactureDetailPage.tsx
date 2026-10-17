@@ -27,6 +27,20 @@ type EmailComposerState = {
   autoBody: string;
 };
 
+const fiscalIssueTarget = (issue: string) => {
+  if (issue.includes("adresse structurée") || issue.includes("pays du client")) return "buyer-address";
+  if (issue.includes("échéance du solde") || issue.includes("conditions de paiement")) return "payment-details";
+  if (issue.includes("particulier ou une entreprise")) return "buyer-kind";
+  if (issue.includes("SIREN")) return "buyer-siren";
+  if (issue.includes("mention «")) return "b2b-payment-mentions";
+  if (issue.includes("ligne") && issue.includes("libellé")) return "invoice-line-label";
+  if (issue.includes("traitement de TVA") || issue.includes("taux") || issue.includes("exonération")) return "invoice-line-vat";
+  if (issue.includes("nature de l’opération")) return "invoice-operation-kind";
+  if (issue.includes("taxe de séjour")) return "tourist-tax-reviewed";
+  if (issue.includes("Confirmez la vérification")) return "invoice-reviewed";
+  return "invoice-fiscal";
+};
+
 const FactureDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -264,7 +278,7 @@ const FactureDetailPage = () => {
         {facture.lifecycle_status === "draft" && <p className="note">Ce document est un brouillon. Sa validation lui attribuera un numéro définitif et figera son contenu. L’envoi par e-mail sera alors disponible.</p>}
         {facture.issuer && <p>{facture.lifecycle_status === "draft" ? "Émetteur prévu" : "Émetteur"} : {facture.issuer.legal_name} · SIREN {facture.issuer.siren || "à compléter"} · SIRET {facture.issuer.siret || "à compléter"}</p>}
         {facture.issued_at && <p>Émis le {formatDate(facture.issued_at)}. Le suivi du paiement ne modifie pas le PDF archivé.</p>}
-        {facture.lifecycle_status === "draft" && !!facture.fiscal_issues?.length && <div className="note"><p>À compléter avant validation :</p><ul>{facture.fiscal_issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+        {facture.lifecycle_status === "draft" && !!facture.fiscal_issues?.length && <div className="note invoice-completion-note"><p>À compléter avant validation :</p><ul>{facture.fiscal_issues.map((issue) => <li key={issue}><Link to={`/factures/${facture.id}/edition#${fiscalIssueTarget(issue)}`} className="invoice-completion-link"><span>{issue}</span><span aria-hidden="true">Compléter ↗</span></Link></li>)}</ul></div>}
         {facture.fiscal_totals && <p>Détail fiscal : HT {formatEuro(facture.fiscal_totals.net_cents / 100)} · TVA {formatEuro(facture.fiscal_totals.vat_cents / 100)} · TTC {formatEuro(facture.fiscal_totals.gross_cents / 100)}{facture.document_kind === "credit_note" ? " (montants annulés par l’avoir)" : ""}.</p>}
         {facture.fiscal_input?.buyer.kind === "business" && <p>Nature de l’opération : {({ goods: "Biens", services: "Services", mixed: "Mixte — biens et services distincts", unknown: "Non qualifiée" } as const)[facture.fiscal_input.operation_kind ?? "unknown"]} · Conservée à l’émission.</p>}
         {facture.structured_available && <p><a href={`/api/invoices/${facture.id}/structured`} target="_blank" rel="noreferrer">Exporter l’instantané fiscal structuré</a> · Données figées à l’émission, distinctes du suivi SuperPDP.</p>}

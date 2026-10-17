@@ -71,12 +71,14 @@ export default function InvoiceFiscalEditor({
     ? computeInvoiceFiscal(validInput.data)
     : null;
   const money = (cents: number) => formatEuro(cents / 100);
+  const required = (note = "Requis") => <span className="invoice-fiscal__required">{note}</span>;
   return (
     <section
       className="card invoice-fiscal"
       aria-label="Données fiscales de la facture"
     >
       <div className="section-title">Client fiscal, lignes et TVA</div>
+      <p className="invoice-fiscal__legend"><span aria-hidden="true">*</span> Champ nécessaire à l’acceptation de la facturation. Certains champs s’appliquent selon le client et les montants.</p>
       <p>
         Les prix restent TTC et le total du séjour ne change pas. Les taux et
         exonérations doivent être vérifiés avec votre comptable ; aucun taux
@@ -113,8 +115,9 @@ export default function InvoiceFiscalEditor({
           </p>
           <div className="grid-2">
             <label className="field">
-              Type de client
+              Type de client {required()}
               <select
+                id="buyer-kind"
                 value={value.buyer.kind}
                 onChange={(e) =>
                   updateBuyer({
@@ -130,8 +133,9 @@ export default function InvoiceFiscalEditor({
               </select>
             </label>
             <label className="field">
-              Pays du client (code ISO)
+              Pays du client (code ISO) {required()}
               <input
+                id="buyer-address"
                 value={value.buyer.country_code}
                 maxLength={2}
                 placeholder="FR"
@@ -141,7 +145,7 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Adresse de facturation
+              Adresse de facturation {required()}
               <input
                 value={value.buyer.address_line1}
                 maxLength={500}
@@ -157,14 +161,14 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Code postal
+              Code postal {required()}
               <input
                 value={value.buyer.postal_code}
                 onChange={(e) => updateBuyer({ postal_code: e.target.value })}
               />
             </label>
             <label className="field">
-              Ville
+              Ville {required()}
               <input
                 value={value.buyer.city}
                 onChange={(e) => updateBuyer({ city: e.target.value })}
@@ -173,8 +177,9 @@ export default function InvoiceFiscalEditor({
             {value.buyer.kind === "business" && (
               <>
                 <label className="field">
-                  SIREN (entreprise française)
+                  SIREN (entreprise française) {value.buyer.country_code === "FR" && required()}
                   <input
+                    id="buyer-siren"
                     value={value.buyer.siren}
                     maxLength={9}
                     onChange={(e) => updateBuyer({ siren: e.target.value })}
@@ -210,8 +215,9 @@ export default function InvoiceFiscalEditor({
               <legend>Ligne {index + 1}</legend>
               <div className="grid-2">
                 <label className="field">
-                  Libellé
+                  Libellé {required()}
                   <input
+                    id={index === 0 ? "invoice-line-label" : undefined}
                     value={line.label}
                     maxLength={500}
                     onChange={(e) =>
@@ -261,8 +267,9 @@ export default function InvoiceFiscalEditor({
                   />
                 </label>
                 <label className="field">
-                  Traitement de TVA
+                  Traitement de TVA {required()}
                   <select
+                    id={index === 0 ? "invoice-line-vat" : undefined}
                     value={line.vat_category}
                     onChange={(e) =>
                       updateLine(line.id, {
@@ -282,7 +289,7 @@ export default function InvoiceFiscalEditor({
                 </label>
                 {line.vat_category === "S" && (
                   <label className="field">
-                    Taux de TVA (%)
+                    Taux de TVA (%) {required()}
                     <input
                       type="number"
                       min="0.01"
@@ -299,7 +306,7 @@ export default function InvoiceFiscalEditor({
                 )}
                 {["E", "O"].includes(line.vat_category) && (
                   <label className="field">
-                    Motif et référence légale
+                    Motif et référence légale {required()}
                     <input
                       value={line.exemption_reason}
                       maxLength={500}
@@ -356,7 +363,7 @@ export default function InvoiceFiscalEditor({
             arrhes simplement prévues au contrat. Le suivi du paiement après
             émission restera indépendant du PDF archivé.
           </p>
-          <div className="grid-2">
+          <div className="grid-2" id="payment-details" tabIndex={-1}>
             <label className="field">
               Sommes réellement reçues (€)
               <input
@@ -370,7 +377,7 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Échéance du solde
+              Échéance du solde {required("Requis si solde dû")}
               <input
                 type="date"
                 value={value.payment_due_date}
@@ -378,7 +385,7 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Conditions de paiement
+              Conditions de paiement {required("Alternative à l’échéance")}
               <textarea
                 value={value.payment_terms}
                 maxLength={2000}
@@ -396,10 +403,11 @@ export default function InvoiceFiscalEditor({
                 PDF et dans les données électroniques, y compris pour un avoir.
               </p>
               <div className="grid-2">
-                {b2bPaymentMentionFields.map(({ key, label }) => (
+                {b2bPaymentMentionFields.map(({ key, label }, index) => (
                   <label className="field" key={key}>
-                    {label}
+                    {label} {required()}
                     <textarea
+                      id={index === 0 ? "b2b-payment-mentions" : undefined}
                       value={value.b2b_payment_mentions?.[key] ?? ""}
                       maxLength={500}
                       onChange={(e) =>
@@ -441,6 +449,7 @@ export default function InvoiceFiscalEditor({
           )}
           <label className="checkbox">
             <input
+              id="tourist-tax-reviewed"
               type="checkbox"
               checked={value.tourist_tax_reviewed}
               onChange={(e) =>
@@ -448,16 +457,17 @@ export default function InvoiceFiscalEditor({
               }
             />
             J’ai vérifié le traitement et la collecte de la taxe de séjour, y
-            compris pour chaque réservation regroupée.
+            compris pour chaque réservation regroupée. {required("Selon les options du séjour")}
           </label>
           <label className="checkbox">
             <input
+              id="invoice-reviewed"
               type="checkbox"
               checked={value.reviewed}
               onChange={(e) => update({ reviewed: e.target.checked })}
             />
             J’ai vérifié le destinataire, la ventilation, les taux, les motifs
-            fiscaux et les sommes réellement reçues.
+            fiscaux et les sommes réellement reçues. {required()}
           </label>
           <p className="field-hint">
             Ce détail prépare les données électroniques. Il ne constitue pas une
