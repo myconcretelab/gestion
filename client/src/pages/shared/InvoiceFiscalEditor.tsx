@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   computeInvoiceFiscal,
   invoiceFiscalInputSchema,
@@ -72,6 +72,9 @@ export default function InvoiceFiscalEditor({
     : null;
   const money = (cents: number) => formatEuro(cents / 100);
   const required = (note = "Requis") => <span className="invoice-fiscal__required">{note}</span>;
+  const fieldLabel = (label: string, marker: ReactNode = required()) => (
+    <span className="invoice-fiscal__label-row"><span>{label}</span>{marker}</span>
+  );
   return (
     <section
       className="card invoice-fiscal"
@@ -115,7 +118,7 @@ export default function InvoiceFiscalEditor({
           </p>
           <div className="grid-2">
             <label className="field">
-              Type de client {required()}
+              {fieldLabel("Type de client")}
               <select
                 id="buyer-kind"
                 value={value.buyer.kind}
@@ -133,7 +136,7 @@ export default function InvoiceFiscalEditor({
               </select>
             </label>
             <label className="field">
-              Pays du client (code ISO) {required()}
+              {fieldLabel("Pays du client (code ISO)")}
               <input
                 id="buyer-address"
                 value={value.buyer.country_code}
@@ -145,7 +148,7 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Adresse de facturation {required()}
+              {fieldLabel("Adresse de facturation")}
               <input
                 value={value.buyer.address_line1}
                 maxLength={500}
@@ -161,14 +164,14 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Code postal {required()}
+              {fieldLabel("Code postal")}
               <input
                 value={value.buyer.postal_code}
                 onChange={(e) => updateBuyer({ postal_code: e.target.value })}
               />
             </label>
             <label className="field">
-              Ville {required()}
+              {fieldLabel("Ville")}
               <input
                 value={value.buyer.city}
                 onChange={(e) => updateBuyer({ city: e.target.value })}
@@ -177,7 +180,7 @@ export default function InvoiceFiscalEditor({
             {value.buyer.kind === "business" && (
               <>
                 <label className="field">
-                  SIREN (entreprise française) {value.buyer.country_code === "FR" && required()}
+                  {fieldLabel("SIREN (entreprise française)", value.buyer.country_code === "FR" ? required() : null)}
                   <input
                     id="buyer-siren"
                     value={value.buyer.siren}
@@ -215,7 +218,7 @@ export default function InvoiceFiscalEditor({
               <legend>Ligne {index + 1}</legend>
               <div className="grid-2">
                 <label className="field">
-                  Libellé {required()}
+                  {fieldLabel("Libellé")}
                   <input
                     id={index === 0 ? "invoice-line-label" : undefined}
                     value={line.label}
@@ -267,7 +270,7 @@ export default function InvoiceFiscalEditor({
                   />
                 </label>
                 <label className="field">
-                  Traitement de TVA {required()}
+                  {fieldLabel("Traitement de TVA")}
                   <select
                     id={index === 0 ? "invoice-line-vat" : undefined}
                     value={line.vat_category}
@@ -289,7 +292,7 @@ export default function InvoiceFiscalEditor({
                 </label>
                 {line.vat_category === "S" && (
                   <label className="field">
-                    Taux de TVA (%) {required()}
+                    {fieldLabel("Taux de TVA (%)")}
                     <input
                       type="number"
                       min="0.01"
@@ -306,7 +309,7 @@ export default function InvoiceFiscalEditor({
                 )}
                 {["E", "O"].includes(line.vat_category) && (
                   <label className="field">
-                    Motif et référence légale {required()}
+                    {fieldLabel("Motif et référence légale")}
                     <input
                       value={line.exemption_reason}
                       maxLength={500}
@@ -377,7 +380,7 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Échéance du solde {required("Requis si solde dû")}
+              {fieldLabel("Échéance du solde", required("Requis si solde dû"))}
               <input
                 type="date"
                 value={value.payment_due_date}
@@ -385,7 +388,7 @@ export default function InvoiceFiscalEditor({
               />
             </label>
             <label className="field">
-              Conditions de paiement {required("Alternative à l’échéance")}
+              {fieldLabel("Conditions de paiement", required("Alternative à l’échéance"))}
               <textarea
                 value={value.payment_terms}
                 maxLength={2000}
@@ -405,7 +408,7 @@ export default function InvoiceFiscalEditor({
               <div className="grid-2">
                 {b2bPaymentMentionFields.map(({ key, label }, index) => (
                   <label className="field" key={key}>
-                    {label} {required()}
+                    {fieldLabel(label)}
                     <textarea
                       id={index === 0 ? "b2b-payment-mentions" : undefined}
                       value={value.b2b_payment_mentions?.[key] ?? ""}

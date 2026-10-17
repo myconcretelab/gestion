@@ -14,7 +14,10 @@ export default function InvoiceOperationEditor({
     <fieldset>
       <legend>Nature de l’opération facturée — B2B</legend>
       <label className="field">
-        Biens, services ou mixte <span className="invoice-fiscal__required">Requis</span>
+        <span className="invoice-fiscal__label-row">
+          <span>Biens, services ou mixte</span>
+          <span className="invoice-fiscal__required">Requis</span>
+        </span>
         <select
           id="invoice-operation-kind"
           value={value}

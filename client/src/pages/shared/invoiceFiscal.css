@@ -21,11 +21,23 @@
   color: var(--primary);
 }
 
+.invoice-fiscal__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.invoice-fiscal__label-row > span:first-child {
+  min-width: 0;
+}
+
 .invoice-fiscal__required {
   display: inline-flex;
-  align-self: flex-start;
   width: max-content;
-  margin: 0.05rem 0 0.12rem;
+  flex: 0 0 auto;
+  margin: 0;
   padding: 0.08rem 0.4rem;
   border-radius: 999px;
   background: var(--primary-soft);
