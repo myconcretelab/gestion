@@ -22,6 +22,7 @@ import {
 } from "./shared/reservationSources";
 import type { Gite, Reservation } from "../utils/types";
 import type { AppUser } from "../utils/auth";
+import { isCleaningReadinessLate, isCleaningReadinessVisible } from "./cleaningTaskStatus";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOTAL_DAY_COUNT = 14;
@@ -521,29 +522,6 @@ const getEventCleaningCheckedAt = (
   return readinessByArrivalId.get(arrivalReservation.id)?.checked_at ?? null;
 };
 
-const getParisClock = (value: Date) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(value);
-  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
-  return {
-    dateIso: `${read("year")}-${read("month")}-${read("day")}`,
-    minutes: Number(read("hour")) * 60 + Number(read("minute")),
-  };
-};
-
-const isCleaningReadinessAvailable = (readiness: GiteCleaningReadiness, now: Date) => {
-  const clock = getParisClock(now);
-  return readiness.departure_date < clock.dateIso
-    || readiness.departure_date === clock.dateIso;
-};
-
 const buildReservationFocusHref = (event: TodayEvent) => {
   const reservationStartDate = parseIsoDate(event.primaryReservation.date_entree);
   const params = new URLSearchParams();
@@ -829,8 +807,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const cleaningReadiness = primaryOverview?.cleaning_readiness ?? [];
   const pendingCleaningReadiness = useMemo(
     () => cleaningReadiness
-      .filter((item) => !item.checked_at && isCleaningReadinessAvailable(item, trashNow)
-        && (!item.next_arrival_at || new Date(item.next_arrival_at) > trashNow))
+      .filter((item) => !item.checked_at && isCleaningReadinessVisible(item, trashNow))
       .sort((left, right) => {
         const leftUrgent = left.next_arrival_date === todayIso ? 0 : 1;
         const rightUrgent = right.next_arrival_date === todayIso ? 0 : 1;
@@ -1337,6 +1314,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             <div className="today-cleaning-readiness__actions">
               {pendingCleaningReadiness.map((item) => {
                 const dueLabel = item.due_at ? new Date(item.due_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).replace(":00", "h") : null;
+                const isLate = isCleaningReadinessLate(item, trashNow);
                 return (
                 <button
                   key={item.gite_id}
@@ -1347,7 +1325,8 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                     item.next_arrival_date === todayIso ? " today-cleaning-readiness__button--urgent" : ""
                   }`}
                   disabled={Boolean(cleaningReadinessBusyId)}
-                  aria-label={usesDirectCleaningValidation ? `Valider le ménage de ${item.gite_name}` : `Gérer le ménage de ${item.gite_name}`}
+                  aria-label={`${usesDirectCleaningValidation ? "Valider" : "Gérer"} le ménage de ${item.gite_name}${isLate ? ", arrivée passée" : ""}`}
+                  title={isLate ? "Arrivée passée · validation encore possible aujourd’hui" : undefined}
                   aria-expanded={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id}
                   aria-controls={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id ? "today-cleaning-panel" : undefined}
                   onClick={() => usesDirectCleaningValidation
