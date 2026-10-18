@@ -9865,7 +9865,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
               </p>
             </div>
             <div className="settings-cluster__grid">
-              <div className="card settings-card settings-card--green settings-card--span-8">
+              <div className="card settings-card settings-card--green settings-card--span-12">
                 <div className="settings-card__topline">
                   <span className="settings-card__tag">Import automatisé</span>
                   <span className="settings-card__badge">
