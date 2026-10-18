@@ -28,9 +28,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   {
     id: "hebergements",
     label: "Hébergements",
-    path: "hebergements",
+    path: "nuitees",
     tabs: [
-      { label: "Vue d’ensemble", path: "hebergements" },
       { label: "Nuitées à déclarer", path: "nuitees", navId: "nav-settings-declaration-nights" },
       { label: "Couleurs des sources", path: "couleurs-sources", navId: "nav-settings-source-colors" },
     ],
@@ -39,14 +38,13 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     id: "documents",
     label: "Documents",
     path: "documents",
-    tabs: [{ label: "Vue d’ensemble", path: "documents" }],
+    tabs: [{ label: "Documents", path: "documents" }],
   },
   {
     id: "canaux",
     label: "Canaux de communication",
-    path: "canaux",
+    path: "emails",
     tabs: [
-      { label: "Vue d’ensemble", path: "canaux" },
       { label: "E-mails", path: "emails", navId: "nav-settings-email-texts" },
       { label: "SMS", path: "sms", navId: "nav-settings-sms" },
       { label: "Telegram", path: "telegram", navId: "nav-settings-telegram" },
@@ -58,7 +56,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     label: "Connexions",
     path: "connexions",
     tabs: [
-      { label: "Vue d’ensemble", path: "connexions" },
+      { label: "Modules", path: "connexions" },
       { label: "Sources iCal", path: "ical-sources", navId: "nav-settings-ical-sources" },
       { label: "Exports iCal", path: "ical-exports", navId: "nav-settings-ical-exports" },
       { label: "Synchronisation", path: "ical-sync", navId: "nav-settings-ical-sync" },
@@ -69,9 +67,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   {
     id: "equipe-acces",
     label: "Équipe et accès",
-    path: "equipe-acces",
+    path: "utilisateurs",
     tabs: [
-      { label: "Vue d’ensemble", path: "equipe-acces" },
       { label: "Utilisateurs", path: "utilisateurs", navId: "nav-settings-users" },
       { label: "Sécurité", path: "securite", navId: "nav-settings-security" },
     ],
@@ -79,9 +76,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   {
     id: "donnees",
     label: "Données et sauvegardes",
-    path: "donnees",
+    path: "journal-imports",
     tabs: [
-      { label: "Vue d’ensemble", path: "donnees" },
       { label: "Journal des imports", path: "journal-imports", navId: "nav-settings-import-log" },
     ],
   },
@@ -89,7 +85,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     id: "systeme",
     label: "Système et diagnostics",
     path: "systeme",
-    tabs: [{ label: "Vue d’ensemble", path: "systeme" }],
+    tabs: [{ label: "Système et diagnostics", path: "systeme" }],
   },
 ];
 

@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import OrganizationSettings from "./settings/OrganizationSettings";
-import { AccommodationsSettings, ChannelsSettings, ConnectionsSettings, DataBackupSettings, DocumentsSettings, SystemDiagnosticsSettings, TeamAccessSettings } from "./settings/CategorySettings";
+import { ConnectionsSettings, DocumentsSettings, SystemDiagnosticsSettings } from "./settings/CategorySettings";
 import SettingsShell from "./settings/SettingsShell";
 import FiscalEntitiesSettings from "./settings/FiscalEntitiesSettings";
 
@@ -10,18 +10,22 @@ const sections = [
   ["donnees", "Données et sauvegardes"], ["systeme", "Système et diagnostics"], ["entreprises", "Entreprises"],
 ] as const;
 
+const overviewRedirects: Record<string, string> = {
+  hebergements: "nuitees",
+  canaux: "emails",
+  "equipe-acces": "utilisateurs",
+  donnees: "journal-imports",
+};
+
 export default function ProductSettingsPage() {
   const segment = useLocation().pathname.split("/")[2] || "";
   if (!sections.some(([id]) => id === segment)) return <Navigate to="/parametres/organisation" replace />;
+  if (overviewRedirects[segment]) return <Navigate to={`/parametres/${overviewRedirects[segment]}`} replace />;
   return <SettingsShell>
     {segment === "organisation" ? <OrganizationSettings /> : null}
     {segment === "entreprises" ? <FiscalEntitiesSettings /> : null}
-    {segment === "hebergements" ? <AccommodationsSettings /> : null}
     {segment === "documents" ? <DocumentsSettings /> : null}
-    {segment === "canaux" ? <ChannelsSettings /> : null}
     {segment === "connexions" ? <ConnectionsSettings /> : null}
-    {segment === "equipe-acces" ? <TeamAccessSettings /> : null}
-    {segment === "donnees" ? <DataBackupSettings /> : null}
     {segment === "systeme" ? <SystemDiagnosticsSettings /> : null}
   </SettingsShell>;
 }
