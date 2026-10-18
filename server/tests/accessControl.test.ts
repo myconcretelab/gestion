@@ -14,7 +14,7 @@ import type { AppUserSummary } from "../src/services/appUsers.ts";
 
 test("l’atelier sandbox exige les droits d’intégration pour toute route et tout verbe",()=>{
   for(const method of ["GET","POST","PUT","DELETE"])
-    for(const path of ["/superpdp-workshop","/superpdp-workshop/activate","/superpdp-workshop/id/pdf/native","/superpdp-workshop/id/send"])
+    for(const path of ["/superpdp-workshop","/superpdp-workshop/activate","/superpdp-workshop/id/pdf/native","/superpdp-workshop/id/send","/superpdp-workshop/id/recordPayment","/superpdp-workshop/id/sendPayment"])
       assert.equal(getRequiredBusinessPermission(method,path),"integrations:manage");
 });
 

@@ -5,6 +5,32 @@ export type WorkshopRun = {
   createdAt: string;
   number: string;
   kind: "invoice" | "credit_note";
+  scenario?: "b2b" | "b2c";
+  payments?: Array<{
+    slot: 1 | 2;
+    reference: string;
+    amount: string;
+    date: string;
+    status: string;
+    remoteEventId: string | null;
+  }>;
+  reporting?: {
+    checkedAt: string;
+    transaction: "pending" | "verified" | "mismatch";
+    transactionIds: string[];
+    payments: Array<{
+      slot: number;
+      result: "pending" | "verified" | "mismatch";
+      ids: string[];
+    }>;
+    declarations: Array<{
+      id: string;
+      kind: "transaction" | "payment";
+      start: string;
+      end: string;
+      events: Array<{ code: string; at: string }>;
+    }>;
+  } | null;
   date: string;
   writable: boolean;
   source: { reservationId: string; label: string; total: number };

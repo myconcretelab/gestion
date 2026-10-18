@@ -11,6 +11,7 @@ import {
   SuperPdpTransport,
   type RemoteInvoice,
   type Validation,
+  type RemoteEvent,
 } from "../src/modules/superpdp/transport.js";
 import { SuperPdpService } from "../src/modules/superpdp/service.js";
 import { checksum } from "../src/modules/superpdp/sandboxRecipe.js";
@@ -44,6 +45,15 @@ class Transport extends SuperPdpTransport {
   badDirectory = false;
   badValidation = false;
   partial = false;
+  profileMismatch = false;
+  duplicateTransaction = false;
+  missingTransaction = false;
+  wrongPayment = false;
+  missingPayment = false;
+  failPayment = false;
+  failConversion = false;
+  paymentCount = 0;
+  paymentEvents: RemoteEvent[] = [];
   payloads: string[] = [];
   calls: string[] = [];
   remote = new Map<string, { invoice: RemoteInvoice; pdf: Buffer }>();
@@ -59,6 +69,10 @@ class Transport extends SuperPdpTransport {
   }
   async convert(payload: string, _pdf: Buffer) {
     this.calls.push("convert");
+    if (this.failConversion)
+      throw Object.assign(new Error("PRIVATE_CONVERTER_MESSAGE"), {
+        code: "SUPERPDP_TRANSPORT_HTTP",
+      });
     this.payloads.push(payload);
     return Buffer.from(`%PDF-SIMULATED-${checksum(payload)}`);
   }
@@ -129,8 +143,85 @@ class Transport extends SuperPdpTransport {
           status_text: "Reçue (simulé)",
           created_at: "2026-10-18T10:00:00Z",
         },
+        ...this.paymentEvents,
       ],
       has_after: false,
+    };
+  }
+  async invoice(_token: string, id: string) {
+    return [...this.remote.values()].find((row) => row.invoice.id === id)!
+      .invoice;
+  }
+  async reportingCompany(_token: string) {
+    this.calls.push("reportingCompany");
+    return {
+      id: binding.sender.companyId,
+      env: "sandbox" as const,
+      vat_regime: this.profileMismatch
+        ? ("quarterly" as const)
+        : ("monthly" as const),
+      has_vat_on_debits: false,
+    };
+  }
+  async b2cTransactions(_token: string, id: string) {
+    this.calls.push("readTransactions");
+    const tx = {
+      id: "6000",
+      invoice_id: id,
+      date: JSON.parse(this.payloads.at(-1)!).issue_date as string,
+      currency: "EUR",
+      category_code: "TPS1",
+      role_code: "SE" as const,
+      tax_exclusive_amount: "100.0000",
+      tax_total: "20.00",
+      tax_subtotals: [
+        { tax_percent: "20.0", taxable_amount: "100.00", tax_total: "20.00" },
+      ],
+    };
+    return {
+      data: this.missingTransaction
+        ? []
+        : this.duplicateTransaction
+          ? [tx, { ...tx, id: "6001" }]
+          : [tx],
+      has_more: false,
+    };
+  }
+  async payment(_token: string, invoiceId: string, details: unknown) {
+    this.paymentCount++;
+    const event: RemoteEvent = {
+      id: String(7000 + this.paymentCount),
+      invoice_id: invoiceId,
+      status_code: "fr:212",
+      status_text: "Encaissée (simulé)",
+      created_at: new Date().toISOString(),
+      details: details as RemoteEvent["details"],
+    };
+    this.paymentEvents.push(event);
+    if (this.failPayment) throw new Error("PRIVATE_REMOTE_PAYMENT_ERROR");
+    return event;
+  }
+  async b2cPayments(_token: string, eventId: string) {
+    this.calls.push("readPayments");
+    const event = this.paymentEvents.find((e) => e.id === eventId)!;
+    return {
+      data: this.missingPayment
+        ? []
+        : [
+            {
+              id: String(8000 + Number(eventId)),
+              invoice_event_id: eventId,
+              date: String(event.details![0].reported_data![0].date),
+              subtotals: [
+                {
+                  amount: this.wrongPayment ? "61.00" : "60.000",
+                  currency_code: "EUR",
+                  tax_percent: "20",
+                },
+              ],
+            },
+          ],
+      has_more: false,
     };
   }
 }
@@ -522,4 +613,326 @@ test("avoir intégral distinct, un seul par source, figé avec référence et m�
     await assert.rejects(
       f.service.credit(credit.id, { revision: credit.revision }, actor),
     );
+  }));
+
+async function b2cReady(f: ReturnType<typeof fixture>) {
+  await f.service.activate(actor, { confirm_local_test_data: true });
+  let row = await f.service.create(
+    {
+      scenario: "b2c",
+      confirm_fictional_b2c: true,
+      confirm_no_other_reporting: true,
+    },
+    actor,
+  );
+  row = await f.service.save(
+    row.id,
+    { revision: row.revision, rates: [20], reviewed: true },
+    actor,
+  );
+  row = await f.service.issue(row.id, { revision: row.revision }, actor);
+  return f.service.prepare(row.id, { revision: row.revision }, actor);
+}
+test("B2C : refus du convertisseur conservé, explication sûre et aucun dépôt/encaissement possible", () =>
+  within(async () => {
+    const f = fixture();
+    f.transport.failConversion = true;
+    const row = await b2cReady(f);
+    assert.equal(row.status, "prepare_failed");
+    assert.match(row.error!, /convertisseur SuperPDP/);
+    assert.ok(!row.error!.includes("PRIVATE_CONVERTER_MESSAGE"));
+    const proof = JSON.parse(
+      fs.readFileSync(
+        path.join(f.folder(row.id), "prepare-error.json"),
+        "utf8",
+      ),
+    );
+    assert.equal(proof.phase, "conversion");
+    assert.equal(proof.code, "SUPERPDP_TRANSPORT_HTTP");
+    await assert.rejects(f.service.send(row.id, sendBody(row), actor));
+    await assert.rejects(
+      f.service.recordPayment(row.id, recordBody(row), actor),
+    );
+    assert.equal(f.transport.sendCount, 0);
+    assert.equal(f.transport.paymentCount, 0);
+  }));
+async function b2cSent(f: ReturnType<typeof fixture>) {
+  const row = await b2cReady(f);
+  await f.service.send(row.id, sendBody(row), actor);
+  return f.service.sync(row.id, actor);
+}
+const recordBody = (
+  row: ReturnType<SuperPdpWorkshop["view"]>,
+  slot: 1 | 2 = 1,
+) => ({
+  revision: row.revision,
+  slot,
+  date: row.date,
+  confirm_fictional_receipt: true,
+});
+const paymentBody = (
+  row: ReturnType<SuperPdpWorkshop["view"]>,
+  slot: 1 | 2 = 1,
+) => ({ revision: row.revision, slot, confirm_test_send: true });
+
+test("B2C atelier : données fixes, particulier sans identifiant/annuaire, PDF cohérent et pas d’avoir", () =>
+  within(async () => {
+    const f = fixture();
+    await f.service.activate(actor, { confirm_local_test_data: true });
+    await assert.rejects(
+      f.service.create(
+        {
+          scenario: "b2c",
+          confirm_fictional_b2c: true,
+          confirm_no_other_reporting: false,
+        },
+        actor,
+      ),
+    );
+    await assert.rejects(
+      f.service.create(
+        {
+          scenario: "b2c",
+          confirm_fictional_b2c: true,
+          confirm_no_other_reporting: true,
+          reservation_id: "source-a",
+        },
+        actor,
+      ),
+    );
+    let row = await b2cReady(f);
+    assert.equal(row.status, "ready");
+    assert.equal(row.scenario, "b2c");
+    assert.equal(row.source.reservationId, "synthetic-b2c-v1");
+    assert.equal(row.source.total, 120);
+    const payload = JSON.parse(
+      fs.readFileSync(path.join(f.folder(row.id), "snapshot.json"), "utf8"),
+    );
+    assert.equal(payload.process_control.business_process_type, "S1");
+    assert.equal(payload.vat_point_date_code, "432");
+    assert.equal(payload.totals.total_with_vat, "120.00");
+    assert.equal(payload.totals.paid_amount, "0.00");
+    assert.equal(payload.buyer.name, "Client particulier fictif");
+    assert.equal(payload.buyer.electronic_address, undefined);
+    assert.equal(payload.buyer.legal_registration_identifier, undefined);
+    assert.equal(payload.buyer.vat_identifier, undefined);
+    assert.ok(
+      payload.notes.some(
+        (n: { subject_code: string; note: string }) =>
+          n.subject_code === "BAR" && n.note === "B2C",
+      ),
+    );
+    assert.ok(
+      !payload.notes.some((n: { subject_code: string }) =>
+        ["PMD", "PMT", "AAB"].includes(n.subject_code),
+      ),
+    );
+    const full = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          f.folder(row.id),
+          `state-${String(row.revision).padStart(4, "0")}.json`,
+        ),
+        "utf8",
+      ),
+    );
+    const html = await buildInvoiceHtml(workshopDocument(full).render);
+    assert.ok(html.includes("Client particulier fictif"));
+    assert.ok(!html.includes("Tricatel"));
+    row = await f.service.send(row.id, sendBody(row), actor);
+    assert.equal(row.status, "submitted");
+    assert.equal(
+      f.transport.remote.get(row.id)!.invoice.processing_rule,
+      "B2C",
+    );
+    await assert.rejects(
+      f.service.credit(row.id, { revision: row.revision }, actor),
+    );
+  }));
+
+test("B2C atelier : profil distant obligatoire sans mutation ; taux fixe ; anciennes archives lisibles", () =>
+  within(async () => {
+    const f = fixture();
+    const row = await b2cReady(f);
+    f.transport.profileMismatch = true;
+    await assert.rejects(f.service.send(row.id, sendBody(row), actor));
+    assert.equal(f.transport.sendCount, 0);
+    const other = fixture();
+    other.transport.profileMismatch = true;
+    const failed = await b2cReady(other);
+    assert.equal(failed.status, "prepare_failed");
+    assert.match(failed.error!, /Profil TVA de Burger Queen/);
+    assert.ok(!other.transport.calls.includes("convert"));
+    await f.service.activate(actor, { confirm_local_test_data: true });
+    const draft = await f.service.create(
+      {
+        scenario: "b2c",
+        confirm_fictional_b2c: true,
+        confirm_no_other_reporting: true,
+      },
+      actor,
+    );
+    await assert.rejects(
+      f.service.save(
+        draft.id,
+        { revision: 0, rates: [10], reviewed: true },
+        actor,
+      ),
+    );
+    const legacy = await issued(f);
+    const file = path.join(
+      f.folder(legacy.id),
+      `state-${String(legacy.revision).padStart(4, "0")}.json`,
+    );
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    delete data.scenario;
+    delete data.payments;
+    delete data.reporting;
+    fs.writeFileSync(file, JSON.stringify(data));
+    const read = f.service.view(legacy.id);
+    assert.equal(read.scenario, "b2b");
+    assert.deepEqual(read.payments, []);
+  }));
+
+test("B2C atelier : deux mouvements de 60, enregistrement sans POST, reçu et extraction séparés, aucun doublon", () =>
+  within(async () => {
+    const f = fixture();
+    let row = await b2cSent(f);
+    assert.equal(row.reporting?.transaction, "verified");
+    const artifactSha = row.artifactSha;
+    for (const slot of [1, 2] as const) {
+      row = await f.service.recordPayment(row.id, recordBody(row, slot), actor);
+      assert.equal(f.transport.paymentCount, slot - 1);
+      assert.equal(row.payments[slot - 1].status, "recorded");
+      const attempts = await Promise.allSettled([
+        f.service.sendPayment(row.id, paymentBody(row, slot), actor),
+        f.service.sendPayment(row.id, paymentBody(row, slot), actor),
+      ]);
+      assert.equal(attempts.filter((r) => r.status === "fulfilled").length, 1);
+      row = f.service.view(row.id);
+      assert.equal(row.payments[slot - 1].status, "submitted");
+      await assert.rejects(
+        f.service.sendPayment(row.id, paymentBody(row, slot), actor),
+      );
+      await assert.rejects(
+        f.service.recordPayment(row.id, recordBody(row, slot), actor),
+      );
+      row = await f.service.sync(row.id, actor);
+      assert.equal(
+        row.reporting?.payments.find((p) => p.slot === slot)?.result,
+        "verified",
+      );
+    }
+    assert.equal(f.transport.paymentCount, 2);
+    assert.equal(row.artifactSha, artifactSha);
+    assert.equal(f.transport.sendCount, 1);
+    assert.equal(
+      row.payments.reduce((n, p) => n + Number(p.amount), 0),
+      120,
+    );
+    assert.ok(
+      fs.existsSync(path.join(f.folder(row.id), "payment-1-intent.json")),
+    );
+  }));
+
+test("B2C atelier : transaction absente/dupliquée, message externe, profil ou extraction erronés bloquent la suite", () =>
+  within(async () => {
+    for (const mode of [
+      "missingTransaction",
+      "duplicateTransaction",
+      "external",
+      "wrongPayment",
+      "missingPayment",
+      "profileMismatch",
+    ] as const) {
+      const f = fixture();
+      let row = await b2cSent(f);
+      if (mode === "wrongPayment" || mode === "missingPayment") {
+        row = await f.service.recordPayment(row.id, recordBody(row), actor);
+        row = await f.service.sendPayment(row.id, paymentBody(row), actor);
+        row = await f.service.recordPayment(row.id, recordBody(row, 2), actor);
+      } else
+        row = await f.service.recordPayment(row.id, recordBody(row), actor);
+      if (mode === "external")
+        f.transport.paymentEvents.push({
+          id: "8888",
+          invoice_id: row.remoteId!,
+          status_code: "fr:212",
+          status_text: "externe",
+          created_at: new Date().toISOString(),
+        });
+      else f.transport[mode] = true;
+      const count = f.transport.paymentCount;
+      await assert.rejects(
+        f.service.sendPayment(
+          row.id,
+          paymentBody(
+            row,
+            mode === "wrongPayment" || mode === "missingPayment" ? 2 : 1,
+          ),
+          actor,
+        ),
+      );
+      assert.equal(f.transport.paymentCount, count);
+    }
+  }));
+
+test("B2C atelier : incertitude, redémarrage et restauration ne réarment jamais un encaissement", () =>
+  within(async () => {
+    const f = fixture();
+    let row = await b2cSent(f);
+    await assert.rejects(
+      f.service.recordPayment(row.id, recordBody(row, 2), actor),
+    );
+    await assert.rejects(
+      f.service.recordPayment(
+        row.id,
+        { ...recordBody(row), date: "2099-01-01" },
+        actor,
+      ),
+    );
+    await assert.rejects(
+      f.service.recordPayment(
+        row.id,
+        { ...recordBody(row), date: "2026-02-30" },
+        actor,
+      ),
+    );
+    row = await f.service.recordPayment(row.id, recordBody(row), actor);
+    const directory = f.folder(row.id);
+    const prior = new Map(
+      fs
+        .readdirSync(directory)
+        .map((n) => [n, fs.readFileSync(path.join(directory, n))]),
+    );
+    f.transport.failPayment = true;
+    const unknown = await f.service.sendPayment(
+      row.id,
+      paymentBody(row),
+      actor,
+    );
+    assert.equal(unknown.payments[0].status, "send_unknown");
+    await assert.rejects(
+      f.service.sendPayment(row.id, paymentBody(unknown), actor),
+    );
+    await assert.rejects(
+      f.service.recordPayment(row.id, recordBody(unknown, 2), actor),
+    );
+    const restarted = f.recreate();
+    await restarted.activate(actor, { confirm_local_test_data: true });
+    const synced = await restarted.sync(row.id, actor);
+    assert.equal(synced.writable, false);
+    assert.equal(synced.payments[0].status, "send_unknown");
+    assert.ok(synced.error);
+    await assert.rejects(
+      restarted.sendPayment(row.id, paymentBody(synced), actor),
+    );
+    for (const n of fs.readdirSync(directory))
+      fs.unlinkSync(path.join(directory, n));
+    for (const [n, b] of prior) fs.writeFileSync(path.join(directory, n), b);
+    assert.equal(f.service.view(row.id).writable, false);
+    await assert.rejects(
+      f.service.sendPayment(row.id, paymentBody(row), actor),
+    );
+    assert.equal(f.transport.paymentCount, 1);
   }));

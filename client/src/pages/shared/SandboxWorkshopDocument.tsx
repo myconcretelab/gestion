@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { computeInvoiceFiscal } from "@contrats/shared";
 import { buildApiUrl } from "../../utils/api";
 import { formatEuro } from "../../utils/format";
+import { WorkshopB2c } from "./SandboxWorkshopB2c";
 import {
   canSendWorkshop,
   workshopStatus,
@@ -30,6 +31,7 @@ export function WorkshopDocument({
   const [sendConfirmed, setSendConfirmed] = useState(false);
   const [creditConfirmed, setCreditConfirmed] = useState(false);
   const draft = run.status === "draft";
+  const b2c = run.scenario === "b2c";
   const writable = active && run.writable && !busy;
   const dirty =
     rates.some((rate, i) => rate !== run.input.lines[i].vat_rate) ||
@@ -52,7 +54,9 @@ export function WorkshopDocument({
         <h2>
           {run.kind === "credit_note"
             ? "Avoir intégral de test"
-            : "Facture de test"}
+            : b2c
+              ? "Facture B2C de test"
+              : "Facture de test"}
         </h2>
         <span className="sandbox-workshop__badge">
           {workshopStatus[run.status] ?? run.status}
@@ -62,7 +66,11 @@ export function WorkshopDocument({
       <p>
         Base locale : {run.source.label} ·{" "}
         <strong>{formatEuro(run.source.total)} TTC</strong>. Identités de
-        recette figées : Burger Queen et Tricatel.
+        recette figées :{" "}
+        {b2c
+          ? "Burger Queen et un particulier entièrement fictif"
+          : "Burger Queen et Tricatel"}
+        .
       </p>
       {run.original && (
         <p>
@@ -84,13 +92,23 @@ export function WorkshopDocument({
           {run.error}
         </p>
       )}
+      {b2c && run.status === "prepare_failed" && (
+        <p className="note">
+          La compatibilité du convertisseur avec ce profil B2C doit être
+          vérifiée auprès de SuperPDP. Ne créez pas un autre test pour
+          contourner ce refus et n’ajoutez pas d’adresse d’annuaire ou de
+          conditions B2B au particulier.
+        </p>
+      )}
       {draft ? (
         <section>
           <h3>2. Vérifier les données de test</h3>
           <p>
             {run.kind === "credit_note"
               ? "L’avoir reprend exactement les montants et taux de la facture source. Relisez ces données avant de confirmer ; elles ne peuvent pas être modifiées."
-              : "Le montant est regroupé en une prestation fictive. Choisissez un taux de recette explicitement ; aucune donnée fiscale de vos fiches n’est modifiée."}
+              : b2c
+                ? "Ce scénario conserve une prestation fictive de 120 € TTC et un taux de recette de 20 %. Vérifiez-les avant de confirmer ; aucune donnée fiscale de vos fiches n’est modifiée."
+                : "Le montant est regroupé en une prestation fictive. Choisissez un taux de recette explicitement ; aucune donnée fiscale de vos fiches n’est modifiée."}
           </p>
           {run.input.lines.map((line, i) => (
             <div key={line.id} className="sandbox-workshop__line">
@@ -105,7 +123,7 @@ export function WorkshopDocument({
                 Taux de TVA de test
                 <select
                   value={rates[i]}
-                  disabled={!writable || run.kind === "credit_note"}
+                  disabled={!writable || run.kind === "credit_note" || b2c}
                   onChange={(e) => {
                     setRates(
                       rates.map((rate, index) =>
@@ -127,6 +145,13 @@ export function WorkshopDocument({
             Conditions de paiement fictives et adresses synthétiques incluses ;
             aucun SIRET inventé.
           </p>
+          {b2c && (
+            <p className="note">
+              TVA de recette fixée à 20 %. Profil mensuel sans option débits ;
+              les deux encaissements fictifs seront enregistrés séparément après
+              le dépôt.
+            </p>
+          )}
           <label className="checkbox">
             <input
               type="checkbox"
@@ -228,9 +253,11 @@ export function WorkshopDocument({
         <section className="sandbox-workshop__send">
           <h3>Confirmer un envoi unique</h3>
           <p>
-            Destination : Tricatel, bac à sable. Relisez d’abord le Factur-X
-            final. Un résultat inconnu bloque définitivement le renvoi de ce
-            document.
+            {b2c
+              ? "Dépôt B2C dans le bac à sable, sans acheminement au particulier."
+              : "Destination : Tricatel, bac à sable."}{" "}
+            Relisez d’abord le Factur-X final. Un résultat inconnu bloque
+            définitivement le renvoi de ce document.
           </p>
           <label className="checkbox">
             <input
@@ -251,7 +278,9 @@ export function WorkshopDocument({
               })
             }
           >
-            Envoyer ce test à Tricatel
+            {b2c
+              ? "Déposer ce test B2C dans SuperPDP"
+              : "Envoyer ce test à Tricatel"}
           </button>
         </section>
       )}
@@ -283,13 +312,16 @@ export function WorkshopDocument({
               ne prouve ni paiement ni acceptation par l’administration.
             </p>
           )}
-          <p>
-            <Link to="/factures-achat">
-              Consulter les achats reçus dans l’application
-            </Link>{" "}
-            · La récupération des achats reste une opération séparée.
-          </p>
-          {run.kind === "invoice" &&
+          {!b2c && (
+            <p>
+              <Link to="/factures-achat">
+                Consulter les achats reçus dans l’application
+              </Link>{" "}
+              · La récupération des achats reste une opération séparée.
+            </p>
+          )}
+          {!b2c &&
+            run.kind === "invoice" &&
             run.status === "submitted" &&
             !run.hasCredit && (
               <>
@@ -318,6 +350,9 @@ export function WorkshopDocument({
             </p>
           )}
         </section>
+      )}
+      {b2c && ["submitted", "send_unknown", "sending"].includes(run.status) && (
+        <WorkshopB2c run={run} active={active} busy={busy} action={action} />
       )}
     </article>
   );

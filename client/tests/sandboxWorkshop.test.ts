@@ -108,3 +108,19 @@ test("document prêt, renvoi bloqué, pause après redémarrage et avoir sont di
   assert.match(credit, /Avoir intégral de test/);
   assert.match(credit, /TEST-ORIGINAL/);
 });
+test("B2C : particulier explicite, encaissements séparés et aucune option d’avoir ou d’achat entrant", () => {
+  const html = markup({
+    ...run,
+    scenario: "b2c",
+    status: "submitted",
+    payments: [],
+    reporting: null,
+  });
+  assert.match(html, /Facture B2C de test/);
+  assert.match(html, /particulier entièrement fictif/);
+  assert.match(html, /aucun paiement réel|Aucun transfert|paiement réel/);
+  assert.match(html, /Non vérifiée/);
+  assert.ok(!html.includes("Créer l’avoir intégral"));
+  assert.ok(!html.includes("Consulter les achats reçus"));
+  assert.match(html, /Aucune déclaration rattachée/);
+});

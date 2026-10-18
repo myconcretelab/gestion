@@ -66,7 +66,7 @@ const decimal2 = (value: unknown) => {
   return `${Number(whole)}.${fraction.padEnd(2, "0").slice(0, 2)}`;
 };
 export const matchesPaymentReceipt = (
-  payment: ElectronicInvoicePayment,
+  payment: Pick<ElectronicInvoicePayment, "allocations_json" | "payment_date">,
   event: RemoteEvent,
 ) => {
   try {

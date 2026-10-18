@@ -6,7 +6,7 @@ Dans l'application locale : **Factures → Ouvrir l’atelier de test SuperPDP**
 
 L'atelier réutilise le calcul fiscal partagé, le constructeur EN16931, le générateur PDF natif, les contrôles OAuth et le transport SuperPDP existants. Il ne crée aucun `Facture`, compteur ou séquence comptable, transmission métier, dépense, paiement ou lien facture/réservation. Les entreprises et leurs établissements ne sont pas modifiés. Aucun nouveau schéma Prisma, migration ou worker n'est ajouté.
 
-Il s'agit d'une **recette technique dans l'interface**, pas du déblocage des factures ordinaires dépourvues de SIREN/SIRET, ni d'un parcours SaaS ou de production. Les vérifications légales, la ventilation réelle d'un séjour, les acomptes, plusieurs taux par séjour, les autres régimes de TVA et le B2C restent à qualifier séparément.
+Il s'agit d'une **recette technique dans l'interface**, pas du déblocage des factures ordinaires dépourvues de SIREN/SIRET, ni d'un parcours SaaS ou de production. Les vérifications légales, la ventilation réelle d'un séjour, les acomptes, plusieurs taux par séjour et les autres régimes de TVA restent à qualifier séparément. Un [scénario B2C entièrement fictif](superpdp-b2c-workshop.md) est désormais proposé séparément dans cet atelier ; il ne qualifie pas les factures B2C ordinaires.
 
 Contrat fournisseur consulté le 18/10/2026 : [OpenAPI officielle](https://api.superpdp.tech/openapi/superpdp.json), version `1.37.0.beta`. Les deux profils fictifs et leurs adresses restent ceux qualifiés dans la [recette opérateur](superpdp-sandbox-recipe.md) ; ne pas extrapoler leurs numéros ou préfixes à des entreprises réelles.
 

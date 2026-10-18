@@ -22,6 +22,13 @@ import {
 import { SuperPdpService, type OAuthActor } from "./service.js";
 import { superPdpError } from "./secrets.js";
 import { SuperPdpTransport } from "./transport.js";
+import { assertRemoteProfile } from "./reporting.js";
+import { matchesPaymentReceipt } from "./payments.js";
+import {
+  readWorkshopReporting,
+  workshopB2cProfile,
+  workshopPaymentDetails,
+} from "./workshopB2c.js";
 import {
   workshopDocument,
   workshopIssues,
@@ -191,12 +198,21 @@ export class SuperPdpWorkshop {
   }
   private async verify(state: WorkshopState, actor: OAuthActor) {
     assert.deepEqual(await this.repository.binding(), state.binding);
-    for (const party of [state.binding.recipient, state.binding.sender]) {
+    for (const party of state.scenario === "b2c"
+      ? [state.binding.sender]
+      : [state.binding.recipient, state.binding.sender]) {
       await this.oauth.withSandboxAccess(
         party.entityId,
         { connectionId: party.connectionId, companyId: party.companyId },
         actor,
         async (token) => {
+          if (state.scenario === "b2c")
+            await assertRemoteProfile(
+              this.transport,
+              token,
+              party.companyId,
+              workshopB2cProfile,
+            );
           const entries = await this.transport.directory(token);
           if (
             !entries.data.some(
@@ -307,6 +323,9 @@ export class SuperPdpWorkshop {
       binding,
       source,
       kind: original ? "credit_note" : "invoice",
+      scenario: "b2b",
+      payments: [],
+      reporting: null,
       original: original
         ? { id: original.id, number: original.number, date: original.date }
         : null,
@@ -325,15 +344,50 @@ export class SuperPdpWorkshop {
   async create(body: unknown, actor: OAuthActor) {
     this.gate(actor);
     const parsed = z
-      .object({
-        reservation_id: z.string().min(1).max(100),
-        confirm_anonymized_copy: z.literal(true),
-      })
-      .strict()
+      .union([
+        z
+          .object({
+            reservation_id: z.string().min(1).max(100),
+            confirm_anonymized_copy: z.literal(true),
+          })
+          .strict(),
+        z
+          .object({
+            scenario: z.literal("b2c"),
+            confirm_fictional_b2c: z.literal(true),
+            confirm_no_other_reporting: z.literal(true),
+          })
+          .strict(),
+      ])
       .parse(body);
     const binding = recipeBindingSchema.parse(await this.repository.binding());
-    const source = await this.repository.source(parsed.reservation_id);
+    const b2c = "scenario" in parsed;
+    const source = b2c
+      ? {
+          reservationId: "synthetic-b2c-v1",
+          label: "Prestation B2C entièrement fictive, sans réservation",
+          total: 120,
+        }
+      : await this.repository.source(parsed.reservation_id);
     const state = this.createState(binding, source, actor);
+    if (b2c) {
+      state.scenario = "b2c";
+      state.number = state.number.replace("TEST-FA-", "TEST-B2C-");
+      Object.assign(state.input.buyer, {
+        kind: "individual",
+        siren: "",
+        vat_number: "",
+        address_line1: "3 rue du Client fictif",
+      });
+      state.input.b2b_payment_mentions = {
+        late_payment_penalties: "",
+        recovery_fee: "",
+        early_payment_discount: "",
+      };
+      state.input.lines[0].label = "Prestation fictive B2C - recette technique";
+      state.input.lines[0].vat_category = "S";
+      state.input.lines[0].vat_rate = 20;
+    }
     this.persist(this.ledger(state.id, true), state);
     return this.view(state.id);
   }
@@ -354,6 +408,8 @@ export class SuperPdpWorkshop {
       if (state.status !== "draft") throw fail("Le document émis est figé.");
       if (parsed.rates.length !== state.input.lines.length)
         throw fail("Ventilation de test incohérente.");
+      if (state.scenario === "b2c" && parsed.rates.some((rate) => rate !== 20))
+        throw fail("Ce scénario B2C figé exige le taux fictif de 20 %.");
       if (
         state.kind === "credit_note" &&
         parsed.rates.some((rate, i) => rate !== state.input.lines[i].vat_rate)
@@ -413,17 +469,20 @@ export class SuperPdpWorkshop {
       state.status = "preparing";
       state.revision++;
       this.persist(ledger, state);
+      let phase = "identity";
       try {
         await this.verify(state, actor);
         const pdf = ledger.read("native.pdf"),
           snapshot = ledger.read("snapshot.json");
         assert.equal(checksum(pdf), state.nativeSha);
         assert.equal(checksum(snapshot), state.snapshotSha);
+        phase = "conversion";
         const converted = await this.transport.convert(
           snapshot.toString(),
           pdf,
         );
         ledger.write("factur-x.pdf", converted);
+        phase = "validation";
         const report = await this.transport.validate(converted);
         ledger.json("validation.json", report);
         state.validation = {
@@ -439,10 +498,25 @@ export class SuperPdpWorkshop {
         requirePositiveRecipeValidation(report);
         state.artifactSha = checksum(converted);
         state.status = "ready";
-      } catch {
+      } catch (error) {
         state.status = "prepare_failed";
         state.error =
-          "Conversion/validation non confirmée. Aucun dépôt n’a été demandé.";
+          (error as { code?: string })?.code ===
+          "SUPERPDP_REPORTING_CONFIGURATION"
+            ? "Profil TVA de Burger Queen absent ou différent dans SuperPDP. Cette recette exige le régime mensuel sans option sur les débits. Aucun réglage distant n’a été modifié et aucun dépôt n’a été demandé."
+            : state.scenario === "b2c" && phase === "conversion"
+              ? "Le convertisseur SuperPDP a refusé le scénario B2C. Aucun dépôt n’a été demandé. Conservez la preuve et faites clarifier le refus ; ne remplacez pas le particulier par une entreprise ou une fausse adresse électronique."
+              : "Conversion/validation non confirmée. Aucun dépôt n’a été demandé.";
+        ledger.json("prepare-error.json", {
+          at: new Date().toISOString(),
+          phase,
+          code: /^SUPERPDP_[A-Z_]+$/.test(
+            String((error as { code?: string })?.code),
+          )
+            ? (error as { code: string }).code
+            : "WORKSHOP_PREPARATION_FAILED",
+          message: state.error,
+        });
       }
       state.revision++;
       this.persist(ledger, state);
@@ -494,12 +568,21 @@ export class SuperPdpWorkshop {
           ledger.sendOnce(
             { id, artifactSha: state.artifactSha, binding: state.binding },
             async () => {
-              const response = await this.transport.send(token, pdf, id, "B2B");
+              const rule = state.scenario === "b2c" ? "B2C" : "B2B";
+              // Recheck the profile in the same OAuth operation as the POST.
+              if (state.scenario === "b2c")
+                await assertRemoteProfile(
+                  this.transport,
+                  token,
+                  state.binding.sender.companyId,
+                  workshopB2cProfile,
+                );
+              const response = await this.transport.send(token, pdf, id, rule);
               ledger.json("provider-response.json", response);
               assert.equal(response.external_id, id);
               assert.equal(response.direction, "out");
               assert.equal(response.company_id, state.binding.sender.companyId);
-              assert.equal(response.processing_rule, "B2B");
+              assert.equal(response.processing_rule, rule);
               return response;
             },
           ),
@@ -561,6 +644,10 @@ export class SuperPdpWorkshop {
           throw fail(
             "Recherche non concluante ou incomplète. Aucun renvoi autorisé.",
           );
+        assert.equal(
+          matches[0].processing_rule,
+          state.scenario === "b2c" ? "B2C" : "B2B",
+        );
         const original = await this.transport.incomingOriginal(
           token,
           matches[0].id,
@@ -573,13 +660,29 @@ export class SuperPdpWorkshop {
         });
         state.remoteId = matches[0].id;
         state.status = "submitted";
-        state.error = null;
+        state.error = state.payments.some(
+          (p) => p.status === "send_unknown" || p.status === "sending",
+        )
+          ? "Résultat d’encaissement incertain : aucun renvoi ni nouvelle saisie. Rapprochement humain requis."
+          : null;
         state.events = events.data.slice(0, 100).map((event) => ({
           id: event.id,
           code: event.status_code,
           text: event.status_text,
           at: event.created_at,
         }));
+        if (state.scenario === "b2c") {
+          const proof = await readWorkshopReporting(
+            this.transport,
+            token,
+            state.binding.sender.companyId,
+            state.remoteId,
+            state.date,
+            state.payments,
+          );
+          ledger.json(`reporting-${crypto.randomUUID()}.json`, proof.evidence);
+          state.reporting = proof.summary;
+        }
       });
       state.revision++;
       this.persist(ledger, state);
@@ -590,6 +693,10 @@ export class SuperPdpWorkshop {
     const parsed = revisionSchema.parse(body);
     return this.locked(id, async () => {
       const { ledger, state } = this.current(id, parsed.revision, actor);
+      if (state.scenario === "b2c")
+        throw fail(
+          "Avoirs et remboursements B2C exclus de cette recette. Aucun avoir créé.",
+        );
       if (state.kind !== "invoice" || state.status !== "submitted")
         throw fail("Un avoir exige une facture de test déposée et confirmée.");
       if (
@@ -613,6 +720,211 @@ export class SuperPdpWorkshop {
       ledger.json("credit-created.json", { id: credit.id, source: id });
       this.persist(this.ledger(credit.id, true), credit);
       return this.view(credit.id);
+    });
+  }
+
+  private checkB2c(state: WorkshopState, ledger: SandboxRecipeLedger) {
+    if (
+      state.scenario !== "b2c" ||
+      state.kind !== "invoice" ||
+      state.status !== "submitted" ||
+      !state.remoteId
+    )
+      throw fail("Une facture B2C fictive déposée est requise.");
+    assert.equal(
+      checksum(JSON.stringify(workshopDocument(state).payload, null, 2)),
+      state.snapshotSha,
+    );
+    assert.equal(checksum(ledger.read("snapshot.json")), state.snapshotSha);
+    assert.equal(checksum(ledger.read("factur-x.pdf")), state.artifactSha);
+  }
+  async recordPayment(id: string, body: unknown, actor: OAuthActor) {
+    const parsed = z
+      .object({
+        revision: z.number().int().nonnegative(),
+        slot: z.union([z.literal(1), z.literal(2)]),
+        date: z.string().date(),
+        confirm_fictional_receipt: z.literal(true),
+      })
+      .strict()
+      .parse(body);
+    return this.locked(id, async () => {
+      const { ledger, state } = this.current(id, parsed.revision, actor);
+      this.checkB2c(state, ledger);
+      if (parsed.date < state.date || parsed.date > localDate())
+        throw fail(
+          "Date de recette attendue entre l’émission et aujourd’hui, sans date future.",
+        );
+      if (state.payments.some((p) => p.slot === parsed.slot))
+        throw fail(
+          "Ce mouvement fictif est déjà enregistré. Aucun doublon ni changement autorisé.",
+        );
+      if (
+        parsed.slot === 2 &&
+        !state.payments.some((p) => p.slot === 1 && p.status === "submitted")
+      )
+        throw fail("Confirmez le premier encaissement avant le second.");
+      if (
+        state.payments.some((p) =>
+          ["sending", "send_unknown"].includes(p.status),
+        )
+      )
+        throw fail("Un résultat incertain bloque tout nouvel encaissement.");
+      state.payments.push({
+        slot: parsed.slot,
+        reference: `${id}-P${parsed.slot}`,
+        amount: "60.00",
+        date: parsed.date,
+        status: "recorded",
+        remoteEventId: null,
+      });
+      state.revision++;
+      this.persist(ledger, state);
+      return this.view(id);
+    });
+  }
+  async sendPayment(id: string, body: unknown, actor: OAuthActor) {
+    const parsed = z
+      .object({
+        revision: z.number().int().nonnegative(),
+        slot: z.union([z.literal(1), z.literal(2)]),
+        confirm_test_send: z.literal(true),
+      })
+      .strict()
+      .parse(body);
+    return this.locked(id, async () => {
+      const { ledger, state } = this.current(id, parsed.revision, actor);
+      this.checkB2c(state, ledger);
+      const payment = state.payments.find((p) => p.slot === parsed.slot);
+      const fence = `${this.key(id)}:payment:${parsed.slot}`;
+      const intent = `payment-${parsed.slot}-intent.json`;
+      if (
+        !payment ||
+        payment.status !== "recorded" ||
+        this.attempted.has(fence) ||
+        fs.existsSync(path.join(ledger.directory, intent))
+      )
+        throw fail("Cet encaissement ne peut pas être envoyé ou renvoyé.");
+      if (state.payments.some((p) => p !== payment && p.status !== "submitted"))
+        throw fail("Un autre encaissement n’est pas confirmé.");
+      await this.verify(state, actor);
+      await this.access(state.binding, actor, async (token) => {
+        await assertRemoteProfile(
+          this.transport,
+          token,
+          state.binding.sender.companyId,
+          workshopB2cProfile,
+        );
+        const invoice = await this.transport.invoice(token, state.remoteId!);
+        assert.equal(invoice.id, state.remoteId);
+        assert.equal(invoice.company_id, state.binding.sender.companyId);
+        assert.equal(invoice.external_id, id);
+        assert.equal(invoice.direction, "out");
+        assert.equal(invoice.processing_rule, "B2C");
+        const history = await this.transport.events(
+          token,
+          state.remoteId!,
+          null,
+        );
+        const known = new Map(
+          state.payments
+            .filter((p) => p.remoteEventId)
+            .map((p) => [p.remoteEventId, p]),
+        );
+        const receiptMatches = (
+          p: typeof payment,
+          e: (typeof history.data)[number],
+        ) =>
+          matchesPaymentReceipt(
+            {
+              payment_date: p.date,
+              allocations_json: JSON.stringify([
+                { vat_rate: "20.00", amount: p.amount },
+              ]),
+            },
+            e,
+          );
+        if (
+          history.has_after ||
+          history.data.some(
+            (e) =>
+              e.invoice_id !== state.remoteId ||
+              [
+                "api:invalid",
+                "api:rejected",
+                "fr:210",
+                "fr:213",
+                "fr:501",
+              ].includes(e.status_code) ||
+              (e.status_code.startsWith("ppf:") &&
+                /(?:ack-error|rejected)$/.test(e.status_code)) ||
+              (e.status_code === "fr:212" &&
+                (!known.has(e.id) || !receiptMatches(known.get(e.id)!, e))),
+          ) ||
+          [...known.keys()].some(
+            (eventId) =>
+              !history.data.some(
+                (e) => e.id === eventId && e.status_code === "fr:212",
+              ),
+          )
+        )
+          throw fail(
+            "Historique rejeté, incomplet ou encaissement externe non rapproché. Aucun envoi autorisé.",
+          );
+        const proof = await readWorkshopReporting(
+          this.transport,
+          token,
+          state.binding.sender.companyId,
+          state.remoteId!,
+          state.date,
+          state.payments,
+        );
+        ledger.json(`reporting-${crypto.randomUUID()}.json`, proof.evidence);
+        if (
+          proof.summary.transaction !== "verified" ||
+          proof.summary.payments.some(
+            (p) => p.slot !== payment.slot && p.result !== "verified",
+          ) ||
+          proof.summary.declarations.some((d) =>
+            d.events.some((e) => /(?:ack-error|rejected)$/.test(e.code)),
+          )
+        )
+          throw fail(
+            "Vérifiez la transaction extraite et les encaissements précédents avant ce nouvel envoi.",
+          );
+        state.reporting = proof.summary;
+        this.attempted.add(fence);
+        payment.status = "sending";
+        state.revision++;
+        this.persist(ledger, state);
+        try {
+          ledger.json(intent, {
+            at: new Date().toISOString(),
+            neverAutoResend: true,
+            invoiceId: state.remoteId,
+            payment,
+          });
+          const event = await this.transport.payment(
+            token,
+            state.remoteId!,
+            workshopPaymentDetails(payment),
+          );
+          ledger.json(`payment-${payment.slot}-provider.json`, event);
+          assert.equal(event.invoice_id, state.remoteId);
+          assert.equal(event.status_code, "fr:212");
+          assert.ok(receiptMatches(payment, event));
+          assert.ok(!state.payments.some((p) => p.remoteEventId === event.id));
+          payment.remoteEventId = event.id;
+          payment.status = "submitted";
+        } catch {
+          payment.status = "send_unknown";
+          state.error =
+            "Résultat d’encaissement inconnu. Ne jamais renvoyer ni recréer ce mouvement ; rapprochement humain requis.";
+        }
+        state.revision++;
+        this.persist(ledger, state);
+      });
+      return this.view(id);
     });
   }
 }

@@ -1,5 +1,7 @@
 # SuperPDP — recette et préparation du pilote (étape 8)
 
+Complément du 18/10/2026 : [atelier B2C fictif et compte rendu de l’essai réel](superpdp-b2c-workshop.md). Parcours développé et testé avec fournisseur simulé ; essai réel **bloqué à la conversion, avant tout dépôt ou message 212**. Ce complément n’atteste pas les lignes R08/R09 et ne débloque pas le pilote.
+
 ## État et limites de cette livraison
 
 Cette étape prépare le pilote ; **elle ne déploie rien, n’utilise pas les accès `.PDP`, ne réalise pas de consentement et ne soumet aucune facture ni déclaration**. Les flux développés aux étapes 4 à 7 sont exclusivement sandbox, désactivés par défaut. Le connecteur de production n’est pas implémenté : un simple changement de variable, de secret ou d’URL ne peut pas le rendre opérationnel. Le domaine API SuperPDP est commun aux deux environnements ; seul le domaine ne permet pas de les distinguer.

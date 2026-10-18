@@ -53,6 +53,60 @@ export const remoteInvoiceSchema = z.object({
   processing_rule: z.string().optional(),
 });
 const decimal = z.string().regex(/^-?\d{1,14}(?:\.\d{1,8})?$/);
+export const b2cTransactionSchema = z.object({
+  id: remoteId,
+  invoice_id: remoteId.optional(),
+  ppf_ereporting_id: remoteId.nullable().optional(),
+  date: z.string().date(),
+  currency: z.string().max(3),
+  category_code: z.string().max(20),
+  role_code: z.enum(["BY", "SE"]),
+  tax_due_date_type_code: z.string().max(20).optional(),
+  tax_exclusive_amount: decimal,
+  tax_total: decimal,
+  tax_subtotals: z
+    .array(
+      z.object({
+        tax_percent: decimal,
+        taxable_amount: decimal,
+        tax_total: decimal,
+      }),
+    )
+    .max(100),
+});
+export const b2cPaymentSchema = z.object({
+  id: remoteId,
+  invoice_event_id: remoteId.optional(),
+  company_id: remoteId.optional(),
+  ppf_ereporting_id: remoteId.nullable().optional(),
+  date: z.string().date(),
+  subtotals: z
+    .array(
+      z.object({
+        amount: decimal,
+        currency_code: z.string().max(3).optional(),
+        tax_percent: decimal,
+      }),
+    )
+    .max(100),
+});
+export const eReportingSchema = z.object({
+  id: remoteId,
+  company_id: remoteId,
+  kind: z.enum(["transaction", "payment"]),
+  role_code: z.enum(["BY", "SE"]),
+  start_period: z.string().date(),
+  end_period: z.string().date(),
+  events: z
+    .array(
+      z.object({
+        id: remoteId,
+        status_code: z.string().min(1).max(100),
+        created_at: z.string().datetime({ offset: true }),
+      }),
+    )
+    .max(100),
+});
 export const incomingStructuredSchema = z
   .object({
     number: z.string().min(1).max(500),
@@ -286,12 +340,9 @@ export class SuperPdpTransport {
       z.object({
         id: remoteId,
         env: z.literal("sandbox"),
-        vat_regime: z.enum([
-          "monthly",
-          "quarterly",
-          "simplified",
-          "vat_exemption",
-        ]),
+        vat_regime: z
+          .enum(["monthly", "quarterly", "simplified", "vat_exemption"])
+          .or(z.literal("")),
         has_vat_on_debits: z.boolean(),
       }),
     );
@@ -307,6 +358,43 @@ export class SuperPdpTransport {
         body,
       },
       eventSchema,
+    );
+  }
+  b2cTransactions(token: string, invoiceId: string) {
+    const query = new URLSearchParams({
+      invoice_id: remoteId.parse(invoiceId),
+      limit: "100",
+      order: "asc",
+    });
+    return this.json(
+      `/v1.beta/b2c_transactions?${query}`,
+      { headers: this.headers(token) },
+      z.object({
+        data: z.array(b2cTransactionSchema).max(100),
+        has_more: z.boolean(),
+      }),
+    );
+  }
+  b2cPayments(token: string, eventId: string) {
+    const query = new URLSearchParams({
+      invoice_event_id: remoteId.parse(eventId),
+      limit: "100",
+      order: "asc",
+    });
+    return this.json(
+      `/v1.beta/b2c_payments?${query}`,
+      { headers: this.headers(token) },
+      z.object({
+        data: z.array(b2cPaymentSchema).max(100),
+        has_more: z.boolean(),
+      }),
+    );
+  }
+  eReporting(token: string, id: string) {
+    return this.json(
+      `/v1.beta/ereportings/${remoteId.parse(id)}`,
+      { headers: this.headers(token) },
+      eReportingSchema,
     );
   }
   list(token: string, cursor: string | null) {

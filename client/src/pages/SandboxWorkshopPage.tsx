@@ -24,6 +24,8 @@ export default function SandboxWorkshopPage() {
   const [activation, setActivation] = useState(false);
   const [reservation, setReservation] = useState("");
   const [copyConfirmed, setCopyConfirmed] = useState(false);
+  const [scenario, setScenario] = useState("b2b");
+  const [b2cConfirmed, setB2cConfirmed] = useState(false);
   const owner = canCurrentUserManageIntegrations();
   useEffect(() => {
     if (!owner) return;
@@ -96,16 +98,17 @@ export default function SandboxWorkshopPage() {
         <span className="sandbox-workshop__badge">Bac à sable uniquement</span>
         <h1>Atelier de facturation test</h1>
         <p>
-          Un parcours guidé, de la réservation à l’avoir. Aucun effet sur vos
-          factures habituelles, leur numérotation ou vos paiements.
+          Deux scénarios guidés : entre entreprises, ou vente à un particulier
+          fictif. Aucun effet sur vos factures habituelles, leur numérotation ou
+          vos paiements.
         </p>
       </header>
       <aside className="sandbox-workshop__notice">
-        <strong>Burger Queen → Tricatel, entreprises fictives.</strong> Seul le
-        montant d’une réservation est repris. Le client, ses coordonnées, les
-        adresses et les coordonnées bancaires du gîte ne sont pas transmis. Les
-        taux sont des choix de recette, pas une qualification fiscale de votre
-        activité.
+        <strong>Identités fictives, aucun paiement réel.</strong> Pour le test
+        entre entreprises, seul le montant d’une réservation est repris. Le
+        client, ses coordonnées, les adresses et les coordonnées bancaires du
+        gîte ne sont pas transmis. Les taux sont des choix de recette, pas une
+        qualification fiscale de votre activité.
       </aside>
       {error && (
         <p className="note" role="alert">
@@ -156,10 +159,12 @@ export default function SandboxWorkshopPage() {
           )}
           <ol className="sandbox-workshop__steps" aria-label="Étapes du test">
             {[
-              "Réservation",
+              "Choisir le scénario",
               "Vérification et émission",
               "Factur-X et envoi",
-              "Suivi et avoir",
+              run?.scenario === "b2c"
+                ? "Suivi et encaissements"
+                : "Suivi et avoir",
             ].map((label, i) => (
               <li
                 key={label}
@@ -193,8 +198,13 @@ export default function SandboxWorkshopPage() {
                 <option value="">Créer un nouveau test</option>
                 {overview.runs.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.kind === "credit_note" ? "Avoir" : "Facture"} ·{" "}
-                    {item.number} · {workshopStatus[item.status] ?? item.status}
+                    {item.scenario === "b2c"
+                      ? "B2C"
+                      : item.kind === "credit_note"
+                        ? "Avoir"
+                        : "Facture B2B"}{" "}
+                    · {item.number} ·{" "}
+                    {workshopStatus[item.status] ?? item.status}
                   </option>
                 ))}
               </select>
@@ -202,67 +212,142 @@ export default function SandboxWorkshopPage() {
           </section>
           {!selected && active && (
             <section className="card">
-              <h2>1. Partir d’une réservation</h2>
-              <p>
-                Réservations des gîtes rattachés à Burger Queen (100 dernières).
-                La copie conserve le montant TTC affiché, pas les informations
-                personnelles ni la ventilation du séjour.
-              </p>
+              <h2>1. Choisir un scénario fictif</h2>
               <label className="field">
-                Réservation de départ
+                Type de test
                 <select
-                  value={reservation}
+                  value={scenario}
                   disabled={busy}
-                  onChange={(e) => setReservation(e.target.value)}
+                  onChange={(e) => {
+                    setScenario(e.target.value);
+                    setB2cConfirmed(false);
+                    setCopyConfirmed(false);
+                  }}
                 >
-                  <option value="">Choisir une réservation</option>
-                  {overview.sources.map((source) => (
-                    <option
-                      key={source.reservationId}
-                      value={source.reservationId}
-                    >
-                      {source.label} · {formatEuro(source.total)}
-                    </option>
-                  ))}
+                  <option value="b2b">
+                    Entre entreprises — Burger Queen → Tricatel
+                  </option>
+                  <option value="b2c">
+                    Particulier fictif — transaction et encaissements
+                  </option>
                 </select>
               </label>
-              {!overview.sources.length && (
-                <p className="note">
-                  Vérifiez les deux connexions fictives et le rattachement d’un
-                  gîte à Burger Queen dans{" "}
-                  <Link to="/parametres/entreprises">Entreprises</Link>. Une
-                  réservation de ce gîte sera nécessaire.
-                </p>
+              {scenario === "b2c" ? (
+                <>
+                  <p className="note">
+                    Recette B2C encore en qualification : le convertisseur
+                    fournisseur a refusé notre dernier essai malgré le marquage
+                    B2C documenté. Le dépôt et les encaissements restent bloqués
+                    tant que la conversion et la validation ne sont pas
+                    positives.
+                  </p>
+                  <p>
+                    Prestation fictive de 120 € TTC : 100 € HT et 20 € de TVA.
+                    Deux encaissements fictifs de 60 € seront saisis après le
+                    dépôt. Aucune réservation n’est utilisée et aucun règlement
+                    n’est attendu.
+                  </p>
+                  <p className="note">
+                    Profil technique fixe : services, TVA mensuelle sur
+                    encaissements, sans option débits. Le serveur vérifiera ce
+                    profil dans Burger Queen sans le modifier. La facture n’est
+                    pas envoyée au particulier.
+                  </p>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={b2cConfirmed}
+                      onChange={(e) => setB2cConfirmed(e.target.checked)}
+                    />
+                    Je confirme ce scénario entièrement fictif et l’absence de
+                    déclaration parallèle de ces mêmes données.
+                  </label>
+                  <button
+                    disabled={!b2cConfirmed || busy}
+                    onClick={() =>
+                      void perform(async () => {
+                        const created = await apiFetch<WorkshopRun>(endpoint, {
+                          method: "POST",
+                          json: {
+                            scenario: "b2c",
+                            confirm_fictional_b2c: true,
+                            confirm_no_other_reporting: true,
+                          },
+                        });
+                        setRun(created);
+                        setB2cConfirmed(false);
+                        setParams({ document: created.id });
+                        setOverview(await apiFetch<WorkshopOverview>(endpoint));
+                      })
+                    }
+                  >
+                    Créer le test B2C fictif de 120 €
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p>
+                    Réservations des gîtes rattachés à Burger Queen (100
+                    dernières). La copie conserve le montant TTC affiché, pas
+                    les informations personnelles ni la ventilation du séjour.
+                  </p>
+                  <label className="field">
+                    Réservation de départ
+                    <select
+                      value={reservation}
+                      disabled={busy}
+                      onChange={(e) => setReservation(e.target.value)}
+                    >
+                      <option value="">Choisir une réservation</option>
+                      {overview.sources.map((source) => (
+                        <option
+                          key={source.reservationId}
+                          value={source.reservationId}
+                        >
+                          {source.label} · {formatEuro(source.total)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {!overview.sources.length && (
+                    <p className="note">
+                      Vérifiez les deux connexions fictives et le rattachement
+                      d’un gîte à Burger Queen dans{" "}
+                      <Link to="/parametres/entreprises">Entreprises</Link>. Une
+                      réservation de ce gîte sera nécessaire.
+                    </p>
+                  )}
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={copyConfirmed}
+                      onChange={(e) => setCopyConfirmed(e.target.checked)}
+                    />
+                    Je souhaite créer une copie de test anonymisée de ce
+                    montant, sans modifier la réservation.
+                  </label>
+                  <button
+                    disabled={!reservation || !copyConfirmed || busy}
+                    onClick={() =>
+                      void perform(async () => {
+                        const created = await apiFetch<WorkshopRun>(endpoint, {
+                          method: "POST",
+                          json: {
+                            reservation_id: reservation,
+                            confirm_anonymized_copy: true,
+                          },
+                        });
+                        setRun(created);
+                        setCopyConfirmed(false);
+                        setParams({ document: created.id });
+                        setOverview(await apiFetch<WorkshopOverview>(endpoint));
+                      })
+                    }
+                  >
+                    Créer le brouillon de test
+                  </button>
+                </>
               )}
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={copyConfirmed}
-                  onChange={(e) => setCopyConfirmed(e.target.checked)}
-                />
-                Je souhaite créer une copie de test anonymisée de ce montant,
-                sans modifier la réservation.
-              </label>
-              <button
-                disabled={!reservation || !copyConfirmed || busy}
-                onClick={() =>
-                  void perform(async () => {
-                    const created = await apiFetch<WorkshopRun>(endpoint, {
-                      method: "POST",
-                      json: {
-                        reservation_id: reservation,
-                        confirm_anonymized_copy: true,
-                      },
-                    });
-                    setRun(created);
-                    setCopyConfirmed(false);
-                    setParams({ document: created.id });
-                    setOverview(await apiFetch<WorkshopOverview>(endpoint));
-                  })
-                }
-              >
-                Créer le brouillon de test
-              </button>
             </section>
           )}
           {selected && !run && !error && <p>Chargement du document…</p>}

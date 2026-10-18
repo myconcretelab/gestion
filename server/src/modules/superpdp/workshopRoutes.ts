@@ -12,12 +12,10 @@ export function createSuperPdpWorkshopRouter(
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(req.hostname)) {
-      res
-        .status(403)
-        .json({
-          error: "Atelier accessible uniquement depuis une adresse locale.",
-          code: "SUPERPDP_WORKSHOP_LOCAL_ONLY",
-        });
+      res.status(403).json({
+        error: "Atelier accessible uniquement depuis une adresse locale.",
+        code: "SUPERPDP_WORKSHOP_LOCAL_ONLY",
+      });
       return;
     }
     next();
@@ -76,6 +74,8 @@ export function createSuperPdpWorkshopRouter(
     "prepare",
     "send",
     "credit",
+    "recordPayment",
+    "sendPayment",
   ] as const) {
     router.post(`/:id/${action}`, async (req, res) => {
       try {

@@ -5,6 +5,10 @@ import {
 } from "@contrats/shared";
 import { buildStructuredInvoice } from "../documents/invoiceFiscal.js";
 import { buildSandboxRecipe, recipeBindingSchema } from "./sandboxRecipe.js";
+import {
+  workshopPaymentSchema,
+  workshopReportingSchema,
+} from "./workshopB2c.js";
 
 export const workshopStateSchema = z.object({
   version: z.literal(1),
@@ -18,6 +22,9 @@ export const workshopStateSchema = z.object({
   number: z.string(),
   binding: recipeBindingSchema,
   kind: z.enum(["invoice", "credit_note"]),
+  scenario: z.enum(["b2b", "b2c"]).default("b2b"),
+  payments: z.array(workshopPaymentSchema).max(2).default([]),
+  reporting: workshopReportingSchema.nullable().default(null),
   source: z.object({
     reservationId: z.string(),
     label: z.string(),
@@ -80,13 +87,14 @@ export const workshopIssues = (state: WorkshopState) =>
 export function workshopDocument(state: WorkshopState) {
   const seed = buildSandboxRecipe(state.binding, state.id, state.date);
   const credit = state.kind === "credit_note";
+  const b2c = state.scenario === "b2c";
   if (credit && !state.original) throw new Error("WORKSHOP_SOURCE_MISSING");
   const issuedAt = new Date(`${state.date}T10:00:00Z`);
   const snapshot = buildStructuredInvoice({
     input: state.input,
     number: state.number,
     issuedAt,
-    buyerName: "Tricatel",
+    buyerName: b2c ? "Client particulier fictif" : "Tricatel",
     credit,
     periodStart: issuedAt,
     periodEnd: issuedAt,
@@ -114,16 +122,28 @@ export function workshopDocument(state: WorkshopState) {
     snapshot.en_invoice_candidate.seller;
   const payload = {
     ...snapshot.en_invoice_candidate,
+    ...(b2c
+      ? {
+          process_control: {
+            ...snapshot.en_invoice_candidate.process_control,
+            business_process_type: "S1",
+          },
+          vat_point_date_code: "432",
+        }
+      : {}),
     seller: {
       ...seller,
       electronic_address: seed.payload.seller.electronic_address,
     },
     buyer: {
       ...snapshot.en_invoice_candidate.buyer,
-      electronic_address: seed.payload.buyer.electronic_address,
+      ...(!b2c
+        ? { electronic_address: seed.payload.buyer.electronic_address }
+        : {}),
     },
     notes: [
       ...snapshot.en_invoice_candidate.notes,
+      ...(b2c ? [{ subject_code: "BAR", note: "B2C" }] : []),
       {
         subject_code: "AAI",
         note: "TEST SUPERPDP - BAC À SABLE - aucune valeur comptable.",
@@ -137,6 +157,7 @@ export function workshopDocument(state: WorkshopState) {
       invoice: {
         ...seed.render.invoice,
         fiscal: state.input,
+        locataire_nom: b2c ? "Client particulier fictif" : "Tricatel",
         numero_facture: state.number,
         document_kind: credit ? "credit_note" : "invoice",
         source_invoice_number: state.original?.number,

@@ -855,6 +855,15 @@ test("atelier web : session administrateur réelle et origine exigées, indispon
     assert.equal(res.status,403);
   }
   assert.equal((await fetch(url+"/activate",{method:"POST",headers:{Cookie:cookieA,"Content-Type":"application/json",Origin:publicOrigin},body:JSON.stringify({confirm_local_test_data:true})})).status,403);
+  for (const action of ["recordPayment", "sendPayment"]) {
+    const target = `${url}/fictional-id/${action}`;
+    const body = JSON.stringify(action === "recordPayment" ? { revision: 0, slot: 1, date: "2026-10-18", confirm_fictional_receipt: true } : { revision: 0, slot: 1, confirm_test_send: true });
+    for (const [cookie, expected] of [["", 401], [cookieWorker, 403]] as const) {
+      assert.equal((await fetch(target, { method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json", Origin: publicOrigin }, body })).status, expected);
+    }
+    assert.equal((await fetch(target, { method: "POST", headers: { Cookie: cookieA, "Content-Type": "application/json" }, body })).status, 403);
+    assert.equal((await fetch(target, { method: "POST", headers: { Cookie: cookieA, "Content-Type": "application/json", Origin: publicOrigin }, body })).status, 403);
+  }
 });
 
 test("administrateur authentifié, origine obligatoire, isolement des comptes et interrupteur d’émission", async () => {

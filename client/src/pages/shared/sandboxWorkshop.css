@@ -107,6 +107,19 @@
 .sandbox-workshop code {
   overflow-wrap: anywhere;
 }
+.sandbox-workshop__payment {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-wrap: anywhere;
+}
+.sandbox-workshop fieldset {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 0.75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+}
 @media (max-width: 600px) {
   .sandbox-workshop__steps {
     grid-template-columns: repeat(2, 1fr);
