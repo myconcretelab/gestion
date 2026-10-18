@@ -35,12 +35,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     ],
   },
   {
-    id: "documents",
-    label: "Documents",
-    path: "documents",
-    tabs: [{ label: "Documents", path: "documents" }],
-  },
-  {
     id: "canaux",
     label: "Canaux de communication",
     path: "emails",

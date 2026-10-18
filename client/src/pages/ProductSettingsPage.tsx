@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import OrganizationSettings from "./settings/OrganizationSettings";
-import { ConnectionsSettings, DocumentsSettings, SystemDiagnosticsSettings } from "./settings/CategorySettings";
+import { ConnectionsSettings, SystemDiagnosticsSettings } from "./settings/CategorySettings";
 import SettingsShell from "./settings/SettingsShell";
 import FiscalEntitiesSettings from "./settings/FiscalEntitiesSettings";
 
@@ -12,6 +12,7 @@ const sections = [
 
 const overviewRedirects: Record<string, string> = {
   hebergements: "nuitees",
+  documents: "emails",
   canaux: "emails",
   "equipe-acces": "utilisateurs",
   donnees: "journal-imports",
@@ -24,7 +25,6 @@ export default function ProductSettingsPage() {
   return <SettingsShell>
     {segment === "organisation" ? <OrganizationSettings /> : null}
     {segment === "entreprises" ? <FiscalEntitiesSettings /> : null}
-    {segment === "documents" ? <DocumentsSettings /> : null}
     {segment === "connexions" ? <ConnectionsSettings /> : null}
     {segment === "systeme" ? <SystemDiagnosticsSettings /> : null}
   </SettingsShell>;
