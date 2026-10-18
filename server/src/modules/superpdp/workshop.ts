@@ -1006,6 +1006,9 @@ export const liveWorkshopRepository: WorkshopRepository = {
       },
     });
     return rows
+      // PostgreSQL returns Prisma Decimal; SQLite returns number. Normalize at
+      // this amount-only test adapter, before finite/range checks and copying.
+      .map((row) => ({ ...row, prix_total: Number(row.prix_total) }))
       .filter(
         (row) =>
           Number.isFinite(row.prix_total) &&
