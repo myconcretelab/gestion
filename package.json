@@ -10,7 +10,7 @@
     "packages/shared"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev": "npm run build -w @contrats/shared && concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w @contrats/shared && npm run build -w client && npm run build -w server",
     "test": "npm run test -w @contrats/shared && npm run test -w server && npm run test -w client",
     "typecheck": "npm run build -w @contrats/shared && npm run build -w server && npm run typecheck -w client",
