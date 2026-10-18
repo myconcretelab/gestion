@@ -23,6 +23,7 @@ const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
 const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const ProfessionalExpensesPage = lazy(() => import("./pages/ProfessionalExpensesPage"));
 const PurchaseInvoicesPage = lazy(() => import("./pages/PurchaseInvoicesPage"));
+const SandboxWorkshopPage = lazy(() => import("./pages/SandboxWorkshopPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./features/settings"));
 const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
@@ -1065,6 +1066,7 @@ const App = () => {
             <Route path="/contrats/:id/edition" element={<PageAccess allowed={canAccessPage("contracts")}><AmountsAccess allowed={canViewAmounts}><ContratFormPage /></AmountsAccess></PageAccess>} />
             <Route path="/contrats/:id" element={<PageAccess allowed={canAccessPage("contracts")}><AmountsAccess allowed={canViewAmounts}><ContratDetailPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FacturesListPage /></AmountsAccess></PageAccess>} />
+            <Route path="/factures/test-superpdp" element={<PageAccess allowed={!!currentUser?.permissions.isOwner}><AmountsAccess allowed={canViewAmounts}><SandboxWorkshopPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures/nouvelle" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures/:id/edition" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures/:id" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureDetailPage /></AmountsAccess></PageAccess>} />

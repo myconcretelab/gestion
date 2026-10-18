@@ -14,6 +14,7 @@ import fiscalEntitiesRouter from "./modules/fiscal/routes.js";
 import contractsRouter from "./routes/contracts.js";
 import invoicesRouter from "./routes/invoices.js";
 import { createSuperPdpInboxRouter } from "./modules/superpdp/inboxRoutes.js";
+import { createSuperPdpWorkshopRouter } from "./modules/superpdp/workshopRoutes.js";
 import reservationsRouter from "./modules/reservations/routes.js";
 import bookedRouter from "./routes/booked.js";
 import bookingRequestsRouter from "./routes/bookingRequests.js";
@@ -284,6 +285,7 @@ export const createApp = () => {
   app.use("/api/contracts", contractsRouter);
   app.use("/api/invoices", invoicesRouter);
   app.use("/api/purchase-invoices", createSuperPdpInboxRouter());
+  app.use("/api/superpdp-workshop", createSuperPdpWorkshopRouter());
   app.use("/api/reservations", reservationsRouter);
   app.use("/api/booked", bookedRouter);
   app.use("/api/booking-requests", bookingRequestsRouter);

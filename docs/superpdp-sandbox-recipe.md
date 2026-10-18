@@ -1,5 +1,7 @@
 # Recette native SuperPDP, isolée des factures métier
 
+Depuis le 18/10/2026, un [atelier web de recette](superpdp-workshop.md) distinct permet également un parcours guidé depuis l'interface locale : copie anonymisée du montant d'une réservation, vérification, émission figée, dépôt, suivi et avoir intégral. Le présent document décrit toujours l'outil opérateur en ligne de commande et ses preuves historiques ; ne pas rejouer ces dépôts depuis l'un ou l'autre parcours.
+
 ## Périmètre et limites
 
 Parcours **opérateur local uniquement**, autorisé le 16/10/2026. Il réutilise le calcul fiscal, le modèle PDF de l'application, le constructeur EN16931 et les services OAuth/transport existants. Il ne crée pas de `Facture`, ne consomme aucune séquence et n'écrit aucune identité légale dans les entreprises ou établissements. Le PDF et les données structurées portent une mention de test explicite.

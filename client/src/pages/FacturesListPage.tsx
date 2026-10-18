@@ -14,6 +14,7 @@ import {
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
+import SandboxWorkshopEntry from "./shared/SandboxWorkshopEntry";
 
 type EmailComposerState = {
   factureId: string;
@@ -288,6 +289,7 @@ const FacturesListPage = () => {
         }
         onSubmit={sendEmail}
       />
+      <SandboxWorkshopEntry />
       <div className="card">
         <div className="section-title">Recherche</div>
         {error && <div className="note">{error}</div>}

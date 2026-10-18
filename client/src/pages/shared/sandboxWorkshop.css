@@ -1,0 +1,120 @@
+.sandbox-workshop {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+  display: grid;
+  gap: 1.25rem;
+}
+.sandbox-workshop header h1 {
+  margin: 0.75rem 0;
+}
+.sandbox-workshop header p,
+.sandbox-workshop p {
+  line-height: 1.55;
+}
+.sandbox-workshop .card {
+  padding: 1.5rem;
+  min-width: 0;
+}
+.sandbox-workshop__badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.sandbox-workshop__notice {
+  border-inline-start: 4px solid var(--primary);
+  background: var(--primary-soft);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  line-height: 1.6;
+}
+.sandbox-workshop__steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+.sandbox-workshop__steps li {
+  padding: 0.9rem;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 0.75rem;
+  font-size: 0.9rem;
+}
+.sandbox-workshop__steps li[aria-current] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-weight: 700;
+}
+.sandbox-workshop__steps span {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+}
+.sandbox-workshop__toolbar,
+.sandbox-workshop__actions,
+.sandbox-workshop__line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+.sandbox-workshop__actions {
+  justify-content: flex-start;
+  margin: 1rem 0;
+}
+.sandbox-workshop__document section {
+  border-top: 1px solid var(--border, #ddd);
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+}
+.sandbox-workshop__reference {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.sandbox-workshop__line {
+  padding: 0.5rem 0;
+}
+.sandbox-workshop__line .field {
+  min-width: 180px;
+}
+.sandbox-workshop__send {
+  background: var(--primary-soft);
+  padding: 1rem;
+  border-radius: 0.75rem;
+}
+.sandbox-workshop .checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 1rem 0;
+  line-height: 1.5;
+}
+.sandbox-workshop .checkbox input {
+  flex: none;
+  margin-top: 0.3rem;
+}
+.sandbox-workshop a.secondary {
+  display: inline-block;
+}
+.sandbox-workshop code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .sandbox-workshop__steps {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .sandbox-workshop .card {
+    padding: 1rem;
+  }
+  .sandbox-workshop__actions button {
+    width: 100%;
+  }
+}

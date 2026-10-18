@@ -187,6 +187,12 @@ Les deux achats reçus restent non rapprochés ; aucun enregistrement de dépens
 
 ## Matrice de recette avec preuves
 
+### Complément du 18/10/2026 : atelier web
+
+L'[atelier web local](superpdp-workshop.md) ajoute une recette technique depuis l'interface, isolée des factures métier : copie du seul montant d'une réservation fictive, vérification, émission PDF figée, conversion/validation, dépôt unique et suivi, puis avoir intégral distinct. La facture de 420 EUR TTC a réussi 151 contrôles réels, l'avoir 154 ; tous deux ont été reçus et importés dans les achats Tricatel avec leurs originaux intacts et sans doublon. La séparation des données/compteurs habituels et la lecture seule après redémarrage ont été vérifiées. Aucun déploiement, dépense ou paiement créé. Les références, limites et preuves privées sont dans le guide ; ne pas rejouer les dépôts.
+
+Ce complément atteste le parcours technique web et l'avoir sandbox de ce scénario, pas une complétude réglementaire des factures ordinaires. Les cas métier, le B2C, les rapprochements humains, les incidents plus larges et la production restent distincts.
+
 Avant l’exécution, identifier chaque scénario comme **à faire**, **réussi**, **échoué** ou **hors périmètre approuvé** dans un compte rendu privé. Les résultats effectivement observés sont ceux des comptes rendus datés ci-dessus ; cette matrice décrit les contrôles attendus, pas une liste de réussites. Les tests automatisés et leurs fournisseurs simulés sont des preuves de comportement local uniquement.
 
 | Scénario | Contrôle attendu | Preuve à conserver hors du dépôt |

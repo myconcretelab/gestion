@@ -1378,7 +1378,7 @@ export const buildInvoiceHtml = async (params: {
     sandboxNoticeHtml: params.invoice.test_environment === "superpdp-sandbox"
       ? '<div class="sandbox-notice">TEST SUPERPDP - BAC À SABLE<br>Entreprises et identifiants fictifs. Aucune valeur comptable.</div>' : "",
     organizationName: params.invoice.seller?.legal_name || organization?.publicDisplayName || organization?.tradeName || params.gite.proprietaires_noms,
-    documentTitle: params.invoice.test_environment === "superpdp-sandbox" ? "FACTURE TEST" : params.invoice.lifecycle_status === "draft" ? params.invoice.document_kind === "credit_note" ? "BROUILLON D’AVOIR" : "BROUILLON" : params.invoice.document_kind === "credit_note" ? "AVOIR" : "FACTURE",
+    documentTitle: params.invoice.test_environment === "superpdp-sandbox" ? params.invoice.document_kind === "credit_note" ? "AVOIR TEST" : "FACTURE TEST" : params.invoice.lifecycle_status === "draft" ? params.invoice.document_kind === "credit_note" ? "BROUILLON D’AVOIR" : "BROUILLON" : params.invoice.document_kind === "credit_note" ? "AVOIR" : "FACTURE",
     sellerIdentifiers: params.invoice.seller ? [params.invoice.seller.siren && `SIREN : ${params.invoice.seller.siren}`, params.invoice.seller.siret && `SIRET : ${params.invoice.seller.siret}`, params.invoice.seller.vat_number && `TVA : ${params.invoice.seller.vat_number}`].filter(Boolean).join(" · ") : "",
     bodyAttrs: params.bodyAttrs ?? "",
     invoiceNumber: params.invoice.lifecycle_status === "draft" ? "Non émis — sans numéro définitif" : params.invoice.numero_facture,

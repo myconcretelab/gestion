@@ -6,7 +6,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import express from "express";
-import type { Server } from "node:http";
+import { request as httpRequest, type Server } from "node:http";
 
 const temp = fs.mkdtempSync(
   path.join(os.tmpdir(), "contrats-superpdp-emission-"),
@@ -818,6 +818,8 @@ before(async () => {
     "/api/fiscal-entities",
     createSuperPdpRouter(new SuperPdpService(new SuperPdpProvider(fakeFetch))),
   );
+  const { createSuperPdpWorkshopRouter } = await import("../src/modules/superpdp/workshopRoutes.js");
+  app.use("/api/superpdp-workshop", createSuperPdpWorkshopRouter());
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
@@ -829,6 +831,30 @@ after(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   if (db) await db.systemPrisma.$disconnect();
   if (!postgresUrl) fs.rmSync(temp, { recursive: true, force: true });
+});
+
+test("atelier web : session administrateur réelle et origine exigées, indisponible hors développement", async () => {
+  const url=origin+"/api/superpdp-workshop";
+  assert.equal((await fetch(url)).status,401);
+  assert.equal((await fetch(url,{headers:{Cookie:cookieWorker}})).status,403);
+  const response=await fetch(url,{headers:{Cookie:cookieA}});
+  assert.equal(response.status,200);assert.equal(response.headers.get("cache-control"),"no-store");
+  assert.equal(response.headers.get("referrer-policy"),"no-referrer");
+  assert.equal((await response.json()).available,false);
+  // fetch normalizes Host back to the destination; use a real HTTP request to
+  // exercise the server's host restriction rather than a rewritten test header.
+  const foreignHostStatus=await new Promise<number>((resolve,reject)=>{
+    const request=httpRequest(url,{headers:{Cookie:cookieA,Host:"remote.invalid"}},response=>{
+      response.resume();resolve(response.statusCode??0);
+    });
+    request.on("error",reject);request.end();
+  });
+  assert.equal(foreignHostStatus,403);
+  for(const originHeader of [undefined,"https://foreign.invalid"]){
+    const res=await fetch(url+"/activate",{method:"POST",headers:{Cookie:cookieA,"Content-Type":"application/json",...(originHeader?{Origin:originHeader}:{})},body:JSON.stringify({confirm_local_test_data:true})});
+    assert.equal(res.status,403);
+  }
+  assert.equal((await fetch(url+"/activate",{method:"POST",headers:{Cookie:cookieA,"Content-Type":"application/json",Origin:publicOrigin},body:JSON.stringify({confirm_local_test_data:true})})).status,403);
 });
 
 test("administrateur authentifié, origine obligatoire, isolement des comptes et interrupteur d’émission", async () => {

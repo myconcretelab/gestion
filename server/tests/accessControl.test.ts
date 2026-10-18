@@ -12,6 +12,12 @@ import {
 } from "../src/services/accessControl.ts";
 import type { AppUserSummary } from "../src/services/appUsers.ts";
 
+test("l’atelier sandbox exige les droits d’intégration pour toute route et tout verbe",()=>{
+  for(const method of ["GET","POST","PUT","DELETE"])
+    for(const path of ["/superpdp-workshop","/superpdp-workshop/activate","/superpdp-workshop/id/pdf/native","/superpdp-workshop/id/send"])
+      assert.equal(getRequiredBusinessPermission(method,path),"integrations:manage");
+});
+
 test("redactMonetaryValues retire les montants sans masquer les compteurs", () => {
   const result = redactMonetaryValues({
     id: "reservation-1",
