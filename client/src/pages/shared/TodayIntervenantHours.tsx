@@ -15,12 +15,21 @@ type HourEntry = {
 };
 type HoursData = { workers: Worker[]; entries: HourEntry[] };
 type PendingAddition = { id: string; workerId: string; worked_on: string; minutes: number };
-const QUICK_MINUTES = [30, 60, 120] as const;
 const dayLabel = (date: string) => new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
   weekday: "long", day: "numeric", month: "long",
 });
 
-export default function TodayIntervenantHours({ today }: { today: string }) {
+export default function TodayIntervenantHours({
+  today,
+  showDatePicker = true,
+  showTotals = true,
+  quickMinutes = [30, 60, 120],
+}: {
+  today: string;
+  showDatePicker?: boolean;
+  showTotals?: boolean;
+  quickMinutes?: number[];
+}) {
   const [date, setDate] = useState(today);
   const previousToday = useRef(today);
   const [data, setData] = useState<HoursData | null>(null);
@@ -206,10 +215,10 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
     <div className="today-hours" aria-label="Heures des intervenants" aria-busy={busy || loading}>
       <div className="today-hours__heading">
         <span className="today-utility-strip__label">Heures</span>
-        <label className="today-hours__date">
+        {showDatePicker ? <label className="today-hours__date">
           <span>{date === today ? "Aujourd'hui" : dayLabel(date)}</span>
           <input type="date" aria-label="Date des heures" value={date} disabled={locked} onChange={(event) => changeDate(event.target.value)} />
-        </label>
+        </label> : <span className="today-hours__date-summary">Aujourd’hui</span>}
         <button type="button" className="today-hours__text-button" aria-expanded={choosingWorkers}
           disabled={locked} onClick={() => { closePicker(); setChoosingWorkers(!choosingWorkers); }}>
           Choisir
@@ -257,7 +266,7 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
                 <div key={worker.id} style={workerStyle} ref={active ? wheelRef : undefined}
                   className={"today-hours__person" + (active ? " is-open" : "")}>
                   {active && <div className="today-hours__durations" role="group" aria-label={"Durée à ajouter pour " + worker.nom}>
-                    {QUICK_MINUTES.map((minutes, index) => <button type="button" key={minutes}
+                    {quickMinutes.map((minutes, index) => <button type="button" key={minutes}
                       className={"today-hours__duration today-hours__duration--" + index}
                       data-duration aria-pressed={chosenMinutes === minutes} disabled={locked}
                       onClick={() => { setChosenMinutes(minutes); setCustom(false); }}>
@@ -282,13 +291,13 @@ export default function TodayIntervenantHours({ today }: { today: string }) {
                   </button>
                   <div className="today-hours__person-meta">
                     <span className="today-hours__name" title={worker.nom}>{worker.nom.split(" ")[0]}</span>
-                    <button type="button" className="today-hours__total" disabled={locked}
+                    {showTotals ? <button type="button" className="today-hours__total" disabled={locked}
                       aria-label={worker.nom + " : " + formatWorkMinutes(total) + ". Voir et corriger les saisies du " + dayLabel(date)}
                       aria-expanded={historyId === worker.id}
                       onClick={() => {
                         closePicker(); setHistoryId(historyId === worker.id ? null : worker.id);
                         setEdit(null); setDeleteArmed(null); void reload();
-                      }}>{formatWorkMinutes(total)}</button>
+                      }}>{formatWorkMinutes(total)}</button> : null}
                   </div>
                   {active && custom && <form className="today-hours__custom" onSubmit={(event) => {
                     event.preventDefault();

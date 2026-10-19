@@ -22,6 +22,14 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     tabs: [
       { label: "Identité", path: "organisation" },
       { label: "Entreprises", path: "entreprises" },
+    ],
+  },
+  {
+    id: "personnalisation",
+    label: "Personnalisation",
+    path: "widgets",
+    tabs: [
+      { label: "Widgets", path: "widgets", navId: "nav-settings-widgets" },
       { label: "Apparence", path: "apparence", navId: "nav-settings-appearance" },
     ],
   },

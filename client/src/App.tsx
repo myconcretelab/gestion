@@ -1085,6 +1085,7 @@ const App = () => {
             <Route path="/parametres/intervenants" element={<Navigate to="/interventions" replace />} />
             <Route path="/parametres/equipe" element={<Navigate to="/parametres/utilisateurs" replace />} />
             <Route path="/parametres" element={<Navigate to="/parametres/organisation" replace />} />
+            <Route path="/parametres/widgets" element={<PageAccess allowed={canAccessPage("today")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
             {(["organisation", "entreprises", "hebergements", "documents", "canaux", "connexions", "equipe-acces", "donnees", "systeme"] as const).map((section) => (
               <Route key={section} path={`/parametres/${section}`} element={<PageAccess allowed={canAccessPage("settings")}><ProductSettingsPage /></PageAccess>} />
             ))}

@@ -26,6 +26,8 @@ import { isCleaningReadinessLate, isCleaningReadinessVisible } from "./cleaningT
 import {
   DEFAULT_TODAY_WIDGET_PREFERENCES,
   TODAY_WIDGET_CATALOG,
+  getNextTrashCollectionOccurrence,
+  getTrashCollectionColor,
   moveTodayWidget,
   readTodayWidgetPreferences,
   writeTodayWidgetPreferences,
@@ -38,12 +40,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const TOTAL_DAY_COUNT = 14;
 const MOBILE_RESERVATION_BREAKPOINT = 760;
 const TODAY_RETURN_HREF = "/aujourdhui";
-const TRASH_COLLECTION_DAY = 3;
-const TRASH_SWITCH_HOUR = 16;
-const TRASH_COLORS = {
-  yellow: "#FFCB05",
-  darkGreen: "#104911",
-};
 
 type TodayPrimaryOverviewPayload = {
   today: string;
@@ -294,27 +290,7 @@ const formatLongDate = (value: string) =>
     timeZone: "UTC",
   });
 
-const getWeekNumber = (value: Date) => {
-  const date = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-  const dayNumber = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNumber);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil(((date.getTime() - yearStart.getTime()) / DAY_MS + 1) / 7);
-};
-
 const getLocalDateUtcStamp = (value: Date) => Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
-
-const getLocalDateWeekNumber = (value: Date) =>
-  getWeekNumber(new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())));
-
-const getNextTrashPickupDate = (value: Date) => {
-  const dayOfWeek = value.getDay();
-  const isCollectionWednesdayBeforeSwitch = dayOfWeek === TRASH_COLLECTION_DAY && value.getHours() < TRASH_SWITCH_HOUR;
-  const daysUntilCollectionDay = (TRASH_COLLECTION_DAY - dayOfWeek + 7) % 7;
-  const daysToAdd = isCollectionWednesdayBeforeSwitch ? 0 : daysUntilCollectionDay === 0 ? 7 : daysUntilCollectionDay;
-
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate() + daysToAdd);
-};
 
 const capitalizeFirstLetter = (value: string) => (value ? `${value.slice(0, 1).toUpperCase()}${value.slice(1)}` : value);
 
@@ -684,14 +660,15 @@ const WidgetSettingsIcon = () => (
   </svg>
 );
 
-const formatRevenueDifference = (value: number) => `${value > 0 ? "+" : ""}${formatEuro(value)}`;
-
 const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const navigate = useNavigate();
+  const [widgetPreferences, setWidgetPreferences] = useState<TodayWidgetPreferences>(() =>
+    readTodayWidgetPreferences(currentUser?.id)
+  );
   const [primaryOverview, setPrimaryOverview] = useState<TodayPrimaryOverviewPayload | null>(null);
   const [deferredOverview, setDeferredOverview] = useState<TodayDeferredOverviewPayload | null>(null);
-  const [notificationDayCount, setNotificationDayCount] = useState(1);
-  const [notificationSliderValue, setNotificationSliderValue] = useState(1);
+  const [notificationDayCount, setNotificationDayCount] = useState(() => widgetPreferences.options.notificationArchive.dayCount);
+  const [notificationSliderValue, setNotificationSliderValue] = useState(() => widgetPreferences.options.notificationArchive.dayCount);
   const [mobileActionState, setMobileActionState] = useState<TodayMobileActionState>(null);
   const [sourcePickerReservationId, setSourcePickerReservationId] = useState<string | null>(null);
   const [sourceUpdating, setSourceUpdating] = useState(false);
@@ -706,9 +683,6 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const [cleaningReadinessBusyId, setCleaningReadinessBusyId] = useState<string | null>(null);
   const [cleaningReadinessUndo, setCleaningReadinessUndo] = useState<GiteCleaningReadiness | null>(null);
   const [selectedCleaningGiteId, setSelectedCleaningGiteId] = useState<string | null>(null);
-  const [widgetPreferences, setWidgetPreferences] = useState<TodayWidgetPreferences>(() =>
-    readTodayWidgetPreferences(currentUser?.id)
-  );
   const [widgetManagerOpen, setWidgetManagerOpen] = useState(false);
   const [widgetManagerFocusId, setWidgetManagerFocusId] = useState<TodayWidgetId | null>(null);
   const primaryRequestIdRef = useRef(0);
@@ -812,7 +786,10 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   }, []);
 
   useEffect(() => {
-    setWidgetPreferences(readTodayWidgetPreferences(currentUser?.id));
+    const preferences = readTodayWidgetPreferences(currentUser?.id);
+    setWidgetPreferences(preferences);
+    setNotificationDayCount(preferences.options.notificationArchive.dayCount);
+    setNotificationSliderValue(preferences.options.notificationArchive.dayCount);
   }, [currentUser?.id]);
 
   useEffect(() => {
@@ -882,6 +859,11 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
 
   const gites = primaryOverview?.gites ?? [];
   const revenueAverages = primaryOverview?.revenue_averages ?? [];
+  const visibleRevenueAverages = revenueAverages.filter((metric) =>
+    widgetPreferences.options.revenue.visibleMetrics.includes(metric.id)
+  );
+  const formatWidgetRevenueAmount = (value: number) =>
+    formatEuro(widgetPreferences.options.revenue.roundAmounts ? Math.round(value) : value);
   const reservations = useMemo(
     () =>
       (primaryOverview?.reservations ?? []).map((reservation) => ({
@@ -918,10 +900,12 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const unassignedCount = deferredOverview?.unassigned_count ?? 0;
   const newReservations = deferredOverview?.new_reservations ?? [];
   const icalConflicts = deferredOverview?.ical_conflicts ?? [];
+  const visibleNewReservations = widgetPreferences.options.notificationArchive.showReservations ? newReservations : [];
+  const visibleIcalConflicts = widgetPreferences.options.notificationArchive.showConflicts ? icalConflicts : [];
   const notificationSummary = deferredOverview
-    ? `${newReservations.length} réservation${newReservations.length > 1 ? "s" : ""} sur ${formatNotificationDayLabel(
+    ? `${visibleNewReservations.length} réservation${visibleNewReservations.length > 1 ? "s" : ""} sur ${formatNotificationDayLabel(
         notificationDayCount
-      )} · ${icalConflicts.length} conflit${icalConflicts.length > 1 ? "s" : ""} iCal en attente`
+      )} · ${visibleIcalConflicts.length} conflit${visibleIcalConflicts.length > 1 ? "s" : ""} iCal en attente`
     : "Chargement des notifications...";
   const mobileActionEvent = useMemo(
     () =>
@@ -1124,7 +1108,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const notificationItems = useMemo<TodayNotificationItem[]>(
     () =>
       [
-        ...newReservations.map(
+        ...visibleNewReservations.map(
           (reservation) =>
             ({
               id: `reservation:${reservation.id}`,
@@ -1133,7 +1117,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               reservation,
             }) satisfies TodayNotificationItem
         ),
-        ...icalConflicts.map(
+        ...visibleIcalConflicts.map(
           (conflict) =>
             ({
               id: `ical-conflict:${conflict.id}`,
@@ -1143,7 +1127,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             }) satisfies TodayNotificationItem
         ),
       ].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime()),
-    [icalConflicts, newReservations]
+    [visibleIcalConflicts, visibleNewReservations]
   );
 
   const openMobileReservationEditPage = (reservation: Reservation) => {
@@ -1188,15 +1172,34 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         }
       : {};
 
-  const nextTrashPickupDate = useMemo(() => getNextTrashPickupDate(trashNow), [trashNow]);
-  const trashPickupLabel = useMemo(() => getTrashPickupRelativeLabel(trashNow, nextTrashPickupDate), [nextTrashPickupDate, trashNow]);
-  const evenWeek = useMemo(() => getLocalDateWeekNumber(nextTrashPickupDate) % 2 === 0, [nextTrashPickupDate]);
-  const mauronTrashColor = evenWeek ? TRASH_COLORS.yellow : TRASH_COLORS.darkGreen;
-  const neantTrashColor = evenWeek ? TRASH_COLORS.darkGreen : TRASH_COLORS.yellow;
-  const mauronTrashTextColor = useMemo(() => getTrashTextColor(mauronTrashColor), [mauronTrashColor]);
-  const neantTrashTextColor = useMemo(() => getTrashTextColor(neantTrashColor), [neantTrashColor]);
+  const trashCollectionViews = useMemo(
+    () => widgetPreferences.options.trash.collections.map((collection) => {
+      const pickupDate = getNextTrashCollectionOccurrence(collection, trashNow);
+      const color = pickupDate ? getTrashCollectionColor(collection, pickupDate) : collection.color;
+      return { collection, pickupDate, color, textColor: getTrashTextColor(color) };
+    }),
+    [trashNow, widgetPreferences.options.trash.collections]
+  );
+  const nextTrashPickupTime = trashCollectionViews.reduce<number | null>((nearest, item) => {
+    const time = item.pickupDate?.getTime();
+    if (time === undefined) return nearest;
+    return nearest === null || time < nearest ? time : nearest;
+  }, null);
+  const nextTrashPickupViews = nextTrashPickupTime === null
+    ? []
+    : trashCollectionViews.filter((item) => item.pickupDate?.getTime() === nextTrashPickupTime);
+  const trashPickupLabel = nextTrashPickupTime === null
+    ? "Aucune collecte configurée"
+    : `${nextTrashPickupViews.map((item) => item.collection.name).join(" + ")} · ${getTrashPickupRelativeLabel(trashNow, new Date(nextTrashPickupTime))}`;
 
   const commitNotificationDayCount = (nextValue: number) => {
+    updateWidgetPreferences((current) => ({
+      ...current,
+      options: {
+        ...current.options,
+        notificationArchive: { ...current.options.notificationArchive, dayCount: nextValue },
+      },
+    }));
     if (nextValue === notificationDayCount) return;
     setNotificationDayCount(nextValue);
     void loadDeferredData({ notificationDays: nextValue });
@@ -1640,30 +1643,18 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             </button>
           </div>
           <div className="today-trash-inline__chips">
-            <span
-              className="today-trash-chip"
-              style={
-                {
-                  "--today-trash-bg": mauronTrashColor,
-                  "--today-trash-fg": mauronTrashTextColor,
-                } as CSSProperties
-              }
-            >
-              <TrashIcon />
-              Mauron
-            </span>
-            <span
-              className="today-trash-chip"
-              style={
-                {
-                  "--today-trash-bg": neantTrashColor,
-                  "--today-trash-fg": neantTrashTextColor,
-                } as CSSProperties
-              }
-            >
-              <TrashIcon />
-              Néant
-            </span>
+            {trashCollectionViews.map(({ collection, pickupDate, color, textColor }) => (
+              <span
+                key={collection.id}
+                className="today-trash-chip"
+                title={pickupDate ? `Prochain passage : ${formatTrashPickupDateLabel(pickupDate)}` : undefined}
+                style={{ "--today-trash-bg": color, "--today-trash-fg": textColor } as CSSProperties}
+              >
+                <TrashIcon />
+                {collection.name}
+              </span>
+            ))}
+            {trashCollectionViews.length === 0 ? <span className="today-widget__empty-copy">Aucune collecte</span> : null}
           </div>
           {widgetPreferences.options.trash.showNextPickup ? <div className="today-utility-strip__detail">
             {deferredOverview && unassignedCount > 0 ? <span>{unassignedCount} sans gîte masquée(s)</span> : null}
@@ -1688,16 +1679,16 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               </button>
             </div>
             <div className="today-utility-strip__fill">
-              <OccupationGaugeDial
+              {widgetPreferences.options.occupancy.showGauge ? <OccupationGaugeDial
                 id={`today-fill-rate-${todayIso}`}
                 occupation={filledGiteRate}
                 highlighted={false}
                 animate={false}
                 size={{ width: 74, height: 34 }}
                 className="today-utility-strip__fill-gauge"
-              />
+              /> : null}
               <div className="today-utility-strip__fill-copy">
-                <strong>{Math.round(filledGiteRate * 100)}%</strong>
+                {widgetPreferences.options.occupancy.showPercentage ? <strong>{Math.round(filledGiteRate * 100)}%</strong> : null}
                 {widgetPreferences.options.occupancy.showCount ? (
                   <span>{filledGiteCount}/{gites.length || 0} gîte{gites.length > 1 ? "s" : ""}</span>
                 ) : null}
@@ -1718,7 +1709,12 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                 <WidgetSettingsIcon />
               </button>
             </div>
-            <TodayIntervenantHours today={todayIso} />
+            <TodayIntervenantHours
+              today={todayIso}
+              showDatePicker={widgetPreferences.options.hours.showDatePicker}
+              showTotals={widgetPreferences.options.hours.showTotals}
+              quickMinutes={widgetPreferences.options.hours.quickMinutes}
+            />
           </div>
         ) : null}
 
@@ -1737,8 +1733,12 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             </div>
             <span>Sélectionnez un montant pour le détail</span>
           </div>
-          <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
-            {revenueAverages.map((metric) => {
+          <div
+            className="today-revenue-mini"
+            aria-label="Revenus mensuels moyens nets"
+            style={{ "--today-revenue-column-count": Math.max(1, visibleRevenueAverages.length) } as CSSProperties}
+          >
+            {visibleRevenueAverages.map((metric) => {
               const popoverId = `today-revenue-popover-${metric.id}`;
               const comparisonDirection = !metric.comparison || metric.comparison.difference === 0
                 ? "flat"
@@ -1777,14 +1777,14 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                 >
                   <div
                     className={`today-revenue-mini__item${
-                      metric.id === "current_month" ? " today-revenue-mini__item--current" : ""
+                      widgetPreferences.options.revenue.highlightCurrentMonth && metric.id === "current_month" ? " today-revenue-mini__item--current" : ""
                     }`}
                   >
                     <span>
                       <i aria-hidden="true">{getRevenueAverageIcon(metric.id)}</i>
                       {metric.label}
                     </span>
-                    <strong>{formatEuro(metric.net_average_monthly_revenue)}</strong>
+                    <strong>{formatWidgetRevenueAmount(metric.net_average_monthly_revenue)}</strong>
                     {widgetPreferences.options.revenue.showTrends && metric.comparison ? (
                       <div
                         className={`today-revenue-mini__trend today-revenue-mini__trend--${comparisonDirection}`}
@@ -1793,11 +1793,11 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                             ? `, montants proratisés sur ${metric.comparison.elapsed_days} jours`
                             : ""
                         } (hors frais perso récurrents) : ${
-                          formatEuro(metric.comparison.reference_net_revenue)
+                          formatWidgetRevenueAmount(metric.comparison.reference_net_revenue)
                         }`}
                       >
                         <RevenueTrendIcon direction={comparisonDirection} />
-                        <small>{formatRevenueDifference(metric.comparison.difference)}</small>
+                        <small>{metric.comparison.difference > 0 ? "+" : ""}{formatWidgetRevenueAmount(metric.comparison.difference)}</small>
                       </div>
                     ) : null}
                   </div>
@@ -1810,28 +1810,30 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                     <div className="reservations-summary-popover__title">
                       Détail · {metric.label}
                     </div>
-                    <div className="reservations-summary-popover__row">
+                    {widgetPreferences.options.revenue.showGrossRevenue ? <div className="reservations-summary-popover__row">
                       <span>Revenus bruts</span>
-                      <strong>{formatEuro(metric.gross_revenue)}</strong>
-                    </div>
-                    <div className="reservations-summary-popover__row">
+                      <strong>{formatWidgetRevenueAmount(metric.gross_revenue)}</strong>
+                    </div> : null}
+                    {widgetPreferences.options.revenue.showExpenses ? <div className="reservations-summary-popover__row">
                       <span>Dépenses totales</span>
-                      <strong>{formatEuro(metric.expenses)}</strong>
-                    </div>
-                    <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
-                      Répartition des dépenses
-                    </div>
-                    <div className="reservations-summary-popover__row">
-                      <span>Frais des gîtes</span>
-                      <strong>{formatEuro(metric.gite_expenses)}</strong>
-                    </div>
-                    {metric.id !== "last_24_months" ? (
-                      <div className="reservations-summary-popover__row">
-                        <span>Frais perso ponctuels</span>
-                        <strong>{formatEuro(metric.personal_occasional_expenses)}</strong>
+                      <strong>{formatWidgetRevenueAmount(metric.expenses)}</strong>
+                    </div> : null}
+                    {widgetPreferences.options.revenue.showExpenseBreakdown ? <>
+                      <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
+                        Répartition des dépenses
                       </div>
-                    ) : null}
-                    {(metric.personal_expense_details ?? []).filter((detail) => detail.kind === "occasional").length > 0 ? (
+                      <div className="reservations-summary-popover__row">
+                        <span>Frais des gîtes</span>
+                        <strong>{formatWidgetRevenueAmount(metric.gite_expenses)}</strong>
+                      </div>
+                      {metric.id !== "last_24_months" ? (
+                        <div className="reservations-summary-popover__row">
+                          <span>Frais perso ponctuels</span>
+                          <strong>{formatWidgetRevenueAmount(metric.personal_occasional_expenses)}</strong>
+                        </div>
+                      ) : null}
+                    </> : null}
+                    {widgetPreferences.options.revenue.showOccasionalExpenses && (metric.personal_expense_details ?? []).filter((detail) => detail.kind === "occasional").length > 0 ? (
                       <>
                         <div className="reservations-summary-popover__title today-revenue-mini__popover-section-title">
                           Frais perso ponctuels
@@ -1852,7 +1854,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                                     .join(" · ")}
                                 </small>
                               </span>
-                              <strong>{formatEuro(detail.period_expenses)}</strong>
+                              <strong>{formatWidgetRevenueAmount(detail.period_expenses)}</strong>
                             </div>
                           ))}
                       </>
@@ -1986,7 +1988,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                               checked={widgetPreferences.options.trash.showNextPickup}
                               onChange={(event) => updateWidgetPreferences((current) => ({
                                 ...current,
-                                options: { ...current.options, trash: { showNextPickup: event.target.checked } },
+                                options: { ...current.options, trash: { ...current.options.trash, showNextPickup: event.target.checked } },
                               }))}
                             />
                             Afficher le prochain passage
@@ -1999,7 +2001,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                               checked={widgetPreferences.options.occupancy.showCount}
                               onChange={(event) => updateWidgetPreferences((current) => ({
                                 ...current,
-                                options: { ...current.options, occupancy: { showCount: event.target.checked } },
+                                options: { ...current.options, occupancy: { ...current.options.occupancy, showCount: event.target.checked } },
                               }))}
                             />
                             Afficher le nombre de gîtes
@@ -2012,7 +2014,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                               checked={widgetPreferences.options.revenue.showTrends}
                               onChange={(event) => updateWidgetPreferences((current) => ({
                                 ...current,
-                                options: { ...current.options, revenue: { showTrends: event.target.checked } },
+                                options: { ...current.options, revenue: { ...current.options.revenue, showTrends: event.target.checked } },
                               }))}
                             />
                             Afficher les tendances
@@ -2042,7 +2044,14 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             </div>
 
             <footer className="today-widget-manager__footer">
-              <button type="button" className="secondary" onClick={() => updateWidgetPreferences(DEFAULT_TODAY_WIDGET_PREFERENCES)}>Réinitialiser</button>
+              <div>
+                <button type="button" className="secondary" onClick={() => {
+                  updateWidgetPreferences(DEFAULT_TODAY_WIDGET_PREFERENCES);
+                  setNotificationSliderValue(DEFAULT_TODAY_WIDGET_PREFERENCES.options.notificationArchive.dayCount);
+                  commitNotificationDayCount(DEFAULT_TODAY_WIDGET_PREFERENCES.options.notificationArchive.dayCount);
+                }}>Réinitialiser</button>
+                <button type="button" className="secondary" onClick={() => { setWidgetManagerOpen(false); navigate("/parametres/widgets"); }}>Options avancées</button>
+              </div>
               <button type="button" className="primary" onClick={() => setWidgetManagerOpen(false)}>Terminer</button>
             </footer>
           </aside>

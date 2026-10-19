@@ -10,6 +10,7 @@
 }
 .today-hours__heading > strong { flex: 1; font-size: .82rem; }
 .today-hours__date { position: relative; flex: 1; margin: 0; font-size: .75rem; color: var(--muted); }
+.today-hours__date-summary { align-self: center; color: var(--muted); font-size: .75rem; }
 .today-hours__date input {
   display: block;
   box-sizing: border-box;

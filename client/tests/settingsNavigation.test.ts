@@ -9,6 +9,7 @@ test("les rubriques de paramètres ouvrent directement un réglage utile", () =>
 
   assert.deepEqual(entryPaths, {
     organisation: "organisation",
+    personnalisation: "widgets",
     hebergements: "nuitees",
     canaux: "emails",
     connexions: "connexions",
@@ -31,4 +32,14 @@ test("la configuration des modules reste accessible dans Connexions", () => {
     label: "Modules",
     path: "connexions",
   });
+});
+
+test("les widgets disposent d'une rubrique de personnalisation dédiée", () => {
+  const personalization = SETTINGS_CATEGORIES.find(({ id }) => id === "personnalisation");
+
+  assert.ok(personalization);
+  assert.deepEqual(personalization.tabs, [
+    { label: "Widgets", path: "widgets", navId: "nav-settings-widgets" },
+    { label: "Apparence", path: "apparence", navId: "nav-settings-appearance" },
+  ]);
 });
