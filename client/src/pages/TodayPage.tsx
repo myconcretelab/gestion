@@ -23,6 +23,16 @@ import {
 import type { Gite, Reservation } from "../utils/types";
 import type { AppUser } from "../utils/auth";
 import { isCleaningReadinessLate, isCleaningReadinessVisible } from "./cleaningTaskStatus";
+import {
+  DEFAULT_TODAY_WIDGET_PREFERENCES,
+  TODAY_WIDGET_CATALOG,
+  moveTodayWidget,
+  readTodayWidgetPreferences,
+  writeTodayWidgetPreferences,
+  type TodayWidgetId,
+  type TodayWidgetPreferences,
+  type TodayWidgetWidth,
+} from "../utils/todayWidgets";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOTAL_DAY_COUNT = 14;
@@ -660,6 +670,20 @@ const RevenueTrendIcon = ({ direction }: { direction: "up" | "down" | "flat" }) 
   </svg>
 );
 
+const WidgetSettingsIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M12 3.5v2" />
+    <path d="M12 18.5v2" />
+    <path d="m5.99 5.99 1.42 1.42" />
+    <path d="m16.59 16.59 1.42 1.42" />
+    <path d="M3.5 12h2" />
+    <path d="M18.5 12h2" />
+    <path d="m5.99 18.01 1.42-1.42" />
+    <path d="m16.59 7.41 1.42-1.42" />
+    <circle cx="12" cy="12" r="3.25" />
+  </svg>
+);
+
 const formatRevenueDifference = (value: number) => `${value > 0 ? "+" : ""}${formatEuro(value)}`;
 
 const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
@@ -682,6 +706,11 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const [cleaningReadinessBusyId, setCleaningReadinessBusyId] = useState<string | null>(null);
   const [cleaningReadinessUndo, setCleaningReadinessUndo] = useState<GiteCleaningReadiness | null>(null);
   const [selectedCleaningGiteId, setSelectedCleaningGiteId] = useState<string | null>(null);
+  const [widgetPreferences, setWidgetPreferences] = useState<TodayWidgetPreferences>(() =>
+    readTodayWidgetPreferences(currentUser?.id)
+  );
+  const [widgetManagerOpen, setWidgetManagerOpen] = useState(false);
+  const [widgetManagerFocusId, setWidgetManagerFocusId] = useState<TodayWidgetId | null>(null);
   const primaryRequestIdRef = useRef(0);
   const deferredRequestIdRef = useRef(0);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
@@ -690,6 +719,41 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
 
   const buildOverviewQuery = (notificationDays: number) =>
     `/today/overview?days=${TOTAL_DAY_COUNT}&notification_days=${notificationDays}`;
+
+  const updateWidgetPreferences = (
+    update: TodayWidgetPreferences | ((current: TodayWidgetPreferences) => TodayWidgetPreferences)
+  ) => {
+    setWidgetPreferences((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      writeTodayWidgetPreferences(currentUser?.id, next);
+      return next;
+    });
+  };
+
+  const openWidgetManager = (widgetId?: TodayWidgetId) => {
+    setWidgetManagerFocusId(widgetId ?? null);
+    setWidgetManagerOpen(true);
+  };
+
+  const setWidgetEnabled = (widgetId: TodayWidgetId, enabled: boolean) => {
+    updateWidgetPreferences((current) => ({
+      ...current,
+      widgets: {
+        ...current.widgets,
+        [widgetId]: { ...current.widgets[widgetId], enabled },
+      },
+    }));
+  };
+
+  const setWidgetWidth = (widgetId: TodayWidgetId, width: TodayWidgetWidth) => {
+    updateWidgetPreferences((current) => ({
+      ...current,
+      widgets: {
+        ...current.widgets,
+        [widgetId]: { ...current.widgets[widgetId], width },
+      },
+    }));
+  };
 
   const loadDeferredData = async (options?: { notificationDays?: number }) => {
     const nextNotificationDays = options?.notificationDays ?? notificationDayCount;
@@ -746,6 +810,28 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    setWidgetPreferences(readTodayWidgetPreferences(currentUser?.id));
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!widgetManagerOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setWidgetManagerOpen(false);
+    };
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (!widgetManagerFocusId) return;
+      const target = document.querySelector<HTMLElement>(`[data-widget-settings-id="${widgetManagerFocusId}"]`);
+      target?.scrollIntoView({ block: "nearest" });
+      target?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    });
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [widgetManagerFocusId, widgetManagerOpen]);
 
   useEffect(() => {
     setNotificationSliderValue((current) => (current === notificationDayCount ? current : notificationDayCount));
@@ -1529,9 +1615,30 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         </div>
       </section>
 
-      <section className="today-utility-strip">
-        <div className="today-utility-strip__block today-utility-strip__block--trash">
-          <span className="today-utility-strip__label">Poubelles</span>
+      <section className="today-utility-strip" aria-label="Mes widgets du jour">
+        <div className="today-widgets__toolbar">
+          <div>
+            <span className="today-widgets__eyebrow">Tableau de bord</span>
+            <strong>Mes widgets</strong>
+          </div>
+          <button type="button" className="today-widgets__manage-button" onClick={() => openWidgetManager()}>
+            <span aria-hidden="true">＋</span>
+            Gérer les widgets
+          </button>
+        </div>
+
+        {widgetPreferences.widgets.trash.enabled ? (
+        <div
+          className="today-utility-strip__block today-utility-strip__block--trash"
+          data-widget-width={widgetPreferences.widgets.trash.width}
+          style={{ order: widgetPreferences.order.indexOf("trash") + 1 }}
+        >
+          <div className="today-widget__header">
+            <span className="today-utility-strip__label">Poubelles</span>
+            <button type="button" className="today-widget__options" onClick={() => openWidgetManager("trash")} aria-label="Options du widget Poubelles">
+              <WidgetSettingsIcon />
+            </button>
+          </div>
           <div className="today-trash-inline__chips">
             <span
               className="today-trash-chip"
@@ -1558,43 +1665,76 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               Néant
             </span>
           </div>
-          <div className="today-utility-strip__detail">
+          {widgetPreferences.options.trash.showNextPickup ? <div className="today-utility-strip__detail">
             {deferredOverview && unassignedCount > 0 ? <span>{unassignedCount} sans gîte masquée(s)</span> : null}
             {!deferredOverview && deferredLoading ? <span>Chargement des indicateurs...</span> : null}
             <span>
               Prochain passage : <strong>{trashPickupLabel}</strong>
             </span>
-          </div>
+          </div> : null}
         </div>
+        ) : null}
 
-        <div className="today-utility-strip__block today-utility-strip__block--fill">
-          <div className="today-utility-strip__fill-hours-row">
-            <div className="today-utility-strip__fill-summary">
+        {widgetPreferences.widgets.occupancy.enabled ? (
+          <div
+            className="today-utility-strip__block today-utility-strip__block--fill"
+            data-widget-width={widgetPreferences.widgets.occupancy.width}
+            style={{ order: widgetPreferences.order.indexOf("occupancy") + 1 }}
+          >
+            <div className="today-widget__header">
               <span className="today-utility-strip__label">Remplissage</span>
-              <div className="today-utility-strip__fill">
-                <OccupationGaugeDial
-                  id={`today-fill-rate-${todayIso}`}
-                  occupation={filledGiteRate}
-                  highlighted={false}
-                  animate={false}
-                  size={{ width: 60, height: 28 }}
-                  className="today-utility-strip__fill-gauge"
-                />
-                <div className="today-utility-strip__fill-copy">
-                  <strong>{Math.round(filledGiteRate * 100)}%</strong>
-                  <span>
-                    {filledGiteCount}/{gites.length || 0} gîte{gites.length > 1 ? "s" : ""}
-                  </span>
-                </div>
+              <button type="button" className="today-widget__options" onClick={() => openWidgetManager("occupancy")} aria-label="Options du widget Remplissage">
+                <WidgetSettingsIcon />
+              </button>
+            </div>
+            <div className="today-utility-strip__fill">
+              <OccupationGaugeDial
+                id={`today-fill-rate-${todayIso}`}
+                occupation={filledGiteRate}
+                highlighted={false}
+                animate={false}
+                size={{ width: 74, height: 34 }}
+                className="today-utility-strip__fill-gauge"
+              />
+              <div className="today-utility-strip__fill-copy">
+                <strong>{Math.round(filledGiteRate * 100)}%</strong>
+                {widgetPreferences.options.occupancy.showCount ? (
+                  <span>{filledGiteCount}/{gites.length || 0} gîte{gites.length > 1 ? "s" : ""}</span>
+                ) : null}
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {widgetPreferences.widgets.hours.enabled ? (
+          <div
+            className="today-utility-strip__block today-utility-strip__block--hours"
+            data-widget-width={widgetPreferences.widgets.hours.width}
+            style={{ order: widgetPreferences.order.indexOf("hours") + 1 }}
+          >
+            <div className="today-widget__header">
+              <span className="today-utility-strip__label">Heures</span>
+              <button type="button" className="today-widget__options" onClick={() => openWidgetManager("hours")} aria-label="Options du widget Heures">
+                <WidgetSettingsIcon />
+              </button>
             </div>
             <TodayIntervenantHours today={todayIso} />
           </div>
-        </div>
+        ) : null}
 
-        <div className="today-utility-strip__block today-utility-strip__block--revenue">
+        {widgetPreferences.widgets.revenue.enabled ? (
+        <div
+          className="today-utility-strip__block today-utility-strip__block--revenue"
+          data-widget-width={widgetPreferences.widgets.revenue.width}
+          style={{ order: widgetPreferences.order.indexOf("revenue") + 1 }}
+        >
           <div className="today-utility-strip__section-head">
-            <span className="today-utility-strip__label">Revenus nets moyens</span>
+            <div className="today-widget__header">
+              <span className="today-utility-strip__label">Revenus nets moyens</span>
+              <button type="button" className="today-widget__options" onClick={() => openWidgetManager("revenue")} aria-label="Options du widget Revenus nets moyens">
+                <WidgetSettingsIcon />
+              </button>
+            </div>
             <span>Sélectionnez un montant pour le détail</span>
           </div>
           <div className="today-revenue-mini" aria-label="Revenus mensuels moyens nets">
@@ -1645,7 +1785,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                       {metric.label}
                     </span>
                     <strong>{formatEuro(metric.net_average_monthly_revenue)}</strong>
-                    {metric.comparison ? (
+                    {widgetPreferences.options.revenue.showTrends && metric.comparison ? (
                       <div
                         className={`today-revenue-mini__trend today-revenue-mini__trend--${comparisonDirection}`}
                         title={`Écart par rapport à ${metric.comparison.reference_label}${
@@ -1728,10 +1868,21 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             })}
           </div>
         </div>
+        ) : null}
 
-        <div className="today-utility-strip__block today-utility-strip__block--archive">
+        {widgetPreferences.widgets.notification_archive.enabled ? (
+        <div
+          className="today-utility-strip__block today-utility-strip__block--archive"
+          data-widget-width={widgetPreferences.widgets.notification_archive.width}
+          style={{ order: widgetPreferences.order.indexOf("notification_archive") + 1 }}
+        >
           <div className="today-utility-strip__slider-head">
-            <span className="today-utility-strip__label">Archives notifications</span>
+            <div className="today-widget__header today-widget__header--grow">
+              <span className="today-utility-strip__label">Archives notifications</span>
+              <button type="button" className="today-widget__options" onClick={() => openWidgetManager("notification_archive")} aria-label="Options du widget Archives notifications">
+                <WidgetSettingsIcon />
+              </button>
+            </div>
             <strong>{formatNotificationDayLabel(notificationSliderValue)}</strong>
           </div>
           <input
@@ -1758,7 +1909,145 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             <span>5 j</span>
           </div>
         </div>
+        ) : null}
+
+        {Object.values(widgetPreferences.widgets).every((widget) => !widget.enabled) ? (
+          <div className="today-widgets__empty">
+            <span aria-hidden="true">▦</span>
+            <strong>Votre espace de widgets est vide</strong>
+            <p>Installez les indicateurs utiles à votre quotidien.</p>
+            <button type="button" className="primary" onClick={() => openWidgetManager()}>Installer un widget</button>
+          </div>
+        ) : null}
       </section>
+
+      {widgetManagerOpen ? (
+        <div className="today-widget-manager" role="dialog" aria-modal="true" aria-labelledby="today-widget-manager-title">
+          <button type="button" className="today-widget-manager__backdrop" onClick={() => setWidgetManagerOpen(false)} aria-label="Fermer la gestion des widgets" />
+          <aside className="today-widget-manager__panel">
+            <header className="today-widget-manager__header">
+              <div>
+                <span className="today-widgets__eyebrow">Personnalisation</span>
+                <h2 id="today-widget-manager-title">Gérer mes widgets</h2>
+                <p>{Object.values(widgetPreferences.widgets).filter((widget) => widget.enabled).length} widget(s) installé(s)</p>
+              </div>
+              <button type="button" className="today-widget-manager__close" onClick={() => setWidgetManagerOpen(false)} aria-label="Fermer">×</button>
+            </header>
+
+            <div className="today-widget-manager__content">
+              {TODAY_WIDGET_CATALOG.map((catalogWidget) => {
+                const widget = widgetPreferences.widgets[catalogWidget.id];
+                const enabledOrder = widgetPreferences.order.filter((id) => widgetPreferences.widgets[id].enabled);
+                const enabledIndex = enabledOrder.indexOf(catalogWidget.id);
+                return (
+                  <section
+                    key={catalogWidget.id}
+                    className={`today-widget-setting${widgetManagerFocusId === catalogWidget.id ? " is-focused" : ""}`}
+                    data-widget-settings-id={catalogWidget.id}
+                  >
+                    <div className="today-widget-setting__summary">
+                      <div className="today-widget-setting__icon" aria-hidden="true">{catalogWidget.label.slice(0, 1)}</div>
+                      <div>
+                        <strong>{catalogWidget.label}</strong>
+                        <p>{catalogWidget.description}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className={widget.enabled ? "today-widget-setting__toggle is-installed" : "today-widget-setting__toggle"}
+                        onClick={() => setWidgetEnabled(catalogWidget.id, !widget.enabled)}
+                      >
+                        {widget.enabled ? "Installé" : "Installer"}
+                      </button>
+                    </div>
+
+                    {widget.enabled ? (
+                      <div className="today-widget-setting__options">
+                        <label>
+                          <span>Largeur</span>
+                          <select value={widget.width} onChange={(event) => setWidgetWidth(catalogWidget.id, event.target.value as TodayWidgetWidth)}>
+                            <option value="small">Compacte</option>
+                            <option value="medium">Moyenne</option>
+                            <option value="large">Large</option>
+                            <option value="full">Ligne entière</option>
+                          </select>
+                        </label>
+                        <div className="today-widget-setting__order" aria-label={`Position du widget ${catalogWidget.label}`}>
+                          <span>Position</span>
+                          <div>
+                            <button type="button" disabled={enabledIndex <= 0} onClick={() => updateWidgetPreferences((current) => moveTodayWidget(current, catalogWidget.id, -1))} aria-label={`Déplacer ${catalogWidget.label} vers le haut`}>↑</button>
+                            <button type="button" disabled={enabledIndex < 0 || enabledIndex >= enabledOrder.length - 1} onClick={() => updateWidgetPreferences((current) => moveTodayWidget(current, catalogWidget.id, 1))} aria-label={`Déplacer ${catalogWidget.label} vers le bas`}>↓</button>
+                          </div>
+                        </div>
+
+                        {catalogWidget.id === "trash" ? (
+                          <label className="today-widget-setting__check">
+                            <input
+                              type="checkbox"
+                              checked={widgetPreferences.options.trash.showNextPickup}
+                              onChange={(event) => updateWidgetPreferences((current) => ({
+                                ...current,
+                                options: { ...current.options, trash: { showNextPickup: event.target.checked } },
+                              }))}
+                            />
+                            Afficher le prochain passage
+                          </label>
+                        ) : null}
+                        {catalogWidget.id === "occupancy" ? (
+                          <label className="today-widget-setting__check">
+                            <input
+                              type="checkbox"
+                              checked={widgetPreferences.options.occupancy.showCount}
+                              onChange={(event) => updateWidgetPreferences((current) => ({
+                                ...current,
+                                options: { ...current.options, occupancy: { showCount: event.target.checked } },
+                              }))}
+                            />
+                            Afficher le nombre de gîtes
+                          </label>
+                        ) : null}
+                        {catalogWidget.id === "revenue" ? (
+                          <label className="today-widget-setting__check">
+                            <input
+                              type="checkbox"
+                              checked={widgetPreferences.options.revenue.showTrends}
+                              onChange={(event) => updateWidgetPreferences((current) => ({
+                                ...current,
+                                options: { ...current.options, revenue: { showTrends: event.target.checked } },
+                              }))}
+                            />
+                            Afficher les tendances
+                          </label>
+                        ) : null}
+                        {catalogWidget.id === "notification_archive" ? (
+                          <label className="today-widget-setting__range">
+                            <span>Conserver {formatNotificationDayLabel(notificationSliderValue)}</span>
+                            <input
+                              type="range"
+                              min={1}
+                              max={5}
+                              step={1}
+                              value={notificationSliderValue}
+                              onChange={(event) => setNotificationSliderValue(Number(event.target.value))}
+                              onPointerUp={() => commitNotificationDayCount(notificationSliderValue)}
+                              onBlur={() => commitNotificationDayCount(notificationSliderValue)}
+                            />
+                          </label>
+                        ) : null}
+                        {catalogWidget.id === "hours" ? <p className="today-widget-setting__hint">Les intervenants visibles se choisissent directement depuis le widget.</p> : null}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
+
+            <footer className="today-widget-manager__footer">
+              <button type="button" className="secondary" onClick={() => updateWidgetPreferences(DEFAULT_TODAY_WIDGET_PREFERENCES)}>Réinitialiser</button>
+              <button type="button" className="primary" onClick={() => setWidgetManagerOpen(false)}>Terminer</button>
+            </footer>
+          </aside>
+        </div>
+      ) : null}
 
       <section className="today-notifications-card">
         <div className="today-section-head today-section-head--notifications">
