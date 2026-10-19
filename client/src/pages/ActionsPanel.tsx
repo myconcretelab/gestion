@@ -197,7 +197,21 @@ export default function ActionsPanel({
       const result = await apiFetch<ActionResponse>(
         `/action-tasks?${new URLSearchParams({ from, to })}`,
       );
-      if (id === requestId.current) setData(result);
+      if (id === requestId.current) {
+        // Keep an already open page usable while the frontend/backend are being deployed.
+        const shortcuts = result.shortcuts.map((item) => ({
+          ...item,
+          note: item.note ?? "",
+          enabled: item.enabled ?? true,
+        }));
+        setData({
+          ...result,
+          shortcuts,
+          shortcut_catalog: result.shortcut_catalog ?? shortcuts,
+          can_edit_compensation: result.can_edit_compensation ?? false,
+          current_user_id: result.current_user_id ?? null,
+        });
+      }
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -759,8 +773,8 @@ export default function ActionsPanel({
                 Une automatisation est liée à{" "}
                 <strong>un gîte et un événement</strong>. Ses dates, son
                 attribution et sa rémunération sont définies une fois, puis
-                reprises à chaque séjour.
-                Une mise en pause arrête la génération sans supprimer les tâches existantes.
+                reprises à chaque séjour. Une mise en pause arrête la génération
+                sans supprimer les tâches existantes.
               </p>
             </div>
             {data.templates.length ? (

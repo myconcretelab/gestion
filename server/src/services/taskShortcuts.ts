@@ -43,7 +43,11 @@ export async function saveTaskShortcuts(
     where: { key: definition.key },
   });
   const current = row
-    ? taskShortcutCatalogSchema.parse(JSON.parse(row.value_json))
+    ? taskShortcutCatalogSchema.parse(
+        typeof row.value_json === "string"
+          ? JSON.parse(row.value_json)
+          : row.value_json,
+      )
     : definition.defaultValue;
   const conflict = () =>
     Object.assign(
@@ -60,7 +64,7 @@ export async function saveTaskShortcuts(
   };
   if (row) {
     const updated = await database.organizationRuntimeSetting.updateMany({
-      where: { id: row.id, value_json: row.value_json },
+      where: { id: row.id, value_json: { equals: row.value_json ?? "" } },
       data: value,
     });
     if (!updated.count) throw conflict();

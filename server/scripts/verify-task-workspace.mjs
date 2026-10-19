@@ -235,14 +235,12 @@ try {
       document.querySelector(".tw-preset h3")?.textContent ===
       "Raccourci de test",
   );
-  const testPreset = page
-    .locator(".tw-preset")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Raccourci de test",
-        exact: true,
-      }),
-    });
+  const testPreset = page.locator(".tw-preset").filter({
+    has: page.getByRole("heading", {
+      name: "Raccourci de test",
+      exact: true,
+    }),
+  });
   await testPreset
     .getByRole("button", { name: "Masquer", exact: true })
     .click();
@@ -344,6 +342,15 @@ try {
       .getByRole("button", { name: "Nouvelle tâche", exact: true })
       .count(),
     0,
+  );
+  fixture.can_manage = true;
+  delete fixture.shortcut_catalog;
+  delete fixture.can_edit_compensation;
+  await mount();
+  await page.getByRole("tab", { name: "Préenregistrées" }).click();
+  assert.equal(
+    await page.locator(".tw-preset").count(),
+    fixture.shortcuts.length,
   );
   assert.deepEqual(errors, []);
   console.log(

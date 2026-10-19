@@ -173,7 +173,8 @@ test("la bibliothèque est persistante, ordonnée et strictement isolée par org
             if (
               concurrentUpdate ||
               row?.id !== scoped.where.id ||
-              row.value_json !== scoped.where.value_json
+              JSON.stringify(row.value_json) !==
+                JSON.stringify(scoped.where.value_json.equals)
             )
               return { count: 0 };
             rows.set(scoped.where.organization_id, { ...row, ...scoped.data });
@@ -200,6 +201,9 @@ test("la bibliothèque est persistante, ordonnée et strictement isolée par org
     await within("org-a", () => saveTaskShortcuts(catalog, defaults));
     assert.deepEqual(await within("org-a", readTaskShortcuts), catalog);
     assert.deepEqual(await within("org-b", readTaskShortcuts), defaults);
+    // PostgreSQL returns JSON values; SQLite returns the serialized text.
+    rows.get("org-a").value_json = catalog;
+    assert.deepEqual(await within("org-a", readTaskShortcuts), catalog);
     await assert.rejects(
       () => within("org-a", () => saveTaskShortcuts([], defaults)),
       { status: 409 },
