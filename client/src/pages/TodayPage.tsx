@@ -49,6 +49,7 @@ type TodayPrimaryOverviewPayload = {
   reservations: Reservation[];
   source_colors: Record<string, string>;
   revenue_averages?: TodayRevenueAverageMetric[];
+  cleaning_assignees?: Array<{ id: string; name: string }>;
   cleaning_readiness: GiteCleaningReadiness[];
 };
 
@@ -69,6 +70,7 @@ type GiteCleaningReadiness = {
   task_status?: string | null;
   task_starts_at?: string | null;
   assignee_id?: string | null;
+  assignee_name?: string | null;
   due_at?: string | null;
   next_arrival_at?: string | null;
   notification_warning?: string | null;
@@ -682,6 +684,10 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const [trashNow, setTrashNow] = useState(() => new Date());
   const [cleaningReadinessBusyId, setCleaningReadinessBusyId] = useState<string | null>(null);
   const [cleaningReadinessUndo, setCleaningReadinessUndo] = useState<GiteCleaningReadiness | null>(null);
+  const [cleaningPerformerPrompt, setCleaningPerformerPrompt] = useState<{
+    item: GiteCleaningReadiness;
+    selectedUserId: string;
+  } | null>(null);
   const [selectedCleaningGiteId, setSelectedCleaningGiteId] = useState<string | null>(null);
   const [widgetManagerOpen, setWidgetManagerOpen] = useState(false);
   const [widgetManagerFocusId, setWidgetManagerFocusId] = useState<TodayWidgetId | null>(null);
@@ -1205,13 +1211,25 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
     void loadDeferredData({ notificationDays: nextValue });
   };
 
-  const updateCleaningReadiness = async (item: GiteCleaningReadiness, checked: boolean, direct = false) => {
+  const updateCleaningReadiness = async (
+    item: GiteCleaningReadiness,
+    checked: boolean,
+    direct = false,
+    fullCleaningUserId?: string | null,
+  ) => {
     if (cleaningReadinessBusyId) return;
     setCleaningReadinessBusyId(item.gite_id);
     try {
       const updated = await apiFetch<GiteCleaningReadiness>(
         `/today/cleaning-readiness/${encodeURIComponent(item.gite_id)}`,
-        { method: "PUT", json: { checked, direct } }
+        {
+          method: "PUT",
+          json: {
+            checked,
+            direct,
+            ...(fullCleaningUserId !== undefined ? { full_cleaning_user_id: fullCleaningUserId } : {}),
+          },
+        }
       );
       setPrimaryOverview((previous) => previous ? {
         ...previous,
@@ -1220,6 +1238,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         ),
       } : previous);
       setCleaningReadinessUndo(checked ? updated : null);
+      setCleaningPerformerPrompt(null);
       setSelectedCleaningGiteId(null);
       dispatchAppNotice({
         label: checked ? `${updated.gite_prefix} est prêt` : `Validation de ${updated.gite_prefix} annulée`,
@@ -1252,6 +1271,40 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
     } finally {
       setCleaningReadinessBusyId(null);
     }
+  };
+
+  const beginDirectCleaningValidation = (item: GiteCleaningReadiness) => {
+    if (!item.departure_has_cleaning_option) {
+      void updateCleaningReadiness(item, true, true, null);
+      return;
+    }
+    const assignees = primaryOverview?.cleaning_assignees ?? [];
+    const currentWorker = currentUser?.roles.includes("worker") && currentUser.intervenantId
+      ? assignees.find((candidate) => candidate.id === currentUser.id) ?? null
+      : null;
+    const assignedWorker = item.assignee_id
+      ? assignees.find((candidate) => candidate.id === item.assignee_id) ?? null
+      : null;
+
+    if (assignedWorker && assignedWorker.id === currentWorker?.id) {
+      void updateCleaningReadiness(item, true, true, assignedWorker.id);
+      return;
+    }
+    if (!assignedWorker && currentWorker) {
+      void updateCleaningReadiness(item, true, true, currentWorker.id);
+      return;
+    }
+    if (!assignees.length) {
+      dispatchAppNotice({
+        label: "Intervenant requis",
+        message: "Ajoutez un intervenant actif avant de comptabiliser ce ménage.",
+        tone: "warning",
+        timeoutMs: 8000,
+        role: "alert",
+      });
+      return;
+    }
+    setCleaningPerformerPrompt({ item, selectedUserId: "" });
   };
 
   const updateCleaningTaskStatus = async (item: GiteCleaningReadiness, status: "in_progress" | "done") => {
@@ -1419,7 +1472,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                   aria-expanded={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id}
                   aria-controls={usesDirectCleaningValidation ? undefined : selectedCleaningGiteId === item.gite_id ? "today-cleaning-panel" : undefined}
                   onClick={() => usesDirectCleaningValidation
-                    ? void updateCleaningReadiness(item, true, true)
+                    ? beginDirectCleaningValidation(item)
                     : setSelectedCleaningGiteId((current) => current === item.gite_id ? null : item.gite_id)}
                 >
                   <span>{item.gite_prefix.trim().slice(0, 2).toUpperCase() || item.gite_name.trim().slice(0, 1).toUpperCase()}</span>
@@ -1473,6 +1526,45 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             >
               Annuler
             </button>
+          </div>
+        ) : null}
+        {cleaningPerformerPrompt ? (
+          <div className="today-cleaning-performer" role="dialog" aria-modal="true" aria-labelledby="today-cleaning-performer-title">
+            <button type="button" className="today-cleaning-performer__backdrop" onClick={() => setCleaningPerformerPrompt(null)} aria-label="Fermer le choix de l’intervenant" />
+            <form className="today-cleaning-performer__panel" onSubmit={(event) => {
+              event.preventDefault();
+              void updateCleaningReadiness(
+                cleaningPerformerPrompt.item,
+                true,
+                true,
+                cleaningPerformerPrompt.selectedUserId,
+              );
+            }}>
+              <header>
+                <div>
+                  <span className="today-widgets__eyebrow">Attribution du ménage</span>
+                  <h2 id="today-cleaning-performer-title">Qui a réalisé le ménage&nbsp;?</h2>
+                  <p>{cleaningPerformerPrompt.item.gite_name} · départ du {formatLongDate(cleaningPerformerPrompt.item.departure_date)}</p>
+                </div>
+                <button type="button" className="today-cleaning-performer__close" onClick={() => setCleaningPerformerPrompt(null)} aria-label="Fermer">×</button>
+              </header>
+              {cleaningPerformerPrompt.item.assignee_id && cleaningPerformerPrompt.item.assignee_id !== currentUser?.id ? (
+                <p className="today-cleaning-performer__notice">
+                  Ce ménage était attribué à <strong>{cleaningPerformerPrompt.item.assignee_name ?? "un autre intervenant"}</strong>. Le contrôle restera enregistré au nom de {currentUser?.displayName ?? "la personne connectée"}.
+                </p>
+              ) : null}
+              <label className="field">Ménage réalisé par
+                <select value={cleaningPerformerPrompt.selectedUserId} onChange={(event) => setCleaningPerformerPrompt((current) => current ? { ...current, selectedUserId: event.target.value } : current)}>
+                  <option value="">Choisir l’intervenant…</option>
+                  {(primaryOverview?.cleaning_assignees ?? []).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}{assignee.id === currentUser?.id ? " (moi)" : ""}</option>)}
+                </select>
+              </label>
+              <p className="field-hint">Le forfait du ménage sera comptabilisé pour cette personne. Le contrôle sera attribué à l’utilisateur connecté.</p>
+              <footer>
+                <button type="button" className="secondary" onClick={() => setCleaningPerformerPrompt(null)}>Annuler</button>
+                <button type="submit" disabled={Boolean(cleaningReadinessBusyId) || !cleaningPerformerPrompt.selectedUserId}>{cleaningReadinessBusyId ? "Validation…" : "Valider le ménage"}</button>
+              </footer>
+            </form>
           </div>
         ) : null}
         <div className="today-timeline__viewport">

@@ -549,7 +549,15 @@ router.get("/overview/primary", async (req, res, next) => {
       await syncCleaningTasks(fromDate, toDate);
       return listCleaningTasksForDepartures(cleaningReadiness.map((item) => item.departure_reservation_id));
     })() : [];
+    const cleaningAssignees = canManageCleaning(currentUser)
+      ? await prisma.appUser.findMany({
+          where: { is_active: true, intervenant_id: { not: null } },
+          select: { id: true, display_name: true },
+          orderBy: [{ display_name: "asc" }, { id: "asc" }],
+        })
+      : [];
     const taskByDeparture = new Map(cleaningTasks.map((item) => [item.departure_reservation_id, item]));
+    const cleaningAssigneeNameById = new Map(cleaningAssignees.map((item) => [item.id, item.display_name]));
     const giteById = new Map(gites.map((gite) => [gite.id, gite]));
     const visibleReadiness = cleaningReadiness
       .filter((item) => canManageCleaning(currentUser) || taskByDeparture.get(item.departure_reservation_id)?.assignee_id === currentUser?.id)
@@ -558,6 +566,7 @@ router.get("/overview/primary", async (req, res, next) => {
         task_status: taskByDeparture.get(item.departure_reservation_id)?.status ?? null,
         task_starts_at: taskByDeparture.get(item.departure_reservation_id)?.starts_at?.toISOString() ?? null,
         assignee_id: taskByDeparture.get(item.departure_reservation_id)?.assignee_id ?? null,
+        assignee_name: cleaningAssigneeNameById.get(taskByDeparture.get(item.departure_reservation_id)?.assignee_id ?? "") ?? null,
         due_at: taskByDeparture.get(item.departure_reservation_id)?.due_at?.toISOString() ?? null,
         next_arrival_at: item.next_arrival_date
           ? parisWallTime(item.next_arrival_date, giteById.get(item.gite_id)?.heure_arrivee_defaut || "17:00").toISOString()
@@ -572,6 +581,7 @@ router.get("/overview/primary", async (req, res, next) => {
       reservations,
       source_colors: readSourceColorSettings().colors,
       revenue_averages: revenueAverages,
+      cleaning_assignees: cleaningAssignees.map((item) => ({ id: item.id, name: item.display_name })),
       cleaning_readiness: visibleReadiness,
     });
   } catch (error) {
@@ -582,7 +592,11 @@ router.get("/overview/primary", async (req, res, next) => {
 router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
   try {
     const currentUser = req.headers ? await getAuthenticatedAppUser(req) : null;
-    const { checked, direct } = z.object({ checked: z.boolean(), direct: z.boolean().default(false) }).parse(req.body ?? {});
+    const { checked, direct, full_cleaning_user_id: requestedFullCleaningUserId } = z.object({
+      checked: z.boolean(),
+      direct: z.boolean().default(false),
+      full_cleaning_user_id: z.string().trim().min(1).nullable().optional(),
+    }).parse(req.body ?? {});
     const gite = await prisma.gite.findUnique({
       where: { id: req.params.giteId },
       select: todayGiteSelect,
@@ -609,7 +623,9 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
       return res.status(403).json({ error: "La validation directe n’est pas autorisée pour cet utilisateur." });
     }
     const fullCleaningUserId = checked && direct && readiness.departure_has_cleaning_option
-      ? currentTask?.assignee_id ?? (currentUser?.roles.includes("worker") && currentUser.intervenantId ? currentUser.id : null)
+      ? requestedFullCleaningUserId !== undefined
+        ? requestedFullCleaningUserId
+        : currentTask?.assignee_id ?? (currentUser?.roles.includes("worker") && currentUser.intervenantId ? currentUser.id : null)
       : null;
     if (checked && direct && readiness.departure_has_cleaning_option && !fullCleaningUserId) {
       return res.status(409).json({ error: "Attribuez d’abord ce ménage à un intervenant." });
@@ -643,8 +659,11 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
       checked_at: checkedAt,
       checked_by_user_id: checked ? currentUser?.id ?? null : null,
       checked_by_name: checked ? currentUser?.displayName ?? null : null,
-      task_status: checked ? "verified" : cleaningTask?.completed_at ? "done" : "planned",
+      task_status: cleaningTask?.status ?? (checked ? "verified" : "planned"),
       assignee_id: cleaningTask?.assignee_id ?? null,
+      assignee_name: cleaningTask?.assignee_id
+        ? (await prisma.appUser.findUnique({ where: { id: cleaningTask.assignee_id }, select: { display_name: true } }))?.display_name ?? null
+        : null,
       due_at: cleaningTask?.due_at?.toISOString() ?? null,
       next_arrival_at: readiness.next_arrival_date
         ? parisWallTime(readiness.next_arrival_date, gite.heure_arrivee_defaut || "17:00").toISOString()

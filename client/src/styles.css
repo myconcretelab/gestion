@@ -1458,6 +1458,83 @@ body.app-scroll-locked {
   font-weight: 800;
 }
 
+.today-cleaning-performer {
+  position: fixed;
+  z-index: 145;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.today-cleaning-performer__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.46);
+  box-shadow: none;
+  backdrop-filter: blur(3px);
+}
+
+.today-cleaning-performer__panel {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  width: min(520px, 100%);
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.24);
+}
+
+.today-cleaning-performer__panel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.today-cleaning-performer__panel h2 { margin: 4px 0 2px; font-size: 1.3rem; }
+.today-cleaning-performer__panel header p { margin: 0; color: var(--muted); font-size: .78rem; }
+.today-cleaning-performer__close {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.today-cleaning-performer__notice {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 12px;
+  background: var(--primary-soft);
+  font-size: .8rem;
+  line-height: 1.45;
+}
+.today-cleaning-performer__panel > .field-hint { margin: 0; }
+.today-cleaning-performer__panel > footer { display: flex; justify-content: flex-end; gap: 10px; }
+
+@media (max-width: 640px) {
+  .today-cleaning-performer { padding: 0; align-items: end; }
+  .today-cleaning-performer__panel { width: 100%; padding: 18px; border-radius: 20px 20px 0 0; }
+  .today-cleaning-performer__panel > footer { display: grid; grid-template-columns: 1fr 1fr; }
+}
+
 .today-section-head {
   display: flex;
   align-items: start;
@@ -21182,6 +21259,17 @@ button.personal-expenses-status:disabled {
 .cleaning-task__note textarea { display: block; width: 100%; margin: .6rem 0; }
 .cleaning-page__rules { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .cleaning-page__checkbox { display: flex; align-items: center; gap: .5rem; }
+.cleaning-page__bulk-unassign {
+  display: grid;
+  gap: .75rem;
+  margin-top: .35rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 14px;
+  background: var(--primary-soft);
+}
+.cleaning-page__bulk-unassign p { margin: .3rem 0 0; color: var(--muted); font-size: .82rem; line-height: 1.45; }
+.cleaning-page__bulk-unassign .button-secondary { justify-self: start; }
 .actions-panel { display: grid; gap: 1.25rem; }
 .actions-panel__templates { display: grid; gap: .5rem; }
 .actions-panel__template { display: flex; justify-content: space-between; align-items: center; gap: 1rem; border: 1px solid var(--primary-soft); border-radius: 12px; padding: .75rem; }

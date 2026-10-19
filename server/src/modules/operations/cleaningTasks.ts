@@ -5,7 +5,7 @@ import { getOrganizationId } from "../../services/organizationContext.js";
 import { fromJsonString } from "../../utils/jsonFields.js";
 import { getAuthenticatedAppUser } from "../../services/serverAuth.js";
 import { canManageCleaning, DEFAULT_CLEANING_RULE, parisWallTime, serializeCleaningTask, syncCleaningTasks } from "../../services/cleaningTasks.js";
-import { isCleaningCheckAvailable, loadGiteCleaningReadiness, updateGiteCleaningReadiness } from "../../services/giteCleaningReadiness.js";
+import { getParisClock, isCleaningCheckAvailable, loadGiteCleaningReadiness, updateGiteCleaningReadiness } from "../../services/giteCleaningReadiness.js";
 import { notifyCleaningCompletedOnTelegram, notifyGiteCheckedOnTelegram } from "../../services/telegramNotifications.js";
 import { parseRotationAssignees, validateAssignees } from "../../services/assignmentRules.js";
 
@@ -122,6 +122,42 @@ router.put("/rules/:giteId", async (req, res, next) => {
       create: { gite_id: gite.id, ...stored }, update: { ...stored, ...(resetRotation ? { rotation_cursor: 0 } : {}) },
     });
     return res.json(rule);
+  } catch (error) { next(error); }
+});
+
+router.post("/rules/unassign-all", async (req, res, next) => {
+  try {
+    const user = await getAuthenticatedAppUser(req);
+    if (!canManageCleaning(user)) return res.status(403).json({ error: "Gestion des règles réservée aux gestionnaires." });
+    const organizationId = getOrganizationId();
+    const gites = await prisma.gite.findMany({ select: { id: true } });
+    const today = getParisClock(new Date()).dateIso;
+    const startOfToday = parisWallTime(today, "00:00");
+    const result = await prisma.$transaction(async (tx) => {
+      for (const gite of gites) {
+        await tx.cleaningRule.upsert({
+          where: { organization_id_gite_id: { organization_id: organizationId, gite_id: gite.id } },
+          create: { gite_id: gite.id, ...DEFAULT_CLEANING_RULE },
+          update: {
+            assignment_mode: "unassigned",
+            default_assignee_id: null,
+            rotation_assignee_ids: "[]",
+            rotation_cursor: 0,
+          },
+        });
+      }
+      const tasks = await tx.cleaningTask.updateMany({
+        where: { status: "planned", starts_at: { gte: startOfToday }, assignee_id: { not: null } },
+        data: { assignee_id: null },
+      });
+      const assignments = await tx.planningRelayAssignment.deleteMany({ where: { date: { gte: today } } });
+      return { tasks: tasks.count, assignments: assignments.count };
+    });
+    return res.json({
+      rules_updated: gites.length,
+      tasks_unassigned: result.tasks,
+      planning_assignments_removed: result.assignments,
+    });
   } catch (error) { next(error); }
 });
 

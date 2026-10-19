@@ -29,6 +29,11 @@ type CleaningResponse = {
   rules: CleaningRule[];
   can_manage: boolean;
 };
+type UnassignAllResponse = {
+  rules_updated: number;
+  tasks_unassigned: number;
+  planning_assignments_removed: number;
+};
 
 const parisDay = (date = new Date()) => new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
@@ -114,6 +119,24 @@ export default function CleaningPage() {
       setNotice("Règle enregistrée. Les horaires des ménages planifiés ont été recalculés ; les attributions existantes sont conservées.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Impossible d’enregistrer la règle.");
+    } finally { setBusyId(null); }
+  };
+
+  const unassignAllFutureCleanings = async () => {
+    const confirmed = window.confirm(
+      "Laisser tous les ménages à venir sans intervenant ?\n\nLes règles de tous les gîtes passeront en attribution manuelle. Les ménages déjà terminés ou en cours ne seront pas modifiés."
+    );
+    if (!confirmed) return;
+    setBusyId("rules:unassign-all"); setError(null); setNotice(null);
+    try {
+      const result = await apiFetch<UnassignAllResponse>("/cleaning-tasks/rules/unassign-all", { method: "POST" });
+      await load();
+      setNotice(
+        `${result.rules_updated} règle${result.rules_updated > 1 ? "s" : ""} passée${result.rules_updated > 1 ? "s" : ""} en attribution manuelle. `
+        + `${result.tasks_unassigned} ménage${result.tasks_unassigned > 1 ? "s" : ""} à venir désattribué${result.tasks_unassigned > 1 ? "s" : ""}.`
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Impossible de retirer les attributions futures.");
     } finally { setBusyId(null); }
   };
 
@@ -244,6 +267,15 @@ export default function CleaningPage() {
         </select></label>
       </div>
       <button type="button" disabled={busyId === `rule:${selectedGite}`} onClick={() => void saveRule()}>{busyId === `rule:${selectedGite}` ? "Enregistrement…" : "Enregistrer la règle"}</button>
+      <div className="cleaning-page__bulk-unassign">
+        <div>
+          <strong>Ne rien attribuer à l’avance</strong>
+          <p>Applique l’attribution manuelle à tous les gîtes et retire les intervenants des ménages planifiés à venir. Les tâches en cours ou terminées restent intactes.</p>
+        </div>
+        <button type="button" className="button-secondary" disabled={busyId === "rules:unassign-all"} onClick={() => void unassignAllFutureCleanings()}>
+          {busyId === "rules:unassign-all" ? "Mise à jour…" : "Désattribuer tous les ménages à venir"}
+        </button>
+      </div>
     </section> : null}
     </div> : <ActionsPanel from={from} to={to} />}
   </div>;

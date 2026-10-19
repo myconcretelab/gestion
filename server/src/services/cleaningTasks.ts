@@ -198,6 +198,39 @@ export const doesCleaningRequireCheck = async (giteId: string) => {
   return rule?.requires_check ?? true;
 };
 
+type CleaningTaskReadinessState = {
+  completed_at: Date | null;
+  completed_by_id: string | null;
+  checked_at: Date | null;
+};
+
+export const cleaningTaskReadinessUpdate = (
+  task: CleaningTaskReadinessState,
+  checked: boolean,
+  checkedAt: Date | null,
+  userId: string | null,
+  fullCleaningUserId: string | null = null,
+) => {
+  const directCompletion = Boolean(
+    !checked
+    && task.completed_at
+    && task.checked_at
+    && task.completed_at.getTime() === task.checked_at.getTime()
+  );
+  return checked ? {
+    status: "verified",
+    completed_at: task.completed_at ?? checkedAt,
+    completed_by_id: task.completed_by_id ?? fullCleaningUserId ?? userId,
+    checked_at: checkedAt,
+    checked_by_id: userId,
+  } : {
+    status: directCompletion ? "planned" : task.completed_at ? "done" : "planned",
+    ...(directCompletion ? { completed_at: null, completed_by_id: null } : {}),
+    checked_at: null,
+    checked_by_id: null,
+  };
+};
+
 export const setCleaningTaskReadiness = async (
   departureId: string, departureDate: string, checked: boolean, checkedAt: Date | null, userId: string | null,
   fullCleaningUserId: string | null = null,
@@ -205,15 +238,10 @@ export const setCleaningTaskReadiness = async (
   await syncCleaningTasks(departureDate, departureDate);
   const task = await getCleaningTaskForDeparture(departureId);
   if (!task) return null;
-  await prisma.cleaningTask.update({ where: { id: task.id }, data: checked ? {
-    ...(fullCleaningUserId ? { assignee_id: fullCleaningUserId } : {}),
-    status: "verified", completed_at: task.completed_at ?? checkedAt,
-    completed_by_id: task.completed_by_id ?? userId,
-    checked_at: checkedAt, checked_by_id: userId,
-  } : {
-    status: task.completed_at ? "done" : "planned", checked_at: null, checked_by_id: null,
-  } });
-  return task;
+  return prisma.cleaningTask.update({
+    where: { id: task.id },
+    data: cleaningTaskReadinessUpdate(task, checked, checkedAt, userId, fullCleaningUserId),
+  });
 };
 
 export const applyLegacyCleaningAssignment = async (giteId: string, day: string, workerId: string | null) => {
