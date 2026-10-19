@@ -50,6 +50,22 @@ const worker = {
   isActive: true, permissions: { canWrite: true, canViewAmounts: false, isOwner: false },
 } as AppUserSummary;
 
+test("les tâches du drawer restent utilisables depuis Aujourd’hui ou Calendrier sans ouvrir les réglages du planning", () => {
+  for (const page of ["today", "calendar"] as const) {
+    const drawerUser = { ...worker, pageAccess: [page] };
+    for (const action of ["assignment", "status", "note"]) {
+      const path = `/action-tasks/tasks/task-a/${action}`;
+      const permission = getRequiredBusinessPermission("PATCH", path)!;
+      assert.equal(permission, "actions:execute");
+      assert.equal(hasBusinessPermission(drawerUser, permission), true);
+      assert.equal(getRequiredPageForApiPath(path), null);
+    }
+    assert.equal(hasBusinessPermission(drawerUser, "planning:write"), false);
+    assert.equal(getRequiredPageForApiPath("/action-tasks/templates/template-a"), "planning_relay");
+  }
+  assert.equal(hasBusinessPermission({ ...worker, pageAccess: ["reservations"] }, "actions:execute"), false);
+});
+
 test("rattacher des gîtes depuis les établissements exige aussi gites:write", () => {
   const settingsOnly = { ...worker, pageAccess: ["settings"] } as AppUserSummary;
   const path = "/fiscal-entities/company/establishments/establishment";

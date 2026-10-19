@@ -88,7 +88,7 @@ export const getRequiredBusinessPermission = (method: string, requestPath: strin
   if (/^\/(?:guest-night-declarations|urssaf-declarations)/.test(path)) return familyPermission("declarations", method);
   if (path.startsWith("/cleaning-tasks")) return (path.endsWith("/status") || path.endsWith("/note")) && isWriteMethod(method) ? "cleaning:execute" : familyPermission("planning", method);
   if (path.startsWith("/action-tasks")) {
-    const taskExecution = ((path.endsWith("/status") || path.endsWith("/note") || path.endsWith("/tasks/quick")) && isWriteMethod(method))
+    const taskExecution = ((path.endsWith("/status") || path.endsWith("/note") || path.endsWith("/assignment") || path.endsWith("/tasks/quick")) && isWriteMethod(method))
       || (method.toUpperCase() === "GET" && path.startsWith("/action-tasks/gites/"));
     return taskExecution ? "actions:execute" : familyPermission("planning", method);
   }
@@ -191,6 +191,6 @@ const PAGE_API_PREFIXES: Array<[string, AppPageId]> = [
 ];
 
 export const getRequiredPageForApiPath = (path: string): AppPageId | null =>
-  /^\/action-tasks\/(?:gites\/|tasks\/quick)/.test(path)
+  /^\/action-tasks\/(?:gites\/|tasks\/quick|tasks\/[^/]+\/(?:status|note|assignment)$)/.test(path)
     ? null
     : PAGE_API_PREFIXES.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))?.[1] ?? null;

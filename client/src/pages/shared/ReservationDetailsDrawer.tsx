@@ -3,6 +3,7 @@ import { useEffect, useId, type ReactNode } from "react";
 
 type ReservationDetailsDrawerProps = {
   open: boolean;
+  className?: string;
   title: string;
   eyebrow?: string;
   summary?: string[];
@@ -23,6 +24,7 @@ const CloseIcon = () => (
 
 const ReservationDetailsDrawer = ({
   open,
+  className,
   title,
   eyebrow = "Réservation",
   summary = [],
@@ -60,7 +62,7 @@ const ReservationDetailsDrawer = ({
   return createPortal(
     <div className="contract-return-drawer-backdrop reservation-details-drawer-backdrop" role="presentation" onClick={() => !busy && onClose()}>
       <section
-        className="contract-return-drawer reservation-details-drawer"
+        className={`contract-return-drawer reservation-details-drawer${className ? ` ${className}` : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

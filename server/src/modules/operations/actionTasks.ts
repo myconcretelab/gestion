@@ -148,6 +148,7 @@ router.get("/gites/:giteId", async (req, res, next) => {
       summary: summarizeActionTasks(tasks),
       shortcuts: ACTION_TASK_SHORTCUTS,
       can_manage: manager,
+      current_user_id: currentUser?.id ?? null,
       assignees: users.map((item) => ({ id: item.id, name: item.display_name })),
       tasks: tasks.map((task) => serializeActionTask(task, { gite: gite.nom, assignee: userById.get(task.assignee_id ?? "") })),
     });
