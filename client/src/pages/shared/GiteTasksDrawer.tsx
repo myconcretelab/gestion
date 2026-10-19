@@ -191,6 +191,22 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
   >
     <div className="gite-tasks-drawer">
       {error ? <div className="note" role="alert">{error}</div> : null}
+      <section className="gite-tasks-drawer__list">
+        <div className="gite-tasks-drawer__section-title"><strong>À faire</strong><span>{openTasks.length}</span></div>
+        {!data ? <p className="field-hint">Chargement…</p> : !openTasks.length ? <div className="gite-tasks-drawer__empty"><TaskHouseIcon /><strong>Tout est fait</strong><span>Le gîte n’a aucune tâche en attente.</span></div> : openTasks.map((task) => <article className={`gite-task-card gite-task-card--${task.category}`} key={task.id}>
+          <button type="button" className="gite-task-card__check" disabled={Boolean(busyId)} onClick={() => void changeTask(task, "done")} aria-label={`Marquer ${task.title} comme réalisée`} />
+          <div className="gite-task-card__copy">
+            <strong>{task.title}</strong>
+            <span>{task.category === "short" ? "Tâche rapide" : "Long terme"}{task.assignee_name ? ` · ${task.assignee_name}` : ""}</span>
+            {task.compensation_mode === "flat_rate" ? <small>Forfait {task.compensation_amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</small> : null}
+            {task.compensation_mode === "time" ? <label>Temps passé <input type="number" min={1} max={1440} inputMode="numeric" value={minutes[task.id] ?? ""} placeholder="min" onChange={(event) => setMinutes((current) => ({ ...current, [task.id]: event.target.value }))} /> min</label> : null}
+          </div>
+          {data.assignees.length ? <select aria-label={`Intervenant pour ${task.title}`} value={task.assignee_id ?? ""} disabled={Boolean(busyId)} onChange={(event) => void assignTask(task, event.target.value || null)}>
+            <option value="" disabled={!data.can_manage}>{data.can_manage ? "Non attribuée" : "Prendre la tâche…"}</option>{data.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}{data.can_manage ? "" : " (moi)"}</option>)}
+          </select> : null}
+        </article>)}
+      </section>
+
       <section className="gite-tasks-drawer__quick">
         <div><strong>Ajout rapide</strong><span>Une pression suffit</span></div>
         <div className="gite-tasks-drawer__shortcuts">
@@ -212,22 +228,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
         </div>
         <button type="submit" disabled={Boolean(busyId) || title.trim().length < 2}>Ajouter</button>
       </form>
-
-      <section className="gite-tasks-drawer__list">
-        <div className="gite-tasks-drawer__section-title"><strong>À faire</strong><span>{openTasks.length}</span></div>
-        {!data ? <p className="field-hint">Chargement…</p> : !openTasks.length ? <div className="gite-tasks-drawer__empty"><TaskHouseIcon /><strong>Tout est fait</strong><span>Le gîte n’a aucune tâche en attente.</span></div> : openTasks.map((task) => <article className={`gite-task-card gite-task-card--${task.category}`} key={task.id}>
-          <button type="button" className="gite-task-card__check" disabled={Boolean(busyId)} onClick={() => void changeTask(task, "done")} aria-label={`Marquer ${task.title} comme réalisée`} />
-          <div className="gite-task-card__copy">
-            <strong>{task.title}</strong>
-            <span>{task.category === "short" ? "Tâche rapide" : "Long terme"}{task.assignee_name ? ` · ${task.assignee_name}` : ""}</span>
-            {task.compensation_mode === "flat_rate" ? <small>Forfait {task.compensation_amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</small> : null}
-            {task.compensation_mode === "time" ? <label>Temps passé <input type="number" min={1} max={1440} inputMode="numeric" value={minutes[task.id] ?? ""} placeholder="min" onChange={(event) => setMinutes((current) => ({ ...current, [task.id]: event.target.value }))} /> min</label> : null}
-          </div>
-          {data.assignees.length ? <select aria-label={`Intervenant pour ${task.title}`} value={task.assignee_id ?? ""} disabled={Boolean(busyId)} onChange={(event) => void assignTask(task, event.target.value || null)}>
-            <option value="" disabled={!data.can_manage}>{data.can_manage ? "Non attribuée" : "Prendre la tâche…"}</option>{data.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}{data.can_manage ? "" : " (moi)"}</option>)}
-          </select> : null}
-        </article>)}
-      </section>
 
       {completedTasks.length ? <details className="gite-tasks-drawer__completed"><summary>{completedTasks.length} tâche{completedTasks.length > 1 ? "s" : ""} réalisée{completedTasks.length > 1 ? "s" : ""}</summary>
         <div>{completedTasks.map((task) => <article key={task.id}><span>✓</span><strong>{task.title}</strong><button type="button" className="secondary" disabled={Boolean(busyId)} onClick={() => void changeTask(task, "planned")}>Rouvrir</button></article>)}</div>

@@ -20997,7 +20997,7 @@ button.personal-expenses-status:disabled {
   place-items: center;
   border: 2px solid #fff;
   border-radius: 999px;
-  background: currentColor;
+  background: var(--ink);
   color: #fff;
   font-size: .62rem;
   font-weight: 900;
@@ -21027,16 +21027,86 @@ button.personal-expenses-status:disabled {
 .gite-tasks-drawer__create {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+.gite-tasks-drawer__create > input {
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 13px;
+  outline: none;
+  background: var(--field-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: .9rem;
+  font-weight: 650;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.gite-tasks-drawer__create > input::placeholder { color: #7c8492; font-weight: 550; opacity: 1; }
+.gite-tasks-drawer__create > input:hover { border-color: #9ca3af; }
+.gite-tasks-drawer__create > input:focus,
+.gite-tasks-drawer__create > input:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-strong);
+}
+.gite-tasks-drawer__category {
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
   background: var(--subtle);
 }
-.gite-tasks-drawer__create > input { min-width: 0; background: var(--card); }
-.gite-tasks-drawer__category { display: flex; padding: 3px; border-radius: 12px; background: var(--card); }
-.gite-tasks-drawer__category button { min-height: 34px; padding: 6px 9px; border: 0; background: transparent; color: var(--muted); box-shadow: none; }
-.gite-tasks-drawer__category button.is-selected { background: var(--primary-soft); color: var(--primary-strong); }
+.gite-tasks-drawer__category button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #4b5563;
+  box-shadow: none;
+  font-size: .8rem;
+  font-weight: 750;
+  transition: color .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.gite-tasks-drawer__category button:hover:not(.is-selected) { color: var(--ink); background: var(--card); }
+.gite-tasks-drawer__category button.is-selected {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+  background: var(--primary-soft);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.gite-tasks-drawer__category button:focus-visible,
+.gite-tasks-drawer__create > button[type="submit"]:focus-visible {
+  outline: 3px solid var(--primary-strong);
+  outline-offset: 2px;
+}
+.gite-tasks-drawer__create > button[type="submit"] {
+  min-height: 46px;
+  padding-inline: 20px;
+  background: color-mix(in srgb, var(--primary) 58%, #7f1d1d);
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 7px 16px rgba(127, 29, 29, 0.18);
+  transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+}
+.gite-tasks-drawer__create > button[type="submit"]:hover:not(:disabled) {
+  filter: brightness(.94);
+  transform: translateY(-1px);
+  box-shadow: 0 9px 20px rgba(127, 29, 29, 0.22);
+}
+.gite-tasks-drawer__create > button[type="submit"]:disabled {
+  background: #e5e7eb;
+  color: #6b7280;
+  box-shadow: none;
+  cursor: not-allowed;
+}
 .gite-tasks-drawer__list { display: grid; gap: 8px; }
 .gite-tasks-drawer__section-title { display: flex; align-items: center; gap: 7px; }
 .gite-tasks-drawer__section-title span { min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 999px; background: var(--subtle); color: var(--muted); font-size: .72rem; font-weight: 800; }
@@ -21069,9 +21139,10 @@ button.personal-expenses-status:disabled {
 .gite-tasks-drawer__completed article button { min-height: 32px; padding: 5px 9px; }
 
 @media (max-width: 640px) {
-  .gite-tasks-drawer__create { grid-template-columns: 1fr; }
+  .gite-tasks-drawer__create { grid-template-columns: 1fr; padding: 12px; }
   .gite-tasks-drawer__category { justify-content: stretch; }
-  .gite-tasks-drawer__category button { flex: 1; }
+  .gite-tasks-drawer__category button { flex: 1; min-height: 42px; }
+  .gite-tasks-drawer__create > button[type="submit"] { min-height: 48px; }
   .gite-task-card { grid-template-columns: auto minmax(0, 1fr); }
   .gite-task-card > select { grid-column: 2; }
 }
