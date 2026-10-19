@@ -153,3 +153,95 @@ test("paiement des heures : remet le solde à zéro sans effacer l'historique", 
     prisma.userIntervention.updateMany = originalInterventionsUpdate;
   }
 });
+
+test("une correction administrateur réattribue les heures et conserve un audit", async () => {
+  const { default: prisma } = await import("../src/db/prisma.ts");
+  const { default: router } = await import("../src/routes/intervenantHours.ts");
+  const original = {
+    transaction: prisma.$transaction,
+    entryFind: prisma.intervenantHourEntry.findFirst,
+    workerFind: prisma.planningRelayWorker.findUnique,
+  };
+  const current = {
+    id: "hour-a",
+    intervenant_id: "worker-a",
+    intervenant_nom: "Ancien nom",
+    worked_on: "2026-10-18",
+    minutes: 60,
+    paid_at: new Date("2026-10-19T10:00:00.000Z"),
+    hourly_rate_snapshot: 20,
+    deleted_at: null,
+    createdAt: new Date("2026-10-18T10:00:00.000Z"),
+    updatedAt: new Date("2026-10-18T11:00:00.000Z"),
+  };
+  const updated = {
+    ...current,
+    intervenant_id: "worker-b",
+    intervenant_nom: "Nouveau nom",
+    worked_on: "2026-10-19",
+    minutes: 90,
+    paid_at: null,
+    hourly_rate_snapshot: null,
+    updatedAt: new Date("2026-10-19T12:00:00.000Z"),
+  };
+  let auditData: any;
+  try {
+    prisma.intervenantHourEntry.findFirst = (async () => current) as any;
+    prisma.planningRelayWorker.findUnique = (async () => ({
+      id: "worker-b", nom: "Nom historique", hourly_rate: 18,
+      app_user: { display_name: "Nouveau nom", hourly_rate: 20 },
+    })) as any;
+    prisma.$transaction = (async (callback: any) => callback({
+      intervenantHourEntry: {
+        updateMany: async ({ where, data }: any) => {
+          assert.equal(where.id, current.id);
+          assert.equal(where.updatedAt.toISOString(), current.updatedAt.toISOString());
+          assert.equal(data.intervenant_id, "worker-b");
+          assert.equal(data.minutes, 90);
+          assert.equal(data.paid_at, null);
+          assert.equal(data.hourly_rate_snapshot, null);
+          return { count: 1 };
+        },
+        findUniqueOrThrow: async () => updated,
+      },
+      auditLog: { create: async ({ data }: any) => { auditData = data; return data; } },
+    })) as any;
+
+    const layer = (router as any).stack.find((item: any) => item.route?.path === "/admin/:entryId" && item.route.methods.patch);
+    const response = {
+      statusCode: 200,
+      body: null as any,
+      status(code: number) { this.statusCode = code; return this; },
+      json(value: unknown) { this.body = value; return this; },
+      getHeader() { return "request-b"; },
+    };
+    let error: unknown;
+    await layer.route.stack[0].handle({
+      params: { entryId: current.id },
+      headers: {},
+      body: {
+        workerId: "worker-b",
+        workedOn: "2026-10-19",
+        minutes: 90,
+        paid: false,
+        reason: "Mauvais intervenant",
+        expectedUpdatedAt: current.updatedAt.toISOString(),
+      },
+    }, response, (reason: unknown) => { error = reason; });
+
+    assert.equal(error, undefined);
+    assert.equal(response.body.intervenant_nom, "Nouveau nom");
+    assert.equal(response.body.minutes, 90);
+    assert.equal(auditData.action, "intervenant_hour.corrected");
+    const metadata = JSON.parse(auditData.metadata_json);
+    assert.equal(metadata.reason, "Mauvais intervenant");
+    assert.equal(metadata.before.minutes, 60);
+    assert.equal(metadata.after.minutes, 90);
+    assert.equal(metadata.after.paid_at, null);
+    assert.equal(metadata.paid_at, "2026-10-19T10:00:00.000Z");
+  } finally {
+    prisma.$transaction = original.transaction;
+    prisma.intervenantHourEntry.findFirst = original.entryFind;
+    prisma.planningRelayWorker.findUnique = original.workerFind;
+  }
+});

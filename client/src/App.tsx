@@ -1081,7 +1081,7 @@ const App = () => {
             <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures-achat" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><PurchaseInvoicesPage /></AmountsAccess></PageAccess>} />
             <Route path="/tarifs" element={<PageAccess allowed={canAccessPage("rates")}><AmountsAccess allowed={canViewAmounts}><SeasonRatesPage /></AmountsAccess></PageAccess>} />
-            <Route path="/interventions" element={<PageAccess allowed={canAccessPage("settings")}><AmountsAccess allowed={canViewAmounts}><IntervenantsPage /></AmountsAccess></PageAccess>} />
+            <Route path="/interventions" element={<PageAccess allowed={canAccessPage("settings")}><AmountsAccess allowed={canViewAmounts}><IntervenantsPage currentUser={currentUser} /></AmountsAccess></PageAccess>} />
             <Route path="/parametres/intervenants" element={<Navigate to="/interventions" replace />} />
             <Route path="/parametres/equipe" element={<Navigate to="/parametres/utilisateurs" replace />} />
             <Route path="/parametres" element={<Navigate to="/parametres/organisation" replace />} />

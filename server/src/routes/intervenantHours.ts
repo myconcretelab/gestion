@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
+import { getOrganizationId } from "../services/organizationContext.js";
+import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { isValidWorkDate, MAX_WORK_MINUTES } from "../utils/intervenantHours.js";
 
 const router = Router();
@@ -15,6 +17,14 @@ const correctionSchema = z.object({
   worked_on: workDate,
   minutes: duration,
   expected_updated_at: z.string().datetime(),
+});
+const administratorCorrectionSchema = z.object({
+  workerId: z.string().trim().min(1),
+  workedOn: workDate,
+  minutes: duration,
+  paid: z.boolean(),
+  reason: z.string().trim().min(3, "Indiquez le motif de la correction.").max(500),
+  expectedUpdatedAt: z.string().datetime(),
 });
 const historyQuerySchema = z.object({
   worker_id: z.string().trim().min(1).optional(),
@@ -145,6 +155,96 @@ router.post("/:workerId/settle", async (req, res, next) => {
       amount: Math.round((hoursAmount + interventionAmount) * 100) / 100,
       paid_at: paidAt.toISOString(),
     });
+  } catch (error) { return next(error); }
+});
+
+router.patch("/admin/:entryId", async (req, res, next) => {
+  try {
+    const administrator = await getAuthenticatedAppUser(req);
+    if (administrator && !administrator.permissions.isOwner) {
+      return res.status(403).json({
+        error: "Seul un administrateur peut corriger cet historique.",
+        code: "ADMIN_REQUIRED",
+      });
+    }
+    const payload = administratorCorrectionSchema.parse(req.body ?? {});
+    const [current, worker] = await Promise.all([
+      prisma.intervenantHourEntry.findFirst({
+        where: { id: req.params.entryId, deleted_at: null },
+      }),
+      prisma.planningRelayWorker.findUnique({
+        where: { id: payload.workerId },
+        select: {
+          id: true,
+          nom: true,
+          hourly_rate: true,
+          app_user: { select: { display_name: true, hourly_rate: true } },
+        },
+      }),
+    ]);
+    if (!current) return res.status(404).json({ error: "Saisie d’heures introuvable." });
+    if (!worker) return res.status(404).json({ error: "Intervenant introuvable." });
+
+    const entry = await prisma.$transaction(async (tx) => {
+      const changed = await tx.intervenantHourEntry.updateMany({
+        where: {
+          id: current.id,
+          deleted_at: null,
+          updatedAt: new Date(payload.expectedUpdatedAt),
+        },
+        data: {
+          intervenant_id: worker.id,
+          intervenant_nom: worker.app_user?.display_name ?? worker.nom,
+          worked_on: payload.workedOn,
+          minutes: payload.minutes,
+          paid_at: payload.paid ? current.paid_at ?? new Date() : null,
+          ...(!payload.paid
+            ? { hourly_rate_snapshot: null }
+            : !current.paid_at
+              ? { hourly_rate_snapshot: Number(worker.app_user?.hourly_rate ?? worker.hourly_rate ?? 0) }
+              : {}),
+        },
+      });
+      if (!changed.count) {
+        throw Object.assign(new Error("Cette ligne a changé depuis son ouverture. Rechargez l’historique."), {
+          status: 409,
+          code: "CORRECTION_CONFLICT",
+        });
+      }
+      const updated = await tx.intervenantHourEntry.findUniqueOrThrow({ where: { id: current.id } });
+      await tx.auditLog.create({
+        data: {
+          organization_id: getOrganizationId(),
+          user_id: administrator?.id ?? null,
+          request_id: String(res.getHeader("X-Request-Id") ?? "") || null,
+          action: "intervenant_hour.corrected",
+          resource_type: "intervenant_hour_entry",
+          resource_id: current.id,
+          metadata_json: JSON.stringify({
+            reason: payload.reason,
+            paid_at: current.paid_at?.toISOString() ?? null,
+            before: {
+              intervenant_id: current.intervenant_id,
+              intervenant_nom: current.intervenant_nom,
+              worked_on: current.worked_on,
+              minutes: current.minutes,
+              paid_at: current.paid_at?.toISOString() ?? null,
+              hourly_rate_snapshot: current.hourly_rate_snapshot == null ? null : Number(current.hourly_rate_snapshot),
+            },
+            after: {
+              intervenant_id: updated.intervenant_id,
+              intervenant_nom: updated.intervenant_nom,
+              worked_on: updated.worked_on,
+              minutes: updated.minutes,
+              paid_at: updated.paid_at?.toISOString() ?? null,
+              hourly_rate_snapshot: updated.hourly_rate_snapshot == null ? null : Number(updated.hourly_rate_snapshot),
+            },
+          }),
+        },
+      });
+      return updated;
+    });
+    return res.json(serializeEntry(entry));
   } catch (error) { return next(error); }
 });
 

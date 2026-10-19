@@ -3,6 +3,7 @@ import { z } from "zod";
 import prisma from "../db/prisma.js";
 import { getOrganizationId } from "../services/organizationContext.js";
 import { normalizeAppUserRoles } from "../services/appUsers.js";
+import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { isValidWorkDate } from "../utils/intervenantHours.js";
 import { recordFullCleaningIntervention } from "../services/userInterventions.js";
@@ -20,6 +21,16 @@ const createSchema = z.object({
   giteId: z.string().trim().min(1),
   occurredOn: workDate,
 });
+const correctionSchema = z.object({
+  userId: z.string().trim().min(1),
+  kind: z.enum(["cleaning_check", "full_cleaning"]),
+  giteId: z.string().trim().min(1),
+  occurredOn: workDate,
+  amount: z.coerce.number().min(0).max(1_000_000),
+  paid: z.boolean(),
+  reason: z.string().trim().min(3, "Indiquez le motif de la correction.").max(500),
+  expectedUpdatedAt: z.string().datetime(),
+});
 
 const serialize = (entry: any) => ({
   id: entry.id,
@@ -33,7 +44,19 @@ const serialize = (entry: any) => ({
   amount: Number(entry.amount_snapshot ?? 0),
   paid_at: entry.paid_at?.toISOString() ?? null,
   created_at: entry.createdAt.toISOString(),
+  updated_at: entry.updatedAt.toISOString(),
 });
+
+const requireAdministrator = async (req: Parameters<typeof getAuthenticatedAppUser>[0]) => {
+  const user = await getAuthenticatedAppUser(req);
+  if (user && !user.permissions.isOwner) {
+    throw Object.assign(new Error("Seul un administrateur peut corriger cet historique."), {
+      status: 403,
+      code: "ADMIN_REQUIRED",
+    });
+  }
+  return user;
+};
 
 router.get("/", async (req, res, next) => {
   try {
@@ -89,6 +112,85 @@ router.post("/", async (req, res, next) => {
     const entry = await recordFullCleaningIntervention(reservation.id, user.id, payload.occurredOn, false);
     if (!entry) return res.status(409).json({ error: "Cet intervenant ne peut pas recevoir de ménage." });
     res.status(201).json(serialize(entry));
+  } catch (error) { next(error); }
+});
+
+router.patch("/:id", async (req, res, next) => {
+  try {
+    const administrator = await requireAdministrator(req);
+    const payload = correctionSchema.parse(req.body ?? {});
+    const [current, user, gite] = await Promise.all([
+      prisma.userIntervention.findUnique({ where: { id: req.params.id } }),
+      prisma.appUser.findUnique({ where: { id: payload.userId } }),
+      prisma.gite.findUnique({ where: { id: payload.giteId }, select: { id: true, nom: true } }),
+    ]);
+    if (!current) return res.status(404).json({ error: "Intervention introuvable." });
+    if (!user || !normalizeAppUserRoles(user.roles).includes("worker")) {
+      return res.status(404).json({ error: "Intervenant introuvable." });
+    }
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
+
+    const entry = await prisma.$transaction(async (tx) => {
+      const changed = await tx.userIntervention.updateMany({
+        where: {
+          id: current.id,
+          updatedAt: new Date(payload.expectedUpdatedAt),
+        },
+        data: {
+          user_id: user.id,
+          user_name: user.display_name,
+          kind: payload.kind,
+          occurred_on: payload.occurredOn,
+          gite_id: gite.id,
+          gite_name: gite.nom,
+          amount_snapshot: payload.amount,
+          paid_at: payload.paid ? current.paid_at ?? new Date() : null,
+        },
+      });
+      if (!changed.count) {
+        throw Object.assign(new Error("Cette ligne a changé depuis son ouverture. Rechargez l’historique."), {
+          status: 409,
+          code: "CORRECTION_CONFLICT",
+        });
+      }
+      const updated = await tx.userIntervention.findUniqueOrThrow({ where: { id: current.id } });
+      await tx.auditLog.create({
+        data: {
+          organization_id: getOrganizationId(),
+          user_id: administrator?.id ?? null,
+          request_id: String(res.getHeader("X-Request-Id") ?? "") || null,
+          action: "user_intervention.corrected",
+          resource_type: "user_intervention",
+          resource_id: current.id,
+          metadata_json: JSON.stringify({
+            reason: payload.reason,
+            paid_at: current.paid_at?.toISOString() ?? null,
+            before: {
+              user_id: current.user_id,
+              user_name: current.user_name,
+              kind: current.kind,
+              occurred_on: current.occurred_on,
+              gite_id: current.gite_id,
+              gite_name: current.gite_name,
+              amount: Number(current.amount_snapshot),
+              paid_at: current.paid_at?.toISOString() ?? null,
+            },
+            after: {
+              user_id: updated.user_id,
+              user_name: updated.user_name,
+              kind: updated.kind,
+              occurred_on: updated.occurred_on,
+              gite_id: updated.gite_id,
+              gite_name: updated.gite_name,
+              amount: Number(updated.amount_snapshot),
+              paid_at: updated.paid_at?.toISOString() ?? null,
+            },
+          }),
+        },
+      });
+      return updated;
+    });
+    res.json(serialize(entry));
   } catch (error) { next(error); }
 });
 

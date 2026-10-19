@@ -1,20 +1,42 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../utils/api";
+import type { AppUser } from "../utils/auth";
 import type { Gite, Intervenant } from "../utils/types";
-import { formatWorkMinutes } from "../utils/intervenantHours";
+import { formatWorkMinutes, parseWorkHours } from "../utils/intervenantHours";
 import "./intervenantsPage.css";
 
 type HourEntry = {
   id: string; intervenant_id: string | null; intervenant_nom: string; worked_on: string;
   minutes: number; paid_at: string | null; hourly_rate_snapshot: number | null;
+  updated_at: string;
 };
 type InterventionEntry = {
   id: string; user_id: string | null; user_name: string; kind: "cleaning_check" | "full_cleaning";
-  occurred_on: string; gite_name: string | null; amount: number; paid_at: string | null;
+  occurred_on: string; gite_id: string | null; gite_name: string | null; amount: number; paid_at: string | null;
+  updated_at: string;
 };
 type ProfileDraft = { show_on_today: boolean };
 type ManualDraft = { userId: string; giteId: string; occurredOn: string };
+type CorrectionDraft = {
+  type: "intervention";
+  entry: InterventionEntry;
+  userId: string;
+  kind: InterventionEntry["kind"];
+  giteId: string;
+  occurredOn: string;
+  amount: string;
+  paid: boolean;
+  reason: string;
+} | {
+  type: "hours";
+  entry: HourEntry;
+  workerId: string;
+  workedOn: string;
+  hours: string;
+  paid: boolean;
+  reason: string;
+};
 
 const todayIso = () => new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
@@ -34,7 +56,7 @@ const unpaidAgeLabel = (firstUnpaidOn: string, today: string) => {
   return `En attente depuis le ${formatDate(firstUnpaidOn)} (${days} ${days === 1 ? "jour" : "jours"})`;
 };
 
-export default function IntervenantsPage() {
+export default function IntervenantsPage({ currentUser }: { currentUser: AppUser | null }) {
   const [workers, setWorkers] = useState<Intervenant[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
   const [hours, setHours] = useState<HourEntry[]>([]);
@@ -49,6 +71,8 @@ export default function IntervenantsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [correction, setCorrection] = useState<CorrectionDraft | null>(null);
+  const canCorrectHistory = !currentUser || currentUser.permissions.isOwner;
 
   const loadWorkers = useCallback(async () => {
     const [workerRows, giteRows] = await Promise.all([
@@ -173,6 +197,88 @@ export default function IntervenantsPage() {
     } finally { setBusyId(null); }
   };
 
+  const openInterventionCorrection = (entry: InterventionEntry) => {
+    setError(null);
+    setCorrection({
+      type: "intervention",
+      entry,
+      userId: entry.user_id ?? "",
+      kind: entry.kind,
+      giteId: entry.gite_id ?? "",
+      occurredOn: entry.occurred_on,
+      amount: String(entry.amount).replace(".", ","),
+      paid: Boolean(entry.paid_at),
+      reason: "",
+    });
+  };
+
+  const openHoursCorrection = (entry: HourEntry) => {
+    setError(null);
+    setCorrection({
+      type: "hours",
+      entry,
+      workerId: entry.intervenant_id ?? "",
+      workedOn: entry.worked_on,
+      hours: String(entry.minutes / 60).replace(".", ","),
+      paid: Boolean(entry.paid_at),
+      reason: "",
+    });
+  };
+
+  const saveCorrection = async () => {
+    if (!correction || correction.reason.trim().length < 3) {
+      setError("Indiquez brièvement le motif de la correction.");
+      return;
+    }
+    setBusyId(`correct-${correction.entry.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      if (correction.type === "intervention") {
+        const amount = Number(correction.amount.trim().replace(",", "."));
+        if (!correction.userId || !correction.giteId || !correction.occurredOn || !Number.isFinite(amount) || amount < 0) {
+          throw new Error("Vérifiez l’intervenant, le gîte, la date et le montant.");
+        }
+        await apiFetch(`/interventions/${encodeURIComponent(correction.entry.id)}`, {
+          method: "PATCH",
+          json: {
+            userId: correction.userId,
+            kind: correction.kind,
+            giteId: correction.giteId,
+            occurredOn: correction.occurredOn,
+            amount,
+            paid: correction.paid,
+            reason: correction.reason,
+            expectedUpdatedAt: correction.entry.updated_at,
+          },
+        });
+      } else {
+        const minutes = parseWorkHours(correction.hours);
+        if (!correction.workerId || !correction.workedOn || minutes === null) {
+          throw new Error("Vérifiez l’intervenant, la date et la durée.");
+        }
+        await apiFetch(`/intervenants/hours/admin/${encodeURIComponent(correction.entry.id)}`, {
+          method: "PATCH",
+          json: {
+            workerId: correction.workerId,
+            workedOn: correction.workedOn,
+            minutes,
+            paid: correction.paid,
+            reason: correction.reason,
+            expectedUpdatedAt: correction.entry.updated_at,
+          },
+        });
+      }
+      await loadHistory();
+      setCorrection(null);
+      setNotice("Correction enregistrée et ajoutée au journal d’audit.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Impossible d’enregistrer la correction.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return <div className="intervenants-page">
     <header className="intervenants-hero">
       <div><span className="intervenants-hero__eyebrow">Activité et rémunération</span><h1>Interventions</h1>
@@ -241,22 +347,67 @@ export default function IntervenantsPage() {
           </select></label>
         </div>
       </div>
+      {canCorrectHistory ? <p className="intervenants-history__admin-note">Les administrateurs peuvent corriger une erreur. Chaque modification exige un motif et conserve l’ancienne valeur dans le journal d’audit.</p> : null}
       <h3>Contrôles et ménages</h3>
       {!interventions.length ? <p className="field-hint">Aucune intervention pour ce filtre.</p> : <div className="intervenants-history__table-wrap">
         <table className="table intervenants-history__table"><thead><tr><th>Date</th><th>Intervenant</th><th>Type</th><th>Gîte</th><th>Montant</th><th>État</th><th></th></tr></thead>
           <tbody>{interventions.map((entry) => <tr key={entry.id}><td>{formatDate(entry.occurred_on)}</td><td>{entry.user_name}</td>
             <td>{entry.kind === "cleaning_check" ? "Contrôle ménage" : "Ménage complet"}</td><td>{entry.gite_name ?? "—"}</td><td>{formatEuro(entry.amount)}</td>
             <td><span className={`intervenants-status intervenants-status--${entry.paid_at ? "paid" : "unpaid"}`}>{entry.paid_at ? "Payé" : "À payer"}</span></td>
-            <td>{!entry.paid_at && entry.kind === "full_cleaning" ? <button className="table-action table-action--danger" disabled={busyId === entry.id} onClick={() => void removeIntervention(entry)}>Retirer</button> : null}</td>
+            <td><div className="intervenants-history__actions">
+              {canCorrectHistory ? <button className="table-action" disabled={Boolean(busyId)} onClick={() => openInterventionCorrection(entry)}>Corriger</button> : null}
+              {!entry.paid_at && entry.kind === "full_cleaning" ? <button className="table-action table-action--danger" disabled={busyId === entry.id} onClick={() => void removeIntervention(entry)}>Retirer</button> : null}
+            </div></td>
           </tr>)}</tbody></table></div>}
       <h3>Heures saisies</h3>
       {!hours.length ? <p className="field-hint">Aucune heure pour ce filtre.</p> : <div className="intervenants-history__table-wrap">
-        <table className="table intervenants-history__table"><thead><tr><th>Date</th><th>Intervenant</th><th>Durée</th><th>Taux</th><th>Montant</th><th>État</th></tr></thead>
+        <table className="table intervenants-history__table"><thead><tr><th>Date</th><th>Intervenant</th><th>Durée</th><th>Taux</th><th>Montant</th><th>État</th><th></th></tr></thead>
           <tbody>{hours.map((entry) => { const worker = workers.find((item) => item.id === entry.intervenant_id); const rate = entry.hourly_rate_snapshot ?? Number(worker?.hourly_rate ?? 0);
             return <tr key={entry.id}><td>{formatDate(entry.worked_on)}</td><td>{entry.intervenant_nom}</td><td>{formatWorkMinutes(entry.minutes)}</td>
               <td>{formatEuro(rate)}/h</td><td>{formatEuro(entry.minutes / 60 * rate)}</td>
-              <td><span className={`intervenants-status intervenants-status--${entry.paid_at ? "paid" : "unpaid"}`}>{entry.paid_at ? "Payé" : "À payer"}</span></td></tr>; })}</tbody>
+              <td><span className={`intervenants-status intervenants-status--${entry.paid_at ? "paid" : "unpaid"}`}>{entry.paid_at ? "Payé" : "À payer"}</span></td>
+              <td>{canCorrectHistory ? <button className="table-action" disabled={Boolean(busyId)} onClick={() => openHoursCorrection(entry)}>Corriger</button> : null}</td></tr>; })}</tbody>
         </table></div>}
     </section>
+    {correction ? <div className="intervenants-correction" role="dialog" aria-modal="true" aria-labelledby="intervenants-correction-title">
+      <button type="button" className="intervenants-correction__backdrop" disabled={Boolean(busyId)} onClick={() => setCorrection(null)} aria-label="Fermer la correction" />
+      <form className="intervenants-correction__panel" onSubmit={(event) => { event.preventDefault(); void saveCorrection(); }}>
+        <header>
+          <div><span className="intervenants-hero__eyebrow">Correction administrateur</span><h2 id="intervenants-correction-title">Corriger une ligne</h2></div>
+          <button type="button" className="intervenants-correction__close" disabled={Boolean(busyId)} onClick={() => setCorrection(null)} aria-label="Fermer">×</button>
+        </header>
+        {correction.entry.paid_at ? <p className="intervenants-correction__warning"><strong>Ligne déjà payée.</strong> Vous pouvez rectifier son état dans le suivi interne ; cette action ne déclenche aucun mouvement bancaire.</p> : null}
+        <div className="intervenants-correction__fields">
+          {correction.type === "intervention" ? <>
+            <label className="field">Date<input type="date" required value={correction.occurredOn} onChange={(event) => setCorrection({ ...correction, occurredOn: event.target.value })} /></label>
+            <label className="field">Intervenant<select required value={correction.userId} onChange={(event) => setCorrection({ ...correction, userId: event.target.value })}>
+              <option value="">Choisir</option>{workers.filter((worker) => worker.user_id).map((worker) => <option key={worker.id} value={worker.user_id!}>{worker.nom}</option>)}
+            </select></label>
+            <label className="field">Type<select value={correction.kind} onChange={(event) => setCorrection({ ...correction, kind: event.target.value as InterventionEntry["kind"] })}>
+              <option value="cleaning_check">Contrôle ménage</option><option value="full_cleaning">Ménage complet</option>
+            </select></label>
+            <label className="field">Gîte<select required value={correction.giteId} onChange={(event) => setCorrection({ ...correction, giteId: event.target.value })}>
+              <option value="">Choisir</option>{gites.map((gite) => <option key={gite.id} value={gite.id}>{gite.nom}</option>)}
+            </select></label>
+            <label className="field intervenants-correction__amount">Montant (€)<input inputMode="decimal" required value={correction.amount} onChange={(event) => setCorrection({ ...correction, amount: event.target.value })} /></label>
+            <label className="field">État<select value={correction.paid ? "paid" : "unpaid"} onChange={(event) => setCorrection({ ...correction, paid: event.target.value === "paid" })}>
+              <option value="unpaid">À payer</option><option value="paid">Payé</option>
+            </select></label>
+          </> : <>
+            <label className="field">Date<input type="date" required value={correction.workedOn} onChange={(event) => setCorrection({ ...correction, workedOn: event.target.value })} /></label>
+            <label className="field">Intervenant<select required value={correction.workerId} onChange={(event) => setCorrection({ ...correction, workerId: event.target.value })}>
+              <option value="">Choisir</option>{workers.map((worker) => <option key={worker.id} value={worker.id}>{worker.nom}</option>)}
+            </select></label>
+            <label className="field intervenants-correction__amount">Durée en heures<input inputMode="decimal" required placeholder="Ex. 1,5" value={correction.hours} onChange={(event) => setCorrection({ ...correction, hours: event.target.value })} /></label>
+            <label className="field">État<select value={correction.paid ? "paid" : "unpaid"} onChange={(event) => setCorrection({ ...correction, paid: event.target.value === "paid" })}>
+              <option value="unpaid">À payer</option><option value="paid">Payé</option>
+            </select></label>
+          </>}
+          <label className="field intervenants-correction__reason">Motif de la correction<textarea required minLength={3} maxLength={500} rows={3} placeholder="Ex. Mauvais intervenant sélectionné" value={correction.reason} onChange={(event) => setCorrection({ ...correction, reason: event.target.value })} /></label>
+        </div>
+        <p className="field-hint">L’ancienne valeur, la nouvelle valeur, le motif et l’administrateur sont conservés dans le journal d’audit.</p>
+        <footer><button type="button" className="secondary" disabled={Boolean(busyId)} onClick={() => setCorrection(null)}>Annuler</button><button type="submit" disabled={Boolean(busyId)}>{busyId ? "Enregistrement…" : "Enregistrer la correction"}</button></footer>
+      </form>
+    </div> : null}
   </div>;
 }
