@@ -6,22 +6,28 @@ type ActionStatus = "planned" | "in_progress" | "done";
 type ActionTask = {
   id: string; title: string; gite_name: string; assignee_id: string | null; assignee_name: string | null;
   status: ActionStatus; starts_at: string; due_at: string; note: string; template_id: string | null;
+  category: "short" | "long"; compensation_mode: "none" | "flat_rate" | "time";
+  compensation_amount: number; spent_minutes: number | null;
 };
 type ActionTemplate = {
   id: string; gite_id: string; title: string; trigger_event: "arrival" | "departure";
   starts_offset_days: number; due_offset_days: number; start_time: string; due_time: string;
   assignment_mode: AssignmentMode; default_assignee_id: string | null;
   rotation_assignee_ids: string[]; enabled: boolean;
+  category: "short" | "long"; compensation_mode: "none" | "flat_rate" | "time";
+  compensation_amount: number; default_minutes: number | null;
 };
 type ActionResponse = {
   tasks: ActionTask[]; templates: ActionTemplate[]; gites: { id: string; nom: string }[];
   assignees: { id: string; name: string }[]; can_manage: boolean;
+  shortcuts: Array<{ key: string; title: string; category: "short" | "long" }>;
 };
 type TemplateDraft = Omit<ActionTemplate, "id">;
 const emptyTemplate = (giteId: string): TemplateDraft => ({
   gite_id: giteId, title: "", trigger_event: "departure", starts_offset_days: 0,
   due_offset_days: 0, start_time: "09:00", due_time: "17:00", assignment_mode: "unassigned",
   default_assignee_id: null, rotation_assignee_ids: [], enabled: true,
+  category: "short", compensation_mode: "none", compensation_amount: 0, default_minutes: null,
 });
 const parisDay = () => new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
@@ -36,9 +42,12 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
   const [draft, setDraft] = useState<TemplateDraft>(emptyTemplate(""));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [manual, setManual] = useState({ gite_id: "", title: "", start_day: parisDay(), start_time: "09:00",
-    due_day: parisDay(), due_time: "17:00", assignee_id: "", note: "" });
+    due_day: parisDay(), due_time: "17:00", assignee_id: "", note: "", category: "short" as "short" | "long",
+    compensation_mode: "none" as "none" | "flat_rate" | "time", compensation_amount: 0, spent_minutes: null as number | null });
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({});
   const [view, setView] = useState<"pending" | "all" | "completed">("pending");
+  const [categoryView, setCategoryView] = useState<"all" | "short" | "long">("all");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +59,7 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
       const result = await apiFetch<ActionResponse>(`/action-tasks?${new URLSearchParams({ from, to })}`);
       setData(result);
       setNotes(Object.fromEntries(result.tasks.map((task) => [task.id, task.note])));
+      setTimeDrafts(Object.fromEntries(result.tasks.filter((task) => task.spent_minutes).map((task) => [task.id, String(task.spent_minutes)])));
       setDraft((current) => current.gite_id ? current : { ...current, gite_id: result.gites[0]?.id ?? "" });
       setManual((current) => current.gite_id ? current : { ...current, gite_id: result.gites[0]?.id ?? "" });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Impossible de charger les actions."); }
@@ -58,7 +68,8 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
   useEffect(() => { void load(); }, [load]);
 
   const visibleTasks = useMemo(() => (data?.tasks ?? []).filter((task) =>
-    view === "all" || (view === "pending" ? task.status !== "done" : task.status === "done")), [data, view]);
+    (categoryView === "all" || task.category === categoryView)
+    && (view === "all" || (view === "pending" ? task.status !== "done" : task.status === "done"))), [categoryView, data, view]);
 
   const run = async (operation: () => Promise<void>, success?: string) => {
     setBusy(true); setError(null); setNotice(null);
@@ -78,26 +89,41 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
     setManual((current) => ({ ...current, title: "", note: "" }));
   }, "Action ponctuelle créée.");
   const changeTask = (task: ActionTask, kind: "assignment" | "status" | "note", value: string | null) => run(async () => {
-    const body = kind === "assignment" ? { assignee_id: value } : kind === "status" ? { status: value } : { note: value ?? "" };
+    const body = kind === "assignment" ? { assignee_id: value } : kind === "status"
+      ? { status: value, ...(value === "done" && task.compensation_mode === "time" ? { spent_minutes: Number(timeDrafts[task.id] ?? 0) } : {}) }
+      : { note: value ?? "" };
     await apiFetch(`/action-tasks/tasks/${encodeURIComponent(task.id)}/${kind}`, { method: "PATCH", json: body });
   });
+  const addShortcut = (shortcut: ActionResponse["shortcuts"][number]) => run(async () => {
+    await apiFetch("/action-tasks/tasks/quick", { method: "POST", json: {
+      gite_id: manual.gite_id, title: shortcut.title, category: shortcut.category, shortcut_key: shortcut.key,
+    } });
+  }, `${shortcut.title} ajoutée.`);
 
   return <div className="actions-panel">
     {error ? <div className="card" role="alert">{error}</div> : null}
     {notice ? <div className="card" role="status">{notice}</div> : null}
     <section className="card cleaning-page__section">
-      <h2>Actions à réaliser</h2>
-      <p className="field-hint">Accueil, linge, équipement ou tout autre travail lié au gîte.</p>
+      <h2>Tâches à réaliser</h2>
+      <p className="field-hint">Les tâches rapides restent visibles sur Aujourd’hui. Les tâches à long terme restent dans votre suivi sans encombrer l’opérationnel.</p>
       <div className="cleaning-page__tabs" role="group" aria-label="Filtrer les actions">
         {([ ["pending", "À faire"], ["all", "Toutes"], ["completed", "Terminées"] ] as const).map(([key, label]) =>
           <button key={key} type="button" className={view === key ? "is-selected" : ""} onClick={() => setView(key)}>{label}</button>
+        )}
+      </div>
+      <div className="cleaning-page__tabs" role="group" aria-label="Filtrer par catégorie">
+        {([ ["all", "Toutes"], ["short", "Rapides"], ["long", "Long terme"] ] as const).map(([key, label]) =>
+          <button key={key} type="button" className={categoryView === key ? "is-selected" : ""} onClick={() => setCategoryView(key)}>{label}</button>
         )}
       </div>
       {loading ? <p>Chargement des actions…</p> : visibleTasks.length === 0 ? <p className="field-hint">Aucune action pour cette période et ce filtre.</p> :
         <div className="cleaning-page__list">{visibleTasks.map((task) => <article className="cleaning-task" key={task.id}>
           <div className="cleaning-task__main">
             <span className={`cleaning-task__status cleaning-task__status--${task.status}`}>{statusLabel[task.status]}</span>
-            <h3>{task.title}</h3><p>{task.gite_name} · Du {displayDate(task.starts_at)} au {displayDate(task.due_at)}</p>
+            <span className={`task-category task-category--${task.category}`}>{task.category === "short" ? "Rapide" : "Long terme"}</span>
+            <h3>{task.title}</h3><p>{task.gite_name} · Échéance {displayDate(task.due_at)}</p>
+            {task.compensation_mode === "flat_rate" ? <small>Forfait : {task.compensation_amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</small> : null}
+            {task.compensation_mode === "time" ? <label className="task-time-input">Temps passé <input type="number" min={1} max={1440} value={timeDrafts[task.id] ?? ""} placeholder="min" onChange={(event) => setTimeDrafts((current) => ({ ...current, [task.id]: event.target.value }))} /> min</label> : null}
             {new Date(task.due_at) < new Date() && task.status !== "done" ? <small className="cleaning-task__warning">Échéance dépassée</small> : null}
             {task.assignee_name && !data?.can_manage ? <small>Attribuée à {task.assignee_name}</small> : null}
           </div>
@@ -107,7 +133,7 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
               <option value="">Non attribuée</option>{data.assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select></label> : null}
             {task.status === "planned" ? <button type="button" disabled={busy} onClick={() => void changeTask(task, "status", "in_progress")}>Commencer</button> : null}
-            {task.status !== "done" ? <button type="button" disabled={busy} onClick={() => void changeTask(task, "status", "done")}>Terminer</button> : null}
+            {task.status !== "done" ? <button type="button" disabled={busy || (task.compensation_mode === "time" && Number(timeDrafts[task.id] ?? 0) < 1)} onClick={() => void changeTask(task, "status", "done")}>Terminer</button> : null}
             {task.status === "done" && data?.can_manage ? <button type="button" className="button-secondary" disabled={busy}
               onClick={() => void changeTask(task, "status", "planned")}>Rouvrir</button> : null}
           </div>
@@ -122,13 +148,18 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
 
     {data?.can_manage ? <>
       <section className="card cleaning-page__section">
-        <h2>Action ponctuelle</h2><p className="field-hint">Pour un besoin qui ne se répète pas à chaque séjour.</p>
+        <h2>Ajout rapide</h2><p className="field-hint">Choisissez le gîte puis touchez un raccourci, ou décrivez une nouvelle tâche.</p>
+        <label className="field">Gîte<select value={manual.gite_id} onChange={(event) => setManual({ ...manual, gite_id: event.target.value })}>
+          {data.gites.map((gite) => <option key={gite.id} value={gite.id}>{gite.nom}</option>)}
+        </select></label>
+        <div className="gite-tasks-drawer__shortcuts">{data.shortcuts.map((shortcut) => <button type="button" key={shortcut.key} disabled={busy || !manual.gite_id} className={`gite-task-shortcut gite-task-shortcut--${shortcut.category}`} onClick={() => void addShortcut(shortcut)}>+ {shortcut.title}</button>)}</div>
+        <h3>Nouvelle tâche</h3>
         <div className="cleaning-page__rules">
-          <label className="field">Gîte<select value={manual.gite_id} onChange={(event) => setManual({ ...manual, gite_id: event.target.value })}>
-            {data.gites.map((gite) => <option key={gite.id} value={gite.id}>{gite.nom}</option>)}
-          </select></label>
           <label className="field">Action<input value={manual.title} maxLength={120} placeholder="Ex. Vérifier la chaudière"
             onChange={(event) => setManual({ ...manual, title: event.target.value })} /></label>
+          <label className="field">Catégorie<select value={manual.category} onChange={(event) => setManual({ ...manual, category: event.target.value as "short" | "long" })}>
+            <option value="short">Rapide</option><option value="long">Long terme</option>
+          </select></label>
           <label className="field">Début<input type="date" value={manual.start_day} onChange={(event) => setManual({ ...manual, start_day: event.target.value })} />
             <input type="time" value={manual.start_time} onChange={(event) => setManual({ ...manual, start_time: event.target.value })} /></label>
           <label className="field">Échéance<input type="date" value={manual.due_day} onChange={(event) => setManual({ ...manual, due_day: event.target.value })} />
@@ -136,13 +167,18 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
           <label className="field">Intervenant<select value={manual.assignee_id} onChange={(event) => setManual({ ...manual, assignee_id: event.target.value })}>
             <option value="">À attribuer plus tard</option>{data.assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select></label>
+          <label className="field">Rémunération<select value={manual.compensation_mode} onChange={(event) => setManual({ ...manual, compensation_mode: event.target.value as typeof manual.compensation_mode })}>
+            <option value="none">Aucune</option><option value="flat_rate">Forfait</option><option value="time">Temps passé</option>
+          </select></label>
+          {manual.compensation_mode === "flat_rate" ? <label className="field">Forfait (€)<input type="number" min={0} step="0.01" value={manual.compensation_amount} onChange={(event) => setManual({ ...manual, compensation_amount: Number(event.target.value) })} /></label> : null}
+          {manual.compensation_mode === "time" ? <label className="field">Durée prévue (min)<input type="number" min={1} max={1440} value={manual.spent_minutes ?? ""} onChange={(event) => setManual({ ...manual, spent_minutes: event.target.value ? Number(event.target.value) : null })} /></label> : null}
           <label className="field">Consignes<input value={manual.note} maxLength={2000} onChange={(event) => setManual({ ...manual, note: event.target.value })} /></label>
         </div>
-        <button type="button" disabled={busy || !manual.gite_id || manual.title.trim().length < 2} onClick={() => void saveManual()}>Créer l’action</button>
+        <button type="button" disabled={busy || !manual.gite_id || manual.title.trim().length < 2} onClick={() => void saveManual()}>Créer la tâche</button>
       </section>
 
       <section className="card cleaning-page__section">
-        <h2>Actions automatiques</h2><p className="field-hint">Un modèle crée une action pour chaque arrivée ou départ du gîte choisi. Désactiver un modèle arrête les nouvelles créations, sans effacer les tâches déjà prévues.</p>
+        <h2>Tâches automatiques</h2><p className="field-hint">Un modèle crée une tâche pour chaque arrivée ou départ du gîte choisi.</p>
         <div className="actions-panel__templates">{data.templates.map((template) => <div className="actions-panel__template" key={template.id}>
           <div><strong>{template.title}</strong><small>{data.gites.find((gite) => gite.id === template.gite_id)?.nom} · {template.trigger_event === "arrival" ? "Arrivée" : "Départ"}{template.enabled ? "" : " · En pause"}</small></div>
           <button type="button" className="button-secondary" onClick={() => { setEditingId(template.id); setDraft({ ...template }); }}>Modifier</button>
@@ -154,6 +190,9 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
           </select></label>
           <label className="field">Action<input value={draft.title} maxLength={120} placeholder="Ex. Préparer le linge"
             onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+          <label className="field">Catégorie<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as ActionTemplate["category"] })}>
+            <option value="short">Rapide</option><option value="long">Long terme</option>
+          </select></label>
           <label className="field">Déclencheur<select value={draft.trigger_event} onChange={(event) => setDraft({ ...draft, trigger_event: event.target.value as ActionTemplate["trigger_event"] })}>
             <option value="departure">Départ</option><option value="arrival">Arrivée</option>
           </select></label>
@@ -174,6 +213,11 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
               onChange={(event) => setDraft({ ...draft, rotation_assignee_ids: event.target.checked
                 ? [...draft.rotation_assignee_ids, item.id] : draft.rotation_assignee_ids.filter((id) => id !== item.id) })} /> {item.name}</label>)}
           </fieldset> : null}
+          <label className="field">Rémunération<select value={draft.compensation_mode} onChange={(event) => setDraft({ ...draft, compensation_mode: event.target.value as ActionTemplate["compensation_mode"] })}>
+            <option value="none">Aucune</option><option value="flat_rate">Forfait</option><option value="time">Temps passé</option>
+          </select></label>
+          {draft.compensation_mode === "flat_rate" ? <label className="field">Forfait (€)<input type="number" min={0} step="0.01" value={draft.compensation_amount} onChange={(event) => setDraft({ ...draft, compensation_amount: Number(event.target.value) })} /></label> : null}
+          {draft.compensation_mode === "time" ? <label className="field">Durée prévue (min)<input type="number" min={1} max={1440} value={draft.default_minutes ?? ""} onChange={(event) => setDraft({ ...draft, default_minutes: event.target.value ? Number(event.target.value) : null })} /></label> : null}
           <label className="cleaning-page__checkbox"><input type="checkbox" checked={draft.enabled}
             onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> Modèle actif</label>
         </div>

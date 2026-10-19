@@ -556,6 +556,17 @@ router.get("/overview/primary", async (req, res, next) => {
           orderBy: [{ display_name: "asc" }, { id: "asc" }],
         })
       : [];
+    const openActionTasks = await prisma.actionTask.findMany({
+      where: { status: { not: "done" } },
+      select: { gite_id: true, category: true },
+    });
+    const taskSummariesByGite = openActionTasks.reduce<Record<string, { short_open: number; long_open: number }>>((summary, task) => {
+      const current = summary[task.gite_id] ?? { short_open: 0, long_open: 0 };
+      if (task.category === "long") current.long_open += 1;
+      else current.short_open += 1;
+      summary[task.gite_id] = current;
+      return summary;
+    }, {});
     const taskByDeparture = new Map(cleaningTasks.map((item) => [item.departure_reservation_id, item]));
     const cleaningAssigneeNameById = new Map(cleaningAssignees.map((item) => [item.id, item.display_name]));
     const giteById = new Map(gites.map((gite) => [gite.id, gite]));
@@ -582,6 +593,7 @@ router.get("/overview/primary", async (req, res, next) => {
       source_colors: readSourceColorSettings().colors,
       revenue_averages: revenueAverages,
       cleaning_assignees: cleaningAssignees.map((item) => ({ id: item.id, name: item.display_name })),
+      task_summaries_by_gite: taskSummariesByGite,
       cleaning_readiness: visibleReadiness,
     });
   } catch (error) {

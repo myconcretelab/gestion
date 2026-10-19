@@ -17,6 +17,7 @@ type MobileReservationActionsBarProps = {
   }>;
   note?: string | null;
   cleaningCheck?: ReactNode;
+  tasksButton?: ReactNode;
   mode?: MobileReservationActionsBarMode;
   onClose: () => void;
   onEdit?: () => void;
@@ -154,6 +155,7 @@ const MobileReservationActionsBar = ({
   details,
   note,
   cleaningCheck,
+  tasksButton,
   mode = "actions",
   onClose,
   onEdit,
@@ -272,6 +274,7 @@ const MobileReservationActionsBar = ({
             {normalizedNote ? <p className="mobile-reservation-actions__note">{normalizedNote}</p> : null}
           </div>
           <div className="mobile-reservation-actions__aside">
+            {tasksButton}
             {cleaningCheck}
             <button
               type="button"

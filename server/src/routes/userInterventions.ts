@@ -23,7 +23,7 @@ const createSchema = z.object({
 });
 const correctionSchema = z.object({
   userId: z.string().trim().min(1),
-  kind: z.enum(["cleaning_check", "full_cleaning"]),
+  kind: z.enum(["cleaning_check", "full_cleaning", "task"]),
   giteId: z.string().trim().min(1),
   occurredOn: workDate,
   amount: z.coerce.number().min(0).max(1_000_000),

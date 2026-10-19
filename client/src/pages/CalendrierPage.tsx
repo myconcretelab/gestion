@@ -1995,6 +1995,8 @@ const CalendrierPage = () => {
           open
           title={getReservationDisplayLabel(mobileActionReservation)}
           reservation={mobileActionReservation}
+          giteId={mobileActionReservation.gite_id}
+          giteName={selectedGite?.nom}
           total={getReservationMonthlyAmountsForMonth(
             mobileActionReservation,
             visibleMonth?.year ?? year,

@@ -2,7 +2,7 @@ import prisma from "../db/prisma.js";
 import { getOrganizationId } from "./organizationContext.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 
-export const USER_INTERVENTION_KINDS = ["cleaning_check", "full_cleaning"] as const;
+export const USER_INTERVENTION_KINDS = ["cleaning_check", "full_cleaning", "task"] as const;
 export type UserInterventionKind = (typeof USER_INTERVENTION_KINDS)[number];
 
 export const toParisIsoDate = (value: Date) => new Intl.DateTimeFormat("en-CA", {

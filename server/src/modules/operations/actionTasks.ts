@@ -3,8 +3,16 @@ import { z } from "zod";
 import prisma from "../../db/prisma.js";
 import { getAuthenticatedAppUser } from "../../services/serverAuth.js";
 import { canManageCleaning, parisWallTime } from "../../services/cleaningTasks.js";
+import { getParisClock } from "../../services/giteCleaningReadiness.js";
 import { parseRotationAssignees, validateAssignees } from "../../services/assignmentRules.js";
-import { serializeActionTask, syncActionTasks } from "../../services/actionTasks.js";
+import {
+  ACTION_TASK_SHORTCUTS,
+  recordActionTaskCompensation,
+  removeActionTaskCompensation,
+  serializeActionTask,
+  summarizeActionTasks,
+  syncActionTasks,
+} from "../../services/actionTasks.js";
 
 const router = Router();
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -14,8 +22,14 @@ const assignment = {
   default_assignee_id: z.string().nullable(),
   rotation_assignee_ids: z.array(z.string()).max(50),
 };
+const taskCategory = z.enum(["short", "long"]);
+const compensationMode = z.enum(["none", "flat_rate", "time"]);
 const templateSchema = z.object({
   gite_id: z.string(), title: z.string().trim().min(2).max(120),
+  category: taskCategory.default("short"),
+  compensation_mode: compensationMode.default("none"),
+  compensation_amount: z.number().min(0).max(100000).default(0),
+  default_minutes: z.number().int().min(1).max(1440).nullable().default(null),
   trigger_event: z.enum(["arrival", "departure"]),
   starts_offset_days: z.number().int().min(-30).max(30),
   due_offset_days: z.number().int().min(-30).max(30),
@@ -25,6 +39,21 @@ const manualSchema = z.object({
   gite_id: z.string(), title: z.string().trim().min(2).max(120),
   start_day: isoDate, start_time: clockTime, due_day: isoDate, due_time: clockTime,
   assignee_id: z.string().nullable(), note: z.string().trim().max(2000).default(""),
+  reservation_id: z.string().nullable().optional(),
+  category: taskCategory.default("short"),
+  compensation_mode: compensationMode.default("none"),
+  compensation_amount: z.number().min(0).max(100000).default(0),
+  spent_minutes: z.number().int().min(1).max(1440).nullable().default(null),
+  source_type: z.enum(["manual", "shortcut", "check", "cleaning"]).default("manual"),
+});
+const quickTaskSchema = z.object({
+  gite_id: z.string().trim().min(1),
+  reservation_id: z.string().trim().min(1).nullable().optional(),
+  title: z.string().trim().min(2).max(120),
+  category: taskCategory.default("short"),
+  shortcut_key: z.string().trim().max(60).nullable().optional(),
+  source_type: z.enum(["manual", "shortcut", "check", "cleaning", "reservation"]).optional(),
+  note: z.string().trim().max(2000).default(""),
 });
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const shiftDate = (date: Date, days: number) => new Date(date.getTime() + days * 86_400_000);
@@ -37,12 +66,15 @@ const checkTemplate = async (payload: z.infer<typeof templateSchema>) => {
   if (!await prisma.gite.findUnique({ where: { id: payload.gite_id }, select: { id: true } })) return "Gîte introuvable.";
   if (payload.assignment_mode === "fixed" && (!payload.default_assignee_id || !await checkAssignee(payload.default_assignee_id))) return "Choisissez un intervenant actif.";
   if (payload.assignment_mode === "rotation" && (!payload.rotation_assignee_ids.length || !await validateAssignees(payload.rotation_assignee_ids))) return "Choisissez des intervenants actifs pour la rotation.";
+  if (payload.compensation_mode === "flat_rate" && payload.compensation_amount <= 0) return "Indiquez le forfait de cette tâche.";
+  if (payload.compensation_mode === "time" && !payload.default_minutes) return "Indiquez une durée prévue.";
   return null;
 };
 const serializeTemplate = (template: {
   id: string; gite_id: string; title: string; trigger_event: string; starts_offset_days: number;
   due_offset_days: number; start_time: string; due_time: string; assignment_mode: string;
   default_assignee_id: string | null; rotation_assignee_ids: string; enabled: boolean;
+  category: string; compensation_mode: string; compensation_amount: unknown; default_minutes: number | null;
 }) => ({ ...template, rotation_assignee_ids: parseRotationAssignees(template.rotation_assignee_ids) });
 
 const taskResponse = async (id: string) => {
@@ -84,7 +116,40 @@ router.get("/", async (req, res, next) => {
       templates: manager ? templates.map(serializeTemplate) : [],
       gites: manager ? gites : [],
       assignees: manager ? users.filter((item) => item.intervenant_id).map((item) => ({ id: item.id, name: item.display_name })) : [],
+      shortcuts: ACTION_TASK_SHORTCUTS,
       can_manage: manager,
+    });
+  } catch (error) { next(error); }
+});
+
+router.get("/gites/:giteId", async (req, res, next) => {
+  try {
+    const currentUser = await getAuthenticatedAppUser(req);
+    const manager = canManageCleaning(currentUser);
+    const gite = await prisma.gite.findUnique({ where: { id: req.params.giteId }, select: { id: true, nom: true } });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
+    const [tasks, users] = await Promise.all([
+      prisma.actionTask.findMany({
+        where: { gite_id: gite.id },
+        orderBy: [{ status: "asc" }, { category: "asc" }, { due_at: "asc" }, { createdAt: "desc" }],
+        take: 100,
+      }),
+      prisma.appUser.findMany({
+        where: {
+          is_active: true, intervenant_id: { not: null },
+          ...(manager ? {} : { id: currentUser?.id ?? "" }),
+        },
+        select: { id: true, display_name: true }, orderBy: [{ display_name: "asc" }, { id: "asc" }],
+      }),
+    ]);
+    const userById = new Map(users.map((item) => [item.id, item.display_name]));
+    return res.json({
+      gite,
+      summary: summarizeActionTasks(tasks),
+      shortcuts: ACTION_TASK_SHORTCUTS,
+      can_manage: manager,
+      assignees: users.map((item) => ({ id: item.id, name: item.display_name })),
+      tasks: tasks.map((task) => serializeActionTask(task, { gite: gite.nom, assignee: userById.get(task.assignee_id ?? "") })),
     });
   } catch (error) { next(error); }
 });
@@ -121,16 +186,47 @@ router.put("/templates/:id", async (req, res, next) => {
 
 router.post("/tasks", async (req, res, next) => {
   try {
-    if (!canManageCleaning(await getAuthenticatedAppUser(req))) return res.status(403).json({ error: "Action réservée aux gestionnaires." });
+    const user = await getAuthenticatedAppUser(req);
+    if (user && !user.permissions.canWrite) return res.status(403).json({ error: "Vous ne pouvez pas créer de tâche." });
     const payload = manualSchema.parse(req.body);
     if (!await prisma.gite.findUnique({ where: { id: payload.gite_id }, select: { id: true } })) return res.status(404).json({ error: "Gîte introuvable." });
     if (!await checkAssignee(payload.assignee_id)) return res.status(400).json({ error: "Intervenant invalide." });
+    if (payload.compensation_mode === "flat_rate" && payload.compensation_amount <= 0) return res.status(400).json({ error: "Indiquez le forfait de cette tâche." });
     const startsAt = parisWallTime(payload.start_day, payload.start_time);
     const dueAt = parisWallTime(payload.due_day, payload.due_time);
     if (startsAt >= dueAt) return res.status(400).json({ error: "L’échéance doit suivre le début de l’action." });
     const task = await prisma.actionTask.create({ data: {
       gite_id: payload.gite_id, title: payload.title, starts_at: startsAt, due_at: dueAt,
-      assignee_id: payload.assignee_id, note: payload.note,
+      assignee_id: payload.assignee_id, note: payload.note, reservation_id: payload.reservation_id ?? null,
+      category: payload.category, compensation_mode: payload.compensation_mode,
+      compensation_amount: payload.compensation_amount, spent_minutes: payload.spent_minutes,
+      source_type: payload.source_type,
+    } });
+    return res.status(201).json(await taskResponse(task.id));
+  } catch (error) { next(error); }
+});
+
+router.post("/tasks/quick", async (req, res, next) => {
+  try {
+    const user = await getAuthenticatedAppUser(req);
+    if (user && !user.permissions.canWrite) return res.status(403).json({ error: "Vous ne pouvez pas créer de tâche." });
+    const payload = quickTaskSchema.parse(req.body ?? {});
+    const gite = await prisma.gite.findUnique({ where: { id: payload.gite_id }, select: { id: true } });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
+    if (payload.reservation_id && !await prisma.reservation.findFirst({ where: { id: payload.reservation_id, gite_id: gite.id }, select: { id: true } })) {
+      return res.status(409).json({ error: "Cette réservation n’appartient pas au gîte choisi." });
+    }
+    if (payload.shortcut_key && !ACTION_TASK_SHORTCUTS.some((item) => item.key === payload.shortcut_key && item.title === payload.title)) {
+      return res.status(400).json({ error: "Raccourci de tâche invalide." });
+    }
+    const now = new Date();
+    const today = getParisClock(now).dateIso;
+    const dueDay = formatDate(shiftDate(new Date(`${today}T00:00:00Z`), payload.category === "short" ? 1 : 30));
+    const task = await prisma.actionTask.create({ data: {
+      gite_id: gite.id, reservation_id: payload.reservation_id ?? null,
+      title: payload.title, category: payload.category,
+      starts_at: now, due_at: parisWallTime(dueDay, payload.category === "short" ? "12:00" : "18:00"),
+      note: payload.note, source_type: payload.source_type ?? (payload.shortcut_key ? "shortcut" : "manual"),
     } });
     return res.status(201).json(await taskResponse(task.id));
   } catch (error) { next(error); }
@@ -138,10 +234,14 @@ router.post("/tasks", async (req, res, next) => {
 
 router.patch("/tasks/:id/assignment", async (req, res, next) => {
   try {
-    if (!canManageCleaning(await getAuthenticatedAppUser(req))) return res.status(403).json({ error: "Attribution réservée aux gestionnaires." });
+    const currentUser = await getAuthenticatedAppUser(req);
+    const manager = canManageCleaning(currentUser);
     const { assignee_id } = z.object({ assignee_id: z.string().nullable() }).parse(req.body);
+    if (!manager && assignee_id !== currentUser?.id) return res.status(403).json({ error: "Vous pouvez seulement prendre cette tâche pour vous-même." });
     if (!await checkAssignee(assignee_id)) return res.status(400).json({ error: "Intervenant invalide." });
-    if (!await prisma.actionTask.findUnique({ where: { id: req.params.id }, select: { id: true } })) return res.status(404).json({ error: "Action introuvable." });
+    const task = await prisma.actionTask.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
+    if (!task) return res.status(404).json({ error: "Tâche introuvable." });
+    if (task.status === "done") return res.status(409).json({ error: "Rouvrez la tâche avant de modifier son intervenant." });
     await prisma.actionTask.update({ where: { id: req.params.id }, data: { assignee_id } });
     return res.json(await taskResponse(req.params.id));
   } catch (error) { next(error); }
@@ -163,15 +263,27 @@ router.patch("/tasks/:id/status", async (req, res, next) => {
   try {
     const user = await getAuthenticatedAppUser(req);
     const manager = canManageCleaning(user);
-    const { status } = z.object({ status: z.enum(["planned", "in_progress", "done"]) }).parse(req.body);
+    const { status, spent_minutes: requestedMinutes } = z.object({
+      status: z.enum(["planned", "in_progress", "done"]),
+      spent_minutes: z.number().int().min(1).max(1440).nullable().optional(),
+    }).parse(req.body);
     const task = await prisma.actionTask.findUnique({ where: { id: req.params.id } });
     if (!task) return res.status(404).json({ error: "Action introuvable." });
     if (!manager && task.assignee_id !== user?.id) return res.status(403).json({ error: "Cette action ne vous est pas attribuée." });
     if (!manager && (status === "planned" || task.status === "done")) return res.status(403).json({ error: "Action réservée au gestionnaire." });
     if (!manager && new Date() < task.starts_at) return res.status(409).json({ error: "Cette action n’est pas encore disponible." });
+    const completedAt = task.completed_at ?? new Date();
+    let spentMinutes = task.spent_minutes;
+    if (status === "done") {
+      const result = await recordActionTaskCompensation(task, completedAt, requestedMinutes);
+      spentMinutes = result.spentMinutes ?? null;
+    } else if (task.status === "done") {
+      await removeActionTaskCompensation(task.id);
+    }
     await prisma.actionTask.update({ where: { id: task.id }, data: {
-      status, completed_at: status === "done" ? task.completed_at ?? new Date() : null,
+      status, completed_at: status === "done" ? completedAt : null,
       completed_by_id: status === "done" ? task.completed_by_id ?? user?.id ?? null : null,
+      spent_minutes: status === "done" ? spentMinutes : task.spent_minutes,
     } });
     return res.json(await taskResponse(task.id));
   } catch (error) { next(error); }

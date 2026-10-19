@@ -12,7 +12,7 @@ type HourEntry = {
   updated_at: string;
 };
 type InterventionEntry = {
-  id: string; user_id: string | null; user_name: string; kind: "cleaning_check" | "full_cleaning";
+  id: string; user_id: string | null; user_name: string; kind: "cleaning_check" | "full_cleaning" | "task";
   occurred_on: string; gite_id: string | null; gite_name: string | null; amount: number; paid_at: string | null;
   updated_at: string;
 };
@@ -127,13 +127,14 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
     const hoursAmount = minutes / 60 * Number(worker.hourly_rate ?? 0);
     const checks = workerInterventions.filter((entry) => entry.kind === "cleaning_check");
     const cleanings = workerInterventions.filter((entry) => entry.kind === "full_cleaning");
+    const tasks = workerInterventions.filter((entry) => entry.kind === "task");
     const interventionAmount = workerInterventions.reduce((sum, entry) => sum + Number(entry.amount), 0);
     const unpaidDates = [
       ...workerHours.map((entry) => entry.worked_on),
       ...workerInterventions.map((entry) => entry.occurred_on),
     ].sort();
     return {
-      worker, minutes, checks: checks.length, cleanings: cleanings.length,
+      worker, minutes, checks: checks.length, cleanings: cleanings.length, tasks: tasks.length,
       hoursAmount, interventionAmount, total: hoursAmount + interventionAmount,
       firstUnpaidOn: unpaidDates[0] ?? null,
       lastUnpaidOn: unpaidDates.at(-1) ?? null,
@@ -142,6 +143,7 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
   const totalMinutes = summaries.reduce((sum, row) => sum + row.minutes, 0);
   const totalChecks = summaries.reduce((sum, row) => sum + row.checks, 0);
   const totalCleanings = summaries.reduce((sum, row) => sum + row.cleanings, 0);
+  const totalTasks = summaries.reduce((sum, row) => sum + row.tasks, 0);
   const totalAmount = summaries.reduce((sum, row) => sum + row.total, 0);
 
   const saveOperationalSettings = async (worker: Intervenant) => {
@@ -282,7 +284,7 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
   return <div className="intervenants-page">
     <header className="intervenants-hero">
       <div><span className="intervenants-hero__eyebrow">Activité et rémunération</span><h1>Interventions</h1>
-        <p>Suivez les heures, les contrôles de ménage, les ménages complets et les montants restant à payer.</p></div>
+        <p>Suivez les heures, les contrôles, les ménages, les tâches rémunérées et les montants restant à payer.</p></div>
       <Link className="secondary button-link" to="/parametres/utilisateurs">Tarifs et utilisateurs</Link>
     </header>
     {error ? <div className="note" role="alert">{error}</div> : null}
@@ -292,14 +294,15 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
       <article><span>Heures à payer</span><strong>{formatWorkMinutes(totalMinutes)}</strong></article>
       <article><span>Contrôles à payer</span><strong>{totalChecks}</strong></article>
       <article><span>Ménages à payer</span><strong>{totalCleanings}</strong></article>
+      <article><span>Tâches au forfait</span><strong>{totalTasks}</strong></article>
       <article><span>Total à payer</span><strong>{formatEuro(totalAmount)}</strong></article>
     </section>
 
     <section className="card intervenants-summary">
       <div className="intervenants-history__header"><div><span className="intervenants-hero__eyebrow">Synthèse</span><h2>À payer par intervenant</h2></div></div>
       <div className="intervenants-history__table-wrap"><table className="table intervenants-summary__table"><thead><tr>
-        <th>Intervenant</th><th>Période à payer</th><th>Heures</th><th>Contrôles</th><th>Ménages</th><th>Total</th><th></th>
-      </tr></thead><tbody>{summaries.map(({ worker, minutes, checks, cleanings, total, firstUnpaidOn, lastUnpaidOn }) => <tr key={worker.id}>
+        <th>Intervenant</th><th>Période à payer</th><th>Heures</th><th>Contrôles</th><th>Ménages</th><th>Tâches</th><th>Total</th><th></th>
+      </tr></thead><tbody>{summaries.map(({ worker, minutes, checks, cleanings, tasks, total, firstUnpaidOn, lastUnpaidOn }) => <tr key={worker.id}>
         <td><strong>{worker.nom}</strong><small>{worker.is_active ? "Actif" : "Inactif"}</small></td>
         <td>{firstUnpaidOn && lastUnpaidOn ? <div className="intervenants-summary__period">
           <strong>{firstUnpaidOn === lastUnpaidOn ? <>Le <time dateTime={firstUnpaidOn}>{formatDate(firstUnpaidOn)}</time></> : <>
@@ -307,7 +310,7 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
           </>}</strong>
           <small>{unpaidAgeLabel(firstUnpaidOn, todayIso())}</small>
         </div> : <small>Rien à payer</small>}</td>
-        <td>{formatWorkMinutes(minutes)}</td><td>{checks}</td><td>{cleanings}</td><td><strong>{formatEuro(total)}</strong></td>
+        <td>{formatWorkMinutes(minutes)}</td><td>{checks}</td><td>{cleanings}</td><td>{tasks}</td><td><strong>{formatEuro(total)}</strong></td>
         <td><button type="button" disabled={!total || busyId === worker.id} onClick={() => void settleWorker(worker)}>Marquer payé</button></td>
       </tr>)}</tbody></table></div>
     </section>
@@ -348,11 +351,11 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
         </div>
       </div>
       {canCorrectHistory ? <p className="intervenants-history__admin-note">Les administrateurs peuvent corriger une erreur. Chaque modification exige un motif et conserve l’ancienne valeur dans le journal d’audit.</p> : null}
-      <h3>Contrôles et ménages</h3>
+      <h3>Contrôles, ménages et tâches au forfait</h3>
       {!interventions.length ? <p className="field-hint">Aucune intervention pour ce filtre.</p> : <div className="intervenants-history__table-wrap">
         <table className="table intervenants-history__table"><thead><tr><th>Date</th><th>Intervenant</th><th>Type</th><th>Gîte</th><th>Montant</th><th>État</th><th></th></tr></thead>
           <tbody>{interventions.map((entry) => <tr key={entry.id}><td>{formatDate(entry.occurred_on)}</td><td>{entry.user_name}</td>
-            <td>{entry.kind === "cleaning_check" ? "Contrôle ménage" : "Ménage complet"}</td><td>{entry.gite_name ?? "—"}</td><td>{formatEuro(entry.amount)}</td>
+            <td>{entry.kind === "cleaning_check" ? "Contrôle ménage" : entry.kind === "full_cleaning" ? "Ménage complet" : "Tâche au forfait"}</td><td>{entry.gite_name ?? "—"}</td><td>{formatEuro(entry.amount)}</td>
             <td><span className={`intervenants-status intervenants-status--${entry.paid_at ? "paid" : "unpaid"}`}>{entry.paid_at ? "Payé" : "À payer"}</span></td>
             <td><div className="intervenants-history__actions">
               {canCorrectHistory ? <button className="table-action" disabled={Boolean(busyId)} onClick={() => openInterventionCorrection(entry)}>Corriger</button> : null}
@@ -384,7 +387,7 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
               <option value="">Choisir</option>{workers.filter((worker) => worker.user_id).map((worker) => <option key={worker.id} value={worker.user_id!}>{worker.nom}</option>)}
             </select></label>
             <label className="field">Type<select value={correction.kind} onChange={(event) => setCorrection({ ...correction, kind: event.target.value as InterventionEntry["kind"] })}>
-              <option value="cleaning_check">Contrôle ménage</option><option value="full_cleaning">Ménage complet</option>
+              <option value="cleaning_check">Contrôle ménage</option><option value="full_cleaning">Ménage complet</option><option value="task">Tâche au forfait</option>
             </select></label>
             <label className="field">Gîte<select required value={correction.giteId} onChange={(event) => setCorrection({ ...correction, giteId: event.target.value })}>
               <option value="">Choisir</option>{gites.map((gite) => <option key={gite.id} value={gite.id}>{gite.nom}</option>)}

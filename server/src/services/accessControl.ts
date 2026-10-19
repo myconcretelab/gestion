@@ -44,9 +44,11 @@ export const hasBusinessPermission = (user: AppUserSummary, permission: Business
   if (permission === "cleaning:execute") {
     return user.pageAccess.includes("today") || user.pageAccess.includes("planning_relay");
   }
+  if (permission === "actions:execute") {
+    return user.pageAccess.includes("today") || user.pageAccess.includes("calendar") || user.pageAccess.includes("planning_relay");
+  }
   const page = pageForPermission[permission];
   if (!page || !user.pageAccess.includes(page)) return false;
-  if (permission === "actions:execute") return true;
   return !permission.endsWith(":write") || user.permissions.canWrite;
 };
 
@@ -85,7 +87,11 @@ export const getRequiredBusinessPermission = (method: string, requestPath: strin
   if (/^\/(?:personal-expenses|professional-expenses)/.test(path)) return familyPermission("finances", method);
   if (/^\/(?:guest-night-declarations|urssaf-declarations)/.test(path)) return familyPermission("declarations", method);
   if (path.startsWith("/cleaning-tasks")) return (path.endsWith("/status") || path.endsWith("/note")) && isWriteMethod(method) ? "cleaning:execute" : familyPermission("planning", method);
-  if (path.startsWith("/action-tasks")) return (path.endsWith("/status") || path.endsWith("/note")) && isWriteMethod(method) ? "actions:execute" : familyPermission("planning", method);
+  if (path.startsWith("/action-tasks")) {
+    const taskExecution = ((path.endsWith("/status") || path.endsWith("/note") || path.endsWith("/tasks/quick")) && isWriteMethod(method))
+      || (method.toUpperCase() === "GET" && path.startsWith("/action-tasks/gites/"));
+    return taskExecution ? "actions:execute" : familyPermission("planning", method);
+  }
   if (/^\/(?:planning-relay-periods|intervenants|interventions)/.test(path)) return familyPermission("planning", method);
   if (path.startsWith("/today/cleaning-readiness") && isWriteMethod(method)) return "cleaning:execute";
   if (path.startsWith("/today")) return familyPermission("today", method);
@@ -185,4 +191,6 @@ const PAGE_API_PREFIXES: Array<[string, AppPageId]> = [
 ];
 
 export const getRequiredPageForApiPath = (path: string): AppPageId | null =>
-  PAGE_API_PREFIXES.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))?.[1] ?? null;
+  /^\/action-tasks\/(?:gites\/|tasks\/quick)/.test(path)
+    ? null
+    : PAGE_API_PREFIXES.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))?.[1] ?? null;

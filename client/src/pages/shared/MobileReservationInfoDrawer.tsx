@@ -5,6 +5,7 @@ import { buildSmsHref, buildTelephoneHref } from "../../utils/sms";
 import type { Reservation } from "../../utils/types";
 import MobileReservationActionsBar from "./MobileReservationActionsBar";
 import { isPlatformReservationSource } from "./reservationSources";
+import { GiteTasksButton, type GiteTaskSummary } from "./GiteTasksDrawer";
 
 type ReservationInfo = Pick<Reservation, "id" | "date_entree" | "date_sortie" | "nb_nuits" | "prix_total" | "source_paiement"> &
   Partial<Pick<Reservation, "options" | "commentaire" | "telephone" | "airbnb_url" |
@@ -15,6 +16,9 @@ type Props = Pick<ComponentProps<typeof MobileReservationActionsBar>,
   reservation: ReservationInfo;
   total?: number;
   onToggleSource: () => void;
+  giteId?: string | null;
+  giteName?: string | null;
+  onTasksChanged?: (summary: GiteTaskSummary) => void;
 };
 
 const formatShortDate = (value: string) => new Date(value).toLocaleDateString("fr-FR", {
@@ -25,6 +29,9 @@ const MobileReservationInfoDrawer = ({
   reservation,
   total,
   onToggleSource,
+  giteId,
+  giteName,
+  onTasksChanged,
   ...props
 }: Props) => {
   const hasLiveEnergy = (reservation.energy_live_consumption_kwh ?? 0) > 0 || (reservation.energy_live_cost_eur ?? 0) > 0;
@@ -53,6 +60,12 @@ const MobileReservationInfoDrawer = ({
       phoneHref={buildTelephoneHref(reservation.telephone)}
       smsHref={buildSmsHref(reservation.telephone ?? "")}
       airbnbUrl={reservation.airbnb_url}
+      tasksButton={giteId ? <GiteTasksButton
+        giteId={giteId}
+        giteName={giteName || "ce gîte"}
+        reservationId={reservation.id}
+        onChanged={onTasksChanged}
+      /> : null}
     />
   );
 };

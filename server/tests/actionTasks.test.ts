@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { actionWindow } from "../src/services/actionTasks.js";
+import { ACTION_TASK_SHORTCUTS, actionWindow, summarizeActionTasks } from "../src/services/actionTasks.js";
 import { parseRotationAssignees, rotationAssigneeAt } from "../src/services/assignmentRules.js";
 
 test("une action peut être prévue la veille d'une arrivée en heure de Paris", () => {
@@ -16,4 +16,20 @@ test("le tour de rôle suit l'ordre défini et revient au début", () => {
   assert.deepEqual(pool, ["a", "b", "c"]);
   assert.deepEqual([1, 2, 3, 4, 5].map((cursor) => rotationAssigneeAt(pool, cursor)), ["a", "b", "c", "a", "b"]);
   assert.equal(rotationAssigneeAt([], 1), null);
+});
+
+test("les tâches courtes et longues ont des compteurs distincts", () => {
+  assert.deepEqual(summarizeActionTasks([
+    { category: "short", status: "planned" },
+    { category: "short", status: "in_progress" },
+    { category: "long", status: "planned" },
+    { category: "short", status: "done" },
+  ]), { open_short: 2, open_long: 1, completed: 1 });
+});
+
+test("les raccourcis essentiels sont disponibles en ajout rapide", () => {
+  assert.ok(ACTION_TASK_SHORTCUTS.some((item) => item.title.includes("savon")));
+  assert.ok(ACTION_TASK_SHORTCUTS.some((item) => item.title.includes("papier toilette")));
+  assert.ok(ACTION_TASK_SHORTCUTS.some((item) => item.title.includes("aspirateur")));
+  assert.ok(ACTION_TASK_SHORTCUTS.every((item) => item.category === "short" || item.category === "long"));
 });

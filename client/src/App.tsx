@@ -30,6 +30,7 @@ const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
 const CleaningPage = lazy(() => import("./pages/CleaningPage"));
+const TasksPage = lazy(() => import("./pages/TasksPage"));
 const PublicPlanningRelayPage = lazy(() => import("./pages/PublicPlanningRelayPage"));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
 const ProductSettingsPage = lazy(() => import("./pages/ProductSettingsPage"));
@@ -354,6 +355,7 @@ const App = () => {
   const isOperationsSection =
     location.pathname === "/menages" ||
     location.pathname.startsWith("/menages/");
+  const isTasksSection = location.pathname === "/taches" || location.pathname.startsWith("/taches/");
   const isStatsSection =
     location.pathname === "/statistiques" ||
     location.pathname.startsWith("/statistiques/");
@@ -408,6 +410,14 @@ const App = () => {
       pageId: "planning_relay" as const,
       label: "Ménages",
       isActive: isOperationsSection,
+      desktopOverflow: true,
+      module: "worker_planning" as const,
+    },
+    {
+      to: "/taches",
+      pageId: "planning_relay" as const,
+      label: "Tâches",
+      isActive: isTasksSection,
       desktopOverflow: true,
       module: "worker_planning" as const,
     },
@@ -1075,6 +1085,7 @@ const App = () => {
             <Route path="/calendrier" element={<PageAccess allowed={canAccessPage("calendar")}><CalendrierPage /></PageAccess>} />
             <Route path="/planning-relais" element={<Navigate to="/menages" replace />} />
             <Route path="/menages" element={<PageAccess allowed={canAccessPage("planning_relay")}><CleaningPage /></PageAccess>} />
+            <Route path="/taches" element={<PageAccess allowed={canAccessPage("planning_relay")}><TasksPage /></PageAccess>} />
             <Route path="/menages/partages" element={<PageAccess allowed={canAccessPage("planning_relay") && (!currentUser || currentUser.permissions.isOwner || (currentUser.status !== "worker" && currentUser.permissions.canWrite))}><OperationsPrintPage /></PageAccess>} />
             <Route path="/statistiques" element={<PageAccess allowed={canAccessPage("statistics")}><AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-personnels" element={<PageAccess allowed={canAccessPage("personal_expenses")}><AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess></PageAccess>} />

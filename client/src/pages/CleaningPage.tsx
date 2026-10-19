@@ -173,7 +173,7 @@ export default function CleaningPage() {
 
     <div className="cleaning-page__tabs" role="group" aria-label="Type de travail">
       <button type="button" className={section === "cleaning" ? "is-selected" : ""} onClick={() => setSection("cleaning")}>Ménages</button>
-      <button type="button" className={section === "actions" ? "is-selected" : ""} onClick={() => setSection("actions")}>Autres actions</button>
+      <button type="button" className={section === "actions" ? "is-selected" : ""} onClick={() => setSection("actions")}>Tâches</button>
     </div>
     <div className="cleaning-page__dates">
       <label>Du <input type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)} /></label>

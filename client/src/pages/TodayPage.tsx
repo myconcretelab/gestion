@@ -1,5 +1,6 @@
 import TodayIntervenantHours from "./shared/TodayIntervenantHours";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
+import GiteTasksDrawer from "./shared/GiteTasksDrawer";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
@@ -50,6 +51,7 @@ type TodayPrimaryOverviewPayload = {
   source_colors: Record<string, string>;
   revenue_averages?: TodayRevenueAverageMetric[];
   cleaning_assignees?: Array<{ id: string; name: string }>;
+  task_summaries_by_gite?: Record<string, { short_open: number; long_open: number }>;
   cleaning_readiness: GiteCleaningReadiness[];
 };
 
@@ -688,6 +690,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
     item: GiteCleaningReadiness;
     selectedUserId: string;
   } | null>(null);
+  const [taskDrawerGite, setTaskDrawerGite] = useState<{ id: string; name: string; reservationId?: string | null } | null>(null);
   const [selectedCleaningGiteId, setSelectedCleaningGiteId] = useState<string | null>(null);
   const [widgetManagerOpen, setWidgetManagerOpen] = useState(false);
   const [widgetManagerFocusId, setWidgetManagerFocusId] = useState<TodayWidgetId | null>(null);
@@ -1521,6 +1524,15 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             <span>{cleaningReadinessUndo.gite_prefix} prêt pour la prochaine arrivée{cleaningReadinessUndo.checked_by_name ? ` · validé par ${cleaningReadinessUndo.checked_by_name}` : ""}.</span>
             <button
               type="button"
+              className="secondary"
+              onClick={() => setTaskDrawerGite({
+                id: cleaningReadinessUndo.gite_id,
+                name: cleaningReadinessUndo.gite_name,
+                reservationId: cleaningReadinessUndo.departure_reservation_id,
+              })}
+            >Ajouter une tâche</button>
+            <button
+              type="button"
               disabled={Boolean(cleaningReadinessBusyId)}
               onClick={() => void updateCleaningReadiness(cleaningReadinessUndo, false)}
             >
@@ -1528,6 +1540,21 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             </button>
           </div>
         ) : null}
+        {taskDrawerGite ? <GiteTasksDrawer
+          open
+          giteId={taskDrawerGite.id}
+          giteName={taskDrawerGite.name}
+          reservationId={taskDrawerGite.reservationId}
+          sourceType="check"
+          onClose={() => setTaskDrawerGite(null)}
+          onChanged={(summary) => setPrimaryOverview((current) => current ? {
+            ...current,
+            task_summaries_by_gite: {
+              ...(current.task_summaries_by_gite ?? {}),
+              [taskDrawerGite.id]: { short_open: summary.open_short, long_open: summary.open_long },
+            },
+          } : current)}
+        /> : null}
         {cleaningPerformerPrompt ? (
           <div className="today-cleaning-performer" role="dialog" aria-modal="true" aria-labelledby="today-cleaning-performer-title">
             <button type="button" className="today-cleaning-performer__backdrop" onClick={() => setCleaningPerformerPrompt(null)} aria-label="Fermer le choix de l’intervenant" />
@@ -1663,6 +1690,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                         marker.event.giteName.trim().slice(0, 1).toUpperCase();
                       const optionBadges = getEventOptionBadges(marker.event);
                       const cleaningChecked = Boolean(getEventCleaningCheckedAt(marker.event, cleaningReadinessByArrivalId));
+                      const openShortTaskCount = primaryOverview?.task_summaries_by_gite?.[marker.event.giteId]?.short_open ?? 0;
 
                       return (
                         <button
@@ -1672,6 +1700,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                             "today-timeline__marker",
                             marker.event.dateIso === todayIso ? "today-timeline__marker--pulse" : "",
                             cleaningChecked ? "today-timeline__marker--cleaning-checked" : "",
+                            openShortTaskCount > 0 ? "today-timeline__marker--has-short-tasks" : "",
                           ]
                             .filter(Boolean)
                             .join(" ")}
@@ -1688,7 +1717,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                                   .map((badge) => `${badge.label}${badge.muted ? " au départ" : ""}`)
                                   .join(", ")}`
                               : ""
-                          }${cleaningChecked ? ", ménage vérifié" : ""}`}
+                          }${cleaningChecked ? ", ménage vérifié" : ""}${openShortTaskCount > 0 ? `, ${openShortTaskCount} tâche${openShortTaskCount > 1 ? "s" : ""} légère${openShortTaskCount > 1 ? "s" : ""} à faire` : ""}`}
                         >
                           {cleaningChecked ? (
                             <>
@@ -1696,6 +1725,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
                               <span className="today-timeline__cleaning-check" aria-hidden="true">✓</span>
                             </>
                           ) : null}
+                          {openShortTaskCount > 0 ? <span className="today-timeline__task-ring" aria-hidden="true" /> : null}
                           <span className="today-timeline__marker-prefix">{prefix}</span>
                           <span className="today-timeline__marker-icon">{getEventIcon(marker.event.type)}</span>
                           <ReservationOptionBadges badges={optionBadges} layout="orbit" />
@@ -2470,6 +2500,18 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
           open
           title={getReservationGuestName(mobileActionReservation)}
           reservation={mobileActionReservation}
+          giteId={mobileActionReservation.gite_id}
+          giteName={mobileActionReservation.gite?.nom}
+          onTasksChanged={(summary) => {
+            if (!mobileActionReservation.gite_id) return;
+            setPrimaryOverview((current) => current ? {
+              ...current,
+              task_summaries_by_gite: {
+                ...(current.task_summaries_by_gite ?? {}),
+                [mobileActionReservation.gite_id as string]: { short_open: summary.open_short, long_open: summary.open_long },
+              },
+            } : current);
+          }}
           onToggleSource={() => {
             setSourceUpdateError(null);
             setSourcePickerReservationId((current) => current === mobileActionReservation.id ? null : mobileActionReservation.id);
