@@ -35,6 +35,23 @@ test("les raccourcis essentiels sont disponibles en ajout rapide", () => {
   assert.ok(ACTION_TASK_SHORTCUTS.every((item) => item.category === "short" || item.category === "long"));
 });
 
+test("modifier une automatisation sans renvoyer le montant conserve le forfait existant", async () => {
+  const { default: router } = await import("../src/modules/operations/actionTasks.js");
+  const handler = (router as any).stack.find((layer: any) => layer.route?.path === "/templates/:id" && layer.route.methods.put).route.stack[0].handle;
+  const original = { find: prisma.actionTemplate.findUnique, update: prisma.actionTemplate.update, gite: prisma.gite.findUnique };
+  const draft = { gite_id: "gite-a", title: "Préparer le linge", category: "short", trigger_event: "departure", starts_offset_days: 0, due_offset_days: 1, start_time: "09:00", due_time: "17:00", assignment_mode: "unassigned", default_assignee_id: null, rotation_assignee_ids: [], enabled: false, compensation_mode: "flat_rate", default_minutes: null };
+  try {
+    prisma.actionTemplate.findUnique = (async () => ({ id: "template-a", assignment_mode: "unassigned", rotation_assignee_ids: "[]", compensation_amount: 17.5 })) as any;
+    prisma.gite.findUnique = (async () => ({ id: "gite-a" })) as any;
+    prisma.actionTemplate.update = (async ({ data }: any) => { assert.equal(data.compensation_amount, 17.5); return { id: "template-a", ...data }; }) as any;
+    let result: any; let error: unknown;
+    await handler({ headers: {}, params: { id: "template-a" }, body: draft }, { status() { return this; }, json(value: unknown) { result = value; } }, (reason: unknown) => { error = reason; });
+    assert.equal(error, undefined);
+    assert.equal(result.compensation_amount, 17.5);
+    assert.equal(result.enabled, false);
+  } finally { prisma.actionTemplate.findUnique = original.find; prisma.actionTemplate.update = original.update; prisma.gite.findUnique = original.gite; }
+});
+
 test("l’édition conserve une occurrence personnalisée, refuse les tâches terminées et détecte les conflits", async () => {
   const { default: router } = await import("../src/modules/operations/actionTasks.js");
   const handler = (router as any).stack.find((layer: any) => layer.route?.path === "/tasks/:id" && layer.route.methods.patch).route.stack[0].handle;

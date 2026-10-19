@@ -6,13 +6,13 @@ import { canManageCleaning, parisWallTime } from "../../services/cleaningTasks.j
 import { getParisClock } from "../../services/giteCleaningReadiness.js";
 import { parseRotationAssignees, validateAssignees } from "../../services/assignmentRules.js";
 import {
-  ACTION_TASK_SHORTCUTS,
   recordActionTaskCompensation,
   removeActionTaskCompensation,
   serializeActionTask,
   summarizeActionTasks,
   syncActionTasks,
 } from "../../services/actionTasks.js";
+import { readTaskShortcuts, resolveTaskShortcut, saveTaskShortcuts, taskShortcutCatalogSchema } from "../../services/taskShortcuts.js";
 
 const router = Router();
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -110,7 +110,7 @@ router.get("/", async (req, res, next) => {
     await syncActionTasks(from, to);
     const user = await getAuthenticatedAppUser(req);
     const manager = canManageCleaning(user);
-    const [tasks, templates, gites, users] = await Promise.all([
+    const [tasks, templates, gites, users, shortcuts] = await Promise.all([
       prisma.actionTask.findMany({ where: {
         ...(manager ? {} : { assignee_id: user?.id ?? "" }),
         starts_at: { lt: parisWallTime(formatDate(shiftDate(new Date(`${to}T00:00:00Z`), 1)), "00:00") },
@@ -119,6 +119,7 @@ router.get("/", async (req, res, next) => {
       manager ? prisma.actionTemplate.findMany({ orderBy: [{ gite_id: "asc" }, { title: "asc" }] }) : [],
       prisma.gite.findMany({ select: { id: true, nom: true } }),
       prisma.appUser.findMany({ where: { is_active: true }, select: { id: true, display_name: true, intervenant_id: true } }),
+      readTaskShortcuts(),
     ]);
     const giteById = new Map(gites.map((item) => [item.id, item.nom]));
     const userById = new Map(users.map((item) => [item.id, item.display_name]));
@@ -127,8 +128,11 @@ router.get("/", async (req, res, next) => {
       templates: manager ? templates.map(serializeTemplate) : [],
       gites: manager ? gites : [],
       assignees: manager ? users.filter((item) => item.intervenant_id).map((item) => ({ id: item.id, name: item.display_name })) : [],
-      shortcuts: ACTION_TASK_SHORTCUTS,
+      shortcuts: shortcuts.filter((item) => item.enabled),
+      shortcut_catalog: manager ? shortcuts : [],
       can_manage: manager,
+      current_user_id: user?.id ?? null,
+      can_edit_compensation: manager && (!user || user.permissions.canViewAmounts),
     });
   } catch (error) { next(error); }
 });
@@ -139,7 +143,7 @@ router.get("/gites/:giteId", async (req, res, next) => {
     const manager = canManageCleaning(currentUser);
     const gite = await prisma.gite.findUnique({ where: { id: req.params.giteId }, select: { id: true, nom: true } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
-    const [tasks, users] = await Promise.all([
+    const [tasks, users, shortcuts] = await Promise.all([
       prisma.actionTask.findMany({
         where: { gite_id: gite.id },
         orderBy: [{ category: "desc" }, { due_at: "asc" }, { createdAt: "desc" }],
@@ -152,18 +156,27 @@ router.get("/gites/:giteId", async (req, res, next) => {
         },
         select: { id: true, display_name: true }, orderBy: [{ display_name: "asc" }, { id: "asc" }],
       }),
+      readTaskShortcuts(),
     ]);
     const userById = new Map(users.map((item) => [item.id, item.display_name]));
     return res.json({
       gite,
       summary: summarizeActionTasks(tasks),
-      shortcuts: ACTION_TASK_SHORTCUTS,
+      shortcuts: shortcuts.filter((item) => item.enabled),
       can_manage: manager,
       current_user_id: currentUser?.id ?? null,
       can_edit_compensation: manager && (!currentUser || currentUser.permissions.canViewAmounts),
       assignees: users.map((item) => ({ id: item.id, name: item.display_name })),
       tasks: tasks.map((task) => serializeActionTask(task, { gite: gite.nom, assignee: userById.get(task.assignee_id ?? "") })),
     });
+  } catch (error) { next(error); }
+});
+
+router.put("/shortcuts", async (req, res, next) => {
+  try {
+    if (!canManageCleaning(await getAuthenticatedAppUser(req))) return res.status(403).json({ error: "Action réservée aux gestionnaires." });
+    const payload = z.object({ shortcuts: taskShortcutCatalogSchema, expected_shortcuts: taskShortcutCatalogSchema }).parse(req.body ?? {});
+    return res.json({ shortcuts: await saveTaskShortcuts(payload.shortcuts, payload.expected_shortcuts) });
   } catch (error) { next(error); }
 });
 
@@ -183,9 +196,11 @@ router.put("/templates/:id", async (req, res, next) => {
     if (!canManageCleaning(await getAuthenticatedAppUser(req))) return res.status(403).json({ error: "Action réservée aux gestionnaires." });
     const payload = templateSchema.parse(req.body);
     const previous = await prisma.actionTemplate.findUnique({
-      where: { id: req.params.id }, select: { id: true, assignment_mode: true, rotation_assignee_ids: true },
+      where: { id: req.params.id }, select: { id: true, assignment_mode: true, rotation_assignee_ids: true, compensation_amount: true },
     });
     if (!previous) return res.status(404).json({ error: "Modèle introuvable." });
+    // Amounts can be omitted by managers who are not allowed to view them.
+    if (req.body.compensation_amount === undefined) payload.compensation_amount = Number(previous.compensation_amount);
     const error = await checkTemplate(payload);
     if (error) return res.status(400).json({ error });
     const rotationAssignees = JSON.stringify([...new Set(payload.rotation_assignee_ids)]);
@@ -229,17 +244,17 @@ router.post("/tasks/quick", async (req, res, next) => {
     if (payload.reservation_id && !await prisma.reservation.findFirst({ where: { id: payload.reservation_id, gite_id: gite.id }, select: { id: true } })) {
       return res.status(409).json({ error: "Cette réservation n’appartient pas au gîte choisi." });
     }
-    if (payload.shortcut_key && !ACTION_TASK_SHORTCUTS.some((item) => item.key === payload.shortcut_key && item.title === payload.title)) {
-      return res.status(400).json({ error: "Raccourci de tâche invalide." });
-    }
+    const shortcut = payload.shortcut_key ? resolveTaskShortcut(await readTaskShortcuts(), payload.shortcut_key) : null;
+    if (payload.shortcut_key && !shortcut) return res.status(409).json({ error: "Cette tâche préenregistrée n’est plus disponible. Rechargez la liste." });
+    const category = shortcut?.category ?? payload.category;
     const now = new Date();
     const today = getParisClock(now).dateIso;
-    const dueDay = formatDate(shiftDate(new Date(`${today}T00:00:00Z`), payload.category === "short" ? 1 : 30));
+    const dueDay = formatDate(shiftDate(new Date(`${today}T00:00:00Z`), category === "short" ? 1 : 30));
     const task = await prisma.actionTask.create({ data: {
       gite_id: gite.id, reservation_id: payload.reservation_id ?? null,
-      title: payload.title, category: payload.category,
-      starts_at: now, due_at: parisWallTime(dueDay, payload.category === "short" ? "12:00" : "18:00"),
-      note: payload.note, source_type: payload.source_type ?? (payload.shortcut_key ? "shortcut" : "manual"),
+      title: shortcut?.title ?? payload.title, category,
+      starts_at: now, due_at: parisWallTime(dueDay, category === "short" ? "12:00" : "18:00"),
+      note: shortcut?.note ?? payload.note, source_type: payload.source_type ?? (payload.shortcut_key ? "shortcut" : "manual"),
     } });
     return res.status(201).json(await taskResponse(task.id));
   } catch (error) { next(error); }

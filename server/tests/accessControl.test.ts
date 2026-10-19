@@ -51,6 +51,9 @@ const worker = {
 } as AppUserSummary;
 
 test("les tâches du drawer restent utilisables depuis Aujourd’hui ou Calendrier sans ouvrir les réglages du planning", () => {
+  assert.equal(getRequiredBusinessPermission("PUT", "/action-tasks/shortcuts"), "planning:write");
+  assert.equal(getRequiredPageForApiPath("/action-tasks/shortcuts"), "planning_relay");
+  assert.equal(hasBusinessPermission({ ...worker, pageAccess: ["today"] }, "planning:write"), false);
   for (const page of ["today", "calendar"] as const) {
     const drawerUser = { ...worker, pageAccess: [page] };
     for (const action of ["assignment", "status", "note"]) {
