@@ -53,6 +53,13 @@ export const hasBusinessPermission = (user: AppUserSummary, permission: Business
 const familyPermission = (family: string, method: string): BusinessPermission =>
   `${family}:${isWriteMethod(method) ? "write" : "read"}` as BusinessPermission;
 
+/** Establishment edits may also change gîtes, and must not bypass their write permission. */
+export const getAdditionalBusinessPermissions = (method: string, path: string, body: unknown): BusinessPermission[] => {
+  if (!isWriteMethod(method) || !/^\/fiscal-entities\/[^/]+\/establishments(?:\/[^/]+)?\/?$/i.test(path)) return [];
+  const links = body && typeof body === "object" ? (body as Record<string, unknown>).gite_links : null;
+  return Array.isArray(links) && links.length ? ["gites:write"] : [];
+};
+
 export const getRequiredBusinessPermission = (method: string, requestPath: string): BusinessPermission | null => {
   const path = requestPath.toLowerCase();
   if (/^\/purchase-invoices(?:\/|$)/.test(path)) return "integrations:manage";

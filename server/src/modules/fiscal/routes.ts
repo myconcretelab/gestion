@@ -1,7 +1,6 @@
 import { Router, type ErrorRequestHandler } from "express";
 import {
   fiscalEntitySchema,
-  fiscalEstablishmentSchema,
   fiscalEntityMissingFields,
 } from "@contrats/shared";
 import prisma from "../../db/prisma.js";
@@ -11,6 +10,10 @@ import {
   assertSiretMatchesSiren,
   fiscalError,
 } from "../../services/fiscalEntities.js";
+import {
+  establishmentSaveSchema,
+  applyEstablishmentLinks,
+} from "./establishmentLinks.js";
 
 const router = Router();
 router.use(createSuperPdpRouter());
@@ -57,6 +60,8 @@ router.get("/inventory", async (_req, res, next) => {
         select: {
           id: true,
           nom: true,
+          adresse_ligne1: true,
+          adresse_ligne2: true,
           gestionnaire_id: true,
           fiscal_establishment_id: true,
           fiscal_establishment: {
@@ -125,7 +130,12 @@ router.put("/:id", async (req, res, next) => {
           where: { id: req.params.id },
           include: {
             establishments: true,
-            superpdp_connections: { select: { status: true, _count: { select: { inbox_syncs: true } } } },
+            superpdp_connections: {
+              select: {
+                status: true,
+                _count: { select: { inbox_syncs: true } },
+              },
+            },
             _count: { select: { invoices: true, sequences: true } },
           },
         });
@@ -143,7 +153,11 @@ router.put("/:id", async (req, res, next) => {
           data.siren !== entity.siren &&
           (entity.establishments.some((item) => item.siret) ||
             entity._count.invoices > 0 ||
-            entity.superpdp_connections.some((connection) => connection.status !== "disconnected" || connection._count.inbox_syncs > 0) ||
+            entity.superpdp_connections.some(
+              (connection) =>
+                connection.status !== "disconnected" ||
+                connection._count.inbox_syncs > 0,
+            ) ||
             entity._count.sequences > 0)
         ) {
           throw fiscalError(
@@ -167,7 +181,11 @@ router.put("/:id", async (req, res, next) => {
 
 router.post("/:id/establishments", async (req, res, next) => {
   try {
-    const data = fiscalEstablishmentSchema.parse(req.body);
+    const {
+      gite_links,
+      expected_updated_at: _expected,
+      ...data
+    } = establishmentSaveSchema.parse(req.body);
     const saved = await prisma.$transaction(
       async (tx) => {
         const entity = await tx.fiscalEntity.findUnique({
@@ -175,9 +193,11 @@ router.post("/:id/establishments", async (req, res, next) => {
         });
         if (!entity) throw fiscalError("Entreprise introuvable.", 404);
         assertSiretMatchesSiren(data.siret, entity.siren);
-        return tx.fiscalEstablishment.create({
+        const saved = await tx.fiscalEstablishment.create({
           data: { ...data, fiscal_entity_id: entity.id },
         });
+        await applyEstablishmentLinks(tx, saved.id, gite_links);
+        return saved;
       },
       { isolationLevel: "Serializable" },
     );
@@ -189,7 +209,8 @@ router.post("/:id/establishments", async (req, res, next) => {
 
 router.put("/:id/establishments/:establishmentId", async (req, res, next) => {
   try {
-    const data = fiscalEstablishmentSchema.parse(req.body);
+    const { gite_links, expected_updated_at, ...data } =
+      establishmentSaveSchema.parse(req.body);
     const saved = await prisma.$transaction(
       async (tx) => {
         const establishment = await tx.fiscalEstablishment.findFirst({
@@ -205,6 +226,14 @@ router.put("/:id/establishments/:establishmentId", async (req, res, next) => {
         if (!establishment)
           throw fiscalError("Établissement introuvable.", 404);
         if (
+          expected_updated_at &&
+          establishment.updatedAt.toISOString() !== expected_updated_at
+        )
+          throw fiscalError(
+            "Cet établissement a changé. Rechargez la page avant de réessayer.",
+            409,
+          );
+        if (
           establishment._count.invoices > 0 &&
           data.siret !== establishment.siret
         ) {
@@ -214,10 +243,12 @@ router.put("/:id/establishments/:establishmentId", async (req, res, next) => {
           );
         }
         assertSiretMatchesSiren(data.siret, establishment.fiscal_entity.siren);
-        return tx.fiscalEstablishment.update({
+        const saved = await tx.fiscalEstablishment.update({
           where: { id: establishment.id },
           data,
         });
+        await applyEstablishmentLinks(tx, saved.id, gite_links);
+        return saved;
       },
       { isolationLevel: "Serializable" },
     );

@@ -8,7 +8,10 @@ import {
 } from "@contrats/shared";
 import { apiFetch } from "../../utils/api";
 import type { FiscalEntity, FiscalEstablishment } from "../../utils/types";
-import { canCurrentUserManageIntegrations } from "../../utils/auth";
+import {
+  canCurrentUserManageIntegrations,
+  canCurrentUserWritePage,
+} from "../../utils/auth";
 import SuperPdpConnectionSettings from "./SuperPdpConnectionSettings";
 import FiscalSettingsNavigation, {
   type FiscalSettingsSection,
@@ -19,6 +22,13 @@ import {
   isFiscalDraftDirty,
   nextFiscalSettingsSection,
 } from "./fiscalSettingsState";
+import EstablishmentGitePicker from "./EstablishmentGitePicker";
+import {
+  establishmentGiteChanges,
+  linkedGiteIds,
+  prefillEstablishmentFromGite,
+  type FiscalInventoryGite,
+} from "./establishmentGites";
 
 const emptyAddress = {
   address_line1: "",
@@ -63,17 +73,7 @@ type Inventory = {
     nom: string;
     _count: { fiscal_entities: number; gites: number };
   }>;
-  gites: Array<{
-    id: string;
-    nom: string;
-    gestionnaire_id: string | null;
-    missing_fields: string[];
-    fiscal_establishment: {
-      name: string;
-      siret: string | null;
-      fiscal_entity: { legal_name: string };
-    } | null;
-  }>;
+  gites: FiscalInventoryGite[];
 };
 
 function AddressFields({
@@ -125,6 +125,11 @@ export default function FiscalEntitiesSettings() {
   const [establishmentId, setEstablishmentId] = useState("");
   const [establishmentDraft, setEstablishmentDraft] =
     useState(emptyEstablishment);
+  const [establishmentGiteIds, setEstablishmentGiteIds] = useState<string[]>(
+    [],
+  );
+  const [sourceGiteId, setSourceGiteId] = useState("");
+  const [confirmReassignment, setConfirmReassignment] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [section, setSection] = useState<FiscalSettingsSection>(() =>
@@ -159,16 +164,30 @@ export default function FiscalEntitiesSettings() {
   const currentEstablishment = selected?.establishments.find(
     (item) => item.id === establishmentId,
   );
-  const establishmentDirty = isFiscalDraftDirty(
-    establishmentDraft,
-    currentEstablishment
-      ? {
-          ...addressDraft(currentEstablishment),
-          name: currentEstablishment.name,
-          siret: currentEstablishment.siret ?? "",
-        }
-      : emptyEstablishment(),
+  const giteChanges = establishmentGiteChanges(
+    inventory?.gites ?? [],
+    establishmentId,
+    establishmentGiteIds,
+    confirmReassignment,
   );
+  const reassignments = giteChanges.filter(
+    (link) =>
+      link.attach &&
+      link.expected_establishment_id &&
+      link.expected_establishment_id !== establishmentId,
+  );
+  const establishmentDirty =
+    giteChanges.length > 0 ||
+    isFiscalDraftDirty(
+      establishmentDraft,
+      currentEstablishment
+        ? {
+            ...addressDraft(currentEstablishment),
+            name: currentEstablishment.name,
+            siret: currentEstablishment.siret ?? "",
+          }
+        : emptyEstablishment(),
+    );
   const unsaved = entityDirty || establishmentDirty || connectionDirty;
   const selectedGiteIds = new Set(
     selected?.establishments.flatMap((item) =>
@@ -224,12 +243,56 @@ export default function FiscalEntitiesSettings() {
           const returnedId = new URLSearchParams(window.location.search).get(
             "entreprise",
           );
+          const giteId = new URLSearchParams(window.location.search).get(
+            "gite",
+          );
+          const requestedGite = overview.gites.find(
+            (gite) => gite.id === giteId,
+          );
           const returned = returnedId
             ? data.find((entity) => entity.id === returnedId)
-            : data[0];
+            : (data.find((entity) =>
+                entity.establishments.some(
+                  (item) => item.id === requestedGite?.fiscal_establishment_id,
+                ),
+              ) ?? data[0]);
           if (returned) {
             setEntityId(returned.id);
             setEntityDraft(entityToDraft(returned));
+            if (requestedGite) {
+              const establishment = returned.establishments.find(
+                (item) => item.id === requestedGite.fiscal_establishment_id,
+              );
+              setEstablishmentId(establishment?.id ?? "");
+              setEstablishmentGiteIds(
+                establishment
+                  ? linkedGiteIds(establishment)
+                  : [requestedGite.id],
+              );
+              setEstablishmentDraft(
+                establishment
+                  ? {
+                      ...addressDraft(establishment),
+                      name: establishment.name,
+                      siret: establishment.siret ?? "",
+                    }
+                  : prefillEstablishmentFromGite(
+                      emptyEstablishment(),
+                      requestedGite,
+                    ),
+              );
+              setSourceGiteId(requestedGite.id);
+              setSection("establishments");
+            } else if (returned.establishments[0]) {
+              const establishment = returned.establishments[0];
+              setEstablishmentId(establishment.id);
+              setEstablishmentGiteIds(linkedGiteIds(establishment));
+              setEstablishmentDraft({
+                ...addressDraft(establishment),
+                name: establishment.name,
+                siret: establishment.siret ?? "",
+              });
+            }
           } else {
             setSection("company");
             if (returnedId) {
@@ -239,7 +302,7 @@ export default function FiscalEntitiesSettings() {
               );
             }
           }
-          if (!canManageIntegrations) setSection("company");
+          if (!canManageIntegrations && !requestedGite) setSection("company");
         }
       })
       .catch((error: Error) => {
@@ -275,8 +338,20 @@ export default function FiscalEntitiesSettings() {
           }
         : emptyEntity(),
     );
-    setEstablishmentId("");
-    setEstablishmentDraft(emptyEstablishment());
+    const establishment = entity?.establishments[0];
+    setEstablishmentId(establishment?.id ?? "");
+    setEstablishmentDraft(
+      establishment
+        ? {
+            ...addressDraft(establishment),
+            name: establishment.name,
+            siret: establishment.siret ?? "",
+          }
+        : emptyEstablishment(),
+    );
+    setEstablishmentGiteIds(linkedGiteIds(establishment));
+    setSourceGiteId("");
+    setConfirmReassignment(false);
     setConnectionDirty(false);
     setShowAllGites(false);
     if (!id) setSection("company");
@@ -292,6 +367,9 @@ export default function FiscalEntitiesSettings() {
     setPendingSelection(null);
     const item = selected?.establishments.find((item) => item.id === id);
     setEstablishmentId(id);
+    setEstablishmentGiteIds(linkedGiteIds(item));
+    setSourceGiteId("");
+    setConfirmReassignment(false);
     setEstablishmentDraft(
       item
         ? { ...addressDraft(item), name: item.name, siret: item.siret ?? "" }
@@ -325,6 +403,7 @@ export default function FiscalEntitiesSettings() {
           ?.establishments[0];
         if (existing) {
           setEstablishmentId(existing.id);
+          setEstablishmentGiteIds(linkedGiteIds(existing));
           setEstablishmentDraft({
             ...addressDraft(existing),
             name: existing.name,
@@ -356,13 +435,23 @@ export default function FiscalEntitiesSettings() {
       setError(parsed.error.issues.map((issue) => issue.message).join(" "));
       return;
     }
+    if (reassignments.length && !confirmReassignment) {
+      setError(
+        "Confirmez le changement d’établissement des gîtes déjà rattachés avant d’enregistrer.",
+      );
+      return;
+    }
     setSaving(true);
     try {
       const saved = await apiFetch<FiscalEstablishment>(
         `/fiscal-entities/${entityId}/establishments${establishmentId ? `/${establishmentId}` : ""}`,
         {
           method: establishmentId ? "PUT" : "POST",
-          json: parsed.data,
+          json: {
+            ...parsed.data,
+            expected_updated_at: currentEstablishment?.updatedAt,
+            gite_links: giteChanges,
+          },
         },
       );
       setEstablishmentId(saved.id);
@@ -371,9 +460,17 @@ export default function FiscalEntitiesSettings() {
         name: saved.name,
         siret: saved.siret ?? "",
       });
-      await load();
+      const refreshed = await load();
+      setEstablishmentGiteIds(
+        linkedGiteIds(
+          refreshed
+            .find((entity) => entity.id === entityId)
+            ?.establishments.find((item) => item.id === saved.id),
+        ),
+      );
+      setConfirmReassignment(false);
       setNotice(
-        "Établissement enregistré. Étape suivante : les gîtes à rattacher." +
+        "Établissement et rattachements enregistrés. Étape suivante : le récapitulatif." +
           (!saved.siret ? " Le SIRET reste à compléter avant émission." : ""),
       );
       advanceFrom("establishments");
@@ -388,6 +485,11 @@ export default function FiscalEntitiesSettings() {
 
   const continueFromGites = async () => {
     if (!selected || !canManageIntegrations) return;
+    if (establishmentDirty || entityDirty) {
+      setError("Enregistrez d’abord vos modifications avant de continuer.");
+      setSection(establishmentDirty ? "establishments" : "company");
+      return;
+    }
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -422,8 +524,8 @@ export default function FiscalEntitiesSettings() {
         <div className="fiscal-eyebrow">Organisation · Facturation</div>
         <h2>Entreprises et facturation</h2>
         <p>
-          Une entreprise, ses établissements, puis les gîtes qu’elle facture.
-          Avancez à votre rythme, volet par volet.
+          Une entreprise, ses établissements avec leurs gîtes, puis un
+          récapitulatif. Avancez à votre rythme, volet par volet.
         </p>
       </header>
       {pendingSelection && (
@@ -665,8 +767,9 @@ export default function FiscalEntitiesSettings() {
             <div className="fiscal-panel-header">
               <h3>2. Les établissements de l’entreprise</h3>
               <p>
-                Chaque établissement porte un SIRET. Vous pourrez ensuite le
-                sélectionner dans les fiches des gîtes concernés.
+                Choisissez les gîtes facturés ici, puis vérifiez le SIRET et
+                l’adresse officielle de leur établissement facturant. Un même
+                établissement peut facturer plusieurs gîtes.
               </p>
             </div>
             {selected && (
@@ -710,9 +813,120 @@ export default function FiscalEntitiesSettings() {
                         ? "Modifier l’établissement"
                         : "Ajouter un établissement"}
                     </legend>
+                    <EstablishmentGitePicker
+                      gites={inventory?.gites ?? []}
+                      selectedIds={establishmentGiteIds}
+                      establishmentId={establishmentId}
+                      disabled={saving || !canCurrentUserWritePage("gites")}
+                      onToggle={(gite, checked) => {
+                        setEstablishmentGiteIds((ids) =>
+                          checked
+                            ? [...ids, gite.id]
+                            : ids.filter((id) => id !== gite.id),
+                        );
+                        setConfirmReassignment(false);
+                        if (checked && !establishmentId && !sourceGiteId) {
+                          setSourceGiteId(gite.id);
+                          setEstablishmentDraft((draft) =>
+                            prefillEstablishmentFromGite(draft, gite),
+                          );
+                        }
+                      }}
+                    />
+                    {!canCurrentUserWritePage("gites") && (
+                      <p className="fiscal-hint">
+                        Le droit de modification des gîtes est nécessaire pour
+                        changer leurs rattachements.
+                      </p>
+                    )}
+                    {reassignments.length > 0 && (
+                      <div className="fiscal-callout">
+                        <p>
+                          Ces gîtes changeront d’établissement facturant :{" "}
+                          {reassignments
+                            .map(
+                              (link) =>
+                                inventory?.gites.find(
+                                  (gite) => gite.id === link.gite_id,
+                                )?.nom,
+                            )
+                            .join(", ")}
+                          . Les factures déjà émises restent inchangées.
+                        </p>
+                        <label className="fiscal-check">
+                          <input
+                            type="checkbox"
+                            checked={confirmReassignment}
+                            onChange={(event) =>
+                              setConfirmReassignment(event.target.checked)
+                            }
+                          />
+                          Je confirme ce changement de rattachement.
+                        </label>
+                      </div>
+                    )}
+                    {establishmentGiteIds.length > 0 && (
+                      <details
+                        className="fiscal-prefill"
+                        open={!establishmentId}
+                      >
+                        <summary>
+                          Reprendre le nom et l’adresse d’un gîte (facultatif)
+                        </summary>
+                        <label className="field">
+                          Reprendre les coordonnées d’un gîte
+                          <select
+                            value={sourceGiteId}
+                            onChange={(event) =>
+                              setSourceGiteId(event.target.value)
+                            }
+                          >
+                            <option value="">
+                              Choisir un gîte sélectionné
+                            </option>
+                            {inventory?.gites
+                              .filter((gite) =>
+                                establishmentGiteIds.includes(gite.id),
+                              )
+                              .map((gite) => (
+                                <option value={gite.id} key={gite.id}>
+                                  {gite.nom}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={
+                            !establishmentGiteIds.includes(sourceGiteId)
+                          }
+                          onClick={() => {
+                            const gite = inventory?.gites.find(
+                              (item) => item.id === sourceGiteId,
+                            );
+                            if (gite)
+                              setEstablishmentDraft((draft) =>
+                                prefillEstablishmentFromGite(draft, gite),
+                              );
+                          }}
+                        >
+                          Préremplir les champs vides
+                        </button>
+                        <p className="fiscal-hint">
+                          Le nom et l’adresse disponibles sont repris sans
+                          écraser vos saisies. Vérifiez l’adresse officielle,
+                          complétez la ville et le code postal. Le SIRET n’est
+                          jamais déduit du nom du gîte.
+                        </p>
+                      </details>
+                    )}
+                    <h4 className="fiscal-group-title">
+                      Identité de l’établissement facturant
+                    </h4>
                     <div className="fiscal-form-grid">
                       <label className="field">
-                        Nom de l’établissement
+                        Nom de l’établissement (repère dans l’application)
                         <input
                           required
                           maxLength={250}
@@ -724,6 +938,10 @@ export default function FiscalEntitiesSettings() {
                             })
                           }
                         />
+                        <span className="field-hint">
+                          Vous pouvez conserver le nom repris du gîte ou
+                          utiliser un nom commun à plusieurs gîtes.
+                        </span>
                       </label>
                       <label className="field">
                         SIRET (14 chiffres)
@@ -753,7 +971,9 @@ export default function FiscalEntitiesSettings() {
                     />
                     <div className="fiscal-save-bar">
                       <span>
-                        Le rattachement des gîtes se fait depuis leur fiche.
+                        {establishmentGiteIds.length} gîte(s) sélectionné(s).
+                        L’établissement et les rattachements seront enregistrés
+                        ensemble.
                       </span>
                       <button type="submit">
                         {saving
@@ -774,11 +994,11 @@ export default function FiscalEntitiesSettings() {
             className="fiscal-panel"
           >
             <div className="fiscal-panel-header">
-              <h3>3. Les gîtes et leur entreprise facturante</h3>
+              <h3>3. Récapitulatif de facturation</h3>
               <p>
-                Ouvrez une fiche gîte pour choisir son établissement facturant.
-                Le gestionnaire de contact ne détermine pas à lui seul qui
-                facture.
+                Vérifiez qui facture chaque gîte et les informations restant à
+                compléter. Les rattachements se modifient dans le volet
+                Établissements.
               </p>
             </div>
             {inventory && (
@@ -807,14 +1027,15 @@ export default function FiscalEntitiesSettings() {
                       Aucun gîte rattaché à cette entreprise pour le moment.
                     </strong>
                     <p>
-                      Créez un établissement, puis associez-le au gîte concerné.
+                      Sélectionnez les gîtes dans le volet Établissements, puis
+                      enregistrez.
                     </p>
                     <button
                       type="button"
                       className="secondary"
-                      onClick={() => setShowAllGites(true)}
+                      onClick={() => setSection("establishments")}
                     >
-                      Voir les gîtes à rattacher
+                      Rattacher des gîtes
                     </button>
                   </div>
                 )}
@@ -829,7 +1050,7 @@ export default function FiscalEntitiesSettings() {
                         <tr>
                           <th>Gîte</th>
                           <th>Entreprise / établissement</th>
-                          <th>Informations à compléter</th>
+                          <th>SIRET facturant / informations à compléter</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -848,6 +1069,11 @@ export default function FiscalEntitiesSettings() {
                                 : "À rattacher"}
                             </td>
                             <td>
+                              <div>
+                                {gite.fiscal_establishment?.siret
+                                  ? `SIRET ${gite.fiscal_establishment.siret}`
+                                  : "SIRET à compléter"}
+                              </div>
                               {gite.missing_fields.length ? (
                                 <details className="fiscal-missing">
                                   <summary>
@@ -874,6 +1100,14 @@ export default function FiscalEntitiesSettings() {
                   Ce relevé vérifie la présence des informations de base, pas
                   l’éligibilité fiscale ni la conformité à SuperPDP.
                 </p>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={saving}
+                  onClick={() => setSection("establishments")}
+                >
+                  Modifier les établissements et les gîtes
+                </button>
                 {inventory.managers.filter(
                   (manager) => !manager._count.fiscal_entities,
                 ).length > 0 && (
@@ -891,8 +1125,9 @@ export default function FiscalEntitiesSettings() {
                 {canManageIntegrations && (
                   <div className="fiscal-save-bar">
                     <span>
-                      Les rattachements sont enregistrés dans les fiches gîtes.
-                      Continuer actualise cette liste sans modifier les gîtes.
+                      Votre configuration est enregistrée. SuperPDP est une
+                      connexion de test facultative ; continuer ne transmet
+                      aucune facture.
                     </span>
                     <button
                       type="button"
@@ -901,7 +1136,7 @@ export default function FiscalEntitiesSettings() {
                     >
                       {saving
                         ? "Actualisation…"
-                        : "Actualiser et continuer vers SuperPDP"}
+                        : "Continuer vers SuperPDP (facultatif)"}
                     </button>
                   </div>
                 )}

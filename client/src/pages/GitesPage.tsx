@@ -11,6 +11,7 @@ import {
 } from "./statistics/statisticsUtils";
 import { getNetAverageMonthlyRevenue } from "./statistics/revenueAverageUtils";
 import { buildGiteNameWithPreposition } from "../utils/giteName";
+import GiteBillingSiret from "./shared/GiteBillingSiret";
 
 type NumberInputValue = number | "";
 type OwnerUserOption = {
@@ -2105,6 +2106,7 @@ const GitesPage = () => {
         heure_depart_defaut: form.heure_depart_defaut || "12:00",
         gestionnaire_id: form.gestionnaire_id || null,
         fiscal_establishment_id: form.fiscal_establishment_id || null,
+        expected_fiscal_establishment_id: selected?.fiscal_establishment_id ?? null,
         date_debut_activite: form.date_debut_activite || null,
         capacite_max: Math.max(1, Math.trunc(toNumberOrDefault(form.capacite_max, 1))),
         nb_adultes_max: Math.max(1, Math.trunc(toNumberOrDefault(form.nb_adultes_max, 1))),
@@ -3036,8 +3038,9 @@ const GitesPage = () => {
                   </option>
                 ))}
               </select>
-              <span className="field-hint">Entreprises et établissements à renseigner dans Paramètres → Organisation → Entreprises.</span>
+              <span className="field-hint">Le propriétaire de contact ne détermine pas à lui seul l’entreprise qui facture.</span>
             </label>
+            <GiteBillingSiret establishment={fiscalEstablishments.find((item) => item.id === form.fiscal_establishment_id)} giteId={selectedId} />
             <label className="field">
               ID Airbnb
               <input

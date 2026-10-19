@@ -60,6 +60,9 @@ export const canCurrentUserManageIntegrations = () => currentUser?.permissions.i
 export const canCurrentUserAccessPage = (page: AppPageId) =>
   !currentUser || currentUser.permissions.isOwner || currentUser.pageAccess.includes(page);
 
+export const canCurrentUserWritePage = (page: AppPageId) =>
+  canCurrentUserAccessPage(page) && (!currentUser || currentUser.permissions.canWrite);
+
 export type ServerAuthSession = {
   required: boolean;
   authenticated: boolean;

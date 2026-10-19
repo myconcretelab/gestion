@@ -703,12 +703,16 @@ router.post("/", async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const parsed = giteSchema.parse(req.body);
+    const { expected_fiscal_establishment_id } = z.object({
+      expected_fiscal_establishment_id: z.string().min(1).nullable().optional(),
+    }).parse(req.body);
     await assertFiscalEstablishment(parsed.fiscal_establishment_id);
     if (!(await ownerExists(parsed.gestionnaire_id))) {
       return res.status(400).json({ error: "Propriétaire introuvable ou inactif." });
     }
     const gite = await prisma.gite.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id, ...(expected_fiscal_establishment_id !== undefined
+        ? { fiscal_establishment_id: expected_fiscal_establishment_id } : {}) },
       data: toGitePersistenceData(parsed),
       include: {
         gestionnaire: { select: { id: true, prenom: true, nom: true } },
@@ -717,6 +721,9 @@ router.put("/:id", async (req, res, next) => {
     });
     res.json(hydrateGite(gite));
   } catch (err) {
+    if ((err as { code?: string }).code === "P2025" && req.body?.expected_fiscal_establishment_id !== undefined) {
+      return res.status(409).json({ error: "Le rattachement fiscal de ce gîte a changé dans un autre onglet. Vos saisies n’ont pas été enregistrées. Rechargez la fiche avant de réessayer." });
+    }
     next(err);
   }
 });

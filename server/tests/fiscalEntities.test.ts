@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { before, after, test } from "node:test";
+import { before, after, test, type TestContext } from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -221,6 +221,264 @@ after(async () => {
     );
   if (database) await database.systemPrisma.$disconnect();
   fs.rmSync(temp, { recursive: true, force: true });
+});
+
+let linkFixtureIndex = 0;
+const linkFixture = async (t: TestContext) => {
+  const index = ++linkFixtureIndex;
+  const siren = `8${String(index).padStart(8, "0")}`;
+  const entity = await request("/fiscal-entities", "POST", {
+    legal_name: `Test rattachement ${index}`,
+    siren,
+  });
+  assert.equal(entity.status, 201);
+  const ids = [`link-${index}-a`, `link-${index}-b`];
+  t.after(async () => {
+    await database.systemPrisma.gite.deleteMany({ where: { id: { in: ids } } });
+    await database.systemPrisma.fiscalEstablishment.deleteMany({
+      where: { fiscal_entity_id: entity.body.id },
+    });
+    await database.systemPrisma.fiscalEntity.delete({
+      where: { id: entity.body.id },
+    });
+  });
+  for (const id of ids)
+    await database.systemPrisma.gite.create({
+      data: {
+        ...gitePayload,
+        id,
+        organization_id: orgA,
+        nom: id,
+        prefixe_contrat: id,
+        telephones: "[]",
+      },
+    });
+  return {
+    base: `/fiscal-entities/${entity.body.id}`,
+    entityId: entity.body.id,
+    ids,
+    siret: `${siren}00001`,
+  };
+};
+const attach = (
+  id: string,
+  expected: string | null = null,
+  confirmed = false,
+) => ({
+  gite_id: id,
+  expected_establishment_id: expected,
+  attach: true,
+  confirm_reassignment: confirmed,
+});
+
+test("l’établissement et plusieurs gîtes sont enregistrés ensemble, sans dupliquer les gîtes", async (t) => {
+  const fixture = await linkFixture(t);
+  const prior = await database.systemPrisma.facture.findUniqueOrThrow({
+    where: { id: "invoice-old" },
+  });
+  const created = await request(`${fixture.base}/establishments`, "POST", {
+    name: "Gîtes existants",
+    siret: fixture.siret,
+    gite_links: fixture.ids.map((id) => attach(id)),
+  });
+  assert.equal(created.status, 201);
+  const rows = await database.systemPrisma.gite.findMany({
+    where: { id: { in: fixture.ids } },
+  });
+  assert.equal(rows.length, 2);
+  assert.ok(
+    rows.every((row) => row.fiscal_establishment_id === created.body.id),
+  );
+  const inventory = await request("/fiscal-entities/inventory");
+  const gite = inventory.body.gites.find(
+    (item: { id: string }) => item.id === fixture.ids[0],
+  );
+  assert.equal(gite.adresse_ligne1, gitePayload.adresse_ligne1);
+  assert.equal(gite.fiscal_establishment.siret, fixture.siret);
+  const removed = await request(
+    `${fixture.base}/establishments/${created.body.id}`,
+    "PUT",
+    {
+      name: "Un gîte conservé",
+      siret: fixture.siret,
+      expected_updated_at: created.body.updatedAt,
+      gite_links: [
+        { ...attach(fixture.ids[0], created.body.id), attach: false },
+      ],
+    },
+  );
+  assert.equal(removed.status, 200);
+  assert.equal(
+    (
+      await database.systemPrisma.gite.findUniqueOrThrow({
+        where: { id: fixture.ids[0] },
+      })
+    ).fiscal_establishment_id,
+    null,
+  );
+  assert.equal(
+    (
+      await database.systemPrisma.gite.findUniqueOrThrow({
+        where: { id: fixture.ids[1] },
+      })
+    ).fiscal_establishment_id,
+    created.body.id,
+  );
+  assert.deepEqual(
+    await database.systemPrisma.facture.findUniqueOrThrow({
+      where: { id: "invoice-old" },
+    }),
+    prior,
+  );
+  const staleGiteSave = await request(`/gites/${fixture.ids[1]}`, "PUT", {
+    ...gitePayload,
+    fiscal_establishment_id: null,
+    expected_fiscal_establishment_id: null,
+  });
+  assert.equal(staleGiteSave.status, 409);
+  assert.equal(
+    (
+      await database.systemPrisma.gite.findUniqueOrThrow({
+        where: { id: fixture.ids[1] },
+      })
+    ).fiscal_establishment_id,
+    created.body.id,
+  );
+});
+
+test("une sélection périmée ou inaccessible annule tout, y compris la création de l’établissement", async (t) => {
+  const fixture = await linkFixture(t);
+  const count = await database.systemPrisma.fiscalEstablishment.count();
+  for (const [link, expectedStatus] of [
+    [attach(fixture.ids[1], "stale"), 409],
+    [attach("missing-gite"), 404],
+  ] as const) {
+    const result = await request(`${fixture.base}/establishments`, "POST", {
+      name: "Ne pas créer",
+      siret: fixture.siret,
+      gite_links: [attach(fixture.ids[0]), link],
+    });
+    assert.equal(result.status, expectedStatus);
+    assert.equal(
+      await database.systemPrisma.fiscalEstablishment.count(),
+      count,
+    );
+    assert.equal(
+      (
+        await database.systemPrisma.gite.findUniqueOrThrow({
+          where: { id: fixture.ids[0] },
+        })
+      ).fiscal_establishment_id,
+      null,
+    );
+  }
+  const duplicate = await request(`${fixture.base}/establishments`, "POST", {
+    name: "Doublon",
+    gite_links: [attach(fixture.ids[0]), attach(fixture.ids[0])],
+  });
+  assert.equal(duplicate.status, 400);
+  await database.systemPrisma.gite.create({
+    data: {
+      ...gitePayload,
+      id: "foreign-link-gite",
+      organization_id: orgB,
+      telephones: "[]",
+    },
+  });
+  t.after(async () => {
+    await database.systemPrisma.gite.delete({
+      where: { id: "foreign-link-gite" },
+    });
+  });
+  const foreign = await request(`${fixture.base}/establishments`, "POST", {
+    name: "Autre compte",
+    gite_links: [attach(fixture.ids[0]), attach("foreign-link-gite")],
+  });
+  assert.equal(foreign.status, 404);
+  assert.equal(await database.systemPrisma.fiscalEstablishment.count(), count);
+});
+
+test("un changement d’établissement demande confirmation et les modifications concurrentes sont refusées", async (t) => {
+  const fixture = await linkFixture(t);
+  const first = await request(`${fixture.base}/establishments`, "POST", {
+    name: "Premier",
+    siret: fixture.siret,
+    gite_links: [attach(fixture.ids[0])],
+  });
+  assert.equal(first.status, 201);
+  const nextFixture = await linkFixture(t);
+  const path = `${nextFixture.base}/establishments`;
+  const refused = await request(path, "POST", {
+    name: "Deuxième",
+    gite_links: [attach(fixture.ids[0], first.body.id)],
+  });
+  assert.equal(refused.status, 409);
+  const changed = await request(path, "POST", {
+    name: "Deuxième",
+    gite_links: [attach(fixture.ids[0], first.body.id, true)],
+  });
+  assert.equal(changed.status, 201);
+  const failedUpdate = await request(`${path}/${changed.body.id}`, "PUT", {
+    name: "Ne pas garder",
+    gite_links: [attach(fixture.ids[1]), attach("missing-gite")],
+  });
+  assert.equal(failedUpdate.status, 404);
+  assert.equal(
+    (
+      await database.systemPrisma.fiscalEstablishment.findUniqueOrThrow({
+        where: { id: changed.body.id },
+      })
+    ).name,
+    "Deuxième",
+  );
+  assert.equal(
+    (
+      await database.systemPrisma.gite.findUniqueOrThrow({
+        where: { id: fixture.ids[1] },
+      })
+    ).fiscal_establishment_id,
+    null,
+  );
+  const foreignDetach = await request(
+    `${fixture.base}/establishments/${first.body.id}`,
+    "PUT",
+    {
+      name: "Premier",
+      siret: fixture.siret,
+      gite_links: [
+        { ...attach(fixture.ids[0], changed.body.id), attach: false },
+      ],
+    },
+  );
+  assert.equal(foreignDetach.status, 409);
+  const stale = await request(`${path}/${changed.body.id}`, "PUT", {
+    name: "Écrasement",
+    expected_updated_at: "2000-01-01T00:00:00.000Z",
+    gite_links: [attach(fixture.ids[1])],
+  });
+  assert.equal(stale.status, 409);
+  assert.equal(
+    (
+      await database.systemPrisma.fiscalEstablishment.findUniqueOrThrow({
+        where: { id: changed.body.id },
+      })
+    ).name,
+    "Deuxième",
+  );
+  const invalidIdentity = await request(`${path}/${changed.body.id}`, "PUT", {
+    name: "Identité erronée",
+    siret: fixture.siret,
+    gite_links: [attach(fixture.ids[1])],
+  });
+  assert.equal(invalidIdentity.status, 400);
+  assert.equal(
+    (
+      await database.systemPrisma.gite.findUniqueOrThrow({
+        where: { id: fixture.ids[1] },
+      })
+    ).fiscal_establishment_id,
+    null,
+  );
 });
 
 test("la migration conserve les propriétaires, factures, PDF référencés et compteurs", async () => {

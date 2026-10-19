@@ -46,7 +46,7 @@ import {
   getAuthenticatedAppUser,
   isServerAuthRequired,
 } from "./services/serverAuth.js";
-import { canActAsRequestedUser, containsMonetaryFields, getRequiredBusinessPermission, hasBusinessPermission, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
+import { canActAsRequestedUser, containsMonetaryFields, getRequiredBusinessPermission, getAdditionalBusinessPermissions, hasBusinessPermission, isAmountsOnlyApiPath, isWriteMethod, redactMonetaryJson } from "./services/accessControl.js";
 import { getModuleForApiPath, isModuleEnabled } from "./services/installationConfig.js";
 import { assertRequestedOrganization, HISTORICAL_ORGANIZATION_ID, runWithOrganization } from "./services/organizationContext.js";
 import { systemPrisma } from "./db/prisma.js";
@@ -223,11 +223,13 @@ export const createApp = () => {
           if (quotaMetric) await assertCreationQuota(session.organizationId, quotaMetric);
         }
         const requiredPermission = getRequiredBusinessPermission(req.method, req.path);
-        if (requiredPermission && !hasBusinessPermission(user, requiredPermission)) {
+        const deniedPermission = [requiredPermission, ...getAdditionalBusinessPermissions(req.method, req.path, req.body)]
+          .find((permission) => permission && !hasBusinessPermission(user, permission));
+        if (deniedPermission) {
           return res.status(403).json({
             error: "Permission métier insuffisante.",
             code: "BUSINESS_PERMISSION_REQUIRED",
-            permission: requiredPermission,
+            permission: deniedPermission,
           });
         }
         if (!canActAsRequestedUser(user, req.path, req.body)) {

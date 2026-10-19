@@ -5,14 +5,14 @@ export const fiscalSettingsSections = [
   {
     id: "establishments",
     label: "Établissements",
-    description: "SIRET et adresses",
+    description: "Gîtes, SIRET et adresses",
   },
   {
     id: "gites",
-    label: "Gîtes rattachés",
-    description: "Qui facture quel gîte ?",
+    label: "Récapitulatif",
+    description: "Vérifier les rattachements",
   },
-  { id: "superpdp", label: "SuperPDP", description: "Connexion de test" },
+  { id: "superpdp", label: "SuperPDP", description: "Test · facultatif" },
 ] as const;
 export type FiscalSettingsSection =
   (typeof fiscalSettingsSections)[number]["id"];

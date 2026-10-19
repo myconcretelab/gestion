@@ -284,6 +284,76 @@
   gap: 10px;
   margin-bottom: 24px;
 }
+.fiscal-settings .fiscal-gite-picker {
+  border: 0;
+  padding: 0;
+  margin: 0 0 24px;
+  min-width: 0;
+}
+.fiscal-gite-picker legend {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.fiscal-gite-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 10px;
+}
+.fiscal-gite-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--fiscal-border);
+  border-radius: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.fiscal-gite-option[data-selected="true"] {
+  border-color: var(--primary);
+  background: var(--fiscal-highlight);
+}
+.fiscal-gite-option input,
+.fiscal-check input {
+  width: auto;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+  margin-top: 4px;
+}
+.fiscal-gite-option > span {
+  display: grid;
+  gap: 5px;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+}
+.fiscal-gite-option small,
+.fiscal-gite-option > span > span {
+  color: var(--muted);
+  font-weight: 400;
+}
+.fiscal-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.fiscal-prefill {
+  padding: 16px;
+  margin: 0 0 24px;
+  border-radius: 10px;
+  background: #f7f8fa;
+}
+.fiscal-prefill button {
+  margin-top: 10px;
+}
+.fiscal-prefill summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--primary);
+}
+.fiscal-prefill[open] summary {
+  margin-bottom: 16px;
+}
 .settings-page .fiscal-establishment-item {
   border: 1px solid var(--fiscal-border);
   border-radius: 10px;

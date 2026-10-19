@@ -7,6 +7,7 @@ import {
   redactMonetaryValues,
   getRequiredPageForApiPath,
   getRequiredBusinessPermission,
+  getAdditionalBusinessPermissions,
   hasBusinessPermission,
   canActAsRequestedUser,
 } from "../src/services/accessControl.ts";
@@ -48,6 +49,19 @@ const worker = {
   cleaningCheckRate: 0, fullCleaningRate: 0, fullCleaningRates: {}, pageAccess: ["today", "reservations", "calendar", "planning_relay"],
   isActive: true, permissions: { canWrite: true, canViewAmounts: false, isOwner: false },
 } as AppUserSummary;
+
+test("rattacher des gîtes depuis les établissements exige aussi gites:write", () => {
+  const settingsOnly = { ...worker, pageAccess: ["settings"] } as AppUserSummary;
+  const path = "/fiscal-entities/company/establishments/establishment";
+  assert.equal(hasBusinessPermission(settingsOnly, getRequiredBusinessPermission("PUT", path)!), true);
+  assert.deepEqual(getAdditionalBusinessPermissions("PUT", path, { gite_links: [{ gite_id: "gite" }] }), ["gites:write"]);
+  assert.equal(hasBusinessPermission(settingsOnly, "gites:write"), false);
+  assert.equal(hasBusinessPermission({ ...settingsOnly, pageAccess: ["settings", "gites"] }, "gites:write"), true);
+  assert.deepEqual(getAdditionalBusinessPermissions("POST", "/fiscal-entities/company/establishments", { gite_links: [{}] }), ["gites:write"]);
+  assert.deepEqual(getAdditionalBusinessPermissions("PUT", path, { gite_links: [] }), []);
+  assert.deepEqual(getAdditionalBusinessPermissions("PUT", path, {}), []);
+  assert.deepEqual(getAdditionalBusinessPermissions("GET", path, { gite_links: [{}] }), []);
+});
 
 test("chaque famille de routes reçoit une permission métier explicite", () => {
   const cases: Array<[string, string, string]> = [

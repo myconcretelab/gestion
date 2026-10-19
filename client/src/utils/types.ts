@@ -10,6 +10,7 @@ export type FiscalAddress = {
 };
 export type FiscalEstablishment = FiscalAddress & {
   id: string;
+  updatedAt?: string;
   name: string;
   siret: string | null;
   gites: Array<{ id: string; nom: string }>;
