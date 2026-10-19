@@ -1834,7 +1834,7 @@ body.app-scroll-locked {
   z-index: 2;
 }
 
-.today-timeline__marker--cleaning-checked .reservation-option-badges--orbit {
+.today-timeline__marker .reservation-option-badges--orbit {
   z-index: 3;
 }
 

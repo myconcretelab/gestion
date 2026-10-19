@@ -267,6 +267,28 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
   >
     <div className="gite-tasks-drawer">
       {error ? <div className="note" role="alert">{error}</div> : null}
+      <section className="gite-tasks-drawer__quick">
+        <div><strong>Ajout rapide</strong><span>Une pression suffit</span></div>
+        <div className="gite-tasks-drawer__shortcuts">
+          {(data?.shortcuts ?? []).map((shortcut) => <button
+            type="button"
+            key={shortcut.key}
+            disabled={Boolean(busyId)}
+            className={`gite-task-shortcut gite-task-shortcut--${shortcut.category}`}
+            onClick={() => void addTask(shortcut.title, shortcut.category, shortcut.key)}
+          >+ {shortcut.title.replace(/^Apporter (?:du |des |de la )?/, "").replace(/^Prévoir une /, "")}</button>)}
+        </div>
+      </section>
+
+      <form className="gite-tasks-drawer__create" onSubmit={(event) => { event.preventDefault(); void addTask(title, category); }}>
+        <input value={title} maxLength={120} placeholder="Une autre tâche…" aria-label="Nouvelle tâche" onChange={(event) => setTitle(event.target.value)} />
+        <div className="gite-tasks-drawer__category" role="group" aria-label="Durée de la tâche">
+          <button type="button" aria-pressed={category === "short"} className={category === "short" ? "is-selected" : ""} onClick={() => setCategory("short")}><TaskCategoryIcon category="short" />Rapide</button>
+          <button type="button" aria-pressed={category === "long"} className={category === "long" ? "is-selected" : ""} onClick={() => setCategory("long")}><TaskCategoryIcon category="long" />Long terme</button>
+        </div>
+        <button type="submit" disabled={Boolean(busyId) || title.trim().length < 2}>Ajouter</button>
+      </form>
+
       <section className="gite-tasks-drawer__list">
         <div className="gite-tasks-drawer__section-title"><strong>À faire</strong><span>{openTasks.length}</span></div>
         {!data ? <p className="field-hint">Chargement…</p> : !openTasks.length ? <div className="gite-tasks-drawer__empty"><TaskHouseIcon /><strong>Tout est fait</strong><span>Le gîte n’a aucune tâche en attente.</span></div> : openTasks.map((task) => {
@@ -314,28 +336,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
           </form> : null}
         </article>})}
       </section>
-
-      <section className="gite-tasks-drawer__quick">
-        <div><strong>Ajout rapide</strong><span>Une pression suffit</span></div>
-        <div className="gite-tasks-drawer__shortcuts">
-          {(data?.shortcuts ?? []).map((shortcut) => <button
-            type="button"
-            key={shortcut.key}
-            disabled={Boolean(busyId)}
-            className={`gite-task-shortcut gite-task-shortcut--${shortcut.category}`}
-            onClick={() => void addTask(shortcut.title, shortcut.category, shortcut.key)}
-          >+ {shortcut.title.replace(/^Apporter (?:du |des |de la )?/, "").replace(/^Prévoir une /, "")}</button>)}
-        </div>
-      </section>
-
-      <form className="gite-tasks-drawer__create" onSubmit={(event) => { event.preventDefault(); void addTask(title, category); }}>
-        <input value={title} maxLength={120} placeholder="Une autre tâche…" aria-label="Nouvelle tâche" onChange={(event) => setTitle(event.target.value)} />
-        <div className="gite-tasks-drawer__category" role="group" aria-label="Durée de la tâche">
-          <button type="button" aria-pressed={category === "short"} className={category === "short" ? "is-selected" : ""} onClick={() => setCategory("short")}><TaskCategoryIcon category="short" />Rapide</button>
-          <button type="button" aria-pressed={category === "long"} className={category === "long" ? "is-selected" : ""} onClick={() => setCategory("long")}><TaskCategoryIcon category="long" />Long terme</button>
-        </div>
-        <button type="submit" disabled={Boolean(busyId) || title.trim().length < 2}>Ajouter</button>
-      </form>
 
       {completedTasks.length ? <details className="gite-tasks-drawer__completed"><summary>{completedTasks.length} tâche{completedTasks.length > 1 ? "s" : ""} réalisée{completedTasks.length > 1 ? "s" : ""}</summary>
         <div>{completedTasks.map((task) => <article key={task.id}><span>✓</span><strong>{task.title}</strong>{data?.can_manage ? <button type="button" className="secondary" disabled={Boolean(busyId)} onClick={() => void changeTask(task, "planned")}>Rouvrir</button> : null}</article>)}</div>
