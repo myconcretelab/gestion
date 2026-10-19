@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../utils/api";
+import GiteTasksDrawer, { TaskEditIcon } from "./shared/GiteTasksDrawer";
 
 type AssignmentMode = "unassigned" | "fixed" | "rotation";
 type ActionStatus = "planned" | "in_progress" | "done";
 type ActionTask = {
-  id: string; title: string; gite_name: string; assignee_id: string | null; assignee_name: string | null;
+  id: string; title: string; gite_id: string; gite_name: string; assignee_id: string | null; assignee_name: string | null;
   status: ActionStatus; starts_at: string; due_at: string; note: string; template_id: string | null;
   category: "short" | "long"; compensation_mode: "none" | "flat_rate" | "time";
-  compensation_amount: number; spent_minutes: number | null;
+  compensation_amount: number | null; spent_minutes: number | null;
 };
 type ActionTemplate = {
   id: string; gite_id: string; title: string; trigger_event: "arrival" | "departure";
@@ -52,6 +53,7 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<ActionTask | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -69,7 +71,8 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
 
   const visibleTasks = useMemo(() => (data?.tasks ?? []).filter((task) =>
     (categoryView === "all" || task.category === categoryView)
-    && (view === "all" || (view === "pending" ? task.status !== "done" : task.status === "done"))), [categoryView, data, view]);
+    && (view === "all" || (view === "pending" ? task.status !== "done" : task.status === "done")))
+    .sort((a, b) => Number(b.category === "short") - Number(a.category === "short") || a.due_at.localeCompare(b.due_at)), [categoryView, data, view]);
 
   const run = async (operation: () => Promise<void>, success?: string) => {
     setBusy(true); setError(null); setNotice(null);
@@ -101,6 +104,7 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
   }, `${shortcut.title} ajoutée.`);
 
   return <div className="actions-panel">
+    {selectedTask ? <GiteTasksDrawer open giteId={selectedTask.gite_id} giteName={selectedTask.gite_name} initialTaskId={selectedTask.id} onClose={() => setSelectedTask(null)} onChanged={() => void load()} /> : null}
     {error ? <div className="card" role="alert">{error}</div> : null}
     {notice ? <div className="card" role="status">{notice}</div> : null}
     <section className="card cleaning-page__section">
@@ -121,14 +125,15 @@ export default function ActionsPanel({ from, to }: { from: string; to: string })
           <div className="cleaning-task__main">
             <span className={`cleaning-task__status cleaning-task__status--${task.status}`}>{statusLabel[task.status]}</span>
             <span className={`task-category task-category--${task.category}`}>{task.category === "short" ? "Rapide" : "Long terme"}</span>
-            <h3>{task.title}</h3><p>{task.gite_name} · Échéance {displayDate(task.due_at)}</p>
-            {task.compensation_mode === "flat_rate" ? <small>Forfait : {task.compensation_amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</small> : null}
+            <h3>{task.status !== "done" ? <button type="button" className="task-title-link" onClick={() => setSelectedTask(task)}>{task.title}</button> : task.title}</h3><p>{task.gite_name} · Échéance {displayDate(task.due_at)}</p>
+            {task.compensation_mode === "flat_rate" && task.compensation_amount !== null ? <small>Forfait : {task.compensation_amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</small> : null}
             {task.compensation_mode === "time" ? <label className="task-time-input">Temps passé <input type="number" min={1} max={1440} value={timeDrafts[task.id] ?? ""} placeholder="min" onChange={(event) => setTimeDrafts((current) => ({ ...current, [task.id]: event.target.value }))} /> min</label> : null}
             {new Date(task.due_at) < new Date() && task.status !== "done" ? <small className="cleaning-task__warning">Échéance dépassée</small> : null}
             {task.assignee_name && !data?.can_manage ? <small>Attribuée à {task.assignee_name}</small> : null}
           </div>
           <div className="cleaning-task__actions">
-            {data?.can_manage ? <label>Intervenant<select value={task.assignee_id ?? ""} disabled={busy}
+            {task.status !== "done" ? <button type="button" className="task-edit-action" disabled={busy} onClick={() => setSelectedTask(task)} aria-label={`Modifier ${task.title}`}><TaskEditIcon /><span>Modifier</span></button> : null}
+            {data?.can_manage && task.status !== "done" ? <label>Intervenant<select value={task.assignee_id ?? ""} disabled={busy}
               onChange={(event) => void changeTask(task, "assignment", event.target.value || null)}>
               <option value="">Non attribuée</option>{data.assignees.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select></label> : null}

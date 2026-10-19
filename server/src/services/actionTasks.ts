@@ -58,7 +58,7 @@ export const syncActionTasks = async (from: string, to: string) => {
       if (startsAt >= rangeEnd || dueAt < rangeStart) continue;
       const oldTask = existingByKey.get(`${template.id}:${reservation.id}`);
       if (oldTask) {
-        if (oldTask.status !== "done" && (oldTask.starts_at.getTime() !== startsAt.getTime()
+        if (oldTask.status !== "done" && oldTask.source_type !== "customized" && (oldTask.starts_at.getTime() !== startsAt.getTime()
           || oldTask.due_at.getTime() !== dueAt.getTime() || oldTask.title !== template.title
           || oldTask.category !== template.category || oldTask.compensation_mode !== template.compensation_mode
           || Number(oldTask.compensation_amount) !== Number(template.compensation_amount))) {
@@ -104,6 +104,7 @@ export const serializeActionTask = (task: {
   title: string; assignee_id: string | null; status: string; starts_at: Date; due_at: Date;
   completed_at: Date | null; note: string; category: string; compensation_mode: string;
   compensation_amount: unknown; spent_minutes: number | null; source_type: string;
+  updatedAt: Date;
 }, names: { gite?: string; assignee?: string | null }) => ({
   id: task.id, template_id: task.template_id, reservation_id: task.reservation_id,
   gite_id: task.gite_id, gite_name: names.gite ?? "Gîte", title: task.title,
@@ -113,6 +114,7 @@ export const serializeActionTask = (task: {
   category: task.category, compensation_mode: task.compensation_mode,
   compensation_amount: Number(task.compensation_amount ?? 0), spent_minutes: task.spent_minutes,
   source_type: task.source_type,
+  updated_at: task.updatedAt.toISOString(),
 });
 
 export const summarizeActionTasks = (tasks: Array<{ category: string; status: string }>) => ({

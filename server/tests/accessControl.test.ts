@@ -60,6 +60,8 @@ test("les tâches du drawer restent utilisables depuis Aujourd’hui ou Calendri
       assert.equal(hasBusinessPermission(drawerUser, permission), true);
       assert.equal(getRequiredPageForApiPath(path), null);
     }
+    assert.equal(getRequiredBusinessPermission("PATCH", "/action-tasks/tasks/task-a"), "actions:execute");
+    assert.equal(getRequiredPageForApiPath("/action-tasks/tasks/task-a"), null);
     assert.equal(hasBusinessPermission(drawerUser, "planning:write"), false);
     assert.equal(getRequiredPageForApiPath("/action-tasks/templates/template-a"), "planning_relay");
   }

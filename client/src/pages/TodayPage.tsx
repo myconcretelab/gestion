@@ -1,6 +1,6 @@
 import TodayIntervenantHours from "./shared/TodayIntervenantHours";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
-import GiteTasksDrawer from "./shared/GiteTasksDrawer";
+import GiteTasksDrawer, { GiteTasksButton } from "./shared/GiteTasksDrawer";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
@@ -1451,6 +1451,13 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             />
           </div>
         </div>
+        {!usesViewportScroll ? <div className="today-gite-tasks" role="group" aria-label="Tâches des gîtes">
+          <span>Tâches</span>
+          {gites.map((gite) => <GiteTasksButton key={gite.id} giteId={gite.id} giteName={gite.nom} displayName={gite.prefixe_contrat?.trim().slice(0, 2) || gite.nom.slice(0, 2)} onChanged={(summary) => setPrimaryOverview((current) => current ? {
+            ...current,
+            task_summaries_by_gite: { ...(current.task_summaries_by_gite ?? {}), [gite.id]: { short_open: summary.open_short, long_open: summary.open_long } },
+          } : current)} />)}
+        </div> : null}
         {pendingCleaningReadiness.length > 0 ? (
           <div className="today-cleaning-readiness" aria-label="Ménages à suivre aujourd’hui">
             <div className="today-cleaning-readiness__label">

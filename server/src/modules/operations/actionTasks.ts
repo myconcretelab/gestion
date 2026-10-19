@@ -55,6 +55,17 @@ const quickTaskSchema = z.object({
   source_type: z.enum(["manual", "shortcut", "check", "cleaning", "reservation"]).optional(),
   note: z.string().trim().max(2000).default(""),
 });
+const taskEditSchema = z.object({
+  title: z.string().trim().min(2).max(120),
+  category: taskCategory,
+  due_day: isoDate,
+  due_time: clockTime,
+  assignee_id: z.string().nullable(),
+  note: z.string().trim().max(2000),
+  compensation_mode: compensationMode.optional(),
+  compensation_amount: z.number().finite().min(0).max(100000).optional(),
+  expected_updated_at: z.string().datetime(),
+});
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const shiftDate = (date: Date, days: number) => new Date(date.getTime() + days * 86_400_000);
 const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
@@ -131,7 +142,7 @@ router.get("/gites/:giteId", async (req, res, next) => {
     const [tasks, users] = await Promise.all([
       prisma.actionTask.findMany({
         where: { gite_id: gite.id },
-        orderBy: [{ status: "asc" }, { category: "asc" }, { due_at: "asc" }, { createdAt: "desc" }],
+        orderBy: [{ category: "desc" }, { due_at: "asc" }, { createdAt: "desc" }],
         take: 100,
       }),
       prisma.appUser.findMany({
@@ -149,6 +160,7 @@ router.get("/gites/:giteId", async (req, res, next) => {
       shortcuts: ACTION_TASK_SHORTCUTS,
       can_manage: manager,
       current_user_id: currentUser?.id ?? null,
+      can_edit_compensation: manager && (!currentUser || currentUser.permissions.canViewAmounts),
       assignees: users.map((item) => ({ id: item.id, name: item.display_name })),
       tasks: tasks.map((task) => serializeActionTask(task, { gite: gite.nom, assignee: userById.get(task.assignee_id ?? "") })),
     });
@@ -245,6 +257,41 @@ router.patch("/tasks/:id/assignment", async (req, res, next) => {
     if (task.status === "done") return res.status(409).json({ error: "Rouvrez la tâche avant de modifier son intervenant." });
     await prisma.actionTask.update({ where: { id: req.params.id }, data: { assignee_id } });
     return res.json(await taskResponse(req.params.id));
+  } catch (error) { next(error); }
+});
+
+router.patch("/tasks/:id", async (req, res, next) => {
+  try {
+    const user = await getAuthenticatedAppUser(req);
+    const manager = canManageCleaning(user);
+    const payload = taskEditSchema.parse(req.body);
+    const task = await prisma.actionTask.findUnique({ where: { id: req.params.id } });
+    if (!task) return res.status(404).json({ error: "Tâche introuvable." });
+    if (user && !user.permissions.canWrite) return res.status(403).json({ error: "Vous ne pouvez pas modifier les tâches." });
+    if (!manager && task.assignee_id && task.assignee_id !== user?.id) return res.status(403).json({ error: "Cette tâche est attribuée à un autre intervenant." });
+    if (task.status === "done") return res.status(409).json({ error: "Rouvrez la tâche avant de la modifier. Une tâche payée se corrige depuis l’historique administrateur." });
+    if (!manager && payload.assignee_id !== task.assignee_id && payload.assignee_id !== user?.id) return res.status(403).json({ error: "Vous pouvez seulement prendre cette tâche pour vous-même." });
+    const mode = payload.compensation_mode ?? task.compensation_mode;
+    const amount = payload.compensation_amount ?? Number(task.compensation_amount);
+    if (!manager && (mode !== task.compensation_mode || amount !== Number(task.compensation_amount))) return res.status(403).json({ error: "La rémunération se règle par un gestionnaire." });
+    if (!await checkAssignee(payload.assignee_id)) return res.status(400).json({ error: "Intervenant invalide." });
+    if (mode === "flat_rate" && amount <= 0) return res.status(400).json({ error: "Indiquez le forfait de cette tâche." });
+    const day = new Date(`${payload.due_day}T12:00:00Z`);
+    if (!Number.isFinite(day.getTime()) || formatDate(day) !== payload.due_day) return res.status(400).json({ error: "Choisissez une date d’échéance valide." });
+    const dueAt = parisWallTime(payload.due_day, payload.due_time);
+    if (!Number.isFinite(dueAt.getTime()) || dueAt <= task.starts_at) return res.status(400).json({ error: "L’échéance doit suivre le début de la tâche." });
+    const { count } = await prisma.actionTask.updateMany({
+      where: { id: task.id, status: { not: "done" }, updatedAt: new Date(payload.expected_updated_at) },
+      data: {
+        title: payload.title, category: payload.category, due_at: dueAt,
+        assignee_id: payload.assignee_id, note: payload.note,
+        compensation_mode: mode, compensation_amount: amount,
+        // Keep this occurrence's edits when its automatic template is synchronized again.
+        source_type: task.template_id ? "customized" : task.source_type,
+      },
+    });
+    if (!count) return res.status(409).json({ error: "Cette tâche a changé entre-temps. Rechargez-la avant de réessayer." });
+    return res.json(await taskResponse(task.id));
   } catch (error) { next(error); }
 });
 

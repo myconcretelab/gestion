@@ -1,4 +1,5 @@
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
+import { GiteTasksButton } from "./shared/GiteTasksDrawer";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -1507,6 +1508,7 @@ const CalendrierPage = () => {
               />
             )}
 
+            {!usesViewportScroll && selectedGite ? <GiteTasksButton giteId={selectedGite.id} giteName={selectedGite.nom} /> : null}
             {!usesViewportScroll ? (
               <button
                 type="button"

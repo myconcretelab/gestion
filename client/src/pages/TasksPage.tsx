@@ -9,7 +9,7 @@ const addDays = (day: string, count: number) => new Date(Date.parse(`${day}T00:0
 export default function TasksPage() {
   const today = parisDay();
   const [from, setFrom] = useState(addDays(today, -30));
-  const [to, setTo] = useState(addDays(today, 365));
+  const [to, setTo] = useState(addDays(today, 335));
 
   return <div className="cleaning-page tasks-page">
     <header className="cleaning-page__header tasks-page__header">
@@ -19,8 +19,8 @@ export default function TasksPage() {
         <p>Notez immédiatement ce qu’il faut faire, puis confiez-le à la bonne personne au bon moment.</p>
       </div>
       <div className="cleaning-page__dates">
-        <label>Du <input type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)} /></label>
-        <label>Au <input type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} /></label>
+        <label>Du <input type="date" value={from} min={addDays(to, -366)} max={to} onChange={(event) => { if (event.target.value && event.target.validity.valid) setFrom(event.target.value); }} /></label>
+        <label>Au <input type="date" value={to} min={from} max={addDays(from, 366)} onChange={(event) => { if (event.target.value && event.target.validity.valid) setTo(event.target.value); }} /></label>
       </div>
     </header>
     <ActionsPanel from={from} to={to} />
