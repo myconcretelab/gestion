@@ -760,7 +760,6 @@ const FactureFormPage = () => {
       <header className="invoice-form__intro">
         <span className="invoice-form__eyebrow">FACTURATION</span>
         <h2>{isEdit ? "Votre facture, en détail" : "Créons votre facture"}</h2>
-        <p>Un client, un séjour, une facture. Enregistrez votre travail, puis vérifiez et validez depuis la fiche.</p>
         <ol className="invoice-form__steps"><li>1 · Client & séjour</li><li>2 · Lignes & paiement</li><li>3 · Enregistrer & vérifier</li></ol>
       </header>
       {!isEdit && loadingFromContract && <div className="note">Préremplissage depuis le contrat...</div>}
