@@ -5,10 +5,12 @@ export default function TouristTaxSettingsEditor({
   value,
   onChange,
   legacyRate = 0,
+  idPrefix = "tourist-tax",
 }: {
   value: TouristTaxSettings | null;
   onChange: (value: TouristTaxSettings | null) => void;
   legacyRate?: number;
+  idPrefix?: string;
 }) {
   const patch = (change: Partial<TouristTaxSettings>) =>
     value && onChange({ ...value, ...change });
@@ -21,13 +23,14 @@ export default function TouristTaxSettingsEditor({
       {!value ? (
         <>
           <p className="field-hint">
-            Le calcul historique est conservé. Configurez le barème pour gérer
-            la collecte et séparer la taxe du prix de l’hébergement. Les séjours
-            déjà enregistrés restent inchangés.
+            Taxe de séjour à configurer. Renseignez le barème pour gérer la
+            collecte et séparer la taxe du prix de l’hébergement. Les séjours
+            déjà enregistrés conservent leurs montants.
           </p>
           <button
             type="button"
             className="secondary"
+            id={`${idPrefix}-configure`}
             onClick={() =>
               onChange({
                 version: 1,
@@ -89,6 +92,7 @@ export default function TouristTaxSettingsEditor({
                 <label className="field">
                   Classement officiel
                   <select
+                    id={`${idPrefix}-stars`}
                     value={value.stars}
                     onChange={(e) => patch({ stars: Number(e.target.value) })}
                   >
@@ -106,6 +110,7 @@ export default function TouristTaxSettingsEditor({
                     type="number"
                     min={0}
                     step="0.01"
+                    id={`${idPrefix}-fixed_rate`}
                     value={value.fixed_rate}
                     onChange={(e) =>
                       patch({ fixed_rate: Number(e.target.value) })
@@ -122,6 +127,7 @@ export default function TouristTaxSettingsEditor({
                     min={1}
                     max={5}
                     step="0.01"
+                    id={`${idPrefix}-percentage`}
                     value={value.percentage || ""}
                     onChange={(e) =>
                       patch({ percentage: Number(e.target.value) })
@@ -134,6 +140,7 @@ export default function TouristTaxSettingsEditor({
                     type="number"
                     min={0.01}
                     step="0.01"
+                    id={`${idPrefix}-cap`}
                     value={value.cap || ""}
                     onChange={(e) => patch({ cap: Number(e.target.value) })}
                   />
@@ -145,6 +152,7 @@ export default function TouristTaxSettingsEditor({
                     min={0}
                     max={100}
                     step="0.01"
+                    id={`${idPrefix}-accommodation_vat_rate`}
                     value={value.accommodation_vat_rate}
                     onChange={(e) =>
                       patch({ accommodation_vat_rate: Number(e.target.value) })
@@ -161,6 +169,7 @@ export default function TouristTaxSettingsEditor({
                 min={0}
                 max={200}
                 step="0.01"
+                id={`${idPrefix}-additional_percentage`}
                 value={value.additional_percentage}
                 onChange={(e) =>
                   patch({ additional_percentage: Number(e.target.value) })
@@ -174,6 +183,7 @@ export default function TouristTaxSettingsEditor({
             <label className="field">
               Collectivité bénéficiaire
               <input
+                id={`${idPrefix}-authority`}
                 value={value.authority}
                 maxLength={200}
                 onChange={(e) => patch({ authority: e.target.value })}
@@ -183,6 +193,7 @@ export default function TouristTaxSettingsEditor({
               Barème applicable à partir du
               <input
                 type="date"
+                id={`${idPrefix}-effective_from`}
                 value={value.effective_from}
                 onChange={(e) => patch({ effective_from: e.target.value })}
               />

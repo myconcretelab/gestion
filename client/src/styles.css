@@ -21515,3 +21515,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
   .tasks-page__header { align-items: stretch; }
   .tasks-page__header .cleaning-page__dates { justify-content: flex-start; }
 }
+
+/* Keep the final gîte actions above the shared completion assistant. */
+.gites-page { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+.gites-editor-section [id], .gites-editor-section[id] { scroll-margin-top: 100px; }

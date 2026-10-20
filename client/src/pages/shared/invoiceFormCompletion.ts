@@ -4,7 +4,12 @@ import {
   type InvoiceFiscalInput,
 } from "@contrats/shared";
 
-export type InvoiceCompletionItem = { label: string; target: string };
+import {
+  formCompletionProgress,
+  type FormCompletionItem,
+} from "./formCompletion";
+export { focusFormField as focusInvoiceField } from "./formCompletion";
+export type InvoiceCompletionItem = FormCompletionItem;
 export type InvoiceValidationOptions = Parameters<
   typeof invoiceFiscalIssues
 >[2] & { sellerCountryCode?: string };
@@ -103,49 +108,14 @@ export function invoiceFormCompletion(
   return items;
 }
 
-export function focusInvoiceField(targetId: string) {
-  const target = document.getElementById(targetId);
-  if (!target) return;
-  const editor = target.closest<HTMLElement>(
-    ".invoice-line__allocation[hidden]",
-  );
-  const editButton = editor?.id
-    ? document.querySelector<HTMLButtonElement>(
-        `button[aria-controls="${CSS.escape(editor.id)}"]`,
-      )
-    : null;
-  if (editButton) {
-    editButton.click();
-    window.requestAnimationFrame(() => focusInvoiceField(targetId));
-    return;
-  }
-  for (
-    let parent = target.parentElement;
-    parent;
-    parent = parent.parentElement
-  ) {
-    if (parent instanceof HTMLDetailsElement) parent.open = true;
-  }
-  target.scrollIntoView({
-    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ? "instant"
-      : "smooth",
-    block: "center",
-  });
-  target.focus({ preventScroll: true });
-  target.classList.remove("invoice-field-highlight");
-  window.requestAnimationFrame(() =>
-    target.classList.add("invoice-field-highlight"),
-  );
-}
-
 // Fixed, equally weighted sections keep progress meaningful when the number of
 // VAT lines or B2B mentions changes. Completion uses the existing validators.
 export function invoiceCompletionProgress(
   items: InvoiceCompletionItem[],
 ): number {
-  const incomplete = new Set(
-    items.map(({ target }) => {
+  const grouped = items.map((item) => {
+    const target = item.target;
+    const group = (() => {
       if (target === "invoice-gite" || target === "invoice-start")
         return "stay";
       if (target.startsWith("buyer-") || target.startsWith("invoice-buyer-"))
@@ -155,7 +125,14 @@ export function invoiceCompletionProgress(
       if (target === "invoice-reviewed" || target === "tourist-tax-reviewed")
         return "review";
       return "lines";
-    }),
-  );
-  return (5 - incomplete.size) * 20;
+    })();
+    return { ...item, group };
+  });
+  return formCompletionProgress(grouped, [
+    "stay",
+    "buyer",
+    "payment",
+    "review",
+    "lines",
+  ]);
 }

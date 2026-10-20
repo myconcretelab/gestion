@@ -1,4 +1,5 @@
 import { TouristTaxSummary } from "./TouristTaxStayEditor";
+import "./formCompletion.css";
 import {
   focusInvoiceField,
   type InvoiceValidationOptions,

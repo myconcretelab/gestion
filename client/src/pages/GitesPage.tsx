@@ -1,3 +1,6 @@
+import FormCompletionAssistant from "./shared/FormCompletionAssistant";
+import { focusFormField } from "./shared/formCompletion";
+import { giteFormCompletion, giteCompletionProgress } from "./shared/giteFormCompletion";
 import TouristTaxSettingsEditor from "./shared/TouristTaxSettingsEditor";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -1588,6 +1591,7 @@ const GitesPage = () => {
     const section = searchParams.get("section");
     return isGiteEditorSectionId(section) ? section : "base-fiche";
   });
+  const [completionTarget, setCompletionTarget] = useState<string | null>(null);
   const [attachingPlaceholderId, setAttachingPlaceholderId] = useState<string | null>(null);
   const [fadingPlaceholderIds, setFadingPlaceholderIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -1602,6 +1606,20 @@ const GitesPage = () => {
     () => (selected?.photos ?? []).find((photo) => photo.id === selectedPhotoId) ?? null,
     [selected?.photos, selectedPhotoId]
   );
+  const billingEstablishment = fiscalEstablishments.find(item => item.id === form.fiscal_establishment_id);
+  const completionItems = giteFormCompletion(form, {
+    photoCount: selected?.photos?.length ?? 0,
+    billingSiret: billingEstablishment?.siret,
+  });
+  useEffect(() => {
+    if (!completionTarget) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusFormField(completionTarget);
+      setCompletionTarget(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeEditorSection, completionTarget]);
+
   const activeEditorSectionLabel = GITE_EDITOR_SECTION_BY_ID.get(activeEditorSection)?.label ?? "Section";
 
   const loadStatisticsForYear = async (year: number) => {
@@ -2688,7 +2706,7 @@ const GitesPage = () => {
   };
 
   return (
-    <div>
+    <div className="gites-page">
       <div className="gites-listing-shell">
         <div className="gites-header gites-header--listing">
           <div className="gites-tools">
@@ -2994,11 +3012,12 @@ const GitesPage = () => {
           <div className="grid-2">
             <label className="field">
               Nom
-              <input value={form.nom} onChange={(e) => handleChange("nom", e.target.value)} />
+              <input id="gite-nom" value={form.nom} onChange={(e) => handleChange("nom", e.target.value)} />
             </label>
             <label className="field">
               Nom avec préposition
               <input
+                id="gite-nom_avec_preposition"
                 value={form.nom_avec_preposition}
                 onChange={(e) => handleChange("nom_avec_preposition", e.target.value)}
                 placeholder={buildGiteNameWithPreposition({ nom: form.nom }) || "du Jardin"}
@@ -3010,6 +3029,7 @@ const GitesPage = () => {
             <label className="field">
               Préfixe contrat
               <input
+                id="gite-prefixe_contrat"
                 value={form.prefixe_contrat}
                 onChange={(e) => handleChange("prefixe_contrat", e.target.value.toUpperCase())}
               />
@@ -3017,6 +3037,7 @@ const GitesPage = () => {
             <label className="field">
               Propriétaire
               <select
+                id="gite-gestionnaire_id"
                 value={form.gestionnaire_id}
                 onChange={(e) => handleChange("gestionnaire_id", e.target.value)}
               >
@@ -3031,6 +3052,7 @@ const GitesPage = () => {
             <label className="field">
               Établissement facturant
               <select
+                id="gite-fiscal_establishment_id"
                 value={form.fiscal_establishment_id}
                 onChange={(e) => handleChange("fiscal_establishment_id", e.target.value)}
               >
@@ -3047,6 +3069,7 @@ const GitesPage = () => {
             <label className="field">
               ID Airbnb
               <input
+                id="gite-airbnb_listing_id"
                 value={form.airbnb_listing_id}
                 onChange={(e) => handleChange("airbnb_listing_id", e.target.value)}
                 placeholder="48504640"
@@ -3056,6 +3079,7 @@ const GitesPage = () => {
               Début d'activité
               <input
                 type="date"
+                id="gite-date_debut_activite"
                 value={form.date_debut_activite}
                 onChange={(e) => handleChange("date_debut_activite", e.target.value)}
               />
@@ -3071,6 +3095,7 @@ const GitesPage = () => {
               Capacité max
               <input
                 type="number"
+                id="gite-capacite_max"
                 value={form.capacite_max}
                 onChange={(e) => handleChange("capacite_max", readNumberInput(e.target.value))}
               />
@@ -3079,6 +3104,7 @@ const GitesPage = () => {
               Nombre d'adultes max
               <input
                 type="number"
+                id="gite-nb_adultes_max"
                 value={form.nb_adultes_max}
                 onChange={(e) => handleChange("nb_adultes_max", readNumberInput(e.target.value))}
               />
@@ -3087,6 +3113,7 @@ const GitesPage = () => {
               Nombre d'adultes habituel
               <input
                 type="number"
+                id="gite-nb_adultes_habituel"
                 value={form.nb_adultes_habituel}
                 onChange={(e) => handleChange("nb_adultes_habituel", readNumberInput(e.target.value))}
               />
@@ -3096,6 +3123,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 min={0}
+                id="gite-nb_enfants_max"
                 value={form.nb_enfants_max}
                 onChange={(e) => handleChange("nb_enfants_max", readNumberInput(e.target.value))}
               />
@@ -3109,6 +3137,7 @@ const GitesPage = () => {
             <label className="field">
               Adresse ligne 1
               <input
+                id="gite-adresse_ligne1"
                 value={form.adresse_ligne1}
                 onChange={(e) => handleChange("adresse_ligne1", e.target.value)}
               />
@@ -3116,6 +3145,7 @@ const GitesPage = () => {
             <label className="field">
               Adresse ligne 2
               <input
+                id="gite-adresse_ligne2"
                 value={form.adresse_ligne2}
                 onChange={(e) => handleChange("adresse_ligne2", e.target.value)}
               />
@@ -3129,6 +3159,7 @@ const GitesPage = () => {
             <label className="field">
               Slug public
               <input
+                id="gite-public_slug"
                 value={form.public_slug}
                 onChange={(e) => handleChange("public_slug", e.target.value.toLowerCase())}
                 placeholder="gite-le-liberte"
@@ -3136,7 +3167,7 @@ const GitesPage = () => {
             </label>
             <label className="field">
               Titre public
-              <input value={form.public_title} onChange={(e) => handleChange("public_title", e.target.value)} />
+              <input id="gite-public_title" value={form.public_title} onChange={(e) => handleChange("public_title", e.target.value)} />
             </label>
           </div>
           <div className="rules-grid" style={{ marginTop: 12 }}>
@@ -3166,6 +3197,7 @@ const GitesPage = () => {
                 type="number"
                 min={1}
                 step={1}
+                id="gite-public_web_info-surface_m2"
                 value={form.public_web_info.surface_m2}
                 onChange={(e) => handlePublicWebInfoChange("surface_m2", readNumberInput(e.target.value))}
               />
@@ -3176,6 +3208,7 @@ const GitesPage = () => {
                 type="number"
                 min={1}
                 step={1}
+                id="gite-public_web_info-max_people"
                 value={form.public_web_info.max_people}
                 onChange={(e) => handlePublicWebInfoChange("max_people", readNumberInput(e.target.value))}
               />
@@ -3186,6 +3219,7 @@ const GitesPage = () => {
                 type="number"
                 min={1}
                 step={1}
+                id="gite-public_web_info-sleeping_capacity"
                 value={form.public_web_info.sleeping_capacity}
                 onChange={(e) => handlePublicWebInfoChange("sleeping_capacity", readNumberInput(e.target.value))}
               />
@@ -3240,6 +3274,7 @@ const GitesPage = () => {
             <label className="field" style={{ gridColumn: "1 / -1" }}>
               Accroche courte
               <textarea
+                id="gite-public_summary"
                 value={form.public_summary}
                 onChange={(e) => handleChange("public_summary", e.target.value)}
                 rows={2}
@@ -3248,6 +3283,7 @@ const GitesPage = () => {
             <label className="field" style={{ gridColumn: "1 / -1" }}>
               Description longue
               <textarea
+                id="gite-public_description"
                 value={form.public_description}
                 onChange={(e) => handleChange("public_description", e.target.value)}
                 rows={6}
@@ -3256,6 +3292,7 @@ const GitesPage = () => {
             <label className="field" style={{ gridColumn: "1 / -1" }}>
               Description technique
               <textarea
+                id="gite-public_technical_description"
                 value={form.public_technical_description}
                 onChange={(e) => handleChange("public_technical_description", e.target.value)}
                 rows={4}
@@ -3321,11 +3358,12 @@ const GitesPage = () => {
           <div className="grid-2">
             <label className="field">
               Titre SEO
-              <input value={form.public_seo_title} onChange={(e) => handleChange("public_seo_title", e.target.value)} />
+              <input id="gite-public_seo_title" value={form.public_seo_title} onChange={(e) => handleChange("public_seo_title", e.target.value)} />
             </label>
             <label className="field">
               Description SEO
               <input
+                id="gite-public_seo_description"
                 value={form.public_seo_description}
                 onChange={(e) => handleChange("public_seo_description", e.target.value)}
               />
@@ -3391,6 +3429,7 @@ const GitesPage = () => {
 
         <div
           id="gite-editor-photos"
+          tabIndex={-1}
           className={`form-section gites-editor-section gite-photo-page-dropzone${
             photoDropActive ? " gite-photo-page-dropzone--active" : ""
           }`}
@@ -3698,6 +3737,7 @@ const GitesPage = () => {
             <label className="field">
               Propriétaires
               <input
+                id="gite-proprietaires_noms"
                 value={form.proprietaires_noms}
                 onChange={(e) => handleChange("proprietaires_noms", e.target.value)}
               />
@@ -3705,6 +3745,7 @@ const GitesPage = () => {
             <label className="field">
               Adresse propriétaires
               <input
+                id="gite-proprietaires_adresse"
                 value={form.proprietaires_adresse}
                 onChange={(e) => handleChange("proprietaires_adresse", e.target.value)}
               />
@@ -3717,38 +3758,30 @@ const GitesPage = () => {
           <div className="grid-2">
             <label className="field">
               Site web
-              <input value={form.site_web} onChange={(e) => handleChange("site_web", e.target.value)} />
+              <input id="gite-site_web" value={form.site_web} onChange={(e) => handleChange("site_web", e.target.value)} />
             </label>
             <label className="field">
               Email
-              <input value={form.email} onChange={(e) => handleChange("email", e.target.value)} />
+              <input id="gite-email" value={form.email} onChange={(e) => handleChange("email", e.target.value)} />
             </label>
             <label className="field">
               Téléphones (séparés par des virgules)
-              <input value={form.telephones} onChange={(e) => handleChange("telephones", e.target.value)} />
+              <input id="gite-telephones" value={form.telephones} onChange={(e) => handleChange("telephones", e.target.value)} />
             </label>
           </div>
         </div>
 
         <div id="gite-editor-fiscalite" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-finance"}>
           <div className="section-subtitle">Fiscalité</div>
-          <TouristTaxSettingsEditor value={form.taxe_sejour_config ?? null} legacyRate={Number(form.taxe_sejour_par_personne_par_nuit || 0)} onChange={value => setForm(previous => ({ ...previous, taxe_sejour_config: value }))} />
+          <TouristTaxSettingsEditor idPrefix="gite-tax" value={form.taxe_sejour_config ?? null} legacyRate={Number(form.taxe_sejour_par_personne_par_nuit || 0)} onChange={value => setForm(previous => ({ ...previous, taxe_sejour_config: value }))} />
           <div className="grid-2">
-            <label className="field" hidden={Boolean(form.taxe_sejour_config)}>
-              Tarif historique de taxe de séjour / personne / nuit
-              <input
-                type="number"
-                step="0.01"
-                value={form.taxe_sejour_par_personne_par_nuit}
-                onChange={(e) => handleChange("taxe_sejour_par_personne_par_nuit", readNumberInput(e.target.value))}
-              />
-            </label>
             <label className="field">
               Prix électricité / kWh
               <input
                 type="number"
                 step="0.0001"
                 min={0}
+                id="gite-electricity_price_per_kwh"
                 value={form.electricity_price_per_kwh}
                 onChange={(e) =>
                   handleChange("electricity_price_per_kwh", readNumberInput(e.target.value))
@@ -3763,15 +3796,15 @@ const GitesPage = () => {
           <div className="grid-2">
             <label className="field">
               IBAN
-              <input value={form.iban} onChange={(e) => handleChange("iban", e.target.value)} />
+              <input id="gite-iban" value={form.iban} onChange={(e) => handleChange("iban", e.target.value)} />
             </label>
             <label className="field">
               BIC
-              <input value={form.bic} onChange={(e) => handleChange("bic", e.target.value)} />
+              <input id="gite-bic" value={form.bic} onChange={(e) => handleChange("bic", e.target.value)} />
             </label>
             <label className="field">
               Titulaire
-              <input value={form.titulaire} onChange={(e) => handleChange("titulaire", e.target.value)} />
+              <input id="gite-titulaire" value={form.titulaire} onChange={(e) => handleChange("titulaire", e.target.value)} />
             </label>
           </div>
         </div>
@@ -4157,6 +4190,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step={1}
+                id="gite-options_draps_par_lit"
                 value={form.options_draps_par_lit}
                 onChange={(e) => handleChange("options_draps_par_lit", readNumberInput(e.target.value))}
               />
@@ -4166,6 +4200,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step={1}
+                id="gite-options_linge_toilette_par_personne"
                 value={form.options_linge_toilette_par_personne}
                 onChange={(e) => handleChange("options_linge_toilette_par_personne", readNumberInput(e.target.value))}
               />
@@ -4175,6 +4210,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step={1}
+                id="gite-options_menage_forfait"
                 value={form.options_menage_forfait}
                 onChange={(e) => handleChange("options_menage_forfait", readNumberInput(e.target.value))}
               />
@@ -4184,6 +4220,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step={1}
+                id="gite-options_depart_tardif_forfait"
                 value={form.options_depart_tardif_forfait}
                 onChange={(e) => handleChange("options_depart_tardif_forfait", readNumberInput(e.target.value))}
               />
@@ -4193,6 +4230,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step={1}
+                id="gite-options_chiens_forfait"
                 value={form.options_chiens_forfait}
                 onChange={(e) => handleChange("options_chiens_forfait", readNumberInput(e.target.value))}
               />
@@ -4207,6 +4245,7 @@ const GitesPage = () => {
               Heure d'arrivée par défaut
               <input
                 type="time"
+                id="gite-heure_arrivee_defaut"
                 value={form.heure_arrivee_defaut}
                 onChange={(e) => handleChange("heure_arrivee_defaut", e.target.value)}
               />
@@ -4215,6 +4254,7 @@ const GitesPage = () => {
               Heure de départ par défaut
               <input
                 type="time"
+                id="gite-heure_depart_defaut"
                 value={form.heure_depart_defaut}
                 onChange={(e) => handleChange("heure_depart_defaut", e.target.value)}
               />
@@ -4230,6 +4270,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step={1}
+                id="gite-caution_montant_defaut"
                 value={form.caution_montant_defaut}
                 onChange={(e) => handleChange("caution_montant_defaut", readNumberInput(e.target.value))}
               />
@@ -4239,6 +4280,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step={1}
+                id="gite-cheque_menage_montant_defaut"
                 value={form.cheque_menage_montant_defaut}
                 onChange={(e) => handleChange("cheque_menage_montant_defaut", readNumberInput(e.target.value))}
               />
@@ -4248,6 +4290,7 @@ const GitesPage = () => {
               <input
                 type="number"
                 step="0.1"
+                id="gite-arrhes_taux_defaut"
                 value={form.arrhes_taux_defaut === "" ? "" : Math.round((form.arrhes_taux_defaut ?? 0) * 1000) / 10}
                 onChange={(e) =>
                   handleChange("arrhes_taux_defaut", e.target.value === "" ? "" : Number(e.target.value) / 100)
@@ -4263,6 +4306,7 @@ const GitesPage = () => {
             <label className="field" style={{ gridColumn: "1 / -1" }}>
               Caractéristiques (1 ligne = 1 bullet PDF)
               <textarea
+                id="gite-caracteristiques"
                 value={form.caracteristiques}
                 onChange={(e) => handleChange("caracteristiques", e.target.value)}
                 rows={3}
@@ -4280,6 +4324,7 @@ const GitesPage = () => {
                 type="number"
                 min={0}
                 step={1}
+                id="gite-prix_nuit_basse_saison"
                 value={form.prix_nuit_basse_saison}
                 onChange={(e) => handleChange("prix_nuit_basse_saison", readNumberInput(e.target.value))}
               />
@@ -4290,6 +4335,7 @@ const GitesPage = () => {
                 type="number"
                 min={0}
                 step={1}
+                id="gite-prix_nuit_haute_saison"
                 value={form.prix_nuit_haute_saison}
                 onChange={(e) => handleChange("prix_nuit_haute_saison", readNumberInput(e.target.value))}
               />
@@ -4297,6 +4343,7 @@ const GitesPage = () => {
             <label className="field">
               Autres prix/nuit proposés (liste séparée par virgules ou retours ligne)
               <textarea
+                id="gite-prix_nuit_liste"
                 value={form.prix_nuit_liste}
                 onChange={(e) => handleChange("prix_nuit_liste", e.target.value)}
                 rows={3}
@@ -4311,6 +4358,7 @@ const GitesPage = () => {
                 type="number"
                 min={1}
                 step={1}
+                id="gite-min_nuits_toute_annee"
                 value={form.min_nuits_toute_annee}
                 onChange={(e) => handleChange("min_nuits_toute_annee", readNumberInput(e.target.value))}
               />
@@ -4321,6 +4369,7 @@ const GitesPage = () => {
                 type="number"
                 min={1}
                 step={1}
+                id="gite-min_nuits_vacances_scolaires"
                 value={form.min_nuits_vacances_scolaires}
                 onChange={(e) => handleChange("min_nuits_vacances_scolaires", readNumberInput(e.target.value))}
               />
@@ -4331,6 +4380,7 @@ const GitesPage = () => {
                 type="number"
                 min={1}
                 step={1}
+                id="gite-min_nuits_juillet_aout"
                 value={form.min_nuits_juillet_aout}
                 onChange={(e) => handleChange("min_nuits_juillet_aout", readNumberInput(e.target.value))}
               />
@@ -4398,6 +4448,20 @@ const GitesPage = () => {
         </div>
       </div>
       </div>
+      <FormCompletionAssistant
+        key={selectedId ?? "new"}
+        items={completionItems}
+        progress={giteCompletionProgress(completionItems, form.public_is_published)}
+        ariaLabel="Assistant de validation de la fiche gîte"
+        description="Complétez la fiche à votre rythme. Vous pouvez enregistrer vos informations à tout moment."
+        completeMessage="La fiche est complète. Pensez à enregistrer vos dernières modifications."
+        onNavigate={target => {
+          const item = completionItems.find(item => item.target === target);
+          if (!item) return;
+          setActiveEditorSection(item.group);
+          setCompletionTarget(target);
+        }}
+      />
     </div>
   );
 };
