@@ -198,3 +198,53 @@ test("le choix et le mode sont figés pour biens, services et mixte ; aucun mode
     "le mode B2C reste du ressort de son profil spécifique",
   );
 });
+
+test("le séjour propose des nuitées au prix unitaire tout en préservant les centimes après remise", async () => {
+  const { proposeInvoiceFiscal } =
+    await import("../src/modules/documents/invoiceFiscal.js");
+  const totals = {
+    nbNuits: 3,
+    montantBase: 210,
+    totalSansOptions: 210,
+    optionsTotal: 20,
+    taxeSejourCalculee: 0,
+    solde: 230,
+    totalGlobal: 230,
+    optionsDetail: {
+      draps: 0,
+      linge: 0,
+      menage: 20,
+      departTardif: 0,
+      chiens: 0,
+    },
+  };
+  const input = proposeInvoiceFiscal({}, totals);
+  assert.equal(input.lines[0].quantity, 3);
+  assert.equal(input.lines[0].unit, "DAY");
+  assert.equal(input.lines[0].unit_price_ttc, 70);
+  assert.equal(input.lines[1].label, "Ménage");
+  assert.equal(input.lines[1].quantity, 1);
+  assert.equal(input.lines[0].vat_category, "unknown");
+  for (const amount of [200, 201, 209.99, 210]) {
+    const discounted = proposeInvoiceFiscal(
+      { remise_montant: 210 - amount },
+      { ...totals, totalSansOptions: amount },
+    );
+    assert.equal(
+      Math.round(
+        discounted.lines[0].quantity * discounted.lines[0].unit_price_ttc * 100,
+      ),
+      Math.round(amount * 100),
+    );
+  }
+  const zero = proposeInvoiceFiscal(
+    {},
+    {
+      ...totals,
+      totalSansOptions: 0,
+      optionsDetail: { ...totals.optionsDetail, menage: 0 },
+    },
+  );
+  assert.equal(zero.lines.length, 1);
+  assert.equal(zero.lines[0].unit_price_ttc, 0);
+});

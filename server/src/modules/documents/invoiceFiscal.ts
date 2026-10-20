@@ -42,13 +42,13 @@ export const proposeInvoiceFiscal = (
     invoice.frais_supplementaires,
     [],
   );
-  const add = (label: string, value: number) => {
+  const add = (label: string, value: number, quantity = 1) => {
     if (value === 0) return;
     input.lines.push({
       id: `line-${input.lines.length + 1}`,
       label,
-      quantity: 1,
-      unit: "C62",
+      quantity,
+      unit: quantity > 1 ? "DAY" : "C62",
       unit_price_ttc: value,
       vat_category: "unknown",
       vat_rate: 0,
@@ -63,10 +63,20 @@ export const proposeInvoiceFiscal = (
       ),
     );
   } else {
+    // Split a discounted stay only when the rounded nightly price preserves its exact total.
+    const nights = totals.nbNuits;
+    const nightlyPrice =
+      Math.round((totals.totalSansOptions / nights) * 100) / 100;
+    const canSplit =
+      nights > 0 &&
+      Math.round(nightlyPrice * nights * 100) ===
+        Math.round(totals.totalSansOptions * 100);
     add(
-      `Location · ${totals.nbNuits} nuit(s)${Number(invoice.remise_montant) > 0 ? " (remise déjà déduite)" : ""}`,
-      totals.totalSansOptions,
+      `Location · ${canSplit ? "nuitée" : `${nights} nuits (forfait)`}${Number(invoice.remise_montant) > 0 ? " (remise déjà déduite)" : ""}`,
+      canSplit ? nightlyPrice : totals.totalSansOptions,
+      canSplit ? nights : 1,
     );
+    if (canSplit && input.lines.length) input.lines[0].unit = "DAY";
     const labels = {
       draps: "Draps",
       linge: "Linge de toilette",

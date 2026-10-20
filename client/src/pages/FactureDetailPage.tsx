@@ -1,3 +1,4 @@
+import { invoiceIssueTarget as fiscalIssueTarget } from "./shared/invoiceFormCompletion";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
@@ -27,19 +28,7 @@ type EmailComposerState = {
   autoBody: string;
 };
 
-const fiscalIssueTarget = (issue: string) => {
-  if (issue.includes("adresse structurée") || issue.includes("pays du client")) return "buyer-address";
-  if (issue.includes("échéance du solde") || issue.includes("conditions de paiement")) return "payment-details";
-  if (issue.includes("particulier ou une entreprise")) return "buyer-kind";
-  if (issue.includes("SIREN")) return "buyer-siren";
-  if (issue.includes("mention «")) return "b2b-payment-mentions";
-  if (issue.includes("ligne") && issue.includes("libellé")) return "invoice-line-label";
-  if (issue.includes("traitement de TVA") || issue.includes("taux") || issue.includes("exonération")) return "invoice-line-vat";
-  if (issue.includes("nature de l’opération")) return "invoice-operation-kind";
-  if (issue.includes("taxe de séjour")) return "tourist-tax-reviewed";
-  if (issue.includes("Confirmez la vérification")) return "invoice-reviewed";
-  return "invoice-fiscal";
-};
+
 
 const FactureDetailPage = () => {
   const { id } = useParams();

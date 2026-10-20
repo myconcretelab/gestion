@@ -359,6 +359,7 @@ type PreviewContext = {
   gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
   totals: ReturnType<typeof computeTotals>;
   invoiceForPdf: InvoiceRenderInput;
+  fiscalValidation: { vatRegime?: string; sellerVatNumber?: string | null; touristTax: number };
 };
 
 type PreviewError = { error: { status: number; message: string } };
@@ -449,7 +450,11 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
     notes: data.notes ?? null,
   };
 
-  return { gite, totals, invoiceForPdf };
+  return { gite, totals, invoiceForPdf, fiscalValidation: {
+    vatRegime: gite.fiscal_establishment?.fiscal_entity?.vat_regime,
+    sellerVatNumber: invoiceForPdf.seller?.vat_number,
+    touristTax: Math.abs(totals.taxeSejourCalculee) || (reservationItems.length >= 2 ? 1 : 0),
+  } };
 };
 
 router.get("/", async (req, res, next) => {
@@ -506,7 +511,7 @@ router.post("/fiscal-preview", async (req, res, next) => {
     const context = await buildPreviewContext(req.body);
     if ("error" in context) return res.status(context.error.status).json({ error: context.error.message });
     res.setHeader("Cache-Control", "no-store");
-    res.json({ fiscal_input: proposeInvoiceFiscal(context.invoiceForPdf, context.totals), total_ttc: context.totals.totalGlobal, tourist_tax: context.totals.taxeSejourCalculee });
+    res.json({ fiscal_input: proposeInvoiceFiscal(context.invoiceForPdf, context.totals), total_ttc: context.totals.totalGlobal, tourist_tax: context.totals.taxeSejourCalculee, validation_options: context.fiscalValidation });
   } catch (error) { next(error); }
 });
 

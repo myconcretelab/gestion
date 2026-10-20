@@ -16,11 +16,15 @@ export default function InvoiceFiscalEditor({
   onChange,
   payload,
   expectedTotal,
+  children,
+  touristTaxRequired = false,
 }: {
   value: InvoiceFiscalInput | null;
   onChange: (value: InvoiceFiscalInput) => void;
   payload: unknown;
   expectedTotal: number;
+  children?: ReactNode;
+  touristTaxRequired?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +41,13 @@ export default function InvoiceFiscalEditor({
     try {
       const result = await apiFetch<{ fiscal_input: InvoiceFiscalInput }>(
         "/invoices/fiscal-preview",
-        { method: "POST", json: payload },
+        {
+          method: "POST",
+          json: {
+            ...(payload as Record<string, unknown>),
+            fiscal_input: undefined,
+          },
+        },
       );
       onChange(
         value
@@ -57,8 +67,6 @@ export default function InvoiceFiscalEditor({
   };
   const update = (patch: Partial<InvoiceFiscalInput>) =>
     value && onChange({ ...value, reviewed: false, ...patch });
-  const updateBuyer = (patch: Partial<InvoiceFiscalInput["buyer"]>) =>
-    value && update({ buyer: { ...value.buyer, ...patch } });
   const updateLine = (id: string, patch: Partial<InvoiceFiscalLine>) =>
     value &&
     update({
@@ -71,34 +79,43 @@ export default function InvoiceFiscalEditor({
     ? computeInvoiceFiscal(validInput.data)
     : null;
   const money = (cents: number) => formatEuro(cents / 100);
-  const required = (note = "Requis") => <span className="invoice-fiscal__required">{note}</span>;
+  const required = (note = "Requis") => (
+    <span className="invoice-fiscal__required">{note}</span>
+  );
   const fieldLabel = (label: string, marker: ReactNode = required()) => (
-    <span className="invoice-fiscal__label-row"><span>{label}</span>{marker}</span>
+    <span className="invoice-fiscal__label-row">
+      <span>{label}</span>
+      {marker}
+    </span>
   );
   return (
     <section
+      id="invoice-fiscal"
+      tabIndex={-1}
       className="card invoice-fiscal"
       aria-label="Données fiscales de la facture"
     >
-      <div className="section-title">Client fiscal, lignes et TVA</div>
-      <p className="invoice-fiscal__legend"><span aria-hidden="true">*</span> Champ nécessaire à l’acceptation de la facturation. Certains champs s’appliquent selon le client et les montants.</p>
-      <p>
-        Les prix restent TTC et le total du séjour ne change pas. Les taux et
-        exonérations doivent être vérifiés avec votre comptable ; aucun taux
-        n’est choisi automatiquement.
-      </p>
-      <button
-        type="button"
-        className="secondary"
-        disabled={loading}
-        onClick={() => void prepare()}
-      >
-        {loading
-          ? "Préparation…"
-          : value
-            ? "Reproposer les lignes depuis le séjour"
-            : "Préparer les lignes depuis le séjour"}
-      </button>
+      <div className="invoice-fiscal__header">
+        <div>
+          <div className="section-title">Votre facture</div>
+          <p className="field-hint">
+            Les nuitées et prestations du séjour sont déjà reprises ci-dessous.
+            Les prix sont TTC.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="secondary"
+          disabled={loading}
+          onClick={() => void prepare()}
+        >
+          {loading
+            ? "Préparation…"
+            : value
+              ? "Reproposer les lignes depuis le séjour"
+              : "Préparer les lignes depuis le séjour"}
+        </button>
+      </div>
       {error && (
         <p role="alert" className="note">
           {error}
@@ -111,333 +128,305 @@ export default function InvoiceFiscalEditor({
               {validInput.error.issues[0]?.message}
             </p>
           )}
-          <h3>Identité du client facturé</h3>
-          <p>
-            Le nom du destinataire est celui du champ « Nom » ci-dessus.
-            L’adresse ci-dessous sera utilisée sur la facture émise.
-          </p>
-          <div className="grid-2">
-            <label className="field">
-              {fieldLabel("Type de client")}
-              <select
-                id="buyer-kind"
-                value={value.buyer.kind}
-                onChange={(e) =>
-                  updateBuyer({
-                    kind: e.target.value as InvoiceFiscalInput["buyer"]["kind"],
-                    siren: "",
-                    vat_number: "",
-                  })
-                }
-              >
-                <option value="unknown">À préciser</option>
-                <option value="individual">Particulier (B2C)</option>
-                <option value="business">Entreprise</option>
-              </select>
-            </label>
-            <label className="field">
-              {fieldLabel("Pays du client (code ISO)")}
-              <input
-                id="buyer-address"
-                value={value.buyer.country_code}
-                maxLength={2}
-                placeholder="FR"
-                onChange={(e) =>
-                  updateBuyer({ country_code: e.target.value.toUpperCase() })
-                }
-              />
-            </label>
-            <label className="field">
-              {fieldLabel("Adresse de facturation")}
-              <input
-                value={value.buyer.address_line1}
-                maxLength={500}
-                onChange={(e) => updateBuyer({ address_line1: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              Complément d’adresse
-              <input
-                value={value.buyer.address_line2}
-                maxLength={500}
-                onChange={(e) => updateBuyer({ address_line2: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              {fieldLabel("Code postal")}
-              <input
-                value={value.buyer.postal_code}
-                onChange={(e) => updateBuyer({ postal_code: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              {fieldLabel("Ville")}
-              <input
-                value={value.buyer.city}
-                onChange={(e) => updateBuyer({ city: e.target.value })}
-              />
-            </label>
-            {value.buyer.kind === "business" && (
-              <>
-                <label className="field">
-                  {fieldLabel("SIREN (entreprise française)", value.buyer.country_code === "FR" ? required() : null)}
-                  <input
-                    id="buyer-siren"
-                    value={value.buyer.siren}
-                    maxLength={9}
-                    onChange={(e) => updateBuyer({ siren: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  Numéro de TVA du client, si applicable
-                  <input
-                    value={value.buyer.vat_number}
-                    onChange={(e) =>
-                      updateBuyer({ vat_number: e.target.value.toUpperCase() })
-                    }
-                  />
-                </label>
-              </>
-            )}
-          </div>
-          {value.buyer.kind === "business" && (
-            <InvoiceOperationEditor
-              value={value.operation_kind ?? "unknown"}
-              onChange={(operation_kind) => update({ operation_kind })}
-            />
-          )}
-          <h3>Lignes de facture</h3>
-          <p>
-            La remise est déjà déduite de la location. Pour une réservation
-            regroupée, ventilez les prestations si leurs traitements de TVA
-            diffèrent. La taxe de séjour n’est ni ajoutée ni classée
-            automatiquement : vérifiez sa collecte et sa présence dans les prix.
-          </p>
-          {value.lines.map((line, index) => (
-            <fieldset key={line.id}>
-              <legend>Ligne {index + 1}</legend>
-              <div className="grid-2">
-                <label className="field">
-                  {fieldLabel("Libellé")}
-                  <input
-                    id={index === 0 ? "invoice-line-label" : undefined}
-                    value={line.label}
-                    maxLength={500}
-                    onChange={(e) =>
-                      updateLine(line.id, { label: e.target.value })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  Quantité
-                  <input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    value={line.quantity}
-                    onChange={(e) =>
-                      updateLine(line.id, { quantity: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  Unité
-                  <select
-                    value={line.unit}
-                    onChange={(e) =>
-                      updateLine(line.id, {
-                        unit: e.target.value as InvoiceFiscalLine["unit"],
+          <div className="invoice-fiscal__columns">
+            <div
+              className="invoice-fiscal__lines"
+              id="invoice-lines"
+              tabIndex={-1}
+            >
+              <h3>Lignes de facture</h3>
+              <p>
+                La remise est déjà déduite de la location. Pour une réservation
+                regroupée, ventilez les prestations si leurs traitements de TVA
+                diffèrent. La taxe de séjour n’est ni ajoutée ni classée
+                automatiquement : vérifiez sa collecte et sa présence dans les
+                prix.
+              </p>
+              {value.lines.map((line, index) => (
+                <fieldset key={line.id}>
+                  <legend>
+                    Ligne {index + 1} ·{" "}
+                    {formatEuro(line.quantity * line.unit_price_ttc)}
+                  </legend>
+                  <div className="grid-2">
+                    <label className="field">
+                      {fieldLabel("Libellé")}
+                      <input
+                        id={
+                          index === 0
+                            ? "invoice-line-label"
+                            : `invoice-line-label-${index}`
+                        }
+                        value={line.label}
+                        maxLength={500}
+                        onChange={(e) =>
+                          updateLine(line.id, { label: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      Quantité
+                      <input
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        value={line.quantity}
+                        onChange={(e) =>
+                          updateLine(line.id, {
+                            quantity: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      Unité
+                      <select
+                        value={line.unit}
+                        onChange={(e) =>
+                          updateLine(line.id, {
+                            unit: e.target.value as InvoiceFiscalLine["unit"],
+                          })
+                        }
+                      >
+                        <option value="C62">Unité / forfait</option>
+                        <option value="DAY">Nuitée / jour</option>
+                        <option value="E48">Prestation</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      Prix unitaire TTC (€)
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unit_price_ttc}
+                        onChange={(e) =>
+                          updateLine(line.id, {
+                            unit_price_ttc: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <details
+                      className="invoice-fiscal__vat"
+                      open={value.buyer.kind === "business" ? true : undefined}
+                    >
+                      <summary>
+                        Réglages de TVA
+                        {line.vat_category === "unknown"
+                          ? " · à compléter"
+                          : " · renseignés"}
+                      </summary>
+                      <div className="grid-2">
+                        <label className="field">
+                          {fieldLabel("Traitement de TVA")}
+                          <select
+                            id={
+                              index === 0
+                                ? "invoice-line-vat"
+                                : `invoice-line-vat-${index}`
+                            }
+                            value={line.vat_category}
+                            onChange={(e) =>
+                              updateLine(line.id, {
+                                vat_category: e.target
+                                  .value as InvoiceFiscalLine["vat_category"],
+                                vat_rate: 0,
+                                exemption_reason: "",
+                              })
+                            }
+                          >
+                            <option value="unknown">À préciser</option>
+                            <option value="S">Soumis à TVA (S)</option>
+                            <option value="Z">Taux zéro (Z)</option>
+                            <option value="E">Exonéré / franchise (E)</option>
+                            <option value="O">Hors champ (O)</option>
+                          </select>
+                        </label>
+                        {line.vat_category === "S" && (
+                          <label className="field">
+                            {fieldLabel("Taux de TVA (%)")}
+                            <input
+                              type="number"
+                              min="0.01"
+                              max="100"
+                              step="0.01"
+                              value={line.vat_rate}
+                              onChange={(e) =>
+                                updateLine(line.id, {
+                                  vat_rate: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                        )}
+                        {["E", "O"].includes(line.vat_category) && (
+                          <label className="field">
+                            {fieldLabel("Motif et référence légale")}
+                            <input
+                              value={line.exemption_reason}
+                              maxLength={500}
+                              placeholder="Référence fiscale à vérifier"
+                              onChange={(e) =>
+                                updateLine(line.id, {
+                                  exemption_reason: e.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </details>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() =>
+                      update({
+                        lines: value.lines.filter(
+                          (item) => item.id !== line.id,
+                        ),
                       })
                     }
                   >
-                    <option value="C62">Unité / forfait</option>
-                    <option value="DAY">Jour</option>
-                    <option value="E48">Prestation</option>
-                  </select>
-                </label>
+                    Retirer cette ligne
+                  </button>
+                </fieldset>
+              ))}
+              <button
+                type="button"
+                className="secondary"
+                disabled={value.lines.length >= 100}
+                onClick={() =>
+                  update({
+                    lines: [
+                      ...value.lines,
+                      {
+                        id: crypto.randomUUID(),
+                        label: "",
+                        quantity: 1,
+                        unit: "C62",
+                        unit_price_ttc: 0,
+                        vat_category: "unknown",
+                        vat_rate: 0,
+                        exemption_reason: "",
+                      },
+                    ],
+                  })
+                }
+              >
+                Ajouter une ligne
+              </button>
+            </div>
+            <div className="invoice-fiscal__payment">
+              <h3>Paiement à l’émission</h3>
+              <p>
+                Indiquez uniquement les sommes effectivement encaissées, pas les
+                arrhes simplement prévues au contrat. Le suivi du paiement après
+                émission restera indépendant du PDF archivé.
+              </p>
+              <div className="grid-2" id="payment-details" tabIndex={-1}>
                 <label className="field">
-                  Prix unitaire TTC (€)
+                  Sommes réellement reçues (€)
                   <input
                     type="number"
                     min="0"
                     step="0.01"
-                    value={line.unit_price_ttc}
+                    value={value.paid_amount}
                     onChange={(e) =>
-                      updateLine(line.id, {
-                        unit_price_ttc: Number(e.target.value),
-                      })
+                      update({ paid_amount: Number(e.target.value) })
                     }
                   />
                 </label>
                 <label className="field">
-                  {fieldLabel("Traitement de TVA")}
-                  <select
-                    id={index === 0 ? "invoice-line-vat" : undefined}
-                    value={line.vat_category}
+                  {fieldLabel(
+                    "Échéance du solde",
+                    required("Requis si solde dû"),
+                  )}
+                  <input
+                    type="date"
+                    value={value.payment_due_date}
                     onChange={(e) =>
-                      updateLine(line.id, {
-                        vat_category: e.target
-                          .value as InvoiceFiscalLine["vat_category"],
-                        vat_rate: 0,
-                        exemption_reason: "",
-                      })
+                      update({ payment_due_date: e.target.value })
                     }
-                  >
-                    <option value="unknown">À préciser</option>
-                    <option value="S">Soumis à TVA (S)</option>
-                    <option value="Z">Taux zéro (Z)</option>
-                    <option value="E">Exonéré / franchise (E)</option>
-                    <option value="O">Hors champ (O)</option>
-                  </select>
+                  />
                 </label>
-                {line.vat_category === "S" && (
-                  <label className="field">
-                    {fieldLabel("Taux de TVA (%)")}
-                    <input
-                      type="number"
-                      min="0.01"
-                      max="100"
-                      step="0.01"
-                      value={line.vat_rate}
-                      onChange={(e) =>
-                        updateLine(line.id, {
-                          vat_rate: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                )}
-                {["E", "O"].includes(line.vat_category) && (
-                  <label className="field">
-                    {fieldLabel("Motif et référence légale")}
-                    <input
-                      value={line.exemption_reason}
-                      maxLength={500}
-                      placeholder="Référence fiscale à vérifier"
-                      onChange={(e) =>
-                        updateLine(line.id, {
-                          exemption_reason: e.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                )}
+                <label className="field">
+                  {fieldLabel(
+                    "Conditions de paiement",
+                    required("Alternative à l’échéance"),
+                  )}
+                  <textarea
+                    value={value.payment_terms}
+                    maxLength={2000}
+                    onChange={(e) => update({ payment_terms: e.target.value })}
+                  />
+                </label>
               </div>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() =>
-                  update({
-                    lines: value.lines.filter((item) => item.id !== line.id),
-                  })
-                }
-              >
-                Retirer cette ligne
-              </button>
-            </fieldset>
-          ))}
-          <button
-            type="button"
-            className="secondary"
-            disabled={value.lines.length >= 100}
-            onClick={() =>
-              update({
-                lines: [
-                  ...value.lines,
-                  {
-                    id: crypto.randomUUID(),
-                    label: "",
-                    quantity: 1,
-                    unit: "C62",
-                    unit_price_ttc: 0,
-                    vat_category: "unknown",
-                    vat_rate: 0,
-                    exemption_reason: "",
-                  },
-                ],
-              })
-            }
-          >
-            Ajouter une ligne
-          </button>
-          <h3>Paiement à l’émission</h3>
-          <p>
-            Indiquez uniquement les sommes effectivement encaissées, pas les
-            arrhes simplement prévues au contrat. Le suivi du paiement après
-            émission restera indépendant du PDF archivé.
-          </p>
-          <div className="grid-2" id="payment-details" tabIndex={-1}>
-            <label className="field">
-              Sommes réellement reçues (€)
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={value.paid_amount}
-                onChange={(e) =>
-                  update({ paid_amount: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label className="field">
-              {fieldLabel("Échéance du solde", required("Requis si solde dû"))}
-              <input
-                type="date"
-                value={value.payment_due_date}
-                onChange={(e) => update({ payment_due_date: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              {fieldLabel("Conditions de paiement", required("Alternative à l’échéance"))}
-              <textarea
-                value={value.payment_terms}
-                maxLength={2000}
-                onChange={(e) => update({ payment_terms: e.target.value })}
-              />
-            </label>
+              {value.buyer.kind === "business" && (
+                <fieldset>
+                  <legend>Mentions de paiement — client professionnel</legend>
+                  <p>
+                    Renseignez les textes complets après vérification de vos
+                    conditions avec votre comptable. Aucun montant ni taux n’est
+                    proposé automatiquement. Ces mêmes mentions figureront sur
+                    le PDF et dans les données électroniques, y compris pour un
+                    avoir.
+                  </p>
+                  <div className="grid-2">
+                    {b2bPaymentMentionFields.map(({ key, label }, index) => (
+                      <label className="field" key={key}>
+                        {fieldLabel(label)}
+                        <textarea
+                          id={index === 0 ? "b2b-payment-mentions" : undefined}
+                          value={value.b2b_payment_mentions?.[key] ?? ""}
+                          maxLength={500}
+                          onChange={(e) =>
+                            update({
+                              b2b_payment_mentions: {
+                                ...(value.b2b_payment_mentions ?? {
+                                  late_payment_penalties: "",
+                                  recovery_fee: "",
+                                  early_payment_discount: "",
+                                }),
+                                [key]: e.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              {value.buyer.kind === "business" && (
+                <InvoiceOperationEditor
+                  value={value.operation_kind}
+                  onChange={(operation_kind) => update({ operation_kind })}
+                />
+              )}
+            </div>
           </div>
-          {value.buyer.kind === "business" && (
-            <fieldset>
-              <legend>Mentions de paiement — client professionnel</legend>
-              <p>
-                Renseignez les textes complets après vérification de vos
-                conditions avec votre comptable. Aucun montant ni taux n’est
-                proposé automatiquement. Ces mêmes mentions figureront sur le
-                PDF et dans les données électroniques, y compris pour un avoir.
-              </p>
-              <div className="grid-2">
-                {b2bPaymentMentionFields.map(({ key, label }, index) => (
-                  <label className="field" key={key}>
-                    {fieldLabel(label)}
-                    <textarea
-                      id={index === 0 ? "b2b-payment-mentions" : undefined}
-                      value={value.b2b_payment_mentions?.[key] ?? ""}
-                      maxLength={500}
-                      onChange={(e) =>
-                        update({
-                          b2b_payment_mentions: {
-                            ...(value.b2b_payment_mentions ?? {
-                              late_payment_penalties: "",
-                              recovery_fee: "",
-                              early_payment_discount: "",
-                            }),
-                            [key]: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          )}
           {totals && (
-            <div className="note" aria-live="polite">
-              <p>
-                Total HT : {money(totals.net_cents)} · TVA :{" "}
-                {money(totals.vat_cents)} · TTC : {money(totals.gross_cents)} ·
-                Reste à régler : {money(totals.due_cents)}
-              </p>
+            <div className="invoice-fiscal__totals" aria-live="polite">
+              <div className="invoice-fiscal__amounts">
+                <div>
+                  <span>Total HT</span>
+                  <strong>{money(totals.net_cents)}</strong>
+                </div>
+                <div>
+                  <span>TVA</span>
+                  <strong>{money(totals.vat_cents)}</strong>
+                </div>
+                <div>
+                  <span>Total TTC</span>
+                  <strong>{money(totals.gross_cents)}</strong>
+                </div>
+                <div>
+                  <span>Reste à régler</span>
+                  <strong>{money(totals.due_cents)}</strong>
+                </div>
+              </div>
               {totals.rounding_cents !== 0 && (
                 <p>Arrondi TTC explicite : {money(totals.rounding_cents)}.</p>
               )}
@@ -450,28 +439,33 @@ export default function InvoiceFiscalEditor({
               )}
             </div>
           )}
-          <label className="checkbox">
-            <input
-              id="tourist-tax-reviewed"
-              type="checkbox"
-              checked={value.tourist_tax_reviewed}
-              onChange={(e) =>
-                update({ tourist_tax_reviewed: e.target.checked })
-              }
-            />
-            J’ai vérifié le traitement et la collecte de la taxe de séjour, y
-            compris pour chaque réservation regroupée. {required("Selon les options du séjour")}
-          </label>
-          <label className="checkbox">
-            <input
-              id="invoice-reviewed"
-              type="checkbox"
-              checked={value.reviewed}
-              onChange={(e) => update({ reviewed: e.target.checked })}
-            />
-            J’ai vérifié le destinataire, la ventilation, les taux, les motifs
-            fiscaux et les sommes réellement reçues. {required()}
-          </label>
+          <div className="invoice-fiscal__review">
+            {touristTaxRequired && (
+              <label className="checkbox">
+                <input
+                  id="tourist-tax-reviewed"
+                  type="checkbox"
+                  checked={value.tourist_tax_reviewed}
+                  onChange={(e) =>
+                    update({ tourist_tax_reviewed: e.target.checked })
+                  }
+                />
+                J’ai vérifié le traitement et la collecte de la taxe de séjour,
+                y compris pour chaque réservation regroupée. {required()}
+              </label>
+            )}
+            <label className="checkbox">
+              <input
+                id="invoice-reviewed"
+                type="checkbox"
+                checked={value.reviewed}
+                onChange={(e) => update({ reviewed: e.target.checked })}
+              />
+              J’ai vérifié le destinataire, la ventilation, les taux, les motifs
+              fiscaux et les sommes réellement reçues. {required()}
+            </label>
+          </div>
+          {children}
           <p className="field-hint">
             Ce détail prépare les données électroniques. Il ne constitue pas une
             certification de conformité et ne transmet rien à SuperPDP.

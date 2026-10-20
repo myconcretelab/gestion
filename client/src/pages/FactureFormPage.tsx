@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { InvoiceFiscalInput } from "@contrats/shared";
+import { emptyInvoiceFiscalInput, type InvoiceFiscalInput } from "@contrats/shared";
+import InvoiceBuyerEditor from "./shared/InvoiceBuyerEditor";
+import InvoiceCompletionAssistant from "./shared/InvoiceCompletionAssistant";
+import { focusInvoiceField, invoiceFormCompletion, type InvoiceValidationOptions } from "./shared/invoiceFormCompletion";
 import InvoiceFiscalEditor from "./shared/InvoiceFiscalEditor";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
@@ -90,7 +93,14 @@ const getValidationFieldErrors = (error: unknown): FieldErrors =>
   extractValidationFieldErrors(error, contractFieldKeySet, "date_fin");
 
 const FactureFormPage = () => {
-  const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput | null>(null);
+  const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput>(emptyInvoiceFiscalInput);
+  const [savedDraft, setSavedDraft] = useState<Facture | null>(null);
+  const [lastSavedKey, setLastSavedKey] = useState<string | null>(null);
+  const [linesManual, setLinesManual] = useState(false);
+  const [preparingLines, setPreparingLines] = useState(false);
+  const [linesRetry, setLinesRetry] = useState(0);
+  const [linesError, setLinesError] = useState<string | null>(null);
+  const [validationOptions, setValidationOptions] = useState<InvoiceValidationOptions>({});
   const fiscalContextRef = useRef<string | null>(null);
   const handledHashNavigationRef = useRef<string | null>(null);
   const location = useLocation();
@@ -116,12 +126,8 @@ const FactureFormPage = () => {
   const [remiseReason, setRemiseReason] = useState("");
   const [fraisSupplementaires, setFraisSupplementaires] = useState<InvoiceExtraFeeRow[]>([]);
   const [options, setOptions] = useState<ContratOptions>(defaultOptions);
-  const [arrhesMontant, setArrhesMontant] = useState("0.00");
   const [arrhesDateLimite, setArrhesDateLimite] = useState("");
-  const [arrhesAuto, setArrhesAuto] = useState(false);
-  const [arrhesDateTouched, setArrhesDateTouched] = useState(false);
   const [clausesText, setClausesText] = useState("");
-  const [statutArrhes, setStatutArrhes] = useState<"non_reglee" | "reglee">("non_reglee");
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
@@ -225,7 +231,6 @@ const FactureFormPage = () => {
     setRemiseMode("euro");
     setRemiseValue(ids.length === 1 ? prefill.remiseValue : "");
     setOptions(ids.length === 1 ? prefill.options : defaultOptions);
-    setArrhesAuto(false);
   };
 
   const toggleReservation = (reservationId: string) => {
@@ -251,7 +256,8 @@ const FactureFormPage = () => {
       .then((data) => {
         if (!active) return;
         setEditingContract(data);
-        setFiscalInput(data.fiscal_input ?? null);
+        setFiscalInput(data.fiscal_input ?? emptyInvoiceFiscalInput());
+        setLinesManual(Boolean(data.fiscal_input?.lines.length));
         setGiteId(data.gite_id);
         setLocataireNom(data.locataire_nom);
         setLocataireAdresse(data.locataire_adresse);
@@ -269,12 +275,9 @@ const FactureFormPage = () => {
         setRemiseReason(typeof data.clauses?.remise_raison === "string" ? data.clauses.remise_raison : "");
         setFraisSupplementaires((data.frais_supplementaires ?? []).map((fee) => createInvoiceExtraFeeRow(fee)));
         setOptions(mergeOptions(data.options));
-        setArrhesAuto(false);
-        setArrhesMontant(Number(data.arrhes_montant ?? 0).toFixed(2));
-        setArrhesDateTouched(true);
         setArrhesDateLimite(toDateInputValue(data.arrhes_date_limite));
         setClausesText(typeof data.clauses?.texte_additionnel === "string" ? data.clauses.texte_additionnel : "");
-        setStatutArrhes(data.statut_paiement ?? "non_reglee");
+
         setSourceContractNumber(null);
         setPrefilledContractGiteId(null);
         setSourceReservationLabel(null);
@@ -334,12 +337,8 @@ const FactureFormPage = () => {
         setRemiseReason(typeof data.clauses?.remise_raison === "string" ? data.clauses.remise_raison : "");
         setFraisSupplementaires([]);
         setOptions(mergeOptions(data.options));
-        setArrhesAuto(false);
-        setArrhesMontant(Number(data.arrhes_montant ?? 0).toFixed(2));
-        setArrhesDateTouched(true);
         setArrhesDateLimite(toDateInputValue(data.arrhes_date_limite));
         setClausesText("");
-        setStatutArrhes("non_reglee");
         setSourceReservationLabel(null);
         setPrefilledReservationGiteId(null);
         setLinkedReservationId(data.reservation_id ?? null);
@@ -410,11 +409,7 @@ const FactureFormPage = () => {
         setRemiseReason("");
         setFraisSupplementaires([]);
         setOptions(prefill.options);
-        setArrhesAuto(false);
-        setArrhesMontant("0.00");
-        setArrhesDateTouched(false);
         setClausesText("");
-        setStatutArrhes("non_reglee");
       })
       .catch((err) => {
         if (!active || isAbortError(err)) return;
@@ -440,8 +435,6 @@ const FactureFormPage = () => {
     prixNuitListe,
     remiseMontant,
     totals,
-    arrhesRate,
-    arrhesAutoValue,
     drapsTarif,
     lingeTarif,
     menageTarif,
@@ -460,7 +453,7 @@ const FactureFormPage = () => {
     remiseValue,
     nbAdultes,
     nbEnfants,
-    arrhesMontant,
+    arrhesMontant: String(fiscalInput.paid_amount),
     options,
   });
 
@@ -546,15 +539,10 @@ const FactureFormPage = () => {
   }, [regleAnimauxAcceptes]);
 
   useEffect(() => {
-    if (!arrhesDateTouched && !arrhesDateLimite) {
+    if (!arrhesDateLimite) {
       setArrhesDateLimite(formatDateInput(addDays(new Date(), 15)));
     }
-  }, [arrhesDateLimite, arrhesDateTouched]);
-
-  useEffect(() => {
-    if (!arrhesAuto) return;
-    if (Number.isFinite(arrhesAutoValue)) setArrhesMontant(arrhesAutoValue.toFixed(2));
-  }, [arrhesAuto, arrhesAutoValue]);
+  }, [arrhesDateLimite]);
 
   const clausesPayload = useMemo(() => {
     const next: Record<string, unknown> = {};
@@ -567,14 +555,14 @@ const FactureFormPage = () => {
     return next;
   }, [clausesText, remiseReason]);
 
-  const showPaymentDeadline = statutArrhes === "non_reglee";
-
+  const expectedTotal = (isMultiReservation ? selectedReservationsTotal : totals?.totalGlobal ?? 0) + fraisSupplementairesTotal;
+  const draftReady = Boolean(giteId && locataireNom.trim() && dateDebut && dateFin && dateFin > dateDebut);
   const previewPayload = useMemo(() => {
     const payload: any = {
       fiscal_input: fiscalInput,
       gite_id: giteId,
       locataire_nom: locataireNom,
-      locataire_adresse: locataireAdresse,
+      locataire_adresse: [fiscalInput.buyer.address_line1, fiscalInput.buyer.address_line2, fiscalInput.buyer.postal_code, fiscalInput.buyer.city, fiscalInput.buyer.country_code].filter(Boolean).join(" · "),
       locataire_tel: locataireTel,
       locataire_email: locataireEmail,
       nb_adultes: nbAdultes,
@@ -587,14 +575,14 @@ const FactureFormPage = () => {
       remise_montant: remiseMontant,
       frais_supplementaires: fraisSupplementairesPayload,
       options,
-      arrhes_montant: Number(arrhesMontant || 0),
-      arrhes_date_limite: arrhesDateLimite,
+      arrhes_montant: fiscalInput.paid_amount,
+      arrhes_date_limite: fiscalInput.payment_due_date || arrhesDateLimite,
       caution_montant: INVOICE_GUARANTEE_AMOUNT,
       cheque_menage_montant: INVOICE_GUARANTEE_AMOUNT,
       afficher_caution_phrase: false,
       afficher_cheque_menage_phrase: false,
       clauses: clausesPayload,
-      statut_paiement: statutArrhes,
+      statut_paiement: fiscalInput.paid_amount >= expectedTotal ? "reglee" : "non_reglee",
       reservation_id: linkedReservationId,
       reservation_ids: selectedReservationIds,
     };
@@ -604,7 +592,6 @@ const FactureFormPage = () => {
     fiscalInput,
     giteId,
     locataireNom,
-    locataireAdresse,
     locataireTel,
     locataireEmail,
     nbAdultes,
@@ -619,18 +606,57 @@ const FactureFormPage = () => {
     options,
     arrhesDateLimite,
     clausesPayload,
-    statutArrhes,
-    arrhesMontant,
+    expectedTotal,
     linkedReservationId,
     selectedReservationIds,
   ]);
+
+  useEffect(() => {
+    if (!locataireAdresse) return;
+    setFiscalInput((previous) => previous.buyer.address_line1 ? previous : { ...previous, buyer: { ...previous.buyer, address_line1: locataireAdresse } });
+  }, [locataireAdresse]);
+
+  const pricingContextKey = JSON.stringify({ gite_id: giteId, date_debut: dateDebut, date_fin: dateFin, prix_par_nuit: prixParNuit,
+    remise_montant: remiseMontant, options, frais_supplementaires: fraisSupplementairesPayload, reservation_ids: selectedReservationIds,
+    nb_adultes: nbAdultes, nb_enfants_2_17: nbEnfants });
+  const fiscalSourceReady = !isEdit || Boolean(editingContract);
+  useEffect(() => {
+    const pricingContext = JSON.parse(pricingContextKey);
+    if (!pricingContext.gite_id || !pricingContext.date_debut || !pricingContext.date_fin ||
+      pricingContext.date_fin <= pricingContext.date_debut || !fiscalSourceReady || loadingFromContract || loadingFromReservation) {
+      setPreparingLines(false);
+      return;
+    }
+    const controller = new AbortController();
+    setPreparingLines(true);
+    setLinesError(null);
+    const timer = window.setTimeout(() => {
+      apiFetch<{ fiscal_input: InvoiceFiscalInput; validation_options: InvoiceValidationOptions }>("/invoices/fiscal-preview", {
+        method: "POST", json: pricingContext, signal: controller.signal,
+      }).then((result) => {
+        if (controller.signal.aborted) return;
+        setValidationOptions(result.validation_options);
+        if (!linesManual) setFiscalInput((previous) => ({ ...previous, lines: result.fiscal_input.lines.map((line) => {
+          const old = previous.lines.find((item) => item.id === line.id && item.label === line.label);
+          return old ? { ...line, vat_category: old.vat_category, vat_rate: old.vat_rate, exemption_reason: old.exemption_reason } : line;
+        }), reviewed: false, tourist_tax_reviewed: false }));
+      }).catch((err) => {
+        if (!isAbortError(err)) setLinesError(err instanceof Error ? err.message : "Préparation des lignes impossible.");
+      }).finally(() => { if (!controller.signal.aborted) setPreparingLines(false); });
+    }, 350);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [pricingContextKey, linesManual, fiscalSourceReady, loadingFromContract, loadingFromReservation, linesRetry]);
+
+  const completionItems = [...(linesError ? [{ label: "Actualiser les lignes et les vérifications du séjour", target: "invoice-lines" }] : []), ...invoiceFormCompletion(fiscalInput, expectedTotal, validationOptions, {
+    name: locataireNom, giteId, start: dateDebut, end: dateFin, email: locataireEmail,
+  })];
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
   const fiscalContextKey = JSON.stringify({ ...previewPayload, fiscal_input: undefined });
   useEffect(() => {
     if (isEdit && !editingContract) return;
     if (fiscalContextRef.current !== null && fiscalContextRef.current !== fiscalContextKey) {
-      setFiscalInput((previous) => previous ? { ...previous, reviewed: false, tourist_tax_reviewed: false } : null);
+      setFiscalInput((previous) => ({ ...previous, reviewed: false, tourist_tax_reviewed: false }));
     }
     fiscalContextRef.current = fiscalContextKey;
   }, [fiscalContextKey, isEdit, editingContract]);
@@ -680,24 +706,26 @@ const FactureFormPage = () => {
       const target = document.getElementById(decodeURIComponent(targetId));
       if (!target) return;
       handledHashNavigationRef.current = navigationKey;
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+      focusInvoiceField(decodeURIComponent(targetId));
     });
     return () => window.cancelAnimationFrame(frame);
   }, [fiscalInput, id, location.hash]);
 
   const submit = useDocumentSubmit<Facture, ContractFieldKey>({
     endpointBase: "/invoices",
-    id,
-    isEdit,
-    canSubmit: Boolean(giteId),
-    payload: { ...previewPayload, ...(isEdit ? { revision: editingContract?.revision } : {}) },
+    id: id ?? savedDraft?.id,
+    isEdit: isEdit || Boolean(savedDraft),
+    canSubmit: draftReady && !preparingLines,
+    payload: { ...previewPayload, ...((isEdit || savedDraft) ? { revision: editingContract?.revision ?? savedDraft?.revision } : {}) },
     payloadKey,
     getValidationFieldErrors,
     setSaving,
     setError,
     setFieldErrors,
-    setCreatedDocument: setCreatedContract,
+    setCreatedDocument: (document) => {
+      setCreatedContract(document);
+      if (document) { setSavedDraft(document); setLastSavedKey(payloadKey); }
+    },
     setCreatedPayloadKey,
     setEditingDocument: setEditingContract,
     unknownErrorMessage: "Erreur lors de l'enregistrement de la facture.",
@@ -727,9 +755,14 @@ const FactureFormPage = () => {
   }
 
   return (
-    <div>
+    <div className="invoice-form">
       {error && <div className="note">{error}</div>}
-      <p className="note">Enregistrez d’abord un brouillon, puis vérifiez-le sur sa fiche avant validation définitive. Le numéro de facture sera attribué à cette validation.</p>
+      <header className="invoice-form__intro">
+        <span className="invoice-form__eyebrow">FACTURATION</span>
+        <h2>{isEdit ? "Votre facture, en détail" : "Créons votre facture"}</h2>
+        <p>Un client, un séjour, une facture. Enregistrez votre travail, puis vérifiez et validez depuis la fiche.</p>
+        <ol className="invoice-form__steps"><li>1 · Client & séjour</li><li>2 · Lignes & paiement</li><li>3 · Enregistrer & vérifier</li></ol>
+      </header>
       {!isEdit && loadingFromContract && <div className="note">Préremplissage depuis le contrat...</div>}
       {!isEdit && loadingFromReservation && <div className="note">Préremplissage depuis la réservation...</div>}
       {!isEdit && !loadingFromContract && sourceContractNumber && (
@@ -738,12 +771,12 @@ const FactureFormPage = () => {
       {!isEdit && !loadingFromReservation && sourceReservationLabel && (
         <div className="note note--success">Facture préremplie depuis la réservation de {sourceReservationLabel}.</div>
       )}
-      <div className="card">
-        <div className="section-title">Infos client</div>
+      <InvoiceBuyerEditor value={fiscalInput} onChange={setFiscalInput}>
         <div className="grid-2">
           <label className={getFieldClassName("gite_id")}>
             Gîte
             <select
+              id="invoice-gite"
               value={giteId}
               disabled={isMultiReservation}
               onChange={(e) => {
@@ -760,8 +793,9 @@ const FactureFormPage = () => {
             {renderFieldError("gite_id")}
           </label>
           <label className={getFieldClassName("locataire_nom")}>
-            Nom client
+            {fiscalInput.buyer.kind === "business" ? "Raison sociale" : "Nom et prénom"}
             <input
+              id="invoice-buyer-name"
               value={locataireNom}
               onChange={(e) => {
                 clearFieldError("locataire_nom");
@@ -769,17 +803,6 @@ const FactureFormPage = () => {
               }}
             />
             {renderFieldError("locataire_nom")}
-          </label>
-          <label className={getFieldClassName("locataire_adresse")}>
-            Adresse client (optionnel)
-            <input
-              value={locataireAdresse}
-              onChange={(e) => {
-                clearFieldError("locataire_adresse");
-                setLocataireAdresse(e.target.value);
-              }}
-            />
-            {renderFieldError("locataire_adresse")}
           </label>
           <label className={getFieldClassName("locataire_tel")}>
             Téléphone client (optionnel)
@@ -795,6 +818,7 @@ const FactureFormPage = () => {
           <label className={getFieldClassName("locataire_email")}>
             Email client (optionnel)
             <input
+              id="invoice-buyer-email"
               type="email"
               value={locataireEmail}
               onChange={(e) => {
@@ -805,7 +829,7 @@ const FactureFormPage = () => {
             {renderFieldError("locataire_email")}
           </label>
         </div>
-      </div>
+      </InvoiceBuyerEditor>
 
       <div className="card invoice-reservations">
         <div className="invoice-reservations__header">
@@ -905,6 +929,7 @@ const FactureFormPage = () => {
             <label className={getFieldClassName("date_debut")}>
               Début
               <input
+                id="invoice-start"
                 type="date"
                 disabled={isMultiReservation}
                 value={dateDebut}
@@ -934,7 +959,7 @@ const FactureFormPage = () => {
       </div>
 
       <div className="card">
-        <div className="section-title">Tarif & Paiement</div>
+        <div className="section-title">Tarif du séjour</div>
         <div className="grid-2">
           <div className={`field-group${isMultiReservation ? " invoice-single-reservation-only" : ""}`}>
             <div className="field-group__label">Tarif séjour</div>
@@ -1051,84 +1076,11 @@ const FactureFormPage = () => {
             </div>
           </div>
 
-          <div className="field-group">
-            <div className="field-group__label">Paiement facture</div>
-            <div className={getFieldClassName("statut_paiement")}>
-              Statut de la facture
-              <div className="switch-group">
-                <span>{statutArrhes === "reglee" ? "Payée" : "Non payée"}</span>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={statutArrhes === "reglee"}
-                    onChange={(e) => {
-                      clearFieldError("statut_paiement");
-                      const nextStatus = e.target.checked ? "reglee" : "non_reglee";
-                      setStatutArrhes(nextStatus);
-                      if (!arrhesDateLimite) {
-                        setArrhesDateLimite(formatDateInput(addDays(new Date(), 15)));
-                      }
-                    }}
-                  />
-                  <span className="slider" />
-                </label>
-              </div>
-              {renderFieldError("statut_paiement")}
-            </div>
-            {showPaymentDeadline && (
-              <label className={getFieldClassName("arrhes_date_limite")}>
-                Date limite de paiement
-                <input
-                  type="date"
-                  value={arrhesDateLimite}
-                  onChange={(e) => {
-                    clearFieldError("arrhes_date_limite");
-                    setArrhesDateTouched(true);
-                    setArrhesDateLimite(e.target.value);
-                  }}
-                />
-                {renderFieldError("arrhes_date_limite")}
-              </label>
-            )}
-            <div className={getFieldClassName("arrhes_montant")}>
-              Acompte déduit (si déjà reçu)
-              <div className="field-row field-row--compact">
-                <input
-                  type="number"
-                  step={1}
-                  value={arrhesMontant}
-                  onChange={(e) => {
-                    clearFieldError("arrhes_montant");
-                    setArrhesAuto(false);
-                    setArrhesMontant(e.target.value);
-                  }}
-                />
-                <div className="switch-group">
-                  <span>Auto</span>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={arrhesAuto}
-                      disabled={isMultiReservation}
-                      onChange={(e) => setArrhesAuto(e.target.checked)}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              </div>
-              <div className="field-hint">
-                {isMultiReservation
-                  ? `Total des réservations : ${formatEuro(selectedReservationsTotal)}`
-                  : `Acompte auto (${Math.round(arrhesRate * 100)}% du séjour): ${formatEuro(arrhesAutoValue)}`}
-              </div>
-              {renderFieldError("arrhes_montant")}
-            </div>
-          </div>
         </div>
       </div>
 
-      <div className={`card${isMultiReservation ? " invoice-single-reservation-only" : ""}`}>
-        <div className="section-title">Options</div>
+      <details className={`card invoice-form__optional${isMultiReservation ? " invoice-single-reservation-only" : ""}`}>
+        <summary>Prestations & options <span>Draps, ménage, animaux…</span></summary>
         <div className="option-grid">
           <div className="option-card option-card--rules">
             <div className="option-title">Règles du gîte</div>
@@ -1436,38 +1388,40 @@ const FactureFormPage = () => {
             </div>
           )}
         </div>
-      </div>
+      </details>
 
-      <div className="card">
-        <div className="section-title">Clauses</div>
+      <details className="card invoice-form__optional">
+        <summary>Une précision à ajouter ? <span>Clause additionnelle</span></summary>
         <div className="grid-2">
           <label className="field">
             Clause additionnelle
             <textarea value={clausesText} onChange={(e) => setClausesText(e.target.value)} rows={3} />
           </label>
         </div>
-      </div>
+      </details>
 
-      <InvoiceFiscalEditor value={fiscalInput} onChange={setFiscalInput} payload={previewPayload} expectedTotal={(isMultiReservation ? selectedReservationsTotal : totals?.totalGlobal ?? 0) + fraisSupplementairesTotal} />
+      {linesError && <p role="alert" className="note">{linesError} <button type="button" className="secondary" onClick={() => setLinesRetry((retry) => retry + 1)}>Réessayer la préparation</button></p>}
+      <InvoiceFiscalEditor value={fiscalInput} onChange={(next) => {
+        const pricingLines = (input: InvoiceFiscalInput) => input.lines.map(({ vat_category, vat_rate, exemption_reason, ...line }) => line);
+        if (JSON.stringify(pricingLines(next)) !== JSON.stringify(pricingLines(fiscalInput))) setLinesManual(true);
+        setFiscalInput(next);
 
-      <div className="card">
-        <div className="section-title">{isEdit ? "Mise à jour" : "Création"}</div>
-        <div className="actions">
-          <button onClick={submit} disabled={saving || Boolean(createdContract && createdPayloadKey === payloadKey)}>
-            {saving ? "Enregistrement..." : "Enregistrer le brouillon"}
-          </button>
-          {createdContract && (
-            <button className="secondary" onClick={downloadPdf}>
-              Télécharger le PDF
-            </button>
-          )}
-        </div>
-        {createdContract && (
-          <div className="note note--success" style={{ marginTop: 12 }}>
-            Brouillon enregistré. <Link to={`/factures/${createdContract.id}`}>Vérifier et valider définitivement</Link>.
+      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax)}>
+        <footer className="invoice-save" aria-label="Enregistrement de la facture">
+          <div><strong>{lastSavedKey === payloadKey ? "Toutes vos modifications sont enregistrées" : "Enregistrez les informations de cette facture"}</strong>
+            <p aria-live="polite">{saving ? "Enregistrement en cours…" : lastSavedKey === payloadKey ? "Votre brouillon est sauvegardé. Vous pouvez passer à la vérification." : "Le client, le séjour, les lignes et le paiement seront sauvegardés ensemble. Le brouillon reste modifiable."}</p>
           </div>
-        )}
-      </div>
+          {error && <p role="alert">{error}</p>}
+          <div className="actions">
+            <button type="button" onClick={submit} disabled={saving || preparingLines || !draftReady || lastSavedKey === payloadKey}>
+              {saving ? "Enregistrement…" : lastSavedKey === payloadKey ? "✓ Modifications enregistrées" : savedDraft || isEdit ? "Enregistrer les modifications" : "Enregistrer ma facture en brouillon"}
+            </button>
+            {savedDraft && lastSavedKey === payloadKey && <Link className="invoice-save__next" to={`/factures/${savedDraft.id}`}>Ouvrir la fiche pour vérifier et valider →</Link>}
+            {createdContract && <button type="button" className="secondary" onClick={downloadPdf}>Télécharger le brouillon PDF</button>}
+          </div>
+          {!!completionItems.length && <p className="field-hint">{draftReady ? "Le brouillon peut être enregistré maintenant. L’assistant vous guide pour compléter les informations avant validation." : "Choisissez un gîte, renseignez le nom du client et les dates pour enregistrer un premier brouillon."}</p>}
+        </footer>
+      </InvoiceFiscalEditor>
 
       <div className="card">
         <div className="preview-header">
@@ -1508,6 +1462,7 @@ const FactureFormPage = () => {
           {previewError && <span className="preview-error">{previewError}</span>}
         </div>
       </div>
+      <InvoiceCompletionAssistant items={completionItems} checking={preparingLines} />
     </div>
   );
 };
