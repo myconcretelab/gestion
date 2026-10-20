@@ -40,6 +40,7 @@ const payload = {
   arrhes_date_limite: "2027-02-01",
   caution_montant: 0,
   cheque_menage_montant: 0,
+  clauses: { invoice_theme: "horizon" },
 };
 const request = async (
   url: string,
@@ -339,6 +340,7 @@ test("la validation fige l’émetteur, les montants et les octets PDF ; les ret
   });
   const archive = JSON.parse(row.immutable_snapshot!);
   assert.equal(archive.calculation.totals.totalGlobal, 330);
+  assert.equal(archive.invoice.clauses.invoice_theme, "horizon");
   assert.equal(archive.issuer.entity.legal_name, "Entreprise a");
   assert.equal(archive.structured_invoice.en_invoice_candidate.type_code, 380);
   assert.equal(
@@ -445,6 +447,7 @@ test("un avoir intégral conserve la source et utilise l’émetteur et les mont
   assert.equal(credit.body.solde_montant, -330);
   assert.equal(credit.body.document_kind, "credit_note");
   assert.equal(credit.body.lifecycle_status, "draft");
+  assert.equal(credit.body.clauses.invoice_theme, "horizon");
   const duplicate = await request(
     `/invoices/${original.id}/credit-note`,
     "POST",

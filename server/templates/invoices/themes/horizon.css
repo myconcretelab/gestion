@@ -1,0 +1,242 @@
+/* Horizon — architectural spacing, ink-blue masthead, clear financial hierarchy.
+ * Overrides presentation only. All monetary and legal content uses invoice.html.
+ */
+:root {
+  --invoice-brand-size: 22pt;
+  --invoice-number-size: 20pt;
+  --invoice-date-size: 15pt;
+  --paper: #ffffff;
+  --paper-strong: #edf3f8;
+  --ink: #182b45;
+  --ink-soft: #4e6073;
+  --sage-deep: #245a7d;
+  --coral: #182b45;
+  --line: #d6e0e8;
+  --line-strong: #aabfce;
+}
+body {
+  font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  background: white;
+}
+.page {
+  overflow-wrap: anywhere;
+  padding: 15mm 14mm 13mm;
+  gap: 6mm;
+  background: white;
+  border-top: 2mm solid var(--ink);
+}
+.motif {
+  display: none;
+}
+.hero {
+  grid-template-columns: minmax(0, 1.2fr) 72mm;
+  gap: 10mm;
+}
+.hero-main {
+  min-width: 0;
+}
+.brand-logo {
+  display: block;
+  line-height: 1.14;
+  color: var(--ink);
+}
+.brand-logo__large {
+  display: block;
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--invoice-brand-size);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+.subtitle {
+  margin-top: 3mm;
+  font-family: inherit;
+  font-size: 10pt;
+  font-weight: 650;
+  color: var(--sage-deep);
+}
+.host-block {
+  margin-top: 3mm;
+  padding-top: 3mm;
+  border-color: var(--line);
+}
+.box {
+  border-radius: 1.5mm;
+  border-color: var(--line);
+  background: white;
+}
+.invoice-summary {
+  padding: 5mm;
+  color: white;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.invoice-number {
+  margin: 0 0 5mm;
+  font-family: inherit;
+  font-size: var(--invoice-number-size);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: white;
+}
+.invoice-number span {
+  margin-top: 2mm;
+  font-size: 10pt;
+  font-weight: 450;
+  letter-spacing: 0.035em;
+  color: #d5e6f1;
+  overflow-wrap: anywhere;
+}
+.invoice-summary .meta-label {
+  font-size: 6.8pt;
+  letter-spacing: 0.12em;
+  color: #bed4e3;
+}
+.invoice-summary .meta-value {
+  margin-top: 1.5mm;
+  font-size: 9.2pt;
+  color: white;
+}
+.info-grid {
+  gap: 5mm;
+}
+.info-grid > .box {
+  padding: 4mm 5mm;
+  background: #f5f8fb;
+  border-color: #e4ebf1;
+}
+.section-title,
+.bank-title {
+  font-size: 7.5pt;
+  letter-spacing: 0.15em;
+}
+.stay-date-row {
+  grid-template-columns: 8mm minmax(0, 1fr);
+}
+.stay-date-label {
+  font-family: inherit;
+  font-size: 8.6pt;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+.stay-date-value {
+  font-family: inherit;
+  font-size: var(--invoice-date-size);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.stay-meta {
+  border-top-color: var(--line);
+}
+.stay-meta-line {
+  font-size: 8.6pt;
+  font-weight: 500;
+}
+.details-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.details-card > .section-title {
+  margin-bottom: 3mm;
+}
+th {
+  padding: 2.8mm 2.5mm;
+  background: var(--ink);
+  color: white;
+  font-size: 7.2pt;
+  letter-spacing: 0.12em;
+  border: 0;
+}
+td {
+  padding: 2.5mm;
+  vertical-align: top;
+  border-bottom-color: var(--line);
+  font-size: 9.2pt;
+}
+td:last-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.invoice-item-meta {
+  margin-top: 1mm;
+  font-size: 7.7pt;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.invoice-stay-heading td {
+  white-space: normal;
+  padding: 2.6mm 2.5mm;
+  background: var(--paper-strong);
+  border-left: 0;
+}
+.invoice-stay-heading strong {
+  color: var(--ink);
+  font-size: 9.5pt;
+}
+.invoice-stay-heading .invoice-item-meta {
+  margin-top: 0.7mm;
+}
+.totals {
+  width: 86mm;
+  margin-top: 5mm;
+}
+.totals td {
+  padding: 1.8mm 2.5mm;
+  font-size: 9pt;
+}
+.totals .invoice-item-meta {
+  font-size: 7pt;
+}
+.totals tr.total td {
+  padding: 3mm 2.5mm;
+  background: var(--ink);
+  border-top: 0;
+  color: white;
+  font-size: 11pt;
+}
+.totals tr.total td:last-child {
+  color: white;
+}
+.bank-footer {
+  margin-top: auto;
+  padding: 4mm 0 0;
+  border: 0;
+  border-top: 1.2mm solid var(--ink);
+  border-radius: 0;
+  background: white;
+}
+.bank-title {
+  margin-bottom: 3mm;
+}
+.iban {
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) minmax(0, 1fr);
+  gap: 4mm;
+}
+.iban-item .meta-value {
+  font-size: 8.1pt;
+}
+.iban-item--iban .meta-value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.iban-item .meta-label {
+  font-size: 6.7pt;
+  letter-spacing: 0.1em;
+}
+body.invoice-multipage .page {
+  border-top: 0;
+}
+body.invoice-multipage .brand-logo {
+  padding: 0;
+}
+body.invoice-multipage .hero {
+  padding-top: 2mm;
+  border-top: 1.5mm solid var(--ink);
+}
+@media screen {
+  body.preview {
+    background: #e9eef3;
+  }
+}

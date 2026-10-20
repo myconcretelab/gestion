@@ -1,6 +1,7 @@
 import { applyIndividualVatPreset, changedVatLineIds, individualVatPresetHint, type AppliedInvoiceVatPresets } from "./shared/invoiceVatPreset";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
+import { defaultInvoiceTheme, resolveInvoiceTheme, type InvoiceThemeId, type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
+import InvoiceThemePicker from "./shared/InvoiceThemePicker";
 import { reconcileInvoiceGeneratedLines, shouldSyncInvoiceGeneratedLines } from "./shared/invoiceFormLines";
 import { createInvoiceFormInput } from "./shared/invoiceFormDefaults";
 import { invoiceReservationPrefill } from "./shared/invoiceReservationPrefill";
@@ -102,6 +103,7 @@ const getValidationFieldErrors = (error: unknown): FieldErrors =>
 
 const FactureFormPage = () => {
   const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput>(createInvoiceFormInput);
+  const [invoiceTheme, setInvoiceTheme] = useState<InvoiceThemeId>(defaultInvoiceTheme);
   const [savedDraft, setSavedDraft] = useState<Facture | null>(null);
   const [lastSavedKey, setLastSavedKey] = useState<string | null>(null);
   const [linesManual, setLinesManual] = useState(false);
@@ -125,6 +127,7 @@ const FactureFormPage = () => {
   const isEdit = Boolean(id);
   const fromContractId = (searchParams.get("fromContractId") ?? "").trim();
   const fromReservationId = (searchParams.get("fromReservationId") ?? "").trim();
+  useEffect(() => { if (!isEdit) setInvoiceTheme(defaultInvoiceTheme); }, [isEdit, fromContractId, fromReservationId]);
   const [giteId, setGiteId] = useState("");
   const [locataireNom, setLocataireNom] = useState("");
   const [locataireAdresse, setLocataireAdresse] = useState("");
@@ -285,6 +288,7 @@ const FactureFormPage = () => {
         appliedVatPresetsRef.current = {};
         touchedVatLinesRef.current.clear();
         setFiscalInput(data.fiscal_input ?? createInvoiceFormInput());
+        setInvoiceTheme(resolveInvoiceTheme(data.clauses));
         setLinesManual(Boolean(data.fiscal_input?.lines.length));
         setGiteId(data.gite_id);
         setLocataireNom(data.locataire_nom);
@@ -574,7 +578,7 @@ const FactureFormPage = () => {
   }, [arrhesDateLimite]);
 
   const clausesPayload = useMemo(() => {
-    const next: Record<string, unknown> = {};
+    const next: Record<string, unknown> = { invoice_theme: invoiceTheme };
     const trimmedAdditionalText = clausesText.trim();
     const trimmedRemiseReason = remiseReason.trim();
 
@@ -582,7 +586,7 @@ const FactureFormPage = () => {
     if (trimmedRemiseReason) next.remise_raison = trimmedRemiseReason;
 
     return next;
-  }, [clausesText, remiseReason]);
+  }, [clausesText, remiseReason, invoiceTheme]);
 
   const expectedTotal = (isMultiReservation ? selectedReservationsTotal : totals?.totalGlobal ?? 0) + fraisSupplementairesTotal;
   const draftReady = Boolean(giteId && locataireNom.trim() && dateDebut && dateFin && dateFin > dateDebut);
@@ -702,7 +706,7 @@ const FactureFormPage = () => {
   })];
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
-  const fiscalContextKey = JSON.stringify({ ...previewPayload, fiscal_input: undefined });
+  const fiscalContextKey = JSON.stringify({ ...previewPayload, fiscal_input: undefined, clauses: { ...clausesPayload, invoice_theme: undefined } });
   useEffect(() => {
     if (isEdit && !editingContract) return;
     if (fiscalContextRef.current !== null && fiscalContextRef.current !== fiscalContextKey) {
@@ -1559,13 +1563,14 @@ const FactureFormPage = () => {
 
       <div className="card">
         <div className="preview-header">
-          <div className="section-title">Prévisualisation (page 1)</div>
+          <div className="section-title">Prévisualisation de votre facture</div>
           {previewOverflowStatus && (
             <span className={`preview-status-chip preview-status-chip--${previewOverflowStatus.tone}`}>
               {previewOverflowStatus.message}
             </span>
           )}
         </div>
+        <InvoiceThemePicker value={invoiceTheme} onChange={setInvoiceTheme} />
         <div className="preview-shell">
           {previewHtml ? (
             <DocumentPreviewFrame html={previewHtml} title="Prévisualisation facture" />

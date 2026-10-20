@@ -7,6 +7,7 @@ import {
   computeInvoiceFiscal,
   invoiceFiscalInputSchema,
   invoiceReservationServices,
+  invoiceThemeIds,
 } from "@contrats/shared";
 import { proposeInvoiceFiscal } from "../src/modules/documents/invoiceFiscal.js";
 import {
@@ -223,6 +224,22 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
     2,
   );
 
+  for (const theme of invoiceThemeIds) {
+    const themed = await buildInvoiceHtml({
+      invoice: { ...invoice, clauses: { invoice_theme: theme } },
+      gite,
+      totals,
+    });
+    const body = (value: string) =>
+      value.split("</head>")[1].replace(/data-invoice-theme="[^"]*"/, "");
+    assert.equal(
+      body(themed),
+      body(html),
+      `${theme} conserve tout le contenu de la facture`,
+    );
+    assert.match(themed, new RegExp(`data-invoice-theme="${theme}"`));
+  }
+
   const groupedItems = Array.from({ length: 6 }, (_, index) => ({
     ...items[index % 2],
     reservation_id: `r-${index}`,
@@ -245,21 +262,28 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
   const previousSkip = process.env.SKIP_PDF_GENERATION;
   delete process.env.SKIP_PDF_GENERATION;
   try {
-    const preview = await generateInvoicePreviewHtml(detailed);
-    assert.equal(preview.multiPage, true);
-    assert.equal(preview.overflowAfter, false);
-    assert.match(preview.html, /invoice-multipage/);
-    assert.equal(
-      (preview.html.match(/<tr class="invoice-stay-heading">/g) ?? []).length,
-      6,
-    );
-    const outputPath = path.join(directory, "invoice.pdf");
-    await generateInvoicePdf({ ...detailed, outputPath });
-    const bytes = await readFile(outputPath);
-    assert.match(bytes.toString("ascii", 0, 8), /^%PDF-/);
-    assert.ok(
-      (bytes.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length >= 2,
-    );
+    for (const theme of invoiceThemeIds) {
+      const params = {
+        ...detailed,
+        invoice: { ...detailed.invoice, clauses: { invoice_theme: theme } },
+      };
+      const preview = await generateInvoicePreviewHtml(params);
+      assert.equal(preview.multiPage, true);
+      assert.equal(preview.overflowAfter, false);
+      assert.match(preview.html, /invoice-multipage/);
+      assert.equal(
+        (preview.html.match(/<tr class="invoice-stay-heading">/g) ?? []).length,
+        6,
+      );
+      const outputPath = path.join(directory, `${theme}.pdf`);
+      await generateInvoicePdf({ ...params, outputPath });
+      const bytes = await readFile(outputPath);
+      assert.match(bytes.toString("ascii", 0, 8), /^%PDF-/);
+      assert.ok(
+        (bytes.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length >=
+          2,
+      );
+    }
     const small = await generateInvoicePreviewHtml({
       ...detailed,
       invoice: {

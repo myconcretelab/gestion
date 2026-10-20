@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { computeInvoiceFiscal, invoicePaymentNotes, type InvoiceFiscalInput } from "@contrats/shared";
+import { computeInvoiceFiscal, invoicePaymentNotes, invoiceThemes, resolveInvoiceTheme, type InvoiceFiscalInput, type InvoiceThemeId } from "@contrats/shared";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
 import { env } from "../config/env.js";
@@ -954,6 +954,14 @@ const loadInvoiceTemplate = async () => {
   return invoiceTemplateCache;
 };
 
+const loadInvoiceThemeStyles = async (id: InvoiceThemeId) => {
+  const stylesheet = invoiceThemes[id].stylesheet;
+  if (!stylesheet) return "";
+  // Keep stylesheet edits visible when a draft PDF is regenerated after its
+  // template mtime changes. The catalogue is the only source of allowed paths.
+  return readTemplateFile(stylesheet);
+};
+
 const pdfBaseOptions = {
   format: "A4" as const,
   printBackground: true,
@@ -1310,6 +1318,8 @@ export const buildInvoiceHtml = async (params: {
   const template = await loadInvoiceTemplate();
   const options = parseJsonField<OptionsInput>(params.invoice.options, {});
   const clauses = parseJsonField<Record<string, unknown>>(params.invoice.clauses ?? {}, {});
+  const invoiceThemeId = resolveInvoiceTheme(clauses);
+  const invoiceThemeStyles = await loadInvoiceThemeStyles(invoiceThemeId);
   const fraisSupplementaires = parseJsonField<InvoiceExtraFeeInput[]>(
     params.invoice.frais_supplementaires ?? [],
     []
@@ -1386,6 +1396,8 @@ export const buildInvoiceHtml = async (params: {
   const fiscalSummary = fiscalTotals ? `<tr><td>Total HT</td><td>${fiscalMoney(fiscalTotals.net_cents)}</td></tr>${fiscalTotals.breakdown.map((group) => `<tr><td>TVA ${escapeHtml(group.category === "unknown" ? "à préciser" : group.category)}${group.category === "S" ? ` · ${escapeHtml(String(group.rate))} %` : ""}${group.reason ? `<div class="invoice-item-meta">${escapeHtml(group.reason)}</div>` : ""}</td><td>${fiscalMoney(group.vat_cents)}</td></tr>`).join("")}${fiscalTotals.rounding_cents ? `<tr><td>Arrondi TTC</td><td>${fiscalMoney(fiscalTotals.rounding_cents)}</td></tr>` : ""}` : "";
 
   return renderTemplate(template, {
+    invoiceThemeId,
+    invoiceThemeStyles,
     sandboxNoticeHtml: params.invoice.test_environment === "superpdp-sandbox"
       ? '<div class="sandbox-notice">TEST SUPERPDP - BAC À SABLE<br>Entreprises et identifiants fictifs. Aucune valeur comptable.</div>' : "",
     organizationName: params.invoice.seller?.legal_name || organization?.publicDisplayName || organization?.tradeName || params.gite.proprietaires_noms,

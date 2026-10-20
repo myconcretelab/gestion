@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Response } from "express";
 import { createSuperPdpEmissionRouter } from "../modules/superpdp/emissionRoutes.js";
 import { z } from "zod";
-import { invoiceFiscalInputSchema, invoiceFiscalIssues, computeInvoiceFiscal, invoiceReservationServices, type InvoiceReservationDetail } from "@contrats/shared";
+import { invoiceFiscalInputSchema, invoiceFiscalIssues, computeInvoiceFiscal, invoiceReservationServices, invoiceThemes, invoiceClausesSchema, type InvoiceReservationDetail } from "@contrats/shared";
 import { parseInvoiceFiscal, proposeInvoiceFiscal } from "../modules/documents/invoiceFiscal.js";
 import path from "path";
 import fs from "fs/promises";
@@ -120,7 +120,7 @@ const invoiceSchema = z.object({
   cheque_menage_montant: z.number().min(0),
   afficher_caution_phrase: z.boolean().optional().default(true),
   afficher_cheque_menage_phrase: z.boolean().optional().default(true),
-  clauses: z.record(z.any()).optional(),
+  clauses: invoiceClausesSchema.optional(),
   notes: z.string().optional().nullable(),
   statut_paiement: z.enum(["non_reglee", "reglee"]).optional(),
   reservation_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
@@ -163,7 +163,7 @@ const previewSchema = z.object({
   cheque_menage_montant: z.number().min(0).optional().default(0),
   afficher_caution_phrase: z.boolean().optional().default(true),
   afficher_cheque_menage_phrase: z.boolean().optional().default(true),
-  clauses: z.record(z.any()).optional(),
+  clauses: invoiceClausesSchema.optional(),
   notes: z.string().optional().nullable(),
   statut_paiement: z.enum(["non_reglee", "reglee"]).optional(),
   reservation_ids: z.array(z.string().trim().min(1)).max(50).optional().default([]),
@@ -225,6 +225,10 @@ const toInvoiceRenderInput = (invoice: any): InvoiceRenderInput => ({
 const invoiceTemplatePaths = [
   path.join(process.cwd(), "server/templates/invoice.html"),
   path.join(process.cwd(), "templates/invoice.html"),
+  ...Object.values(invoiceThemes).flatMap(({ stylesheet }) => stylesheet ? [
+    path.join(process.cwd(), "server/templates", stylesheet),
+    path.join(process.cwd(), "templates", stylesheet),
+  ] : []),
 ];
 
 const regenerateStoredInvoicePdf = async (invoice: any) => {

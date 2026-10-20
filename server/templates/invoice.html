@@ -10,6 +10,9 @@
       }
 
       :root {
+        --invoice-brand-size: 31pt;
+        --invoice-number-size: 18.5pt;
+        --invoice-date-size: 18.8pt;
         --paper: #fbf8f0;
         --paper-strong: #f4ecdc;
         --ink: #2f2a22;
@@ -156,7 +159,7 @@
 
       .brand-logo__large {
         margin-top: -1mm;
-        font-size: 31pt;
+        font-size: var(--invoice-brand-size);
       }
 
       .subtitle {
@@ -211,7 +214,7 @@
       .invoice-number {
         margin: 1.5mm 0 3.4mm;
         font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-        font-size: 18.5pt;
+        font-size: var(--invoice-number-size);
         line-height: 1.08;
         color: var(--ink);
       }
@@ -279,7 +282,7 @@
 
       .stay-date-value {
         font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-        font-size: 18.8pt;
+        font-size: var(--invoice-date-size);
         font-weight: 700;
         line-height: 1.02;
         color: var(--ink);
@@ -464,11 +467,11 @@
       }
 
       body.compact-text .brand-logo__large {
-        font-size: 28pt;
+        font-size: calc(var(--invoice-brand-size) * .9);
       }
 
       body.compact-text .invoice-number {
-        font-size: 17pt;
+        font-size: calc(var(--invoice-number-size) * .92);
       }
 
       body.compact-text .period-main {
@@ -476,7 +479,7 @@
       }
 
       body.compact-text .stay-date-value {
-        font-size: 17pt;
+        font-size: calc(var(--invoice-date-size) * .9);
       }
 
       body.compact-text .stay-date-label {
@@ -530,7 +533,7 @@
       }
 
       body.compact-margins .brand-logo__large {
-        font-size: 25.5pt;
+        font-size: calc(var(--invoice-brand-size) * .82);
       }
 
       body.compact-margins .period-main {
@@ -538,7 +541,7 @@
       }
 
       body.compact-margins .stay-date-value {
-        font-size: 15.6pt;
+        font-size: calc(var(--invoice-date-size) * .83);
       }
 
       @page invoice-details {
@@ -578,8 +581,9 @@
         }
       }
     </style>
+    <style>{{{invoiceThemeStyles}}}</style>
   </head>
-  <body {{{bodyAttrs}}}>
+  <body data-invoice-theme="{{invoiceThemeId}}" {{{bodyAttrs}}}>
     <div class="page">
       <svg class="motif motif--top" viewBox="0 0 220 180" aria-hidden="true">
         <path

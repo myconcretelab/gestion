@@ -106,3 +106,4 @@ export const organizationSummarySchema = z.object({
 export type OrganizationSummary = z.infer<typeof organizationSummarySchema>;
 export * from "./invoiceFiscal.js";
 export * from "./invoiceReservationPricing.js";
+export * from "./invoiceThemes.js";

@@ -314,7 +314,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
         { libelle: "Frais de dossier", montant: 15 },
         { libelle: "Traitement", montant: 5.5 },
       ],
-      clauses: {},
+      clauses: { invoice_theme: "horizon" },
       notes: "note facture",
       statut_paiement: "non_reglee",
     };
@@ -330,6 +330,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     );
     assert.equal(nextError, null);
     assert.equal(createInvoiceRes.statusCode, 201);
+    assert.equal((createInvoiceRes.body as any).clauses.invoice_theme, "horizon");
     assert.equal(Number((createInvoiceRes.body as any).solde_montant), 292.5);
     assert.equal(Number((createInvoiceRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((createInvoiceRes.body as any).reservation_id, "r-invoice-created");
@@ -353,6 +354,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
       {
         body: {
           ...invoicePayload,
+          clauses: { invoice_theme: "signature" },
           prix_par_nuit: 120,
           arrhes_montant: 50,
           options: {
@@ -372,6 +374,7 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
     );
     assert.equal(nextError, null);
     assert.equal(updateInvoiceRes.statusCode, 200);
+    assert.equal((updateInvoiceRes.body as any).clauses.invoice_theme, "signature");
     assert.equal(Number((updateInvoiceRes.body as any).solde_montant), 380);
     assert.equal(Number((updateInvoiceRes.body as any).taxe_sejour_calculee), 9);
     assert.equal((updateInvoiceRes.body as any).reservation_id, "r-invoice");

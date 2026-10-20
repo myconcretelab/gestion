@@ -1,0 +1,261 @@
+/* Signature — editorial typography, fine copper rules and generous white space.
+ * Shared selectors deliberately retain all invoice data and pagination behavior.
+ */
+:root {
+  --invoice-brand-size: 23pt;
+  --invoice-number-size: 25pt;
+  --invoice-date-size: 16pt;
+  --paper: #fffefa;
+  --paper-strong: #f5eee5;
+  --ink: #302b28;
+  --ink-soft: #696158;
+  --sage-deep: #94603d;
+  --coral: #94603d;
+  --line: #ded4c8;
+  --line-strong: #bda38c;
+}
+body {
+  font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  background: var(--paper);
+}
+.page {
+  overflow-wrap: anywhere;
+  padding: 14mm 15mm;
+  gap: 6mm;
+  background: var(--paper);
+}
+.motif {
+  display: none;
+}
+.hero {
+  grid-template-columns: minmax(0, 1.35fr) 65mm;
+  gap: 9mm;
+  padding-bottom: 5mm;
+  border-bottom: 1px solid var(--line-strong);
+}
+.hero-main {
+  min-width: 0;
+}
+.brand-logo {
+  display: block;
+  color: var(--ink);
+  line-height: 1.12;
+}
+.brand-logo__large {
+  display: block;
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: var(--invoice-brand-size);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.subtitle {
+  margin-top: 3mm;
+  font-family: inherit;
+  font-size: 8pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--sage-deep);
+}
+.hero-main > .muted {
+  margin-top: 1.2mm;
+  font-size: 8.5pt;
+}
+.host-block {
+  margin-top: 3mm;
+  padding-top: 0;
+  border: 0;
+}
+.host-block .muted,
+.host-block .link {
+  font-size: 8.2pt;
+  line-height: 1.6;
+}
+.box {
+  padding: 4mm 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.invoice-summary {
+  padding: 0;
+  background: transparent;
+}
+.invoice-number {
+  margin: 0 0 5mm;
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-weight: 400;
+  font-size: var(--invoice-number-size);
+  letter-spacing: -0.02em;
+}
+.invoice-number span {
+  margin-top: 2mm;
+  font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  font-size: 9pt;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  color: var(--sage-deep);
+  overflow-wrap: anywhere;
+}
+.invoice-summary .meta-label {
+  font-size: 6.5pt;
+  letter-spacing: 0.14em;
+}
+.invoice-summary .meta-value {
+  margin-top: 1.3mm;
+  font-size: 9pt;
+  font-weight: 550;
+}
+.info-grid {
+  gap: 12mm;
+}
+.info-grid > .box {
+  padding: 0;
+}
+.section-title,
+.bank-title {
+  margin-bottom: 3mm;
+  font-size: 7pt;
+  letter-spacing: 0.18em;
+  font-weight: 600;
+}
+.info-grid .line {
+  font-size: 9.3pt;
+  line-height: 1.65;
+}
+.info-grid .line strong {
+  font-size: 11pt;
+  font-weight: 600;
+  color: var(--ink);
+}
+.stay-card {
+  padding-left: 5mm !important;
+  border-left: 1px solid var(--line);
+}
+.stay-date-row {
+  grid-template-columns: 7mm minmax(0, 1fr);
+}
+.stay-date-label {
+  font-family: inherit;
+  font-size: 8.2pt;
+  font-weight: 400;
+}
+.stay-date-value {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: var(--invoice-date-size);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.stay-meta {
+  padding-top: 2.3mm;
+  margin-top: 2.5mm;
+  border-top-color: var(--line);
+}
+.stay-meta-line {
+  font-size: 8pt;
+  font-weight: 400;
+}
+.details-card {
+  padding: 0;
+}
+.details-card > .section-title {
+  padding-top: 4mm;
+  border-top: 1px solid var(--line-strong);
+}
+th {
+  padding: 2.4mm 1.5mm;
+  font-size: 7pt;
+  color: var(--ink-soft);
+  letter-spacing: 0.12em;
+  border-bottom: 1px solid var(--line-strong);
+}
+td {
+  padding: 2.6mm 1.5mm;
+  vertical-align: top;
+  font-size: 9.1pt;
+  border-bottom-color: #e9e1d7;
+}
+td:last-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.invoice-item-meta {
+  margin-top: 1.2mm;
+  font-size: 7.6pt;
+  line-height: 1.45;
+}
+.invoice-stay-heading td {
+  white-space: normal;
+  padding: 3mm 2.5mm;
+  background: var(--paper-strong);
+  border-bottom: 0;
+}
+.invoice-stay-heading strong {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: 12pt;
+  font-weight: 500;
+}
+.invoice-stay-heading .invoice-item-meta {
+  margin-top: 0.7mm;
+}
+.totals {
+  width: 84mm;
+  margin-top: 5mm;
+}
+.totals td {
+  padding: 1.6mm 0;
+  font-size: 9pt;
+}
+.totals .invoice-item-meta {
+  font-size: 7pt;
+}
+.totals tr.total td {
+  padding-top: 3mm;
+  border-top: 1px solid var(--line-strong);
+  font-size: 10.5pt;
+  font-weight: 500;
+}
+.totals tr.total td:last-child {
+  font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-size: 18pt;
+  font-weight: 500;
+  color: var(--ink);
+}
+.bank-footer {
+  margin-top: auto;
+  padding: 4mm 4.5mm;
+  background: var(--paper-strong);
+  border-top: 1px solid var(--line-strong);
+}
+.bank-title {
+  margin-bottom: 3mm;
+}
+.iban {
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.65fr) minmax(0, 1fr);
+  gap: 4mm;
+}
+.iban-item .meta-label {
+  font-size: 6.4pt;
+  letter-spacing: 0.1em;
+}
+.iban-item .meta-value {
+  font-size: 8pt;
+  font-weight: 500;
+}
+.iban-item--iban .meta-value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+body.invoice-multipage .brand-logo {
+  padding: 0;
+}
+body.invoice-multipage .hero {
+  padding-top: 1mm;
+}
+@media screen {
+  body.preview {
+    background: #ebe5dc;
+  }
+}
