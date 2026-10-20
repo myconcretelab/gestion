@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import ActionMenu, { type ActionMenuItem } from "./shared/ActionMenu";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Facture, Gite } from "../utils/types";
 import { invoiceDisplayNumber, invoiceLifecycleLabel } from "../utils/invoiceLifecycle";
@@ -404,32 +405,14 @@ const FacturesListPage = () => {
                       >
                         Détails
                       </Link>
-                      {facture.lifecycle_status !== "draft" && facture.locataire_email ? (
-                        <button
-                          type="button"
-                          className="table-action table-action--neutral"
-                          onClick={() => void openEmailComposer(facture)}
-                          disabled={Boolean(emailSending[facture.id])}
-                        >
-                          {emailSending[facture.id] ? "Envoi..." : "Email"}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="table-action table-action--neutral"
-                          disabled
-                          title={facture.lifecycle_status === "draft" ? "Validez le brouillon avant envoi" : "Email client non renseigné"}
-                        >
-                          Email
-                        </button>
-                      )}
-                      {facture.lifecycle_status === "draft" && <button
-                        className="table-action table-action--danger"
-                        onClick={() => remove(facture)}
-                        disabled={deletingId === facture.id}
-                      >
-                        Supprimer
-                      </button>}
+                      <ActionMenu
+                        ariaLabel={`Actions pour la facture ${invoiceDisplayNumber(facture)}`}
+                        context={invoiceDisplayNumber(facture)}
+                        items={[
+                          { id: "email", label: emailSending[facture.id] ? "Envoi en cours…" : "Envoyer par email", icon: "email", onSelect: () => { void openEmailComposer(facture); }, disabled: facture.lifecycle_status === "draft" || !facture.locataire_email || Boolean(emailSending[facture.id]), description: facture.lifecycle_status === "draft" ? "Validez le brouillon avant envoi" : !facture.locataire_email ? "Email du client non renseigné" : undefined },
+                          ...(facture.lifecycle_status === "draft" ? [{ id: "delete", label: "Supprimer le brouillon", icon: "trash", danger: true, separatorBefore: true, onSelect: () => { void remove(facture); }, disabled: deletingId === facture.id } satisfies ActionMenuItem] : []),
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>

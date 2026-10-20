@@ -11,6 +11,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { flushSync } from "react-dom";
+import ActionMenu, { type ActionMenuItem } from "./shared/ActionMenu";
 import { Link, useLocation } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import GiteTabs, { type GiteTabItem } from "./shared/GiteTabs";
@@ -6369,124 +6370,45 @@ const ReservationsPage = () => {
                                     {rowStatusLabel}
                                   </div>
                                 )}
-                                <div className="reservations-actions-menu">
-                                  <button className="table-action table-action--neutral reservations-actions-trigger" title="Actions">
-                                    ⋯
-                                  </button>
-                                  <div className="reservations-row-actions">
-                                  {isIcalToVerify && (
-                                    <button
-                                      type="button"
-                                      className="table-action table-action--success"
-                                      onClick={() => markReservationAsVerified(reservation).catch((err) => setError((err as Error).message))}
-                                      disabled={rowSaveState === "saving" || deletingId === reservation.id}
-                                      title='Retirer le statut "A vérifier"'
-                                    >
-                                      OK
-                                    </button>
-                                  )}
-                                  <button
-                                    className="table-action table-action--neutral"
-                                    onClick={() => {
-                                      if (isEditing) {
-                                        if (isDetailsExpanded) {
-                                          saveExistingRow(reservation.id).catch((err) => setError((err as Error).message));
-                                        } else {
-                                          saveAndCloseExistingRow(reservation.id).catch((err) => setError((err as Error).message));
+                                <ActionMenu
+                                  ariaLabel={`Actions pour la réservation de ${getEditableHostName(reservation.hote_nom)}`}
+                                  context={getEditableHostName(reservation.hote_nom)}
+                                  items={[
+                                    ...(isIcalToVerify ? [{
+                                      id: "verify", label: "Marquer comme vérifiée", icon: "check",
+                                      description: 'Retirer le statut « À vérifier »',
+                                      onSelect: () => { markReservationAsVerified(reservation).catch((err) => setError((err as Error).message)); },
+                                      disabled: rowSaveState === "saving" || deletingId === reservation.id,
+                                    } satisfies ActionMenuItem] : []),
+                                    {
+                                      id: "edit", label: isEditing ? "Enregistrer" : "Modifier", icon: isEditing ? "save" : "edit",
+                                      onSelect: () => {
+                                        if (isEditing) {
+                                          if (isDetailsExpanded) saveExistingRow(reservation.id).catch((err) => setError((err as Error).message));
+                                          else saveAndCloseExistingRow(reservation.id).catch((err) => setError((err as Error).message));
+                                          return;
                                         }
-                                        return;
-                                      }
-                                      setEditingRows((previous) => ({
-                                        ...previous,
-                                        [reservation.id]: true,
-                                      }));
-                                      setDrafts((previous) => ({
-                                        ...previous,
-                                        [reservation.id]: previous[reservation.id] ?? toDraft(reservation),
-                                      }));
-                                    }}
-                                    title={isEditing ? "Enregistrer" : "Éditer"}
-                                  >
-                                    {isEditing ? "✓" : "✎"}
-                                  </button>
-                                  <button
-                                    className="table-action table-action--neutral"
-                                    onClick={() => duplicateIntoNewRow(reservation, monthIndex, rowIndex)}
-                                    title="Dupliquer"
-                                  >
-                                    ⧉
-                                  </button>
-                                  {canSplitByMonth && (
-                                    <button
-                                      className="table-action table-action--neutral"
-                                      onClick={() => splitReservationByMonth(reservation).catch((err) => setError((err as Error).message))}
-                                      title={
-                                        isEditing
-                                          ? "Enregistrez la ligne avant de scinder"
-                                          : "Scinder la réservation par mois"
-                                      }
-                                      disabled={isEditing || splittingId === reservation.id}
-                                    >
-                                      {splittingId === reservation.id ? "Scission..." : "Scinder"}
-                                    </button>
-                                  )}
-                                  <button
-                                    className={`table-action table-action--neutral ${hasFees ? "reservations-fee-btn--active" : ""}`}
-                                    onClick={() => toggleDetails(reservation)}
-                                    title="Options"
-                                  >
-                                    €
-                                  </button>
-                                  {reservation.airbnb_url && (
-                                    <a
-                                      className="table-action table-action--neutral"
-                                      href={reservation.airbnb_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      title="Ouvrir la réservation Airbnb"
-                                      onClick={(event) => event.stopPropagation()}
-                                    >
-                                      AB
-                                    </a>
-                                  )}
-                                  {telephoneHref && (
-                                    <a
-                                      className="table-action table-action--neutral"
-                                      href={telephoneHref}
-                                      title={reservation.telephone ?? "Appeler"}
-                                      onClick={(event) => event.stopPropagation()}
-                                    >
-                                      ☎
-                                    </a>
-                                  )}
-                                  {reservation.gite_id && (
-                                    <Link
-                                      className="table-action table-action--neutral"
-                                      to={`/contrats/nouveau?fromReservationId=${encodeURIComponent(reservation.id)}`}
-                                      title="Créer un contrat prérempli"
-                                    >
-                                      C
-                                    </Link>
-                                  )}
-                                  {reservation.gite_id && (
-                                    <Link
-                                      className="table-action table-action--neutral"
-                                      to={`/factures/nouvelle?fromReservationId=${encodeURIComponent(reservation.id)}`}
-                                      title="Créer une facture préremplie"
-                                    >
-                                      F
-                                    </Link>
-                                  )}
-                                  <button
-                                    className="table-action table-action--danger"
-                                    onClick={() => removeReservation(reservation)}
-                                    disabled={deletingId === reservation.id}
-                                    title="Supprimer"
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                                </div>
+                                        setEditingRows((previous) => ({ ...previous, [reservation.id]: true }));
+                                        setDrafts((previous) => ({ ...previous, [reservation.id]: previous[reservation.id] ?? toDraft(reservation) }));
+                                      },
+                                    },
+                                    { id: "duplicate", label: "Dupliquer", icon: "copy", onSelect: () => duplicateIntoNewRow(reservation, monthIndex, rowIndex) },
+                                    ...(canSplitByMonth ? [{
+                                      id: "split", label: splittingId === reservation.id ? "Scission en cours…" : "Scinder par mois", icon: "split",
+                                      description: isEditing ? "Enregistrez la ligne avant de scinder" : undefined,
+                                      disabled: isEditing || splittingId === reservation.id,
+                                      onSelect: () => { splitReservationByMonth(reservation).catch((err) => setError((err as Error).message)); },
+                                    } satisfies ActionMenuItem] : []),
+                                    { id: "options", label: "Options et frais", icon: "options", description: hasFees ? "Des options sont déjà renseignées" : undefined, onSelect: () => toggleDetails(reservation) },
+                                    ...(reservation.airbnb_url ? [{ id: "airbnb", label: "Ouvrir sur Airbnb", icon: "external", href: reservation.airbnb_url, external: true } satisfies ActionMenuItem] : []),
+                                    ...(telephoneHref ? [{ id: "phone", label: "Appeler", description: reservation.telephone ?? undefined, icon: "phone", href: telephoneHref } satisfies ActionMenuItem] : []),
+                                    ...(reservation.gite_id ? [
+                                      { id: "contract", label: "Créer un contrat", icon: "contract", to: `/contrats/nouveau?fromReservationId=${encodeURIComponent(reservation.id)}` } satisfies ActionMenuItem,
+                                      { id: "invoice", label: "Créer une facture", icon: "invoice", to: `/factures/nouvelle?fromReservationId=${encodeURIComponent(reservation.id)}` } satisfies ActionMenuItem,
+                                    ] : []),
+                                    { id: "delete", label: deletingId === reservation.id ? "Suppression en cours…" : "Supprimer", icon: "trash", danger: true, separatorBefore: true, disabled: deletingId === reservation.id, onSelect: () => { void removeReservation(reservation); } },
+                                  ]}
+                                />
                               </div>
                             </td>
                           </tr>

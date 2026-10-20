@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import ActionMenu from "./shared/ActionMenu";
 import { apiFetch, buildApiUrl, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
 import { formatDate, formatEuro } from "../utils/format";
@@ -803,57 +804,22 @@ const ContratsListPage = () => {
                     <strong>{formatEuro(contrat.solde_montant)}</strong>
                   </td>
                   <td className="table-actions-cell">
-                    <div className="reservations-actions-cell">
+                    <div className="table-actions">
                       <Link
                         className="table-action table-action--neutral"
                         to={`/contrats/${contrat.id}`}
                       >
                         Détails
                       </Link>
-                      <div className="reservations-actions-menu">
-                        <button
-                          type="button"
-                          className="table-action table-action--neutral reservations-actions-trigger"
-                          title="Actions"
-                        >
-                          ⋯
-                        </button>
-                        <div className="reservations-row-actions">
-                          {contrat.locataire_email ? (
-                            <button
-                              type="button"
-                              className="table-action table-action--neutral"
-                              onClick={() => void openEmailComposer(contrat)}
-                              disabled={Boolean(emailSending[contrat.id])}
-                            >
-                              {emailSending[contrat.id] ? "Envoi..." : "Email"}
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="table-action table-action--neutral"
-                              disabled
-                              title="Email locataire non renseigné"
-                            >
-                              Email
-                            </button>
-                          )}
-                          <Link
-                            className="table-action table-action--neutral"
-                            to={`/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}`}
-                          >
-                            Facturer
-                          </Link>
-                          <button
-                            type="button"
-                            className="table-action table-action--danger"
-                            onClick={() => remove(contrat)}
-                            disabled={deletingId === contrat.id}
-                          >
-                            Supprimer
-                          </button>
-                        </div>
-                      </div>
+                      <ActionMenu
+                        ariaLabel={`Actions pour le contrat ${contrat.numero_contrat}`}
+                        context={contrat.numero_contrat}
+                        items={[
+                          { id: "email", label: emailSending[contrat.id] ? "Envoi en cours…" : "Envoyer par email", icon: "email", onSelect: () => { void openEmailComposer(contrat); }, disabled: !contrat.locataire_email || Boolean(emailSending[contrat.id]), description: !contrat.locataire_email ? "Email du locataire non renseigné" : undefined },
+                          { id: "invoice", label: "Créer une facture", icon: "invoice", to: `/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}` },
+                          { id: "delete", label: "Supprimer", icon: "trash", danger: true, separatorBefore: true, onSelect: () => { void remove(contrat); }, disabled: deletingId === contrat.id },
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>

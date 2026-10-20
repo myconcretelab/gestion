@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400&display=swap");
+@import "./pages/shared/actionMenu.css";
 
 :root {
   color-scheme: light;
@@ -13507,7 +13508,7 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table col.reservations-col--actions {
-  width: 6%;
+  width: 136px;
 }
 
 .reservations-table td.reservations-col-date {
@@ -14353,64 +14354,15 @@ button.personal-expenses-status:disabled {
   }
 }
 
-.reservations-actions-menu {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
 .reservations-actions-cell {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
-  min-height: 32px;
+  max-width: 100%;
+  min-height: 36px;
   white-space: nowrap;
-}
-
-.reservations-actions-trigger {
-  min-width: 32px;
-  padding: 5px 8px;
-}
-
-.reservations-row-actions {
-  position: absolute;
-  right: 36px;
-  top: 50%;
-  transform: translateY(-50%) translateX(6px);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
-  z-index: 3;
-}
-
-.reservations-actions-menu:hover .reservations-row-actions,
-.reservations-actions-menu:focus-within .reservations-row-actions {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(-50%) translateX(0);
-}
-
-.reservations-row-actions .table-action {
-  min-width: 30px;
-  padding: 4px 7px;
-}
-
-.reservations-fee-btn--active {
-  background: #dcfce7;
-  border-color: #86efac;
-  color: #166534;
 }
 
 .reservations-save-state {
