@@ -304,12 +304,6 @@ export default function InvoiceFiscalEditor({
                   </div>
                   <div className="grid-2">
                     <div className="invoice-fiscal__vat">
-                      <div className="invoice-fiscal__vat-title">
-                        Réglages de TVA
-                        {line.vat_category === "unknown"
-                          ? " · à compléter"
-                          : " · renseignés"}
-                      </div>
                       <div className="grid-2">
                         <label className="field">
                           {fieldLabel("Traitement de TVA")}

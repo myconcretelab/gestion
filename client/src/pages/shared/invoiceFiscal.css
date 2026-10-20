@@ -243,12 +243,8 @@
   padding: 14px 0 4px;
   border-top: 1px solid var(--border);
 }
-.invoice-fiscal__vat-title {
-  color: var(--ink);
-  font-size: 0.86rem;
-}
 .invoice-fiscal__vat > .grid-2 {
-  margin-top: 20px;
+  margin-top: 0;
 }
 .invoice-fiscal__review {
   margin: 24px 0;
