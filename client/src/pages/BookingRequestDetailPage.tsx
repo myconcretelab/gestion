@@ -416,7 +416,7 @@ const BookingRequestDetailPage = () => {
 
               <aside className="booking-requests-page__pricing">
                 <h2>Estimation</h2>
-                <div><span>Hébergement</span><strong>{formatEuro(request.pricing_snapshot.montant_hebergement)}</strong></div>
+                <div><span>Hébergement</span><strong>{formatEuro(request.pricing_snapshot.tourist_tax_result?.accommodation_amount ?? request.pricing_snapshot.montant_hebergement)}</strong></div>
                 <div><span>Options</span><strong>{formatEuro(request.pricing_snapshot.total_options)}</strong></div>
                 <div><span>Taxe de séjour</span><strong>{formatEuro(request.pricing_snapshot.taxe_sejour)}</strong></div>
                 <div className="booking-requests-page__pricing-total"><span>Total</span><strong>{formatEuro(request.pricing_snapshot.total_global)}</strong></div>

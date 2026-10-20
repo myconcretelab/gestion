@@ -1,3 +1,4 @@
+import { touristTaxSettingsSchema, parseTouristTaxSettings } from "@contrats/shared";
 import { giteTranslationsSchema } from "../services/giteTranslations.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -157,6 +158,7 @@ const giteSchemaShape = {
   airbnb_listing_id: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   telephones: z.array(z.string()).default([]),
   taxe_sejour_par_personne_par_nuit: z.coerce.number().min(0),
+  taxe_sejour_config: touristTaxSettingsSchema.nullable().optional(),
   iban: z.string().trim().min(1),
   bic: z.preprocess(emptyStringToNull, z.string().nullable()).optional(),
   titulaire: z.string().trim().min(1),
@@ -374,6 +376,7 @@ type GiteImportInput = z.infer<typeof giteImportItemSchema>;
 
 const toGitePersistenceData = (payload: GiteInput) => ({
   ...payload,
+  ...(payload.taxe_sejour_config !== undefined ? { taxe_sejour_config: payload.taxe_sejour_config ? encodeJsonField(payload.taxe_sejour_config) : null } : {}),
   ...(payload.public_translations !== undefined ? { public_translations: encodeJsonField(payload.public_translations) } : {}),
   date_debut_activite: payload.date_debut_activite
     ? new Date(`${payload.date_debut_activite}T00:00:00.000Z`)
@@ -450,6 +453,7 @@ const hydrateGite = (gite: any) => {
     ...rest,
     telephones,
     taxe_sejour_par_personne_par_nuit: toNumber(rest.taxe_sejour_par_personne_par_nuit),
+    taxe_sejour_config: parseTouristTaxSettings(rest.taxe_sejour_config),
     options_draps_par_lit: toNumber(rest.options_draps_par_lit),
     options_linge_toilette_par_personne: toNumber(rest.options_linge_toilette_par_personne),
     options_menage_forfait: toNumber(rest.options_menage_forfait),
@@ -1371,6 +1375,7 @@ router.post("/:id/duplicate", async (req, res, next) => {
         date_debut_activite: null,
         telephones: encodeJsonField(fromJsonString<string[]>(existing.telephones, [])),
         taxe_sejour_par_personne_par_nuit: existing.taxe_sejour_par_personne_par_nuit,
+        taxe_sejour_config: existing.taxe_sejour_config,
         iban: existing.iban,
         bic: existing.bic,
         titulaire: existing.titulaire,

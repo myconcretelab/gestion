@@ -475,6 +475,7 @@ model Gite {
   email                               String?
   telephones                          Json
   taxe_sejour_par_personne_par_nuit   Decimal   @db.Decimal(10, 2)
+  taxe_sejour_config                 String?
   iban                                String
   bic                                 String?
   titulaire                           String

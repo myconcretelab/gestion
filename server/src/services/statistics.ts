@@ -1,3 +1,4 @@
+import { reservationTouristTax } from "@contrats/shared";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type StatisticsGite = {
@@ -25,6 +26,9 @@ export type StatisticsReservation = {
   nb_adultes: number;
   prix_par_nuit: number;
   prix_total: number;
+  options?: unknown;
+  nb_enfants_2_17?: number;
+  remise_montant?: number;
   source_paiement: string | null;
   frais_optionnels_montant: number;
   frais_optionnels_declares: boolean;
@@ -147,7 +151,8 @@ export const buildStatisticsReservationSegments = (
   const segments = splitByMonth(start, end);
   if (segments.length === 0) return [];
 
-  const effectiveNightPrice =
+  const touristTax = reservationTouristTax(reservation);
+  const effectiveNightPrice = touristTax && reservation.nb_nuits > 0 ? touristTax.accommodation_amount / reservation.nb_nuits :
     reservation.prix_par_nuit > 0
       ? reservation.prix_par_nuit
       : reservation.nb_nuits > 0
@@ -159,6 +164,7 @@ export const buildStatisticsReservationSegments = (
     ? optionalFeesTotal
     : 0;
   const totalSegmentNights = segments.reduce((sum, segment) => sum + segment.nights, 0);
+  let allocatedAccommodation = 0;
   let allocatedOptionalFees = 0;
   let allocatedDeclaredOptionalFees = 0;
 
@@ -177,6 +183,11 @@ export const buildStatisticsReservationSegments = (
       : proportionalDeclaredOptionalFees;
     allocatedDeclaredOptionalFees = round2(allocatedDeclaredOptionalFees + declaredOptionalFeesForSegment);
 
+    const accommodationForSegment = touristTax
+      ? isLastSegment ? round2(touristTax.accommodation_amount - allocatedAccommodation)
+        : round2(touristTax.accommodation_amount * segment.nights / totalSegmentNights)
+      : round2(prixNuit * segment.nights);
+    allocatedAccommodation = round2(allocatedAccommodation + accommodationForSegment);
     return {
       debut: isoDateOnly(segment.start),
       fin: isoDateOnly(segment.endDisplay),
@@ -185,7 +196,7 @@ export const buildStatisticsReservationSegments = (
       nights: segment.nights,
       adults: reservation.nb_adultes ?? 0,
       prixNuit,
-      revenus: round2(prixNuit * segment.nights),
+      revenus: accommodationForSegment,
       fraisOptionnelsTotal: optionalFeesForSegment,
       fraisOptionnelsDeclares: declaredOptionalFeesForSegment,
       paiement: (reservation.source_paiement ?? "Indéfini").trim() || "Indéfini",

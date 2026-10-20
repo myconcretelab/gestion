@@ -1,3 +1,4 @@
+import { computeTouristTax, type TouristTaxStay } from "@contrats/shared";
 import {
   areReservationOptionsAllDeclared,
   buildQuickReservationOptions,
@@ -317,6 +318,9 @@ const formatQuickReservationOptionSmsSummary = (params: {
 };
 
 export const computeQuickReservationDerivedState = (params: {
+  touristTax?: TouristTaxStay;
+  quotedAccommodation?: number;
+  taxChildren?: number;
   draft: QuickReservationDraft | null;
   editingReservation: Reservation | null;
   gite: Gite | null;
@@ -340,8 +344,12 @@ export const computeQuickReservationDerivedState = (params: {
     gite,
   });
   const nightly = draft ? Number.parseFloat(String(draft.prix_par_nuit).replace(",", ".")) : Number.NaN;
-  const baseTotal = draft && Number.isFinite(nightly) && nightly >= 0 && dateSummary.nights > 0 ? round2(nightly * dateSummary.nights) : null;
-  const computedTotal = baseTotal !== null ? round2(baseTotal + optionsPreview.total) : null;
+  const baseTotal = draft && Number.isFinite(nightly) && nightly >= 0 && dateSummary.nights > 0 ? round2(params.quotedAccommodation ?? nightly * dateSummary.nights) : null;
+  const tax = params.touristTax && baseTotal !== null ? computeTouristTax({ stay: params.touristTax,
+    nights: dateSummary.nights, adults: Number(params.draft?.nb_adultes ?? 0), children: params.taxChildren ?? 0,
+    accommodation: baseTotal, start: params.draft?.date_entree,
+  }) : null;
+  const computedTotal = baseTotal !== null ? round2((tax?.accommodation_amount ?? baseTotal) + optionsPreview.total + (tax?.host_amount ?? 0)) : null;
   const optionSummary = options
     ? formatQuickReservationOptionSmsSummary({
         options,

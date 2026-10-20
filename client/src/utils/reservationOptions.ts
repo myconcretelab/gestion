@@ -24,6 +24,7 @@ const resolveChiensTarif = (params: { options: ContratOptions; gite: Gite | null
     : round2(Number(params.gite?.options_chiens_forfait ?? 0));
 
 export const mergeReservationOptions = (value?: ContratOptions | null): NormalizedReservationOptions => ({
+  ...(value?.tourist_tax ? { tourist_tax: value.tourist_tax } : {}),
   draps: { enabled: false, nb_lits: 0, offert: false, declared: false, ...(value?.draps ?? {}) },
   linge_toilette: { enabled: false, nb_personnes: 0, offert: false, declared: false, ...(value?.linge_toilette ?? {}) },
   menage: { enabled: false, offert: false, declared: false, ...(value?.menage ?? {}) },

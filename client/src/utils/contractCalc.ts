@@ -1,3 +1,4 @@
+import { computeTouristTax, type TouristTaxResult } from "@contrats/shared";
 import type { ContratOptions, Gite } from "./types";
 
 export type Totals = {
@@ -6,6 +7,7 @@ export type Totals = {
   totalSansOptions: number;
   optionsTotal: number;
   taxeSejour: number;
+  touristTaxes?: TouristTaxResult[];
   solde: number;
   totalGlobal: number;
 };
@@ -84,10 +86,14 @@ export const computeTotals = (params: {
 
   const optionsTotal = round2(draps + linge + menage + departTardif + chiens);
 
-  const taxeSejour = round2(params.nbAdultes * nbNuits * Number(gite?.taxe_sejour_par_personne_par_nuit ?? 0));
+  const tax = params.options.tourist_tax ? computeTouristTax({
+    stay: params.options.tourist_tax, nights: nbNuits, adults: params.nbAdultes,
+    children: params.nbEnfants, accommodation: totalSansOptions, start: params.dateDebut,
+  }) : null;
+  const taxeSejour = tax?.amount ?? round2(params.nbAdultes * nbNuits * Number(gite?.taxe_sejour_par_personne_par_nuit ?? 0));
 
-  const totalGlobal = round2(totalSansOptions + optionsTotal);
+  const totalGlobal = round2((tax?.accommodation_amount ?? totalSansOptions) + optionsTotal + (tax?.host_amount ?? 0));
   const solde = round2(totalGlobal - params.arrhesMontant);
 
-  return { nbNuits, montantBase, totalSansOptions, optionsTotal, taxeSejour, solde, totalGlobal };
+  return { nbNuits, montantBase, totalSansOptions, optionsTotal, taxeSejour, solde, totalGlobal, ...(tax ? { touristTaxes: [tax] } : {}) };
 };

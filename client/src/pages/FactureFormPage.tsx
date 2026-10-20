@@ -1,3 +1,6 @@
+import { createTouristTaxStay } from "@contrats/shared";
+import { reservationAmountToCollect } from "@contrats/shared";
+import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import { applyIndividualVatPreset, changedVatLineIds, individualVatPresetHint, type AppliedInvoiceVatPresets } from "./shared/invoiceVatPreset";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { defaultInvoiceTheme, resolveInvoiceTheme, type InvoiceThemeId, type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
@@ -220,7 +223,7 @@ const FactureFormPage = () => {
   );
   const selectedReservationsTotal = useMemo(
     () => selectedReservations.reduce(
-      (sum, reservation) => sum + Number(reservation.prix_total ?? 0) - Number(reservation.remise_montant ?? 0) + Number(reservation.frais_optionnels_montant ?? 0),
+      (sum, reservation) => sum + reservationAmountToCollect(reservation),
       0
     ),
     [selectedReservations]
@@ -679,9 +682,10 @@ const FactureFormPage = () => {
           setLinesManual(false);
           setFiscalInput((previous) => {
             const lines = reconcileInvoiceGeneratedLines(previous.lines, proposed, baseline);
-            return JSON.stringify(lines) === JSON.stringify(previous.lines) ? previous : { ...previous, lines, reviewed: false, tourist_tax_reviewed: false };
+            return JSON.stringify(lines) === JSON.stringify(previous.lines) && JSON.stringify(previous.tourist_taxes) === JSON.stringify(result.fiscal_input.tourist_taxes) ? previous : { ...previous, lines, tourist_taxes: result.fiscal_input.tourist_taxes, reviewed: false, tourist_tax_reviewed: false };
           });
         }
+        if (!shouldSync) setFiscalInput(previous => ({ ...previous, tourist_taxes: result.fiscal_input.tourist_taxes, reviewed: false, tourist_tax_reviewed: false }));
         proposedLinesRef.current = proposed;
       }).catch((err) => {
         if (!isAbortError(err)) setLinesError(err instanceof Error ? err.message : "Préparation des lignes impossible.");
@@ -1291,6 +1295,13 @@ const FactureFormPage = () => {
           />
         </label>
       </div>
+      {!isMultiReservation && <TouristTaxStayEditor
+        value={options.tourist_tax} settings={selectedGite?.taxe_sejour_config}
+        onChange={tourist_tax => setOptions(previous => ({ ...previous, tourist_tax }))}
+        nights={totals.nbNuits} adults={nbAdultes} children={nbEnfants} onAdultsChange={setNbAdultes} onChildrenChange={setNbEnfants}
+        accommodation={totals.totalSansOptions} start={dateDebut}
+        initialize={!isEdit && !fromContractId && !fromReservationId && !selectedReservationIds.length}
+      />}
       {optionsEditor}
       <div className="invoice-extra-fees">
         <div className="invoice-extra-fees__header">
@@ -1386,6 +1397,7 @@ const FactureFormPage = () => {
               onChange={(e) => {
                 clearFieldError("gite_id");
                 setGiteId(e.target.value);
+                setOptions(previous => ({ ...previous, tourist_tax: (() => { const settings = gites.find(gite => gite.id === e.target.value)?.taxe_sejour_config; return settings ? createTouristTaxStay(settings) : undefined; })() }));
               }}
             >
               {gites.map((gite) => (
@@ -1453,7 +1465,7 @@ const FactureFormPage = () => {
         {selectedReservations.length > 0 && (
           <div className="invoice-reservations__selected">
             {selectedReservations.map((reservation) => {
-              const amount = Number(reservation.prix_total ?? 0) - Number(reservation.remise_montant ?? 0) + Number(reservation.frais_optionnels_montant ?? 0);
+              const amount = reservationAmountToCollect(reservation);
               return (
                 <div className="invoice-reservation-card" key={reservation.id}>
                   <div>
@@ -1506,7 +1518,7 @@ const FactureFormPage = () => {
                     <small>{reservation.gite?.nom ?? "Sans gîte"} · {formatDate(reservation.date_entree)} — {formatDate(reservation.date_sortie)}</small>
                     {linkedInvoice && <small>Déjà incluse dans la facture {linkedInvoice.numero_facture}</small>}
                   </span>
-                  <strong>{formatEuro(Number(reservation.prix_total ?? 0) - Number(reservation.remise_montant ?? 0) + Number(reservation.frais_optionnels_montant ?? 0))}</strong>
+                  <strong>{formatEuro(reservationAmountToCollect(reservation))}</strong>
                 </label>
                 );
               })}
@@ -1545,7 +1557,7 @@ const FactureFormPage = () => {
         if (JSON.stringify(pricingLines(next)) !== JSON.stringify(pricingLines(fiscalInput))) setLinesManual(true);
         setFiscalInput(next);
 
-      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax)} pricingEditor={pricingEditor} onReprepared={(options) => {
+      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax || validationOptions?.touristTaxes?.length)} pricingEditor={pricingEditor} onReprepared={(options) => {
         setLinesManual(false);
         if (options) { setValidationOptions(options); setValidationGiteId(giteId); }
         touchedVatLinesRef.current.clear(); appliedVatPresetsRef.current = {};

@@ -13,6 +13,7 @@ import { proposeInvoiceFiscal } from "../src/modules/documents/invoiceFiscal.js"
 import {
   buildInvoiceHtml,
   generateInvoicePreviewHtml,
+  generateContractPreviewHtml,
   generateInvoicePdf,
   closeBrowser,
   type InvoiceRenderInput,
@@ -305,6 +306,93 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
         assert.match(discountedHtml, /1 nuitée × 260,00/);
       }
     }
+  }
+
+  for (const included of [false, true]) {
+    const options = {
+      tourist_tax: {
+        settings: {
+          version: 1 as const,
+          classified: true,
+          stars: 3,
+          included,
+          fixed_rate: 1.5,
+          percentage: 4,
+          cap: 4,
+          additional_percentage: 0,
+          accommodation_vat_rate: 0,
+          authority: "Collectivité <test>",
+          effective_from: "2026-01-01",
+        },
+        collector: "host" as const,
+        platform: "",
+        infants: 0,
+        exempt_adults: 0,
+        exemption_reason: "",
+      },
+    };
+    const taxTotals = computeTotals({
+      dateDebut: new Date("2026-10-20"),
+      dateFin: new Date("2026-10-21"),
+      prixParNuit: 350,
+      remiseMontant: 0,
+      nbAdultes: 2,
+      nbEnfants: 0,
+      arrhesMontant: 0,
+      options,
+      gite,
+    });
+    const taxFiscal = proposeInvoiceFiscal({ options }, taxTotals);
+    taxFiscal.lines.forEach((line) => {
+      line.vat_category = "E";
+      line.exemption_reason = "TVA non applicable, article 293 B du CGI";
+    });
+    assert.equal(
+      computeInvoiceFiscal(taxFiscal).gross_cents,
+      included ? 35000 : 35300,
+    );
+    const taxInvoice = {
+      ...invoice,
+      reservation_items: [],
+      fiscal: taxFiscal,
+      options,
+      prix_par_nuit: 350,
+      nb_adultes: 2,
+      date_fin: new Date("2026-10-21"),
+      solde_montant: taxTotals.totalGlobal,
+    };
+    for (const theme of invoiceThemeIds) {
+      const taxHtml = await buildInvoiceHtml({
+        invoice: { ...taxInvoice, clauses: { invoice_theme: theme } },
+        gite,
+        totals: taxTotals,
+      });
+      assert.match(taxHtml, /Taxe de séjour/);
+      assert.match(
+        taxHtml,
+        /2 personne\(s\) taxable\(s\) × 1 nuit\(s\) × 1,50/,
+      );
+      assert.match(taxHtml, /Collectivité &lt;test&gt;/);
+      assert.match(
+        taxHtml,
+        included ? /comprise dans le prix annoncé/ : /en supplément/,
+      );
+      assert.match(taxHtml, included ? /347,00/ : /353,00/);
+    }
+    const contractPreview = await generateContractPreviewHtml({
+      contract: { ...taxInvoice, numero_contrat: "TEST-TAXE" },
+      gite,
+      totals: taxTotals,
+    });
+    assert.match(contractPreview.html, /hors taxe de séjour/);
+    assert.match(
+      contractPreview.html,
+      /La taxe de séjour est détaillée séparément/,
+    );
+    assert.doesNotMatch(
+      contractPreview.html,
+      /Le prix comprend toutes les charges ainsi que la taxe de séjour/,
+    );
   }
 
   const groupedItems = Array.from({ length: 6 }, (_, index) => ({

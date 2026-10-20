@@ -1,3 +1,4 @@
+import type { TouristTaxSettings, TouristTaxStay, TouristTaxResult } from "@contrats/shared";
 import type { PlanningOrganization, PlanningIntervention, InvoiceReservationDetail } from "@contrats/shared";
 import type { SchoolHoliday } from "./schoolHolidays";
 import type { VatRegime } from "@contrats/shared";
@@ -84,6 +85,7 @@ export type Gite = {
   airbnb_listing_id?: string | null;
   telephones: string[];
   taxe_sejour_par_personne_par_nuit: number;
+  taxe_sejour_config?: TouristTaxSettings | null;
   iban: string;
   bic?: string | null;
   titulaire: string;
@@ -476,6 +478,8 @@ export type BookingQuote = {
   montant_hebergement: number;
   total_options: number;
   taxe_sejour: number;
+  tourist_tax?: TouristTaxStay;
+  tourist_tax_result?: TouristTaxResult;
   total_global: number;
   arrhes_theoriques: number;
   options_detail: {
@@ -519,6 +523,7 @@ export type BookingRequest = {
 };
 
 export type ContratOptions = {
+  tourist_tax?: TouristTaxStay;
   draps?: { enabled: boolean; nb_lits?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
   menage?: { enabled: boolean; offert?: boolean; declared?: boolean };

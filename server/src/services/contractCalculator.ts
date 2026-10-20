@@ -1,7 +1,9 @@
+import { computeTouristTax, type TouristTaxStay, type TouristTaxResult } from "@contrats/shared";
 import { differenceInCalendarDays } from "date-fns";
 import { toNumber, round2, type NumericLike } from "../utils/money.js";
 
 export type OptionsInput = {
+  tourist_tax?: TouristTaxStay;
   draps?: { enabled: boolean; nb_lits?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
   menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
@@ -20,6 +22,7 @@ export type ContractTotals = {
   totalSansOptions: number;
   optionsTotal: number;
   taxeSejourCalculee: number;
+  touristTaxes?: TouristTaxResult[];
   solde: number;
   totalGlobal: number;
   optionsDetail: {
@@ -99,9 +102,14 @@ export const computeTotals = (params: {
   const optionsTotal = round2(draps + linge + menage + departTardif + chiens);
 
   const taxeTarif = toNumber(params.gite.taxe_sejour_par_personne_par_nuit);
-  const taxeSejourCalculee = round2(params.nbAdultes * nbNuits * taxeTarif);
+  const tax = params.options.tourist_tax ? computeTouristTax({
+    stay: params.options.tourist_tax, nights: nbNuits, adults: params.nbAdultes,
+    children: params.nbEnfants, accommodation: totalSansOptions,
+    start: params.dateDebut.toISOString().slice(0, 10),
+  }) : null;
+  const taxeSejourCalculee = tax?.amount ?? round2(params.nbAdultes * nbNuits * taxeTarif);
 
-  const totalGlobal = round2(totalSansOptions + optionsTotal);
+  const totalGlobal = round2((tax?.accommodation_amount ?? totalSansOptions) + optionsTotal + (tax?.host_amount ?? 0));
   const solde = round2(totalGlobal - params.arrhesMontant);
 
   return {
@@ -110,6 +118,7 @@ export const computeTotals = (params: {
     totalSansOptions,
     optionsTotal,
     taxeSejourCalculee,
+    ...(tax ? { touristTaxes: [tax] } : {}),
     solde,
     totalGlobal,
     optionsDetail: {
@@ -120,4 +129,9 @@ export const computeTotals = (params: {
       chiens,
     },
   };
+};
+
+export const assertTouristTaxReady = (totals: ContractTotals) => {
+  const issues = (totals.touristTaxes ?? []).flatMap(tax => tax.issues);
+  if (issues.length) throw Object.assign(new Error([...new Set(issues)].join(" ")), { status: 400, code: "TOURIST_TAX_INCOMPLETE" });
 };

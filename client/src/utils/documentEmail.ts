@@ -473,7 +473,7 @@ export const buildBookingRequestApprovedEmailDraft = (
     nbAdultes: String(request.nb_adultes),
     nbEnfants: String(request.nb_enfants_2_17),
     montantHebergement: formatEuroText(
-      request.pricing_snapshot.montant_hebergement,
+      request.pricing_snapshot.tourist_tax_result?.accommodation_amount ?? request.pricing_snapshot.montant_hebergement,
     ),
     totalOptions: formatEuroText(request.pricing_snapshot.total_options),
     taxeSejour: formatEuroText(request.pricing_snapshot.taxe_sejour),

@@ -1,3 +1,4 @@
+import { createTouristTaxStay, parseTouristTaxSettings } from "@contrats/shared";
 import { Router } from "express";
 import crypto from "node:crypto";
 import { addDays, format } from "date-fns";
@@ -761,8 +762,9 @@ const normalizeAssociation = (payload: z.infer<typeof reservationPayloadSchema>)
 
 const ensureAssociationExists = async (association: ReservationAssociation) => {
   if (association.gite_id) {
-    const gite = await prisma.gite.findUnique({ where: { id: association.gite_id }, select: { id: true } });
+    const gite = await prisma.gite.findUnique({ where: { id: association.gite_id }, select: { id: true, taxe_sejour_config: true } });
     if (!gite) throw new Error("Gîte introuvable pour cette réservation.");
+    return parseTouristTaxSettings(gite.taxe_sejour_config);
   }
 
   if (association.placeholder_id) {
@@ -772,6 +774,7 @@ const ensureAssociationExists = async (association: ReservationAssociation) => {
     });
     if (!placeholder) throw new Error("Placeholder introuvable pour cette réservation.");
   }
+  return null;
 };
 
 const findConflicts = async (params: {
@@ -2252,7 +2255,8 @@ router.post("/", async (req, res, next) => {
   try {
     const payload = reservationPayloadSchema.parse(req.body);
     const association = normalizeAssociation(payload);
-    await ensureAssociationExists(association);
+    const taxSettings = await ensureAssociationExists(association);
+    if (!payload.options.tourist_tax && taxSettings) payload.options.tourist_tax = createTouristTaxStay(taxSettings);
     const prepared = buildReservationSegmentRecords(
       payload,
       association,
@@ -2481,8 +2485,12 @@ router.put("/:id", async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: "Réservation introuvable" });
 
     const payload = reservationPayloadSchema.parse(req.body);
+    const savedTax = fromJsonString<OptionsInput>(existing.options, {}).tourist_tax;
+    if (!payload.options.tourist_tax && savedTax) payload.options.tourist_tax = savedTax;
+
     const association = normalizeAssociation(payload);
-    await ensureAssociationExists(association);
+    const targetTaxSettings = await ensureAssociationExists(association);
+    if (association.gite_id !== existing.gite_id) payload.options.tourist_tax = targetTaxSettings ? createTouristTaxStay(targetTaxSettings) : undefined;
     const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
 
     const computed = computeReservationFields(payload);

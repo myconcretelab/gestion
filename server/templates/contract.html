@@ -864,18 +864,19 @@
         <div class="band-title">Montant de la location</div>
         <table class="band-table">
           <tr>
-            <td>{{nbNuits}} nuits x {{prixParNuit}}</td>
+            <td>{{locationLabel}}</td>
             <td>{{montantBase}}</td>
           </tr>
           {{{remiseRowHtml}}}
           {{{optionsBandRowsHtml}}}
+          {{{touristTaxRowsHtml}}}
           <tr class="band-total">
             <td>TOTAL</td>
             <td>{{totalGlobal}}</td>
           </tr>
         </table>
           <div class="small muted" style="margin-top:2mm;">
-            Le prix comprend toutes les charges ainsi que la taxe de séjour : {{taxeSejourInfo}}.
+            {{touristTaxDescription}} {{taxeSejourInfo}}
           </div>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { computeTouristTax, createTouristTaxStay, parseTouristTaxSettings, type TouristTaxStay, type TouristTaxResult } from "@contrats/shared";
 import prisma from "../db/prisma.js";
 import { normalizeOptions, validateDocumentOccupancy } from "../routes/shared/rentalDocument.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
@@ -44,6 +45,8 @@ export type BookingQuote = {
   montant_hebergement: number;
   total_options: number;
   taxe_sejour: number;
+  tourist_tax?: TouristTaxStay;
+  tourist_tax_result?: TouristTaxResult;
   total_global: number;
   arrhes_theoriques: number;
   options_detail: {
@@ -77,6 +80,7 @@ type BookedQuoteGite = {
   min_nuits_vacances_scolaires?: number | null;
   min_nuits_juillet_aout?: number | null;
   taxe_sejour_par_personne_par_nuit: unknown;
+  taxe_sejour_config?: unknown;
   options_draps_par_lit: unknown;
   options_linge_toilette_par_personne: unknown;
   options_menage_forfait: unknown;
@@ -438,7 +442,12 @@ export const computeSeasonQuote = async (params: {
     nbNuits,
     nbAdultes: params.nbAdultes,
   });
-  const total_global = round2(montant_hebergement + resolvedOptions.total_options);
+  const taxSettings = parseTouristTaxSettings(params.gite.taxe_sejour_config);
+  const taxStay: TouristTaxStay | undefined = params.options?.tourist_tax ?? (taxSettings ? { ...createTouristTaxStay(taxSettings), collector: "host" } : undefined);
+  const tax = taxStay ? computeTouristTax({ stay: taxStay, nights: nbNuits, adults: params.nbAdultes,
+    children: params.nbEnfants, accommodation: montant_hebergement, start: formatBookedDateInput(params.dateEntree) }) : null;
+  if (tax?.issues.length) throw new BookedValidationError({ code: "tourist_tax", message: tax.issues.join(" "), statusCode: 400 });
+  const total_global = round2((tax?.accommodation_amount ?? montant_hebergement) + resolvedOptions.total_options + (tax?.host_amount ?? 0));
   const arrhes_theoriques = round2(montant_hebergement * toNumber(params.gite.arrhes_taux_defaut as any));
 
   return {
@@ -449,7 +458,8 @@ export const computeSeasonQuote = async (params: {
     nightly_breakdown: nightlyBreakdown,
     montant_hebergement,
     total_options: resolvedOptions.total_options,
-    taxe_sejour: resolvedOptions.taxe_sejour,
+    taxe_sejour: tax?.amount ?? resolvedOptions.taxe_sejour,
+    ...(tax && taxStay ? { tourist_tax: taxStay, tourist_tax_result: tax } : {}),
     total_global,
     arrhes_theoriques,
     options_detail: resolvedOptions.options_detail,

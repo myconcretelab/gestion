@@ -1,3 +1,4 @@
+import { touristTaxResultSchema } from "@contrats/shared";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -128,6 +129,7 @@ const totalsSchema = z.object({
   totalSansOptions: z.number().finite(),
   optionsTotal: z.number().finite(),
   taxeSejourCalculee: z.number().finite(),
+  touristTaxes: z.array(touristTaxResultSchema).optional(),
   solde: z.number().finite(),
   totalGlobal: z.number().finite(),
   optionsDetail: z.object({
@@ -353,6 +355,7 @@ export const issueInvoice = async (
               Math.abs(calculation.totals.taxeSejourCalculee) ||
                 (grouped ? 1 : 0),
               invoice.document_kind === "credit_note",
+              calculation.totals.touristTaxes,
             );
           const now = new Date();
           const year = Number(
@@ -434,7 +437,7 @@ export const issueInvoice = async (
               email: invoice.locataire_email,
               phone: invoice.locataire_tel,
             },
-            ...(fiscal
+            ...(fiscal && !(fiscal.tourist_taxes ?? []).some(tax => tax.host_amount > 0)
               ? {
                   structured_invoice: buildStructuredInvoice({
                     input: fiscal,

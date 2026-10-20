@@ -39,3 +39,10 @@ test("buildStatisticsPayload ne renvoie que les segments de l'année demandée",
   assert.equal(payload.entriesByGite[gite.id].length, 1);
   assert.equal(payload.entriesByGite[gite.id][0].debut, "2026-01-01");
 });
+
+
+test("la taxe comprise dans le prix est isolée des revenus, avec les centimes conservés entre mois", () => {
+  const options = { tourist_tax: { settings: { version: 1 as const, classified: true, stars: 3, included: true, fixed_rate: 1.5, percentage: 4, cap: 4, additional_percentage: 0, accommodation_vat_rate: 0, authority: "", effective_from: "2025-01-01" }, collector: "host" as const, platform: "", infants: 0, exempt_adults: 0, exemption_reason: "" } };
+  const payload = buildStatisticsPayload({ gites: [gite], reservations: [{ ...reservation, prix_total: 400.01, options }] });
+  assert.equal(Math.round(payload.entriesByGite[gite.id].reduce((sum, entry) => sum + entry.revenus, 0) * 100), 38801);
+});

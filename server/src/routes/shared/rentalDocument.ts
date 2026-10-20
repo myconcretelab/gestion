@@ -1,9 +1,11 @@
+import { touristTaxStaySchema, parseTouristTaxSettings } from "@contrats/shared";
 import fs from "fs/promises";
 import { z, ZodError } from "zod";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { fromJsonString } from "../../utils/jsonFields.js";
 
 export const optionsSchema = z.object({
+  tourist_tax: touristTaxStaySchema.optional(),
   draps: z
     .object({
       enabled: z.boolean(),
@@ -87,6 +89,7 @@ export const hydrateGite = (gite: any) => ({
   ...gite,
   telephones: fromJsonString<string[]>(gite.telephones, []),
   prix_nuit_liste: fromJsonString<number[]>(gite.prix_nuit_liste, []),
+  taxe_sejour_config: parseTouristTaxSettings(gite.taxe_sejour_config),
 });
 
 export const getLatestTemplateMtimeMs = async (templatePaths: string[]) => {

@@ -1,3 +1,4 @@
+import TouristTaxSettingsEditor from "./shared/TouristTaxSettingsEditor";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
@@ -75,6 +76,7 @@ const emptyForm = {
   date_debut_activite: "",
   telephones: "",
   taxe_sejour_par_personne_par_nuit: 0,
+  taxe_sejour_config: null as Gite["taxe_sejour_config"],
   iban: "",
   bic: "",
   titulaire: "",
@@ -1713,6 +1715,7 @@ const GitesPage = () => {
       date_debut_activite: selected.date_debut_activite?.slice(0, 10) ?? "",
       telephones: Array.isArray(selected.telephones) ? selected.telephones.join(", ") : "",
       taxe_sejour_par_personne_par_nuit: selected.taxe_sejour_par_personne_par_nuit,
+      taxe_sejour_config: selected.taxe_sejour_config ?? null,
       iban: selected.iban,
       bic: selected.bic ?? "",
       titulaire: selected.titulaire,
@@ -3729,9 +3732,10 @@ const GitesPage = () => {
 
         <div id="gite-editor-fiscalite" className="form-section gites-editor-section" hidden={activeEditorSection !== "gestion-finance"}>
           <div className="section-subtitle">Fiscalité</div>
+          <TouristTaxSettingsEditor value={form.taxe_sejour_config ?? null} legacyRate={Number(form.taxe_sejour_par_personne_par_nuit || 0)} onChange={value => setForm(previous => ({ ...previous, taxe_sejour_config: value }))} />
           <div className="grid-2">
-            <label className="field">
-              Taxe de séjour / personne / nuit
+            <label className="field" hidden={Boolean(form.taxe_sejour_config)}>
+              Tarif historique de taxe de séjour / personne / nuit
               <input
                 type="number"
                 step="0.01"

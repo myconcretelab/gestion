@@ -75,3 +75,18 @@ test("ne tronque pas les numéros saisis au-delà de dix chiffres", () => {
   assert.equal(formatQuickReservationPhone("0033 6 12 34 56 78"), "00 33 6 12 34 56 78");
   assert.equal(getQuickReservationSmsPhoneDigits("0033 6 12 34 56 78"), "0033612345678");
 });
+
+test("le total et le SMS mobiles suivent la taxe collectée, comprise ou en supplément", () => {
+  const settings = { version: 1 as const, classified: true, stars: 3, included: false, fixed_rate: 1.5, percentage: 4, cap: 4, additional_percentage: 0, accommodation_vat_rate: 0, authority: "", effective_from: "2026-01-01" };
+  const stay = { settings, collector: "host" as const, platform: "", infants: 0, exempt_adults: 0, exemption_reason: "" };
+  const params = { draft, editingReservation: null, gite, smsSnippets: [], smsSelection: [] };
+  const extra = computeQuickReservationDerivedState({ ...params, touristTax: stay });
+  assert.equal(extra.computedTotal, 306);
+  const mixed = computeQuickReservationDerivedState({ ...params, touristTax: stay, quotedAccommodation: 250 });
+  assert.equal(mixed.computedTotal, 356);
+  assert.match(extra.smsText, /total du séjour est de 306€/);
+  const included = computeQuickReservationDerivedState({ ...params, touristTax: { ...stay, settings: { ...settings, included: true } } });
+  assert.equal(included.computedTotal, 300);
+  const platform = computeQuickReservationDerivedState({ ...params, touristTax: { ...stay, collector: "platform", platform: "Plateforme fictive" } });
+  assert.equal(platform.computedTotal, 300);
+});

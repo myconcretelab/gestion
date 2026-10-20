@@ -1,3 +1,4 @@
+import { TouristTaxSummary } from "./shared/TouristTaxStayEditor";
 import { invoiceIssueTarget as fiscalIssueTarget } from "./shared/invoiceFormCompletion";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -269,6 +270,8 @@ const FactureDetailPage = () => {
         {facture.issued_at && <p>Émis le {formatDate(facture.issued_at)}. Le suivi du paiement ne modifie pas le PDF archivé.</p>}
         {facture.lifecycle_status === "draft" && !!facture.fiscal_issues?.length && <div className="note invoice-completion-note"><p>À compléter avant validation :</p><ul>{facture.fiscal_issues.map((issue) => <li key={issue}><Link to={`/factures/${facture.id}/edition#${fiscalIssueTarget(issue)}`} className="invoice-completion-link"><span>{issue}</span><span aria-hidden="true">Compléter ↗</span></Link></li>)}</ul></div>}
         {facture.fiscal_totals && <p>Détail fiscal : HT {formatEuro(facture.fiscal_totals.net_cents / 100)} · TVA {formatEuro(facture.fiscal_totals.vat_cents / 100)} · TTC {formatEuro(facture.fiscal_totals.gross_cents / 100)}{facture.document_kind === "credit_note" ? " (montants annulés par l’avoir)" : ""}.</p>}
+        {!!facture.fiscal_input?.tourist_taxes?.length && <TouristTaxSummary taxes={facture.fiscal_input.tourist_taxes} />}
+        {facture.fiscal_input?.tourist_taxes?.some(tax => tax.host_amount > 0) && <p className="field-hint">PDF local disponible. L’export électronique avec taxe de séjour collectée par le loueur n’est pas encore pris en charge.</p>}
         {facture.fiscal_input?.buyer.kind === "business" && <p>Nature de l’opération : {({ goods: "Biens", services: "Services", mixed: "Mixte — biens et services distincts", unknown: "Non qualifiée" } as const)[facture.fiscal_input.operation_kind ?? "unknown"]} · Conservée à l’émission.</p>}
         {facture.structured_available && <p><a href={`/api/invoices/${facture.id}/structured`} target="_blank" rel="noreferrer">Exporter l’instantané fiscal structuré</a> · Données figées à l’émission, distinctes du suivi SuperPDP.</p>}
         {facture.lifecycle_status === "issued" && canCurrentUserManageIntegrations() && <ElectronicInvoicePanel key={facture.id} invoiceId={facture.id} />}

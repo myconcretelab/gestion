@@ -1044,3 +1044,158 @@ test("les avoirs des factures émises avant le modèle fiscal restent possibles 
     409,
   );
 });
+
+test("taxe de séjour dédiée : montants, TVA, PDF local, barème figé et avoir sans double collecte", async () => {
+  const settings = {
+    version: 1,
+    classified: true,
+    stars: 3,
+    included: false,
+    fixed_rate: 1.5,
+    percentage: 4,
+    cap: 4,
+    additional_percentage: 0,
+    accommodation_vat_rate: 0,
+    authority: "Collectivité fictive",
+    effective_from: "2026-01-01",
+  };
+  for (const [included, collector, expected, expectedService] of [
+    [false, "host", 309, 300],
+    [true, "host", 300, 291],
+    [false, "platform", 300, 300],
+    [true, "platform", 291, 291],
+  ] as const) {
+    const draft = await createDraft({
+      options: {
+        tourist_tax: {
+          settings: { ...settings, included },
+          collector,
+          platform: collector === "platform" ? "Plateforme fictive" : "",
+          infants: 0,
+          exempt_adults: 0,
+          exemption_reason: "",
+        },
+      },
+    });
+    assert.equal(draft.solde_montant + draft.arrhes_montant, expected);
+    assert.equal(draft.fiscal_totals.net_cents, expectedService * 100);
+    assert.equal(draft.fiscal_totals.vat_cents, 0);
+    assert.equal(
+      draft.fiscal_totals.tourist_tax_cents,
+      collector === "host" ? 900 : 0,
+    );
+    assert.deepEqual(draft.fiscal_issues, []);
+    const issued = await request(`/invoices/${draft.id}/issue`, "POST", {
+      revision: draft.revision,
+    });
+    assert.equal(issued.status, 200, JSON.stringify(issued.body));
+    assert.equal(issued.body.structured_available, collector !== "host");
+    const before = await db
+      .getTenantPrisma(orgA)
+      .facture.findUniqueOrThrow({ where: { id: draft.id } });
+    const archived = JSON.parse(String(before.immutable_snapshot));
+    assert.equal(archived.calculation.totals.touristTaxes[0].amount, 9);
+    assert.equal(Boolean(archived.structured_invoice), collector !== "host");
+    if (collector === "host" && !included) {
+      const credit = await request(
+        `/invoices/${draft.id}/credit-note`,
+        "POST",
+        { reason: "Annulation du séjour et de la taxe" },
+      );
+      assert.equal(credit.status, 201, JSON.stringify(credit.body));
+      assert.equal(credit.body.document_kind, "credit_note");
+      assert.equal(Math.abs(credit.body.solde_montant), expected);
+    }
+  }
+});
+
+test("une taxe manquante ou un collecteur inconnu bloque la validation avant numérotation", async () => {
+  const settings = {
+    version: 1,
+    classified: true,
+    stars: 3,
+    included: false,
+    fixed_rate: 1.5,
+    percentage: 4,
+    cap: 4,
+    additional_percentage: 0,
+    accommodation_vat_rate: 0,
+    authority: "Collectivité fictive",
+    effective_from: "2026-01-01",
+  };
+  const draft = await createDraft({
+    options: {
+      tourist_tax: {
+        settings,
+        collector: "unknown",
+        platform: "",
+        infants: 0,
+        exempt_adults: 0,
+        exemption_reason: "",
+      },
+    },
+  });
+  const denied = await request(`/invoices/${draft.id}/issue`, "POST", {
+    revision: draft.revision,
+  });
+  assert.equal(denied.status, 409);
+  assert.match(denied.body.error, /qui collecte/);
+  const unchanged = await request(`/invoices/${draft.id}`);
+  assert.equal(unchanged.body.lifecycle_status, "draft");
+});
+
+test("une facture regroupée conserve la taxe et le mode d’inclusion propres à chaque réservation", async () => {
+  const tenant = db.getTenantPrisma(orgA);
+  const ids: string[] = [];
+  for (const [index, included, total] of [
+    [0, true, 200],
+    [1, false, 300],
+  ] as const) {
+    const settings = {
+      version: 1,
+      classified: true,
+      stars: 3,
+      included,
+      fixed_rate: 1.5,
+      percentage: 4,
+      cap: 4,
+      additional_percentage: 0,
+      accommodation_vat_rate: 0,
+      authority: "Collectivité fictive",
+      effective_from: "2026-01-01",
+    };
+    const record = await tenant.reservation.create({
+      data: {
+        gite_id: "gite-a",
+        hote_nom: `Client taxe ${index}`,
+        date_entree: new Date(`2028-04-${10 + index * 10}`),
+        date_sortie: new Date(`2028-04-${12 + index * 10}`),
+        nb_nuits: 2,
+        nb_adultes: 2,
+        prix_par_nuit: total / 2,
+        prix_total: total,
+        options: JSON.stringify({
+          tourist_tax: {
+            settings,
+            collector: "host",
+            platform: "",
+            infants: 0,
+            exempt_adults: 0,
+            exemption_reason: "",
+          },
+        }),
+      },
+    });
+    ids.push(record.id);
+  }
+  const draft = await createDraft({ reservation_ids: ids });
+  assert.equal(draft.fiscal_totals.net_cents, 49400);
+  assert.equal(draft.fiscal_totals.tourist_tax_cents, 1200);
+  assert.equal(draft.fiscal_totals.gross_cents, 50600);
+  assert.equal(draft.fiscal_input.tourist_taxes.length, 2);
+  assert.deepEqual(draft.fiscal_issues, []);
+  const issued = await request(`/invoices/${draft.id}/issue`, "POST", {
+    revision: draft.revision,
+  });
+  assert.equal(issued.status, 200, JSON.stringify(issued.body));
+});

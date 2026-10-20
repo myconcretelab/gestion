@@ -486,7 +486,8 @@ test("la migration conserve les propriétaires, factures, PDF référencés et c
   const [gite] = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
     'SELECT * FROM "gites" WHERE "id" = \'gite-old\'',
   );
-  const { fiscal_establishment_id, ...existing } = gite;
+  const { fiscal_establishment_id, taxe_sejour_config, ...existing } = gite;
+  assert.equal(taxe_sejour_config, null);
   assert.equal(fiscal_establishment_id, null);
   assert.deepEqual(existing, priorGite);
   const [migratedInvoice] = await db.$queryRawUnsafe<

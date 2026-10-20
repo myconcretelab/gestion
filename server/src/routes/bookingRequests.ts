@@ -58,6 +58,7 @@ const quoteGiteSelect = {
   min_nuits_vacances_scolaires: true,
   min_nuits_juillet_aout: true,
   taxe_sejour_par_personne_par_nuit: true,
+  taxe_sejour_config: true,
   options_draps_par_lit: true,
   options_linge_toilette_par_personne: true,
   options_menage_forfait: true,
@@ -379,6 +380,8 @@ router.post("/:id/approve", async (req, res, next) => {
     const hydrated = toBookingRequestPayload(bookingRequest);
     const pricingSnapshot = hydrated.pricing_snapshot as BookingQuote;
     const options = fromJsonString<OptionsInput>(bookingRequest.options, {});
+    if (pricingSnapshot.tourist_tax) options.tourist_tax = pricingSnapshot.tourist_tax;
+
     const averageNightly = pricingSnapshot.nb_nuits > 0
       ? round2(pricingSnapshot.montant_hebergement / pricingSnapshot.nb_nuits)
       : 0;

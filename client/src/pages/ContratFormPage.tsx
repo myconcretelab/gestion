@@ -1,3 +1,5 @@
+import { createTouristTaxStay } from "@contrats/shared";
+import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
@@ -536,6 +538,7 @@ const ContratFormPage = () => {
               onChange={(e) => {
                 clearFieldError("gite_id");
                 setGiteId(e.target.value);
+                setOptions(previous => ({ ...previous, tourist_tax: (() => { const settings = gites.find(gite => gite.id === e.target.value)?.taxe_sejour_config; return settings ? createTouristTaxStay(settings) : undefined; })() }));
               }}
             >
               {gites.map((gite) => (
@@ -923,6 +926,11 @@ const ContratFormPage = () => {
 
       <div className="card">
         <div className="section-title">Options</div>
+        <TouristTaxStayEditor value={options.tourist_tax} settings={selectedGite?.taxe_sejour_config}
+          onChange={tourist_tax => setOptions(previous => ({ ...previous, tourist_tax }))}
+          nights={totals.nbNuits} adults={nbAdultes} children={nbEnfants}
+          accommodation={totals.totalSansOptions} start={dateDebut}
+          initialize={!isEdit && !fromReservationId} />
         <div className="option-grid">
           <div className="option-card option-card--rules">
             <div className="option-title">Règles du gîte</div>

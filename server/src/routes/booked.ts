@@ -41,7 +41,7 @@ const quoteSchema = z.object({
   date_sortie: z.string().trim().min(1),
   nb_adultes: z.coerce.number().int().min(1),
   nb_enfants_2_17: z.coerce.number().int().min(0).default(0),
-  options: optionsSchema.optional().default({}),
+  options: optionsSchema.omit({ tourist_tax: true }).optional().default({}),
 });
 
 const bookingRequestCreateSchema = quoteSchema.extend({
@@ -86,6 +86,7 @@ const loadPublicGite = async (giteId: string) =>
       min_nuits_vacances_scolaires: true,
       min_nuits_juillet_aout: true,
       taxe_sejour_par_personne_par_nuit: true,
+      taxe_sejour_config: true,
       options_draps_par_lit: true,
       options_linge_toilette_par_personne: true,
       options_menage_forfait: true,
@@ -456,7 +457,7 @@ router.post("/requests", async (req, res, next) => {
         nb_nuits: pricingSnapshot.nb_nuits,
         nb_adultes: payload.nb_adultes,
         nb_enfants_2_17: payload.nb_enfants_2_17,
-        options: encodeBookingRequestOptions(payload.options),
+        options: encodeBookingRequestOptions({ ...payload.options, ...(pricingSnapshot.tourist_tax ? { tourist_tax: pricingSnapshot.tourist_tax } : {}) }),
         message_client: payload.message_client ?? null,
         pricing_snapshot: encodeBookingRequestPricingSnapshot(pricingSnapshot),
         status: "pending",

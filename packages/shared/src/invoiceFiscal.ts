@@ -1,3 +1,4 @@
+import { touristTaxResultSchema, type TouristTaxResult } from "./touristTax.js";
 import { z } from "zod";
 
 const text = z.string().trim().max(500);
@@ -166,6 +167,7 @@ export const invoiceFiscalInputSchema = z.object({
   b2b_payment_mentions: b2bPaymentMentionsSchema.default({}),
   reviewed: z.boolean(),
   tourist_tax_reviewed: z.boolean(),
+  tourist_taxes: z.array(touristTaxResultSchema).max(50).optional(),
 });
 export type InvoiceFiscalInput = z.infer<typeof invoiceFiscalInputSchema>;
 export type InvoiceFiscalLine = InvoiceFiscalInput["lines"][number];
@@ -233,17 +235,23 @@ export const computeInvoiceFiscal = (input: InvoiceFiscalInput) => {
   const net = lines.reduce((sum, line) => sum + line.net_cents, 0);
   const vat = breakdown.reduce((sum, group) => sum + group.vat_cents, 0);
   const gross = lines.reduce((sum, line) => sum + line.gross_cents, 0);
+  const touristTax = (input.tourist_taxes ?? []).reduce(
+    (sum, tax) => sum + invoiceCents(tax.host_amount),
+    0,
+  );
   const paid = invoiceCents(input.paid_amount);
   return {
     lines,
     breakdown,
     net_cents: net,
     vat_cents: vat,
-    total_with_vat_cents: net + vat,
-    gross_cents: gross,
+    total_with_vat_cents: net + vat + touristTax,
+    services_gross_cents: gross,
+    tourist_tax_cents: touristTax,
+    gross_cents: gross + touristTax,
     rounding_cents: gross - net - vat,
     paid_cents: paid,
-    due_cents: gross - paid,
+    due_cents: gross + touristTax - paid,
   };
 };
 
@@ -254,6 +262,7 @@ export const invoiceFiscalIssues = (
     vatRegime?: string;
     sellerVatNumber?: string | null;
     touristTax?: number;
+    touristTaxes?: TouristTaxResult[];
     credit?: boolean;
   } = {},
 ): string[] => {
@@ -400,9 +409,19 @@ export const invoiceFiscalIssues = (
     !input.payment_terms
   )
     issues.push("Précisez l’échéance du solde ou les conditions de paiement.");
-  if (options.touristTax && !input.tourist_tax_reviewed)
+  if (
+    (options.touristTax || options.touristTaxes?.length) &&
+    !input.tourist_tax_reviewed
+  )
     issues.push(
       "Vérifiez explicitement le traitement de la taxe de séjour (incluse, collectée ailleurs ou non applicable).",
+    );
+  for (const tax of input.tourist_taxes ?? []) issues.push(...tax.issues);
+  const actualTaxes = input.tourist_taxes ?? [];
+  const expectedTaxes = options.touristTaxes ?? [];
+  if (JSON.stringify(actualTaxes) !== JSON.stringify(expectedTaxes))
+    issues.push(
+      "Le détail de la taxe de séjour ne correspond pas au calcul enregistré. Recalculez les lignes de la facture.",
     );
   if (!input.reviewed)
     issues.push(

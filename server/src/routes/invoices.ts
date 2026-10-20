@@ -1,3 +1,4 @@
+import { reservationTouristTax, reservationAmountToCollect } from "@contrats/shared";
 import { Router, type NextFunction, type Response } from "express";
 import { createSuperPdpEmissionRouter } from "../modules/superpdp/emissionRoutes.js";
 import { z } from "zod";
@@ -211,6 +212,7 @@ const hydrateInvoice = (contrat: any) => ({
   fiscal_issues: contrat.document_kind === "credit_note" && !parseInvoiceFiscal(contrat.fiscal_data) && !fromJsonString<any>(contrat.original_invoice?.immutable_snapshot, null)?.structured_invoice ? [] : invoiceFiscalIssues(parseInvoiceFiscal(contrat.fiscal_data), toNumber(contrat.solde_montant) + toNumber(contrat.arrhes_montant), {
     vatRegime: fromJsonString<any>(contrat.immutable_snapshot, null)?.issuer?.entity?.vat_regime ?? fromJsonString<any>(contrat.original_invoice?.immutable_snapshot, null)?.issuer?.entity?.vat_regime ?? contrat.gite?.fiscal_establishment?.fiscal_entity?.vat_regime,
     sellerVatNumber: invoiceSeller(contrat)?.vat_number,
+    touristTaxes: fromJsonString<any>(contrat.calculation_snapshot, null)?.totals?.touristTaxes,
     touristTax: Math.abs(toNumber(contrat.taxe_sejour_calculee ?? 0)) || (fromJsonString<unknown[]>(contrat.reservation_items, []).length >= 2 ? 1 : 0), credit: contrat.document_kind === "credit_note",
   }),
   structured_available: !!fromJsonString<any>(contrat.immutable_snapshot, null)?.structured_invoice,
@@ -295,7 +297,9 @@ const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise
     if (!reservation.gite_id || !reservation.gite) {
       throw new z.ZodError([{ code: "custom", path: ["reservation_ids"], message: "Toutes les réservations doivent être rattachées à un gîte." }]);
     }
+    const tax = reservationTouristTax(reservation);
     return {
+      ...(tax ? { tourist_tax: { ...tax, stay_label: `${reservation.gite.nom} · ${reservation.date_entree.toISOString().slice(0, 10)} au ${reservation.date_sortie.toISOString().slice(0, 10)}` } } : {}),
       reservation_id: reservation.id,
       gite_id: reservation.gite_id,
       gite_nom: reservation.gite.nom,
@@ -306,17 +310,13 @@ const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise
       nb_adultes: reservation.nb_adultes,
       nb_enfants_2_17: reservation.nb_enfants_2_17,
       prix_par_nuit: round2(toNumber(reservation.prix_par_nuit ?? toNumber(reservation.prix_total) / reservation.nb_nuits)),
-      montant_location: round2(toNumber(reservation.prix_total) - toNumber(reservation.remise_montant)),
+      montant_location: tax?.accommodation_amount ?? round2(toNumber(reservation.prix_total) - toNumber(reservation.remise_montant)),
       remise_montant: round2(toNumber(reservation.remise_montant)),
       services: invoiceReservationServices({
         ...reservation,
         options: fromJsonString<OptionsInput>(reservation.options, {}),
       }, reservation.gite).services,
-      montant: round2(
-        toNumber(reservation.prix_total) -
-          toNumber(reservation.remise_montant) +
-          toNumber(reservation.frais_optionnels_montant)
-      ),
+      montant: reservationAmountToCollect(reservation),
     };
   });
 };
@@ -361,7 +361,8 @@ const applyReservationItemsToTotals = (
     montantBase: reservationsTotal,
     totalSansOptions: reservationsTotal,
     optionsTotal: 0,
-    taxeSejourCalculee: 0,
+    taxeSejourCalculee: round2(items.reduce((sum, item) => sum + (item.tourist_tax?.amount ?? 0), 0)),
+    touristTaxes: items.flatMap(item => item.tourist_tax ? [item.tourist_tax] : []),
     totalGlobal,
     solde: round2(totalGlobal - arrhesMontant),
     optionsDetail: { draps: 0, linge: 0, menage: 0, departTardif: 0, chiens: 0 },
@@ -372,7 +373,7 @@ type PreviewContext = {
   gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
   totals: ReturnType<typeof computeTotals>;
   invoiceForPdf: InvoiceRenderInput;
-  fiscalValidation: { vatRegime?: string; sellerVatNumber?: string | null; sellerCountryCode?: string; touristTax: number };
+  fiscalValidation: { vatRegime?: string; sellerVatNumber?: string | null; sellerCountryCode?: string; touristTax: number; touristTaxes?: import("@contrats/shared").TouristTaxResult[] };
 };
 
 type PreviewError = { error: { status: number; message: string } };
@@ -467,6 +468,7 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
     vatRegime: gite.fiscal_establishment?.fiscal_entity?.vat_regime,
     sellerCountryCode: gite.fiscal_establishment?.fiscal_entity?.country_code,
     sellerVatNumber: invoiceForPdf.seller?.vat_number,
+    touristTaxes: totals.touristTaxes,
     touristTax: Math.abs(totals.taxeSejourCalculee) || (reservationItems.length >= 2 ? 1 : 0),
   } };
 };

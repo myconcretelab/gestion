@@ -9,6 +9,7 @@ import {
   type InvoiceFiscalInput,
   type InvoiceFiscalLine,
   type InvoiceReservationDetail,
+  type TouristTaxResult,
 } from "@contrats/shared";
 import type { FiscalEntity, FiscalEstablishment } from "@prisma/client";
 import { fromJsonString } from "../../utils/jsonFields.js";
@@ -33,6 +34,7 @@ export const proposeInvoiceFiscal = (
   totals: ContractTotals,
 ): InvoiceFiscalInput => {
   const input = emptyInvoiceFiscalInput();
+  if (totals.touristTaxes?.length) input.tourist_taxes = totals.touristTaxes;
   const items = fromJsonString<
     Array<
       InvoiceReservationDetail & {
@@ -132,7 +134,7 @@ export const proposeInvoiceFiscal = (
     });
   } else {
     addNights(
-      totals.totalSansOptions,
+      totals.touristTaxes?.[0]?.accommodation_amount ?? totals.totalSansOptions,
       totals.nbNuits,
       Number(invoice.remise_montant ?? 0),
     );
@@ -186,11 +188,13 @@ export const validateInvoiceFiscal = (
   entity: FiscalEntity,
   touristTax: number,
   credit = false,
+  touristTaxes?: TouristTaxResult[],
 ) => {
   const issues = invoiceFiscalIssues(input, total, {
     vatRegime: entity.vat_regime,
     sellerVatNumber: entity.vat_number,
     touristTax,
+    touristTaxes,
     credit,
   });
   if (issues.length)
@@ -248,6 +252,8 @@ export const buildStructuredInvoice = (params: {
   sourceIssuedAt?: Date;
 }) => {
   const { input, issuer } = params;
+  if ((input.tourist_taxes ?? []).some(tax => tax.host_amount > 0))
+    throw Object.assign(new Error("L’export électronique des taxes de séjour collectées par le loueur nécessite un format dédié. Le PDF local reste disponible."), { status: 409 });
   const computed = computeInvoiceFiscal(input);
   const buyer = input.buyer;
   const amount = decimalAmount;

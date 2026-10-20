@@ -1,3 +1,4 @@
+import { TouristTaxSummary } from "./TouristTaxStayEditor";
 import {
   focusInvoiceField,
   type InvoiceValidationOptions,
@@ -67,6 +68,7 @@ export default function InvoiceFiscalEditor({
           ? {
               ...value,
               lines: result.fiscal_input.lines,
+              tourist_taxes: result.fiscal_input.tourist_taxes,
               reviewed: false,
               tourist_tax_reviewed: false,
             }
@@ -157,11 +159,9 @@ export default function InvoiceFiscalEditor({
                   identique.
                 </p>
               )}
-              <p>
-                La remise est déjà déduite de la location. Chaque séjour
-                conserve ses prestations et ses frais. La taxe de séjour n’est
-                ni ajoutée ni classée automatiquement : vérifiez sa collecte et
-                sa présence dans les prix.
+              <p className="field-hint">
+                Les nuitées et prestations sont séparées de la taxe de séjour.
+                La remise est déjà déduite de la location.
               </p>
               {value.lines.flatMap((line, index) => [
                 line.source &&
@@ -367,6 +367,9 @@ export default function InvoiceFiscalEditor({
                   </div>
                 </fieldset>,
               ])}
+              {!!value.tourist_taxes?.length && (
+                <TouristTaxSummary taxes={value.tourist_taxes} />
+              )}
               <details className="invoice-line__allocation">
                 <summary>Ajouter une ventilation personnalisée</summary>
                 <p className="field-hint">
@@ -511,7 +514,7 @@ export default function InvoiceFiscalEditor({
                   <strong>{money(totals.vat_cents)}</strong>
                 </div>
                 <div>
-                  <span>Total TTC</span>
+                  <span>Total à payer, taxe de séjour comprise</span>
                   <strong>{money(totals.gross_cents)}</strong>
                 </div>
                 <div>
@@ -534,26 +537,11 @@ export default function InvoiceFiscalEditor({
           <div className="invoice-fiscal__review">
             {touristTaxRequired && (
               <>
-                <div className="invoice-fiscal__tourist-tax-help">
-                  <strong>Taxe de séjour : où modifier les réglages ?</strong>
-                  <p>
-                    Le tarif par personne et par nuit se modifie dans Gîtes →
-                    Gestion → Fiscalité & banque. Le montant calculé n’est pas
-                    ajouté automatiquement au total de la facture.
-                  </p>
-                  <p>
-                    Si la taxe est comprise dans le prix, utilisez «
-                    Personnaliser cette ligne » et « Ajouter une ventilation
-                    personnalisée » pour répartir le même total et renseigner
-                    son traitement de TVA. Si elle est facturée en plus, ajoutez
-                    un frais supplémentaire. Si une plateforme la collecte
-                    séparément, ne l’ajoutez pas une seconde fois.
-                  </p>
-                  <p>
-                    La case ci-dessous confirme votre vérification ; elle ne
-                    modifie ni le montant ni le mode de collecte.
-                  </p>
-                </div>
+                <p className="field-hint">
+                  Le tarif se règle dans la fiche du gîte. Le collecteur et les
+                  exonérations se modifient dans le bloc « Taxe de séjour »
+                  ci-dessus ou dans chaque réservation regroupée.
+                </p>
                 <label className="checkbox">
                   <input
                     id="tourist-tax-reviewed"
@@ -580,6 +568,13 @@ export default function InvoiceFiscalEditor({
               fiscaux et les sommes réellement reçues. {required()}
             </label>
           </div>
+          {totals && totals.tourist_tax_cents > 0 && (
+            <p className="field-hint">
+              La taxe de séjour est suivie séparément des prestations. Le PDF
+              local est disponible ; l’export électronique avec taxe collectée
+              par le loueur n’est pas encore pris en charge.
+            </p>
+          )}
           {children}
           <p className="field-hint">
             Ce détail prépare les données électroniques. Il ne constitue pas une

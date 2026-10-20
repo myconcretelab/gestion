@@ -1,5 +1,6 @@
+import { assertTouristTaxReady } from "./contractCalculator.js";
 import fs from "fs/promises";
-import { computeInvoiceFiscal, invoicePaymentNotes, invoiceThemes, resolveInvoiceTheme, type InvoiceFiscalInput, type InvoiceThemeId } from "@contrats/shared";
+import { computeInvoiceFiscal, invoicePaymentNotes, invoiceThemes, resolveInvoiceTheme, type InvoiceFiscalInput, type InvoiceThemeId, type TouristTaxResult } from "@contrats/shared";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
 import { env } from "../config/env.js";
@@ -1055,6 +1056,14 @@ const prepareContractPage = async (page: Page, html: string) => {
   return applyCompactionIfOverflow(page);
 };
 
+const buildTouristTaxRows = (taxes: TouristTaxResult[] = [], sign = 1) => taxes.map(tax => {
+  const collector = tax.collector === "host" ? (tax.included ? "comprise dans le prix annoncé" : "en supplément")
+    : tax.collector === "platform" ? `collectée par ${tax.platform || "la plateforme"}, non due au loueur`
+    : tax.collector === "not_applicable" ? `non applicable : ${tax.exemption_reason}` : "collecteur à préciser";
+  const detail = `${tax.taxable_adults} personne(s) taxable(s) × ${tax.nights} nuit(s) × ${formatEuro(tax.unit_amount)}${tax.exempt_people ? ` · ${tax.exempt_people} personne(s) exonérée(s)` : ""}${tax.authority ? ` · ${tax.authority}` : ""}`;
+  return `<tr class="invoice-tourist-tax"><td>Taxe de séjour${tax.stay_label ? ` · ${escapeHtml(tax.stay_label)}` : ""}<div class="invoice-item-meta">${escapeHtml(detail)} · ${escapeHtml(collector)}${tax.collector === "platform" ? ` · ${formatEuro(tax.amount)}` : ""}</div></td><td>${tax.host_amount ? formatEuro(sign * tax.host_amount) : "—"}</td></tr>`;
+}).join("");
+
 const buildContractHtml = async (params: {
   contract: ContractRenderInput;
   gite: GiteLike;
@@ -1094,7 +1103,10 @@ const buildContractHtml = async (params: {
     heureDepart: params.contract.heure_depart,
     nbNuits: String(params.totals.nbNuits),
     prixParNuit: formatEuro(toNumber(params.contract.prix_par_nuit)),
-    montantBase: formatEuro(params.totals.montantBase),
+    locationLabel: params.totals.touristTaxes?.length ? `Hébergement · ${params.totals.nbNuits} nuit(s), hors taxe de séjour` : `${params.totals.nbNuits} nuits x ${formatEuro(toNumber(params.contract.prix_par_nuit))}`,
+    montantBase: formatEuro(params.totals.touristTaxes?.[0] ? params.totals.touristTaxes[0].accommodation_amount + toNumber(params.contract.remise_montant) : params.totals.montantBase),
+    touristTaxRowsHtml: buildTouristTaxRows(params.totals.touristTaxes),
+    touristTaxDescription: params.totals.touristTaxes?.length ? "La taxe de séjour est détaillée séparément ci-dessus. Les sommes collectées par une plateforme ne sont pas à régler au loueur." : "Le prix comprend toutes les charges ainsi que la taxe de séjour :",
     remiseMontant: formatEuro(toNumber(params.contract.remise_montant)),
     remiseRowHtml,
     totalGlobal: formatEuro(params.totals.totalGlobal),
@@ -1108,7 +1120,7 @@ const buildContractHtml = async (params: {
       totals: params.totals,
       gite: params.gite,
     }),
-    taxeSejourInfo: `${formatEuro(params.totals.taxeSejourCalculee)} (soit ${formatEuro(
+    taxeSejourInfo: params.totals.touristTaxes?.length ? "" : `${formatEuro(params.totals.taxeSejourCalculee)} (soit ${formatEuro(
       toNumber(params.gite.taxe_sejour_par_personne_par_nuit)
     )} / adulte / nuit)`,
     arrhesMontant: formatEuro(toNumber(params.contract.arrhes_montant)),
@@ -1147,6 +1159,7 @@ export const generateContractPdf = async (params: {
   totals: ContractTotals;
   outputPath: string;
 }) => {
+  assertTouristTaxReady(params.totals);
   if (isPdfGenerationDisabled()) {
     await writePlaceholderPdf(params.outputPath);
     return;
@@ -1367,6 +1380,8 @@ export const buildInvoiceHtml = async (params: {
     ? `<tr><td>Annulation intégrale de la facture ${escapeHtml(params.invoice.source_invoice_number ?? "")}</td><td>${formatEuro(params.totals.totalGlobal)}</td></tr>`
     : isMultiReservation
     ? reservationRowsHtml
+    : params.totals.touristTaxes?.length
+    ? `<tr><td>Hébergement · ${escapeHtml(nightsLabel)} (hors taxe de séjour)</td><td>${formatEuro(params.totals.touristTaxes[0].accommodation_amount + remiseMontantValue)}</td></tr>${remiseRowHtml}${optionsRowsHtml}${buildTouristTaxRows(params.totals.touristTaxes)}`
     : `<tr><td>${escapeHtml(locationLineLabel)}</td><td>${formatEuro(params.totals.montantBase)}</td></tr><tr class="invoice-row-taxe-sejour"><td>Dont taxe de séjour</td><td>${formatEuro(params.totals.taxeSejourCalculee)}</td></tr>${remiseRowHtml}${optionsRowsHtml}`;
   const metaGridClass = statutPaiement === "reglee" || params.invoice.document_kind === "credit_note" ? "meta-grid--single" : "";
   const echeanceMetaHtml =
@@ -1400,6 +1415,8 @@ export const buildInvoiceHtml = async (params: {
   const fiscalRows = fiscalTotals ? fiscalDiscountHtml + fiscalRowGroups.map((group) => `<tbody${group.stayId ? ' class="invoice-stay-group"' : ""}>${group.rows.join("")}</tbody>`).join("") : undefined;
   const fiscalSummary = fiscalTotals ? `<tr><td>Total HT</td><td>${fiscalMoney(fiscalTotals.net_cents)}</td></tr>${fiscalTotals.breakdown.map((group) => `<tr><td>TVA ${escapeHtml(group.category === "unknown" ? "à préciser" : group.category)}${group.category === "S" ? ` · ${escapeHtml(String(group.rate))} %` : ""}${group.reason ? `<div class="invoice-item-meta">${escapeHtml(group.reason)}</div>` : ""}</td><td>${fiscalMoney(group.vat_cents)}</td></tr>`).join("")}${fiscalTotals.rounding_cents ? `<tr><td>Arrondi TTC</td><td>${fiscalMoney(fiscalTotals.rounding_cents)}</td></tr>` : ""}` : "";
 
+  const touristTaxSummary = fiscalTotals && fiscal?.tourist_taxes?.length
+    ? `<tr><td>Total des prestations TTC</td><td>${fiscalMoney(fiscalTotals.services_gross_cents)}</td></tr>${buildTouristTaxRows(fiscal.tourist_taxes, sign)}` : "";
   return renderTemplate(template, {
     invoiceThemeId,
     invoiceThemeStyles,
@@ -1432,9 +1449,9 @@ export const buildInvoiceHtml = async (params: {
       ? `${reservationGiteCount} gîte${reservationGiteCount > 1 ? "s" : ""}`
       : occupancyLabel,
     invoiceRowsHtml: fiscalRows ?? `<tbody>${invoiceRowsHtml}${extraFeesRowsHtml}</tbody>`,
-    fiscalSummaryHtml: fiscalSummary,
+    fiscalSummaryHtml: fiscalSummary + touristTaxSummary,
     invoiceAmountHeading: fiscal ? "Montant TTC" : "Montant",
-    invoiceSubtotalLabel: fiscal ? "Total TTC" : "Sous-total",
+    invoiceSubtotalLabel: fiscal?.tourist_taxes?.length ? "Total à payer, taxe comprise" : fiscal ? "Total TTC" : "Sous-total",
     taxeSejour: formatEuro(params.totals.taxeSejourCalculee),
     totalGlobal: formatEuro(params.totals.totalGlobal),
     acompteRowHtml: fiscalTotals ? fiscalTotals.paid_cents ? `<tr><td>Sommes réellement reçues</td><td>- ${formatEuro(fiscalTotals.paid_cents / 100)}</td></tr>` : "" : acompteRowHtml,

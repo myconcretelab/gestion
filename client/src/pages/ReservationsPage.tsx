@@ -1,3 +1,4 @@
+import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import {
   Fragment,
   useCallback,
@@ -82,6 +83,7 @@ type ReservationDraft = {
   date_sortie: string;
   nb_nuits: number;
   nb_adultes: number;
+  nb_enfants_2_17: number;
   prix_par_nuit: number;
   prix_total: number;
   source_paiement: string;
@@ -950,6 +952,7 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     date_sortie: toInputDate(reservation.date_sortie),
     nb_nuits: reservation.nb_nuits,
     nb_adultes: reservation.nb_adultes,
+    nb_enfants_2_17: reservation.nb_enfants_2_17 ?? 0,
     prix_par_nuit: Number(reservation.prix_par_nuit ?? 0),
     prix_total: Number(reservation.prix_total ?? 0),
     source_paiement: normalizeReservationSource(reservation.source_paiement),
@@ -982,6 +985,7 @@ const buildEmptyDraft = (
     date_sortie: exit,
     nb_nuits: 1,
     nb_adultes: defaultAdults,
+    nb_enfants_2_17: overrides.nb_enfants_2_17 ?? 0,
     prix_par_nuit: nightlyPrice,
     prix_total: overrides.prix_total ?? 0,
     source_paiement: overrides.source_paiement ?? DEFAULT_RESERVATION_SOURCE,
@@ -1003,6 +1007,7 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions, keepIcalTo
     date_entree: draft.date_entree,
     date_sortie: draft.date_sortie,
     nb_adultes: draft.nb_adultes,
+    nb_enfants_2_17: draft.nb_enfants_2_17 ?? 0,
     nb_nuits: draft.nb_nuits,
     prix_par_nuit: draft.prix_par_nuit,
     prix_total: draft.prix_total,
@@ -5483,6 +5488,11 @@ const ReservationsPage = () => {
                             </div>
                             {optionGite ? (
                               <>
+                                <TouristTaxStayEditor value={optionDraft.tourist_tax} settings={optionGite.taxe_sejour_config}
+                                  onChange={tourist_tax => updateReservationOptionsSelection(reservation, draft, previous => ({ ...previous, tourist_tax }))}
+                                  nights={draft.nb_nuits} adults={draft.nb_adultes} children={draft.nb_enfants_2_17 ?? 0}
+                                  onChildrenChange={nb_enfants_2_17 => updateExistingField(reservation, previous => ({ ...previous, nb_enfants_2_17 }), { autosave: false })}
+                                  accommodation={draft.prix_total} start={draft.date_entree} />
                                 <ReservationOptionsEditor
                                   options={optionDraft}
                                   preview={optionPreview}

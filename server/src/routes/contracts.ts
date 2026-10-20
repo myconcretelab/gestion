@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs/promises";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
-import { computeTotals, type OptionsInput } from "../services/contractCalculator.js";
+import { computeTotals, assertTouristTaxReady, type OptionsInput } from "../services/contractCalculator.js";
 import { generateContractNumber } from "../services/contractNumber.js";
 import { syncReservationFromDocument } from "../services/documentReservationSync.js";
 import {
@@ -773,6 +773,8 @@ router.post("/", async (req, res, next) => {
       modePaiementArrhes: data.mode_paiement_arrhes,
     });
 
+    assertTouristTaxReady(totals);
+
     const numeroContrat = await generateContractNumber(
       data.gite_id,
       gite.prefixe_contrat,
@@ -915,6 +917,7 @@ router.put("/:id", async (req, res, next) => {
       options,
       gite,
     });
+    assertTouristTaxReady(totals);
     const nextArrhesStatus =
       data.statut_paiement_arrhes ?? (existing.statut_paiement_arrhes === "recu" ? "recu" : "non_recu");
     const arrhesTracking = resolveArrhesTracking({

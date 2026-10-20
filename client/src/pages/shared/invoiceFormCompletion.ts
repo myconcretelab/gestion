@@ -30,7 +30,10 @@ export const invoiceIssueTarget = (issue: string) => {
     return "buyer-kind";
   if (issue.includes("mention «")) return "b2b-payment-mentions";
   if (issue.includes("nature de l’opération")) return "invoice-operation-kind";
-  if (issue.includes("taxe de séjour")) return "tourist-tax-reviewed";
+  if (issue.includes("taxe de séjour"))
+    return issue.startsWith("Vérifiez explicitement")
+      ? "tourist-tax-reviewed"
+      : "invoice-lines";
   return "invoice-fiscal";
 };
 

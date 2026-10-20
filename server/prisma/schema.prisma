@@ -475,6 +475,7 @@ model Gite {
   email                               String?
   telephones                          String
   taxe_sejour_par_personne_par_nuit   Float
+  taxe_sejour_config                 String?
   iban                                String
   bic                                 String?
   titulaire                           String

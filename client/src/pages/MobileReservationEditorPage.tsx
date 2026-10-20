@@ -1,3 +1,5 @@
+import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
+import type { TouristTaxStay } from "@contrats/shared";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -126,6 +128,8 @@ const MobileReservationEditorPage = () => {
   const [quickReservationError, setQuickReservationError] = useState<string | null>(null);
   const [quickReservationErrorField, setQuickReservationErrorField] = useState<QuickReservationErrorField>(null);
   const [optionsExpanded, setOptionsExpanded] = useState(false);
+  const [touristTaxStay, setTouristTaxStay] = useState<TouristTaxStay>();
+  const [taxChildren, setTaxChildren] = useState(0);
   const [smsExpanded, setSmsExpanded] = useState(false);
   const [smsPreviewExpanded, setSmsPreviewExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -263,6 +267,10 @@ const MobileReservationEditorPage = () => {
   }, [quickReservationErrorField]);
 
   const selectedGite = useMemo(() => gites.find((gite) => gite.id === selectedGiteId) ?? null, [gites, selectedGiteId]);
+  useEffect(() => {
+    setTouristTaxStay(editingReservation?.gite_id === selectedGiteId ? editingReservation.options?.tourist_tax : undefined);
+    setTaxChildren(editingReservation?.nb_enfants_2_17 ?? 0);
+  }, [editingReservation, selectedGiteId]);
   const accentColor = selectedGite ? getGiteColor(selectedGite) : "#ff5a5f";
   const quickReservationAdultsMax = useMemo(() => getQuickReservationAdultsMax(selectedGite), [selectedGite]);
   const quickReservationAdultOptions = useMemo(
@@ -287,13 +295,15 @@ const MobileReservationEditorPage = () => {
   const quickReservationDerived = useMemo(
     () =>
       computeQuickReservationDerivedState({
+        touristTax: touristTaxStay, taxChildren,
+        quotedAccommodation: quickReservationSeasonalPrice?.is_mixed ? quickReservationSeasonalPrice.prix_total : undefined,
         draft: quickReservationDraft,
         editingReservation,
         gite: selectedGite,
         smsSnippets: quickReservationSmsSnippets,
         smsSelection: quickReservationSmsSelection,
       }),
-    [editingReservation, quickReservationDraft, quickReservationSmsSelection, quickReservationSmsSnippets, selectedGite]
+    [editingReservation, quickReservationDraft, quickReservationSmsSelection, quickReservationSmsSnippets, selectedGite, touristTaxStay, taxChildren, quickReservationSeasonalPrice]
   );
   const quickReservationDateSummary = quickReservationDerived.dateSummary;
   const quickReservationOptionsPreview = quickReservationDerived.optionsPreview;
@@ -443,6 +453,7 @@ const MobileReservationEditorPage = () => {
 
     clearQuickReservationSavedTimeout();
     setQuickReservationSaveState("saving");
+    const stayPayload = { ...savePayload.payload, options: { ...savePayload.payload.options, ...(touristTaxStay ? { tourist_tax: touristTaxStay } : {}) }, nb_enfants_2_17: taxChildren };
     setQuickReservationError(null);
     setQuickReservationErrorField(null);
 
@@ -461,7 +472,7 @@ const MobileReservationEditorPage = () => {
             gite_id: editingReservation.gite_id ?? selectedGiteId,
             placeholder_id: editingReservation.placeholder_id ?? undefined,
             airbnb_url: editingReservation.airbnb_url ?? undefined,
-            ...savePayload.payload,
+            ...stayPayload,
           },
         });
 
@@ -479,7 +490,7 @@ const MobileReservationEditorPage = () => {
           method: "POST",
           json: {
             gite_id: selectedGiteId,
-            ...savePayload.payload,
+            ...stayPayload,
             ...(quickReservationSeasonalPrice?.is_mixed
               ? {
                   prix_par_nuit: quickReservationSeasonalPrice.prix_par_nuit,
@@ -526,6 +537,7 @@ const MobileReservationEditorPage = () => {
       if (!saveSucceeded) setQuickReservationSaveState("idle");
     }
   }, [
+    touristTaxStay, taxChildren,
     backHref,
     clearQuickReservationSavedTimeout,
     editorMode,
@@ -818,6 +830,11 @@ const MobileReservationEditorPage = () => {
               </label>
             </section>
 
+            <TouristTaxStayEditor value={touristTaxStay} settings={selectedGite?.taxe_sejour_config}
+              onChange={setTouristTaxStay} initialize={!editingReservation}
+              nights={quickReservationDateSummary.nights} adults={Number(quickReservationDraft.nb_adultes)} children={taxChildren}
+              onChildrenChange={setTaxChildren} start={quickReservationDraft.date_entree}
+              accommodation={quickReservationSeasonalPrice?.is_mixed ? quickReservationSeasonalPrice.prix_total : Number(quickReservationDraft.prix_par_nuit.replace(",", ".")) * quickReservationDateSummary.nights} />
             <section className="calendar-quick-create-sheet__section">
               <button
                 type="button"

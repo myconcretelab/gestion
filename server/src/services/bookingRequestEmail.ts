@@ -204,7 +204,7 @@ const buildApprovedTemplateValues = (payload: BookingRequestEmailPayload) => {
       travellersSummary: buildTravellersSummary(payload),
       nbAdultes: String(payload.nb_adultes),
       nbEnfants: String(payload.nb_enfants_2_17),
-      montantHebergement: formatPrice(payload.pricing_snapshot.montant_hebergement),
+      montantHebergement: formatPrice(payload.pricing_snapshot.tourist_tax_result?.accommodation_amount ?? payload.pricing_snapshot.montant_hebergement),
       totalOptions: formatPrice(payload.pricing_snapshot.total_options),
       taxeSejour: formatPrice(payload.pricing_snapshot.taxe_sejour),
       totalGlobal: formatPrice(payload.pricing_snapshot.total_global),

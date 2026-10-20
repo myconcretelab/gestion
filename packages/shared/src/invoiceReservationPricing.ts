@@ -1,3 +1,4 @@
+import type { TouristTaxResult } from "./touristTax.js";
 type Option = {
   enabled?: boolean;
   offert?: boolean;
@@ -24,6 +25,7 @@ export type InvoiceReservationDetail = {
   prix_par_nuit?: number;
   montant_location?: number;
   remise_montant?: number;
+  tourist_tax?: TouristTaxResult;
   services?: InvoiceReservationService[];
 };
 
