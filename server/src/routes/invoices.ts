@@ -359,7 +359,7 @@ type PreviewContext = {
   gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
   totals: ReturnType<typeof computeTotals>;
   invoiceForPdf: InvoiceRenderInput;
-  fiscalValidation: { vatRegime?: string; sellerVatNumber?: string | null; touristTax: number };
+  fiscalValidation: { vatRegime?: string; sellerVatNumber?: string | null; sellerCountryCode?: string; touristTax: number };
 };
 
 type PreviewError = { error: { status: number; message: string } };
@@ -452,6 +452,7 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
 
   return { gite, totals, invoiceForPdf, fiscalValidation: {
     vatRegime: gite.fiscal_establishment?.fiscal_entity?.vat_regime,
+    sellerCountryCode: gite.fiscal_establishment?.fiscal_entity?.country_code,
     sellerVatNumber: invoiceForPdf.seller?.vat_number,
     touristTax: Math.abs(totals.taxeSejourCalculee) || (reservationItems.length >= 2 ? 1 : 0),
   } };

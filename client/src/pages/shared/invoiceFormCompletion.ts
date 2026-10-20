@@ -7,7 +7,7 @@ import {
 export type InvoiceCompletionItem = { label: string; target: string };
 export type InvoiceValidationOptions = Parameters<
   typeof invoiceFiscalIssues
->[2];
+>[2] & { sellerCountryCode?: string };
 
 export const invoiceIssueTarget = (issue: string) => {
   if (issue.includes("Confirmez la vérification")) return "invoice-reviewed";

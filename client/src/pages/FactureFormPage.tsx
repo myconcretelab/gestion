@@ -1,3 +1,4 @@
+import { applyIndividualVatPreset, changedVatLineIds, individualVatPresetHint, type AppliedInvoiceVatPresets } from "./shared/invoiceVatPreset";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
 import { reconcileInvoiceGeneratedLines, shouldSyncInvoiceGeneratedLines } from "./shared/invoiceFormLines";
@@ -104,6 +105,9 @@ const FactureFormPage = () => {
   const [linesRetry, setLinesRetry] = useState(0);
   const [linesError, setLinesError] = useState<string | null>(null);
   const [validationOptions, setValidationOptions] = useState<InvoiceValidationOptions>({});
+  const [validationGiteId, setValidationGiteId] = useState("");
+  const appliedVatPresetsRef = useRef<AppliedInvoiceVatPresets>({});
+  const touchedVatLinesRef = useRef(new Map<string, InvoiceFiscalLine>());
   const proposedLinesRef = useRef<InvoiceFiscalLine[]>();
   const currentFiscalRef = useRef(fiscalInput);
   currentFiscalRef.current = fiscalInput;
@@ -264,6 +268,8 @@ const FactureFormPage = () => {
         if (!active) return;
         setEditingContract(data);
         proposedLinesRef.current = undefined;
+        appliedVatPresetsRef.current = {};
+        touchedVatLinesRef.current.clear();
         setFiscalInput(data.fiscal_input ?? createInvoiceFormInput());
         setLinesManual(Boolean(data.fiscal_input?.lines.length));
         setGiteId(data.gite_id);
@@ -644,6 +650,7 @@ const FactureFormPage = () => {
       }).then((result) => {
         if (controller.signal.aborted) return;
         setValidationOptions(result.validation_options);
+        setValidationGiteId(pricingContext.gite_id);
         const baseline = proposedLinesRef.current;
         const proposed = result.fiscal_input.lines;
         const shouldSync = shouldSyncInvoiceGeneratedLines(linesManual, currentFiscalRef.current.lines, proposed, baseline);
@@ -661,6 +668,19 @@ const FactureFormPage = () => {
     }, 350);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [pricingContextKey, linesManual, fiscalSourceReady, loadingFromContract, loadingFromReservation, linesRetry]);
+
+  const vatPresetContext = {
+    giteId,
+    vatRegime: validationGiteId === giteId ? validationOptions?.vatRegime : undefined,
+    sellerCountryCode: validationGiteId === giteId ? validationOptions?.sellerCountryCode : undefined,
+    grouped: isMultiReservation,
+  };
+  const vatPresetContextKey = JSON.stringify(vatPresetContext);
+  useEffect(() => {
+    const result = applyIndividualVatPreset(fiscalInput, JSON.parse(vatPresetContextKey), appliedVatPresetsRef.current, touchedVatLinesRef.current);
+    appliedVatPresetsRef.current = result.applied;
+    if (result.input !== fiscalInput) setFiscalInput(result.input);
+  }, [fiscalInput, vatPresetContextKey]);
 
   const completionItems = [...(linesError ? [{ label: "Actualiser les lignes et les vérifications du séjour", target: "invoice-lines" }] : []), ...invoiceFormCompletion(fiscalInput, expectedTotal, validationOptions, {
     name: locataireNom, giteId, start: dateDebut, end: dateFin, email: locataireEmail,
@@ -1493,11 +1513,19 @@ const FactureFormPage = () => {
 
       {linesError && <p role="alert" className="note">{linesError} <button type="button" className="secondary" onClick={() => setLinesRetry((retry) => retry + 1)}>Réessayer la préparation</button></p>}
       <InvoiceFiscalEditor value={fiscalInput} onChange={(next) => {
+        const changedVatIds = new Set(changedVatLineIds(fiscalInput, next));
+        next.lines.forEach((line) => {
+          if (changedVatIds.has(line.id) || touchedVatLinesRef.current.has(line.id)) touchedVatLinesRef.current.set(line.id, line);
+        });
         const pricingLines = (input: InvoiceFiscalInput) => input.lines.map(({ id, quantity, unit, unit_price_ttc }) => ({ id, quantity, unit, unit_price_ttc }));
         if (JSON.stringify(pricingLines(next)) !== JSON.stringify(pricingLines(fiscalInput))) setLinesManual(true);
         setFiscalInput(next);
 
-      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax)} pricingEditor={pricingEditor} onReprepared={() => setLinesManual(false)} manualLines={linesManual}>
+      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax)} pricingEditor={pricingEditor} onReprepared={(options) => {
+        setLinesManual(false);
+        if (options) { setValidationOptions(options); setValidationGiteId(giteId); }
+        touchedVatLinesRef.current.clear(); appliedVatPresetsRef.current = {};
+      }} manualLines={linesManual} vatPresetHint={fiscalInput.buyer.kind === "individual" ? individualVatPresetHint(vatPresetContext) : undefined}>
         <footer className="invoice-save" id="invoice-save" data-invoice-step="3" tabIndex={-1} aria-label="Enregistrement de la facture">
           <div><strong>{lastSavedKey === payloadKey ? "Toutes vos modifications sont enregistrées" : "Enregistrez les informations de cette facture"}</strong>
             <p aria-live="polite">{saving ? "Enregistrement en cours…" : lastSavedKey === payloadKey ? "Votre brouillon est sauvegardé. Vous pouvez passer à la vérification." : "Le client, le séjour, les lignes et le paiement seront sauvegardés ensemble. Le brouillon reste modifiable."}</p>

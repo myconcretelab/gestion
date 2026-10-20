@@ -1,4 +1,7 @@
-import { focusInvoiceField } from "./invoiceFormCompletion";
+import {
+  focusInvoiceField,
+  type InvoiceValidationOptions,
+} from "./invoiceFormCompletion";
 import { useState, type ReactNode } from "react";
 import {
   computeInvoiceFiscal,
@@ -22,6 +25,7 @@ export default function InvoiceFiscalEditor({
   pricingEditor,
   onReprepared,
   manualLines = false,
+  vatPresetHint,
 }: {
   value: InvoiceFiscalInput | null;
   onChange: (value: InvoiceFiscalInput) => void;
@@ -30,7 +34,8 @@ export default function InvoiceFiscalEditor({
   children?: ReactNode;
   touristTaxRequired?: boolean;
   pricingEditor?: ReactNode;
-  onReprepared?: () => void;
+  onReprepared?: (options?: InvoiceValidationOptions) => void;
+  vatPresetHint?: string;
   manualLines?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
@@ -46,16 +51,16 @@ export default function InvoiceFiscalEditor({
     setLoading(true);
     setError(null);
     try {
-      const result = await apiFetch<{ fiscal_input: InvoiceFiscalInput }>(
-        "/invoices/fiscal-preview",
-        {
-          method: "POST",
-          json: {
-            ...(payload as Record<string, unknown>),
-            fiscal_input: undefined,
-          },
+      const result = await apiFetch<{
+        fiscal_input: InvoiceFiscalInput;
+        validation_options?: InvoiceValidationOptions;
+      }>("/invoices/fiscal-preview", {
+        method: "POST",
+        json: {
+          ...(payload as Record<string, unknown>),
+          fiscal_input: undefined,
         },
-      );
+      });
       onChange(
         value
           ? {
@@ -66,7 +71,7 @@ export default function InvoiceFiscalEditor({
             }
           : result.fiscal_input,
       );
-      onReprepared?.();
+      onReprepared?.(result.validation_options);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Préparation impossible.");
     } finally {
@@ -145,6 +150,11 @@ export default function InvoiceFiscalEditor({
             >
               <h3>Lignes de facture</h3>
               {pricingEditor}
+              {vatPresetHint && (
+                <p className="field-hint invoice-fiscal__vat-hint">
+                  {vatPresetHint}
+                </p>
+              )}
               {manualLines && (
                 <p className="field-hint">
                   Votre ventilation personnalisée est conservée. Si vous
