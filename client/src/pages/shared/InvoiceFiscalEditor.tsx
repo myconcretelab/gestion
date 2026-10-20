@@ -40,6 +40,7 @@ export default function InvoiceFiscalEditor({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedLines, setExpandedLines] = useState<string[]>([]);
   const prepare = async () => {
     if (
       value?.lines.length &&
@@ -110,13 +111,6 @@ export default function InvoiceFiscalEditor({
       aria-label="Données fiscales de la facture"
     >
       <div className="invoice-fiscal__header">
-        <div>
-          <div className="section-title">Votre facture</div>
-          <p className="field-hint">
-            Les nuitées et prestations du séjour sont déjà reprises ci-dessous.
-            Les prix sont TTC.
-          </p>
-        </div>
         <button
           type="button"
           className="secondary"
@@ -194,26 +188,46 @@ export default function InvoiceFiscalEditor({
                     Ligne {index + 1} ·{" "}
                     {formatEuro(line.quantity * line.unit_price_ttc)}
                   </legend>
-                  <div className="invoice-line__summary">
-                    <strong>{line.label || "Ligne à compléter"}</strong>
-                    <span>
-                      {line.quantity}{" "}
-                      {line.unit === "DAY"
-                        ? /^Location(?: ·|$)/.test(line.label)
-                          ? line.quantity > 1
-                            ? "nuitées"
-                            : "nuitée"
-                          : line.quantity > 1
-                            ? "jours"
-                            : "jour"
-                        : line.unit === "E48"
-                          ? "prestation(s)"
-                          : "unité(s)"}{" "}
-                      × {formatEuro(line.unit_price_ttc)} TTC
-                    </span>
+                  <div className="invoice-line__header">
+                    <div className="invoice-line__summary">
+                      <strong>{line.label || "Ligne à compléter"}</strong>
+                      <span>
+                        {line.quantity}{" "}
+                        {line.unit === "DAY"
+                          ? /^Location(?: ·|$)/.test(line.label)
+                            ? line.quantity > 1
+                              ? "nuitées"
+                              : "nuitée"
+                            : line.quantity > 1
+                              ? "jours"
+                              : "jour"
+                          : line.unit === "E48"
+                            ? "prestation(s)"
+                            : "unité(s)"}{" "}
+                        × {formatEuro(line.unit_price_ttc)} TTC
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary invoice-line__edit"
+                      aria-expanded={expandedLines.includes(line.id)}
+                      aria-controls={`invoice-line-edit-${line.id}`}
+                      onClick={() =>
+                        setExpandedLines((previous) =>
+                          previous.includes(line.id)
+                            ? previous.filter((id) => id !== line.id)
+                            : [...previous, line.id],
+                        )
+                      }
+                    >
+                      Personnaliser cette ligne
+                    </button>
                   </div>
-                  <details className="invoice-line__allocation">
-                    <summary>Personnaliser cette ligne</summary>
+                  <div
+                    id={`invoice-line-edit-${line.id}`}
+                    className="invoice-line__allocation"
+                    hidden={!expandedLines.includes(line.id)}
+                  >
                     <div className="grid-2">
                       <label className="field">
                         {fieldLabel("Libellé")}
@@ -287,18 +301,15 @@ export default function InvoiceFiscalEditor({
                     >
                       Retirer cette ligne
                     </button>
-                  </details>
+                  </div>
                   <div className="grid-2">
-                    <details
-                      className="invoice-fiscal__vat"
-                      open={value.buyer.kind === "business" ? true : undefined}
-                    >
-                      <summary>
+                    <div className="invoice-fiscal__vat">
+                      <div className="invoice-fiscal__vat-title">
                         Réglages de TVA
                         {line.vat_category === "unknown"
                           ? " · à compléter"
                           : " · renseignés"}
-                      </summary>
+                      </div>
                       <div className="grid-2">
                         <label className="field">
                           {fieldLabel("Traitement de TVA")}
@@ -358,7 +369,7 @@ export default function InvoiceFiscalEditor({
                           </label>
                         )}
                       </div>
-                    </details>
+                    </div>
                   </div>
                 </fieldset>,
               ])}
@@ -528,18 +539,41 @@ export default function InvoiceFiscalEditor({
           )}
           <div className="invoice-fiscal__review">
             {touristTaxRequired && (
-              <label className="checkbox">
-                <input
-                  id="tourist-tax-reviewed"
-                  type="checkbox"
-                  checked={value.tourist_tax_reviewed}
-                  onChange={(e) =>
-                    update({ tourist_tax_reviewed: e.target.checked })
-                  }
-                />
-                J’ai vérifié le traitement et la collecte de la taxe de séjour,
-                y compris pour chaque réservation regroupée. {required()}
-              </label>
+              <>
+                <div className="invoice-fiscal__tourist-tax-help">
+                  <strong>Taxe de séjour : où modifier les réglages ?</strong>
+                  <p>
+                    Le tarif par personne et par nuit se modifie dans Gîtes →
+                    Gestion → Fiscalité & banque. Le montant calculé n’est pas
+                    ajouté automatiquement au total de la facture.
+                  </p>
+                  <p>
+                    Si la taxe est comprise dans le prix, utilisez «
+                    Personnaliser cette ligne » et « Ajouter une ventilation
+                    personnalisée » pour répartir le même total et renseigner
+                    son traitement de TVA. Si elle est facturée en plus, ajoutez
+                    un frais supplémentaire. Si une plateforme la collecte
+                    séparément, ne l’ajoutez pas une seconde fois.
+                  </p>
+                  <p>
+                    La case ci-dessous confirme votre vérification ; elle ne
+                    modifie ni le montant ni le mode de collecte.
+                  </p>
+                </div>
+                <label className="checkbox">
+                  <input
+                    id="tourist-tax-reviewed"
+                    type="checkbox"
+                    checked={value.tourist_tax_reviewed}
+                    onChange={(e) =>
+                      update({ tourist_tax_reviewed: e.target.checked })
+                    }
+                  />
+                  J’ai vérifié le traitement et la collecte de la taxe de
+                  séjour, y compris pour chaque réservation regroupée.{" "}
+                  {required()}
+                </label>
+              </>
             )}
             <label className="checkbox">
               <input

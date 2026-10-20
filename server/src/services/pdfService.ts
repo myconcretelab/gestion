@@ -1392,7 +1392,12 @@ export const buildInvoiceHtml = async (params: {
     if (previous && previous.stayId === source?.stay_id) previous.rows.push(row);
     else fiscalRowGroups.push({ stayId: source?.stay_id, rows: [row] });
   });
-  const fiscalRows = fiscalTotals ? fiscalRowGroups.map((group) => `<tbody${group.stayId ? ' class="invoice-stay-group"' : ""}>${group.rows.join("")}</tbody>`).join("") : undefined;
+  // Fiscal lines already contain the discounted price. Explain the reduction
+  // without adding a second negative accounting line (or changing VAT totals).
+  const fiscalDiscountHtml = fiscalTotals && !isMultiReservation && remiseMontantValue > 0
+    ? `<tbody><tr class="invoice-discount-detail"><td colspan="2"><strong>Remise de ${formatEuro(remiseMontantValue)} TTC${sign < 0 ? " sur la facture d’origine" : ""}</strong>${remiseReason ? `<div class="invoice-remise-reason">${escapeHtml(remiseReason)}</div>` : ""}<div class="invoice-item-meta">Location avant remise : ${formatEuro(params.totals.montantBase)} − remise : ${formatEuro(remiseMontantValue)} = ${formatEuro(params.totals.totalSansOptions)} TTC. Remise déjà déduite des nuitées ci-dessous.</div></td></tr></tbody>`
+    : "";
+  const fiscalRows = fiscalTotals ? fiscalDiscountHtml + fiscalRowGroups.map((group) => `<tbody${group.stayId ? ' class="invoice-stay-group"' : ""}>${group.rows.join("")}</tbody>`).join("") : undefined;
   const fiscalSummary = fiscalTotals ? `<tr><td>Total HT</td><td>${fiscalMoney(fiscalTotals.net_cents)}</td></tr>${fiscalTotals.breakdown.map((group) => `<tr><td>TVA ${escapeHtml(group.category === "unknown" ? "à préciser" : group.category)}${group.category === "S" ? ` · ${escapeHtml(String(group.rate))} %` : ""}${group.reason ? `<div class="invoice-item-meta">${escapeHtml(group.reason)}</div>` : ""}</td><td>${fiscalMoney(group.vat_cents)}</td></tr>`).join("")}${fiscalTotals.rounding_cents ? `<tr><td>Arrondi TTC</td><td>${fiscalMoney(fiscalTotals.rounding_cents)}</td></tr>` : ""}` : "";
 
   return renderTemplate(template, {

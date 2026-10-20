@@ -103,6 +103,19 @@ export function invoiceFormCompletion(
 export function focusInvoiceField(targetId: string) {
   const target = document.getElementById(targetId);
   if (!target) return;
+  const editor = target.closest<HTMLElement>(
+    ".invoice-line__allocation[hidden]",
+  );
+  const editButton = editor?.id
+    ? document.querySelector<HTMLButtonElement>(
+        `button[aria-controls="${CSS.escape(editor.id)}"]`,
+      )
+    : null;
+  if (editButton) {
+    editButton.click();
+    window.requestAnimationFrame(() => focusInvoiceField(targetId));
+    return;
+  }
   for (
     let parent = target.parentElement;
     parent;

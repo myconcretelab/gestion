@@ -19,6 +19,7 @@ import {
   type GiteLike,
 } from "../src/services/pdfService.js";
 import type { ContractTotals } from "../src/services/contractCalculator.js";
+import { computeTotals } from "../src/services/contractCalculator.js";
 
 const gite: GiteLike = {
   nom: "Le Chêne",
@@ -238,6 +239,72 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
       `${theme} conserve tout le contenu de la facture`,
     );
     assert.match(themed, new RegExp(`data-invoice-theme="${theme}"`));
+  }
+
+  // Fiscal PDFs must explain the reduction while their lines and VAT still
+  // account for it exactly once, including allocations across nightly cents.
+  for (const [nights, discount] of [
+    [1, 90],
+    [3, 10],
+    [2, 70],
+    [1, 350],
+  ]) {
+    const discountedTotals = computeTotals({
+      dateDebut: new Date("2026-10-20"),
+      dateFin: new Date(`2026-10-${20 + nights}`),
+      prixParNuit: 350,
+      remiseMontant: discount,
+      nbAdultes: 1,
+      nbEnfants: 0,
+      arrhesMontant: 0,
+      options: {},
+      gite,
+    });
+    const discountedFiscal = proposeInvoiceFiscal(
+      { remise_montant: discount },
+      discountedTotals,
+    );
+    discountedFiscal.lines.forEach((line) => {
+      line.vat_category = "S";
+      line.vat_rate = 10;
+    });
+    const computed = computeInvoiceFiscal(discountedFiscal);
+    assert.equal(computed.gross_cents, nights * 35000 - discount * 100);
+    for (const theme of invoiceThemeIds) {
+      const discountedHtml = await buildInvoiceHtml({
+        gite,
+        totals: discountedTotals,
+        invoice: {
+          ...invoice,
+          reservation_items: [],
+          fiscal: discountedFiscal,
+          prix_par_nuit: 350,
+          remise_montant: discount,
+          clauses: {
+            invoice_theme: theme,
+            remise_raison: "Fidélité <client> & séjour",
+          },
+          date_fin: new Date(`2026-10-${20 + nights}`),
+        },
+      });
+      assert.match(discountedHtml, /Fidélité &lt;client&gt; &amp; séjour/);
+      assert.match(discountedHtml, /Location avant remise :/);
+      assert.equal(
+        (discountedHtml.match(/class="invoice-discount-detail"/g) ?? []).length,
+        1,
+      );
+      assert.match(
+        discountedHtml,
+        /Remise déjà déduite des nuitées ci-dessous/,
+      );
+      if (nights === 1 && discount === 90) {
+        assert.match(
+          discountedHtml,
+          /350,00[^<]*− remise : 90,00[^<]*= 260,00/,
+        );
+        assert.match(discountedHtml, /1 nuitée × 260,00/);
+      }
+    }
   }
 
   const groupedItems = Array.from({ length: 6 }, (_, index) => ({

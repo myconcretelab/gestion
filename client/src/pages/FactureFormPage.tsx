@@ -10,6 +10,7 @@ import InvoiceCompletionAssistant from "./shared/InvoiceCompletionAssistant";
 import InvoiceFormHeader from "./shared/InvoiceFormHeader";
 import { focusInvoiceField, invoiceFormCompletion, type InvoiceValidationOptions } from "./shared/invoiceFormCompletion";
 import InvoiceFiscalEditor from "./shared/InvoiceFiscalEditor";
+import InvoiceOptionsDialog from "./shared/InvoiceOptionsDialog";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, Facture, ContratOptions, Reservation } from "../utils/types";
@@ -145,6 +146,7 @@ const FactureFormPage = () => {
   const [remiseReason, setRemiseReason] = useState("");
   const [fraisSupplementaires, setFraisSupplementaires] = useState<InvoiceExtraFeeRow[]>([]);
   const [options, setOptions] = useState<ContratOptions>(defaultOptions);
+  const [optionsEditorOpen, setOptionsEditorOpen] = useState(false);
   const [arrhesDateLimite, setArrhesDateLimite] = useState("");
   const [clausesText, setClausesText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -853,12 +855,14 @@ const FactureFormPage = () => {
     </div>
   );
   const optionsEditor = (
-    <details
+    <div
       className={`invoice-form__optional invoice-pricing__options${isMultiReservation ? " invoice-single-reservation-only" : ""}`}
     >
-      <summary>
-        Prestations & options <span>Draps, ménage, animaux…</span>
-      </summary>
+      <div className="invoice-pricing__options-header">
+        <div><strong>Prestations & options</strong><span>Draps, ménage, animaux…</span></div>
+        <button type="button" className="secondary" aria-haspopup="dialog" onClick={() => setOptionsEditorOpen(true)}>Éditer</button>
+      </div>
+      <InvoiceOptionsDialog open={optionsEditorOpen} onClose={() => setOptionsEditorOpen(false)}>
       <div className="option-grid">
         <div className="option-card option-card--rules">
           <div className="option-title">Règles du gîte</div>
@@ -1220,7 +1224,8 @@ const FactureFormPage = () => {
           </div>
         )}
       </div>
-    </details>
+      </InvoiceOptionsDialog>
+    </div>
   );
   const pricingEditor = (
     <div className="invoice-pricing">
@@ -1286,6 +1291,7 @@ const FactureFormPage = () => {
           />
         </label>
       </div>
+      {optionsEditor}
       <div className="invoice-extra-fees">
         <div className="invoice-extra-fees__header">
           <div>
@@ -1349,7 +1355,6 @@ const FactureFormPage = () => {
           Total frais: {formatEuro(fraisSupplementairesTotal)}
         </div>
       </div>
-      {optionsEditor}
     </div>
   );
 
