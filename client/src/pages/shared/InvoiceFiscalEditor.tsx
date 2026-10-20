@@ -91,6 +91,7 @@ export default function InvoiceFiscalEditor({
   return (
     <section
       id="invoice-fiscal"
+      data-invoice-step="2"
       tabIndex={-1}
       className="card invoice-fiscal"
       aria-label="Données fiscales de la facture"

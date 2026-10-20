@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { emptyInvoiceFiscalInput, type InvoiceFiscalInput } from "@contrats/shared";
 import InvoiceBuyerEditor from "./shared/InvoiceBuyerEditor";
 import InvoiceCompletionAssistant from "./shared/InvoiceCompletionAssistant";
+import InvoiceFormHeader from "./shared/InvoiceFormHeader";
 import { focusInvoiceField, invoiceFormCompletion, type InvoiceValidationOptions } from "./shared/invoiceFormCompletion";
 import InvoiceFiscalEditor from "./shared/InvoiceFiscalEditor";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
@@ -757,11 +758,7 @@ const FactureFormPage = () => {
   return (
     <div className="invoice-form">
       {error && <div className="note">{error}</div>}
-      <header className="invoice-form__intro">
-        <span className="invoice-form__eyebrow">FACTURATION</span>
-        <h2>{isEdit ? "Votre facture, en détail" : "Créons votre facture"}</h2>
-        <ol className="invoice-form__steps"><li>1 · Client & séjour</li><li>2 · Lignes & paiement</li><li>3 · Enregistrer & vérifier</li></ol>
-      </header>
+      <InvoiceFormHeader isEdit={isEdit} />
       {!isEdit && loadingFromContract && <div className="note">Préremplissage depuis le contrat...</div>}
       {!isEdit && loadingFromReservation && <div className="note">Préremplissage depuis la réservation...</div>}
       {!isEdit && !loadingFromContract && sourceContractNumber && (
@@ -1406,7 +1403,7 @@ const FactureFormPage = () => {
         setFiscalInput(next);
 
       }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax)}>
-        <footer className="invoice-save" aria-label="Enregistrement de la facture">
+        <footer className="invoice-save" id="invoice-save" data-invoice-step="3" tabIndex={-1} aria-label="Enregistrement de la facture">
           <div><strong>{lastSavedKey === payloadKey ? "Toutes vos modifications sont enregistrées" : "Enregistrez les informations de cette facture"}</strong>
             <p aria-live="polite">{saving ? "Enregistrement en cours…" : lastSavedKey === payloadKey ? "Votre brouillon est sauvegardé. Vous pouvez passer à la vérification." : "Le client, le séjour, les lignes et le paiement seront sauvegardés ensemble. Le brouillon reste modifiable."}</p>
           </div>

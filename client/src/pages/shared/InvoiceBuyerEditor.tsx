@@ -26,6 +26,9 @@ export default function InvoiceBuyerEditor({
   );
   return (
     <section
+      id="invoice-client"
+      data-invoice-step="1"
+      tabIndex={-1}
       className="card invoice-fiscal invoice-buyer"
       aria-labelledby="invoice-buyer-title"
     >
