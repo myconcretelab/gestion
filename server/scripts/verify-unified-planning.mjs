@@ -17,7 +17,7 @@ const gites = [{ id: "a", nom: "La Grée" }, { id: "b", nom: "Tante Phonsine" }]
 const fixture = { tasks: [], templates: [], gites, assignees: [{ id: "u-a", name: "Marie" }], rules: [], can_manage: true, can_edit_compensation: true, current_user_id: "u-a", shortcuts: [], shortcut_catalog: [] };
 let periods = [];
 const rows = [
-  { id: "basket", kind: "task", date: "2026-11-05", title: "Livraison de paniers", gite_id: "a", gite_name: "La Grée", assignee_id: "u-a", assignee_name: "Marie", worker_id: "w-a", starts_at: "2026-11-05T08:00:00Z", due_at: "2026-11-05T16:00:00Z", status: "planned", note: "Déposer devant la porte", amount: 12, guest: "Séjour test", phone: null, comment: null, options: "", nights: 5 },
+  { id: "inspection", kind: "task", date: "2026-11-05", title: "Vérification des détecteurs", gite_id: "a", gite_name: "La Grée", assignee_id: "u-a", assignee_name: "Marie", worker_id: "w-a", starts_at: "2026-11-05T08:00:00Z", due_at: "2026-11-05T16:00:00Z", status: "planned", note: "Contrôler les piles", amount: 12, guest: "Séjour test", phone: null, comment: null, options: "", nights: 5 },
   { id: "clean", kind: "cleaning", date: "2026-11-05", title: "Ménage", gite_id: "a", gite_name: "La Grée", assignee_id: "u-a", assignee_name: "Marie", worker_id: "w-a", starts_at: "2026-11-05T11:00:00Z", due_at: "2026-11-05T16:00:00Z", status: "planned", note: "", amount: 45, guest: "Séjour test", phone: null, comment: null, options: "", nights: 5 },
 ];
 await page.route("**/api/**", async (route) => {
@@ -30,7 +30,7 @@ await page.route("**/api/**", async (route) => {
   else if (path.endsWith("/workers")) result = people;
   else if (path.endsWith("/message-channels/status")) result = { channels: [{ id: "sms", label: "SMS", available: true }, { id: "telegram", label: "Telegram", available: true }] };
   else if (path.endsWith("/programme-templates")) result = { programme_templates: [{ id: "block", key: "programme_gite", template: "{{gite}} · {{prestation}} : {{horaire}}" }] };
-  else if (path.endsWith("/organization-preview")) result = { count: 3, assignments: 0, conflicts: 0, examples: ["5 novembre · La Grée · Panier"] };
+  else if (path.endsWith("/organization-preview")) result = { count: 3, assignments: 0, conflicts: 0, examples: ["5 novembre · La Grée · Vérification des détecteurs"] };
   else if (path.endsWith("/interventions")) result = { period: periods[0], interventions: rows };
   else if (path.includes("/planning-relay-periods")) {
     if (body && req.method() === "POST") { const period = { id: "plan-1", ...body, public_path: "/r/abcdefgh?audience=all&key=test", assignments: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() }; periods.push(period); result = period; }
@@ -57,11 +57,16 @@ await mount.getByRole("tab", { name: "Automatisations", exact: true }).click();
 await mount.getByRole("button", { name: "+ Organiser une période", exact: true }).click();
 await page.getByRole("button", { name: /Prévoir une prestation à chaque séjour/ }).click();
 const dialog = page.getByRole("dialog");
+assert.equal(await dialog.getByLabel("Nom de l’organisation").inputValue(), "");
+assert.equal(await dialog.getByLabel("Nom de la prestation").inputValue(), "");
+await dialog.getByLabel("Nom de l’organisation").fill("Vérification des détecteurs");
+await dialog.getByLabel("Nom de la prestation").fill("Contrôler les détecteurs");
 await dialog.getByLabel("Du", { exact: true }).fill("2026-11-01");
 await dialog.getByLabel("Au", { exact: true }).fill("2026-11-15");
 await dialog.locator(".po-gites").first().getByLabel("La Grée", { exact: true }).check();
 await dialog.locator(".po-gites").first().getByLabel("Tante Phonsine", { exact: true }).check();
-assert.equal(await dialog.getByLabel("Durée minimale du séjour (nuits)").inputValue(), "5");
+assert.equal(await dialog.getByLabel("Durée minimale du séjour (nuits)").inputValue(), "");
+await dialog.getByLabel("Durée minimale du séjour (nuits)").fill("5");
 await dialog.getByLabel("Intervenant pour La Grée", { exact: true }).selectOption("u-a");
 await dialog.getByLabel("Forfait pour La Grée", { exact: true }).fill("12");
 await dialog.getByRole("button", { name: "Appliquer aux autres gîtes" }).click();
@@ -73,8 +78,9 @@ await page.screenshot({ path: join(output, "desktop-form.png"), fullPage: true, 
 await dialog.getByRole("button", { name: "Vérifier les interventions", exact: true }).click();
 await dialog.getByText("Prêt à appliquer", { exact: true }).waitFor();
 await dialog.getByRole("button", { name: "Appliquer l’organisation", exact: true }).click();
-await mount.getByRole("heading", { name: "Livraison de paniers", exact: true }).waitFor();
+await mount.getByRole("heading", { name: "Vérification des détecteurs", exact: true }).waitFor();
 assert.equal(periods.length, 1);
+assert.equal(periods[0].organization_config.missions[0].title, "Contrôler les détecteurs");
 assert.equal(periods[0].organization_config.missions[0].rates.b, 18);
 assert.equal(periods[0].organization_config.missions[0].minimum_nights, 5);
 assert.equal(periods[0].sms_configs[0].recipient_channels["w-a"], "telegram");

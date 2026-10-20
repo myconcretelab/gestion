@@ -50,20 +50,12 @@ const date = (value: string) =>
     month: "short",
     year: "numeric",
   });
-const newMission = (
-  kind: "cleaning" | "task",
-  basket = false,
-): PlanningMission => ({
+const newMission = (kind: "cleaning" | "task"): PlanningMission => ({
   id: id(),
   kind,
-  title:
-    kind === "cleaning"
-      ? "Ménage"
-      : basket
-        ? "Livraison de paniers"
-        : "Nouvelle prestation",
+  title: kind === "cleaning" ? "Ménage" : "",
   trigger: kind === "cleaning" ? "departure" : "arrival",
-  minimum_nights: basket ? 5 : null,
+  minimum_nights: null,
   starts_offset_days: 0,
   due_offset_days: 0,
   start_time: "09:00",
@@ -84,7 +76,7 @@ const newDraft = (
     kind === "cleaning"
       ? "Relais pendant mon absence"
       : kind === "task"
-        ? "Livraison de paniers"
+        ? ""
         : "Planning de l’équipe",
   from: day(),
   to: addDays(day(), 13),
@@ -102,7 +94,7 @@ const newDraft = (
     version: 1,
     enabled: true,
     audience: "individual",
-    missions: kind === "share" ? [] : [newMission(kind, kind === "task")],
+    missions: kind === "share" ? [] : [newMission(kind)],
   },
   sms_configs: [
     {
@@ -509,7 +501,7 @@ export default function PlanningOrganizationsPanel({
                 [
                   "task",
                   "Prévoir une prestation à chaque séjour",
-                  "Paniers à l’arrivée, préparation du linge ou autre intervention.",
+                  "Choisir librement la prestation, son moment et ses conditions.",
                 ],
                 [
                   "share",
@@ -597,6 +589,7 @@ export default function PlanningOrganizationsPanel({
                     required
                     value={draft.label}
                     maxLength={120}
+                    placeholder="Nom de votre organisation"
                     onChange={(event) => update({ label: event.target.value })}
                   />
                 </label>
