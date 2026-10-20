@@ -2,6 +2,8 @@
 
 `client/src/pages/shared/ActionMenu.tsx` est le menu commun aux listes de réservations, contrats et factures. Il remplace les anciennes palettes d’icônes ouvertes au survol. Les liens principaux « Détails » restent accessibles directement.
 
+Le bouton affiche uniquement l’icône de liste, avec un nom accessible et une infobulle fournis par `ariaLabel`. Il mesure 36 px (42 px sur mobile). Les groupes `table-actions--menu` reviennent à la ligne si la cellule est trop étroite pour « Détails » et l’icône.
+
 ## Ajouter une action
 
 Passer un tableau d’`ActionMenuItem` : un `id` stable, un `label` explicite, une `icon` issue d’`ActionIcon`, puis **un seul** comportement : `onSelect`, `to` pour une route React ou `href` pour un lien. Les liens externes utilisent `external: true`.

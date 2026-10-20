@@ -204,6 +204,7 @@ export default function ActionMenu({
         id={`${id}-trigger`}
         className="action-menu__trigger"
         aria-label={ariaLabel}
+        title={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
@@ -223,8 +224,6 @@ export default function ActionMenu({
         }}
       >
         <ActionIcon name="menu" />
-        <span>Actions</span>
-        <ActionIcon name="chevron" />
       </button>
       {open &&
         createPortal(

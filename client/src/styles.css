@@ -15326,6 +15326,12 @@ button.personal-expenses-status:disabled {
   gap: 8px;
 }
 
+.table-actions--menu {
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .table-action {
   display: inline-flex;
   align-items: center;

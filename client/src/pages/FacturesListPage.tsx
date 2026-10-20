@@ -398,7 +398,7 @@ const FacturesListPage = () => {
                     </div>
                   </td>
                   <td className="table-actions-cell">
-                    <div className="table-actions">
+                    <div className="table-actions table-actions--menu">
                       <Link
                         className="table-action table-action--neutral"
                         to={`/factures/${facture.id}`}
