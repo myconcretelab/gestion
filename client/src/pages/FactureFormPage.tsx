@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { emptyInvoiceFiscalInput, type InvoiceFiscalInput } from "@contrats/shared";
+import { type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
+import { reconcileInvoiceGeneratedLines, shouldSyncInvoiceGeneratedLines } from "./shared/invoiceFormLines";
+import { createInvoiceFormInput } from "./shared/invoiceFormDefaults";
 import InvoiceBuyerEditor from "./shared/InvoiceBuyerEditor";
 import InvoiceCompletionAssistant from "./shared/InvoiceCompletionAssistant";
 import InvoiceFormHeader from "./shared/InvoiceFormHeader";
@@ -94,7 +96,7 @@ const getValidationFieldErrors = (error: unknown): FieldErrors =>
   extractValidationFieldErrors(error, contractFieldKeySet, "date_fin");
 
 const FactureFormPage = () => {
-  const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput>(emptyInvoiceFiscalInput);
+  const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput>(createInvoiceFormInput);
   const [savedDraft, setSavedDraft] = useState<Facture | null>(null);
   const [lastSavedKey, setLastSavedKey] = useState<string | null>(null);
   const [linesManual, setLinesManual] = useState(false);
@@ -102,6 +104,10 @@ const FactureFormPage = () => {
   const [linesRetry, setLinesRetry] = useState(0);
   const [linesError, setLinesError] = useState<string | null>(null);
   const [validationOptions, setValidationOptions] = useState<InvoiceValidationOptions>({});
+  const proposedLinesRef = useRef<InvoiceFiscalLine[]>();
+  const currentFiscalRef = useRef(fiscalInput);
+  currentFiscalRef.current = fiscalInput;
+  const pricedGiteRef = useRef<string | null>(null);
   const fiscalContextRef = useRef<string | null>(null);
   const handledHashNavigationRef = useRef<string | null>(null);
   const location = useLocation();
@@ -257,7 +263,8 @@ const FactureFormPage = () => {
       .then((data) => {
         if (!active) return;
         setEditingContract(data);
-        setFiscalInput(data.fiscal_input ?? emptyInvoiceFiscalInput());
+        proposedLinesRef.current = undefined;
+        setFiscalInput(data.fiscal_input ?? createInvoiceFormInput());
         setLinesManual(Boolean(data.fiscal_input?.lines.length));
         setGiteId(data.gite_id);
         setLocataireNom(data.locataire_nom);
@@ -492,11 +499,11 @@ const FactureFormPage = () => {
   );
 
   useEffect(() => {
-    if (!selectedGite) return;
-    if (prixNuitListe.length > 0 && !prixNuitListe.includes(prixParNuit)) {
-      setPrixParNuit(prixNuitListe[0]);
-    }
-  }, [selectedGite, prixNuitListe, prixParNuit]);
+    if (!selectedGite || pricedGiteRef.current === selectedGite.id) return;
+    pricedGiteRef.current = selectedGite.id;
+    if (isEdit || fromContractId || fromReservationId || selectedReservationIds.length) return;
+    if (prixNuitListe.length) setPrixParNuit(prixNuitListe[0]);
+  }, [selectedGite, prixNuitListe, isEdit, fromContractId, fromReservationId, selectedReservationIds.length]);
 
   useEffect(() => {
     if (!selectedGite) return;
@@ -637,10 +644,17 @@ const FactureFormPage = () => {
       }).then((result) => {
         if (controller.signal.aborted) return;
         setValidationOptions(result.validation_options);
-        if (!linesManual) setFiscalInput((previous) => ({ ...previous, lines: result.fiscal_input.lines.map((line) => {
-          const old = previous.lines.find((item) => item.id === line.id && item.label === line.label);
-          return old ? { ...line, vat_category: old.vat_category, vat_rate: old.vat_rate, exemption_reason: old.exemption_reason } : line;
-        }), reviewed: false, tourist_tax_reviewed: false }));
+        const baseline = proposedLinesRef.current;
+        const proposed = result.fiscal_input.lines;
+        const shouldSync = shouldSyncInvoiceGeneratedLines(linesManual, currentFiscalRef.current.lines, proposed, baseline);
+        if (shouldSync) {
+          setLinesManual(false);
+          setFiscalInput((previous) => {
+            const lines = reconcileInvoiceGeneratedLines(previous.lines, proposed, baseline);
+            return JSON.stringify(lines) === JSON.stringify(previous.lines) ? previous : { ...previous, lines, reviewed: false, tourist_tax_reviewed: false };
+          });
+        }
+        proposedLinesRef.current = proposed;
       }).catch((err) => {
         if (!isAbortError(err)) setLinesError(err instanceof Error ? err.message : "Préparation des lignes impossible.");
       }).finally(() => { if (!controller.signal.aborted) setPreparingLines(false); });
@@ -749,6 +763,556 @@ const FactureFormPage = () => {
       return previous < nextMinDateFin ? nextMinDateFin : previous;
     });
   };
+
+  const hasStaySource = Boolean(
+    linkedReservationId || selectedReservationIds.length || sourceContractNumber,
+  );
+  const stayDatesEditor = (
+    <div className="field-group">
+      <div className="field-group__header">
+        <div className="field-group__label">Dates</div>
+        <div
+          className={`nights-chip${nbNuitsSelection ? "" : " nights-chip--muted"}`}
+        >
+          {isMultiReservation
+            ? `${selectedReservationsNights} nuit${selectedReservationsNights > 1 ? "s" : ""} au total`
+            : nbNuitsSelection
+              ? `${nbNuitsSelection} nuit${nbNuitsSelection > 1 ? "s" : ""}`
+              : "Durée à définir"}
+        </div>
+      </div>
+      <div className="field-row">
+        <label className={getFieldClassName("date_debut")}>
+          Début
+          <input
+            id="invoice-start"
+            type="date"
+            disabled={isMultiReservation}
+            value={dateDebut}
+            onChange={(e) => {
+              clearFieldError("date_debut");
+              handleDateDebutChange(e.target.value);
+            }}
+          />
+          {renderFieldError("date_debut")}
+        </label>
+        <label className={getFieldClassName("date_fin")}>
+          Fin
+          <input
+            type="date"
+            disabled={isMultiReservation}
+            value={dateFin}
+            min={minDateFin}
+            onChange={(e) => {
+              clearFieldError("date_fin");
+              setDateFin(e.target.value);
+            }}
+          />
+          {renderFieldError("date_fin")}
+        </label>
+      </div>
+    </div>
+  );
+  const optionsEditor = (
+    <details
+      className={`invoice-form__optional invoice-pricing__options${isMultiReservation ? " invoice-single-reservation-only" : ""}`}
+    >
+      <summary>
+        Prestations & options <span>Draps, ménage, animaux…</span>
+      </summary>
+      <div className="option-grid">
+        <div className="option-card option-card--rules">
+          <div className="option-title">Règles du gîte</div>
+          <div className="rule-list">
+            <div className="rule-row">
+              <div className="rule-info">
+                <div className="rule-title">Animaux acceptés</div>
+                <div className="rule-sub">
+                  Active l'option chiens sur la facture.
+                </div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={regleAnimauxAcceptes}
+                  onChange={(e) =>
+                    updateRule("regle_animaux_acceptes", e.target.checked)
+                  }
+                />
+                <span className="slider" />
+              </label>
+            </div>
+            <div className="rule-row">
+              <div className="rule-info">
+                <div className="rule-title">Bois première flambée</div>
+                <div className="rule-sub">
+                  Mention dans les notes de la facture.
+                </div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={regleBoisPremiereFlambee}
+                  onChange={(e) =>
+                    updateRule("regle_bois_premiere_flambee", e.target.checked)
+                  }
+                />
+                <span className="slider" />
+              </label>
+            </div>
+            <div className="rule-row">
+              <div className="rule-info">
+                <div className="rule-title">Info tiers personnes</div>
+                <div className="rule-sub">
+                  Mention dans les notes de la facture.
+                </div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={regleTiersPersonnesInfo}
+                  onChange={(e) =>
+                    updateRule("regle_tiers_personnes_info", e.target.checked)
+                  }
+                />
+                <span className="slider" />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="option-card">
+          <div className="option-row">
+            <div>
+              <div className="option-title">Draps</div>
+              <div className="option-sub">
+                {formatEuro(drapsTarif)} / lit / séjour
+              </div>
+            </div>
+            <div className="option-actions">
+              <div className="switch-group">
+                <span>Activer</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={options.draps?.enabled}
+                    onChange={(e) =>
+                      updateOption("draps", {
+                        enabled: e.target.checked,
+                        offert: e.target.checked
+                          ? (options.draps?.offert ?? false)
+                          : false,
+                      })
+                    }
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              <div className="switch-group">
+                <span>Offert</span>
+                <label className="switch switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={options.draps?.offert}
+                    disabled={!options.draps?.enabled}
+                    onChange={(e) =>
+                      updateOption("draps", { offert: e.target.checked })
+                    }
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="option-inputs">
+            <label className="field field-inline">
+              Lits
+              <input
+                type="number"
+                value={options.draps?.nb_lits ?? 0}
+                disabled={!options.draps?.enabled}
+                onChange={(e) =>
+                  updateOption("draps", { nb_lits: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label className="field field-inline">
+              Prix / lit
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={options.draps?.prix_unitaire ?? drapsTarif}
+                disabled={!options.draps?.enabled}
+                onChange={(e) =>
+                  updateOption("draps", { prix_unitaire: Number(e.target.value) })
+                }
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="option-card">
+          <div className="option-row">
+            <div>
+              <div className="option-title">Linge de toilette</div>
+              <div className="option-sub">
+                {formatEuro(lingeTarif)} / personne / séjour
+              </div>
+            </div>
+            <div className="option-actions">
+              <div className="switch-group">
+                <span>Activer</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={options.linge_toilette?.enabled}
+                    onChange={(e) =>
+                      updateOption("linge_toilette", {
+                        enabled: e.target.checked,
+                        offert: e.target.checked
+                          ? (options.linge_toilette?.offert ?? false)
+                          : false,
+                      })
+                    }
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              <div className="switch-group">
+                <span>Offert</span>
+                <label className="switch switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={options.linge_toilette?.offert}
+                    disabled={!options.linge_toilette?.enabled}
+                    onChange={(e) =>
+                      updateOption("linge_toilette", { offert: e.target.checked })
+                    }
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="option-inputs">
+            <label className="field field-inline">
+              Personnes
+              <input
+                type="number"
+                value={options.linge_toilette?.nb_personnes ?? 0}
+                disabled={!options.linge_toilette?.enabled}
+                onChange={(e) =>
+                  updateOption("linge_toilette", {
+                    nb_personnes: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="option-card">
+          <div className="option-row">
+            <div>
+              <div className="option-title">Ménage fin de séjour</div>
+              <div className="option-sub">Forfait {formatEuro(menageTarif)}</div>
+            </div>
+            <div className="option-actions">
+              <div className="switch-group">
+                <span>Activer</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={options.menage?.enabled}
+                    onChange={(e) =>
+                      updateOption("menage", {
+                        enabled: e.target.checked,
+                        offert: e.target.checked
+                          ? (options.menage?.offert ?? false)
+                          : false,
+                      })
+                    }
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              <div className="switch-group">
+                <span>Offert</span>
+                <label className="switch switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={options.menage?.offert}
+                    disabled={!options.menage?.enabled}
+                    onChange={(e) =>
+                      updateOption("menage", { offert: e.target.checked })
+                    }
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="option-card">
+          <div className="option-row">
+            <div>
+              <div className="option-title">Départ tardif</div>
+              <div className="option-sub">
+                Forfait actuel {formatEuro(departTardifTarif)}
+              </div>
+            </div>
+            <div className="option-actions">
+              <div className="switch-group">
+                <span>Activer</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={options.depart_tardif?.enabled}
+                    onChange={(e) => {
+                      updateOption("depart_tardif", {
+                        enabled: e.target.checked,
+                        offert: e.target.checked
+                          ? (options.depart_tardif?.offert ?? false)
+                          : false,
+                      });
+                      if (e.target.checked) {
+                        clearFieldError("heure_depart");
+                        setHeureDepart("17:00");
+                      }
+                    }}
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+              <div className="switch-group">
+                <span>Offert</span>
+                <label className="switch switch--pink">
+                  <input
+                    type="checkbox"
+                    checked={options.depart_tardif?.offert}
+                    disabled={!options.depart_tardif?.enabled}
+                    onChange={(e) =>
+                      updateOption("depart_tardif", { offert: e.target.checked })
+                    }
+                  />
+                  <span className="slider" />
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="option-inputs">
+            <label className="field field-inline">
+              Prix forfait
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={options.depart_tardif?.prix_forfait ?? departTardifTarif}
+                disabled={!options.depart_tardif?.enabled}
+                onChange={(e) =>
+                  updateOption("depart_tardif", {
+                    prix_forfait: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+        </div>
+
+        {regleAnimauxAcceptes && (
+          <div className="option-card">
+            <div className="option-row">
+              <div>
+                <div className="option-title">Chiens</div>
+                <div className="option-sub">
+                  {formatEuro(chiensTarif)} / nuit / chien
+                </div>
+              </div>
+              <div className="option-actions">
+                <div className="switch-group">
+                  <span>Activer</span>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={options.chiens?.enabled}
+                      onChange={(e) =>
+                        updateOption("chiens", {
+                          enabled: e.target.checked,
+                          offert: e.target.checked
+                            ? (options.chiens?.offert ?? false)
+                            : false,
+                        })
+                      }
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+                <div className="switch-group">
+                  <span>Offert</span>
+                  <label className="switch switch--pink">
+                    <input
+                      type="checkbox"
+                      checked={options.chiens?.offert}
+                      disabled={!options.chiens?.enabled}
+                      onChange={(e) =>
+                        updateOption("chiens", { offert: e.target.checked })
+                      }
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="option-inputs">
+              <label className="field field-inline">
+                Chiens
+                <input
+                  type="number"
+                  value={options.chiens?.nb ?? 0}
+                  disabled={!options.chiens?.enabled}
+                  onChange={(e) =>
+                    updateOption("chiens", { nb: Number(e.target.value) })
+                  }
+                />
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+  const pricingEditor = (
+    <div className="invoice-pricing">
+      <div
+        className={`field-group${isMultiReservation ? " invoice-single-reservation-only" : ""}`}
+      >
+        <label className={getFieldClassName("prix_par_nuit")}>
+          Prix par nuit
+          <input
+            id="invoice-nightly-price"
+            type="number"
+            min="0"
+            step="0.01"
+            list="invoice-nightly-rates"
+            value={prixParNuit}
+            onChange={(e) => {
+              clearFieldError("prix_par_nuit");
+              setPrixParNuit(Number(e.target.value));
+            }}
+          />
+          <datalist id="invoice-nightly-rates">
+            {prixNuitListe.map((prix) => (
+              <option key={prix} value={prix}>
+                {formatEuro(prix)}
+              </option>
+            ))}
+          </datalist>
+          {renderFieldError("prix_par_nuit")}
+        </label>
+        <div className={getFieldClassName("remise_montant")}>
+          Remise
+          <div className="field-row field-row--compact">
+            <input
+              type="number"
+              step={1}
+              value={remiseValue}
+              onChange={(e) => {
+                clearFieldError("remise_montant");
+                setRemiseValue(e.target.value);
+              }}
+            />
+            <select
+              value={remiseMode}
+              onChange={(e) =>
+                setRemiseMode(e.target.value as "euro" | "percent")
+              }
+            >
+              <option value="euro">€</option>
+              <option value="percent">%</option>
+            </select>
+          </div>
+          <div className="field-hint">Soit {formatEuro(remiseMontant)}</div>
+          {renderFieldError("remise_montant")}
+        </div>
+        <label className="field field--small">
+          Raison de la remise (optionnel)
+          <input
+            type="text"
+            maxLength={120}
+            value={remiseReason}
+            onChange={(e) => setRemiseReason(e.target.value)}
+            placeholder="Ex: remise fidélité"
+          />
+        </label>
+      </div>
+      <div className="invoice-extra-fees">
+        <div className="invoice-extra-fees__header">
+          <div>
+            <div className="invoice-extra-fees__title">Frais supplémentaires</div>
+            <div className="field-hint">Ajoutés uniquement à cette facture.</div>
+          </div>
+          <button
+            type="button"
+            className="secondary"
+            onClick={addFraisSupplementaire}
+          >
+            Ajouter
+          </button>
+        </div>
+        {fraisSupplementaires.length > 0 ? (
+          <div className="invoice-extra-fees__list">
+            {fraisSupplementaires.map((fee, index) => (
+              <div className="invoice-extra-fees__row" key={fee.id}>
+                <label className="field">
+                  Libellé
+                  <input
+                    type="text"
+                    maxLength={120}
+                    value={fee.libelle}
+                    onChange={(e) =>
+                      updateFraisSupplementaire(fee.id, {
+                        libelle: e.target.value,
+                      })
+                    }
+                    placeholder={`Frais ${index + 1}`}
+                  />
+                </label>
+                <label className="field invoice-extra-fees__amount">
+                  Montant
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={fee.montant}
+                    onChange={(e) =>
+                      updateFraisSupplementaire(fee.id, {
+                        montant: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="secondary invoice-extra-fees__remove"
+                  onClick={() => removeFraisSupplementaire(fee.id)}
+                >
+                  Retirer
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="field-hint">Aucun frais ajouté.</div>
+        )}
+        <div className="field-hint">
+          Total frais: {formatEuro(fraisSupplementairesTotal)}
+        </div>
+      </div>
+      {optionsEditor}
+    </div>
+  );
 
   if (isEdit && loadingContract && !editingContract) return <div>Chargement...</div>;
   if (isEdit && editingContract && (editingContract.lifecycle_status !== "draft" || editingContract.document_kind === "credit_note")) {
@@ -906,485 +1470,16 @@ const FactureFormPage = () => {
             </div>
           </div>
         )}
+        {hasStaySource ? (
+          <>
+            {(!selectedReservations.length || (selectedReservations.length === 1 && (dateDebut !== toDateInputValue(selectedReservations[0].date_entree) || dateFin !== toDateInputValue(selectedReservations[0].date_sortie)))) && dateDebut && dateFin && <p className="field-hint">Séjour facturé du {formatDate(dateDebut)} au {formatDate(dateFin)} · {nbNuitsSelection} nuit{(nbNuitsSelection ?? 0) > 1 ? "s" : ""}.</p>}
+            <details className="invoice-reservations__dates">
+              <summary>Dates facturées · consulter ou ajuster</summary>
+              {stayDatesEditor}
+            </details>
+          </>
+        ) : stayDatesEditor}
       </div>
-
-      <div className="card">
-        <div className="section-title">Période</div>
-        <div className="field-group">
-          <div className="field-group__header">
-            <div className="field-group__label">Dates</div>
-            <div className={`nights-chip${nbNuitsSelection ? "" : " nights-chip--muted"}`}>
-              {isMultiReservation
-                ? `${selectedReservationsNights} nuit${selectedReservationsNights > 1 ? "s" : ""} au total`
-                : nbNuitsSelection
-                  ? `${nbNuitsSelection} nuit${nbNuitsSelection > 1 ? "s" : ""}`
-                  : "Durée à définir"}
-            </div>
-          </div>
-          <div className="field-row">
-            <label className={getFieldClassName("date_debut")}>
-              Début
-              <input
-                id="invoice-start"
-                type="date"
-                disabled={isMultiReservation}
-                value={dateDebut}
-                onChange={(e) => {
-                  clearFieldError("date_debut");
-                  handleDateDebutChange(e.target.value);
-                }}
-              />
-              {renderFieldError("date_debut")}
-            </label>
-            <label className={getFieldClassName("date_fin")}>
-              Fin
-              <input
-                type="date"
-                disabled={isMultiReservation}
-                value={dateFin}
-                min={minDateFin}
-                onChange={(e) => {
-                  clearFieldError("date_fin");
-                  setDateFin(e.target.value);
-                }}
-              />
-              {renderFieldError("date_fin")}
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="section-title">Tarif du séjour</div>
-        <div className="grid-2">
-          <div className={`field-group${isMultiReservation ? " invoice-single-reservation-only" : ""}`}>
-            <div className="field-group__label">Tarif séjour</div>
-            <label className={getFieldClassName("prix_par_nuit")}>
-              Prix par nuit
-              {prixNuitListe.length > 0 ? (
-                <select
-                  value={prixParNuit}
-                  onChange={(e) => {
-                    clearFieldError("prix_par_nuit");
-                    setPrixParNuit(Number(e.target.value));
-                  }}
-                >
-                  {prixNuitListe.map((prix, index) => (
-                    <option key={`${prix}-${index}`} value={prix}>
-                      {formatEuro(prix)}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <>
-                  <input
-                    type="number"
-                    step={1}
-                    value={prixParNuit}
-                    onChange={(e) => {
-                      clearFieldError("prix_par_nuit");
-                      setPrixParNuit(Number(e.target.value));
-                    }}
-                  />
-                  <div className="field-hint">Ajoutez des tarifs dans la gestion des gîtes.</div>
-                </>
-              )}
-              {renderFieldError("prix_par_nuit")}
-            </label>
-            <div className={getFieldClassName("remise_montant")}>
-              Remise
-              <div className="field-row field-row--compact">
-                <input
-                  type="number"
-                  step={1}
-                  value={remiseValue}
-                  onChange={(e) => {
-                    clearFieldError("remise_montant");
-                    setRemiseValue(e.target.value);
-                  }}
-                />
-                <select value={remiseMode} onChange={(e) => setRemiseMode(e.target.value as "euro" | "percent")}>
-                  <option value="euro">€</option>
-                  <option value="percent">%</option>
-                </select>
-              </div>
-              <div className="field-hint">Soit {formatEuro(remiseMontant)}</div>
-              {renderFieldError("remise_montant")}
-            </div>
-            <label className="field field--small">
-              Raison de la remise (optionnel)
-              <input
-                type="text"
-                maxLength={120}
-                value={remiseReason}
-                onChange={(e) => setRemiseReason(e.target.value)}
-                placeholder="Ex: remise fidélité"
-              />
-            </label>
-            <div className="invoice-extra-fees">
-              <div className="invoice-extra-fees__header">
-                <div>
-                  <div className="invoice-extra-fees__title">Frais supplémentaires</div>
-                  <div className="field-hint">Ajoutés uniquement à cette facture.</div>
-                </div>
-                <button type="button" className="secondary" onClick={addFraisSupplementaire}>
-                  Ajouter
-                </button>
-              </div>
-              {fraisSupplementaires.length > 0 ? (
-                <div className="invoice-extra-fees__list">
-                  {fraisSupplementaires.map((fee, index) => (
-                    <div className="invoice-extra-fees__row" key={fee.id}>
-                      <label className="field">
-                        Libellé
-                        <input
-                          type="text"
-                          maxLength={120}
-                          value={fee.libelle}
-                          onChange={(e) => updateFraisSupplementaire(fee.id, { libelle: e.target.value })}
-                          placeholder={`Frais ${index + 1}`}
-                        />
-                      </label>
-                      <label className="field invoice-extra-fees__amount">
-                        Montant
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={fee.montant}
-                          onChange={(e) => updateFraisSupplementaire(fee.id, { montant: e.target.value })}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="secondary invoice-extra-fees__remove"
-                        onClick={() => removeFraisSupplementaire(fee.id)}
-                      >
-                        Retirer
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="field-hint">Aucun frais ajouté.</div>
-              )}
-              <div className="field-hint">Total frais: {formatEuro(fraisSupplementairesTotal)}</div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <details className={`card invoice-form__optional${isMultiReservation ? " invoice-single-reservation-only" : ""}`}>
-        <summary>Prestations & options <span>Draps, ménage, animaux…</span></summary>
-        <div className="option-grid">
-          <div className="option-card option-card--rules">
-            <div className="option-title">Règles du gîte</div>
-            <div className="rule-list">
-              <div className="rule-row">
-                <div className="rule-info">
-                  <div className="rule-title">Animaux acceptés</div>
-                  <div className="rule-sub">Active l'option chiens sur la facture.</div>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={regleAnimauxAcceptes}
-                    onChange={(e) => updateRule("regle_animaux_acceptes", e.target.checked)}
-                  />
-                  <span className="slider" />
-                </label>
-              </div>
-              <div className="rule-row">
-                <div className="rule-info">
-                  <div className="rule-title">Bois première flambée</div>
-                  <div className="rule-sub">Mention dans les notes de la facture.</div>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={regleBoisPremiereFlambee}
-                    onChange={(e) => updateRule("regle_bois_premiere_flambee", e.target.checked)}
-                  />
-                  <span className="slider" />
-                </label>
-              </div>
-              <div className="rule-row">
-                <div className="rule-info">
-                  <div className="rule-title">Info tiers personnes</div>
-                  <div className="rule-sub">Mention dans les notes de la facture.</div>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={regleTiersPersonnesInfo}
-                    onChange={(e) => updateRule("regle_tiers_personnes_info", e.target.checked)}
-                  />
-                  <span className="slider" />
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="option-card">
-            <div className="option-row">
-              <div>
-                <div className="option-title">Draps</div>
-                <div className="option-sub">{formatEuro(drapsTarif)} / lit / séjour</div>
-              </div>
-              <div className="option-actions">
-                <div className="switch-group">
-                  <span>Activer</span>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={options.draps?.enabled}
-                      onChange={(e) =>
-                        updateOption("draps", {
-                          enabled: e.target.checked,
-                          offert: e.target.checked ? options.draps?.offert ?? false : false,
-                        })
-                      }
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-                <div className="switch-group">
-                  <span>Offert</span>
-                  <label className="switch switch--pink">
-                    <input
-                      type="checkbox"
-                      checked={options.draps?.offert}
-                      disabled={!options.draps?.enabled}
-                      onChange={(e) => updateOption("draps", { offert: e.target.checked })}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="option-inputs">
-              <label className="field field-inline">
-                Lits
-                <input
-                  type="number"
-                  value={options.draps?.nb_lits ?? 0}
-                  disabled={!options.draps?.enabled}
-                  onChange={(e) => updateOption("draps", { nb_lits: Number(e.target.value) })}
-                />
-              </label>
-              <label className="field field-inline">
-                Prix / lit
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={options.draps?.prix_unitaire ?? drapsTarif}
-                  disabled={!options.draps?.enabled}
-                  onChange={(e) => updateOption("draps", { prix_unitaire: Number(e.target.value) })}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="option-card">
-            <div className="option-row">
-              <div>
-                <div className="option-title">Linge de toilette</div>
-                <div className="option-sub">{formatEuro(lingeTarif)} / personne / séjour</div>
-              </div>
-              <div className="option-actions">
-                <div className="switch-group">
-                  <span>Activer</span>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={options.linge_toilette?.enabled}
-                      onChange={(e) =>
-                        updateOption("linge_toilette", {
-                          enabled: e.target.checked,
-                          offert: e.target.checked ? options.linge_toilette?.offert ?? false : false,
-                        })
-                      }
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-                <div className="switch-group">
-                  <span>Offert</span>
-                  <label className="switch switch--pink">
-                    <input
-                      type="checkbox"
-                      checked={options.linge_toilette?.offert}
-                      disabled={!options.linge_toilette?.enabled}
-                      onChange={(e) => updateOption("linge_toilette", { offert: e.target.checked })}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="option-inputs">
-              <label className="field field-inline">
-                Personnes
-                <input
-                  type="number"
-                  value={options.linge_toilette?.nb_personnes ?? 0}
-                  disabled={!options.linge_toilette?.enabled}
-                  onChange={(e) => updateOption("linge_toilette", { nb_personnes: Number(e.target.value) })}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="option-card">
-            <div className="option-row">
-              <div>
-                <div className="option-title">Ménage fin de séjour</div>
-                <div className="option-sub">Forfait {formatEuro(menageTarif)}</div>
-              </div>
-              <div className="option-actions">
-                <div className="switch-group">
-                  <span>Activer</span>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={options.menage?.enabled}
-                      onChange={(e) =>
-                        updateOption("menage", {
-                          enabled: e.target.checked,
-                          offert: e.target.checked ? options.menage?.offert ?? false : false,
-                        })
-                      }
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-                <div className="switch-group">
-                  <span>Offert</span>
-                  <label className="switch switch--pink">
-                    <input
-                      type="checkbox"
-                      checked={options.menage?.offert}
-                      disabled={!options.menage?.enabled}
-                      onChange={(e) => updateOption("menage", { offert: e.target.checked })}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="option-card">
-            <div className="option-row">
-              <div>
-                <div className="option-title">Départ tardif</div>
-                <div className="option-sub">Forfait actuel {formatEuro(departTardifTarif)}</div>
-              </div>
-              <div className="option-actions">
-                <div className="switch-group">
-                  <span>Activer</span>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={options.depart_tardif?.enabled}
-                      onChange={(e) => {
-                        updateOption("depart_tardif", {
-                          enabled: e.target.checked,
-                          offert: e.target.checked ? options.depart_tardif?.offert ?? false : false,
-                        });
-                        if (e.target.checked) {
-                          clearFieldError("heure_depart");
-                          setHeureDepart("17:00");
-                        }
-                      }}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-                <div className="switch-group">
-                  <span>Offert</span>
-                  <label className="switch switch--pink">
-                    <input
-                      type="checkbox"
-                      checked={options.depart_tardif?.offert}
-                      disabled={!options.depart_tardif?.enabled}
-                      onChange={(e) => updateOption("depart_tardif", { offert: e.target.checked })}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="option-inputs">
-              <label className="field field-inline">
-                Prix forfait
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={options.depart_tardif?.prix_forfait ?? departTardifTarif}
-                  disabled={!options.depart_tardif?.enabled}
-                  onChange={(e) => updateOption("depart_tardif", { prix_forfait: Number(e.target.value) })}
-                />
-              </label>
-            </div>
-          </div>
-
-          {regleAnimauxAcceptes && (
-            <div className="option-card">
-              <div className="option-row">
-                <div>
-                  <div className="option-title">Chiens</div>
-                  <div className="option-sub">{formatEuro(chiensTarif)} / nuit / chien</div>
-                </div>
-                <div className="option-actions">
-                  <div className="switch-group">
-                    <span>Activer</span>
-                    <label className="switch">
-                      <input
-                        type="checkbox"
-                        checked={options.chiens?.enabled}
-                        onChange={(e) =>
-                          updateOption("chiens", {
-                            enabled: e.target.checked,
-                            offert: e.target.checked ? options.chiens?.offert ?? false : false,
-                          })
-                        }
-                      />
-                      <span className="slider" />
-                    </label>
-                  </div>
-                  <div className="switch-group">
-                    <span>Offert</span>
-                    <label className="switch switch--pink">
-                      <input
-                        type="checkbox"
-                        checked={options.chiens?.offert}
-                        disabled={!options.chiens?.enabled}
-                        onChange={(e) => updateOption("chiens", { offert: e.target.checked })}
-                      />
-                      <span className="slider" />
-                    </label>
-                  </div>
-                </div>
-              </div>
-              <div className="option-inputs">
-                <label className="field field-inline">
-                  Chiens
-                  <input
-                    type="number"
-                    value={options.chiens?.nb ?? 0}
-                    disabled={!options.chiens?.enabled}
-                    onChange={(e) => updateOption("chiens", { nb: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
-            </div>
-          )}
-        </div>
-      </details>
 
       <details className="card invoice-form__optional">
         <summary>Une précision à ajouter ? <span>Clause additionnelle</span></summary>
@@ -1398,11 +1493,11 @@ const FactureFormPage = () => {
 
       {linesError && <p role="alert" className="note">{linesError} <button type="button" className="secondary" onClick={() => setLinesRetry((retry) => retry + 1)}>Réessayer la préparation</button></p>}
       <InvoiceFiscalEditor value={fiscalInput} onChange={(next) => {
-        const pricingLines = (input: InvoiceFiscalInput) => input.lines.map(({ vat_category, vat_rate, exemption_reason, ...line }) => line);
+        const pricingLines = (input: InvoiceFiscalInput) => input.lines.map(({ id, quantity, unit, unit_price_ttc }) => ({ id, quantity, unit, unit_price_ttc }));
         if (JSON.stringify(pricingLines(next)) !== JSON.stringify(pricingLines(fiscalInput))) setLinesManual(true);
         setFiscalInput(next);
 
-      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax)}>
+      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax)} pricingEditor={pricingEditor} onReprepared={() => setLinesManual(false)} manualLines={linesManual}>
         <footer className="invoice-save" id="invoice-save" data-invoice-step="3" tabIndex={-1} aria-label="Enregistrement de la facture">
           <div><strong>{lastSavedKey === payloadKey ? "Toutes vos modifications sont enregistrées" : "Enregistrez les informations de cette facture"}</strong>
             <p aria-live="polite">{saving ? "Enregistrement en cours…" : lastSavedKey === payloadKey ? "Votre brouillon est sauvegardé. Vous pouvez passer à la vérification." : "Le client, le séjour, les lignes et le paiement seront sauvegardés ensemble. Le brouillon reste modifiable."}</p>

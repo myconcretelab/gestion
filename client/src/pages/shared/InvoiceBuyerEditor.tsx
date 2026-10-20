@@ -1,3 +1,4 @@
+import { countryOptions } from "./countryOptions";
 import type { InvoiceFiscalInput } from "@contrats/shared";
 
 export default function InvoiceBuyerEditor({
@@ -70,16 +71,27 @@ export default function InvoiceBuyerEditor({
       {children}
       <div className="grid-2">
         <label className="field">
-          {fieldLabel("Pays (code à deux lettres)")}
-          <input
+          {fieldLabel("Pays")}
+          <select
             id="buyer-country"
             value={value.buyer.country_code}
-            maxLength={2}
-            placeholder="FR"
-            onChange={(e) =>
-              updateBuyer({ country_code: e.target.value.toUpperCase() })
-            }
-          />
+            onChange={(e) => updateBuyer({ country_code: e.target.value })}
+          >
+            <option value="">Choisir un pays</option>
+            {value.buyer.country_code &&
+              !countryOptions.some(
+                ({ code }) => code === value.buyer.country_code,
+              ) && (
+                <option value={value.buyer.country_code}>
+                  {value.buyer.country_code}
+                </option>
+              )}
+            {countryOptions.map(({ code, label }) => (
+              <option key={code} value={code}>
+                {label} ({code})
+              </option>
+            ))}
+          </select>
         </label>
         <label className="field">
           {fieldLabel("Adresse de facturation")}

@@ -510,3 +510,117 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.invoice-reservations > .field-group,
+.invoice-reservations__dates {
+  margin-top: 24px;
+}
+.invoice-reservations__dates summary,
+.invoice-line__allocation summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.invoice-reservations__dates[open] > .field-group {
+  margin-top: 18px;
+}
+.invoice-pricing {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.invoice-pricing > .field-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  background: var(--subtle);
+  padding: 18px;
+  border-radius: 14px;
+}
+.invoice-pricing .field--small {
+  grid-column: 1 / -1;
+}
+.invoice-pricing .invoice-extra-fees {
+  margin: 0;
+}
+.invoice-pricing__options {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+.invoice-pricing .option-grid {
+  grid-template-columns: 1fr;
+}
+.invoice-line__summary {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.invoice-line__summary > span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.invoice-line__allocation {
+  margin: 12px 0;
+}
+.invoice-line__allocation[open] > .grid-2 {
+  margin: 16px 0;
+}
+.invoice-assistant__summary {
+  padding-bottom: 14px;
+  border: 1px solid var(--primary-soft);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 8px 35px #11182718;
+}
+.invoice-assistant__summary .invoice-assistant__toggle {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.invoice-assistant__progress {
+  height: 7px;
+  margin: 0 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--primary-soft);
+}
+.invoice-assistant__progress > span {
+  display: block;
+  position: relative;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.45s ease;
+}
+.invoice-assistant__progress--checking > span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 55%),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: invoice-progress-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes invoice-progress-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (max-width: 600px) {
+  .invoice-pricing > .field-group {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .invoice-assistant__progress--checking > span::after {
+    animation: none;
+  }
+}
+.invoice-pricing > .invoice-single-reservation-only {
+  display: none;
+}

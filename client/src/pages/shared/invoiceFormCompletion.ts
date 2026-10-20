@@ -122,3 +122,24 @@ export function focusInvoiceField(targetId: string) {
     target.classList.add("invoice-field-highlight"),
   );
 }
+
+// Fixed, equally weighted sections keep progress meaningful when the number of
+// VAT lines or B2B mentions changes. Completion uses the existing validators.
+export function invoiceCompletionProgress(
+  items: InvoiceCompletionItem[],
+): number {
+  const incomplete = new Set(
+    items.map(({ target }) => {
+      if (target === "invoice-gite" || target === "invoice-start")
+        return "stay";
+      if (target.startsWith("buyer-") || target.startsWith("invoice-buyer-"))
+        return "buyer";
+      if (target === "payment-details" || target === "b2b-payment-mentions")
+        return "payment";
+      if (target === "invoice-reviewed" || target === "tourist-tax-reviewed")
+        return "review";
+      return "lines";
+    }),
+  );
+  return (5 - incomplete.size) * 20;
+}

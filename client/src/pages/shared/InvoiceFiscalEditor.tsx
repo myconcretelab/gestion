@@ -1,3 +1,4 @@
+import { focusInvoiceField } from "./invoiceFormCompletion";
 import { useState, type ReactNode } from "react";
 import {
   computeInvoiceFiscal,
@@ -18,6 +19,9 @@ export default function InvoiceFiscalEditor({
   expectedTotal,
   children,
   touristTaxRequired = false,
+  pricingEditor,
+  onReprepared,
+  manualLines = false,
 }: {
   value: InvoiceFiscalInput | null;
   onChange: (value: InvoiceFiscalInput) => void;
@@ -25,6 +29,9 @@ export default function InvoiceFiscalEditor({
   expectedTotal: number;
   children?: ReactNode;
   touristTaxRequired?: boolean;
+  pricingEditor?: ReactNode;
+  onReprepared?: () => void;
+  manualLines?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +66,7 @@ export default function InvoiceFiscalEditor({
             }
           : result.fiscal_input,
       );
+      onReprepared?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Préparation impossible.");
     } finally {
@@ -113,7 +121,7 @@ export default function InvoiceFiscalEditor({
           {loading
             ? "Préparation…"
             : value
-              ? "Reproposer les lignes depuis le séjour"
+              ? "Recalculer les lignes"
               : "Préparer les lignes depuis le séjour"}
         </button>
       </div>
@@ -136,6 +144,15 @@ export default function InvoiceFiscalEditor({
               tabIndex={-1}
             >
               <h3>Lignes de facture</h3>
+              {pricingEditor}
+              {manualLines && (
+                <p className="field-hint">
+                  Votre ventilation personnalisée est conservée. Si vous
+                  modifiez le séjour, vous pouvez recalculer les lignes ou
+                  ajuster leur répartition ci-dessous. Le total doit rester
+                  identique.
+                </p>
+              )}
               <p>
                 La remise est déjà déduite de la location. Pour une réservation
                 regroupée, ventilez les prestations si leurs traitements de TVA
@@ -149,65 +166,101 @@ export default function InvoiceFiscalEditor({
                     Ligne {index + 1} ·{" "}
                     {formatEuro(line.quantity * line.unit_price_ttc)}
                   </legend>
+                  <div className="invoice-line__summary">
+                    <strong>{line.label || "Ligne à compléter"}</strong>
+                    <span>
+                      {line.quantity}{" "}
+                      {line.unit === "DAY"
+                        ? /^Location(?: ·|$)/.test(line.label)
+                          ? line.quantity > 1
+                            ? "nuitées"
+                            : "nuitée"
+                          : line.quantity > 1
+                            ? "jours"
+                            : "jour"
+                        : line.unit === "E48"
+                          ? "prestation(s)"
+                          : "unité(s)"}{" "}
+                      × {formatEuro(line.unit_price_ttc)} TTC
+                    </span>
+                  </div>
+                  <details className="invoice-line__allocation">
+                    <summary>Personnaliser cette ligne</summary>
+                    <div className="grid-2">
+                      <label className="field">
+                        {fieldLabel("Libellé")}
+                        <input
+                          id={
+                            index === 0
+                              ? "invoice-line-label"
+                              : `invoice-line-label-${index}`
+                          }
+                          value={line.label}
+                          maxLength={500}
+                          onChange={(e) =>
+                            updateLine(line.id, { label: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        Quantité
+                        <input
+                          type="number"
+                          min="0.001"
+                          step="0.001"
+                          value={line.quantity}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              quantity: Number(e.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        Unité
+                        <select
+                          value={line.unit}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              unit: e.target.value as InvoiceFiscalLine["unit"],
+                            })
+                          }
+                        >
+                          <option value="C62">Unité / forfait</option>
+                          <option value="DAY">Nuitée / jour</option>
+                          <option value="E48">Prestation</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        Prix unitaire TTC (€)
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unit_price_ttc}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              unit_price_ttc: Number(e.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() =>
+                        update({
+                          lines: value.lines.filter(
+                            (item) => item.id !== line.id,
+                          ),
+                        })
+                      }
+                    >
+                      Retirer cette ligne
+                    </button>
+                  </details>
                   <div className="grid-2">
-                    <label className="field">
-                      {fieldLabel("Libellé")}
-                      <input
-                        id={
-                          index === 0
-                            ? "invoice-line-label"
-                            : `invoice-line-label-${index}`
-                        }
-                        value={line.label}
-                        maxLength={500}
-                        onChange={(e) =>
-                          updateLine(line.id, { label: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      Quantité
-                      <input
-                        type="number"
-                        min="0.001"
-                        step="0.001"
-                        value={line.quantity}
-                        onChange={(e) =>
-                          updateLine(line.id, {
-                            quantity: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      Unité
-                      <select
-                        value={line.unit}
-                        onChange={(e) =>
-                          updateLine(line.id, {
-                            unit: e.target.value as InvoiceFiscalLine["unit"],
-                          })
-                        }
-                      >
-                        <option value="C62">Unité / forfait</option>
-                        <option value="DAY">Nuitée / jour</option>
-                        <option value="E48">Prestation</option>
-                      </select>
-                    </label>
-                    <label className="field">
-                      Prix unitaire TTC (€)
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.unit_price_ttc}
-                        onChange={(e) =>
-                          updateLine(line.id, {
-                            unit_price_ttc: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </label>
                     <details
                       className="invoice-fiscal__vat"
                       open={value.buyer.kind === "business" ? true : undefined}
@@ -279,45 +332,50 @@ export default function InvoiceFiscalEditor({
                       </div>
                     </details>
                   </div>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() =>
-                      update({
-                        lines: value.lines.filter(
-                          (item) => item.id !== line.id,
-                        ),
-                      })
-                    }
-                  >
-                    Retirer cette ligne
-                  </button>
                 </fieldset>
               ))}
-              <button
-                type="button"
-                className="secondary"
-                disabled={value.lines.length >= 100}
-                onClick={() =>
-                  update({
-                    lines: [
-                      ...value.lines,
-                      {
-                        id: crypto.randomUUID(),
-                        label: "",
-                        quantity: 1,
-                        unit: "C62",
-                        unit_price_ttc: 0,
-                        vat_category: "unknown",
-                        vat_rate: 0,
-                        exemption_reason: "",
-                      },
-                    ],
-                  })
-                }
-              >
-                Ajouter une ligne
-              </button>
+              <details className="invoice-line__allocation">
+                <summary>Ajouter une ventilation personnalisée</summary>
+                <p className="field-hint">
+                  Pour ajouter un montant à la facture, utilisez les frais
+                  supplémentaires ci-dessus. La ventilation répartit le même
+                  total entre les prestations.
+                </p>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={value.lines.length >= 100}
+                  onClick={() => {
+                    const index = value.lines.length;
+                    update({
+                      lines: [
+                        ...value.lines,
+                        {
+                          id: crypto.randomUUID(),
+                          label: "",
+                          quantity: 1,
+                          unit: "C62",
+                          unit_price_ttc: 0,
+                          vat_category: "unknown",
+                          vat_rate: 0,
+                          exemption_reason: "",
+                        },
+                      ],
+                    });
+                    window.setTimeout(
+                      () =>
+                        focusInvoiceField(
+                          index
+                            ? `invoice-line-label-${index}`
+                            : "invoice-line-label",
+                        ),
+                      0,
+                    );
+                  }}
+                >
+                  Ajouter une ligne de ventilation
+                </button>
+              </details>
             </div>
             <div className="invoice-fiscal__payment">
               <h3>Paiement à l’émission</h3>

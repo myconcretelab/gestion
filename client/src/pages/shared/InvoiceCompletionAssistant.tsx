@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   focusInvoiceField,
+  invoiceCompletionProgress,
   type InvoiceCompletionItem,
 } from "./invoiceFormCompletion";
 
@@ -12,9 +13,34 @@ export default function InvoiceCompletionAssistant({
   checking: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const assistantRef = useRef<HTMLElement>(null);
   const remaining = items.length;
+  const progress = Math.min(
+    invoiceCompletionProgress(items),
+    checking ? 99 : 100,
+  );
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !assistantRef.current?.contains(event.target)
+      )
+        setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside, true);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
   return (
     <aside
+      ref={assistantRef}
       className="invoice-assistant"
       aria-label="Assistant de création de facture"
     >
@@ -48,34 +74,52 @@ export default function InvoiceCompletionAssistant({
           )}
         </div>
       )}
-      <button
-        type="button"
-        className="invoice-assistant__toggle"
-        aria-expanded={open}
-        aria-controls="invoice-completion-list"
-        onClick={() => setOpen(!open)}
-      >
-        <span
-          className="invoice-assistant__orb"
-          aria-hidden="true"
-          key={remaining}
+      <div className="invoice-assistant__summary">
+        <button
+          type="button"
+          className="invoice-assistant__toggle"
+          aria-expanded={open}
+          aria-controls="invoice-completion-list"
+          onClick={() => setOpen(!open)}
         >
-          {checking ? "…" : remaining ? remaining : "✓"}
-        </span>
-        <span aria-live="polite">
-          <strong>
-            {checking
-              ? "Préparation du séjour…"
-              : remaining
-                ? `${remaining} point${remaining > 1 ? "s" : ""} à compléter`
-                : "Formulaire complété"}
-          </strong>
-          <small>
-            {open ? "Réduire l’assistant" : "Votre guide vers la validation"}
-          </small>
-        </span>
-        <span aria-hidden="true">{open ? "⌄" : "⌃"}</span>
-      </button>
+          <span
+            className="invoice-assistant__orb"
+            aria-hidden="true"
+            key={remaining}
+          >
+            {checking ? "…" : remaining ? remaining : "✓"}
+          </span>
+          <span aria-live="polite">
+            <strong>
+              {checking
+                ? "Préparation du séjour…"
+                : remaining
+                  ? `${remaining} point${remaining > 1 ? "s" : ""} à compléter`
+                  : "Formulaire complété"}
+            </strong>
+            <small>
+              {open ? "Réduire l’assistant" : "Votre guide vers la validation"}{" "}
+              · {progress} %
+            </small>
+          </span>
+          <span aria-hidden="true">{open ? "⌄" : "⌃"}</span>
+        </button>
+        <div
+          className={`invoice-assistant__progress${checking ? " invoice-assistant__progress--checking" : ""}`}
+          role="progressbar"
+          aria-label="Avancement des rubriques du formulaire"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+          aria-valuetext={
+            checking
+              ? "Vérification en cours"
+              : `${progress} % des rubriques complétées`
+          }
+        >
+          <span style={{ width: `${progress}%` }} />
+        </div>
+      </div>
     </aside>
   );
 }
