@@ -1,3 +1,7 @@
+import { planningOrganizationSchema } from "@contrats/shared";
+import { readPlanningOrganization, validatePlanningOrganization, syncPlanningTemplates, applyPlanningCleaningAssignments } from "../services/planningOrganizations.js";
+import { loadPlanningInterventions, planningPublicPath, planningAudienceIsValid, planningDocumentHtml } from "../services/planningInterventions.js";
+import { generatePlanningPdf } from "../services/pdfService.js";
 import { Router, type Request } from "express";
 import { addDays, differenceInCalendarDays, endOfDay } from "date-fns";
 import { z } from "zod";
@@ -88,6 +92,7 @@ const nullableIsoDateSchema = z.preprocess(
 );
 
 const payloadSchema = z.object({
+  organization_config: planningOrganizationSchema.nullable().optional(),
   label: z.string().trim().min(1).max(120),
   from: isoDateSchema,
   to: isoDateSchema,
@@ -154,6 +159,7 @@ const smsConfigSchema = z.object({
 });
 
 const patchSchema = payloadSchema.partial().extend({
+  expected_updated_at: z.string().datetime().optional(),
   is_active: z.boolean().optional(),
   sms_enabled: z.boolean().optional(),
   sms_recipient: z.preprocess(
@@ -266,12 +272,12 @@ const parseIsoDate = (value: string) => {
 
 const toIsoDate = (value: Date) => value.toISOString().slice(0, 10);
 
-const validatePeriod = (from: string, to: string) => {
+const validatePeriod = (from: string, to: string, maxDays = MAX_DAYS) => {
   const start = parseIsoDate(from);
   const end = parseIsoDate(to);
   const dayCount = differenceInCalendarDays(end, start) + 1;
-  if (dayCount < 1 || dayCount > MAX_DAYS) {
-    throw new Error(`La période doit contenir entre 1 et ${MAX_DAYS} jours.`);
+  if (dayCount < 1 || dayCount > maxDays) {
+    throw new Error(`La période doit contenir entre 1 et ${maxDays} jours.`);
   }
   return { start, end };
 };
@@ -291,6 +297,7 @@ const normalizeGitePrices = (value: unknown) => Object.fromEntries(
 
 const serializeWorker = (worker: any) => ({
   id: worker.id,
+  user_id: worker.app_user?.id ?? null,
   nom: worker.app_user?.display_name ?? worker.nom,
   telephone: worker.app_user?.telephone ?? worker.telephone,
   email: worker.app_user?.email ?? worker.email ?? null,
@@ -367,6 +374,7 @@ const ensureShortCode = async (period: any) => {
 const serializePeriod = (period: any) => {
   const code = buildPlanningRelayShortCode(period.share_nonce);
   return {
+    organization_config: readPlanningOrganization(period.organization_config),
     id: period.id,
     label: period.label,
     from: toIsoDate(period.date_debut),
@@ -395,7 +403,7 @@ const serializePeriod = (period: any) => {
     assignments: serializeAssignments(period),
     created_at: period.createdAt.toISOString(),
     updated_at: period.updatedAt.toISOString(),
-    public_path: `/r/${code}`,
+    public_path: planningPublicPath(period),
   };
 };
 
@@ -429,8 +437,9 @@ const buildCreateData = (
   payload: z.infer<typeof payloadSchema>,
   identity: { nonce: string; publicCodeHash: string },
 ) => {
-  const { start, end } = validatePeriod(payload.from, payload.to);
+  const { start, end } = validatePeriod(payload.from, payload.to, payload.organization_config ? 366 : MAX_DAYS);
   return {
+    organization_config: payload.organization_config ? JSON.stringify(payload.organization_config) : null,
     label: payload.label,
     date_debut: start,
     date_fin: end,
@@ -445,7 +454,7 @@ const buildCreateData = (
     stay_nights: payload.stay_nights ?? null,
     share_nonce: identity.nonce,
     public_code_hash: identity.publicCodeHash,
-    expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : endOfDay(addDays(end, 7)),
+    expires_at: payload.expires_at ? endOfDay(parseIsoDate(payload.expires_at)) : payload.organization_config ? null : endOfDay(addDays(end, 7)),
   };
 };
 
@@ -466,14 +475,82 @@ privateRouter.post("/", async (req, res, next) => {
   try {
     const payload = payloadSchema.parse(req.body);
     await assertGitesExist(payload.gite_ids);
+    if (payload.organization_config) await validatePlanningOrganization(payload.organization_config, payload.gite_ids, payload.from, payload.to);
     const identity = await createShareIdentity();
     const period = await prisma.planningRelayPeriod.create({
       data: { ...buildCreateData(payload, identity), public_origin: getRequestOrigin(req) },
     });
+    await syncPlanningTemplates(period);
     return res.status(201).json(serializePeriod({ ...period, assignments: [] }));
   } catch (error) {
     return next(error);
   }
+});
+
+privateRouter.post("/organization-preview", async (req, res, next) => {
+  try {
+    const payload = payloadSchema.parse(req.body);
+    const config = planningOrganizationSchema.parse(payload.organization_config);
+    const { start, end } = validatePeriod(payload.from, payload.to, 366);
+    await assertGitesExist(payload.gite_ids);
+    await validatePlanningOrganization(config, payload.gite_ids, payload.from, payload.to, typeof req.body.id === "string" ? req.body.id : undefined);
+    const [reservations, tasks, gites] = await Promise.all([
+      prisma.reservation.findMany({ where: { gite_id: { in: payload.gite_ids }, OR: [
+        { date_entree: { gte: addDays(start, -30), lte: addDays(end, 30) } },
+        { date_sortie: { gte: addDays(start, -30), lte: addDays(end, 30) } },
+      ] } }),
+      prisma.cleaningTask.findMany({ where: { gite_id: { in: payload.gite_ids }, starts_at: { gte: start, lte: endOfDay(end) } } }),
+      prisma.gite.findMany({ where: { id: { in: payload.gite_ids } }, select: { id: true, nom: true } }),
+    ]);
+    const examples: string[] = [];
+    let count = 0; let assignments = 0; let conflicts = 0;
+    for (const mission of config.missions) {
+      if (mission.kind === "cleaning") {
+        count += tasks.length;
+        assignments += tasks.filter((task) => task.status === "planned" && task.assignment_source !== "manual").length;
+        conflicts += tasks.filter((task) => task.assignment_source === "manual").length;
+        for (const task of tasks.slice(0, 3)) examples.push(`${task.starts_at.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" })} · ${gites.find((gite) => gite.id === task.gite_id)?.nom} · ménage`);
+      } else for (const reservation of reservations) {
+        const event = mission.trigger === "arrival" ? reservation.date_entree : reservation.date_sortie;
+        const day = addDays(event, mission.starts_offset_days);
+        if (day < start || day > end || (mission.minimum_nights && reservation.nb_nuits < mission.minimum_nights)) continue;
+        count += 1;
+        if (examples.length < 6) examples.push(`${toIsoDate(day)} · ${gites.find((gite) => gite.id === reservation.gite_id)?.nom} · ${mission.title}`);
+      }
+    }
+    return res.json({ count, assignments, conflicts, examples: examples.slice(0, 6) });
+  } catch (error) { next(error); }
+});
+privateRouter.get("/:id/audience-link", async (req, res, next) => {
+  try {
+    const period = await getPeriodWithAssignments(req.params.id);
+    if (!period) return res.status(404).json({ error: "Planning introuvable." });
+    const worker = typeof req.query.worker === "string" && req.query.worker ? req.query.worker : undefined;
+    return res.json({ public_path: planningPublicPath(period, worker) });
+  } catch (error) { next(error); }
+});
+
+privateRouter.get("/:id/interventions", async (req, res, next) => {
+  try {
+    const period = await getPeriodWithAssignments(req.params.id);
+    if (!period) return res.status(404).json({ error: "Planning introuvable." });
+    const worker = typeof req.query.worker === "string" && req.query.worker ? req.query.worker : undefined;
+    return res.json({ interventions: await loadPlanningInterventions(period, worker), period: serializePeriod(period) });
+  } catch (error) { next(error); }
+});
+privateRouter.get("/:id/pdf", async (req, res, next) => {
+  try {
+    const period = await getPeriodWithAssignments(req.params.id);
+    if (!period || !readPlanningOrganization(period.organization_config)) return res.status(404).json({ error: "Planning introuvable." });
+    const worker = typeof req.query.worker === "string" && req.query.worker ? req.query.worker : undefined;
+    const rows = await loadPlanningInterventions(period, worker);
+    const url = new URL(planningPublicPath(period, worker), getRequestOrigin(req)).toString();
+    const html = planningDocumentHtml(period.label, toIsoDate(period.date_debut), toIsoDate(period.date_fin), rows, url, period.show_intervention_prices, period.show_timeline);
+    const buffer = await generatePlanningPdf(html);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="planning.pdf"');
+    return res.send(buffer);
+  } catch (error) { next(error); }
 });
 
 privateRouter.get("/workers", async (_req, res, next) => {
@@ -645,9 +722,12 @@ privateRouter.patch("/:id", async (req, res, next) => {
 
     const from = payload.from ?? toIsoDate(current.date_debut);
     const to = payload.to ?? toIsoDate(current.date_fin);
-    const { start, end } = validatePeriod(from, to);
+    if (payload.expected_updated_at && current.updatedAt.toISOString() !== payload.expected_updated_at) return res.status(409).json({ error: "Cette organisation a été modifiée. Rechargez-la avant d’enregistrer." });
+    const organization = payload.organization_config === undefined ? readPlanningOrganization(current.organization_config) : payload.organization_config;
+    const { start, end } = validatePeriod(from, to, organization ? 366 : MAX_DAYS);
     const giteIds = payload.gite_ids ?? normalizeGiteIds(current.gite_ids);
     await assertGitesExist(giteIds);
+    if (organization) await validatePlanningOrganization(organization, giteIds, from, to, current.id);
     const smsWorker = payload.sms_worker_id
       ? await prisma.planningRelayWorker.findUnique({ where: { id: payload.sms_worker_id } })
       : null;
@@ -665,7 +745,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
         const workerWithoutAddress = configuredWorkers.find(
           (worker) =>
             config.worker_ids.includes(worker.id) &&
-            !resolvePlanningRelayRecipientDelivery(config, worker).recipient,
+            config.enabled && !resolvePlanningRelayRecipientDelivery(config, worker).recipient,
         );
         if (workerWithoutAddress) {
           const { channel } = resolvePlanningRelayRecipientDelivery(
@@ -680,13 +760,14 @@ privateRouter.patch("/:id", async (req, res, next) => {
     }
 
     const period = await prisma.planningRelayPeriod.update({
-      where: { id: current.id },
+      where: { id: current.id, ...(payload.expected_updated_at ? { updatedAt: new Date(payload.expected_updated_at) } : {}) },
       data: {
+        ...(payload.organization_config !== undefined ? { organization_config: payload.organization_config ? JSON.stringify(payload.organization_config) : null } : {}),
         public_origin: getRequestOrigin(req),
         ...(payload.label !== undefined ? { label: payload.label } : {}),
         date_debut: start,
         date_fin: end,
-        ...((payload.from !== undefined || payload.to !== undefined) && payload.expires_at === undefined
+        ...((payload.from !== undefined || payload.to !== undefined) && payload.expires_at === undefined && !organization
           ? { expires_at: endOfDay(addDays(end, 7)) }
           : {}),
         gite_ids: encodeJsonField([...new Set(giteIds)]),
@@ -720,6 +801,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
         ...(payload.sms_configs !== undefined
           ? { sms_configs: encodeJsonField(payload.sms_configs.map((config) => ({
               ...config,
+              delivery_state: normalizePlanningRelaySmsConfigs(current.sms_configs, current).find((item) => item.id === config.id)?.delivery_state,
               template: config.template || PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
               programme_template: config.programme_template || PLANNING_RELAY_SMS_DEFAULT_PROGRAMME_TEMPLATE,
               programme_templates: config.programme_templates,
@@ -731,6 +813,7 @@ privateRouter.patch("/:id", async (req, res, next) => {
       },
       include: periodWithAssignmentsInclude,
     });
+    await syncPlanningTemplates(period);
     return res.json(serializePeriod(period));
   } catch (error) {
     return next(error);
@@ -973,7 +1056,15 @@ privateRouter.post("/:id/send-sms", async (req, res, next) => {
 
 privateRouter.delete("/:id", async (req, res, next) => {
   try {
-    await prisma.planningRelayPeriod.delete({ where: { id: req.params.id } });
+    const period = await prisma.planningRelayPeriod.findUnique({ where: { id: req.params.id } });
+    if (!period) return res.status(404).json({ error: "Planning introuvable." });
+    await prisma.$transaction(async (tx) => {
+      const templates = await tx.actionTemplate.findMany({ where: { planning_period_id: period.id }, select: { id: true } });
+      await tx.actionTask.deleteMany({ where: { template_id: { in: templates.map((row) => row.id) }, status: "planned", source_type: "automatic", starts_at: { gte: new Date() } } });
+      await tx.actionTemplate.updateMany({ where: { planning_period_id: period.id }, data: { enabled: false } });
+      await tx.planningRelayPeriod.delete({ where: { id: period.id } });
+    });
+    await applyPlanningCleaningAssignments(toIsoDate(period.date_debut), toIsoDate(period.date_fin));
     return res.status(204).end();
   } catch (error) {
     return next(error);
@@ -1019,6 +1110,17 @@ publicRouter.get("/:token", async (req, res, next) => {
       return res.status(404).json({ error: "Ce planning n’est plus disponible." });
     }
 
+    const organization = readPlanningOrganization(period.organization_config);
+    if (organization) {
+      const audience = typeof req.query.audience === "string" ? req.query.audience : "all";
+      if (organization.audience === "individual" && !planningAudienceIsValid(period.share_nonce, audience, req.query.key))
+        return res.status(404).json({ error: "Ce lien de planning n’est pas valide." });
+      const interventions = await loadPlanningInterventions(period, audience === "all" ? undefined : audience);
+      return res.json({ period: { label: period.label, from: toIsoDate(period.date_debut), to: toIsoDate(period.date_fin),
+        show_timeline: period.show_timeline, show_options: period.show_options, show_comments: period.show_comments,
+        show_phones: period.show_phones, show_intervention_prices: period.show_intervention_prices,
+        expires_at: period.expires_at?.toISOString() ?? null }, interventions, reservations: [], gites: [], assignments: [], generated_at: new Date().toISOString() });
+    }
     const giteIds = normalizeGiteIds(period.gite_ids);
     const periodEndExclusive = addDays(period.date_fin, 1);
     const [gites, reservations] = await Promise.all([

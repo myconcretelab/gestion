@@ -163,12 +163,15 @@ function TaskRow({
 export default function ActionsPanel({
   from,
   to,
+  section,
 }: {
   from: string;
   to: string;
+  section?: Tab;
 }) {
   const [data, setData] = useState<ActionResponse | null>(null);
-  const [tab, setTab] = useState<Tab>("tasks");
+  const [tab, setTab] = useState<Tab>(section ?? "tasks");
+  useEffect(() => { if (section) setTab(section); }, [section]);
   const [view, setView] = useState<View>("pending");
   const [category, setCategory] = useState<"all" | Category>("all");
   const [giteId, setGiteId] = useState("");
@@ -351,7 +354,7 @@ export default function ActionsPanel({
 
   return (
     <div className="task-workspace" aria-busy={loading || busy}>
-      <div className="tw-overview" aria-label="Résumé de la période">
+      <div className="tw-overview" aria-label="Résumé de la période" hidden={Boolean(section && section !== "tasks")}>
         {(
           [
             ["short", "Rapides à faire", "Les petits gestes du quotidien"],
@@ -388,7 +391,7 @@ export default function ActionsPanel({
         ))}
       </div>
       <div className="tw-navigation">
-        <div className="tw-tabs" role="tablist" aria-label="Gestion des tâches">
+        <div className="tw-tabs" role="tablist" aria-label="Gestion des tâches" hidden={Boolean(section)}>
           {(
             [
               ["tasks", "À faire", "check"],

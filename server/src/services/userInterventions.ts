@@ -46,13 +46,14 @@ export const recordFullCleaningIntervention = async (
   reservationId: string, userId: string | null, occurredOn: string, automatic: boolean,
 ) => {
   if (!userId) return null;
-  const [user, reservation] = await Promise.all([
+  const [user, reservation, task] = await Promise.all([
     prisma.appUser.findUnique({ where: { id: userId }, select: {
       id: true, display_name: true, intervenant_id: true, full_cleaning_rates: true,
     } }),
     prisma.reservation.findUnique({ where: { id: reservationId }, select: {
       id: true, gite_id: true, gite: { select: { nom: true, options_menage_forfait: true } },
     } }),
+    prisma.cleaningTask.findFirst({ where: { departure_reservation_id: reservationId }, select: { amount_snapshot: true, assignee_id: true } }),
   ]);
   if (!user || !user.intervenant_id || !reservation?.gite_id || !reservation.gite) return null;
   const sourceKey = `full-cleaning:${reservation.id}`;
@@ -68,7 +69,7 @@ export const recordFullCleaningIntervention = async (
       gite_name: reservation.gite.nom,
       reservation_id: reservation.id,
       source_key: sourceKey,
-      amount_snapshot: fullCleaningAmount(reservation.gite.options_menage_forfait, user.full_cleaning_rates, reservation.gite_id),
+      amount_snapshot: task?.assignee_id === userId && task.amount_snapshot !== null ? task.amount_snapshot : fullCleaningAmount(reservation.gite.options_menage_forfait, user.full_cleaning_rates, reservation.gite_id),
       automatic,
     },
   });

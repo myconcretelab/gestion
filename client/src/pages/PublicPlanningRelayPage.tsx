@@ -1,3 +1,4 @@
+import PlanningDocument from "./tasks/PlanningDocument";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
@@ -96,7 +97,7 @@ const PublicPlanningRelayPage = () => {
     if (!token) return;
     if (!silent) setLoading(true);
     try {
-      setData(await apiFetch<PublicPlanningRelayResponse>(`/public/planning-relay/${encodeURIComponent(token)}`));
+      setData(await apiFetch<PublicPlanningRelayResponse>(`/public/planning-relay/${encodeURIComponent(token)}${window.location.search}`));
       setError(null);
     } catch (caught) {
       if (!silent) {
@@ -191,6 +192,8 @@ const PublicPlanningRelayPage = () => {
       </main>
     );
   }
+
+  if (data.interventions) return <main className="public-relay-page"><PlanningDocument label={data.period.label} from={data.period.from} to={data.period.to} rows={data.interventions} prices={data.period.show_intervention_prices} timeline={data.period.show_timeline} generatedAt={data.generated_at} /></main>;
 
   const { period, gites, reservations } = data;
 

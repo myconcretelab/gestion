@@ -52,7 +52,7 @@ const scheduleLabel: Record<CleaningRule["schedule_mode"], string> = {
   after_departure: "Dès le départ", day_before_arrival: "La veille de l’arrivée", arrival_day: "Le jour de l’arrivée",
 };
 
-export default function CleaningPage() {
+export default function CleaningPage({ embedded = false, rulesOnly = false, range }: { embedded?: boolean; rulesOnly?: boolean; range?: { from: string; to: string } }) {
   const today = parisDay();
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(addDays(today, 45));
@@ -67,6 +67,10 @@ export default function CleaningPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const rangeFrom = range?.from;
+  const rangeTo = range?.to;
+  useEffect(() => { if (rangeFrom && rangeTo) { setFrom(rangeFrom); setTo(rangeTo); } }, [rangeFrom, rangeTo]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -162,27 +166,27 @@ export default function CleaningPage() {
   }));
 
   return <div className="cleaning-page">
-    <header className="cleaning-page__header">
+    <header className="cleaning-page__header" hidden={embedded}>
       <div><span className="cleaning-page__eyebrow">Organisation</span><h1>Ménages</h1>
         <p>Organisez les ménages et les autres actions de votre équipe.</p></div>
-      {data?.can_manage ? <Link className="button-secondary" to="/menages/partages">Plannings partagés</Link> : null}
+      {!embedded && data?.can_manage ? <Link className="button-secondary" to="/menages/partages">Plannings partagés</Link> : null}
     </header>
 
     {error ? <div className="card" role="alert">{error}</div> : null}
     {notice ? <div className="card" role="status">{notice}</div> : null}
 
-    <div className="cleaning-page__tabs" role="group" aria-label="Type de travail">
+    <div className="cleaning-page__tabs" role="group" aria-label="Type de travail" hidden={embedded}>
       <button type="button" className={section === "cleaning" ? "is-selected" : ""} onClick={() => setSection("cleaning")}>Ménages</button>
       <button type="button" className={section === "actions" ? "is-selected" : ""} onClick={() => setSection("actions")}>Tâches</button>
     </div>
-    <div className="cleaning-page__dates">
+    <div className="cleaning-page__dates" hidden={embedded}>
       <label>Du <input type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)} /></label>
       <label>Au <input type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} /></label>
     </div>
 
     {section === "cleaning" ? <div className="cleaning-page__layout">
 
-    <section className="card cleaning-page__section" aria-label="Liste des ménages">
+    <section className="card cleaning-page__section" aria-label="Liste des ménages" hidden={rulesOnly}>
       <div className="cleaning-page__toolbar">
         <div className="cleaning-page__tabs" role="group" aria-label="Filtrer les ménages">
           {([ ["pending", "À faire"], ["all", "Tous"], ["completed", "Terminés"] ] as const).map(([key, label]) =>
@@ -233,7 +237,7 @@ export default function CleaningPage() {
         })}</div>}
     </section>
 
-    {data?.can_manage && currentRule ? <section className="card cleaning-page__section" aria-label="Règles automatiques">
+    {data?.can_manage && currentRule && (!embedded || rulesOnly) ? <section className="card cleaning-page__section" aria-label="Règles automatiques">
       <h2>Règles automatiques</h2><p className="field-hint">Choisissez comment les prochains ménages seront créés pour chaque gîte.</p>
       <div className="cleaning-page__rules">
         <label className="field">Gîte<select value={selectedGite} onChange={(event) => setSelectedGite(event.target.value)}>

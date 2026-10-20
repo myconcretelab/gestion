@@ -1,3 +1,4 @@
+import type { PlanningOrganization, PlanningIntervention } from "@contrats/shared";
 import type { SchoolHoliday } from "./schoolHolidays";
 import type { VatRegime } from "@contrats/shared";
 
@@ -151,6 +152,7 @@ export type GitePhoto = {
 };
 
 export type PlanningRelayPeriod = {
+  organization_config?: PlanningOrganization | null;
   id: string;
   label: string;
   from: string;
@@ -183,6 +185,7 @@ export type PlanningRelayPeriod = {
 };
 
 export type PlanningRelaySmsConfig = {
+  delivery_state?: Record<string, { date: string; status: "sent" | "failed" | "empty" | "uncertain"; attempts: number; error?: string }>;
   id: string;
   channel: "sms" | "telegram";
   recipient_channels: Record<string, "sms" | "telegram">;
@@ -285,6 +288,7 @@ export type PlanningRelaySmsPreview = {
 };
 
 export type PublicPlanningRelayResponse = {
+  interventions?: PlanningIntervention[];
   period: Pick<
     PlanningRelayPeriod,
     "label" | "from" | "to" | "show_timeline" | "show_comments" | "show_phones" | "show_options" | "show_intervention_prices" | "gite_prices" | "arrivals_only" | "stay_nights" | "expires_at"

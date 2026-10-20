@@ -386,7 +386,7 @@ const OperationsPrintPage = () => {
   const refreshSavedPeriods = useCallback(async () => {
     try {
       const periods = await apiFetch<PlanningRelayPeriod[]>("/planning-relay-periods");
-      setSavedPeriods(periods);
+      setSavedPeriods(periods.filter((period) => !period.organization_config));
       setSavedPeriodsError(null);
     } catch (caught) {
       setSavedPeriodsError(formatApiErrorMessage(caught, "Impossible de charger les périodes enregistrées."));

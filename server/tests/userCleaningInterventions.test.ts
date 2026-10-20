@@ -13,6 +13,7 @@ test("le forfait du gîte s'applique sans dérogation et le tarif intervenant pe
 
 test("la validation directe comptabilise le contrôle et le ménage optionnel une seule fois, puis annule le ménage automatique", async () => {
   const original = {
+    cleaningFind: prisma.cleaningTask.findFirst,
     transaction: prisma.$transaction,
     reservationUpdate: prisma.reservation.update,
     reservationFindUnique: prisma.reservation.findUnique,
@@ -31,6 +32,7 @@ test("la validation directe comptabilise le contrôle et le ménage optionnel un
     checked_by_user_id: null, checked_by_name: null,
   };
   try {
+    prisma.cleaningTask.findFirst = (async () => null) as any;
     prisma.$transaction = (async (queries: Promise<unknown>[]) => Promise.all(queries)) as any;
     prisma.reservation.update = (async () => ({})) as any;
     prisma.reservation.findUnique = (async () => ({
@@ -58,6 +60,7 @@ test("la validation directe comptabilise le contrôle et le ménage optionnel un
     assert.equal(deletions[1].where.automatic, true);
     assert.equal(deletions[1].where.paid_at, null);
   } finally {
+    prisma.cleaningTask.findFirst = original.cleaningFind;
     prisma.$transaction = original.transaction;
     prisma.reservation.update = original.reservationUpdate;
     prisma.reservation.findUnique = original.reservationFindUnique;

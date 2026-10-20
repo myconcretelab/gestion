@@ -116,7 +116,7 @@ router.get("/", async (req, res, next) => {
         starts_at: { lt: parisWallTime(formatDate(shiftDate(new Date(`${to}T00:00:00Z`), 1)), "00:00") },
         due_at: { gte: parisWallTime(from, "00:00") },
       }, orderBy: [{ starts_at: "asc" }, { createdAt: "asc" }] }),
-      manager ? prisma.actionTemplate.findMany({ orderBy: [{ gite_id: "asc" }, { title: "asc" }] }) : [],
+      manager ? prisma.actionTemplate.findMany({ where: { planning_period_id: null }, orderBy: [{ gite_id: "asc" }, { title: "asc" }] }) : [],
       prisma.gite.findMany({ select: { id: true, nom: true } }),
       prisma.appUser.findMany({ where: { is_active: true }, select: { id: true, display_name: true, intervenant_id: true } }),
       readTaskShortcuts(),
@@ -270,7 +270,7 @@ router.patch("/tasks/:id/assignment", async (req, res, next) => {
     const task = await prisma.actionTask.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
     if (!task) return res.status(404).json({ error: "Tâche introuvable." });
     if (task.status === "done") return res.status(409).json({ error: "Rouvrez la tâche avant de modifier son intervenant." });
-    await prisma.actionTask.update({ where: { id: req.params.id }, data: { assignee_id } });
+    await prisma.actionTask.update({ where: { id: req.params.id }, data: { assignee_id, source_type: "customized" } });
     return res.json(await taskResponse(req.params.id));
   } catch (error) { next(error); }
 });

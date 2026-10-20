@@ -1,3 +1,4 @@
+import { recordFullCleaningIntervention, removeUnpaidAutomaticFullCleaningIntervention, toParisIsoDate } from "../../services/userInterventions.js";
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../../db/prisma.js";
@@ -170,7 +171,7 @@ router.patch("/:id/assignment", async (req, res, next) => {
     if (!task) return res.status(404).json({ error: "Ménage introuvable." });
     const assignee = assignee_id ? await prisma.appUser.findUnique({ where: { id: assignee_id }, select: { is_active: true, intervenant_id: true } }) : null;
     if (assignee_id && (!assignee?.is_active || !assignee.intervenant_id)) return res.status(400).json({ error: "Intervenant invalide." });
-    await prisma.cleaningTask.update({ where: { id: task.id }, data: { assignee_id } });
+    await prisma.cleaningTask.update({ where: { id: task.id }, data: { assignee_id, assignment_source: "manual", assignment_period_id: null, previous_assignee_id: null, amount_snapshot: null } });
     const departure = await prisma.reservation.findUnique({ where: { id: task.departure_reservation_id }, select: { date_sortie: true } });
     if (departure) {
       const day = formatDate(departure.date_sortie);
@@ -224,6 +225,10 @@ router.patch("/:id/status", async (req, res, next) => {
     if (task.status === "verified" && !manager) return res.status(409).json({ error: "Ce ménage est déjà validé." });
     if (!manager && status === "verified" && task.status !== "done") return res.status(409).json({ error: "Terminez d’abord le ménage." });
     if (status === "in_progress" && task.status !== "planned" && !manager) return res.status(409).json({ error: "Ce ménage ne peut pas être démarré." });
+    if (status === "planned" || status === "in_progress") {
+      const paid = await prisma.userIntervention.findFirst({ where: { source_key: `full-cleaning:${task.departure_reservation_id}`, paid_at: { not: null } } });
+      if (paid) return res.status(409).json({ error: "Ce ménage a déjà été payé. Corrigez-le depuis l’historique des interventions." });
+    }
     const rule = await prisma.cleaningRule.findUnique({ where: { organization_id_gite_id: { organization_id: getOrganizationId(), gite_id: task.gite_id } } });
     if (!manager && status === "verified" && (rule?.requires_check ?? true)) {
       return res.status(403).json({ error: "Le contrôle final est réservé au gestionnaire." });
@@ -244,6 +249,11 @@ router.patch("/:id/status", async (req, res, next) => {
       await updateGiteCleaningReadiness(readiness, shouldVerify, status === "verified" ? user?.id ?? null : null, now);
     }
     const nextStatus = shouldVerify ? "verified" : status;
+    if ((nextStatus === "done" || nextStatus === "verified") && task.assignee_id) {
+      await recordFullCleaningIntervention(task.departure_reservation_id, task.assignee_id, toParisIsoDate(now), true);
+    } else if (nextStatus === "planned" || nextStatus === "in_progress") {
+      await removeUnpaidAutomaticFullCleaningIntervention(task.departure_reservation_id);
+    }
     const updated = await prisma.cleaningTask.update({ where: { id: task.id }, data: {
       status: nextStatus, ...(note !== undefined ? { note } : {}),
       completed_at: nextStatus === "planned" || nextStatus === "in_progress" ? null : task.completed_at ?? now,

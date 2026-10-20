@@ -1455,3 +1455,9 @@ export const generateInvoicePreviewHtml = async (params: {
     return { html: renderedHtml, ...compactInfo };
   });
 };
+
+export const generatePlanningPdf = (html: string) => withPageRetry(async (page) => {
+  await page.route("**/*", (route) => route.abort());
+  await page.setContent(html, { waitUntil: "domcontentloaded" });
+  return page.pdf({ format: "A4", printBackground: true, margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" } });
+});

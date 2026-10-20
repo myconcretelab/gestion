@@ -1,3 +1,6 @@
+import { isModuleEnabled } from "./installationConfig.js";
+import { loadPlanningInterventions, planningPublicPath } from "./planningInterventions.js";
+import { readPlanningOrganization } from "./planningOrganizations.js";
 import { addDays } from "date-fns";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
@@ -81,6 +84,7 @@ export type PlanningRelaySmsConfig = {
   template: string;
   programme_template?: string;
   programme_templates?: PlanningRelaySmsProgrammeTemplate[];
+  delivery_state?: Record<string, { date: string; status: "sent" | "failed" | "empty" | "uncertain"; attempts: number; attempted_at: string; error?: string }>;
   last_sent_for_date: string | null;
   last_attempt_for_date: string | null;
 };
@@ -159,6 +163,7 @@ export const normalizePlanningRelaySmsConfigs = (
         : PLANNING_RELAY_SMS_DEFAULT_TEMPLATE,
       programme_template: programmeTemplates[0].template,
       programme_templates: programmeTemplates,
+      delivery_state: config.delivery_state as PlanningRelaySmsConfig["delivery_state"],
       last_sent_for_date: typeof config.last_sent_for_date === "string" ? config.last_sent_for_date : null,
       last_attempt_for_date: typeof config.last_attempt_for_date === "string" ? config.last_attempt_for_date : null,
     }];
@@ -238,12 +243,13 @@ export const resolvePlanningRelayRecipientDelivery = (
   };
 };
 
-const sendPlanningRelayMessage = (
+const sendPlanningRelayMessage = async (
   channel: PlanningRelayMessageChannel,
   recipient: string,
   message: string,
-) =>
-  sendMessage(channel, {
+) => {
+  if (!await isModuleEnabled(channel)) throw new Error(`Le module ${channel === "sms" ? "SMS" : "Telegram"} est désactivé.`);
+  return sendMessage(channel, {
     recipients: [recipient],
     message,
     ...(channel === "telegram"
@@ -255,6 +261,7 @@ const sendPlanningRelayMessage = (
         }
       : {}),
   });
+};
 
 export const buildPlanningRelayPublicUrl = (
   period: { share_nonce: string; public_origin?: string | null },
@@ -724,10 +731,36 @@ const buildConfigMessage = async (period: {
   arrivals_only?: boolean;
   share_nonce: string;
   public_origin?: string | null;
-}, config: PlanningRelaySmsConfig, worker: { nom: string }, targetIsoDate: string, test = false, publicOrigin?: string, requirePublicOrigin = false) => {
+  date_fin?: Date; organization_config?: unknown;
+  show_phones?: boolean; show_comments?: boolean; show_options?: boolean; show_intervention_prices?: boolean;
+}, config: PlanningRelaySmsConfig, worker: { nom: string; id?: string }, targetIsoDate: string, test = false, publicOrigin?: string, requirePublicOrigin = false) => {
   const heading = test
     ? getPlanningRelayTestProgramHeading(targetIsoDate)
     : getPlanningRelayProgramHeading(config.send_day);
+  const organization = readPlanningOrganization(period.organization_config);
+  if (organization && period.date_fin) {
+    const rows = (await loadPlanningInterventions({ ...period, date_fin: period.date_fin,
+      organization_config: period.organization_config, show_phones: period.show_phones ?? false,
+      show_comments: period.show_comments ?? false, show_options: period.show_options ?? false,
+      show_intervention_prices: period.show_intervention_prices ?? false, arrivals_only: period.arrivals_only ?? false,
+      stay_nights: period.stay_nights ?? null }, organization.audience === "individual" ? worker.id : undefined))
+      .filter((row) => row.date === targetIsoDate);
+    if (!rows.length) return null;
+    const time = (value: string) => new Date(value).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" });
+    const programme = [heading + ":", ...rows.map((row) => `${row.gite_name} · ${row.title} : ${time(row.starts_at)}${row.note ? ` · ${row.note}` : ""}`)].join("\n");
+    const blocks = normalizePlanningRelayProgrammeTemplates(config.programme_templates, config.programme_template);
+    const values = rows.map((row) => ({ gite: row.gite_name, horaire: time(row.starts_at), in_out: row.title,
+      prestation: row.title, options: row.options, consignes: row.note }));
+    const dynamic = Object.fromEntries(blocks.map((block) => [block.key, values.map((value) => block.template.replace(/{{\s*([a-z_-]+)\s*}}/gi,
+      (match, key: string) => value[key.replace("-", "_") as keyof typeof value] ?? match)).join("\n")]));
+    const baseUrl = new URL(buildPlanningRelayPublicUrl(period, publicOrigin, requirePublicOrigin));
+    const link = new URL(planningPublicPath(period, worker.id), baseUrl.origin).toString();
+    return renderPlanningRelaySmsTemplate(config.template, { date: formatPlanningRelaySmsHeadingDate(targetIsoDate),
+      date_texte: formatPlanningRelaySmsTextDate(targetIsoDate), programme, programme_gite: programme,
+      gite: rows.map((row) => row.gite_name).join(" / "), horaire: values.map((value) => value.horaire).join(" / "),
+      in_out: values.map((value) => value.in_out).join(" / "), ...dynamic,
+      intervenant: worker.nom, periode: period.label, lien: link });
+  }
   const messages = await buildPlanningRelayProgramSmsForPeriod(period, targetIsoDate, heading);
   if (!messages?.length) return null;
   const programme = messages.join("\n");
@@ -863,7 +896,7 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
   const tomorrowDate = parsePlanningRelayIsoDate(addPlanningRelayIsoDays(isoDate, 1));
   const periods = await prisma.planningRelayPeriod.findMany({
     where: {
-      is_active: true,
+      OR: [{ is_active: true }, { organization_config: { not: null } }],
       date_debut: { lte: tomorrowDate },
       date_fin: { gte: todayDate },
     },
@@ -873,67 +906,51 @@ export const runPlanningRelaySmsSchedule = async (now = new Date()) => {
 
   let sentCount = 0;
   for (const period of periods) {
+    const organization = readPlanningOrganization(period.organization_config);
+    if (organization && !organization.enabled) continue;
     const configs = normalizePlanningRelaySmsConfigs(period.sms_configs, period);
     for (const config of configs.filter((item) => item.enabled)) {
       const targetIsoDate = getPlanningRelayProgramTargetIsoDate(isoDate, config.send_day);
       const targetDate = parsePlanningRelayIsoDate(targetIsoDate);
       if (period.date_debut > targetDate || period.date_fin < targetDate) continue;
-      if (!isPlanningRelaySmsDue({
-        nowTime: time,
-        sendTime: config.send_time,
-        targetIsoDate,
-        lastAttemptForDate: config.last_attempt_for_date,
-      })) continue;
-
+      if (time < normalizePlanningRelaySmsTime(config.send_time)) continue;
+      // Old configurations already attempted today stay protected during a rolling update.
+      if (!config.delivery_state && config.last_attempt_for_date === targetIsoDate) continue;
       const configIndex = configs.findIndex((item) => item.id === config.id);
-      configs[configIndex] = { ...config, last_attempt_for_date: targetIsoDate };
-      await prisma.planningRelayPeriod.update({
-        where: { id: period.id },
-        data: { sms_configs: encodeJsonField(configs) },
+      const states = config.delivery_state ?? {};
+      const workers = await prisma.planningRelayWorker.findMany({
+        where: { id: { in: config.worker_ids } },
+        include: { app_user: { select: { telephone: true, telegram_chat_id: true } } },
       });
-
-      try {
-        const workers = await prisma.planningRelayWorker.findMany({
-          where: { id: { in: config.worker_ids } },
-          include: { app_user: { select: { telephone: true, telegram_chat_id: true } } },
-        });
-        if (
-          workers.length !== config.worker_ids.length ||
-          workers.some(
-            (worker) =>
-              !resolvePlanningRelayRecipientDelivery(config, worker).recipient,
-          )
-        ) {
-          throw new Error("Intervenant ou adresse de messagerie manquante.");
-        }
-        let deliveredCount = 0;
-        for (const worker of workers) {
+      for (const workerId of config.worker_ids) {
+        const previous = states[workerId];
+        if (previous?.date === targetIsoDate && (previous.status !== "failed" || previous.attempts >= 3
+          || now.getTime() - Date.parse(previous.attempted_at) < 5 * 60_000)) continue;
+        const attempt = { date: targetIsoDate, attempts: previous?.date === targetIsoDate ? previous.attempts + 1 : 1,
+          attempted_at: now.toISOString(), status: "failed" as "sent" | "failed" | "empty" | "uncertain" };
+        // Persist the claim before contacting a provider. An uncertain delivery is not sent again immediately.
+        states[workerId] = { ...attempt, status: "uncertain", error: "Envoi interrompu ; résultat à vérifier avant tout nouvel envoi." };
+        configs[configIndex] = { ...config, delivery_state: states, last_attempt_for_date: targetIsoDate };
+        await prisma.planningRelayPeriod.update({ where: { id: period.id }, data: { sms_configs: encodeJsonField(configs) } });
+        try {
+          const worker = workers.find((item) => item.id === workerId);
+          if (!worker) throw new Error("Intervenant introuvable.");
+          const { channel, recipient } = resolvePlanningRelayRecipientDelivery(config, worker);
+          if (!recipient) throw new Error("Adresse de messagerie manquante.");
           const message = await buildConfigMessage(period, config, worker, targetIsoDate, false, undefined, true);
-          if (!message) continue;
-          const { channel, recipient } = resolvePlanningRelayRecipientDelivery(
-            config,
-            worker,
-          );
-          await sendPlanningRelayMessage(
-            channel,
-            recipient,
-            message,
-          );
-          deliveredCount += 1;
+          if (message) {
+            const result = await sendPlanningRelayMessage(channel, recipient, message);
+            if (!result.sent_count || result.skipped_reason) throw new Error("Le canal n’a pas transmis le message : " + (result.skipped_reason ?? "aucun envoi"));
+            sentCount += 1;
+          }
+          states[workerId] = { ...attempt, status: message ? "sent" : "empty" };
+        } catch (error) {
+          states[workerId] = { ...attempt, error: (error instanceof Error ? error.message : "Échec de l’envoi").slice(0, 300) };
         }
-        if (deliveredCount === 0) continue;
-        configs[configIndex] = { ...configs[configIndex], last_sent_for_date: targetIsoDate };
-        await prisma.planningRelayPeriod.update({
-          where: { id: period.id },
-          data: { sms_configs: encodeJsonField(configs) },
-        });
-        sentCount += deliveredCount;
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(
-          `Erreur envoi planning relais ${period.id}/${config.id}:`,
-          error instanceof Error ? error.message : error,
-        );
+        configs[configIndex] = { ...configs[configIndex], delivery_state: states,
+          ...(config.worker_ids.every((id) => states[id]?.date === targetIsoDate && (states[id]?.status === "sent" || states[id]?.status === "empty"))
+            ? { last_sent_for_date: targetIsoDate } : {}) };
+        await prisma.planningRelayPeriod.update({ where: { id: period.id }, data: { sms_configs: encodeJsonField(configs) } });
       }
     }
   }

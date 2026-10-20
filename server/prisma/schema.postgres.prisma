@@ -1320,6 +1320,7 @@ model ReservationPlaceholder {
 }
 
 model PlanningRelayPeriod {
+  organization_config       String?
   id                        String    @id @default(cuid())
   label                     String
   date_debut                DateTime
@@ -1497,6 +1498,12 @@ model CleaningRule {
 }
 
 model ActionTemplate {
+  planning_period_id    String?
+  planning_mission_id   String?
+  active_from           String?
+  active_to             String?
+  minimum_nights        Int?
+  note                  String   @default("")
   id                    String   @id @default(cuid())
   organization_id       String   @default("org_historical_broceliande")
   gite_id               String
@@ -1552,6 +1559,10 @@ model ActionTask {
 }
 
 model CleaningTask {
+  assignment_source        String    @default("rule")
+  assignment_period_id     String?
+  previous_assignee_id     String?
+  amount_snapshot          Float?
   id                       String    @id @default(cuid())
   organization_id          String    @default("org_historical_broceliande")
   gite_id                  String

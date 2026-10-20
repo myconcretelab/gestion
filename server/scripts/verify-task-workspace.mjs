@@ -130,7 +130,7 @@ async function mount() {
   await page.evaluate(async () => {
     const R = await import("/node_modules/.vite/deps/react.js");
     const D = await import("/node_modules/.vite/deps/react-dom_client.js");
-    const { default: Component } = await import("/src/pages/TasksPage.tsx");
+    const { default: Component } = await import("/src/pages/ActionsPanel.tsx");
     window.taskTestRoot?.unmount();
     document.getElementById("root").style.display = "none";
     let el = document.getElementById("task-test-mount");
@@ -141,7 +141,7 @@ async function mount() {
     }
     el.style.cssText = `padding:${innerWidth < 700 ? 16 : 40}px;max-width:1240px;margin:auto`;
     window.taskTestRoot = (D.default ?? D).createRoot(el);
-    window.taskTestRoot.render((R.default ?? R).createElement(Component));
+    window.taskTestRoot.render((R.default ?? R).createElement(Component, { from: "2026-10-01", to: "2027-09-30" }));
   });
   await page
     .getByRole("button", {

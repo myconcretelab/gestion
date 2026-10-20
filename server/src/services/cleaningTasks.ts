@@ -1,3 +1,4 @@
+import { applyPlanningCleaningAssignments } from "./planningOrganizations.js";
 import prisma from "../db/prisma.js";
 import type { AppUserSummary } from "./appUsers.js";
 import { getOrganizationId } from "./organizationContext.js";
@@ -84,20 +85,27 @@ export const syncCleaningTasks = async (from: string, to: string) => {
       departure_cleaning_checked_at: true, departure_cleaning_checked_by_user_id: true },
     orderBy: { date_sortie: "desc" },
   })));
-  const allReservations = [...reservations, ...priorDepartures.filter((item): item is NonNullable<typeof item> => item !== null)];
+  const pendingInRange = await prisma.cleaningTask.findMany({ where: { status: "planned", starts_at: { gte: parisWallTime(from, "00:00"), lt: parisWallTime(addIsoDays(to, 1), "00:00") } } });
+  const pendingDepartureIds = new Set(pendingInRange.map((task) => task.departure_reservation_id));
+  const pendingReservations = pendingDepartureIds.size ? await prisma.reservation.findMany({ where: { id: { in: [...pendingDepartureIds] } },
+    select: { id: true, gite_id: true, date_entree: true, date_sortie: true, options: true, departure_cleaning_checked_at: true, departure_cleaning_checked_by_user_id: true } }) : [];
+  const validPending = new Set(pendingReservations.map((row) => row.id));
+  const orphanIds = pendingInRange.filter((task) => !validPending.has(task.departure_reservation_id) && task.starts_at >= new Date()).map((task) => task.id);
+  if (orphanIds.length) await prisma.cleaningTask.deleteMany({ where: { id: { in: orphanIds }, status: "planned" } });
+  const allReservations = [...new Map([...reservations, ...priorDepartures.filter((item): item is NonNullable<typeof item> => item !== null), ...pendingReservations].map((row) => [row.id, row])).values()];
   const giteById = new Map(gites.map((item) => [item.id, item]));
   const ruleByGite = new Map(rules.map((item) => [item.gite_id, item]));
   const departures = allReservations.filter((item) => {
     if (!item.gite_id || !giteById.has(item.gite_id)) return false;
     const day = dateIso(item.date_sortie);
-    if (day >= from && day <= to) return true;
+    if ((day >= from && day <= to) || pendingDepartureIds.has(item.id)) return true;
     return day < from && reservations.some((candidate) =>
       candidate.gite_id === item.gite_id && candidate.id !== item.id
       && candidate.date_entree >= item.date_sortie
       && dateIso(candidate.date_entree) >= from && dateIso(candidate.date_entree) <= to
     );
   }).sort((left, right) => left.date_sortie.getTime() - right.date_sortie.getTime() || left.id.localeCompare(right.id));
-  if (!departures.length) return;
+  if (!departures.length) { await applyPlanningCleaningAssignments(from, to); return; }
 
   const existing = await prisma.cleaningTask.findMany({ where: { departure_reservation_id: { in: departures.map((item) => item.id) } } });
   const existingByDeparture = new Map(existing.map((item) => [item.departure_reservation_id, item]));
@@ -132,7 +140,7 @@ export const syncCleaningTasks = async (from: string, to: string) => {
       bufferMinutes: rule.buffer_minutes,
     });
     if (oldTask) {
-      if ((oldTask.status === "planned" || oldTask.status === "in_progress") && (
+      if (oldTask.status === "planned" && (
         oldTask.arrival_reservation_id !== (nextArrival?.id ?? null)
         || oldTask.starts_at.getTime() !== window.startsAt.getTime()
         || oldTask.due_at?.getTime() !== (window.dueAt?.getTime() ?? undefined)
@@ -170,6 +178,7 @@ export const syncCleaningTasks = async (from: string, to: string) => {
       }
     }
   }
+  await applyPlanningCleaningAssignments(from, to);
 };
 
 export const serializeCleaningTask = (task: {
@@ -253,7 +262,7 @@ export const applyLegacyCleaningAssignment = async (giteId: string, day: string,
   ]);
   if (departures.length) await prisma.cleaningTask.updateMany({
     where: { departure_reservation_id: { in: departures.map((row) => row.id) } },
-    data: { assignee_id: nextUser?.id ?? null },
+    data: { assignee_id: nextUser?.id ?? null, assignment_source: "manual", assignment_period_id: null, previous_assignee_id: null, amount_snapshot: null },
   });
 };
 

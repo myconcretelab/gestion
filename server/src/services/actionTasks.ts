@@ -38,7 +38,7 @@ export const syncActionTasks = async (from: string, to: string) => {
       { date_entree: { gte: new Date(`${start}T00:00:00Z`), lt: new Date(`${addDays(end, 1)}T00:00:00Z`) } },
       { date_sortie: { gte: new Date(`${start}T00:00:00Z`), lt: new Date(`${addDays(end, 1)}T00:00:00Z`) } },
     ] },
-    select: { id: true, gite_id: true, date_entree: true, date_sortie: true },
+    select: { id: true, gite_id: true, date_entree: true, date_sortie: true, nb_nuits: true },
     orderBy: [{ date_entree: "asc" }, { id: "asc" }],
   });
   const existing = await prisma.actionTask.findMany({
@@ -52,20 +52,27 @@ export const syncActionTasks = async (from: string, to: string) => {
         const b = template.trigger_event === "arrival" ? right.date_entree : right.date_sortie;
         return a.getTime() - b.getTime() || left.id.localeCompare(right.id);
       });
+    const eligibleReservationIds: string[] = [];
     for (const reservation of candidates) {
       const eventDay = isoDay(template.trigger_event === "arrival" ? reservation.date_entree : reservation.date_sortie);
       const { startsAt, dueAt } = actionWindow(eventDay, template);
+      const interventionDay = toParisIsoDate(startsAt);
+      if ((template.active_from && interventionDay < template.active_from) || (template.active_to && interventionDay > template.active_to)
+        || (template.minimum_nights && reservation.nb_nuits < template.minimum_nights)) continue;
+      eligibleReservationIds.push(reservation.id);
       if (startsAt >= rangeEnd || dueAt < rangeStart) continue;
       const oldTask = existingByKey.get(`${template.id}:${reservation.id}`);
       if (oldTask) {
-        if (oldTask.status !== "done" && oldTask.source_type !== "customized" && (oldTask.starts_at.getTime() !== startsAt.getTime()
+        if (oldTask.status === "planned" && oldTask.source_type !== "customized" && (oldTask.starts_at.getTime() !== startsAt.getTime()
           || oldTask.due_at.getTime() !== dueAt.getTime() || oldTask.title !== template.title
           || oldTask.category !== template.category || oldTask.compensation_mode !== template.compensation_mode
-          || Number(oldTask.compensation_amount) !== Number(template.compensation_amount))) {
+          || Number(oldTask.compensation_amount) !== Number(template.compensation_amount)
+          || (template.assignment_mode === "fixed" && oldTask.assignee_id !== template.default_assignee_id) || oldTask.note !== template.note)) {
           await prisma.actionTask.update({ where: { id: oldTask.id }, data: {
             starts_at: startsAt, due_at: dueAt, title: template.title,
             category: template.category, compensation_mode: template.compensation_mode,
             compensation_amount: template.compensation_amount,
+            ...(template.assignment_mode === "fixed" ? { assignee_id: template.default_assignee_id } : {}), note: template.note,
             spent_minutes: template.compensation_mode === "time" ? template.default_minutes : null,
           } });
         }
@@ -80,7 +87,7 @@ export const syncActionTasks = async (from: string, to: string) => {
           category: template.category, compensation_mode: template.compensation_mode,
           compensation_amount: template.compensation_amount,
           spent_minutes: template.compensation_mode === "time" ? template.default_minutes : null,
-          source_type: "automatic",
+          source_type: "automatic", note: template.note,
         } });
       } catch (error) {
         if ((error as { code?: string }).code === "P2002") continue;
@@ -96,6 +103,10 @@ export const syncActionTasks = async (from: string, to: string) => {
         }
       }
     }
+    if (template.planning_period_id) await prisma.actionTask.deleteMany({ where: {
+      template_id: template.id, status: "planned", source_type: "automatic",
+      starts_at: { gte: new Date(Math.max(Date.now(), rangeStart.getTime())), lt: rangeEnd }, reservation_id: { notIn: eligibleReservationIds },
+    } });
   }
 };
 
