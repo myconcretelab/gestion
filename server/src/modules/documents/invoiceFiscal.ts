@@ -7,6 +7,8 @@ import {
   invoicePaymentNotes,
   invoiceBusinessProcessType,
   type InvoiceFiscalInput,
+  type InvoiceFiscalLine,
+  type InvoiceReservationDetail,
 } from "@contrats/shared";
 import type { FiscalEntity, FiscalEstablishment } from "@prisma/client";
 import { fromJsonString } from "../../utils/jsonFields.js";
@@ -26,57 +28,114 @@ export const proposeInvoiceFiscal = (
     frais_supplementaires?: unknown;
     reservation_items?: unknown;
     remise_montant?: unknown;
+    options?: unknown;
   },
   totals: ContractTotals,
 ): InvoiceFiscalInput => {
   const input = emptyInvoiceFiscalInput();
   const items = fromJsonString<
-    Array<{
-      gite_nom: string;
-      montant: number;
-      date_debut: string;
-      date_fin: string;
-    }>
+    Array<
+      InvoiceReservationDetail & {
+        reservation_id?: string;
+        nb_nuits?: number;
+        gite_nom: string;
+        montant: number;
+        date_debut: string;
+        date_fin: string;
+      }
+    >
   >(invoice.reservation_items, []);
   const fees = fromJsonString<Array<{ libelle: string; montant: number }>>(
     invoice.frais_supplementaires,
     [],
   );
-  const add = (label: string, value: number, quantity = 1) => {
-    if (value === 0) return;
+  const add = (
+    label: string,
+    value: number,
+    quantity = 1,
+    source?: InvoiceFiscalLine["source"],
+    unit: InvoiceFiscalLine["unit"] = quantity > 1 ? "DAY" : "C62",
+    includeZero = false,
+  ) => {
+    if (value === 0 && !includeZero) return;
     input.lines.push({
       id: `line-${input.lines.length + 1}`,
       label,
+      source,
       quantity,
-      unit: quantity > 1 ? "DAY" : "C62",
+      unit,
       unit_price_ttc: value,
       vat_category: "unknown",
       vat_rate: 0,
       exemption_reason: "",
     });
   };
-  if (items.length >= 2) {
-    items.forEach((item) =>
+  // Keep nightly quantities even when a discount cannot be divided evenly in cents.
+  // At most two unit prices are needed; their sum is exactly the booked net amount.
+  const addNights = (
+    total: number,
+    nights: number,
+    discount: number,
+    source?: InvoiceFiscalLine["source"],
+  ) => {
+    const count = Math.max(1, Math.round(nights));
+    const cents = Math.round(total * 100);
+    const low = Math.floor(cents / count);
+    const remainder = cents - low * count;
+    const label = `Location · nuitée${discount > 0 ? " (remise déjà déduite)" : ""}`;
+    if (count - remainder > 0)
+      add(label, low / 100, count - remainder, source, "DAY", true);
+    if (remainder > 0)
       add(
-        `${item.gite_nom} · ${item.date_debut.slice(0, 10)} au ${item.date_fin.slice(0, 10)} (montant regroupé à ventiler si nécessaire)`,
-        item.montant,
-      ),
-    );
+        `${label} · ajustement au centime`,
+        (low + 1) / 100,
+        remainder,
+        source ? { ...source, key: `${source.key}:rounding` } : undefined,
+        "DAY",
+      );
+  };
+  if (items.length >= 2) {
+    items.forEach((item, index) => {
+      // Historical snapshots contain only a total: retain it until explicitly rebuilt.
+      if (
+        item.montant_location === undefined ||
+        !item.nb_nuits ||
+        !item.services
+      ) {
+        add(
+          `${item.gite_nom} · ${item.date_debut.slice(0, 10)} au ${item.date_fin.slice(0, 10)} (montant regroupé à ventiler si nécessaire)`,
+          item.montant,
+        );
+        return;
+      }
+      const stayId = item.reservation_id ?? String(index);
+      const source = {
+        key: `${stayId}:location`,
+        stay_id: stayId,
+        stay_label: item.gite_nom,
+        date_debut: item.date_debut.slice(0, 10),
+        date_fin: item.date_fin.slice(0, 10),
+        original_nightly_price: item.prix_par_nuit ?? 0,
+        discount: item.remise_montant ?? 0,
+      };
+      addNights(item.montant_location, item.nb_nuits, source.discount, source);
+      item.services.forEach((service) =>
+        add(
+          service.label,
+          service.unit_price_ttc,
+          service.quantity,
+          { ...source, key: `${stayId}:${service.key}` },
+          "C62",
+          true,
+        ),
+      );
+    });
   } else {
-    // Split a discounted stay only when the rounded nightly price preserves its exact total.
-    const nights = totals.nbNuits;
-    const nightlyPrice =
-      Math.round((totals.totalSansOptions / nights) * 100) / 100;
-    const canSplit =
-      nights > 0 &&
-      Math.round(nightlyPrice * nights * 100) ===
-        Math.round(totals.totalSansOptions * 100);
-    add(
-      `Location · ${canSplit ? "nuitée" : `${nights} nuits (forfait)`}${Number(invoice.remise_montant) > 0 ? " (remise déjà déduite)" : ""}`,
-      canSplit ? nightlyPrice : totals.totalSansOptions,
-      canSplit ? nights : 1,
+    addNights(
+      totals.totalSansOptions,
+      totals.nbNuits,
+      Number(invoice.remise_montant ?? 0),
     );
-    if (canSplit && input.lines.length) input.lines[0].unit = "DAY";
     const labels = {
       draps: "Draps",
       linge: "Linge de toilette",
@@ -84,8 +143,26 @@ export const proposeInvoiceFiscal = (
       departTardif: "Départ tardif",
       chiens: "Animaux",
     };
-    for (const key of Object.keys(labels) as Array<keyof typeof labels>)
-      add(labels[key], totals.optionsDetail[key]);
+    const options = fromJsonString<
+      Record<string, { enabled?: boolean; offert?: boolean }>
+    >(invoice.options, {});
+    for (const key of Object.keys(labels) as Array<keyof typeof labels>) {
+      const optionKey =
+        key === "linge"
+          ? "linge_toilette"
+          : key === "departTardif"
+            ? "depart_tardif"
+            : key;
+      const offered = options[optionKey]?.enabled && options[optionKey]?.offert;
+      add(
+        `${labels[key]}${offered ? " · offert" : ""}`,
+        totals.optionsDetail[key],
+        1,
+        undefined,
+        "C62",
+        Boolean(offered),
+      );
+    }
   }
   fees.forEach((fee) => add(fee.libelle, fee.montant));
   // Zero-value invoices still need one explicit EN16931 line.

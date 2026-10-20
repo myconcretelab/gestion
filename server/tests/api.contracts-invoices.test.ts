@@ -751,6 +751,15 @@ test("creation facture regroupe plusieurs reservations et fige leurs montants", 
         ? JSON.parse(createdData.reservation_items)
         : createdData.reservation_items;
     assert.deepEqual(reservationItems.map((item: any) => item.montant), [310, 200]);
+    assert.equal(reservationItems[0].montant_location, 280);
+    assert.equal(reservationItems[0].prix_par_nuit, 100);
+    assert.equal(reservationItems[0].remise_montant, 20);
+    assert.deepEqual(reservationItems[0].services, [{ key: "fees", label: "Frais du séjour", quantity: 1, unit_price_ttc: 30 }]);
+    const { proposeInvoiceFiscal } = await import("../src/modules/documents/invoiceFiscal.js");
+    const { computeInvoiceFiscal } = await import("@contrats/shared");
+    const proposed = proposeInvoiceFiscal({ reservation_items: reservationItems }, { nbNuits: 5 } as any);
+    assert.equal(computeInvoiceFiscal(proposed).gross_cents, 51000);
+    assert.equal(proposed.lines.filter((line) => line.unit === "DAY").reduce((sum, line) => sum + line.quantity, 0), 5);
   } finally {
     prisma.gite.findUnique = original.giteFindUnique;
     prisma.reservation.findMany = original.reservationFindMany;

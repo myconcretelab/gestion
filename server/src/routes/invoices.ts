@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Response } from "express";
 import { createSuperPdpEmissionRouter } from "../modules/superpdp/emissionRoutes.js";
 import { z } from "zod";
-import { invoiceFiscalInputSchema, invoiceFiscalIssues, computeInvoiceFiscal } from "@contrats/shared";
+import { invoiceFiscalInputSchema, invoiceFiscalIssues, computeInvoiceFiscal, invoiceReservationServices, type InvoiceReservationDetail } from "@contrats/shared";
 import { parseInvoiceFiscal, proposeInvoiceFiscal } from "../modules/documents/invoiceFiscal.js";
 import path from "path";
 import fs from "fs/promises";
@@ -55,12 +55,13 @@ const emptyStringToNull = (value: unknown) => {
 const invoiceExtraFeeSchema = z.object({
   libelle: z.string().optional().default(""),
   montant: z.number().min(0).optional().default(0),
+  source_reservation_id: z.string().min(1).max(100).optional(),
 });
 
 type InvoiceExtraFeeInput = z.infer<typeof invoiceExtraFeeSchema>;
-type InvoiceExtraFee = { libelle: string; montant: number };
+type InvoiceExtraFee = { libelle: string; montant: number; source_reservation_id?: string };
 
-export type InvoiceReservationItem = {
+export type InvoiceReservationItem = InvoiceReservationDetail & {
   reservation_id: string;
   gite_id: string;
   gite_nom: string;
@@ -78,6 +79,7 @@ const normalizeInvoiceExtraFees = (fees: InvoiceExtraFeeInput[] | null | undefin
     .map((fee) => ({
       libelle: fee.libelle.trim() || "Frais complémentaires",
       montant: round2(fee.montant ?? 0),
+      ...(fee.source_reservation_id ? { source_reservation_id: fee.source_reservation_id } : {}),
     }))
     .filter((fee) => fee.montant > 0);
 
@@ -278,7 +280,7 @@ const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise
   if (ids.length < 2) return [];
   const reservations = await prisma.reservation.findMany({
     where: { id: { in: ids } },
-    include: { gite: { select: { id: true, nom: true } } },
+    include: { gite: true },
   });
   if (reservations.length !== ids.length) {
     throw new z.ZodError([{ code: "custom", path: ["reservation_ids"], message: "Une réservation sélectionnée est introuvable." }]);
@@ -299,6 +301,13 @@ const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise
       nb_nuits: reservation.nb_nuits,
       nb_adultes: reservation.nb_adultes,
       nb_enfants_2_17: reservation.nb_enfants_2_17,
+      prix_par_nuit: round2(toNumber(reservation.prix_par_nuit ?? toNumber(reservation.prix_total) / reservation.nb_nuits)),
+      montant_location: round2(toNumber(reservation.prix_total) - toNumber(reservation.remise_montant)),
+      remise_montant: round2(toNumber(reservation.remise_montant)),
+      services: invoiceReservationServices({
+        ...reservation,
+        options: fromJsonString<OptionsInput>(reservation.options, {}),
+      }, reservation.gite).services,
       montant: round2(
         toNumber(reservation.prix_total) -
           toNumber(reservation.remise_montant) +

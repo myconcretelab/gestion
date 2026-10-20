@@ -351,6 +351,9 @@
         font-style: italic;
       }
 
+      .invoice-stay-heading td { background: var(--paper-strong); text-align: left; }
+      .invoice-stay-heading { break-after: avoid; }
+
       .invoice-item-meta {
         margin-top: 0.7mm;
         color: var(--ink-soft);
@@ -538,6 +541,29 @@
         font-size: 15.6pt;
       }
 
+      @page invoice-details {
+        size: A4;
+        margin: 12mm 12mm 17mm;
+      }
+
+      body.invoice-multipage { page: invoice-details; }
+      body.invoice-multipage .page {
+        min-height: 0;
+        padding: 0;
+        display: block;
+        overflow: visible;
+      }
+      body.invoice-multipage .page > * { margin-bottom: 5mm; }
+      body.invoice-multipage .brand-logo { padding: 3mm 1mm 0; }
+      body.invoice-multipage .motif { display: none; }
+      body.invoice-multipage .info-grid,
+      body.invoice-multipage .totals,
+      body.invoice-multipage .bank-footer { break-inside: avoid; }
+      body.invoice-multipage thead { display: table-header-group; }
+      body.invoice-multipage tr,
+      body.invoice-multipage .invoice-stay-group { break-inside: avoid; }
+      body.invoice-multipage td:first-child { overflow-wrap: anywhere; }
+
       @media screen {
         body.preview {
           background: #efe8d8;
@@ -720,9 +746,7 @@
               <th>{{invoiceAmountHeading}}</th>
             </tr>
           </thead>
-          <tbody>
-            {{{invoiceRowsHtml}}}
-          </tbody>
+          {{{invoiceRowsHtml}}}
         </table>
 
         <table class="totals">

@@ -1370,8 +1370,19 @@ export const buildInvoiceHtml = async (params: {
   const sign = params.invoice.document_kind === "credit_note" ? -1 : 1;
   const fiscalTotals = fiscal ? computeInvoiceFiscal(fiscal) : null;
   const fiscalMoney = (cents: number) => formatEuro(cents === 0 ? 0 : sign * cents / 100);
-  const fiscalUnitLabels = { C62: "forfait(s)", DAY: "jour(s)", E48: "prestation(s)" };
-  const fiscalRows = fiscalTotals?.lines.map((line) => `<tr><td>${escapeHtml(line.label)}<div class="invoice-item-meta">${escapeHtml(String(line.quantity))} ${escapeHtml(fiscalUnitLabels[line.unit])} · HT ${fiscalMoney(line.net_cents)} · ${line.vat_category === "unknown" ? "TVA à préciser" : line.vat_category === "S" ? `TVA ${escapeHtml(String(line.vat_rate))} %` : escapeHtml(line.vat_category)}${line.exemption_reason ? ` · ${escapeHtml(line.exemption_reason)}` : ""}</div></td><td>${fiscalMoney(line.gross_cents)}</td></tr>`).join("");
+  const fiscalUnitLabels = { C62: "unité(s)", DAY: "jour(s)", E48: "prestation(s)" };
+  const fiscalRowGroups: Array<{ stayId?: string; rows: string[] }> = [];
+  fiscalTotals?.lines.forEach((line, index) => {
+    const source = line.source;
+    const heading = source && source.stay_id !== fiscalTotals.lines[index - 1]?.source?.stay_id
+      ? `<tr class="invoice-stay-heading"><td colspan="2"><strong>${escapeHtml(source.stay_label)}</strong><div class="invoice-item-meta">Du ${escapeHtml(formatDate(new Date(source.date_debut)))} au ${escapeHtml(formatDate(new Date(source.date_fin)))}${source.discount > 0 ? ` · Tarif initial ${formatEuro(source.original_nightly_price)} / nuit · remise de ${formatEuro(source.discount)} déjà déduite` : ""}</div></td></tr>` : "";
+    const unit = line.unit === "DAY" && /^Location(?: ·|$)/.test(line.label) ? (line.quantity > 1 ? "nuitées" : "nuitée") : fiscalUnitLabels[line.unit];
+    const row = `${heading}<tr><td>${escapeHtml(line.label)}<div class="invoice-item-meta">${escapeHtml(String(line.quantity))} ${escapeHtml(unit)} × ${fiscalMoney(Math.round(line.unit_price_ttc * 100))} TTC · HT ${fiscalMoney(line.net_cents)} · ${line.vat_category === "unknown" ? "TVA à préciser" : line.vat_category === "S" ? `TVA ${escapeHtml(String(line.vat_rate))} %` : escapeHtml(line.vat_category)}${line.exemption_reason ? ` · ${escapeHtml(line.exemption_reason)}` : ""}</div></td><td>${fiscalMoney(line.gross_cents)}</td></tr>`;
+    const previous = fiscalRowGroups.at(-1);
+    if (previous && previous.stayId === source?.stay_id) previous.rows.push(row);
+    else fiscalRowGroups.push({ stayId: source?.stay_id, rows: [row] });
+  });
+  const fiscalRows = fiscalTotals ? fiscalRowGroups.map((group) => `<tbody${group.stayId ? ' class="invoice-stay-group"' : ""}>${group.rows.join("")}</tbody>`).join("") : undefined;
   const fiscalSummary = fiscalTotals ? `<tr><td>Total HT</td><td>${fiscalMoney(fiscalTotals.net_cents)}</td></tr>${fiscalTotals.breakdown.map((group) => `<tr><td>TVA ${escapeHtml(group.category === "unknown" ? "à préciser" : group.category)}${group.category === "S" ? ` · ${escapeHtml(String(group.rate))} %` : ""}${group.reason ? `<div class="invoice-item-meta">${escapeHtml(group.reason)}</div>` : ""}</td><td>${fiscalMoney(group.vat_cents)}</td></tr>`).join("")}${fiscalTotals.rounding_cents ? `<tr><td>Arrondi TTC</td><td>${fiscalMoney(fiscalTotals.rounding_cents)}</td></tr>` : ""}` : "";
 
   return renderTemplate(template, {
@@ -1403,7 +1414,7 @@ export const buildInvoiceHtml = async (params: {
     occupancyLabel: isMultiReservation
       ? `${reservationGiteCount} gîte${reservationGiteCount > 1 ? "s" : ""}`
       : occupancyLabel,
-    invoiceRowsHtml: fiscalRows ?? `${invoiceRowsHtml}${extraFeesRowsHtml}`,
+    invoiceRowsHtml: fiscalRows ?? `<tbody>${invoiceRowsHtml}${extraFeesRowsHtml}</tbody>`,
     fiscalSummaryHtml: fiscalSummary,
     invoiceAmountHeading: fiscal ? "Montant TTC" : "Montant",
     invoiceSubtotalLabel: fiscal ? "Total TTC" : "Sous-total",
@@ -1417,6 +1428,18 @@ export const buildInvoiceHtml = async (params: {
     titulaire: params.gite.titulaire,
     notesBlockHtml: `${notesBlockHtml}${buildInvoicePaymentTermsHtml(fiscal, sign < 0)}`,
   });
+};
+
+// Keep the existing one-page layout when it fits. Detailed invoices may flow
+// across pages, with repeating column headers and indivisible monetary rows.
+const prepareInvoicePage = async (page: Page, html: string) => {
+  const layout = await prepareContractPage(page, html);
+  if (!layout.overflowAfter) return { ...layout, multiPage: false };
+  await page.evaluate((compactClasses) => {
+    document.body.classList.remove(...compactClasses);
+    document.body.classList.add("invoice-multipage");
+  }, [...compactClassSteps]);
+  return { ...layout, overflowAfter: false, compactApplied: false, multiPage: true };
 };
 
 export const generateInvoicePdf = async (params: {
@@ -1434,11 +1457,16 @@ export const generateInvoicePdf = async (params: {
 
   await fs.mkdir(path.dirname(params.outputPath), { recursive: true });
   await withPageRetry(async (page) => {
-    const layout = await prepareContractPage(page, html);
-    if (layout.overflowAfter) throw Object.assign(new Error("Le détail de cette facture dépasse la page imprimable, même après ajustement. Réduisez le texte ou répartissez les réservations entre plusieurs factures avant validation."), { status: 409 });
+    const layout = await prepareInvoicePage(page, html);
     await page.pdf({
       path: params.outputPath,
       ...pdfBaseOptions,
+      ...(layout.multiPage ? {
+        preferCSSPageSize: true,
+        displayHeaderFooter: true,
+        headerTemplate: "<span></span>",
+        footerTemplate: `<div style="font-size:8px;width:100%;text-align:center;color:#62584d">${escapeHtml(params.invoice.lifecycle_status === "draft" ? "Brouillon non émis" : params.invoice.numero_facture)} · Page <span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+      } : {}),
     });
   });
 };
@@ -1450,7 +1478,7 @@ export const generateInvoicePreviewHtml = async (params: {
 }) => {
   const html = await buildInvoiceHtml({ ...params, bodyAttrs: 'class="preview"' });
   return withPageRetry(async (page) => {
-    const compactInfo = await prepareContractPage(page, html);
+    const compactInfo = await prepareInvoicePage(page, html);
     const renderedHtml = await page.content();
     return { html: renderedHtml, ...compactInfo };
   });

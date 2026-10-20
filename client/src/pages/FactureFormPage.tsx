@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
 import { reconcileInvoiceGeneratedLines, shouldSyncInvoiceGeneratedLines } from "./shared/invoiceFormLines";
 import { createInvoiceFormInput } from "./shared/invoiceFormDefaults";
+import { invoiceReservationPrefill } from "./shared/invoiceReservationPrefill";
 import InvoiceBuyerEditor from "./shared/InvoiceBuyerEditor";
 import InvoiceCompletionAssistant from "./shared/InvoiceCompletionAssistant";
 import InvoiceFormHeader from "./shared/InvoiceFormHeader";
@@ -34,14 +35,16 @@ type InvoiceExtraFeeRow = {
   id: string;
   libelle: string;
   montant: string;
+  source_reservation_id?: string;
 };
 
-const createInvoiceExtraFeeRow = (values?: { libelle?: string | null; montant?: number | string | null }): InvoiceExtraFeeRow => ({
+const createInvoiceExtraFeeRow = (values?: { libelle?: string | null; montant?: number | string | null; source_reservation_id?: string }): InvoiceExtraFeeRow => ({
   id:
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   libelle: values?.libelle ?? "",
+  source_reservation_id: values?.source_reservation_id,
   montant:
     values?.montant === null || values?.montant === undefined || Number(values.montant) === 0
       ? ""
@@ -53,6 +56,7 @@ const normalizeInvoiceExtraFees = (rows: InvoiceExtraFeeRow[]) =>
     .map((row) => ({
       libelle: row.libelle.trim() || "Frais complémentaires",
       montant: Math.round(Number(row.montant || 0) * 100) / 100,
+      ...(row.source_reservation_id ? { source_reservation_id: row.source_reservation_id } : {}),
     }))
     .filter((fee) => Number.isFinite(fee.montant) && fee.montant > 0);
 
@@ -109,6 +113,7 @@ const FactureFormPage = () => {
   const appliedVatPresetsRef = useRef<AppliedInvoiceVatPresets>({});
   const touchedVatLinesRef = useRef(new Map<string, InvoiceFiscalLine>());
   const proposedLinesRef = useRef<InvoiceFiscalLine[]>();
+  const reservationPickerButtonRef = useRef<HTMLButtonElement>(null);
   const currentFiscalRef = useRef(fiscalInput);
   currentFiscalRef.current = fiscalInput;
   const pricedGiteRef = useRef<string | null>(null);
@@ -225,6 +230,7 @@ const FactureFormPage = () => {
     setSelectedReservationIds(ids);
     setLinkedReservationId(ids[0] ?? null);
     if (!selected.length) return;
+    setFraisSupplementaires((previous) => previous.filter((row) => !row.source_reservation_id));
 
     const first = selected[0];
     const prefill = buildReservationDocumentPrefill(first);
@@ -241,7 +247,12 @@ const FactureFormPage = () => {
     setPrixParNuit(prefill.prixParNuit);
     setRemiseMode("euro");
     setRemiseValue(ids.length === 1 ? prefill.remiseValue : "");
-    setOptions(ids.length === 1 ? prefill.options : defaultOptions);
+    const invoicePrefill = invoiceReservationPrefill(first, gites.find((gite) => gite.id === first.gite_id));
+    setOptions(ids.length === 1 ? invoicePrefill.options : defaultOptions);
+    if (ids.length === 1) setFraisSupplementaires((previous) => [
+      ...previous,
+      ...invoicePrefill.fees.map((fee) => createInvoiceExtraFeeRow({ ...fee, source_reservation_id: first.id })),
+    ]);
   };
 
   const toggleReservation = (reservationId: string) => {
@@ -249,6 +260,9 @@ const FactureFormPage = () => {
       ? selectedReservationIds.filter((id) => id !== reservationId)
       : [...selectedReservationIds, reservationId];
     applyReservationSelection(next);
+    setReservationPickerOpen(false);
+    setReservationSearch("");
+    reservationPickerButtonRef.current?.focus({ preventScroll: true });
   };
 
   const minDateFin = useMemo(() => {
@@ -391,7 +405,7 @@ const FactureFormPage = () => {
   }, [isEdit, fromContractId, fromReservationId]);
 
   useEffect(() => {
-    if (isEdit || fromContractId || !fromReservationId) return;
+    if (isEdit || fromContractId || !fromReservationId || !gites.length) return;
     const controller = new AbortController();
     let active = true;
     setError(null);
@@ -421,8 +435,9 @@ const FactureFormPage = () => {
         setRemiseMode("euro");
         setRemiseValue(prefill.remiseValue);
         setRemiseReason("");
-        setFraisSupplementaires([]);
-        setOptions(prefill.options);
+        const invoicePrefill = invoiceReservationPrefill(data, gites.find((gite) => gite.id === prefill.giteId));
+        setFraisSupplementaires(invoicePrefill.fees.map((fee) => createInvoiceExtraFeeRow({ ...fee, source_reservation_id: data.id })));
+        setOptions(invoicePrefill.options);
         setClausesText("");
       })
       .catch((err) => {
@@ -442,7 +457,7 @@ const FactureFormPage = () => {
       active = false;
       controller.abort();
     };
-  }, [isEdit, fromContractId, fromReservationId]);
+  }, [isEdit, fromContractId, fromReservationId, gites]);
 
   const {
     selectedGite,
@@ -716,7 +731,7 @@ const FactureFormPage = () => {
       : !previewLoading && !previewError && previewOverflow?.before && !previewOverflow.after
         ? {
             tone: "ok" as const,
-            message: "Dépassement détecté puis corrigé : après ajustement, la page 1 ne dépasse plus.",
+            message: "Mise en page adaptée au détail de la facture, sur plusieurs pages si nécessaire.",
           }
         : null;
 
@@ -1421,7 +1436,7 @@ const FactureFormPage = () => {
                 : "Vous pouvez créer une facture libre ou sélectionner une ou plusieurs réservations."}
             </div>
           </div>
-          <button type="button" className="secondary" onClick={() => setReservationPickerOpen((open) => !open)}>
+          <button ref={reservationPickerButtonRef} type="button" className="secondary" onClick={() => setReservationPickerOpen((open) => !open)} aria-expanded={reservationPickerOpen}>
             {reservationPickerOpen ? "Fermer" : "Ajouter une réservation"}
           </button>
         </div>

@@ -624,3 +624,15 @@
 .invoice-pricing > .invoice-single-reservation-only {
   display: none;
 }
+
+.invoice-stay-heading {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  margin-top: 28px;
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+  background: var(--primary-soft);
+}
+.invoice-stay-heading strong { color: var(--primary-strong); }
+.invoice-stay-heading span, .invoice-stay-heading small { color: var(--muted); }

@@ -11,7 +11,7 @@ import {
   type InvoiceFiscalLine,
 } from "@contrats/shared";
 import { apiFetch } from "../../utils/api";
-import { formatEuro } from "../../utils/format";
+import { formatDate, formatEuro } from "../../utils/format";
 import "./invoiceFiscal.css";
 import InvoiceOperationEditor from "./InvoiceOperationEditor";
 
@@ -164,13 +164,31 @@ export default function InvoiceFiscalEditor({
                 </p>
               )}
               <p>
-                La remise est déjà déduite de la location. Pour une réservation
-                regroupée, ventilez les prestations si leurs traitements de TVA
-                diffèrent. La taxe de séjour n’est ni ajoutée ni classée
-                automatiquement : vérifiez sa collecte et sa présence dans les
-                prix.
+                La remise est déjà déduite de la location. Chaque séjour
+                conserve ses prestations et ses frais. La taxe de séjour n’est
+                ni ajoutée ni classée automatiquement : vérifiez sa collecte et
+                sa présence dans les prix.
               </p>
-              {value.lines.map((line, index) => (
+              {value.lines.flatMap((line, index) => [
+                line.source &&
+                line.source.stay_id !==
+                  value.lines[index - 1]?.source?.stay_id ? (
+                  <div key={`stay-${line.id}`} className="invoice-stay-heading">
+                    <strong>{line.source.stay_label}</strong>
+                    <span>
+                      {formatDate(line.source.date_debut)} —{" "}
+                      {formatDate(line.source.date_fin)}
+                    </span>
+                    {line.source.discount > 0 && (
+                      <small>
+                        Tarif initial :{" "}
+                        {formatEuro(line.source.original_nightly_price)} / nuit
+                        · remise de {formatEuro(line.source.discount)} déjà
+                        déduite des nuitées.
+                      </small>
+                    )}
+                  </div>
+                ) : null,
                 <fieldset key={line.id}>
                   <legend>
                     Ligne {index + 1} ·{" "}
@@ -342,8 +360,8 @@ export default function InvoiceFiscalEditor({
                       </div>
                     </details>
                   </div>
-                </fieldset>
-              ))}
+                </fieldset>,
+              ])}
               <details className="invoice-line__allocation">
                 <summary>Ajouter une ventilation personnalisée</summary>
                 <p className="field-hint">

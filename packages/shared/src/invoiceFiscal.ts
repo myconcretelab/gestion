@@ -115,6 +115,17 @@ export const invoiceFiscalInputSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1).max(100),
+        source: z
+          .object({
+            key: z.string().min(1).max(200),
+            stay_id: z.string().min(1).max(100),
+            stay_label: text,
+            date_debut: isoDate,
+            date_fin: isoDate,
+            original_nightly_price: amount,
+            discount: amount,
+          })
+          .optional(),
         label: text,
         quantity: z
           .number()

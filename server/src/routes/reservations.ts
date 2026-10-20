@@ -1775,6 +1775,7 @@ router.get("/invoice-options", async (_req, res, next) => {
       prix_total: true,
       remise_montant: true,
       frais_optionnels_montant: true,
+      frais_optionnels_libelle: true,
       options: true,
       createdAt: true,
       gite: { select: reservationGiteSelect },
@@ -1801,6 +1802,7 @@ router.get("/invoice-options", async (_req, res, next) => {
         prix_total: hydrated.prix_total,
         remise_montant: hydrated.remise_montant,
         frais_optionnels_montant: hydrated.frais_optionnels_montant,
+        frais_optionnels_libelle: hydrated.frais_optionnels_libelle,
         options: hydrated.options,
         gite: hydrated.gite,
       };

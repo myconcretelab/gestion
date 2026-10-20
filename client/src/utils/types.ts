@@ -1,4 +1,4 @@
-import type { PlanningOrganization, PlanningIntervention } from "@contrats/shared";
+import type { PlanningOrganization, PlanningIntervention, InvoiceReservationDetail } from "@contrats/shared";
 import type { SchoolHoliday } from "./schoolHolidays";
 import type { VatRegime } from "@contrats/shared";
 
@@ -530,6 +530,7 @@ export type ContratOptions = {
 };
 
 export type InvoiceExtraFee = {
+  source_reservation_id?: string;
   libelle: string;
   montant: number;
 };
@@ -637,7 +638,7 @@ export type Facture = {
   gite?: Gite;
 };
 
-export type InvoiceReservationItem = {
+export type InvoiceReservationItem = InvoiceReservationDetail & {
   reservation_id: string;
   gite_id: string;
   gite_nom: string;

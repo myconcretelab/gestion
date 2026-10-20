@@ -219,3 +219,62 @@ test("deux frais portant le même libellé ne se transmettent pas leur TVA lors 
   );
   assert.equal(removed[0].vat_category, "unknown");
 });
+
+test("la TVA et le libellé d’un séjour restent attachés à leur réservation après retrait d’un autre séjour", () => {
+  const source = (stayId: string) => ({
+    key: `${stayId}:location`,
+    stay_id: stayId,
+    stay_label: stayId,
+    date_debut: "2026-10-20",
+    date_fin: "2026-10-23",
+    original_nightly_price: 70,
+    discount: 0,
+  });
+  const baseline = [
+    { ...line("line-1", "Location · nuitée", 70), source: source("r1") },
+    { ...line("line-2", "Location · nuitée", 80), source: source("r2") },
+  ];
+  const previous = structuredClone(baseline);
+  previous[0].vat_category = "E";
+  previous[0].exemption_reason = "Motif du premier séjour";
+  previous[1].vat_category = "S";
+  previous[1].vat_rate = 10;
+  previous[1].label = "Séjour personnalisé";
+  const proposed = [{ ...baseline[1], id: "line-1", unit_price_ttc: 90 }];
+  const updated = reconcileInvoiceGeneratedLines(previous, proposed, baseline);
+  assert.equal(updated[0].vat_category, "S");
+  assert.equal(updated[0].vat_rate, 10);
+  assert.equal(updated[0].label, "Séjour personnalisé");
+  assert.equal(updated[0].unit_price_ttc, 90);
+});
+
+test("le préremplissage reprend les frais sans détail et respecte les options déjà comptées", async () => {
+  const { invoiceReservationPrefill } =
+    await import("../src/pages/shared/invoiceReservationPrefill.ts");
+  const reservation = {
+    nb_nuits: 3,
+    frais_optionnels_montant: 30,
+    frais_optionnels_libelle: "Panier",
+    options: {},
+  } as any;
+  assert.deepEqual(invoiceReservationPrefill(reservation).fees, [
+    { libelle: "Panier", montant: 30 },
+  ]);
+  const gite = { options_menage_forfait: 30 } as any;
+  const structured = { ...reservation, options: { menage: { enabled: true } } };
+  assert.deepEqual(invoiceReservationPrefill(structured, gite).fees, []);
+  assert.equal(
+    invoiceReservationPrefill(structured, gite).options.menage.enabled,
+    true,
+  );
+  const changedRate = invoiceReservationPrefill(structured, {
+    ...gite,
+    options_menage_forfait: 40,
+  });
+  assert.equal(changedRate.options.menage.enabled, false);
+  assert.equal(changedRate.fees[0].montant, 30);
+  assert.match(
+    changedRate.fees[0].libelle,
+    /Ménage × 1 · montant enregistré · Panier/,
+  );
+});

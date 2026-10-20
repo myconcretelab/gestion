@@ -232,10 +232,11 @@ test("le séjour propose des nuitées au prix unitaire tout en préservant les c
     );
     assert.equal(
       Math.round(
-        discounted.lines[0].quantity * discounted.lines[0].unit_price_ttc * 100,
+        discounted.lines.filter((line) => line.unit === "DAY").reduce((sum, line) => sum + line.quantity * line.unit_price_ttc, 0) * 100,
       ),
       Math.round(amount * 100),
     );
+    assert.equal(discounted.lines.filter((line) => line.unit === "DAY").reduce((sum, line) => sum + line.quantity, 0), 3);
   }
   const zero = proposeInvoiceFiscal(
     {},

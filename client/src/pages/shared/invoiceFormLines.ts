@@ -15,7 +15,7 @@ export const sameInvoiceLineAmounts = (
 // A source keeps its fiscal choices when its price or position changes. Removed
 // options must never pass their VAT treatment on to the next generated line.
 const sourceKey = (line: InvoiceFiscalLine) =>
-  /^Location(?: ·|$)/.test(line.label) ? "Location" : line.label;
+  line.source?.key ?? (/^Location(?: ·|$)/.test(line.label) ? "Location" : line.label);
 
 export function reconcileInvoiceGeneratedLines(
   previous: InvoiceFiscalLine[],
