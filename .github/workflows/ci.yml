@@ -22,6 +22,8 @@ jobs:
           node-version: 22.12.0
           cache: npm
       - run: npm ci --include=optional
+      - name: Install Chromium for PDF tests
+        run: npx playwright install --with-deps chromium
       - run: npm run prisma:generate
       - run: npm run typecheck
       - run: npm run prisma -w server -- migrate deploy
