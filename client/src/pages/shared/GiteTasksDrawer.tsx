@@ -342,7 +342,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
             {task.compensation_mode === "flat_rate" ? <small>Forfait{task.compensation_amount !== null ? ` ${task.compensation_amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}` : ""}</small> : null}
             {task.compensation_mode === "time" ? <label className="gite-task-card__time">Temps <input aria-label={`Minutes passées pour ${task.title}`} type="number" min={1} max={1440} inputMode="numeric" value={minutes[task.id] ?? ""} placeholder="0" onChange={(event) => setMinutes((current) => ({ ...current, [task.id]: event.target.value }))} /> min</label> : null}
             </div> : null}
-            {task.created_by_name ? <small className="field-hint">Créée par {task.created_by_name}</small> : null}
           </div>
           {editor?.task.id === task.id ? <form className="gite-task-editor" aria-label="Modifier la tâche" onSubmit={(event) => { event.preventDefault(); void saveEdit(); }}>
             <div className="gite-task-editor__heading"><strong>Modifier la tâche</strong><span>Les changements concernent cette tâche uniquement.</span></div>

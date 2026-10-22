@@ -84,7 +84,6 @@ function TaskRow({
             )}
           </h3>
           <div className="tw-task-meta">
-            {task.created_by_name ? <span>Créée par {task.created_by_name}</span> : null}
             <span>
               <TaskIcon name="home" />
               {task.gite_name}
