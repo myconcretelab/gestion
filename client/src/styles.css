@@ -17301,6 +17301,16 @@ button.personal-expenses-status:disabled {
   font-size: 0.7rem;
 }
 
+.stats-revenue-breakdown {
+  display: grid;
+  gap: 3px;
+  color: #6b7280;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
 .stats-trend {
   font-size: 0.8rem;
   font-weight: 700;
@@ -18009,6 +18019,12 @@ button.personal-expenses-status:disabled {
 .stats-chart-group header h3 {
   margin: 0;
   font-size: 0.96rem;
+}
+
+.stats-chart-group__total {
+  display: grid;
+  gap: 4px;
+  text-align: right;
 }
 
 .stats-chart-group.chart-mode .recharts-label-list text {

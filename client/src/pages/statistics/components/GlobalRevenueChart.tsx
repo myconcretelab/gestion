@@ -1,10 +1,13 @@
 import { Bar, CartesianGrid, Cell, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatEuro } from "../../../utils/format";
+import RevenueBreakdown from "./RevenueBreakdown";
 
 export type RevenueChartGroup = {
   key: string;
   title: string;
   total: number;
+  totalWithoutOptions: number;
+  totalOptions: number;
   months: Array<{
     month: number;
     ca: number;
@@ -73,7 +76,10 @@ const GlobalRevenueChart = ({ groups, avgMode, onAvgModeChange }: GlobalRevenueC
           <article key={group.key} className="stats-chart-group chart-mode">
             <header>
               <h3>{group.title}</h3>
-              <strong>{formatEUR0(group.total)}</strong>
+              <div className="stats-chart-group__total">
+                <strong>{formatEUR0(group.total)}</strong>
+                <RevenueBreakdown withoutOptions={group.totalWithoutOptions} options={group.totalOptions} />
+              </div>
             </header>
 
             <ResponsiveContainer width="100%" height={240}>

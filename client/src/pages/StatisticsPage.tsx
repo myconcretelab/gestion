@@ -25,6 +25,7 @@ import {
   type StatisticsPayload,
 } from "./statistics/statisticsUtils";
 import GlobalRevenueChart, { type RevenueChartGroup } from "./statistics/components/GlobalRevenueChart";
+import RevenueBreakdown from "./statistics/components/RevenueBreakdown";
 import ExpenseReport from "./statistics/components/ExpenseReport";
 import IntervenantExpenseReport from "./statistics/components/IntervenantExpenseReport";
 import OccupationGauge from "./statistics/components/OccupationGauge";
@@ -138,6 +139,8 @@ const buildChartGroups = (params: {
         key: gite.id,
         title: `Chiffre d'affaire ${gite.nom} ${selectedItem}`,
         total: stats.total,
+        totalWithoutOptions: stats.totalWithoutOptions,
+        totalOptions: stats.totalOptions,
         months: stats.months.map((month, idx) => ({
           month: month.month,
           ca: month.ca,
@@ -163,6 +166,8 @@ const buildChartGroups = (params: {
     key: String(year),
     title: getChartTitle(selectedItem, giteById, year),
     total: byYear[year]?.total ?? 0,
+    totalWithoutOptions: byYear[year]?.totalWithoutOptions ?? 0,
+    totalOptions: byYear[year]?.totalOptions ?? 0,
     months:
       byYear[year]?.months.map((month, idx) => ({
         month: month.month,
@@ -350,9 +355,9 @@ const StatisticsPage = () => {
   const allEntries = useMemo(() => Object.values(entriesByGite).flat(), [entriesByGite]);
 
   const globalStats = useMemo(() => computeGlobalStats(entriesByGite, selectedYear, selectedMonth), [entriesByGite, selectedMonth, selectedYear]);
-  const reservedYearCA = useMemo(() => {
+  const reservedYearStats = useMemo(() => {
     if (typeof selectedYear !== "number") return null;
-    return getMonthlyCAByYear(entriesByGite)[selectedYear]?.total ?? 0;
+    return getMonthlyCAByYear(entriesByGite)[selectedYear] ?? { total: 0, totalWithoutOptions: 0, totalOptions: 0 };
   }, [entriesByGite, selectedYear]);
   const realizedCALabel = selectedYear === currentYear && !selectedMonth
     ? "CA réalisé à ce jour"
@@ -638,7 +643,7 @@ const StatisticsPage = () => {
           </div>
         ) : null}
 
-        <div className={`stats-global-cards${reservedYearCA !== null ? " stats-global-cards--with-reserved" : ""}`}>
+        <div className={`stats-global-cards${reservedYearStats !== null ? " stats-global-cards--with-reserved" : ""}`}>
           <article>
             <p>Total réservations</p>
             <strong>{globalStats.totalReservations}</strong>
@@ -652,6 +657,7 @@ const StatisticsPage = () => {
           <article>
             <p>{realizedCALabel}</p>
             <strong>{formatEuro(globalStats.totalCA)}</strong>
+            <RevenueBreakdown withoutOptions={globalStats.totalWithoutOptions} options={globalStats.totalOptions} />
             {selectedYear !== "all" && !selectedMonth ? (
               <span className="stats-monthly-average">
                 Moyenne par mois : {formatEuro(globalStats.totalCA / Math.max(expenseReport?.monthCount ?? 12, 1))}
@@ -659,10 +665,11 @@ const StatisticsPage = () => {
             ) : null}
             {showStats ? renderTrend(globalStats.totalCA, averageCA, true) : null}
           </article>
-          {reservedYearCA !== null ? (
+          {reservedYearStats !== null ? (
             <article className="stats-global-cards__reserved">
               <p>CA réservé sur toute l’année {selectedYear}</p>
-              <strong>{formatEuro(reservedYearCA)}</strong>
+              <strong>{formatEuro(reservedYearStats.total)}</strong>
+              <RevenueBreakdown withoutOptions={reservedYearStats.totalWithoutOptions} options={reservedYearStats.totalOptions} />
               <span className="stats-monthly-average">Inclut les séjours à venir</span>
             </article>
           ) : null}

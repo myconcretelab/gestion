@@ -474,15 +474,19 @@ export const computeGlobalStats = (
   let totalReservations = 0;
   let totalNights = 0;
   let totalCA = 0;
+  let totalWithoutOptions = 0;
+  let totalOptions = 0;
 
   for (const entries of Object.values(entriesByGite)) {
     const filtered = getEntriesByPeriod(entries, year, month, { now });
     totalReservations += filtered.length;
     totalNights += filtered.reduce((sum, entry) => sum + (entry.nuits || 0), 0);
     totalCA += filtered.reduce((sum, entry) => sum + getEntryGrossCA(entry), 0);
+    totalWithoutOptions += filtered.reduce((sum, entry) => sum + (Number(entry.revenus) || 0), 0);
+    totalOptions += filtered.reduce((sum, entry) => sum + (Number(entry.fraisOptionnelsTotal) || 0), 0);
   }
 
-  return { totalReservations, totalNights, totalCA };
+  return { totalReservations, totalNights, totalCA, totalWithoutOptions, totalOptions };
 };
 
 export const computeGiteStats = (
@@ -655,18 +659,34 @@ export const getOccupationPerYear = (
       occupation: computeOccupation(entries, year, selectedMonth, activityStart),
     }));
 
+type MonthlyRevenueStats = {
+  months: Array<{ month: number; ca: number }>;
+  total: number;
+  totalWithoutOptions: number;
+  totalOptions: number;
+};
+
 export const getMonthlyCAByYear = (entriesByGite: Record<string, ParsedStatisticsEntry[]>) => {
-  const result: Record<number, { months: Array<{ month: number; ca: number }>; total: number }> = {};
+  const result: Record<number, MonthlyRevenueStats> = {};
 
   for (const entries of Object.values(entriesByGite)) {
     for (const entry of entries) {
       if (isHomeExchange(entry)) continue;
       const year = entry.debutDate.getUTCFullYear();
       const monthIdx = entry.debutDate.getUTCMonth();
-      if (!result[year]) result[year] = { months: Array.from({ length: 12 }, (_, idx) => ({ month: idx + 1, ca: 0 })), total: 0 };
+      if (!result[year]) {
+        result[year] = {
+          months: Array.from({ length: 12 }, (_, idx) => ({ month: idx + 1, ca: 0 })),
+          total: 0,
+          totalWithoutOptions: 0,
+          totalOptions: 0,
+        };
+      }
       const grossCA = getEntryGrossCA(entry);
       result[year].months[monthIdx].ca += grossCA;
       result[year].total += grossCA;
+      result[year].totalWithoutOptions += Number(entry.revenus) || 0;
+      result[year].totalOptions += Number(entry.fraisOptionnelsTotal) || 0;
     }
   }
 
@@ -678,11 +698,13 @@ export const getMonthlyCAByGiteForYear = (
   gites: StatisticsGite[],
   year: number
 ) => {
-  const result: Record<string, { months: Array<{ month: number; ca: number }>; total: number }> = {};
+  const result: Record<string, MonthlyRevenueStats> = {};
 
   for (const gite of gites) {
     const months = Array.from({ length: 12 }, (_, idx) => ({ month: idx + 1, ca: 0 }));
     let total = 0;
+    let totalWithoutOptions = 0;
+    let totalOptions = 0;
 
     for (const entry of entriesByGite[gite.id] ?? []) {
       if (isHomeExchange(entry)) continue;
@@ -691,9 +713,11 @@ export const getMonthlyCAByGiteForYear = (
       const grossCA = getEntryGrossCA(entry);
       months[monthIdx].ca += grossCA;
       total += grossCA;
+      totalWithoutOptions += Number(entry.revenus) || 0;
+      totalOptions += Number(entry.fraisOptionnelsTotal) || 0;
     }
 
-    result[gite.id] = { months, total };
+    result[gite.id] = { months, total, totalWithoutOptions, totalOptions };
   }
 
   return result;

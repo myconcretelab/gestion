@@ -9,6 +9,7 @@ import {
   getEntryGrossCA,
   getEntryUrssafBase,
   getMonthlyCAByYear,
+  getMonthlyCAByGiteForYear,
   parseStatisticsPayload,
   type StatisticsPayload,
 } from "../src/pages/statistics/statisticsUtils.ts";
@@ -69,6 +70,8 @@ test("les stats de CA brut incluent les options et excluent HomeExchange", () =>
     totalReservations: 1,
     totalNights: 2,
     totalCA: 250,
+    totalWithoutOptions: 200,
+    totalOptions: 50,
   });
 
   const giteStats = computeGiteStats(entries, 2026, 5);
@@ -78,6 +81,12 @@ test("les stats de CA brut incluent les options et excluent HomeExchange", () =>
   assert.equal(computeAverageCA(entries, "all", 5), 250);
   assert.equal(computeAveragePrice(entries, "all", 5), 125);
   assert.equal(getMonthlyCAByYear(parsed.entriesByGite)[2026].months[4].ca, 250);
+  const annual = getMonthlyCAByYear(parsed.entriesByGite)[2026];
+  assert.equal(annual.totalWithoutOptions, 200);
+  assert.equal(annual.totalOptions, 50);
+  const byGite = getMonthlyCAByGiteForYear(parsed.entriesByGite, parsed.gites, 2026);
+  assert.equal(byGite.g1.totalWithoutOptions, 200);
+  assert.equal(byGite.g1.totalOptions, 50);
 });
 
 test("l'assiette Urssaf inclut uniquement les revenus et options déclarés des sources éligibles", () => {
@@ -269,7 +278,14 @@ test("l'année en cours est arrêtée au jour courant et les frais fixes sont pr
     totalReservations: 2,
     totalNights: 4,
     totalCA: 470,
+    totalWithoutOptions: 400,
+    totalOptions: 70,
   });
+
+  const annual = getMonthlyCAByYear(parsed.entriesByGite)[2026];
+  assert.equal(annual.total, 1190);
+  assert.equal(annual.totalWithoutOptions, 1100);
+  assert.equal(annual.totalOptions, 90);
 
   const report = computeExpenseReport({
     ...parsed,
