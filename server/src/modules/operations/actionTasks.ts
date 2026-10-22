@@ -190,7 +190,7 @@ router.get("/reminder-settings", async (req, res, next) => {
     if (!canManageCleaning(await getAuthenticatedAppUser(req))) return res.status(403).json({ error: "Action réservée aux gestionnaires." });
     const telegram = readTelegramNotificationConfig();
     const users = await prisma.appUser.findMany({ where: { is_active: true }, select: { id: true, display_name: true, telegram_chat_id: true }, orderBy: { display_name: "asc" } });
-    return res.json({ settings: await readTaskReminderSettings(), telegram_ready: telegram.enabled && Boolean(telegram.bot_token), scheduler_enabled: env.MULTITENANT_AUTOMATION_ENABLED,
+    return res.json({ settings: await readTaskReminderSettings(), telegram_ready: telegram.enabled && Boolean(telegram.bot_token), scheduler_enabled: env.TASK_URGENCY_AUTOMATION_ENABLED,
       users: users.map((user) => ({ id: user.id, name: user.display_name, telegram_ready: Boolean(user.telegram_chat_id?.trim()) })) });
   } catch (error) { next(error); }
 });

@@ -162,6 +162,22 @@ after(async () => {
   fs.rmSync(temp, { recursive: true, force: true });
 });
 
+test("le planificateur dédié fonctionne avec le planificateur général désactivé et conserve son verrou par organisation", async () => {
+  const { env } = await import("../src/config/env.js");
+  const { runTaskUrgencyAutomationTick } = await import("../src/services/taskUrgencyAutomation.js");
+  const previous = env.MULTITENANT_AUTOMATION_ENABLED;
+  try {
+    env.MULTITENANT_AUTOMATION_ENABLED = false;
+    const now = new Date();
+    const first = await runTaskUrgencyAutomationTick(now);
+    assert.equal(first.find((row) => row.organizationId === org)?.status, "succeeded");
+    assert.equal(first.find((row) => row.organizationId === otherOrg)?.status, "succeeded");
+    const repeated = await runTaskUrgencyAutomationTick(now);
+    assert.equal(repeated.find((row) => row.organizationId === org)?.status, "skipped_interval");
+    assert.equal(repeated.find((row) => row.organizationId === otherOrg)?.status, "skipped_interval");
+  } finally { env.MULTITENANT_AUTOMATION_ENABLED = previous; }
+});
+
 async function makeTask(
   id: string,
   level = 1,

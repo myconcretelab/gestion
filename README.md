@@ -311,7 +311,7 @@ Le créateur est enregistré depuis la session connectée, sans pouvoir être re
 
 Chaque tâche du message possède un bouton **C’est fait** et, au niveau 2, **Arrêter les rappels**. Les liens signés ouvrent une confirmation sans connexion ; un aperçu de lien ne modifie donc aucune tâche. Le premier bouton termine la tâche, en conservant les règles de rémunération (saisie des minutes si nécessaire) ; le second laisse la tâche à faire. Une réouverture désactive son ancienne urgence et révoque ses anciens liens. Les grands groupes de plus de vingt tâches restent dans un seul message avec un accès à la liste et à ses boutons.
 
-Les envois nécessitent les modules **Tâches/planning** et **Telegram**, un bot Telegram activé et le planificateur existant (`MULTITENANT_AUTOMATION_ENABLED=true` côté serveur). La page de réglages indique si le bot ou le planificateur manque. Les contrôles ont lieu environ une fois par minute ; les états d’envoi sont conservés en base et les exécutions sont protégées par un verrou propre à chaque organisation.
+Les envois nécessitent les modules **Tâches/planning** et **Telegram** et un bot Telegram activé. Un planificateur dédié aux tâches urgentes démarre automatiquement en dehors des tests, indépendamment du planificateur général ; il respecte l’activation de chaque compte dans les paramètres. `TASK_URGENCY_AUTOMATION_ENABLED=false` permet de le suspendre au niveau du serveur. La page de réglages indique si le bot ou ce planificateur manque. Les contrôles ont lieu environ une fois par minute ; les états d’envoi sont conservés en base et les exécutions sont protégées par un verrou propre à chaque organisation.
 
 ## Sauvegarde et restauration
 

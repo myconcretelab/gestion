@@ -145,6 +145,7 @@ export const env = {
   ORGANIZATION_JOB_LEASE_MS: parseIntegerEnv(process.env.ORGANIZATION_JOB_LEASE_MS, 60_000, 5000, 3_600_000),
   ORGANIZATION_JOB_MAX_ATTEMPTS: parseIntegerEnv(process.env.ORGANIZATION_JOB_MAX_ATTEMPTS, 5, 1, 20),
   MULTITENANT_AUTOMATION_ENABLED: parseBooleanEnv(process.env.MULTITENANT_AUTOMATION_ENABLED, false),
+  TASK_URGENCY_AUTOMATION_ENABLED: parseBooleanEnv(process.env.TASK_URGENCY_AUTOMATION_ENABLED, true),
   // Standard API payloads should stay small. The two base64 upload endpoints use
   // UPLOAD_BODY_LIMIT explicitly so they do not raise the limit for every route.
   REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT ?? "2mb",

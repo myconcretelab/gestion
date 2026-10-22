@@ -5,6 +5,7 @@ import { ensureLegacyIntegrationTokenMigrated } from "./services/apiTokens.js";
 import { startBillingJobWorker } from "./modules/billing/worker.js";
 import { startSuperPdpJobWorker } from "./modules/superpdp/worker.js";
 import { startMultiTenantAutomationScheduler } from "./services/multiTenantAutomation.js";
+import { startTaskUrgencyAutomationScheduler } from "./services/taskUrgencyAutomation.js";
 
 await assertProductionAuthConfigured();
 await ensureLegacyIntegrationTokenMigrated();
@@ -15,6 +16,7 @@ if (env.NODE_ENV !== "test") {
   startBillingJobWorker();
   startSuperPdpJobWorker();
   startMultiTenantAutomationScheduler();
+  startTaskUrgencyAutomationScheduler();
 }
 
 app.listen(env.PORT, () => {
