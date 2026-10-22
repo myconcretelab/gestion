@@ -1,0 +1,10 @@
+ALTER TABLE "action_tasks" ADD COLUMN "created_by_id" TEXT;
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_level" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_requested_at" TIMESTAMP(3);
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_starts_at" TIMESTAMP(3);
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_first_sent_at" TIMESTAMP(3);
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_last_sent_at" TIMESTAMP(3);
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_stopped_at" TIMESTAMP(3);
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_departure_id" TEXT;
+ALTER TABLE "action_tasks" ADD COLUMN "urgency_version" TEXT NOT NULL DEFAULT '';
+CREATE INDEX "action_tasks_org_urgency_status_idx" ON "action_tasks"("organization_id", "urgency_level", "status");

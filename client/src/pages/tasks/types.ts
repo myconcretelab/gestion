@@ -1,7 +1,13 @@
 export type Category = "short" | "long";
+import type { TaskReminderSettings, UrgencyLevel } from "./taskUrgency";
 export type CompensationMode = "none" | "flat_rate" | "time";
 export type ActionStatus = "planned" | "in_progress" | "done";
 export type ActionTask = {
+  created_by_id?: string | null;
+  created_by_name?: string | null;
+  urgency_level?: UrgencyLevel;
+  urgency_stopped_at?: string | null;
+  urgency_first_sent_at?: string | null;
   id: string;
   title: string;
   gite_id: string;
@@ -44,6 +50,7 @@ export type Shortcut = {
   enabled: boolean;
 };
 export type ActionResponse = {
+  reminder_settings?: TaskReminderSettings;
   tasks: ActionTask[];
   templates: ActionTemplate[];
   gites: { id: string; nom: string }[];

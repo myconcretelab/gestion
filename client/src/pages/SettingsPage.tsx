@@ -32,6 +32,7 @@ import type {
 
 import AppearanceSettings from "./AppearanceSettings";
 import TodayWidgetsSettings from "./settings/TodayWidgetsSettings";
+import TaskReminderSettings from "./settings/TaskReminderSettings";
 import UserSettings from "./UserSettings";
 import SettingsShell from "./settings/SettingsShell";
 
@@ -314,6 +315,7 @@ type PumpSessionRenewalResult = {
 const SETTINGS_SECTIONS = [
   { id: "settings-appearance", label: "Templates d’apparence" },
   { id: "settings-widgets", label: "Widgets" },
+  { id: "settings-tasks", label: "Tâches" },
   { id: "settings-import-log", label: "Journal des imports" },
   { id: "settings-sms", label: "SMS" },
   { id: "settings-email-texts", label: "Emails" },
@@ -338,6 +340,7 @@ const DEFAULT_SETTINGS_SECTION: SettingsSectionId = "settings-security";
 const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
   "settings-appearance": "apparence",
   "settings-widgets": "widgets",
+  "settings-tasks": "taches",
   "settings-import-log": "journal-imports",
   "settings-sms": "sms",
   "settings-email-texts": "emails",
@@ -5198,6 +5201,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
     <SettingsShell>
           {activeSettingsSection === "settings-appearance" ? <AppearanceSettings /> : null}
           {activeSettingsSection === "settings-widgets" ? <TodayWidgetsSettings currentUser={currentUser} /> : null}
+          {activeSettingsSection === "settings-tasks" ? <TaskReminderSettings /> : null}
           {activeSettingsSection === "settings-users" ? (
             currentUser?.permissions.isOwner
               ? <UserSettings currentUserId={currentUser.id} onAuthSessionUpdated={onAuthSessionUpdated} />

@@ -301,6 +301,18 @@ La dépendance Stripe est installée uniquement côté serveur. Pendant le pilot
 
 La synchronisation crée un Product Stripe et ses Prices récurrents en mode test. Un changement de montant crée un nouveau Price et désactive l'ancien, conformément au fonctionnement Stripe. Les identifiants Stripe sont conservés en base ; les clés secrètes ne le sont jamais.
 
+## Urgence des tâches rapides
+
+Dans **Paramètres → Tâches et rappels** (`/parametres/taches`), régler l’activation de chaque niveau, la fréquence du niveau 2 (une heure par défaut), les destinataires, les libellés des messages et boutons et la validité des liens. Le sélecteur de chaque nouvelle tâche démarre sans urgence et suit le cycle **Sans urgence → Urgence 1 → Urgence 2 → Sans urgence**.
+
+Les deux niveaux attendent le premier départ de locataires après l’activation de l’urgence, y compris le séjour en cours. L’heure vient du contrat associé, sinon de l’heure de départ du gîte, en heure de Paris. Tant que le premier message n’a pas été envoyé, les reports et annulations de réservations sont pris en compte. Sans réservation, la tâche attend le prochain séjour. Le niveau 1 est envoyé une fois ; le niveau 2 se répète à l’intervalle choisi, sans rejouer toutes les heures manquées après un redémarrage.
+
+Le créateur est enregistré depuis la session connectée, sans pouvoir être remplacé par une valeur envoyée par le navigateur. Par défaut, il est prioritaire pour les rappels ; à défaut d’un compte actif avec Telegram, le destinataire est l’intervenant affecté, puis le gestionnaire du logement, puis le destinataire de secours choisi (ou un propriétaire joignable). Les anciennes tâches et les tâches produites automatiquement n’ont pas de créateur identifié. Les messages sont regroupés par logement et destinataire.
+
+Chaque tâche du message possède un bouton **C’est fait** et, au niveau 2, **Arrêter les rappels**. Les liens signés ouvrent une confirmation sans connexion ; un aperçu de lien ne modifie donc aucune tâche. Le premier bouton termine la tâche, en conservant les règles de rémunération (saisie des minutes si nécessaire) ; le second laisse la tâche à faire. Une réouverture désactive son ancienne urgence et révoque ses anciens liens. Les grands groupes de plus de vingt tâches restent dans un seul message avec un accès à la liste et à ses boutons.
+
+Les envois nécessitent les modules **Tâches/planning** et **Telegram**, un bot Telegram activé et le planificateur existant (`MULTITENANT_AUTOMATION_ENABLED=true` côté serveur). La page de réglages indique si le bot ou le planificateur manque. Les contrôles ont lieu environ une fois par minute ; les états d’envoi sont conservés en base et les exécutions sont protégées par un verrou propre à chaque organisation.
+
 ## Sauvegarde et restauration
 
 ```bash

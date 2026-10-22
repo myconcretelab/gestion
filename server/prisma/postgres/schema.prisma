@@ -1509,6 +1509,10 @@ model ActionTemplate {
   organization_id       String   @default("org_historical_broceliande")
   gite_id               String
   title                 String
+  category              String   @default("short")
+  compensation_mode     String   @default("none")
+  compensation_amount   Float    @default(0)
+  default_minutes       Int?
   trigger_event         String
   starts_offset_days    Int      @default(0)
   due_offset_days       Int      @default(0)
@@ -1533,6 +1537,20 @@ model ActionTask {
   reservation_id  String?
   gite_id         String
   title           String
+  category        String    @default("short")
+  compensation_mode String  @default("none")
+  compensation_amount Float @default(0)
+  spent_minutes   Int?
+  created_by_id        String?
+  urgency_level        Int       @default(0)
+  urgency_requested_at DateTime?
+  urgency_departure_id String?
+  urgency_starts_at    DateTime?
+  urgency_first_sent_at DateTime?
+  urgency_last_sent_at DateTime?
+  urgency_stopped_at   DateTime?
+  urgency_version      String    @default("")
+  source_type     String    @default("manual")
   assignee_id     String?
   status          String    @default("planned")
   starts_at       DateTime
@@ -1546,6 +1564,8 @@ model ActionTask {
   @@unique([organization_id, template_id, reservation_id], map: "action_tasks_org_template_reservation_key")
   @@index([organization_id, starts_at], map: "action_tasks_org_starts_idx")
   @@index([organization_id, assignee_id, status], map: "action_tasks_org_assignee_status_idx")
+  @@index([organization_id, gite_id, category, status], map: "action_tasks_org_gite_category_status_idx")
+  @@index([organization_id, urgency_level, status], map: "action_tasks_org_urgency_status_idx")
   @@map("action_tasks")
 }
 

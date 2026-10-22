@@ -1,4 +1,4 @@
-import prisma from "../db/prisma.js";
+import prisma, { type TenantTransactionClient } from "../db/prisma.js";
 import { activeRotationAssignees, rotationAssigneeAt } from "./assignmentRules.js";
 import { parisWallTime } from "./cleaningTasks.js";
 import { getOrganizationId } from "./organizationContext.js";
@@ -116,7 +116,10 @@ export const serializeActionTask = (task: {
   completed_at: Date | null; note: string; category: string; compensation_mode: string;
   compensation_amount: unknown; spent_minutes: number | null; source_type: string;
   updatedAt: Date;
-}, names: { gite?: string; assignee?: string | null }) => ({
+  urgency_level?: number; urgency_starts_at?: Date | null; urgency_stopped_at?: Date | null;
+  urgency_first_sent_at?: Date | null;
+  created_by_id?: string | null;
+}, names: { gite?: string; assignee?: string | null; creator?: string | null }) => ({
   id: task.id, template_id: task.template_id, reservation_id: task.reservation_id,
   gite_id: task.gite_id, gite_name: names.gite ?? "Gîte", title: task.title,
   assignee_id: task.assignee_id, assignee_name: names.assignee ?? null,
@@ -126,6 +129,12 @@ export const serializeActionTask = (task: {
   compensation_amount: Number(task.compensation_amount ?? 0), spent_minutes: task.spent_minutes,
   source_type: task.source_type,
   updated_at: task.updatedAt.toISOString(),
+  created_by_id: task.created_by_id ?? null,
+  created_by_name: names.creator ?? null,
+  urgency_level: task.urgency_level ?? 0,
+  urgency_starts_at: task.urgency_starts_at?.toISOString() ?? null,
+  urgency_stopped_at: task.urgency_stopped_at?.toISOString() ?? null,
+  urgency_first_sent_at: task.urgency_first_sent_at?.toISOString() ?? null,
 });
 
 export const summarizeActionTasks = (tasks: Array<{ category: string; status: string }>) => ({
@@ -149,20 +158,21 @@ export const recordActionTaskCompensation = async (
   task: CompensatedActionTask,
   completedAt: Date,
   requestedMinutes?: number | null,
+  database: TenantTransactionClient = prisma,
 ) => {
   if (task.compensation_mode === "none") return { spentMinutes: task.spent_minutes };
   if (!task.assignee_id) {
     throw Object.assign(new Error("Attribuez la tâche à l’intervenant qui l’a réalisée."), { status: 409 });
   }
   const [user, gite] = await Promise.all([
-    prisma.appUser.findUnique({ where: { id: task.assignee_id }, select: { id: true, display_name: true, intervenant_id: true } }),
-    prisma.gite.findUnique({ where: { id: task.gite_id }, select: { id: true, nom: true } }),
+    database.appUser.findUnique({ where: { id: task.assignee_id }, select: { id: true, display_name: true, intervenant_id: true } }),
+    database.gite.findUnique({ where: { id: task.gite_id }, select: { id: true, nom: true } }),
   ]);
   if (!user?.intervenant_id || !gite) {
     throw Object.assign(new Error("L’intervenant de cette tâche est inactif ou introuvable."), { status: 409 });
   }
   if (task.compensation_mode === "flat_rate") {
-    await prisma.userIntervention.upsert({
+    await database.userIntervention.upsert({
       where: { organization_id_source_key: { organization_id: getOrganizationId(), source_key: `action-task:${task.id}` } },
       update: {},
       create: {
@@ -179,11 +189,11 @@ export const recordActionTaskCompensation = async (
     throw Object.assign(new Error("Indiquez le temps réellement passé sur cette tâche."), { status: 409 });
   }
   const id = `action-task:${task.id}`;
-  const existing = await prisma.intervenantHourEntry.findUnique({ where: { id } });
+  const existing = await database.intervenantHourEntry.findUnique({ where: { id } });
   if (existing?.paid_at && (existing.intervenant_id !== user.intervenant_id || existing.minutes !== spentMinutes)) {
     throw Object.assign(new Error("Le temps de cette tâche a déjà été payé et ne peut plus être modifié ici."), { status: 409 });
   }
-  await prisma.intervenantHourEntry.upsert({
+  await database.intervenantHourEntry.upsert({
     where: { id },
     update: existing?.paid_at ? {} : {
       intervenant_id: user.intervenant_id, intervenant_nom: user.display_name,

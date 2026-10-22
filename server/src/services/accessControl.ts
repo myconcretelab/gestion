@@ -88,6 +88,7 @@ export const getRequiredBusinessPermission = (method: string, requestPath: strin
   if (/^\/(?:guest-night-declarations|urssaf-declarations)/.test(path)) return familyPermission("declarations", method);
   if (path.startsWith("/cleaning-tasks")) return (path.endsWith("/status") || path.endsWith("/note")) && isWriteMethod(method) ? "cleaning:execute" : familyPermission("planning", method);
   if (path.startsWith("/action-tasks")) {
+    if (path.startsWith("/action-tasks/reminder-settings")) return familyPermission("settings", method);
     const taskExecution = ((path.endsWith("/status") || path.endsWith("/note") || path.endsWith("/assignment") || path.endsWith("/tasks/quick")) && isWriteMethod(method))
       || (method.toUpperCase() === "GET" && path.startsWith("/action-tasks/gites/"))
       || (method.toUpperCase() === "PATCH" && /^\/action-tasks\/tasks\/[^/]+$/.test(path));

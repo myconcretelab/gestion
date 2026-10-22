@@ -12,6 +12,7 @@ test("les rubriques de paramètres ouvrent directement un réglage utile", () =>
     personnalisation: "widgets",
     hebergements: "nuitees",
     canaux: "emails",
+    taches: "taches",
     connexions: "connexions",
     "equipe-acces": "utilisateurs",
     donnees: "journal-imports",

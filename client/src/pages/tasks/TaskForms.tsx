@@ -1,6 +1,8 @@
 import { useState } from "react";
 import ReservationDetailsDrawer from "../shared/ReservationDetailsDrawer";
 import { CategoryChoice, TaskIcon } from "./TaskIcons";
+import TaskUrgencyControl from "./TaskUrgencyControl";
+import type { UrgencyLevel } from "./taskUrgency";
 import {
   addDays,
   emptyTemplate,
@@ -103,6 +105,7 @@ export function TaskCreateDrawer({
     gite_id: giteId || data.gites[0]?.id || "",
     title: "",
     category: "short" as "short" | "long",
+    urgency_level: 0 as UrgencyLevel,
     note: "",
     assignee_id: "",
     start_day: parisDay(),
@@ -118,6 +121,7 @@ export function TaskCreateDrawer({
     setDraft((current) => ({
       ...current,
       category,
+      urgency_level: category === "short" ? current.urgency_level : 0,
       due_day: addDays(parisDay(), category === "short" ? 1 : 30),
       due_time: category === "short" ? "12:00" : "18:00",
     }));
@@ -203,6 +207,7 @@ export function TaskCreateDrawer({
                           ...current,
                           title: item.title,
                           category: item.category,
+                          urgency_level: item.category === "short" ? current.urgency_level : 0,
                           note: item.note,
                           due_day: addDays(
                             parisDay(),
@@ -247,6 +252,7 @@ export function TaskCreateDrawer({
             />
           </label>
           <CategoryChoice value={draft.category} onChange={chooseCategory} />
+          {draft.category === "short" ? <TaskUrgencyControl value={draft.urgency_level} onChange={(urgency_level) => setDraft({ ...draft, urgency_level })} disabled={busy} settings={data.reminder_settings} /> : null}
           <label>
             Consignes <span className="tw-optional">facultatif</span>
             <textarea

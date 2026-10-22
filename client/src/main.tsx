@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./styles.css";
 import "./appearance.css";
+import "./pages/tasks/taskUrgency.css";
 import { APPEARANCE_KEY, applyAppearance, readAppearance } from "./utils/appearance";
 
 applyAppearance(readAppearance());

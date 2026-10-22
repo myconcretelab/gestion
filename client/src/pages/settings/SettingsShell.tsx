@@ -54,6 +54,12 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     ],
   },
   {
+    id: "taches",
+    label: "Tâches et rappels",
+    path: "taches",
+    tabs: [{ label: "Tâches", path: "taches" }],
+  },
+  {
     id: "connexions",
     label: "Connexions",
     path: "connexions",

@@ -9,6 +9,7 @@ import authRouter from "./routes/auth.js";
 import gitesRouter from "./modules/properties/routes.js";
 import publicGitesRouter from "./routes/publicGites.js";
 import publicCleaningCheckRouter from "./routes/publicCleaningCheck.js";
+import publicTaskRemindersRouter from "./modules/operations/publicTaskReminders.js";
 import managersRouter from "./routes/managers.js";
 import fiscalEntitiesRouter from "./modules/fiscal/routes.js";
 import contractsRouter from "./routes/contracts.js";
@@ -280,6 +281,7 @@ export const createApp = () => {
   app.use("/api/gites", gitesRouter);
   app.use("/api/public/gites", publicGitesRouter);
   app.use("/api/public/cleaning-check", publicCleaningCheckRouter);
+  app.use("/api/public/task-reminders", publicTaskRemindersRouter);
   app.use("/api/public/planning-relay", publicPlanningRelayRouter);
   app.use("/api/public/documents", publicDocumentSharesRouter);
   app.use("/api/managers", managersRouter);

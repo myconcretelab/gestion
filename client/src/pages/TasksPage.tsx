@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import ActionsPanel from "./ActionsPanel";
 import CleaningPage from "./CleaningPage";
@@ -53,6 +54,7 @@ export default function TasksPage() {
         <div>
           <span className="cleaning-page__eyebrow">Organisation des gîtes</span>
           <h1>Tâches & plannings</h1>
+          {canManage ? <Link to="/parametres/taches" className="tw-text-button">Réglages des rappels Telegram</Link> : null}
           <p>
             Ménages, prestations et relais : une organisation commune pour votre
             équipe.

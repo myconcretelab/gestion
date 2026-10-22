@@ -5,6 +5,7 @@ import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 import TaskPresetsEditor from "./tasks/TaskPresetsEditor";
 import { TaskAutomationDrawer, TaskCreateDrawer } from "./tasks/TaskForms";
 import { CategoryIcon, TaskIcon } from "./tasks/TaskIcons";
+import { TaskUrgencyBadge } from "./tasks/TaskUrgencyControl";
 import {
   displayDate,
   type ActionResponse,
@@ -76,6 +77,8 @@ function TaskRow({
             )}
           </h3>
           <div className="tw-task-meta">
+            {task.created_by_name ? <span>Créée par {task.created_by_name}</span> : null}
+            {task.status !== "done" ? <TaskUrgencyBadge level={task.urgency_level} stopped={task.urgency_stopped_at} sent={task.urgency_first_sent_at} /> : null}
             <span>
               <TaskIcon name="home" />
               {task.gite_name}
