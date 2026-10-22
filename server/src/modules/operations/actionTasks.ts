@@ -315,6 +315,25 @@ router.patch("/tasks/:id/assignment", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+router.patch("/tasks/:id/urgency", async (req, res, next) => {
+  try {
+    const user = await getAuthenticatedAppUser(req);
+    const payload = z.object({ urgency_level: z.number().int().min(0).max(2), expected_updated_at: z.string().datetime() }).parse(req.body);
+    const task = await prisma.actionTask.findUnique({ where: { id: req.params.id } });
+    if (!task) return res.status(404).json({ error: "Tâche introuvable." });
+    if (user && !user.permissions.canWrite) return res.status(403).json({ error: "Vous ne pouvez pas modifier les tâches." });
+    if (!canManageCleaning(user) && task.assignee_id && task.assignee_id !== user?.id) return res.status(403).json({ error: "Cette tâche est attribuée à un autre intervenant." });
+    if (task.status === "done") return res.status(409).json({ error: "Cette tâche est déjà terminée." });
+    await validateTaskUrgency(payload.urgency_level, task.category);
+    const { count } = await prisma.actionTask.updateMany({
+      where: { id: task.id, status: { not: "done" }, updatedAt: new Date(payload.expected_updated_at) },
+      data: { ...taskUrgencyData(payload.urgency_level), ...(task.template_id ? { source_type: "customized" } : {}) },
+    });
+    if (!count) return res.status(409).json({ error: "Cette tâche a changé entre-temps. Actualisez la liste avant de réessayer." });
+    return res.json(await taskResponse(task.id));
+  } catch (error) { next(error); }
+});
+
 router.patch("/tasks/:id", async (req, res, next) => {
   try {
     const user = await getAuthenticatedAppUser(req);

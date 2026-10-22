@@ -252,7 +252,7 @@ export function TaskCreateDrawer({
             />
           </label>
           <CategoryChoice value={draft.category} onChange={chooseCategory} />
-          {draft.category === "short" ? <TaskUrgencyControl value={draft.urgency_level} onChange={(urgency_level) => setDraft({ ...draft, urgency_level })} disabled={busy} settings={data.reminder_settings} /> : null}
+          {draft.category === "short" ? <div className="task-urgency-field"><TaskUrgencyControl value={draft.urgency_level} onChange={(urgency_level) => setDraft({ ...draft, urgency_level })} disabled={busy} settings={data.reminder_settings} showHint /></div> : null}
           <label>
             Consignes <span className="tw-optional">facultatif</span>
             <textarea

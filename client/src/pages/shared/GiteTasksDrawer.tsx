@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../utils/api";
 import ReservationDetailsDrawer from "./ReservationDetailsDrawer";
-import TaskUrgencyControl, { TaskUrgencyBadge } from "../tasks/TaskUrgencyControl";
+import TaskUrgencyControl from "../tasks/TaskUrgencyControl";
 import type { TaskReminderSettings, UrgencyLevel } from "../tasks/taskUrgency";
 
 export type GiteTaskSummary = { open_short: number; open_long: number; completed: number };
@@ -139,7 +139,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
   const [data, setData] = useState<GiteTasksPayload | null>(null);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<"short" | "long">("short");
-  const [urgencyLevel, setUrgencyLevel] = useState<UrgencyLevel>(0);
   const [minutes, setMinutes] = useState<Record<string, string>>({});
   const [assigneeSelections, setAssigneeSelections] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -170,7 +169,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
 
   useEffect(() => {
     setEditor(null);
-    setUrgencyLevel(0);
     setAssigneeSelections({});
     initialEditorOpenedRef.current = null;
   }, [open, giteId]);
@@ -214,16 +212,28 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
           reservation_id: reservationId ?? null,
           title: taskTitle,
           category: taskCategory,
-          urgency_level: taskCategory === "short" ? urgencyLevel : 0,
+          urgency_level: 0,
           shortcut_key: shortcutKey ?? null,
           source_type: sourceType,
         },
       });
       setTitle("");
-      setUrgencyLevel(0);
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Impossible d’ajouter la tâche.");
+    } finally { setBusyId(null); }
+  };
+
+  const changeUrgency = async (task: GiteTask, urgency_level: UrgencyLevel) => {
+    setBusyId(task.id); setError(null);
+    try {
+      const saved = await apiFetch<GiteTask>(`/action-tasks/tasks/${encodeURIComponent(task.id)}/urgency`, {
+        method: "PATCH", json: { urgency_level, expected_updated_at: task.updated_at },
+      });
+      setData((current) => current ? { ...current, tasks: current.tasks.map((row) => row.id === saved.id ? saved : row) } : current);
+      setEditor((current) => current?.task.id === saved.id ? { ...current, task: saved, urgency_level: saved.urgency_level ?? 0 } : current);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Impossible de modifier l’urgence de cette tâche.");
     } finally { setBusyId(null); }
   };
 
@@ -282,7 +292,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
       {error ? <div className="note" role="alert">{error}</div> : null}
       <section className="gite-tasks-drawer__quick">
         <div><strong>Ajout rapide</strong><span>Une pression suffit</span></div>
-        <TaskUrgencyControl value={urgencyLevel} onChange={setUrgencyLevel} disabled={Boolean(busyId) || !data} settings={data?.reminder_settings} />
         <div className="gite-tasks-drawer__shortcuts">
           {(data?.shortcuts ?? []).map((shortcut) => <button
             type="button"
@@ -327,6 +336,7 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
                   {data.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}{assignee.id === data.current_user_id ? " (moi)" : ""}</option>)}
                 </select>
               </label>
+              {task.category === "short" ? <TaskUrgencyControl value={task.urgency_level ?? 0} taskTitle={task.title} stopped={task.urgency_stopped_at} disabled={Boolean(busyId) || !canEdit} settings={data.reminder_settings} onChange={(level) => void changeUrgency(task, level)} /> : null}
               {canEdit ? <button type="button" className="gite-task-card__edit" aria-label={`Modifier ${task.title}`} title="Modifier la tâche" disabled={Boolean(busyId)} onClick={() => setEditor(taskDraft(task))}><TaskEditIcon /></button> : null}
             </div>
             {task.compensation_mode !== "none" ?
@@ -334,14 +344,13 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
             {task.compensation_mode === "flat_rate" ? <small>Forfait{task.compensation_amount !== null ? ` ${task.compensation_amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}` : ""}</small> : null}
             {task.compensation_mode === "time" ? <label className="gite-task-card__time">Temps <input aria-label={`Minutes passées pour ${task.title}`} type="number" min={1} max={1440} inputMode="numeric" value={minutes[task.id] ?? ""} placeholder="0" onChange={(event) => setMinutes((current) => ({ ...current, [task.id]: event.target.value }))} /> min</label> : null}
             </div> : null}
-            {task.status !== "done" ? <TaskUrgencyBadge level={task.urgency_level} stopped={task.urgency_stopped_at} sent={task.urgency_first_sent_at} /> : null}
             {task.created_by_name ? <small className="field-hint">Créée par {task.created_by_name}</small> : null}
           </div>
           {editor?.task.id === task.id ? <form className="gite-task-editor" aria-label="Modifier la tâche" onSubmit={(event) => { event.preventDefault(); void saveEdit(); }}>
             <div className="gite-task-editor__heading"><strong>Modifier la tâche</strong><span>Les changements concernent cette tâche uniquement.</span></div>
             <label className="field gite-task-editor__wide">Intitulé<input autoFocus required minLength={2} maxLength={120} value={editor.title} onChange={(event) => setEditor({ ...editor, title: event.target.value })} /></label>
             <label className="field">Catégorie<select value={editor.category} onChange={(event) => setEditor({ ...editor, category: event.target.value as TaskEditDraft["category"] })}><option value="short">Rapide</option><option value="long">Long terme</option></select></label>
-            {editor.category === "short" ? <div className="gite-task-editor__wide"><TaskUrgencyControl value={editor.urgency_level} onChange={(urgency_level) => setEditor({ ...editor, urgency_level })} disabled={Boolean(busyId)} settings={data.reminder_settings} />{editor.task.urgency_stopped_at && editor.urgency_level === editor.task.urgency_level ? <p className="field-hint">Rappels arrêtés. Pour les réactiver, enregistrez sans urgence puis choisissez à nouveau un niveau.</p> : null}</div> : null}
+            {editor.category === "short" ? <div className="gite-task-editor__wide task-urgency-field"><TaskUrgencyControl value={editor.urgency_level} onChange={(urgency_level) => setEditor({ ...editor, urgency_level })} disabled={Boolean(busyId)} settings={data.reminder_settings} showHint /></div> : null}
             <label className="field">Intervenant<select value={editor.assignee_id} onChange={(event) => setEditor({ ...editor, assignee_id: event.target.value })}><option value="" disabled={!data.can_manage && editor.task.assignee_id !== null}>Non attribuée</option>{data.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
             <label className="field">Échéance<input type="date" required value={editor.due_day} onChange={(event) => setEditor({ ...editor, due_day: event.target.value })} /></label>
             <label className="field">Heure<input type="time" required value={editor.due_time} onChange={(event) => setEditor({ ...editor, due_time: event.target.value })} /></label>

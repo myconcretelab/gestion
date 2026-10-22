@@ -303,7 +303,7 @@ La synchronisation crée un Product Stripe et ses Prices récurrents en mode tes
 
 ## Urgence des tâches rapides
 
-Dans **Paramètres → Tâches et rappels** (`/parametres/taches`), régler l’activation de chaque niveau, la fréquence du niveau 2 (une heure par défaut), les destinataires, les libellés des messages et boutons et la validité des liens. Le sélecteur de chaque nouvelle tâche démarre sans urgence et suit le cycle **Sans urgence → Urgence 1 → Urgence 2 → Sans urgence**.
+Dans **Paramètres → Tâches et rappels** (`/parametres/taches`), régler l’activation de chaque niveau, la fréquence du niveau 2 (une heure par défaut), les destinataires, les libellés des messages et boutons et la validité des liens. Chaque tâche rapide possède sa propre cloche, à côté de son intervenant : un clic enregistre uniquement son urgence et suit le cycle **Sans urgence → Urgence 1 → Urgence 2 → Sans urgence**. Les raccourcis d’ajout créent toujours des tâches sans urgence.
 
 Les deux niveaux attendent le premier départ de locataires après l’activation de l’urgence, y compris le séjour en cours. L’heure vient du contrat associé, sinon de l’heure de départ du gîte, en heure de Paris. Tant que le premier message n’a pas été envoyé, les reports et annulations de réservations sont pris en compte. Sans réservation, la tâche attend le prochain séjour. Le niveau 1 est envoyé une fois ; le niveau 2 se répète à l’intervalle choisi, sans rejouer toutes les heures manquées après un redémarrage.
 

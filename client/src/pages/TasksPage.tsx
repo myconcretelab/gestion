@@ -54,7 +54,7 @@ export default function TasksPage() {
         <div>
           <span className="cleaning-page__eyebrow">Organisation des gîtes</span>
           <h1>Tâches & plannings</h1>
-          {canManage ? <Link to="/parametres/taches" className="tw-text-button">Réglages des rappels Telegram</Link> : null}
+          {canManage ? <Link to="/parametres/taches" className="tw-text-button">Réglages des rappels</Link> : null}
           <p>
             Ménages, prestations et relais : une organisation commune pour votre
             équipe.

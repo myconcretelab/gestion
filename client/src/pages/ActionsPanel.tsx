@@ -5,7 +5,8 @@ import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 import TaskPresetsEditor from "./tasks/TaskPresetsEditor";
 import { TaskAutomationDrawer, TaskCreateDrawer } from "./tasks/TaskForms";
 import { CategoryIcon, TaskIcon } from "./tasks/TaskIcons";
-import { TaskUrgencyBadge } from "./tasks/TaskUrgencyControl";
+import TaskUrgencyControl from "./tasks/TaskUrgencyControl";
+import type { TaskReminderSettings, UrgencyLevel } from "./tasks/taskUrgency";
 import {
   displayDate,
   type ActionResponse,
@@ -31,6 +32,9 @@ function TaskRow({
   onComplete,
   onStatus,
   onNote,
+  onUrgency,
+  reminderSettings,
+  canEditUrgency,
 }: {
   task: ActionTask;
   busy: boolean;
@@ -39,6 +43,9 @@ function TaskRow({
   onComplete: () => void;
   onStatus: (status: "planned" | "in_progress") => void;
   onNote: (note: string) => Promise<boolean>;
+  onUrgency: (level: UrgencyLevel) => void;
+  reminderSettings?: TaskReminderSettings;
+  canEditUrgency: boolean;
 }) {
   const [note, setNote] = useState(task.note);
   const overdue =
@@ -78,7 +85,6 @@ function TaskRow({
           </h3>
           <div className="tw-task-meta">
             {task.created_by_name ? <span>Créée par {task.created_by_name}</span> : null}
-            {task.status !== "done" ? <TaskUrgencyBadge level={task.urgency_level} stopped={task.urgency_stopped_at} sent={task.urgency_first_sent_at} /> : null}
             <span>
               <TaskIcon name="home" />
               {task.gite_name}
@@ -106,6 +112,7 @@ function TaskRow({
           <span>{task.assignee_name || "Non attribuée"}</span>
         </span>
         <div className="tw-row-actions">
+          {task.category === "short" && task.status !== "done" ? <TaskUrgencyControl value={task.urgency_level ?? 0} taskTitle={task.title} stopped={task.urgency_stopped_at} disabled={busy || !canEditUrgency || !task.updated_at} settings={reminderSettings} onChange={onUrgency} /> : null}
           {task.status === "planned" ? (
             <button
               type="button"
@@ -685,6 +692,9 @@ export default function ActionsPanel({
                             task={task}
                             busy={busy}
                             manager={Boolean(data?.can_manage)}
+                            reminderSettings={data?.reminder_settings}
+                            canEditUrgency={Boolean(data?.can_manage || !task.assignee_id || task.assignee_id === data?.current_user_id)}
+                            onUrgency={(urgency_level) => void run(() => apiFetch(`/action-tasks/tasks/${encodeURIComponent(task.id)}/urgency`, { method: "PATCH", json: { urgency_level, expected_updated_at: task.updated_at } }))}
                             onEdit={() => setSelectedTask(task)}
                             onComplete={() => {
                               setError(null);

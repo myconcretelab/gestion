@@ -17,6 +17,7 @@ export type ActionTask = {
   status: ActionStatus;
   starts_at: string;
   due_at: string;
+  updated_at?: string;
   note: string;
   template_id: string | null;
   category: Category;

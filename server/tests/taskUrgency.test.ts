@@ -115,6 +115,7 @@ before(async () => {
         intervenant_id: "worker-profile",
         telegram_chat_id: "worker-chat",
         status: "worker",
+        roles: '["worker"]',
         page_access: '["planning_relay"]',
       },
     });
@@ -490,6 +491,35 @@ function tokenFor(
     `${org}-fake-secret`,
   );
 }
+
+test("la cloche modifie seulement l’urgence de la tâche choisie, avec contrôle des droits et des conflits", async () => {
+  const [task, other] = await inOrg(async () => Promise.all([makeTask("bell-a", 0), makeTask("bell-b", 0)]));
+  const headers = { Cookie: cookie, Origin: "http://localhost:5173", "Content-Type": "application/json" };
+  const change = (id: string, level: number, updatedAt: string, requestHeaders = headers) => fetch(`${origin}/api/action-tasks/tasks/${id}/urgency`, { method: "PATCH", headers: requestHeaders, body: JSON.stringify({ urgency_level: level, expected_updated_at: updatedAt, title: "Ne doit pas changer", assignee_id: "manager" }) });
+  let current = task;
+  for (const level of [1, 2, 0]) {
+    const response = await change(task.id, level, current.updatedAt.toISOString());
+    assert.equal(response.status, 200, await response.clone().text());
+    const saved = await response.json() as any;
+    assert.equal(saved.urgency_level, level);
+    assert.equal(saved.title, task.title);
+    assert.equal(saved.assignee_id, task.assignee_id);
+    assert.equal(saved.created_by_id, task.created_by_id);
+    current = await inOrg(() => db.default.actionTask.findUniqueOrThrow({ where: { id: task.id } }));
+    await inOrg(async () => assert.equal((await db.default.actionTask.findUniqueOrThrow({ where: { id: other.id } })).urgency_level, 0));
+  }
+  assert.equal((await change(task.id, 1, "2000-01-01T00:00:00.000Z")).status, 409);
+  await inOrg(() => db.default.actionTask.update({ where: { id: task.id }, data: { status: "done" } }));
+  assert.equal((await change(task.id, 1, current.updatedAt.toISOString())).status, 409);
+  const long = await inOrg(() => makeTask("bell-long", 0, { category: "long" }));
+  assert.equal((await change(long.id, 1, long.updatedAt.toISOString())).status, 400);
+  const foreign = await inOrg(() => makeTask("bell-foreign", 0), otherOrg);
+  assert.equal((await change(foreign.id, 1, foreign.updatedAt.toISOString())).status, 404);
+  await inOrg(() => db.default.actionTask.update({ where: { id: other.id }, data: { assignee_id: "manager" } }));
+  const { createServerAuthSession } = await import("../src/services/serverAuth.js");
+  const workerSession = await createServerAuthSession("worker", 24, org);
+  assert.equal((await change(other.id, 1, other.updatedAt.toISOString(), { ...headers, Cookie: `contrats_session=${workerSession.id}` })).status, 403);
+});
 const publicGet = (token: string) =>
   fetch(
     `${origin}/api/public/task-reminders/action?token=${encodeURIComponent(token)}`,
