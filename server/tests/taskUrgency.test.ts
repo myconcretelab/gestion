@@ -598,7 +598,7 @@ test("liens altérés, expirés, révoqués, mauvais destinataire ou autre organ
   );
 });
 
-test("la création authentifiée enregistre l’auteur réel et ignore un auteur fourni par le client", async () => {
+test("la création attribue la tâche à l’utilisateur connecté et enregistre l’auteur réel", async () => {
   const headers = {
     Cookie: cookie,
     Origin: "http://localhost:5173",
@@ -612,12 +612,16 @@ test("la création authentifiée enregistre l’auteur réel et ignore un auteur
       title: "Apporter du savon",
       urgency_level: 1,
       created_by_id: "worker",
+      assignee_id: "worker",
     }),
   });
   assert.equal(response.status, 201);
   const task = (await response.json()) as any;
   assert.equal(task.created_by_id, `${org}-creator`);
   assert.equal(task.created_by_name, "Créateur");
+  assert.equal(task.assignee_id, `${org}-creator`);
+  assert.equal(task.assignee_name, "Créateur");
+  await inOrg(async () => assert.equal((await db.default.actionTask.findUniqueOrThrow({ where: { id: task.id } })).assignee_id, `${org}-creator`));
   const manual = await fetch(`${origin}/api/action-tasks/tasks`, {
     method: "POST",
     headers,
@@ -633,7 +637,25 @@ test("la création authentifiée enregistre l’auteur réel et ignore un auteur
     }),
   });
   assert.equal(manual.status, 201);
-  assert.equal(((await manual.json()) as any).created_by_id, `${org}-creator`);
+  const manualTask = await manual.json() as any;
+  assert.equal(manualTask.created_by_id, `${org}-creator`);
+  assert.equal(manualTask.assignee_id, null);
+  for (const assigneeId of [undefined, `${org}-creator`, "worker"]) {
+    const created = await fetch(`${origin}/api/action-tasks/tasks`, {
+      method: "POST", headers,
+      body: JSON.stringify({ gite_id: `${org}-gite`, title: "Tâche manuelle", start_day: "2030-07-01", start_time: "09:00", due_day: "2030-07-02", due_time: "12:00", assignee_id: assigneeId }),
+    });
+    assert.equal(created.status, 201, await created.clone().text());
+    assert.equal(((await created.json()) as any).assignee_id, assigneeId ?? `${org}-creator`);
+  }
+  for (const url of [`/api/action-tasks/gites/${org}-gite`, "/api/action-tasks?from=2030-07-01&to=2030-07-03"]) {
+    const response = await fetch(`${origin}${url}`, { headers });
+    assert.equal(response.status, 200);
+    assert.ok(((await response.json()) as any).assignees.some((assignee: any) => assignee.id === `${org}-creator`));
+  }
+  const longTask = await fetch(`${origin}/api/action-tasks/tasks/quick`, { method: "POST", headers, body: JSON.stringify({ gite_id: `${org}-gite`, title: "Rénover le portail", category: "long" }) });
+  assert.equal(longTask.status, 201);
+  assert.equal(((await longTask.json()) as any).assignee_id, `${org}-creator`);
   const long = await fetch(`${origin}/api/action-tasks/tasks/quick`, {
     method: "POST",
     headers,

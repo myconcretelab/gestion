@@ -140,7 +140,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<"short" | "long">("short");
   const [minutes, setMinutes] = useState<Record<string, string>>({});
-  const [assigneeSelections, setAssigneeSelections] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editor, setEditor] = useState<TaskEditDraft | null>(null);
@@ -169,7 +168,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
 
   useEffect(() => {
     setEditor(null);
-    setAssigneeSelections({});
     initialEditorOpenedRef.current = null;
   }, [open, giteId]);
 
@@ -194,7 +192,6 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
         },
       });
       setEditor(null);
-      setAssigneeSelections((current) => { const next = { ...current }; delete next[task.id]; return next; });
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Impossible d’enregistrer la tâche.");
@@ -247,8 +244,8 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
     }
     setBusyId(task.id); setError(null);
     try {
-      // A suggestion becomes an attribution only after an explicit action.
-      const selectedAssigneeId = assigneeSelections[task.id] ?? task.assignee_id ?? defaultAssigneeId;
+      // Completing an unassigned task explicitly attributes it to the current user.
+      const selectedAssigneeId = task.assignee_id ?? defaultAssigneeId;
       if (status === "done" && !task.assignee_id && selectedAssigneeId) {
         await apiFetch(`/action-tasks/tasks/${encodeURIComponent(task.id)}/assignment`, {
           method: "PATCH", json: { assignee_id: selectedAssigneeId },
@@ -266,10 +263,11 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
   const assignTask = async (task: GiteTask, assigneeId: string | null) => {
     setBusyId(task.id); setError(null);
     try {
-      await apiFetch(`/action-tasks/tasks/${encodeURIComponent(task.id)}/assignment`, {
+      const saved = await apiFetch<GiteTask>(`/action-tasks/tasks/${encodeURIComponent(task.id)}/assignment`, {
         method: "PATCH", json: { assignee_id: assigneeId },
       });
-      setAssigneeSelections((current) => ({ ...current, [task.id]: assigneeId ?? "" }));
+      setData((current) => current ? { ...current, tasks: current.tasks.map((row) => row.id === saved.id ? saved : row) } : current);
+      setEditor((current) => current?.task.id === saved.id ? { ...current, task: saved, assignee_id: saved.assignee_id ?? "" } : current);
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Impossible d’attribuer la tâche.");
@@ -315,9 +313,9 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
       <section className="gite-tasks-drawer__list">
         <div className="gite-tasks-drawer__section-title"><strong>À faire</strong><span>{openTasks.length}</span></div>
         {!data ? <p className="field-hint">Chargement…</p> : !openTasks.length ? <div className="gite-tasks-drawer__empty"><TaskHouseIcon /><strong>Tout est fait</strong><span>Le gîte n’a aucune tâche en attente.</span></div> : openTasks.map((task) => {
-          const selectedAssigneeId = assigneeSelections[task.id] ?? task.assignee_id ?? defaultAssigneeId;
+          const selectedAssigneeId = task.assignee_id ?? "";
           const selectedAssigneeName = data.assignees.find((assignee) => assignee.id === selectedAssigneeId)?.name ?? task.assignee_name ?? (task.assignee_id ? "Intervenant attribué" : "");
-          const canComplete = data.can_manage || selectedAssigneeId === data.current_user_id;
+          const canComplete = data.can_manage || task.assignee_id === data.current_user_id || (!task.assignee_id && Boolean(defaultAssigneeId));
           const canEdit = data.can_manage || !task.assignee_id || task.assignee_id === data.current_user_id;
           return <article className={`gite-task-card gite-task-card--${task.category}`} key={task.id}>
           <button type="button" className="gite-task-card__check" disabled={Boolean(busyId) || !canComplete} onClick={() => void changeTask(task, "done")} aria-label={`Marquer ${task.title} comme réalisée${selectedAssigneeName ? ` par ${selectedAssigneeName}` : ""}`}>
@@ -351,7 +349,7 @@ export default function GiteTasksDrawer({ open, giteId, giteName, reservationId,
             <label className="field gite-task-editor__wide">Intitulé<input autoFocus required minLength={2} maxLength={120} value={editor.title} onChange={(event) => setEditor({ ...editor, title: event.target.value })} /></label>
             <label className="field">Catégorie<select value={editor.category} onChange={(event) => setEditor({ ...editor, category: event.target.value as TaskEditDraft["category"] })}><option value="short">Rapide</option><option value="long">Long terme</option></select></label>
             {editor.category === "short" ? <div className="gite-task-editor__wide task-urgency-field"><TaskUrgencyControl value={editor.urgency_level} onChange={(urgency_level) => setEditor({ ...editor, urgency_level })} disabled={Boolean(busyId)} settings={data.reminder_settings} showHint /></div> : null}
-            <label className="field">Intervenant<select value={editor.assignee_id} onChange={(event) => setEditor({ ...editor, assignee_id: event.target.value })}><option value="" disabled={!data.can_manage && editor.task.assignee_id !== null}>Non attribuée</option>{data.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
+            <label className="field">Intervenant<select value={editor.assignee_id} onChange={(event) => setEditor({ ...editor, assignee_id: event.target.value })}><option value="" disabled={!data.can_manage && editor.task.assignee_id !== null}>Non attribuée</option>{editor.task.assignee_id && !data.assignees.some((assignee) => assignee.id === editor.task.assignee_id) ? <option value={editor.task.assignee_id}>{editor.task.assignee_name || "Intervenant attribué"}</option> : null}{data.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
             <label className="field">Échéance<input type="date" required value={editor.due_day} onChange={(event) => setEditor({ ...editor, due_day: event.target.value })} /></label>
             <label className="field">Heure<input type="time" required value={editor.due_time} onChange={(event) => setEditor({ ...editor, due_time: event.target.value })} /></label>
             <label className="field gite-task-editor__wide">Consignes<textarea rows={2} maxLength={2000} value={editor.note} onChange={(event) => setEditor({ ...editor, note: event.target.value })} /></label>

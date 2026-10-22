@@ -44,7 +44,7 @@ const manualSchema = z.object({
   urgency_level: z.number().int().min(0).max(2).default(0),
   gite_id: z.string(), title: z.string().trim().min(2).max(120),
   start_day: isoDate, start_time: clockTime, due_day: isoDate, due_time: clockTime,
-  assignee_id: z.string().nullable(), note: z.string().trim().max(2000).default(""),
+  assignee_id: z.string().nullable().optional(), note: z.string().trim().max(2000).default(""),
   reservation_id: z.string().nullable().optional(),
   category: taskCategory.default("short"),
   compensation_mode: compensationMode.default("none"),
@@ -78,7 +78,7 @@ const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const shiftDate = (date: Date, days: number) => new Date(date.getTime() + days * 86_400_000);
 const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
 
-const checkAssignee = async (id: string | null) => !id || await validateAssignees([id]);
+const checkAssignee = async (id: string | null, currentUserId?: string) => !id || id === currentUserId || await validateAssignees([id]);
 const checkTemplate = async (payload: z.infer<typeof templateSchema>) => {
   if (payload.due_offset_days * 1440 + minutes(payload.due_time)
     <= payload.starts_offset_days * 1440 + minutes(payload.start_time)) return "L’échéance doit suivre le début de l’action.";
@@ -136,7 +136,7 @@ router.get("/", async (req, res, next) => {
       tasks: tasks.map((task) => serializeActionTask(task, { gite: giteById.get(task.gite_id), assignee: userById.get(task.assignee_id ?? ""), creator: userById.get(task.created_by_id ?? "") })),
       templates: manager ? templates.map(serializeTemplate) : [],
       gites: manager ? gites : [],
-      assignees: manager ? users.filter((item) => item.intervenant_id).map((item) => ({ id: item.id, name: item.display_name })) : [],
+      assignees: manager ? users.filter((item) => item.intervenant_id || item.id === user?.id).map((item) => ({ id: item.id, name: item.display_name })) : [],
       shortcuts: shortcuts.filter((item) => item.enabled),
       shortcut_catalog: manager ? shortcuts : [],
       can_manage: manager,
@@ -161,7 +161,7 @@ router.get("/gites/:giteId", async (req, res, next) => {
       }),
       prisma.appUser.findMany({
         where: {
-          is_active: true, intervenant_id: { not: null },
+          is_active: true, OR: [{ intervenant_id: { not: null } }, { id: currentUser?.id ?? "" }],
           ...(manager ? {} : { id: currentUser?.id ?? "" }),
         },
         select: { id: true, display_name: true }, orderBy: [{ display_name: "asc" }, { id: "asc" }],
@@ -253,14 +253,15 @@ router.post("/tasks", async (req, res, next) => {
     const payload = manualSchema.parse(req.body);
     await validateTaskUrgency(payload.urgency_level, payload.category);
     if (!await prisma.gite.findUnique({ where: { id: payload.gite_id }, select: { id: true } })) return res.status(404).json({ error: "Gîte introuvable." });
-    if (!await checkAssignee(payload.assignee_id)) return res.status(400).json({ error: "Intervenant invalide." });
+    const assigneeId = payload.assignee_id === undefined ? user?.id ?? null : payload.assignee_id;
+    if (!await checkAssignee(assigneeId, user?.id)) return res.status(400).json({ error: "Intervenant invalide." });
     if (payload.compensation_mode === "flat_rate" && payload.compensation_amount <= 0) return res.status(400).json({ error: "Indiquez le forfait de cette tâche." });
     const startsAt = parisWallTime(payload.start_day, payload.start_time);
     const dueAt = parisWallTime(payload.due_day, payload.due_time);
     if (startsAt >= dueAt) return res.status(400).json({ error: "L’échéance doit suivre le début de l’action." });
     const task = await prisma.actionTask.create({ data: {
       gite_id: payload.gite_id, title: payload.title, starts_at: startsAt, due_at: dueAt,
-      assignee_id: payload.assignee_id, note: payload.note, reservation_id: payload.reservation_id ?? null,
+      assignee_id: assigneeId, note: payload.note, reservation_id: payload.reservation_id ?? null,
       category: payload.category, compensation_mode: payload.compensation_mode,
       compensation_amount: payload.compensation_amount, spent_minutes: payload.spent_minutes,
       source_type: payload.source_type,
@@ -293,6 +294,7 @@ router.post("/tasks/quick", async (req, res, next) => {
       title: shortcut?.title ?? payload.title, category,
       created_by_id: user?.id ?? null,
       starts_at: now, due_at: parisWallTime(dueDay, category === "short" ? "12:00" : "18:00"),
+      assignee_id: user?.id ?? null,
       note: shortcut?.note ?? payload.note, source_type: payload.source_type ?? (payload.shortcut_key ? "shortcut" : "manual"),
       ...taskUrgencyData(payload.urgency_level, now),
     } });
@@ -306,7 +308,7 @@ router.patch("/tasks/:id/assignment", async (req, res, next) => {
     const manager = canManageCleaning(currentUser);
     const { assignee_id } = z.object({ assignee_id: z.string().nullable() }).parse(req.body);
     if (!manager && assignee_id !== currentUser?.id) return res.status(403).json({ error: "Vous pouvez seulement prendre cette tâche pour vous-même." });
-    if (!await checkAssignee(assignee_id)) return res.status(400).json({ error: "Intervenant invalide." });
+    if (!await checkAssignee(assignee_id, currentUser?.id)) return res.status(400).json({ error: "Intervenant invalide." });
     const task = await prisma.actionTask.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
     if (!task) return res.status(404).json({ error: "Tâche introuvable." });
     if (task.status === "done") return res.status(409).json({ error: "Rouvrez la tâche avant de modifier son intervenant." });
@@ -350,7 +352,7 @@ router.patch("/tasks/:id", async (req, res, next) => {
     const mode = payload.compensation_mode ?? task.compensation_mode;
     const amount = payload.compensation_amount ?? Number(task.compensation_amount);
     if (!manager && (mode !== task.compensation_mode || amount !== Number(task.compensation_amount))) return res.status(403).json({ error: "La rémunération se règle par un gestionnaire." });
-    if (!await checkAssignee(payload.assignee_id)) return res.status(400).json({ error: "Intervenant invalide." });
+    if (payload.assignee_id !== task.assignee_id && !await checkAssignee(payload.assignee_id, user?.id)) return res.status(400).json({ error: "Intervenant invalide." });
     if (mode === "flat_rate" && amount <= 0) return res.status(400).json({ error: "Indiquez le forfait de cette tâche." });
     const day = new Date(`${payload.due_day}T12:00:00Z`);
     if (!Number.isFinite(day.getTime()) || formatDate(day) !== payload.due_day) return res.status(400).json({ error: "Choisissez une date d’échéance valide." });

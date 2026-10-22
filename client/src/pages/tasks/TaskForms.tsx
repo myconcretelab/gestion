@@ -107,7 +107,7 @@ export function TaskCreateDrawer({
     category: "short" as "short" | "long",
     urgency_level: 0 as UrgencyLevel,
     note: "",
-    assignee_id: "",
+    assignee_id: data.current_user_id ?? "",
     start_day: parisDay(),
     start_time: "09:00",
     due_day: addDays(parisDay(), 1),
