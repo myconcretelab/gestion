@@ -13,7 +13,7 @@ import {
 } from "@contrats/shared";
 import type { FiscalEntity, FiscalEstablishment } from "@prisma/client";
 import { fromJsonString } from "../../utils/jsonFields.js";
-import type { ContractTotals } from "../../services/contractCalculator.js";
+import type { ContractTotals, OptionsInput } from "../../services/contractCalculator.js";
 
 export const parseInvoiceFiscal = (
   value: unknown,
@@ -145,9 +145,14 @@ export const proposeInvoiceFiscal = (
       departTardif: "Départ tardif",
       chiens: "Animaux",
     };
-    const options = fromJsonString<
-      Record<string, { enabled?: boolean; offert?: boolean }>
-    >(invoice.options, {});
+    const options = fromJsonString<OptionsInput>(invoice.options, {});
+    const quantities = {
+      draps: options.draps?.nb_lits ?? 1,
+      linge: options.linge_toilette?.nb_personnes ?? 1,
+      menage: 1,
+      departTardif: 1,
+      chiens: (options.chiens?.nb ?? 1) * totals.nbNuits,
+    };
     for (const key of Object.keys(labels) as Array<keyof typeof labels>) {
       const optionKey =
         key === "linge"
@@ -156,10 +161,13 @@ export const proposeInvoiceFiscal = (
             ? "depart_tardif"
             : key;
       const offered = options[optionKey]?.enabled && options[optionKey]?.offert;
+      const quantity = options[optionKey]?.enabled
+        ? Math.max(1, quantities[key])
+        : 1;
       add(
         `${labels[key]}${offered ? " · offert" : ""}`,
-        totals.optionsDetail[key],
-        1,
+        Math.round((totals.optionsDetail[key] / quantity) * 100) / 100,
+        quantity,
         undefined,
         "C62",
         Boolean(offered),

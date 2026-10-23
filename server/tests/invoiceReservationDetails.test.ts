@@ -112,6 +112,84 @@ const proposal = () =>
     totals,
   );
 
+test("un séjour conserve les quantités et tarifs unitaires des draps et des autres options", async () => {
+  for (const beds of [7, 10]) {
+    for (const offered of [false, true]) {
+      const options = {
+        draps: { enabled: true, nb_lits: beds, prix_unitaire: 15, offert: offered },
+        linge_toilette: { enabled: true, nb_personnes: 4 },
+        menage: { enabled: true },
+        depart_tardif: { enabled: true, prix_forfait: 25 },
+        chiens: { enabled: true, nb: 2, prix_unitaire: 7.35 },
+      };
+      const singleTotals = computeTotals({
+        dateDebut: new Date("2026-10-20"),
+        dateFin: new Date("2026-10-23"),
+        prixParNuit: 70,
+        remiseMontant: 0,
+        nbAdultes: 4,
+        nbEnfants: 0,
+        arrhesMontant: 0,
+        options,
+        gite,
+      });
+      // Options may come from a request object or the saved JSON column.
+      const input = proposeInvoiceFiscal(
+        { options: beds === 7 ? options : JSON.stringify(options) },
+        singleTotals,
+      );
+      assert.equal(invoiceFiscalInputSchema.safeParse(input).success, true);
+      const sheets = input.lines.find((line) => line.label.startsWith("Draps"))!;
+      assert.equal(sheets.quantity, beds);
+      assert.equal(sheets.unit, "C62");
+      assert.equal(sheets.unit_price_ttc, offered ? 0 : 15);
+      assert.equal(sheets.label, offered ? "Draps · offert" : "Draps");
+      for (const [label, quantity, price] of [
+        ["Linge de toilette", 4, 5],
+        ["Ménage", 1, 40],
+        ["Départ tardif", 1, 25],
+        ["Animaux", 6, 7.35],
+      ] as const) {
+        const line = input.lines.find((line) => line.label === label)!;
+        assert.equal(line.quantity, quantity);
+        assert.equal(line.unit_price_ttc, price);
+        assert.equal(line.unit, "C62");
+      }
+      assert.equal(
+        computeInvoiceFiscal(input).gross_cents,
+        Math.round(singleTotals.totalGlobal * 100),
+      );
+      const html = await buildInvoiceHtml({
+        invoice: {
+          numero_facture: "BROUILLON",
+          lifecycle_status: "draft",
+          fiscal: input,
+          locataire_nom: "Client fictif",
+          locataire_adresse: "",
+          locataire_tel: "",
+          nb_adultes: 4,
+          nb_enfants_2_17: 0,
+          date_debut: new Date("2026-10-20"),
+          date_fin: new Date("2026-10-23"),
+          heure_arrivee: "17:00",
+          heure_depart: "12:00",
+          prix_par_nuit: 70,
+          remise_montant: 0,
+          arrhes_montant: 0,
+          arrhes_date_limite: new Date("2026-10-20"),
+          solde_montant: singleTotals.totalGlobal,
+          cheque_menage_montant: 0,
+          caution_montant: 0,
+          options,
+        },
+        gite,
+        totals: singleTotals,
+      });
+      assert.match(html, new RegExp(`${beds} unité\\(s\\) × ${offered ? "0" : "15"},00`));
+    }
+  }
+});
+
 test("les séjours regroupés conservent nuitées, options offertes, frais et centimes de remise", () => {
   const input = proposal();
   assert.equal(invoiceFiscalInputSchema.safeParse(input).success, true);
