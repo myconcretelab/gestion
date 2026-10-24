@@ -1,4 +1,5 @@
 import { sendBookingPaymentEmails } from "../../services/bookingRequestEmail.js";
+import { buildBookingConfirmation } from "./confirmation.js";
 import {
   applyReservationLinkSession,
   sendReservationLinkReceipt,
@@ -371,19 +372,27 @@ export const publicPaymentStatus = async (
   } else await refreshPayment(id);
   const updated = await prisma.bookingPayment.findUniqueOrThrow({
     where: { id },
-    include: { booking_request: true },
+    include: { booking_request: { include: { gite: true } } },
   });
+  const confirmed =
+    updated.booking_request?.status === "approved" && updated.status === "paid";
   return {
     status: updated.status,
-    confirmed:
-      updated.booking_request?.status === "approved" &&
-      updated.status === "paid",
+    confirmed,
     purpose: updated.purpose,
     amount_paid: updated.paid_amount_cents / 100,
     total: updated.total_cents / 100,
     remaining:
       Math.max(0, updated.total_cents - updated.paid_amount_cents) / 100,
     reference: updated.booking_request_id,
+    ...(confirmed && updated.booking_request
+      ? {
+          confirmation: await buildBookingConfirmation(
+            hydrateBookingRequest(updated.booking_request),
+            updated,
+          ),
+        }
+      : {}),
   };
 };
 

@@ -80,6 +80,7 @@ const fixture = async (purpose: "deposit" | "full" = "deposit") =>
 before(async () => {
   Object.assign(process.env, {
     NODE_ENV: "test",
+    DATA_DIR: temp,
     DATABASE_URL: `file:${temp}/test.db`,
     DATABASE_URL_SQLITE: `file:${temp}/test.db`,
     SMTP_HOST: "",
@@ -256,6 +257,24 @@ test("paiement des arrhes : une seule réservation, options conservées, contrat
       () => service.publicPaymentStatus(f.request.payment!.id, "x".repeat(43)),
       /introuvable/,
     );
+    const returned = await service.publicPaymentStatus(
+      f.request.payment!.id,
+      f.token,
+    );
+    assert.equal(returned.confirmed, true);
+    assert.equal(returned.confirmation?.gite.name, "Gîte fictif");
+    assert.equal(returned.confirmation?.stay.nights, 4);
+    assert.match(returned.confirmation!.options[0], /Chiens : 15.*× 4 nuits = 60/);
+    assert.match(returned.confirmation!.message.text, /90,00/);
+    assert.match(returned.confirmation!.message.text, /270,00/);
+    assert.doesNotMatch(
+      JSON.stringify(returned),
+      /access_token|stripe_session|stripe_payment_intent|sk_test/,
+    );
+    await assert.rejects(
+      () => inOrg(() => service.publicPaymentStatus(f.request.payment!.id, f.token), otherOrg),
+      /introuvable/,
+    );
   });
 });
 test("paiement complet : le solde du contrat est marqué réglé", async () => {
@@ -282,6 +301,10 @@ test("paiement complet : le solde du contrat est marqué réglé", async () => {
     assert.equal(summary!.amount_paid, 360);
     assert.equal(summary!.remaining, 0);
     assert.equal(summary!.purpose, "full");
+    const returned = await service.publicPaymentStatus(f.request.payment!.id, f.token);
+    assert.equal(returned.remaining, 0);
+    assert.equal(returned.confirmed, true);
+    assert.ok(returned.confirmation);
   });
 });
 test("webhook non payé, réel, autre organisme ou référence différente : aucune confirmation", async () => {
@@ -317,6 +340,9 @@ test("montant ou devise incorrects : argent conservé dans le suivi, aucune rés
       });
       assert.ok(payment.paid_at);
       assert.ok(payment.review_reason);
+      const returned = await service.publicPaymentStatus(payment.id, f.token);
+      assert.equal(returned.confirmed, false);
+      assert.equal("confirmation" in returned, false);
       assert.equal(
         (
           await db.default.bookingRequest.findUniqueOrThrow({

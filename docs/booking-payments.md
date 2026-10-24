@@ -54,6 +54,14 @@ Les accusés de réception, notifications propriétaire, refus, reçus de liens 
 
 En local, consulter les messages dans Mailpit (`http://127.0.0.1:10000`). Les réservations de démonstration doivent utiliser des noms **TEST** et des adresses fictives. Les tests automatisés des modèles emploient un dossier temporaire pour ne pas modifier les textes enregistrés sur l’installation locale.
 
+## Page de retour après paiement
+
+Après vérification du paiement, Booked affiche une fiche de confirmation avec la même identité et la même photo publique que l’email : dates, voyageurs, options du devis enregistré, somme déjà réglée et solde. Le texte personnalisé complet de la confirmation est disponible dans une rubrique dépliable. Le formulaire de réservation est masqué pour éviter une nouvelle demande. Il redevient disponible après une annulation ou une expiration ; un paiement à vérifier ne propose pas de recommencer à payer.
+
+Pour une page de retour dédiée, créer une page WordPress avec le shortcode `[booked_confirmation]` et configurer `BOOKING_STRIPE_RETURN_URL` sur son URL. Aucun formulaire n’est chargé sur cette page. Le retour fonctionne aussi sur une page qui contient déjà un formulaire Booked ; celui-ci est alors masqué après confirmation.
+
+Les détails sont délivrés uniquement pour une réservation confirmée, après contrôle du jeton privé de retour et de l’organisme. La réponse n’est pas mise en cache. Le jeton est retiré de l’URL puis conservé au maximum une heure dans la session de l’onglet, uniquement pour la page de retour, ce qui permet de recharger la confirmation sans perturber les autres fiches de gîte. Le bouton **Retour au site** efface cette session de retour.
+
 ## Liens courts depuis une réservation
 
 Dans le menu d’actions d’une ligne de réservation : **Lien de paiement Stripe**. Le panneau propose les arrhes encore dues ou le montant restant du séjour, puis un lien à copier dans un SMS. Un contrat existant fixe les montants ; sinon le calcul utilise les montants de la réservation, ses frais et sa taxe enregistrée. Les règlements Stripe et les paiements reçus renseignés sur le contrat sont déduits. Pour une réservation de plateforme, vérifier les sommes déjà encaissées avant de demander un paiement.
