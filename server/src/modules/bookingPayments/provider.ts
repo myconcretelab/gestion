@@ -14,7 +14,7 @@ export const bookingStripeConfig = () => {
   const returnUrl = process.env.BOOKING_STRIPE_RETURN_URL || "";
   const webhookSecret = process.env.BOOKING_STRIPE_WEBHOOK_SECRET || "";
   if (
-    !secret.startsWith(`sk_${mode}_`) ||
+    !["sk", "rk"].some((prefix) => secret.startsWith(`${prefix}_${mode}_`)) ||
     !organizationId ||
     !accountId ||
     !returnUrl

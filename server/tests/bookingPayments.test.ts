@@ -330,6 +330,40 @@ test("mode explicite par environnement : clés cohérentes, réel réservé à l
     ],
     ["réel explicitement configuré", liveEnvironment, "live"],
     [
+      "clé restreinte de test acceptée",
+      { BOOKING_STRIPE_SECRET_KEY: "rk_test_fake_no_network" },
+      "test",
+    ],
+    [
+      "clé restreinte réelle explicitement configurée",
+      { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "rk_live_fake_no_network" },
+      "live",
+    ],
+    [
+      "clé restreinte réelle refusée en développement",
+      {
+        ...liveEnvironment,
+        NODE_ENV: "development",
+        BOOKING_STRIPE_SECRET_KEY: "rk_live_fake_no_network",
+      },
+      null,
+    ],
+    [
+      "clé restreinte réelle refusée en mode test",
+      { BOOKING_STRIPE_SECRET_KEY: "rk_live_fake_no_network" },
+      null,
+    ],
+    [
+      "clé restreinte de test refusée en réel",
+      { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "rk_test_fake_no_network" },
+      null,
+    ],
+    [
+      "clé publique refusée",
+      { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "pk_live_fake_no_network" },
+      null,
+    ],
+    [
       "réel avec clé de test refusé",
       { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "sk_test_fake" },
       null,
