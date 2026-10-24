@@ -1,3 +1,4 @@
+import type { BookingOptionUnitPrices } from "@contrats/shared";
 import { computeTouristTax, createTouristTaxStay, parseTouristTaxSettings, type TouristTaxStay, type TouristTaxResult } from "@contrats/shared";
 import prisma from "../db/prisma.js";
 import { normalizeOptions, validateDocumentOccupancy } from "../routes/shared/rentalDocument.js";
@@ -49,6 +50,7 @@ export type BookingQuote = {
   tourist_tax_result?: TouristTaxResult;
   total_global: number;
   arrhes_theoriques: number;
+  options_unit_prices?: BookingOptionUnitPrices;
   options_detail: {
     draps: number;
     linge: number;
@@ -346,6 +348,7 @@ const resolveOptionAmounts = (params: {
   return {
     total_options,
     taxe_sejour,
+    options_unit_prices: { draps: drapsTarif, linge: lingeTarif, menage: menageTarif, depart_tardif: departTardifTarif, chiens: chiensTarif },
     options_detail: {
       draps,
       linge,
@@ -378,6 +381,7 @@ export const reviseBookingRequestOptions = (params: {
       ...quote,
       total_options: amounts.total_options,
       options_detail: amounts.options_detail,
+      options_unit_prices: amounts.options_unit_prices,
       total_global: round2(quote.total_global - quote.total_options + amounts.total_options),
     },
   };
@@ -490,6 +494,7 @@ export const computeSeasonQuote = async (params: {
     total_global,
     arrhes_theoriques,
     options_detail: resolvedOptions.options_detail,
+    options_unit_prices: resolvedOptions.options_unit_prices,
   } satisfies BookingQuote;
 };
 

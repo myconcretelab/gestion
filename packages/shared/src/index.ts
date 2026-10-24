@@ -109,3 +109,4 @@ export * from "./invoiceReservationPricing.js";
 export * from "./invoiceThemes.js";
 
 export * from "./touristTax.js";
+export * from "./bookingRequestOptionDetails.js";

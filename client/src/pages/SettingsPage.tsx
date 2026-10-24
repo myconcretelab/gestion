@@ -5781,7 +5781,10 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                   {"{{activitiesList}}"}, {"{{guideUrl}}"}, {"{{destinationUrl}}"},{" "}
                   {"{{clientName}}"}, {"{{dateEntreeLong}}"},{" "}
                   {"{{dateSortieLong}}"}, {"{{travellersSummary}}"},{" "}
-                  {"{{totalGlobal}}"}, {"{{beddingReminder}}"}
+                  {"{{totalGlobal}}"}, {"{{totalOptions}}"}, {"{{beddingReminder}}"}, {"{{optionsSummary}}"}
+                </div>
+                <div className="field-hint">
+                  Options : <code>{"{{optionsSummary}}"}</code> détaille toutes les options choisies (tarif, quantité et montant). Pour les placer séparément : {"{{optionsDraps}}"}, {"{{optionsLingeToilette}}"}, {"{{optionsMenage}}"}, {"{{optionsDepartTardif}}"}, {"{{optionsChiens}}"}. Les options non choisies restent vides.
                 </div>
                 {loadingDocumentEmailTexts ? (
                   <div className="field-hint" style={{ marginTop: 12 }}>

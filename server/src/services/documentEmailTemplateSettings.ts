@@ -137,7 +137,7 @@ const normalizeSettings = (
     },
     bookingRequestApproved: {
       ...bookingRequestApproved,
-      bodyLines: bookingRequestApproved.bodyLines.some((line) => line.includes("{{optionsSummary}}"))
+      bodyLines: bookingRequestApproved.bodyLines.some((line) => /\{\{\s*options(Summary|Draps|LingeToilette|Menage|DepartTardif|Chiens)\s*\}\}/.test(line))
         ? bookingRequestApproved.bodyLines
         : (() => {
             const lines = [...bookingRequestApproved.bodyLines];

@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import nodemailer from "nodemailer";
 import { env } from "../src/config/env.js";
 import {
   buildBookingRequestApprovedMessage,
   buildBookingRequestApprovedSms,
+  sendBookingRequestCreatedEmails,
 } from "../src/services/bookingRequestEmail.ts";
+import { resetSmtpTransportForTests } from "../src/services/mailer.ts";
 import {
   buildBookingRequestApprovedTelegramMessage,
   buildBookingRequestCreatedMessage,
@@ -47,6 +50,42 @@ const payload = {
   options,
 };
 
+test("les variables d’options détaillent les calculs à l’identique dans l’aperçu et l’email", () => {
+  const settings = buildDefaultDocumentEmailTemplateSettings();
+  settings.bookingRequestApproved.bodyLines = ["{{optionsSummary}}", "{{optionsChiens}}", "{{optionsDraps}}", "{{optionsLingeToilette}}", "{{optionsDepartTardif}}"];
+  writeDocumentEmailTemplateSettings(settings);
+  const request = { ...payload, nb_nuits: 4, options: { chiens: { enabled: true, nb: 1 }, draps: { enabled: true, nb_lits: 2 }, linge_toilette: { enabled: true, nb_personnes: 3 } }, pricing_snapshot: { ...quote, nb_nuits: 4, options_detail: { ...quote.options_detail, chiens: 60, linge: 18 }, options_unit_prices: { chiens: 15, draps: 12, linge: 6 } } };
+  const message = buildBookingRequestApprovedMessage(request as any);
+  const preview = buildBookingRequestApprovedEmailDraft(request as unknown as BookingRequest, { bookingRequestApproved: settings.bookingRequestApproved });
+  assert.equal(preview.body, message.text);
+  assert.match(message.text, /Chiens : 15.*× 4 nuits = 60/);
+  assert.match(message.text, /Draps : 12.*× 2 lits = 24/);
+  assert.match(message.text, /Linge de toilette : 6.*× 3 personnes = 18/);
+  assert.ok(!message.text.includes("{{"));
+  assert.match(message.html, /× 4 nuits = 60/);
+});
+
+test("les emails de réception au client et au propriétaire contiennent aussi le calcul des options", async (t) => {
+  const originalHost = env.SMTP_HOST, originalFrom = env.SMTP_FROM;
+  const originalTransport = nodemailer.createTransport;
+  const messages: any[] = [];
+  t.after(() => { env.SMTP_HOST = originalHost; env.SMTP_FROM = originalFrom; nodemailer.createTransport = originalTransport; resetSmtpTransportForTests(); });
+  env.SMTP_HOST = "smtp.example.test";
+  env.SMTP_FROM = "owner@example.test";
+  resetSmtpTransportForTests();
+  nodemailer.createTransport = () => ({ verify: async () => true, sendMail: async (message: any) => { messages.push(message); return { accepted: [message.to], rejected: [], pending: [] }; } }) as any;
+  await sendBookingRequestCreatedEmails({ ...payload, gite: { ...payload.gite, email: "owner@example.test" }, options: { chiens: { enabled: true, nb: 1 } }, pricing_snapshot: { ...quote, nb_nuits: 4, options_detail: { ...quote.options_detail, chiens: 60 } } } as any);
+  assert.equal(messages.length, 2);
+  for (const message of messages) assert.match(message.text, /Chiens : 15.*× 4 nuits = 60/);
+});
+
+test("un modèle avec les variables par option ne reçoit pas un second récapitulatif automatique", () => {
+  const settings = buildDefaultDocumentEmailTemplateSettings();
+  settings.bookingRequestApproved.bodyLines = ["{{optionsChiens}}", "{{optionsDraps}}"];
+  writeDocumentEmailTemplateSettings(settings);
+  assert.deepEqual(readDocumentEmailTemplateSettings().bookingRequestApproved.bodyLines, settings.bookingRequestApproved.bodyLines);
+});
+
 test("email, aperçu et Telegram indiquent les options et leurs montants", () => {
   fs.mkdirSync(env.DATA_DIR, { recursive: true });
   fs.writeFileSync(settingsPath, JSON.stringify(buildDefaultDocumentEmailTemplateSettings()), "utf-8");
@@ -60,7 +99,7 @@ test("email, aperçu et Telegram indiquent les options et leurs montants", () =>
     }),
   );
   for (const text of [serverEmail.text, clientEmail.body]) {
-    assert.match(text, /Draps \(2 lit\(s\)\) : 24/);
+    assert.match(text, /Draps : 12.*× 2 lits = 24/);
     assert.match(text, /Ménage : 60/);
     assert.doesNotMatch(text, /Petit rappel : les draps ne sont pas inclus/);
     assert.doesNotMatch(text, /L'option draps est bien notée/);
@@ -174,7 +213,7 @@ test("le résumé des options reste vide quand aucune option n'est choisie", () 
 
 test("les anciennes demandes sans détail des prix restent notifiables", () => {
   const legacy = { ...payload, pricing_snapshot: { ...quote, options_detail: undefined } };
-  assert.match(buildBookingRequestApprovedMessage(legacy as any).text, /Draps \(2 lit\(s\)\)/);
+  assert.match(buildBookingRequestApprovedMessage(legacy as any).text, /Draps \(2 lits\)/);
   assert.match(buildBookingRequestApprovedTelegramMessage(legacy as any), /Ménage/);
 });
 

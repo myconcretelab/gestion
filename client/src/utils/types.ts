@@ -1,3 +1,4 @@
+import type { BookingOptionUnitPrices } from "@contrats/shared";
 import type { TouristTaxSettings, TouristTaxStay, TouristTaxResult } from "@contrats/shared";
 import type { PlanningOrganization, PlanningIntervention, InvoiceReservationDetail } from "@contrats/shared";
 import type { SchoolHoliday } from "./schoolHolidays";
@@ -482,6 +483,7 @@ export type BookingQuote = {
   tourist_tax_result?: TouristTaxResult;
   total_global: number;
   arrhes_theoriques: number;
+  options_unit_prices?: BookingOptionUnitPrices;
   options_detail: {
     draps: number;
     linge: number;

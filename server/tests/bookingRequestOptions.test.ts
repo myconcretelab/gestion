@@ -45,7 +45,9 @@ test("ajouter un chien conserve l’hébergement, la taxe et les arrhes déjà a
   assert.equal(revised.quote.options_detail.chiens, 15);
   assert.equal(revised.quote.total_options, 75);
   assert.equal(revised.quote.total_global, 384);
-  assert.deepEqual({ ...revised.quote, total_options: quote.total_options, total_global: quote.total_global, options_detail: quote.options_detail }, quote);
+  const { options_unit_prices, ...revisedQuote } = revised.quote;
+  assert.equal(options_unit_prices.chiens, 5);
+  assert.deepEqual({ ...revisedQuote, total_options: quote.total_options, total_global: quote.total_global, options_detail: quote.options_detail }, quote);
   const removed = reviseBookingRequestOptions({ gite, quote: revised.quote, nbAdultes: 2, options: { menage: { enabled: true }, chiens: { enabled: false, nb: 1 } } });
   assert.equal(removed.quote.total_global, 369);
 });
@@ -82,7 +84,7 @@ test("l’enregistrement alimente le total, l’email et la réservation approuv
   assert.equal(res.body.pricing_snapshot.total_global, 384);
   assert.equal(res.body.options.menage.declared, true);
   assert.deepEqual(res.body.options.tourist_tax, quote.tourist_tax);
-  assert.match(buildBookingRequestApprovedMessage(hydrateBookingRequest(stored)).text, /Chiens \(1\) : 15/);
+  assert.match(buildBookingRequestApprovedMessage(hydrateBookingRequest(stored)).text, /Chiens : 5.*× 3 nuits = 15/);
   await handler("/:id/approve")({ params: { id: stored.id }, body: {} }, response(), (error: unknown) => { throw error; });
   assert.equal(reservation.prix_total, 300);
   assert.equal(reservation.frais_optionnels_montant, 75);

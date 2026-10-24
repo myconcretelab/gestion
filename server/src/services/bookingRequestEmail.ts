@@ -1,3 +1,4 @@
+import { buildBookingRequestOptionsTemplateValues } from "@contrats/shared";
 import { env } from "../config/env.js";
 import { sendSmtpMail } from "./mailer.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
@@ -99,19 +100,6 @@ const buildTravellersSummary = (payload: BookingRequestEmailPayload) => {
   return parts.join(", ");
 };
 
-const buildOptionsSummary = (payload: BookingRequestEmailPayload) => {
-  const options = payload.options;
-  const prices = payload.pricing_snapshot.options_detail;
-  const priced = (amount?: number) => typeof amount === "number" ? ` : ${formatPrice(amount)}` : "";
-  const details: string[] = [];
-  if (options?.draps?.enabled) details.push(`Draps (${options.draps.nb_lits ?? 0} lit(s))${priced(prices?.draps)}`);
-  if (options?.linge_toilette?.enabled) details.push(`Linge de toilette (${options.linge_toilette.nb_personnes ?? 0} personne(s))${priced(prices?.linge)}`);
-  if (options?.menage?.enabled) details.push(`Ménage${priced(prices?.menage)}`);
-  if (options?.depart_tardif?.enabled) details.push(`Départ tardif${priced(prices?.depart_tardif)}`);
-  if (options?.chiens?.enabled) details.push(`Chiens (${options.chiens.nb ?? 0})${priced(prices?.chiens)}`);
-  return details.length ? `Options choisies :\n${details.join("\n")}` : "";
-};
-
 const buildBeddingReminder = (options?: OptionsInput | null) => {
   if (options?.draps?.enabled) {
     return "";
@@ -209,7 +197,7 @@ const buildApprovedTemplateValues = (payload: BookingRequestEmailPayload) => {
       taxeSejour: formatPrice(payload.pricing_snapshot.taxe_sejour),
       totalGlobal: formatPrice(payload.pricing_snapshot.total_global),
       beddingReminder: buildBeddingReminder(payload.options),
-      optionsSummary: buildOptionsSummary(payload),
+      ...buildBookingRequestOptionsTemplateValues(payload),
       activitiesList: (template.activities ?? []).join("\n\n"),
       guideUrl: template.guideUrl ?? "",
       destinationUrl: template.destinationUrl ?? "",
@@ -249,8 +237,9 @@ const buildStaySummary = (payload: BookingRequestEmailPayload) =>
     `Séjour: du ${formatBookedDateInput(payload.date_entree)} au ${formatBookedDateInput(payload.date_sortie)} (${payload.pricing_snapshot.nb_nuits} nuit(s))`,
     `Voyageurs: ${payload.nb_adultes} adulte(s), ${payload.nb_enfants_2_17} enfant(s)`,
     `Total estimatif: ${formatPrice(payload.pricing_snapshot.total_global)}`,
+    buildBookingRequestOptionsTemplateValues(payload).optionsSummary,
     `Blocage jusqu'au: ${formatDateTimeFr(payload.hold_expires_at)}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
 export const sendBookingRequestCreatedEmails = async (payload: BookingRequestEmailPayload) => {
   const adminRecipient = resolveAdminRecipient(payload.gite.email);
