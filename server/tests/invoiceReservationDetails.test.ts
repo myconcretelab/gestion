@@ -462,6 +462,12 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
       gite,
       totals: taxTotals,
     });
+    const paidPreview = await generateContractPreviewHtml({
+      contract: { ...taxInvoice, numero_contrat: "TEST-PAID", statut_paiement_solde: "regle" },
+      gite, totals: taxTotals,
+    });
+    assert.match(paidPreview.html, /séjour est déjà réglé en totalité/);
+    assert.doesNotMatch(paidPreview.html, /Le montant restant de la location/);
     assert.match(contractPreview.html, /hors taxe de séjour/);
     assert.match(
       contractPreview.html,

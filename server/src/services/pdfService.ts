@@ -89,6 +89,7 @@ export type ContractRenderInput = {
   remise_montant: NumericLike;
   arrhes_montant: NumericLike;
   arrhes_date_limite: Date;
+  statut_paiement_solde?: "non_regle" | "regle";
   statut_paiement_arrhes?: "non_recu" | "recu";
   date_paiement_arrhes?: Date | string | null;
   mode_paiement_arrhes?: string | null;
@@ -580,6 +581,7 @@ const buildNotesHtml = (params: { gite: GiteLike; options: OptionsInput }) => {
 };
 
 const buildPaiementSurPlaceHtml = (params: {
+  alreadyPaid?: boolean;
   soldeMontant: string;
   chequeMenageMontant: string;
   cautionMontant: string;
@@ -595,6 +597,8 @@ const buildPaiementSurPlaceHtml = (params: {
   if (params.afficherCautionPhrase) {
     extras.push(`le chèque de caution de ${params.cautionMontant}`);
   }
+
+  if (params.alreadyPaid) return `<p>Le séjour est déjà réglé en totalité. Aucun solde de location n’est à régler sur place.${extras.length ? ` À la remise des clés, merci de prévoir ${extras.join(" et ")}.` : ""}</p>`;
 
   let tail = ".";
   if (extras.length === 1) {
@@ -1134,6 +1138,7 @@ const buildContractHtml = async (params: {
       modePaiementArrhes: params.contract.mode_paiement_arrhes,
     }),
     paiementSurPlaceHtml: buildPaiementSurPlaceHtml({
+      alreadyPaid: params.contract.statut_paiement_solde === "regle",
       soldeMontant: formatEuro(toNumber(params.contract.solde_montant)),
       chequeMenageMontant: formatEuro(toNumber(params.contract.cheque_menage_montant)),
       cautionMontant: formatEuro(toNumber(params.contract.caution_montant)),

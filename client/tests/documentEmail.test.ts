@@ -152,3 +152,13 @@ test("renderEmailBodyHtml convertit les paragraphes et liens en aperçu HTML", (
   assert.match(html, /Lien utile :<br \/>/);
   assert.match(html, /<a href="https:\/\/example.com\/doc\.pdf"/);
 });
+
+test("l’aperçu du contrat payé en totalité ne réclame plus le solde", () => {
+  const draft = buildDocumentEmailDraft({
+    recipient: "fake@example.test", documentType: "contrat", documentNumber: "TEST-PAID", documentUrl: "https://example.test/contract.pdf",
+    locataireNom: "Client fictif", giteNom: "Test", dateDebut: "2027-02-10", dateFin: "2027-02-17", heureArrivee: "17:00", heureDepart: "10:00",
+    nbNuits: 7, arrhesMontant: 90, arrhesDateLimite: "2027-01-10", statutPaiementArrhes: "recu", statutPaiementSolde: "regle", soldeMontant: 270,
+  });
+  assert.match(draft.body, /déjà réglé en totalité/);
+  assert.doesNotMatch(draft.body, /270€/);
+});

@@ -30,6 +30,7 @@ type BuildContractMailtoHrefParams = BuildDocumentMailtoHrefBaseParams & {
   nbNuits: number;
   arrhesMontant: number;
   arrhesDateLimite: string;
+  statutPaiementSolde?: "non_regle" | "regle";
   statutPaiementArrhes?: "non_recu" | "recu";
   datePaiementArrhes?: string | null;
   modePaiementArrhes?: string | null;
@@ -251,10 +252,12 @@ const buildArrhesInstruction = (params: {
   arrhesMontant: string;
   arrhesDateLimiteLong: string;
   soldeMontant: string;
+  statutPaiementSolde?: "non_regle" | "regle";
   statutPaiementArrhes?: "non_recu" | "recu";
   datePaiementArrhes?: string | null;
   modePaiementArrhes?: string | null;
 }) => {
+  if (params.statutPaiementSolde === "regle") return `Votre séjour est déjà réglé en totalité. Aucun solde de location ne sera à régler à votre arrivée. Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}.`;
   if (params.statutPaiementArrhes === "recu") {
     const dateText = params.datePaiementArrhes
       ? ` le ${formatLongDate(params.datePaiementArrhes)}`
@@ -389,7 +392,8 @@ export const buildDocumentMailtoHref = (
       arrhesInstruction: buildArrhesInstruction({
         arrhesMontant: formatEuroText(params.arrhesMontant),
         arrhesDateLimiteLong: formatLongDate(params.arrhesDateLimite),
-        soldeMontant: formatEuroText(params.soldeMontant),
+        soldeMontant: formatEuroText(params.statutPaiementSolde === "regle" ? 0 : params.soldeMontant),
+        statutPaiementSolde: params.statutPaiementSolde,
         statutPaiementArrhes: params.statutPaiementArrhes,
         datePaiementArrhes: params.datePaiementArrhes,
         modePaiementArrhes: params.modePaiementArrhes,
@@ -402,7 +406,7 @@ export const buildDocumentMailtoHref = (
       heureDepart: formatTime(params.heureDepart),
       arrhesMontant: formatEuroText(params.arrhesMontant),
       arrhesDateLimiteLong: formatLongDate(params.arrhesDateLimite),
-      soldeMontant: formatEuroText(params.soldeMontant),
+      soldeMontant: formatEuroText(params.statutPaiementSolde === "regle" ? 0 : params.soldeMontant),
       activitiesList,
       guideUrl: template.guideUrl ?? "",
       destinationUrl: template.destinationUrl ?? "",

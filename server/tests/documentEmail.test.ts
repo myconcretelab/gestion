@@ -214,3 +214,13 @@ test("buildContractEmailMessage accepte un sujet et un corps personnalises", () 
   assert.equal(message.text, "Bonjour,\n\nTexte modifié.");
   assert.match(message.html, /Texte modifié/);
 });
+
+test("un séjour payé en totalité ne réclame plus le solde dans l’email du contrat", () => {
+  const message = buildContractEmailMessage({
+    numero_contrat: "TEST-PAID", locataire_nom: "Client fictif", date_debut: "2027-02-10", date_fin: "2027-02-17",
+    heure_arrivee: "17:00", heure_depart: "10:00", nb_nuits: 7, arrhes_montant: 90, arrhes_date_limite: "2027-01-10",
+    statut_paiement_arrhes: "recu", statut_paiement_solde: "regle", mode_paiement_arrhes: "Stripe", solde_montant: 270,
+  }, { documentUrl: "https://example.test/contract.pdf" });
+  assert.match(message.text, /déjà réglé en totalité/);
+  assert.doesNotMatch(message.text, /270€/);
+});

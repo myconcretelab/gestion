@@ -232,6 +232,14 @@ const ContratFormPage = () => {
         setModePaiementArrhes("");
         setClausesText("");
         setStatutArrhes("non_recu");
+        if (data.online_payment) {
+          setArrhesAuto(false);
+          setArrhesMontant(String(data.online_payment.deposit));
+          const received = data.online_payment.amount_paid >= data.online_payment.deposit;
+          setStatutArrhes(received ? "recu" : "non_recu");
+          setDatePaiementArrhes(received ? data.online_payment.paid_at.slice(0, 10) : "");
+          setModePaiementArrhes(received ? "Stripe" : "");
+        }
       })
       .catch((err) => {
         if (!active || isAbortError(err)) return;
@@ -855,6 +863,7 @@ const ContratFormPage = () => {
                     <option value="">Non renseigné</option>
                     <option value="Chèque">Chèque</option>
                     <option value="Virement">Virement</option>
+                    <option value="Stripe">Stripe — carte bancaire</option>
                     <option value="Espèces">Espèces</option>
                     <option value="A définir">A définir</option>
                   </select>

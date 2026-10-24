@@ -32,6 +32,7 @@ export type ContractEmailDocument = BaseDocumentEmail & {
   nb_nuits: number;
   arrhes_montant: number;
   arrhes_date_limite: string | Date;
+  statut_paiement_solde?: "non_regle" | "regle";
   statut_paiement_arrhes?: "non_recu" | "recu";
   date_paiement_arrhes?: string | Date | null;
   mode_paiement_arrhes?: string | null;
@@ -152,10 +153,12 @@ const buildArrhesInstruction = (params: {
   arrhesMontant: string;
   arrhesDateLimiteLong: string;
   soldeMontant: string;
+  statutPaiementSolde?: "non_regle" | "regle";
   statutPaiementArrhes?: "non_recu" | "recu";
   datePaiementArrhes?: string | Date | null;
   modePaiementArrhes?: string | null;
 }) => {
+  if (params.statutPaiementSolde === "regle") return `Votre séjour est déjà réglé en totalité. Aucun solde de location ne sera à régler à votre arrivée. Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}.`;
   if (params.statutPaiementArrhes === "recu") {
     const dateText = params.datePaiementArrhes
       ? ` le ${formatLongDate(params.datePaiementArrhes)}`
@@ -351,11 +354,12 @@ export const buildContractEmailMessage = (
     heureDepart: formatTime(contract.heure_depart),
     arrhesMontant: formatEuroText(contract.arrhes_montant),
     arrhesDateLimiteLong: formatLongDate(contract.arrhes_date_limite),
-    soldeMontant: formatEuroText(contract.solde_montant),
+    soldeMontant: formatEuroText(contract.statut_paiement_solde === "regle" ? 0 : contract.solde_montant),
     arrhesInstruction: buildArrhesInstruction({
       arrhesMontant: formatEuroText(contract.arrhes_montant),
       arrhesDateLimiteLong: formatLongDate(contract.arrhes_date_limite),
-      soldeMontant: formatEuroText(contract.solde_montant),
+      soldeMontant: formatEuroText(contract.statut_paiement_solde === "regle" ? 0 : contract.solde_montant),
+      statutPaiementSolde: contract.statut_paiement_solde,
       statutPaiementArrhes: contract.statut_paiement_arrhes,
       datePaiementArrhes: contract.date_paiement_arrhes,
       modePaiementArrhes: contract.mode_paiement_arrhes,

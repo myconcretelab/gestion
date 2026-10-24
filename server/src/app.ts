@@ -1,3 +1,4 @@
+import { bookingStripeWebhook, bookingPaymentRouter } from "./modules/bookingPayments/routes.js";
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -106,6 +107,7 @@ export const createApp = () => {
     if (env.NODE_ENV === "production") res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     next();
   });
+  app.post("/api/booked/webhook/stripe", express.raw({ type: "application/json", limit: "2mb" }), bookingStripeWebhook);
   app.post("/api/billing/webhook/stripe", express.raw({ type: "application/json", limit: "2mb" }), stripeWebhookHandler);
   const uploadJsonParser = express.json({ limit: env.UPLOAD_BODY_LIMIT, strict: true });
   app.use((req, res, next) => {
@@ -291,6 +293,7 @@ export const createApp = () => {
   app.use("/api/purchase-invoices", createSuperPdpInboxRouter());
   app.use("/api/superpdp-workshop", createSuperPdpWorkshopRouter());
   app.use("/api/reservations", reservationsRouter);
+  app.use("/api/booked", bookingPaymentRouter);
   app.use("/api/booked", bookedRouter);
   app.use("/api/booking-requests", bookingRequestsRouter);
   app.use("/api/statistics", statisticsRouter);

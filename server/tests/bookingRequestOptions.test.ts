@@ -75,8 +75,9 @@ test("l’enregistrement alimente le total, l’email et la réservation approuv
   stub(t, prisma.bookingRequest, "findMany", async () => []);
   stub(t, prisma.reservation, "findMany", async () => []);
   stub(t, prisma, "$transaction", async (callback: any) => callback({
-    reservation: { create: async ({ data }: any) => { reservation = data; return { id: "reservation-options" }; } },
-    bookingRequest: { update: async ({ data }: any) => (stored = { ...stored, ...data }) },
+    gite: { update: async () => ({}) },
+    reservation: { findFirst: async () => null, create: async ({ data }: any) => { reservation = data; return { id: "reservation-options" }; } },
+    bookingRequest: { findFirst: async () => null, update: async ({ data }: any) => (stored = { ...stored, ...data }) },
   }));
   const res = response();
   await handler("/:id/options")({ params: { id: stored.id }, body: { options: { chiens: { enabled: true, nb: 1 } } } }, res, (error: unknown) => { throw error; });

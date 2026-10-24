@@ -245,13 +245,15 @@ test("POST /booking-requests/:id/approve crée une réservation booked avec les 
     } as any);
     prisma.$transaction = async (callback: any) =>
       callback({
-        reservation: {
+        gite: { update: async () => ({}) },
+        reservation: { findFirst: async () => null,
           create: async ({ data }: any) => {
             createdReservationData = data;
             return { id: "r-booked-1" };
           },
         },
         bookingRequest: {
+          findFirst: async () => null,
           update: async ({ data }: any) => ({
             id: "br1",
             gite_id: "g1",

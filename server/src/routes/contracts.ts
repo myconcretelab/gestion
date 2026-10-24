@@ -1,3 +1,4 @@
+import { contractStripeTracking } from "../modules/bookingPayments/contracts.js";
 import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
 import path from "path";
@@ -48,7 +49,7 @@ const emptyStringToNull = (value: unknown) => {
 };
 
 const nullableDateString = z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional();
-const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir"] as const;
+const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir", "Stripe"] as const;
 const SIGNED_CONTRACT_MAX_BYTES = 12 * 1024 * 1024;
 const SIGNED_CONTRACT_ALLOWED_MIME_TYPES = new Map<string, string>([
   ["application/pdf", ".pdf"],
@@ -367,6 +368,7 @@ const toContractRenderInput = (contrat: any): ContractRenderInput => ({
   remise_montant: contrat.remise_montant,
   arrhes_montant: contrat.arrhes_montant,
   arrhes_date_limite: contrat.arrhes_date_limite,
+  statut_paiement_solde: contrat.statut_paiement_solde ?? "non_regle",
   statut_paiement_arrhes: contrat.statut_paiement_arrhes ?? "non_recu",
   date_paiement_arrhes: contrat.date_paiement_arrhes ?? null,
   mode_paiement_arrhes: contrat.mode_paiement_arrhes ?? null,
@@ -392,6 +394,7 @@ const toContractEmailDocument = (contrat: any): ContractEmailDocument => ({
   nb_nuits: contrat.nb_nuits,
   arrhes_montant: toNumber(contrat.arrhes_montant),
   arrhes_date_limite: contrat.arrhes_date_limite,
+  statut_paiement_solde: contrat.statut_paiement_solde ?? "non_regle",
   statut_paiement_arrhes: contrat.statut_paiement_arrhes ?? "non_recu",
   date_paiement_arrhes: contrat.date_paiement_arrhes ?? null,
   mode_paiement_arrhes: contrat.mode_paiement_arrhes ?? null,
@@ -775,6 +778,7 @@ router.post("/", async (req, res, next) => {
 
     assertTouristTaxReady(totals);
 
+    const stripeTracking = await contractStripeTracking(data.reservation_id, { giteId: data.gite_id, dateDebut, dateFin, total: totals.totalGlobal, arrhes: arrhesMontant });
     const numeroContrat = await generateContractNumber(
       data.gite_id,
       gite.prefixe_contrat,
@@ -840,6 +844,7 @@ router.post("/", async (req, res, next) => {
         mode_paiement_arrhes: arrhesTracking.mode_paiement_arrhes,
         notes: data.notes ?? null,
         reservation_id: reservationId,
+        ...stripeTracking,
       },
       include: { gite: true },
     });
@@ -928,6 +933,7 @@ router.put("/:id", async (req, res, next) => {
       existingModePaiementArrhes: existing.mode_paiement_arrhes,
     });
 
+    const stripeTracking = await contractStripeTracking(data.reservation_id ?? existing.reservation_id, { giteId: data.gite_id, dateDebut, dateFin, total: totals.totalGlobal, arrhes: arrhesMontant });
     const reservationId = await syncReservationFromDocument({
       explicitReservationId: data.reservation_id ?? null,
       existingReservationId: existing.reservation_id ?? null,
@@ -991,6 +997,7 @@ router.put("/:id", async (req, res, next) => {
         mode_paiement_arrhes: arrhesTracking.mode_paiement_arrhes,
         notes: data.notes ?? null,
         reservation_id: reservationId,
+        ...stripeTracking,
       },
       include: { gite: true },
     });

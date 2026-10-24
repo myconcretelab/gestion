@@ -339,6 +339,14 @@ const BookingRequestDetailPage = () => {
               </div>
             </div>
 
+            {request.payment ? <div className="note" role="status">
+              <strong>Paiement par carte — {request.payment.purpose === "deposit" ? "arrhes" : "totalité"}</strong>
+              <p>{request.payment.status === "pending" ? "Paiement en cours. La réservation sera confirmée automatiquement après encaissement." : request.payment.status === "paid" ? "Paiement reçu, réservation confirmée automatiquement." : request.payment.status === "expired" ? "Paiement expiré ou annulé. Aucune confirmation." : "Ce paiement nécessite votre vérification."}</p>
+              <p>Encaissé : {formatEuro(request.payment.paid_amount_cents / 100)} · Solde initial : {formatEuro(Math.max(0, request.payment.total_cents - request.payment.paid_amount_cents) / 100)}</p>
+              {request.payment.refunded_amount_cents > 0 ? <p>Remboursé : {formatEuro(request.payment.refunded_amount_cents / 100)}</p> : null}
+              {request.payment.review_reason ? <p>{request.payment.review_reason}</p> : null}
+            </div> : null}
+
             {notice ? <div className="note">{notice}</div> : null}
 
             <div className="booking-requests-page__grid">
@@ -346,7 +354,7 @@ const BookingRequestDetailPage = () => {
                 <strong>Dates du séjour</strong>
                 <span>{formatDate(request.date_entree)} → {formatDate(request.date_sortie)}</span>
                 <small>{request.nb_nuits} nuit{request.nb_nuits > 1 ? "s" : ""}</small>
-                {request.status === "pending" ? (
+                {request.status === "pending" && !request.payment ? (
                   <button
                     type="button"
                     className="button-secondary booking-requests-page__date-edit-button"
@@ -409,7 +417,7 @@ const BookingRequestDetailPage = () => {
                       ))}
                     </ul>
                   ) : <p>Aucune option choisie.</p>}
-                  {request.status === "pending" && !optionsEditor ? (
+                  {request.status === "pending" && !request.payment && !optionsEditor ? (
                     <button type="button" className="button-secondary" onClick={() => void openOptionsEditor()} disabled={editingStay || Boolean(submittingAction)}>
                       {loadingOptions ? "Chargement…" : "Modifier les options"}
                     </button>
@@ -483,7 +491,7 @@ const BookingRequestDetailPage = () => {
                   </div>
                 )}
 
-                {request.status === "pending" ? (
+                {request.status === "pending" && !request.payment ? (
                   <label className="field booking-request-detail-page__decision-note">
                     Note de décision
                     <textarea
@@ -515,7 +523,7 @@ const BookingRequestDetailPage = () => {
               </aside>
             </div>
 
-            {request.status === "pending" ? (
+            {request.status === "pending" && !request.payment ? (
               <div className="actions booking-request-detail-page__actions">
                 <button type="button" onClick={() => void openApprovalEmailComposer()} disabled={Boolean(submittingAction) || editingStay}>
                   {submittingAction === "approve-email" ? "Préparation…" : "Prévisualiser puis approuver"}
@@ -527,7 +535,7 @@ const BookingRequestDetailPage = () => {
                   {submittingAction === "reject" ? "Refus…" : "Rejeter"}
                 </button>
               </div>
-            ) : request.status === "expired" ? (
+            ) : request.status === "expired" && !request.payment ? (
               <div className="actions booking-request-detail-page__actions">
                 <button type="button" onClick={() => void refreshRequest()} disabled={Boolean(submittingAction)}>
                   {submittingAction === "refresh" ? "Vérification…" : "Réactiver la demande"}

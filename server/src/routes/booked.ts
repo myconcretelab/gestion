@@ -1,3 +1,6 @@
+import { bookingPaymentsEnabled, getBookingStripe } from "../modules/bookingPayments/provider.js";
+import { createBookingCheckout, prepareBookingPayment } from "../modules/bookingPayments/service.js";
+import { lockBookingGite, assertTransactionAvailability } from "../modules/bookingPayments/locking.js";
 import { localizeGite, resolveGiteLanguage } from "../services/giteTranslations.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -45,6 +48,7 @@ const quoteSchema = z.object({
 });
 
 const bookingRequestCreateSchema = quoteSchema.extend({
+  payment_choice: z.enum(["manual", "deposit", "full"]).default("manual"),
   gite_id: z.string().trim().min(1),
   hote_nom: z.string().trim().min(1),
   telephone: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
@@ -187,6 +191,7 @@ router.get("/gites/:id/config", async (req, res, next) => {
       },
       taxe_sejour_par_personne_par_nuit: Number(gite.taxe_sejour_par_personne_par_nuit) || 0,
       arrhes_taux_defaut: Number(gite.arrhes_taux_defaut) || 0,
+      payments: { online: bookingPaymentsEnabled(), mode: "test" },
     });
   } catch (error) {
     next(error);
@@ -446,8 +451,19 @@ router.post("/requests", async (req, res, next) => {
       options: payload.options,
     });
 
-    const created = await prisma.bookingRequest.create({
+    const online = payload.payment_choice !== "manual";
+    if (online) {
+      if (!payload.email) return res.status(400).json({ error: "Une adresse email est nécessaire pour le paiement." });
+      await getBookingStripe();
+
+    }
+    const preparedPayment = online ? prepareBookingPayment(pricingSnapshot, payload.payment_choice as "deposit" | "full") : null;
+    const created = await prisma.$transaction(async tx => {
+      await lockBookingGite(tx, gite.id);
+      await assertTransactionAvailability(tx, { gite_id: gite.id, date_entree: dateEntree, date_sortie: dateSortie });
+      return tx.bookingRequest.create({
       data: {
+        ...(preparedPayment ? { payment: { create: preparedPayment.data } } : {}),
         gite_id: gite.id,
         hote_nom: payload.hote_nom,
         telephone: payload.telephone ?? null,
@@ -461,12 +477,22 @@ router.post("/requests", async (req, res, next) => {
         message_client: payload.message_client ?? null,
         pricing_snapshot: encodeBookingRequestPricingSnapshot(pricingSnapshot),
         status: "pending",
-        hold_expires_at: getBookingRequestHoldExpiresAt(),
+        hold_expires_at: online ? new Date(Date.now() + 34 * 60_000) : getBookingRequestHoldExpiresAt(),
       },
       include: {
         gite: { select: { id: true, nom: true, email: true } },
       },
+      });
     });
+    if (online) {
+      try {
+        return res.status(201).json(await createBookingCheckout(created.id, preparedPayment!.token));
+      } catch {
+        // Keep the short hold: a timeout can hide a successfully created Checkout.
+        // Reconciliation or the signed webhook will recover any received payment.
+        return res.status(503).json({ error: "La connexion au paiement a été interrompue. Aucun nouveau paiement ne sera lancé. Réessayez après quelques minutes ou contactez-nous.", code: "checkout_unavailable" });
+      }
+    }
 
     try {
       await sendBookingRequestCreatedEmails({

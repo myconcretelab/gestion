@@ -1692,6 +1692,33 @@ model GiteSeasonRate {
   @@map("gite_season_rates")
 }
 
+model BookingPayment {
+  id                    String   @id @default(cuid())
+  organization_id       String   @default("org_historical_broceliande")
+  booking_request_id    String   @unique
+  purpose               String
+  amount_cents          Int
+  total_cents           Int
+  currency              String   @default("eur")
+  status                String   @default("pending")
+  access_token_hash     String
+  stripe_session_id     String?  @unique
+  stripe_payment_intent String?  @unique
+  paid_amount_cents     Int      @default(0)
+  refunded_amount_cents Int      @default(0)
+  expires_at            DateTime
+  paid_at               DateTime?
+  review_reason         String?
+  notification_sent_at  DateTime?
+  notification_lease_at DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  booking_request       BookingRequest @relation(fields: [booking_request_id], references: [id], onDelete: Restrict)
+
+  @@index([organization_id, status, createdAt])
+  @@map("booking_payments")
+}
+
 model BookingRequest {
   id                      String    @id @default(cuid())
   gite_id                 String
@@ -1717,6 +1744,7 @@ model BookingRequest {
   organization_id         String    @default("org_historical_broceliande")
 
   gite                 Gite         @relation(fields: [gite_id], references: [id], onDelete: Cascade)
+  payment              BookingPayment?
   approved_reservation Reservation? @relation("ApprovedBookingRequest", fields: [approved_reservation_id], references: [id], onDelete: SetNull)
 
   @@index([gite_id, status, hold_expires_at], map: "booking_requests_gite_status_hold_idx")

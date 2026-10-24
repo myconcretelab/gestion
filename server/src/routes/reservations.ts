@@ -1,3 +1,4 @@
+import { reservationPaymentPrefill } from "../modules/bookingPayments/contracts.js";
 import { createTouristTaxStay, parseTouristTaxSettings } from "@contrats/shared";
 import { Router } from "express";
 import crypto from "node:crypto";
@@ -2105,7 +2106,7 @@ router.get("/prefill/:id", async (req, res, next) => {
 
     const groupedRows = await loadGroupedStayRows(reservation);
     const groupedReservation = buildGroupedStayReservation(groupedRows) ?? reservation;
-    return res.json(await hydrateReservationWithLinkedContract(groupedReservation));
+    return res.json({ ...await hydrateReservationWithLinkedContract(groupedReservation), online_payment: await reservationPaymentPrefill(reservation.id) });
   } catch (err) {
     next(err);
   }

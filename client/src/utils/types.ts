@@ -354,6 +354,7 @@ export type ReservationLinkedContract = {
 };
 
 export type Reservation = {
+  online_payment?: { amount_paid: number; deposit: number; total: number; paid_at: string } | null;
   id: string;
   gite_id?: string | null;
   stay_group_id?: string | null;
@@ -495,7 +496,12 @@ export type BookingQuote = {
 
 export type BookingRequestStatus = "pending" | "approved" | "rejected" | "expired";
 
+export type BookingPaymentSummary = {
+ id: string; status: string; purpose: string; amount_cents: number; paid_amount_cents: number;
+ total_cents: number; refunded_amount_cents: number; paid_at?: string | null; review_reason?: string | null;
+};
 export type BookingRequest = {
+  payment?: BookingPaymentSummary | null;
   id: string;
   gite_id: string;
   approved_reservation_id?: string | null;
@@ -584,7 +590,7 @@ export type Contrat = {
   statut_paiement_arrhes: "non_recu" | "recu";
   date_paiement_arrhes?: string | null;
   statut_paiement_solde: "non_regle" | "regle";
-  mode_paiement_arrhes?: "Chèque" | "Virement" | "Espèces" | "A définir" | null;
+  mode_paiement_arrhes?: "Chèque" | "Virement" | "Espèces" | "A définir" | "Stripe" | null;
   notes?: string | null;
   commentaire_interne?: string | null;
   reservation_id?: string | null;

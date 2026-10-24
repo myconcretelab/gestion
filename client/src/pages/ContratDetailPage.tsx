@@ -193,6 +193,7 @@ const ContratDetailPage = () => {
         nbNuits: contrat.nb_nuits,
         arrhesMontant: contrat.arrhes_montant,
         arrhesDateLimite: contrat.arrhes_date_limite,
+        statutPaiementSolde: contrat.statut_paiement_solde,
         statutPaiementArrhes: contrat.statut_paiement_arrhes,
         datePaiementArrhes: contrat.date_paiement_arrhes ?? null,
         modePaiementArrhes: contrat.mode_paiement_arrhes ?? null,

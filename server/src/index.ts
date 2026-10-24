@@ -1,3 +1,4 @@
+import { startBookingPaymentsWorker } from "./modules/bookingPayments/service.js";
 import { env } from "./config/env.js";
 import { createApp } from "./app.js";
 import { assertProductionAuthConfigured } from "./services/serverAuth.js";
@@ -13,6 +14,7 @@ await ensureLegacyIntegrationTokenMigrated();
 const app = createApp();
 
 if (env.NODE_ENV !== "test") {
+  startBookingPaymentsWorker();
   startBillingJobWorker();
   startSuperPdpJobWorker();
   startMultiTenantAutomationScheduler();

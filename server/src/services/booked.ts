@@ -238,7 +238,9 @@ export const getBookingRequestHoldExpiresAt = (now = new Date()) =>
 export const ensureBookingRequestPending = (bookingRequest: {
   status: string;
   hold_expires_at: Date;
+  payment?: { status: string } | null;
 }) => {
+  if (bookingRequest.payment) throw new BookedValidationError({ statusCode: 409, code: "online_payment_locked", message: "Cette demande est liée à un paiement en ligne et son suivi est automatique." });
   if (bookingRequest.status !== "pending") {
     throw new BookedValidationError({
       code: "invalid_status",
