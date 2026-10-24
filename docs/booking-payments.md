@@ -42,7 +42,7 @@ Un verrou de base de données protège les allocations concurrentes du parcours 
 
 Une demande liée à un paiement est protégée contre les actions manuelles de modification, approbation, rejet ou réouverture. Les notes internes restent éditables. Une somme reçue après réattribution des dates ou avec un montant inattendu reste enregistrée avec un signalement **à vérifier** ; elle ne crée pas de seconde réservation. Les remboursements signalés par Stripe sont suivis sans annuler automatiquement le séjour. La gestion manuelle d’un remboursement se fait depuis Stripe.
 
-Le détail d’une demande affiche les montants encaissés et le solde. Le contrat créé depuis cette réservation reprend les arrhes reçues et marque le solde réglé si le séjour est payé en entier. Un changement de dates ou de total du contrat est bloqué pour demander une vérification du paiement.
+Le détail d’une demande et la fiche de réservation affichent les montants encaissés, la date du paiement et le solde. La fiche tient aussi compte d’un solde ensuite marqué réglé sur le contrat. Le contrat créé depuis cette réservation reprend les arrhes reçues et marque le solde réglé si le séjour est payé en entier. Un changement de dates ou de total du contrat est bloqué pour demander une vérification du paiement.
 
 Les emails de confirmation au client et au propriétaire contiennent le détail des options, le paiement reçu, le solde et la référence. Aucun email d’attente d’approbation n’est envoyé pour le parcours carte.
 

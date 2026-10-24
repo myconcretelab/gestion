@@ -1,3 +1,4 @@
+import ReservationOnlinePayment from "./ReservationOnlinePayment";
 import type { ComponentProps } from "react";
 import { formatEuro } from "../../utils/format";
 import { getReservationOptionBadges } from "../../utils/reservationOptionBadges";
@@ -9,7 +10,7 @@ import { GiteTasksButton, type GiteTaskSummary } from "./GiteTasksDrawer";
 
 type ReservationInfo = Pick<Reservation, "id" | "date_entree" | "date_sortie" | "nb_nuits" | "prix_total" | "source_paiement"> &
   Partial<Pick<Reservation, "options" | "commentaire" | "telephone" | "airbnb_url" |
-    "energy_consumption_kwh" | "energy_cost_eur" | "energy_live_consumption_kwh" | "energy_live_cost_eur">>;
+    "online_payment" | "linked_contract" | "energy_consumption_kwh" | "energy_cost_eur" | "energy_live_consumption_kwh" | "energy_live_cost_eur">>;
 
 type Props = Pick<ComponentProps<typeof MobileReservationActionsBar>,
   "open" | "title" | "onClose" | "onEdit" | "highlightedCard" | "sourcePicker"> & {
@@ -56,6 +57,7 @@ const MobileReservationInfoDrawer = ({
         },
         ...(energyCost !== null ? [{ label: "Conso", value: formatEuro(energyCost) }] : []),
       ]}
+      paymentInfo={<ReservationOnlinePayment payment={reservation.online_payment} balancePaid={reservation.linked_contract?.statut_paiement_solde === "regle"} />}
       note={reservation.commentaire}
       phoneHref={buildTelephoneHref(reservation.telephone)}
       smsHref={buildSmsHref(reservation.telephone ?? "")}

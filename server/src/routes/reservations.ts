@@ -1,4 +1,4 @@
-import { reservationPaymentPrefill } from "../modules/bookingPayments/contracts.js";
+import { reservationPaymentsForIds } from "../modules/bookingPayments/contracts.js";
 import { createTouristTaxStay, parseTouristTaxSettings } from "@contrats/shared";
 import { Router } from "express";
 import crypto from "node:crypto";
@@ -1075,8 +1075,9 @@ const attachLinkedContractsToReservations = async <T extends { id: string; stay_
     }
   }
 
-  const contracts = await loadLinkedContracts([
-    ...new Set([...visibleReservationIds, ...groupedReservationRows.map((row) => row.id)]),
+  const [contracts, paymentsByReservationId] = await Promise.all([
+    loadLinkedContracts([...new Set([...visibleReservationIds, ...groupedReservationRows.map((row) => row.id)])]),
+    reservationPaymentsForIds(visibleReservationIds),
   ]);
 
   const linkedContractByReservationId = new Map<
@@ -1101,6 +1102,7 @@ const attachLinkedContractsToReservations = async <T extends { id: string; stay_
 
   return reservations.map((reservation) => ({
     ...reservation,
+    online_payment: paymentsByReservationId.get(reservation.id) ?? null,
     linked_contract:
       linkedContractByReservationId.get(reservation.id) ??
       (reservation.stay_group_id ? linkedContractByGroupId.get(reservation.stay_group_id) : null) ??
@@ -2106,7 +2108,7 @@ router.get("/prefill/:id", async (req, res, next) => {
 
     const groupedRows = await loadGroupedStayRows(reservation);
     const groupedReservation = buildGroupedStayReservation(groupedRows) ?? reservation;
-    return res.json({ ...await hydrateReservationWithLinkedContract(groupedReservation), online_payment: await reservationPaymentPrefill(reservation.id) });
+    return res.json(await hydrateReservationWithLinkedContract(groupedReservation));
   } catch (err) {
     next(err);
   }

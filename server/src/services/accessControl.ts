@@ -116,6 +116,7 @@ const CAMEL_AMOUNT_KEY_PATTERN = /(?:amount|montant|price|prix|tarif|revenue|rev
 const AMOUNT_CONTAINER_PATTERN = /^(?:prices|pricing|pricing_snapshot|options_detail|gite_prices|prices_by_gite|totals)$/i;
 
 const isAmountKey = (key: string, parentKey: string) => {
+  if (key === "online_payment") return true;
   if (key === "total_count" || key.endsWith("_count") || key === "count") return false;
   if (AMOUNT_KEY_PATTERN.test(key) || CAMEL_AMOUNT_KEY_PATTERN.test(key)) return true;
   if (/^options_(?:draps|linge|menage|depart_tardif|chiens)/i.test(key)) return true;

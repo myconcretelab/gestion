@@ -51,16 +51,43 @@ export const contractStripeTracking = async (
       amount >= payment.total_cents ? "regle" : "non_regle",
   };
 };
-export const reservationPaymentPrefill = async (reservationId: string) => {
-  const paid = await paidBookingForReservation(reservationId);
-  if (!paid) return null;
-  const quote = hydrateBookingRequest(paid.request).pricing_snapshot;
-  return {
-    amount_paid:
-      (paid.payment.paid_amount_cents - paid.payment.refunded_amount_cents) /
-      100,
-    deposit: quote.arrhes_theoriques,
-    total: paid.payment.total_cents / 100,
-    paid_at: paid.payment.paid_at,
-  };
+export const reservationPaymentsForIds = async (reservationIds: string[]) => {
+  const ids = [...new Set(reservationIds)];
+  if (!ids.length) return new Map();
+  const requests = await prisma.bookingRequest.findMany({
+    where: {
+      approved_reservation_id: { in: ids },
+      status: "approved",
+      payment: { is: { paid_at: { not: null } } },
+    },
+    include: { payment: true },
+  });
+  return new Map(
+    requests
+      .filter((request) => request.payment && request.approved_reservation_id)
+      .map((request) => {
+        const payment = request.payment!;
+        const amount = Math.max(
+          0,
+          payment.paid_amount_cents - payment.refunded_amount_cents,
+        );
+        const quote = hydrateBookingRequest(request).pricing_snapshot;
+        return [
+          request.approved_reservation_id!,
+          {
+            amount_paid: amount / 100,
+            deposit: quote.arrhes_theoriques,
+            total: payment.total_cents / 100,
+            remaining: Math.max(0, payment.total_cents - amount) / 100,
+            refunded_amount: payment.refunded_amount_cents / 100,
+            purpose: payment.purpose,
+            status: payment.status,
+            paid_at: payment.paid_at,
+            request_id: request.id,
+          },
+        ];
+      }),
+  );
 };
+export const reservationPaymentPrefill = async (reservationId: string) =>
+  (await reservationPaymentsForIds([reservationId])).get(reservationId) ?? null;

@@ -196,6 +196,45 @@ test("paiement des arrhes : une seule réservation, options conservées, contrat
     assert.equal(tracking.statut_paiement_arrhes, "recu");
     assert.equal(tracking.statut_paiement_solde, "non_regle");
     assert.equal(tracking.mode_paiement_arrhes, "Stripe");
+    const summary = await contracts.reservationPaymentPrefill(reservation.id);
+    assert.equal(summary!.amount_paid, 90);
+    assert.equal(summary!.remaining, 270);
+    assert.equal(summary!.purpose, "deposit");
+    assert.equal(summary!.request_id, request.id);
+    const { default: reservationRouter } =
+      await import("../src/routes/reservations.js");
+    const route = (reservationRouter as any).stack.find(
+      (layer: any) => layer.route?.path === "/:id" && layer.route.methods.get,
+    );
+    let result: any;
+    await route.route.stack[0].handle(
+      { params: { id: reservation.id } },
+      {
+        json(value: any) {
+          result = value;
+        },
+      },
+      (error: unknown) => {
+        throw error;
+      },
+    );
+    assert.equal(result.online_payment.amount_paid, 90);
+    assert.equal(result.online_payment.remaining, 270);
+    assert.doesNotMatch(
+      JSON.stringify(result.online_payment),
+      /access_token|stripe_session|stripe_payment_intent/,
+    );
+    const { redactMonetaryValues } =
+      await import("../src/services/accessControl.js");
+    assert.deepEqual((redactMonetaryValues(result) as any).online_payment, {});
+    assert.equal(
+      await inOrg(
+        () => contracts.reservationPaymentPrefill(reservation.id),
+        otherOrg,
+      ),
+      null,
+    );
+
     await assert.rejects(
       () =>
         contracts.contractStripeTracking(reservation.id, {
@@ -237,6 +276,12 @@ test("paiement complet : le solde du contrat est marqué réglé", async () => {
       },
     );
     assert.equal(tracking.statut_paiement_solde, "regle");
+    const summary = await contracts.reservationPaymentPrefill(
+      request.approved_reservation_id!,
+    );
+    assert.equal(summary!.amount_paid, 360);
+    assert.equal(summary!.remaining, 0);
+    assert.equal(summary!.purpose, "full");
   });
 });
 test("webhook non payé, réel, autre organisme ou référence différente : aucune confirmation", async () => {
@@ -439,6 +484,12 @@ test("webhook HTTP : signature obligatoire, corps brut et remboursement idempote
       );
       assert.equal(tracking.statut_paiement_arrhes, "non_recu");
       assert.equal(tracking.statut_paiement_solde, "non_regle");
+      const summary = await contracts.reservationPaymentPrefill(
+        request.approved_reservation_id!,
+      );
+      assert.equal(summary!.amount_paid, 0);
+      assert.equal(summary!.remaining, 360);
+      assert.equal(summary!.refunded_amount, 360);
     });
     const earlyRefund = await fixture("full");
     assert.equal(

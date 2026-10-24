@@ -1,3 +1,4 @@
+import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import {
   Fragment,
@@ -5397,6 +5398,7 @@ const ReservationsPage = () => {
                         ) : null;
                       const reservationDetailsContent = (
                         <div className={`reservations-details-grid ${isDetailsDrawerVisible ? "reservations-details-grid--drawer" : ""}`}>
+                          <ReservationOnlinePayment payment={reservation.online_payment} balancePaid={reservation.linked_contract?.statut_paiement_solde === "regle"} />
                           {hasEnergyData ? (
                             <div className="reservations-energy-inline">
                               Électricité: {formatKwh(reservation.energy_consumption_kwh)} kWh
