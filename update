@@ -57,7 +57,7 @@ load_env_file "$ROOT_DIR/.env"
 load_env_file "$ROOT_DIR/.env.production"
 load_env_file "$ROOT_DIR/.env.update"
 
-# Vite can otherwise exceed Alwaysdata's per-process memory limit during builds.
+# Default for auxiliary commands; workspace builds have separate budgets below.
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
 echo "==> Node memory limit: ${NODE_OPTIONS}"
 
@@ -287,7 +287,19 @@ else
 fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  run_step "Build client + server" npm run build
+  # A larger global heap lets Vite exceed the hosting process limit, while the
+  # full server typecheck needs slightly more than 768 MiB. Keep both checks.
+  client_build_heap="${CLIENT_BUILD_HEAP_MB:-768}"
+  server_build_heap="${SERVER_BUILD_HEAP_MB:-832}"
+  if [[ ! "$client_build_heap" =~ ^[1-9][0-9]*$ || ! "$server_build_heap" =~ ^[1-9][0-9]*$ ]]; then
+    echo "CLIENT_BUILD_HEAP_MB and SERVER_BUILD_HEAP_MB must be positive integers."
+    exit 1
+  fi
+  run_step "Build shared workspace" npm run build -w @contrats/shared
+  run_step "Build client (${client_build_heap} MiB heap)" \
+    env NODE_OPTIONS="--max-old-space-size=${client_build_heap}" npm run build -w client
+  run_step "Build server with typecheck (${server_build_heap} MiB heap)" \
+    env NODE_OPTIONS="--max-old-space-size=${server_build_heap}" npm run build -w server
 else
   echo "==> Skip build (SKIP_BUILD=1)"
 fi
