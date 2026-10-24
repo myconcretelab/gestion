@@ -155,6 +155,10 @@ test("les modèles ajoutés se personnalisent sans remplacer les textes déjà e
       subject: "Merci {{clientName}}",
       body: "Notre accusé {{giteName}}",
     },
+    bookingRequestApprovedOwner: {
+      subject: "Nouvelle réservation de {{clientName}}",
+      body: "Notre notification propriétaire.\n{{clientDetails}}\n{{paymentSummary}}",
+    },
   });
   assert.deepEqual(
     merged.bookingRequestApproved.bodyLines,
@@ -165,6 +169,16 @@ test("les modèles ajoutés se personnalisent sans remplacer les textes déjà e
     response.bookingRequestReceived.body,
     "Notre accusé {{giteName}}",
   );
+  assert.equal(
+    response.bookingRequestApprovedOwner.subject,
+    "Nouvelle réservation de {{clientName}}",
+  );
+  writeDocumentEmailTemplateSettings(merged);
+  const owner = buildBookingEmailMessage("bookingRequestApproved", payload, {
+    audience: "owner",
+  });
+  assert.match(owner.text, /Notre notification propriétaire/);
+  assert.equal(owner.subject, "Nouvelle réservation de Camille <Test>");
 });
 test("les paiements à vérifier ne sont pas présentés comme une réservation confirmée", () => {
   const payment = {
@@ -222,11 +236,29 @@ test("les copies propriétaire après arrhes ou totalité ciblent la réservatio
     assert.equal(target.searchParams.get("tab"), "gite-1");
     assert.equal(target.searchParams.get("focus"), "reservation-123");
     assert.match(owner.html, />Voir la réservation<\/a>/);
+    assert.equal(
+      owner.subject,
+      "Réservation confirmée · Camille <Test> · Gîte & jardin",
+    );
+    assert.match(owner.text, /Une réservation a été confirmée automatiquement/);
+    assert.match(owner.text, /Client : Camille <Test>/);
+    assert.match(owner.text, /0600000000/);
+    assert.match(owner.text, /Aucune approbation manuelle/);
+    assert.doesNotMatch(
+      owner.text,
+      /Bonjour Camille|votre séjour|votre demande|idées d’activités/i,
+    );
+    assert.match(owner.html, /Règlement du client/);
     assert.doesNotMatch(target.href, /token|secret/);
     const guest = buildBookingEmailMessage(
       "bookingRequestApproved",
       confirmed,
       { branding, payment },
+    );
+    assert.match(guest.text, /Bonjour Camille/);
+    assert.doesNotMatch(
+      guest.text,
+      /Une réservation a été confirmée automatiquement|Client : Camille/,
     );
     assert.doesNotMatch(
       guest.text + guest.html,
@@ -245,6 +277,47 @@ test("les copies propriétaire après arrhes ou totalité ciblent la réservatio
     assert.equal(
       new URL(receipt.text.split("\n").at(-1)!).searchParams.get("focus"),
       "existing-reservation",
+    );
+  }
+});
+test("reçus, paiements à vérifier et remboursements ont aussi des textes dédiés au propriétaire", () => {
+  for (const [type, status, refunded, expected] of [
+    [
+      "bookingPaymentReceipt",
+      "paid",
+      0,
+      /Un paiement en ligne a été enregistré/,
+    ],
+    ["bookingPaymentReview", "requires_review", 0, /Contrôler le dossier/],
+    [
+      "bookingPaymentRefunded",
+      "refunded",
+      9000,
+      /Un remboursement a été enregistré/,
+    ],
+  ] as const) {
+    const payment = {
+      purpose: "deposit",
+      total_cents: 36000,
+      paid_amount_cents: 9000,
+      refunded_amount_cents: refunded,
+      status,
+    };
+    const owner = buildBookingEmailMessage(type, payload, {
+      audience: "owner",
+      payment,
+    });
+    assert.match(owner.text, expected);
+    assert.match(owner.text, /Client : Camille/);
+    assert.doesNotMatch(
+      owner.text + owner.subject,
+      /Bonjour Camille|votre séjour|votre paiement|nous vous contacterons/i,
+    );
+    const guest = buildBookingEmailMessage(type, payload, { payment });
+    assert.match(guest.text, /Bonjour Camille/);
+    assert.doesNotMatch(
+      guest.text + guest.html,
+      /Client : Camille|Voir la demande|Voir la réservation/,
     );
   }
 });

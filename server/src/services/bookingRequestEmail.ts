@@ -52,10 +52,15 @@ export type BookingRequestEmailPayload = {
     Partial<BookingQuote>;
   options?: OptionsInput | null;
 };
-const paymentSummary = (payment?: BookingPaymentEmailInfo) => {
+const paymentSummary = (
+  payment?: BookingPaymentEmailInfo,
+  audience: "client" | "owner" = "client",
+) => {
   if (!payment) return "";
   if (payment.status === "requires_review")
-    return "Règlement à vérifier. Aucun nouveau paiement n’est nécessaire.";
+    return audience === "owner"
+      ? "Règlement à vérifier dans Gestion avant toute confirmation."
+      : "Règlement à vérifier. Aucun nouveau paiement n’est nécessaire.";
   const lines = [
     (payment.purpose === "deposit"
       ? "Arrhes reçues par Stripe : "
@@ -71,7 +76,12 @@ const paymentSummary = (payment?: BookingPaymentEmailInfo) => {
       payment.remaining_cents ??
       Math.max(0, payment.total_cents - payment.paid_amount_cents);
     lines.push("Solde à régler sur place : " + formatPrice(remaining / 100));
-    if (!remaining) lines.push("Votre séjour est réglé en totalité.");
+    if (!remaining)
+      lines.push(
+        audience === "owner"
+          ? "Le séjour est réglé en totalité."
+          : "Votre séjour est réglé en totalité.",
+      );
   }
   return lines.join("\n");
 };
@@ -202,6 +212,7 @@ const buildApprovedTemplateValues = (
     branding?: EmailBranding;
     payment?: BookingPaymentEmailInfo;
     decisionNote?: string;
+    audience?: "client" | "owner";
   },
 ) => {
   const template = readDocumentEmailTemplateSettings().bookingRequestApproved;
@@ -213,7 +224,10 @@ const buildApprovedTemplateValues = (
       ...organizationEmailVariables(
         context?.branding || { name: payload.gite.nom },
       ),
-      greeting: buildGreeting(payload.hote_nom),
+      greeting:
+        context?.audience === "owner"
+          ? "Bonjour,"
+          : buildGreeting(payload.hote_nom),
       clientDetails: [
         "Client : " + payload.hote_nom,
         "Téléphone : " + (payload.telephone || "Non renseigné"),
@@ -225,7 +239,7 @@ const buildApprovedTemplateValues = (
       holdExpiresAt: formatDateTimeFr(payload.hold_expires_at),
       requestReference: "Référence de réservation : " + payload.id,
       decisionNote: context?.decisionNote?.trim() || "",
-      paymentSummary: paymentSummary(context?.payment),
+      paymentSummary: paymentSummary(context?.payment, context?.audience),
       stayPaymentInstruction: !context?.payment
         ? "Ce montant sera à régler sur place."
         : context.payment.status === "requires_review"
@@ -238,7 +252,9 @@ const buildApprovedTemplateValues = (
                     context.payment.total_cents -
                       context.payment.paid_amount_cents,
                   )) > 0
-              ? "Vous avez déjà réglé " +
+              ? (context?.audience === "owner"
+                  ? "Le client a déjà réglé "
+                  : "Vous avez déjà réglé ") +
                 formatPrice(context.payment.paid_amount_cents / 100) +
                 (context.payment.purpose === "deposit" ? " d’arrhes." : ".") +
                 " Le solde à régler sur place est de " +
@@ -251,7 +267,9 @@ const buildApprovedTemplateValues = (
                     )) / 100,
                 ) +
                 "."
-              : "Votre séjour est déjà réglé en totalité.",
+              : context?.audience === "owner"
+                ? "Le séjour est déjà réglé en totalité."
+                : "Votre séjour est déjà réglé en totalité.",
       paidAmount: context?.payment
         ? formatPrice(context.payment.paid_amount_cents / 100)
         : "",
@@ -265,7 +283,7 @@ const buildApprovedTemplateValues = (
           )
         : "",
       arrhesMontant: formatPrice(payload.pricing_snapshot.arrhes_theoriques),
-      arrhesInstruction: paymentSummary(context?.payment),
+      arrhesInstruction: paymentSummary(context?.payment, context?.audience),
       clientName: payload.hote_nom.trim(),
       giteName,
       giteNameWithPreposition,
@@ -299,6 +317,13 @@ const buildApprovedTemplateValues = (
   };
 };
 
+const ownerPaymentTemplates = {
+  bookingRequestApproved: "bookingRequestApprovedOwner",
+  bookingPaymentReceipt: "bookingPaymentReceiptOwner",
+  bookingPaymentReview: "bookingPaymentReviewOwner",
+  bookingPaymentRefunded: "bookingPaymentRefundedOwner",
+} as const satisfies Record<string, BookingEmailTemplateKey>;
+
 export const buildBookingEmailMessage = (
   type: "bookingRequestApproved" | BookingEmailTemplateKey,
   payload: BookingRequestEmailPayload,
@@ -311,8 +336,21 @@ export const buildBookingEmailMessage = (
     reservationId?: string | null;
   },
 ) => {
-  const { values } = buildApprovedTemplateValues(payload, context);
-  const template = readDocumentEmailTemplateSettings()[type];
+  const audience =
+    context?.audience ||
+    (type === "bookingRequestOwner" ||
+    Object.values(ownerPaymentTemplates).some((key) => key === type)
+      ? "owner"
+      : "client");
+  const templateType =
+    audience === "owner" && type in ownerPaymentTemplates
+      ? ownerPaymentTemplates[type as keyof typeof ownerPaymentTemplates]
+      : type;
+  const { values } = buildApprovedTemplateValues(payload, {
+    ...context,
+    audience,
+  });
+  const template = readDocumentEmailTemplateSettings()[templateType];
   const subject =
     context?.customMessage?.subject?.trim() ||
     renderSubjectTemplate(template.subject, values);
@@ -337,6 +375,10 @@ export const buildBookingEmailMessage = (
   const labels: Record<string, string> = {
     bookingRequestReceived: "Demande reçue",
     bookingRequestOwner: "Nouvelle demande",
+    bookingRequestApprovedOwner: "Réservation confirmée",
+    bookingPaymentReceiptOwner: "Paiement reçu",
+    bookingPaymentReviewOwner: "Paiement à vérifier",
+    bookingPaymentRefundedOwner: "Remboursement",
     bookingRequestApproved: "Réservation confirmée",
     bookingRequestRejected: "Votre demande",
     bookingPaymentReceipt: "Paiement reçu",
@@ -351,7 +393,7 @@ export const buildBookingEmailMessage = (
   // Internal navigation belongs only in the owner's copy, never the guest receipt
   // or the public confirmation page (which uses the same message builder).
   const action =
-    type === "bookingRequestOwner" || context?.audience === "owner"
+    audience === "owner"
       ? ownerBookingAction(
           payload,
           context?.reservationId || payload.approved_reservation_id,
@@ -367,7 +409,7 @@ export const buildBookingEmailMessage = (
       text,
       branding,
       action,
-      label: labels[type],
+      label: labels[templateType],
       facts: [
         { label: "Gîte", value: payload.gite.nom },
         {
@@ -397,7 +439,8 @@ export const buildBookingEmailMessage = (
         },
         {
           text: values.paymentSummary,
-          title: "Votre règlement",
+          title:
+            audience === "owner" ? "Règlement du client" : "Votre règlement",
           lines: values.paymentSummary.split("\n"),
         },
       ].filter((item) => item.text),

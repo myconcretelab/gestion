@@ -22,8 +22,9 @@ export default function BookingEmailTemplatesEditor({
       <p className="note">
         Ces textes utilisent la même présentation que les contrats : logo de
         l’organisation, photo principale publique du gîte et coordonnées. Les
-        confirmations après paiement reprennent le modèle « Confirmation de
-        réservation » ci-dessus.
+        confirmations envoyées aux clients après paiement reprennent le modèle «
+        Confirmation de réservation » ci-dessus. Les notifications aux
+        propriétaires utilisent leurs propres modèles ci-dessous.
       </p>
       <p className="field-hint">
         Variables de règlement : <code>{"{{paymentSummary}}"}</code>,{" "}
