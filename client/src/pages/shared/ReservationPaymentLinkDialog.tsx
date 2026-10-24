@@ -15,7 +15,7 @@ type PaymentLink = {
 };
 type Choices = {
   enabled: boolean;
-  mode: string;
+  mode: "test" | "live" | null;
   total: number;
   received: number;
   deposit_due: number;

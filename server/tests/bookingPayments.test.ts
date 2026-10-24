@@ -21,6 +21,33 @@ const inOrg = <T>(fn: () => T, organizationId = org) =>
     { organizationId, source: "test" },
     async () => await fn(),
   );
+const withStripeEnvironment = async <T>(
+  values: Record<string, string | undefined>,
+  work: () => Promise<T>,
+) => {
+  const previous = Object.fromEntries(
+    Object.keys(values).map((key) => [key, process.env[key]]),
+  );
+  try {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    return await work();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+};
+const liveEnvironment = {
+  NODE_ENV: "production",
+  BOOKING_STRIPE_MODE: "live",
+  BOOKING_STRIPE_SECRET_KEY: "sk_live_fake_no_network",
+  BOOKING_STRIPE_RETURN_URL:
+    "https://gites.example.test/confirmation-reservation/",
+};
 const quote = {
   nb_nuits: 4,
   montant_hebergement: 300,
@@ -85,6 +112,7 @@ before(async () => {
     DATABASE_URL_SQLITE: `file:${temp}/test.db`,
     SMTP_HOST: "",
     SMTP_FROM: "",
+    BOOKING_STRIPE_MODE: "test",
     BOOKING_STRIPE_SECRET_KEY: "sk_test_fake_no_network",
     BOOKING_STRIPE_ACCOUNT_ID: "acct_fake",
     BOOKING_STRIPE_ORGANIZATION_ID: org,
@@ -259,18 +287,103 @@ test("les arrhes gardent le calcul du gîte ; la totalité inclut toutes les opt
   );
   assert.throws(() => service.cents(NaN));
 });
-test("configuration désactivée pour un autre organisme et pour les clés réelles", async () => {
+test("mode explicite par environnement : clés cohérentes, réel réservé à la production HTTPS avec webhook", async () => {
   assert.equal(await inOrg(() => provider.bookingPaymentsEnabled()), true);
   assert.equal(
     await inOrg(() => provider.bookingPaymentsEnabled(), otherOrg),
     false,
   );
-  const key = process.env.BOOKING_STRIPE_SECRET_KEY;
-  process.env.BOOKING_STRIPE_SECRET_KEY = "sk_live_forbidden";
-  try {
-    assert.equal(provider.bookingStripeConfig(), null);
-  } finally {
-    process.env.BOOKING_STRIPE_SECRET_KEY = key;
+  const cases: [
+    string,
+    Record<string, string | undefined>,
+    "test" | "live" | null,
+  ][] = [
+    ["absence de choix : test", { BOOKING_STRIPE_MODE: undefined }, "test"],
+    [
+      "le mode SaaS ne choisit pas celui des séjours",
+      { STRIPE_MODE: "live", BOOKING_STRIPE_MODE: undefined },
+      "test",
+    ],
+    [
+      "clé réelle seule refusée",
+      { BOOKING_STRIPE_SECRET_KEY: "sk_live_fake" },
+      null,
+    ],
+    ["choix invalide refusé", { BOOKING_STRIPE_MODE: "automatic" }, null],
+    [
+      "réel refusé en développement",
+      { ...liveEnvironment, NODE_ENV: "development" },
+      null,
+    ],
+    [
+      "production de test possible",
+      {
+        NODE_ENV: "production",
+        BOOKING_STRIPE_RETURN_URL: liveEnvironment.BOOKING_STRIPE_RETURN_URL,
+      },
+      "test",
+    ],
+    [
+      "production ne bascule pas automatiquement en réel",
+      { ...liveEnvironment, BOOKING_STRIPE_MODE: undefined },
+      null,
+    ],
+    ["réel explicitement configuré", liveEnvironment, "live"],
+    [
+      "réel avec clé de test refusé",
+      { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "sk_test_fake" },
+      null,
+    ],
+    [
+      "réel sans webhook refusé",
+      { ...liveEnvironment, BOOKING_STRIPE_WEBHOOK_SECRET: "" },
+      null,
+    ],
+    [
+      "production test sans webhook refusée",
+      {
+        NODE_ENV: "production",
+        BOOKING_STRIPE_WEBHOOK_SECRET: "",
+        BOOKING_STRIPE_RETURN_URL: liveEnvironment.BOOKING_STRIPE_RETURN_URL,
+      },
+      null,
+    ],
+    [
+      "réel sans HTTPS refusé",
+      {
+        ...liveEnvironment,
+        BOOKING_STRIPE_RETURN_URL: "http://gites.example.test/confirmation/",
+      },
+      null,
+    ],
+    [
+      "réel vers Local refusé",
+      {
+        ...liveEnvironment,
+        BOOKING_STRIPE_RETURN_URL: "https://gites.local/confirmation/",
+      },
+      null,
+    ],
+    [
+      "réel vers localhost refusé",
+      {
+        ...liveEnvironment,
+        BOOKING_STRIPE_RETURN_URL: "https://localhost/confirmation/",
+      },
+      null,
+    ],
+  ];
+  for (const [name, values, expected] of cases) {
+    await withStripeEnvironment(values, async () => {
+      const config = provider.bookingStripeConfig();
+      assert.equal(config?.mode ?? null, expected, name);
+      assert.equal(
+        await inOrg(() => provider.bookingPaymentsEnabled()),
+        expected !== null,
+        name,
+      );
+      if (config) assert.equal(config.livemode, expected === "live", name);
+    });
   }
 });
 test("paiement des arrhes : une seule réservation, options conservées, contrat déjà renseigné", async () => {
@@ -560,11 +673,18 @@ test("webhook HTTP : signature obligatoire, corps brut et remboursement idempote
   const origin = `http://127.0.0.1:${(server.address() as any).port}/hook`;
   const stripe = new Stripe("sk_test_fake");
   const f = await fixture("full");
-  const post = async (type: string, data: unknown, valid = true) => {
+  const post = async (
+    type: string,
+    data: unknown,
+    valid = true,
+    livemode = false,
+    account?: string,
+  ) => {
     const payload = JSON.stringify({
       id: crypto.randomUUID(),
       type,
-      livemode: false,
+      livemode,
+      ...(account ? { account } : {}),
       data: { object: data },
     });
     return fetch(origin, {
@@ -665,6 +785,108 @@ test("webhook HTTP : signature obligatoire, corps brut et remboursement idempote
         null,
       );
     });
+    const sandboxPending = await fixture();
+    await withStripeEnvironment(liveEnvironment, async () => {
+      const f = await fixture("full");
+      const session = {
+        ...f.session,
+        id: "cs_live_" + f.request.id,
+        livemode: true,
+      };
+      assert.equal(
+        (await post("checkout.session.completed", session)).status,
+        400,
+      );
+      assert.equal(
+        (
+          await post(
+            "checkout.session.completed",
+            session,
+            true,
+            true,
+            "acct_other",
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (await post("checkout.session.completed", session, false, true)).status,
+        400,
+      );
+      assert.equal(
+        (await post("checkout.session.completed", f.session, true, true))
+          .status,
+        200,
+      );
+      await inOrg(async () => {
+        assert.equal(
+          (
+            await db.default.bookingRequest.findUniqueOrThrow({
+              where: { id: f.request.id },
+            })
+          ).status,
+          "pending",
+        );
+        assert.equal(
+          await service.applyVerifiedSession({
+            ...sandboxPending.session,
+            livemode: true,
+          }),
+          "ignored",
+        );
+      });
+      assert.equal(
+        (
+          await post(
+            "charge.refunded",
+            {
+              payment_intent: sandboxPending.session.payment_intent,
+              metadata: {
+                booking_payment_id: sandboxPending.request.payment!.id,
+              },
+              amount_refunded: 9000,
+              refunded: true,
+            },
+            true,
+            true,
+          )
+        ).status,
+        200,
+      );
+      await inOrg(async () => {
+        const payment = await db.default.bookingPayment.findUniqueOrThrow({
+          where: { id: sandboxPending.request.payment!.id },
+        });
+        assert.equal(payment.refunded_amount_cents, 0);
+      });
+      assert.equal(
+        (await post("checkout.session.completed", session, true, true)).status,
+        200,
+      );
+      assert.equal(
+        (
+          await post(
+            "charge.refunded",
+            {
+              payment_intent: session.payment_intent,
+              amount_refunded: 36000,
+              refunded: true,
+            },
+            true,
+            true,
+          )
+        ).status,
+        200,
+      );
+      await inOrg(async () => {
+        const payment = await db.default.bookingPayment.findUniqueOrThrow({
+          where: { id: f.request.payment!.id },
+        });
+        assert.equal(payment.stripe_mode, "live");
+        assert.equal(payment.status, "refunded");
+        assert.equal(payment.refunded_amount_cents, 36000);
+      });
+    });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -729,4 +951,111 @@ test("arrhes Booked puis solde par lien : registre unique et contrat entièremen
       "regle",
     );
   });
+});
+
+test("production réelle simulée : arrhes et totalité, liens et affichage du mode, aucun appel Stripe", async () => {
+  const { publicReservationPaymentRouter } =
+    await import("../src/modules/bookingPayments/linkRoutes.js");
+  const { default: bookedRouter } = await import("../src/routes/booked.js");
+  const { createReservationPaymentLink, paymentLinkChoices } =
+    await import("../src/modules/bookingPayments/reservationLinks.js");
+  const app = express();
+  app.use((req, res, next) => {
+    void inOrg(async () => next());
+  });
+  app.use("/p", publicReservationPaymentRouter);
+  app.use("/booked", bookedRouter);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const origin = `http://127.0.0.1:${(server.address() as any).port}`;
+  try {
+    await withStripeEnvironment(liveEnvironment, async () => {
+      const configResponse = await fetch(
+        origin + "/booked/gites/gite-payment-test/config",
+      );
+      assert.equal(configResponse.status, 200);
+      assert.deepEqual((await configResponse.json()).payments, {
+        online: true,
+        mode: "live",
+      });
+      for (const purpose of ["deposit", "full"] as const) {
+        const f = await fixture(purpose);
+        const liveSession = {
+          ...f.session,
+          id: "cs_live_" + f.request.id,
+          livemode: true,
+        };
+        await inOrg(async () => {
+          assert.equal(
+            await service.applyVerifiedSession(f.session),
+            "ignored",
+          );
+          assert.equal(
+            await service.applyVerifiedSession(liveSession),
+            "confirmed",
+          );
+          assert.equal(
+            await service.applyVerifiedSession(liveSession),
+            "duplicate",
+          );
+          const request = await db.default.bookingRequest.findUniqueOrThrow({
+            where: { id: f.request.id },
+          });
+          const choices = await paymentLinkChoices(
+            request.approved_reservation_id!,
+          );
+          assert.equal(choices.mode, "live");
+          assert.equal(choices.received, purpose === "deposit" ? 90 : 360);
+          assert.equal(choices.balance_due, purpose === "deposit" ? 270 : 0);
+          const status = await service.publicPaymentStatus(
+            f.request.payment!.id,
+            f.token,
+          );
+          assert.equal(status.confirmed, true);
+          if (purpose === "deposit") {
+            const link = await createReservationPaymentLink(
+              request.approved_reservation_id!,
+              "balance",
+            );
+            const code = new URL(link.url).pathname.split("/").at(-1);
+            const page = await fetch(origin + "/p/" + code);
+            assert.equal(page.status, 200);
+            assert.doesNotMatch(
+              await page.text(),
+              /Mode test Stripe|aucun paiement réel/,
+            );
+            await withStripeEnvironment(
+              {
+                BOOKING_STRIPE_MODE: "test",
+                BOOKING_STRIPE_SECRET_KEY: "sk_test_fake_no_network",
+              },
+              async () => {
+                const page = await fetch(origin + "/p/" + code);
+                assert.equal(page.status, 410);
+                assert.doesNotMatch(
+                  await page.text(),
+                  /Payer par carte avec Stripe/,
+                );
+                await assert.rejects(
+                  inOrg(() =>
+                    service.publicPaymentStatus(f.request.payment!.id, f.token),
+                  ),
+                  /Paiement introuvable/,
+                );
+              },
+            );
+          }
+        });
+      }
+    });
+    const response = await fetch(
+      origin + "/booked/gites/gite-payment-test/config",
+    );
+    assert.deepEqual((await response.json()).payments, {
+      online: true,
+      mode: "test",
+    });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

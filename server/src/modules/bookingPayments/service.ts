@@ -55,6 +55,7 @@ export const prepareBookingPayment = (
     token,
     data: {
       organization_id: getOrganizationId(),
+      stripe_mode: bookingStripeConfig()?.mode ?? "test",
       purpose,
       amount_cents: amount,
       total_cents: total,
@@ -73,7 +74,11 @@ export const createBookingCheckout = async (
     include: { gite: true, payment: true },
   });
   const payment = request.payment;
-  if (!payment || payment.access_token_hash !== tokenHash(token))
+  if (
+    !payment ||
+    payment.stripe_mode !== config.mode ||
+    payment.access_token_hash !== tokenHash(token)
+  )
     throw new Error("Paiement introuvable.");
   const quote = hydrateBookingRequest(request).pricing_snapshot as BookingQuote;
   const purpose = payment.purpose;
@@ -131,7 +136,13 @@ export const applyVerifiedSession = async (
   session: Stripe.Checkout.Session,
 ) => {
   // Called only with an SDK-verified webhook or an authenticated Stripe API response.
-  if (session.livemode || session.mode !== "payment") return "ignored";
+  const config = bookingStripeConfig();
+  if (
+    !config ||
+    session.livemode !== config.livemode ||
+    session.mode !== "payment"
+  )
+    return "ignored";
   const paymentId = session.metadata?.booking_payment_id;
   if (!paymentId || session.metadata?.organization_id !== getOrganizationId())
     return "ignored";
@@ -141,6 +152,7 @@ export const applyVerifiedSession = async (
   });
   if (
     !payment ||
+    payment.stripe_mode !== config.mode ||
     (payment.stripe_session_id && payment.stripe_session_id !== session.id) ||
     session.client_reference_id !== payment.id
   )
@@ -232,6 +244,7 @@ export const deliverPaymentNotification = async (id: string) => {
   const lease = await prisma.bookingPayment.updateMany({
     where: {
       id,
+      stripe_mode: bookingStripeConfig()?.mode ?? "disabled",
       status: {
         in: ["paid", "requires_review", "refunded", "partially_refunded"],
       },
@@ -283,6 +296,7 @@ export const refreshPayment = async (id: string) => {
   let payment = await prisma.bookingPayment.findUniqueOrThrow({
     where: { id },
   });
+  if (payment.stripe_mode !== bookingStripeConfig()?.mode) return;
   if (
     ["pending", "creating"].includes(payment.status) &&
     !payment.stripe_session_id
@@ -359,7 +373,11 @@ export const publicPaymentStatus = async (
   cancel = false,
 ) => {
   const payment = await prisma.bookingPayment.findUnique({
-    where: { id, access_token_hash: tokenHash(token) },
+    where: {
+      id,
+      access_token_hash: tokenHash(token),
+      stripe_mode: bookingStripeConfig()?.mode ?? "disabled",
+    },
   });
   if (!payment)
     throw Object.assign(new Error("Paiement introuvable."), {
@@ -410,6 +428,7 @@ export const reconcileBookingPayments = async () => {
     async () => {
       const rows = await prisma.bookingPayment.findMany({
         where: {
+          stripe_mode: config.mode,
           OR: [
             { status: { in: ["pending", "creating"] } },
             {

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { bookingStripeConfig } from "./provider.js";
 import prisma, { type TenantTransactionClient } from "../../db/prisma.js";
 import { computeTouristTax } from "@contrats/shared";
 import { fromJsonString } from "../../utils/jsonFields.js";
@@ -39,6 +40,11 @@ export const reservationBalance = async (
       },
     }),
   ]);
+  const mode = bookingStripeConfig()?.mode;
+  if (mode && receipts.some((row) => row.stripe_mode !== mode))
+    throw paymentError(
+      "Cette réservation contient un règlement d’un autre environnement Stripe. Vérifiez-la avant de demander un paiement.",
+    );
   if (
     receipts.some(
       (row) =>

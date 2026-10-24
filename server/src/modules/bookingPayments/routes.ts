@@ -54,7 +54,9 @@ export const bookingStripeWebhook = async (
   } catch {
     return res.status(400).json({ error: "Signature Stripe invalide." });
   }
-  if (event.livemode || (event.account && event.account !== config.accountId))
+  if (event.livemode !== config.livemode)
+    return res.status(400).json({ error: "Mode Stripe incorrect." });
+  if (event.account && event.account !== config.accountId)
     return res.status(400).json({ error: "Compte Stripe incorrect." });
   try {
     await runWithOrganization(
@@ -88,6 +90,7 @@ export const bookingStripeWebhook = async (
             // Refund events may arrive out of order: the cumulative refunded total only increases.
             await prisma.bookingPayment.updateMany({
               where: {
+                stripe_mode: config.mode,
                 OR: [
                   { stripe_payment_intent: intent },
                   ...(charge.metadata?.booking_payment_id

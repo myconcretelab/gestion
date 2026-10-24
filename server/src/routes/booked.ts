@@ -1,4 +1,4 @@
-import { bookingPaymentsEnabled, getBookingStripe } from "../modules/bookingPayments/provider.js";
+import { bookingStripeConfig, bookingPaymentsEnabled, getBookingStripe } from "../modules/bookingPayments/provider.js";
 import { createBookingCheckout, prepareBookingPayment } from "../modules/bookingPayments/service.js";
 import { lockBookingGite, assertTransactionAvailability } from "../modules/bookingPayments/locking.js";
 import { localizeGite, resolveGiteLanguage } from "../services/giteTranslations.js";
@@ -191,7 +191,7 @@ router.get("/gites/:id/config", async (req, res, next) => {
       },
       taxe_sejour_par_personne_par_nuit: Number(gite.taxe_sejour_par_personne_par_nuit) || 0,
       arrhes_taux_defaut: Number(gite.arrhes_taux_defaut) || 0,
-      payments: { online: bookingPaymentsEnabled(), mode: "test" },
+      payments: { online: bookingPaymentsEnabled(), mode: bookingStripeConfig()?.mode ?? null },
     });
   } catch (error) {
     next(error);

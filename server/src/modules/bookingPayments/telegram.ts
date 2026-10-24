@@ -15,6 +15,7 @@ import {
   runOrganizationJobBatch,
   type OrganizationJobHandler,
 } from "../system/jobs.js";
+import { bookingStripeConfig } from "./provider.js";
 import { buildReservationLinkReceipt } from "./reservationLinks.js";
 
 const JOB_TYPE = "booking.telegram.payment";
@@ -89,7 +90,11 @@ const deliver: OrganizationJobHandler = async (job) => {
       payment_link: true,
     },
   });
-  if (!payment || eventState(payment) !== input.state)
+  if (
+    !payment ||
+    payment.stripe_mode !== bookingStripeConfig()?.mode ||
+    eventState(payment) !== input.state
+  )
     return { skipped: "superseded" };
   const existing = Boolean(payment.reservation_id);
   if (

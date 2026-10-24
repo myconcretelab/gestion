@@ -1,4 +1,4 @@
-# Réservations : paiement Stripe en environnement de test
+# Réservations : paiement Stripe en test ou en réel
 
 Le client choisit, après ses coordonnées et options :
 
@@ -15,6 +15,7 @@ Les variables `BOOKING_STRIPE_*` concernent exclusivement l’encaissement des s
 Dans un fichier privé non versionné, droits `600` :
 
 ```dotenv
+BOOKING_STRIPE_MODE=test
 BOOKING_STRIPE_SECRET_KEY=sk_test_...
 BOOKING_STRIPE_WEBHOOK_SECRET=whsec_...
 BOOKING_STRIPE_ORGANIZATION_ID=identifiant_organisme
@@ -22,9 +23,19 @@ BOOKING_STRIPE_ACCOUNT_ID=acct_...
 BOOKING_STRIPE_RETURN_URL=https://votre-site/confirmation-reservation/
 ```
 
-La page de retour doit charger le widget Booked. L’URL est imposée par la configuration du serveur, sans paramètres ni fragment. `http` est accepté uniquement en développement pour localhost ou un domaine `.local`. Seules les clés **de test** sont autorisées dans cette première version. Le fournisseur vérifie aussi que la clé appartient au compte configuré et que l’organisme courant est autorisé.
+La page de retour doit charger le widget Booked. L’URL est imposée par la configuration du serveur, sans paramètres ni fragment. `http` est accepté uniquement en développement pour localhost ou un domaine `.local`. Le mode est choisi explicitement par `BOOKING_STRIPE_MODE` :
 
-En développement local, le rapprochement périodique et la page de retour peuvent vérifier les sessions par l’API Stripe sans exposer Local à Internet. Le lanceur local des gîtes charge sa configuration privée hors des dépôts ; seuls les appels HTTPS vers `api.stripe.com:443` sont ajoutés à son isolation réseau. Les courriels restent capturés par Mailpit.
+| Environnement | Mode | Clé | Conditions |
+| --- | --- | --- | --- |
+| Local | `test` (valeur par défaut) | `sk_test_…` | HTTP local autorisé ; webhook facultatif pour les essais avec rapprochement API |
+| Production en préparation | `test` | `sk_test_…` | Retour HTTPS et webhook de test configuré |
+| Production avec encaissements | `live` | `sk_live_…` | `NODE_ENV=production`, retour HTTPS public et webhook réel configuré |
+
+`NODE_ENV=production` ne déclenche jamais à lui seul le mode réel. Un choix inconnu, une clé incompatible ou une configuration incomplète masque le paiement en ligne ; le parcours sur place avec approbation manuelle reste disponible. Le réel est refusé hors production et vers une page de retour locale. Le fournisseur vérifie aussi que la clé appartient au compte configuré et que l’organisme courant est autorisé.
+
+Les configurations, clés, secrets de webhook et bases de données de chaque installation restent séparés. Le réglage `STRIPE_MODE` des abonnements de Gestion n’influence pas les encaissements de séjours. Aucun réglage ni secret ne doit être transmis par le navigateur ou enregistré dans Git.
+
+En développement local, le rapprochement périodique et la page de retour peuvent vérifier les sessions par l’API Stripe sans exposer Local à Internet. Le lanceur local des gîtes charge sa configuration privée hors des dépôts ; seuls les appels HTTPS vers `api.stripe.com:443` sont ajoutés à son isolation réseau. Les courriels restent capturés par Mailpit. Le lanceur local impose aussi `BOOKING_STRIPE_MODE=test`, indépendamment de la configuration de production.
 
 Sur un serveur en mode production, le paiement en ligne reste masqué sans secret de webhook. Configurer une destination Stripe vers :
 
@@ -32,11 +43,13 @@ Sur un serveur en mode production, le paiement en ligne reste masqué sans secre
 POST https://votre-gestion/api/booked/webhook/stripe
 ```
 
-Événements : `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `charge.refunded`. La signature est contrôlée sur le corps brut avant tout traitement. Ce raccordement n’active pas les encaissements réels.
+Événements : `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `charge.refunded`. La signature est contrôlée sur le corps brut avant tout traitement. Créer cette destination dans le même environnement Stripe que la clé configurée, avec les événements au format **snapshot**. Chaque destination possède son propre secret de signature. L’enveloppe de l’événement et la session Checkout doivent correspondre au mode configuré ; les événements de l’autre mode sont refusés.
+
+Pour activer les encaissements après déploiement, renseigner dans la configuration privée du serveur `BOOKING_STRIPE_MODE=live`, la clé réelle du compte des gîtes, son identifiant `acct_…`, le secret du webhook réel, l’organisme et l’URL HTTPS de confirmation, puis redémarrer le service. Le poste local garde ses réglages de test. Vérifier que le compte Stripe est autorisé à encaisser avant l’ouverture aux clients. Références : [clés et environnements Stripe](https://docs.stripe.com/keys), [webhooks Stripe](https://docs.stripe.com/webhooks).
 
 ## Confirmation et suivi
 
-Checkout expire après environ 31 minutes ; les dates sont bloquées environ 34 minutes. Un retour « succès » du navigateur ne suffit jamais à confirmer : le serveur attend une session réellement payée et contrôle sa référence, son organisme, le mode test, le montant et la devise.
+Checkout expire après environ 31 minutes ; les dates sont bloquées environ 34 minutes. Un retour « succès » du navigateur ne suffit jamais à confirmer : le serveur attend une session réellement payée et contrôle sa référence, son organisme, le mode configuré, le montant et la devise.
 
 Un verrou de base de données protège les allocations concurrentes du parcours Booked. La confirmation et la création de réservation se font dans la même transaction. Les notifications sont reprises en cas d’échec d’envoi ; elles peuvent exceptionnellement être répétées si le processus s’interrompt après l’envoi et avant son enregistrement.
 
@@ -84,7 +97,9 @@ Le lien privé est de la forme `APP_PUBLIC_URL/p/<code aléatoire de 22 caractè
 
 Chaque reçu est rattaché à la réservation existante, sans nouvelle demande ni réservation. Le contrat et le récapitulatif des paiements cumulent les arrhes et le solde, y compris si les arrhes proviennent initialement de Booked. Un lien peut être annulé ; toute session ouverte doit d’abord être clôturée chez Stripe. Les dates, montants et règlements sont revérifiés au lancement et à la réception du paiement. Un changement concurrent ou un remboursement impose une vérification manuelle plutôt qu’un nouveau prélèvement.
 
-`APP_PUBLIC_URL` doit désigner l’adresse publique HTTPS de Gestion. En local, les liens `http://localhost:4001/p/…` fonctionnent uniquement sur cet ordinateur. Cette version reste limitée au bac à sable Stripe ; les liens et emails de test ne doivent pas être envoyés aux clients comme moyens d’encaissement réels.
+`APP_PUBLIC_URL` doit désigner l’adresse publique HTTPS de Gestion. En local, les liens `http://localhost:4001/p/…` fonctionnent uniquement sur cet ordinateur. La mention « Mode test » est affichée uniquement en test, sur la page du lien, dans le panneau de Gestion et dans le formulaire Booked.
+
+Le mode est enregistré sur chaque paiement et lien. Les anciennes lignes sont conservées comme `test` lors de la migration. Un lien de l’autre mode est inutilisable ; aucun rapprochement, remboursement ou notification de cet autre mode n’est appliqué. Une réservation contenant déjà des règlements de l’autre mode ne peut pas recevoir un nouveau lien de paiement. Ne pas transférer les réservations fictives de la base locale vers la production.
 
 ## Présentation des fiches WordPress locales
 
@@ -97,4 +112,5 @@ La page `test-reservation-options` est une page d’essai du formulaire seul. Le
 - `npm run test` et `npm run build` dans Gestion.
 - Dans Booked, importer et exécuter `runBookingFlowChecks`, `runBookingI18nChecks` et `runBookingPaymentChecks` avec Chromium Playwright.
 - Essais du vrai bac à sable : totalité, refus de carte, arrhes et annulation ; vérifier le reçu et Mailpit, ainsi que l’absence de double réservation.
+- La migration `20261024220000_booking_stripe_mode` ajoute le mode aux paiements et aux liens, sans supprimer de données ; les lignes existantes restent de test.
 - Les migrations SQLite et PostgreSQL ajoutent le registre `booking_payments` et les liens `reservation_payment_links`, avec rattachement facultatif des paiements à une réservation existante. Appliquer les migrations à la base locale après sauvegarde. Un futur déploiement serveur nécessitera une sauvegarde récupérable et le déploiement complet ; un simple déploiement léger ne suffit pas.

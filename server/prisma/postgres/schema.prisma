@@ -1697,6 +1697,7 @@ model GiteSeasonRate {
 model ReservationPaymentLink {
   id                     String   @id @default(cuid())
   organization_id        String   @default("org_historical_broceliande")
+  stripe_mode           String   @default("test")
   reservation_id         String
   code                   String   @unique
   purpose                String
@@ -1719,6 +1720,7 @@ model ReservationPaymentLink {
 model BookingPayment {
   id                    String   @id @default(cuid())
   organization_id       String   @default("org_historical_broceliande")
+  stripe_mode           String   @default("test")
   booking_request_id    String?  @unique
   reservation_id        String?
   payment_link_id       String?

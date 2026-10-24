@@ -3,7 +3,11 @@ import type Stripe from "stripe";
 import prisma from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { getOrganizationId } from "../organizations/context.js";
-import { bookingPaymentsEnabled, getBookingStripe } from "./provider.js";
+import {
+  bookingStripeConfig,
+  bookingPaymentsEnabled,
+  getBookingStripe,
+} from "./provider.js";
 import { reservationBalance, paymentError } from "./reservationBalance.js";
 import {
   sendBookingPaymentEmails,
@@ -46,6 +50,7 @@ export const paymentLinkChoices = async (reservationId: string) => {
   const links = await prisma.reservationPaymentLink.findMany({
     where: {
       reservation_id: reservationId,
+      stripe_mode: bookingStripeConfig()?.mode ?? "disabled",
       status: { in: ["active", "revoking"] },
       expires_at: { gt: new Date() },
     },
@@ -53,7 +58,7 @@ export const paymentLinkChoices = async (reservationId: string) => {
   });
   return {
     enabled: bookingPaymentsEnabled(),
-    mode: "test",
+    mode: bookingStripeConfig()?.mode ?? null,
     total: state.total / 100,
     received: state.received / 100,
     deposit_due: state.depositDue / 100,
@@ -88,6 +93,7 @@ export const createReservationPaymentLink = async (
     const active = await tx.reservationPaymentLink.findFirst({
       where: {
         reservation_id: reservationId,
+        stripe_mode: bookingStripeConfig()!.mode,
         status: { in: ["active", "revoking"] },
       },
       include: {
@@ -117,6 +123,7 @@ export const createReservationPaymentLink = async (
     const row = await tx.reservationPaymentLink.create({
       data: {
         reservation_id: reservationId,
+        stripe_mode: bookingStripeConfig()!.mode,
         code: crypto.randomBytes(16).toString("base64url"),
         purpose,
         amount_cents: amount,
@@ -144,6 +151,11 @@ export const loadPaymentLink = async (code: string) => {
     },
   });
   if (!link) throw paymentError("Lien de paiement introuvable.", 404);
+  if (link.stripe_mode !== bookingStripeConfig()?.mode)
+    throw paymentError(
+      "Ce lien appartient à un autre environnement de paiement. Contactez le propriétaire pour obtenir un nouveau lien.",
+      410,
+    );
   return link;
 };
 export const startReservationLinkCheckout = async (code: string) => {
@@ -178,6 +190,7 @@ export const startReservationLinkCheckout = async (code: string) => {
     const payment = await tx.bookingPayment.create({
       data: {
         reservation_id: link.reservation_id,
+        stripe_mode: link.stripe_mode,
         payment_link_id: link.id,
         purpose: link.purpose,
         amount_cents: link.amount_cents,
@@ -250,11 +263,18 @@ export const applyReservationLinkSession = async (
   session: Stripe.Checkout.Session,
   paymentId: string,
 ) => {
+  const config = bookingStripeConfig();
+  if (!config || session.livemode !== config.livemode) return "ignored";
   return prisma.$transaction(async (tx) => {
     const initial = await tx.bookingPayment.findUniqueOrThrow({
       where: { id: paymentId },
     });
-    if (!initial.reservation_id || !initial.payment_link_id) return "ignored";
+    if (
+      initial.stripe_mode !== config.mode ||
+      !initial.reservation_id ||
+      !initial.payment_link_id
+    )
+      return "ignored";
     await tx.reservation.update({
       where: { id: initial.reservation_id },
       data: { updatedAt: new Date() },
@@ -355,6 +375,10 @@ export const revokeReservationPaymentLink = async (
     const row = await tx.reservationPaymentLink.findUniqueOrThrow({
       where: { id, reservation_id: reservationId },
     });
+    if (row.stripe_mode !== bookingStripeConfig()?.mode)
+      throw paymentError(
+        "Ce lien appartient à un autre environnement de paiement.",
+      );
     if (row.status === "paid" || row.status === "requires_review")
       throw paymentError(
         "Un paiement a déjà été reçu. Le lien ne peut plus être annulé.",

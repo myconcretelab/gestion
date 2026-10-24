@@ -3,13 +3,18 @@ import { getOrganizationId } from "../organizations/context.js";
 
 // Guest receipts use their own merchant account; never reuse SaaS subscription keys.
 export const bookingStripeConfig = () => {
+  // Never infer live payments from NODE_ENV or from a key alone.
+  const mode = process.env.BOOKING_STRIPE_MODE || "test";
+  if (mode !== "test" && mode !== "live") return null;
+  if (mode === "live" && process.env.NODE_ENV !== "production") return null;
+  const livemode = mode === "live";
   const secret = process.env.BOOKING_STRIPE_SECRET_KEY || "";
   const organizationId = process.env.BOOKING_STRIPE_ORGANIZATION_ID || "";
   const accountId = process.env.BOOKING_STRIPE_ACCOUNT_ID || "";
   const returnUrl = process.env.BOOKING_STRIPE_RETURN_URL || "";
   const webhookSecret = process.env.BOOKING_STRIPE_WEBHOOK_SECRET || "";
   if (
-    !secret.startsWith("sk_test_") ||
+    !secret.startsWith(`sk_${mode}_`) ||
     !organizationId ||
     !accountId ||
     !returnUrl
@@ -24,6 +29,12 @@ export const bookingStripeConfig = () => {
     const url = new URL(returnUrl);
     if (url.username || url.password || url.hash || url.search) return null;
     if (
+      livemode &&
+      (url.hostname.endsWith(".local") ||
+        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+    )
+      return null;
+    if (
       url.protocol !== "https:" &&
       !(
         process.env.NODE_ENV !== "production" &&
@@ -36,7 +47,15 @@ export const bookingStripeConfig = () => {
   } catch {
     return null;
   }
-  return { secret, organizationId, accountId, returnUrl, webhookSecret };
+  return {
+    mode,
+    livemode,
+    secret,
+    organizationId,
+    accountId,
+    returnUrl,
+    webhookSecret,
+  };
 };
 export const bookingPaymentsEnabled = () =>
   bookingStripeConfig()?.organizationId === getOrganizationId();
