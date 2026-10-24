@@ -126,7 +126,7 @@ export const incomingStructuredSchema = z
 export const incomingInvoiceSchema = remoteInvoiceSchema.extend({
   created_at: z.string().datetime({ offset: true }),
   // A just-created remote document may not have completed semantic extraction yet.
-  en_invoice: z.record(z.unknown()).nullable().optional(),
+  en_invoice: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 export const eventSchema = z.object({
   id: remoteId,
@@ -164,6 +164,7 @@ export const eventSchema = z.object({
         reported_data: z
           .array(
             z.record(
+              z.string(),
               z.union([z.string().max(4000), z.boolean(), z.number().finite()]),
             ),
           )

@@ -84,7 +84,7 @@ export function invoiceFormCompletion(
               vat_number: "buyer-vat-number",
             }[String(key)] ?? "buyer-address")
           : section === "lines"
-            ? `invoice-line-${field === "label" ? "label" : "vat"}${Number(key) ? `-${key}` : ""}`
+            ? `invoice-line-${field === "label" ? "label" : "vat"}${Number(key) ? `-${String(key)}` : ""}`
             : "payment-details";
       items.push({
         label: `${section === "buyer" ? "Client" : section === "lines" ? `Ligne ${Number(key) + 1}` : "Paiement"} : ${issue.message}`,

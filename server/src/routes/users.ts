@@ -28,7 +28,7 @@ const userSchema = z.object({
   hourlyRate: z.coerce.number().min(0).max(10_000).default(0),
   cleaningCheckRate: z.coerce.number().min(0).max(10_000).default(0),
   fullCleaningRate: z.coerce.number().min(0).max(10_000).default(0),
-  fullCleaningRates: z.record(z.coerce.number().min(0).max(10_000)).optional(),
+  fullCleaningRates: z.record(z.string(), z.coerce.number().min(0).max(10_000)).optional(),
   directCleaningValidation: z.boolean().optional(),
   canWrite: z.boolean().default(false),
   canViewAmounts: z.boolean().default(false),

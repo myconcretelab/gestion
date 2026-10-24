@@ -1,3 +1,4 @@
+import { partialInputSchema } from "../utils/validation.js";
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
@@ -49,7 +50,7 @@ const intervenantExpensePayloadSchema = intervenantExpenseFieldsSchema.superRefi
     });
   }
 });
-const intervenantExpensePatchSchema = intervenantExpenseFieldsSchema.partial();
+const intervenantExpensePatchSchema = partialInputSchema(intervenantExpenseFieldsSchema);
 
 const serializeIntervenantExpense = (expense: any) => ({
   id: expense.id,
@@ -265,7 +266,7 @@ router.delete("/:id/expenses/:expenseId", async (req, res, next) => {
 
 router.patch("/:id", async (req, res, next) => {
   try {
-    const payload = intervenantPayloadSchema.partial().parse(req.body ?? {});
+    const payload = partialInputSchema(intervenantPayloadSchema).parse(req.body ?? {});
     const current = await prisma.planningRelayWorker.findUnique({
       where: { id: req.params.id },
       include: { app_user: true },

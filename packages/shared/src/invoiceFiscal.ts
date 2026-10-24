@@ -164,7 +164,7 @@ export const invoiceFiscalInputSchema = z.object({
   payment_due_date: isoDate,
   payment_terms: z.string().trim().max(2000),
   // Existing drafts remain readable; missing mentions must be completed before B2B issuance.
-  b2b_payment_mentions: b2bPaymentMentionsSchema.default({}),
+  b2b_payment_mentions: b2bPaymentMentionsSchema.prefault({}),
   reviewed: z.boolean(),
   tourist_tax_reviewed: z.boolean(),
   tourist_taxes: z.array(touristTaxResultSchema).max(50).optional(),

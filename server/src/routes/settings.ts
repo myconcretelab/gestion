@@ -1,3 +1,4 @@
+import { partialInputSchema } from "../utils/validation.js";
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
@@ -1698,7 +1699,7 @@ router.post("/pump/config/import", (req, res, next) => {
 
 router.post("/pump/config/test-connection", async (_req, res, next) => {
   try {
-    const payload = pumpAutomationConfigSchema.partial().parse(_req.body ?? {});
+    const payload = partialInputSchema(pumpAutomationConfigSchema).parse(_req.body ?? {});
     const result = await testPumpAutomationConnection(payload);
     res.json({ success: true, result });
   } catch (error) {
@@ -1708,7 +1709,7 @@ router.post("/pump/config/test-connection", async (_req, res, next) => {
 
 router.post("/pump/config/test-scroll-target", async (_req, res, next) => {
   try {
-    const payload = pumpAutomationConfigSchema.partial().parse(_req.body ?? {});
+    const payload = partialInputSchema(pumpAutomationConfigSchema).parse(_req.body ?? {});
     const result = await testPumpAutomationScrollTarget(payload);
     res.json({ success: true, result });
   } catch (error) {

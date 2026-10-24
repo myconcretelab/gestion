@@ -44,7 +44,7 @@ const quoteSchema = z.object({
   date_sortie: z.string().trim().min(1),
   nb_adultes: z.coerce.number().int().min(1),
   nb_enfants_2_17: z.coerce.number().int().min(0).default(0),
-  options: optionsSchema.omit({ tourist_tax: true }).optional().default({}),
+  options: optionsSchema.omit({ tourist_tax: true }).prefault({}),
 });
 
 const bookingRequestCreateSchema = quoteSchema.extend({

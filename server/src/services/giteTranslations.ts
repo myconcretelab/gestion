@@ -22,7 +22,7 @@ const translationSchema = z.object({
   })).nullable().optional(),
   public_equipment: z.unknown().optional(), public_rooms: z.unknown().optional(),
   public_practical_info: z.unknown().optional(), public_location_info: z.unknown().optional(),
-  photos: z.record(z.object({ title: text(), alt: text() }).strict()).optional(),
+  photos: z.record(z.string(), z.object({ title: text(), alt: text() }).strict()).optional(),
 }).strict();
 export const giteTranslationsSchema = z.object({en: translationSchema.optional(), es: translationSchema.optional()}).strict().nullable().optional();
 

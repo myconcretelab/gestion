@@ -308,7 +308,7 @@ const reservationPayloadSchema = z.object({
   frais_optionnels_montant: z.coerce.number().min(0).optional().default(0),
   frais_optionnels_libelle: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   frais_optionnels_declares: z.boolean().optional().default(false),
-  options: optionsSchema.optional().default({}),
+  options: optionsSchema.prefault({}),
 });
 const reservationSourcePayloadSchema = z.object({
   source_paiement: z.preprocess(emptyStringToNull, z.string().trim().nullable()),
@@ -325,8 +325,8 @@ const importPayloadSchema = z.object({
   content: z.string().min(1),
   delimiter: z.enum([",", ";", "\t"]).optional(),
   gite_id: z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional(),
-  abbreviation_map: z.record(z.string().trim().min(1)).optional().default({}),
-  column_map: z.record(z.string().trim()).optional().default({}),
+  abbreviation_map: z.record(z.string(), z.string().trim().min(1)).optional().prefault({}),
+  column_map: z.record(z.string(), z.string().trim()).optional().prefault({}),
 });
 
 const assignPlaceholderSchema = z.object({

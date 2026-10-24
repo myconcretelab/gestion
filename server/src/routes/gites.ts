@@ -86,8 +86,7 @@ const publicWebInfoSchema = z
     private_garden: z.boolean().default(false),
     private_courtyard: z.boolean().default(false),
   })
-  .optional()
-  .default({});
+  .prefault({});
 const expenseCategorySchema = z.object({
   id: z.string().trim().min(1),
   name: z.string().trim().min(1),

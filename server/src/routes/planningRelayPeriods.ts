@@ -1,3 +1,4 @@
+import { partialInputSchema } from "../utils/validation.js";
 import { planningOrganizationSchema } from "@contrats/shared";
 import { readPlanningOrganization, validatePlanningOrganization, syncPlanningTemplates, applyPlanningCleaningAssignments } from "../services/planningOrganizations.js";
 import { loadPlanningInterventions, planningPublicPath, planningAudienceIsValid, planningDocumentHtml } from "../services/planningInterventions.js";
@@ -158,7 +159,7 @@ const smsConfigSchema = z.object({
   };
 });
 
-const patchSchema = payloadSchema.partial().extend({
+const patchSchema = partialInputSchema(payloadSchema).extend({
   expected_updated_at: z.string().datetime().optional(),
   is_active: z.boolean().optional(),
   sms_enabled: z.boolean().optional(),
@@ -588,7 +589,7 @@ privateRouter.post("/workers", async (req, res, next) => {
 
 privateRouter.patch("/workers/:id", async (req, res, next) => {
   try {
-    const payload = workerPayloadSchema.partial().parse(req.body ?? {});
+    const payload = partialInputSchema(workerPayloadSchema).parse(req.body ?? {});
     const current = await prisma.planningRelayWorker.findUnique({ where: { id: req.params.id }, include: { app_user: true } });
     if (!current) return res.status(404).json({ error: "Intervenant introuvable." });
     const worker = await prisma.planningRelayWorker.update({
