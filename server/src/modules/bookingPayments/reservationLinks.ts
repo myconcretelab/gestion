@@ -404,7 +404,7 @@ export const revokeReservationPaymentLink = async (
     data: { status: "revoked" },
   });
 };
-export const sendReservationLinkReceipt = async (payment: any) => {
+export const buildReservationLinkReceipt = async (payment: any) => {
   const reservation = payment.reservation;
   const terms = fromJsonString<any>(payment.payment_link?.terms_json, {});
   const options = terms.options || fromJsonString(reservation.options, {});
@@ -464,14 +464,17 @@ export const sendReservationLinkReceipt = async (payment: any) => {
           : {}),
     },
   };
-  await sendBookingPaymentEmails(
+  return {
     payload,
-    {
+    paymentInfo: {
       ...payment,
       remaining_cents: summary
         ? Math.round(summary.remaining * 100)
         : undefined,
     },
-    true,
-  );
+  };
+};
+export const sendReservationLinkReceipt = async (payment: any) => {
+  const content = await buildReservationLinkReceipt(payment);
+  await sendBookingPaymentEmails(content.payload, content.paymentInfo, true);
 };

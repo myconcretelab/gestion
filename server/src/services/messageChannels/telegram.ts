@@ -33,6 +33,7 @@ const postTelegramMessage = async (params: {
     `https://api.telegram.org/bot${params.botToken}/sendMessage`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(15_000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: params.chatId,

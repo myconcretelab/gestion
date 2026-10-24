@@ -106,6 +106,9 @@ before(async () => {
   service = await import("../src/modules/bookingPayments/service.js");
   contracts = await import("../src/modules/bookingPayments/contracts.js");
   provider = await import("../src/modules/bookingPayments/provider.js");
+  await db.systemPrisma.organization.create({
+    data: { id: org, slug: org, name: "Organisme de test" },
+  });
   await inOrg(() =>
     db.default.gite.create({
       data: {
@@ -123,6 +126,110 @@ before(async () => {
       },
     }),
   );
+});
+
+test("Telegram après paiement : reprise par destinataire sans renvoi des emails, puis remboursement", async () => {
+  const telegram = await import("../src/services/telegramNotifications.js");
+  const jobs = await import("../src/modules/bookingPayments/telegram.js");
+  const { telegramMessageChannel } =
+    await import("../src/services/messageChannels/telegram.js");
+  const originalSend = telegramMessageChannel.send;
+  const received: Array<{ chat: string; message: string }> = [];
+  let failSecond = true;
+  telegramMessageChannel.send = async (input) => {
+    const chat = input.recipients![0];
+    if (chat === "chat-b" && failSecond)
+      throw new Error("Indisponibilité de test");
+    received.push({ chat, message: input.message });
+    return {
+      channel: "telegram",
+      sent_count: 1,
+      skipped_reason: null,
+      deliveries: [],
+    };
+  };
+  try {
+    await inOrg(async () => {
+      telegram.writeTelegramNotificationConfig({
+        ...telegram.buildDefaultTelegramNotificationConfig(),
+        enabled: true,
+        bot_token: "fake-no-network",
+        chat_ids: ["chat-a", "chat-b"],
+      });
+      const f = await fixture();
+      await service.applyVerifiedSession(f.session);
+      await service.deliverPaymentNotification(f.request.payment!.id);
+      await service.deliverPaymentNotification(f.request.payment!.id);
+      const filter = { idempotency_key: { contains: f.request.payment!.id } };
+      assert.equal(
+        await db.default.organizationJob.count({ where: filter }),
+        2,
+      );
+      await jobs.runBookingTelegramJobBatch();
+      assert.equal(received.filter((r) => r.chat === "chat-a").length, 1);
+      assert.equal(received.filter((r) => r.chat === "chat-b").length, 0);
+      const payment = await db.default.bookingPayment.findUniqueOrThrow({
+        where: { id: f.request.payment!.id },
+      });
+      assert.ok(payment.notification_sent_at);
+      failSecond = false;
+      await db.default.organizationJob.updateMany({
+        where: { ...filter, status: "queued" },
+        data: { run_at: new Date(0) },
+      });
+      await jobs.runBookingTelegramJobBatch();
+      assert.equal(received.filter((r) => r.chat === "chat-a").length, 1);
+      assert.equal(received.filter((r) => r.chat === "chat-b").length, 1);
+      assert.match(received[0].message, /Arrhes reçues/);
+      assert.match(received[0].message, /focus=/);
+      await jobs.runBookingTelegramJobBatch();
+      assert.equal(received.length, 2);
+      await db.default.bookingPayment.update({
+        where: { id: payment.id },
+        data: {
+          status: "refunded",
+          refunded_amount_cents: 9000,
+          notification_sent_at: null,
+        },
+      });
+      await service.deliverPaymentNotification(payment.id);
+      await jobs.runBookingTelegramJobBatch();
+      assert.equal(received.length, 4);
+      assert.match(received[2].message, /Remboursement enregistré/);
+      assert.doesNotMatch(received[2].message, /Réservation confirmée/);
+      const obsolete = await fixture("full");
+      await service.applyVerifiedSession(obsolete.session);
+      await service.deliverPaymentNotification(obsolete.request.payment!.id);
+      await db.default.bookingPayment.update({
+        where: { id: obsolete.request.payment!.id },
+        data: { status: "refunded", refunded_amount_cents: 36000 },
+      });
+      await jobs.runBookingTelegramJobBatch();
+      assert.equal(
+        received.length,
+        4,
+        "une confirmation devenue obsolète ne doit pas être envoyée",
+      );
+      const config = telegram.readTelegramNotificationConfig();
+      telegram.writeTelegramNotificationConfig({
+        ...config,
+        notify_booking_request_approved: false,
+      });
+      const count = await db.default.organizationJob.count({});
+      await jobs.queueBookingPaymentTelegram({
+        ...payment,
+        id: "disabled-event",
+      });
+      assert.equal(await db.default.organizationJob.count({}), count);
+    });
+  } finally {
+    telegramMessageChannel.send = originalSend;
+    await inOrg(() =>
+      telegram.writeTelegramNotificationConfig(
+        telegram.buildDefaultTelegramNotificationConfig(),
+      ),
+    );
+  }
 });
 after(async () => {
   await db?.systemPrisma.$disconnect();
@@ -264,7 +371,10 @@ test("paiement des arrhes : une seule réservation, options conservées, contrat
     assert.equal(returned.confirmed, true);
     assert.equal(returned.confirmation?.gite.name, "Gîte fictif");
     assert.equal(returned.confirmation?.stay.nights, 4);
-    assert.match(returned.confirmation!.options[0], /Chiens : 15.*× 4 nuits = 60/);
+    assert.match(
+      returned.confirmation!.options[0],
+      /Chiens : 15.*× 4 nuits = 60/,
+    );
     assert.match(returned.confirmation!.message.text, /90,00/);
     assert.match(returned.confirmation!.message.text, /270,00/);
     assert.doesNotMatch(
@@ -272,7 +382,11 @@ test("paiement des arrhes : une seule réservation, options conservées, contrat
       /access_token|stripe_session|stripe_payment_intent|sk_test/,
     );
     await assert.rejects(
-      () => inOrg(() => service.publicPaymentStatus(f.request.payment!.id, f.token), otherOrg),
+      () =>
+        inOrg(
+          () => service.publicPaymentStatus(f.request.payment!.id, f.token),
+          otherOrg,
+        ),
       /introuvable/,
     );
   });
@@ -301,7 +415,10 @@ test("paiement complet : le solde du contrat est marqué réglé", async () => {
     assert.equal(summary!.amount_paid, 360);
     assert.equal(summary!.remaining, 0);
     assert.equal(summary!.purpose, "full");
-    const returned = await service.publicPaymentStatus(f.request.payment!.id, f.token);
+    const returned = await service.publicPaymentStatus(
+      f.request.payment!.id,
+      f.token,
+    );
     assert.equal(returned.remaining, 0);
     assert.equal(returned.confirmed, true);
     assert.ok(returned.confirmation);

@@ -56,6 +56,16 @@ Les notifications destinées au propriétaire affichent un bouton **Voir la dema
 
 Les propriétaires ont des modèles dédiés pour les confirmations après paiement, les reçus de paiements sur réservation existante, les paiements à vérifier et les remboursements. Leurs sujets identifient le client et le gîte ; le corps présente les coordonnées du client, les dates, les options et le règlement à la troisième personne. Ils ne reprennent pas les salutations, conseils touristiques ou formules d’accueil adressés au client. Ces modèles restent personnalisables indépendamment des messages clients dans **Paramètres → Emails**.
 
+## Notifications Telegram
+
+Les demandes classiques et approbations manuelles contiennent les coordonnées du client, les dates, le total et le calcul détaillé des options, ainsi qu’un lien vers la demande ou la réservation. Une confirmation par paiement Stripe n’est pas présentée comme une demande en attente : elle indique les arrhes ou le paiement reçu, le solde et le lien vers la réservation, avec sélection du gîte et de la période puis défilement vers sa ligne.
+
+Les paiements par lien sur une réservation existante, paiements à vérifier et remboursements ont aussi leur message propriétaire. Un paiement à vérifier n’annonce aucune confirmation ; un remboursement n’annonce pas l’annulation du séjour. Les options utilisent le même calcul à partir du devis enregistré que les emails.
+
+Dans **Paramètres → Telegram**, l’option **Réservations confirmées et suivi des paiements** couvre les approbations manuelles et les événements Stripe. Elle conserve le réglage existant `notify_booking_request_approved`. Les demandes restent contrôlées par leur option distincte. Les alertes concernant les contrats, factures et contrôles de ménage conservent leur fonctionnement.
+
+Les alertes Stripe sont enregistrées dans la file de tâches existante, séparément par paiement, état et destinataire. Le worker des paiements les traite généralement sous une minute, avec reprises en cas d’échec, sans renvoyer les emails ou notifications déjà remis aux autres destinataires. Une notification devenue obsolète, un destinataire retiré ou un événement désactivé sont ignorés. Le worker de tâches doit être activé (`ORGANIZATION_JOB_WORKER_ENABLED`). Une interruption après remise au fournisseur mais avant enregistrement du succès peut exceptionnellement répéter un message. Les paiements anciens dont la notification email a déjà été traitée ne sont pas rejoués rétroactivement.
+
 En local, consulter les messages dans Mailpit (`http://127.0.0.1:10000`). Les réservations de démonstration doivent utiliser des noms **TEST** et des adresses fictives. Les tests automatisés des modèles emploient un dossier temporaire pour ne pas modifier les textes enregistrés sur l’installation locale.
 
 ## Page de retour après paiement

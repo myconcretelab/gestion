@@ -6226,7 +6226,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
 
                       <div className="grid-2" style={{ marginTop: 16 }}>
                         <label className="field">
-                          Demandes Booked approuvées
+                          Réservations confirmées et suivi des paiements
                           <select
                             value={telegramNotificationDraft.notify_booking_request_approved ? "1" : "0"}
                             onChange={(event) => {
@@ -6243,6 +6243,9 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             <option value="0">Ignorer</option>
                           </select>
                         </label>
+                        <p className="field-hint">
+                          Approbations manuelles, arrhes et paiements Stripe, paiements à vérifier et remboursements.
+                        </p>
                       </div>
 
                       <div className="grid-2" style={{ marginTop: 16 }}>

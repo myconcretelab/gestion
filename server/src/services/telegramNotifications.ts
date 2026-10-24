@@ -1,4 +1,7 @@
 import fs from "node:fs";
+import { buildBookingRequestOptionsTemplateValues } from "@contrats/shared";
+import { buildBookingManagementAction } from "./bookingManagementLinks.js";
+import type { BookingPaymentEmailInfo } from "./bookingRequestEmail.js";
 import { env } from "../config/env.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
 import { telegramMessageChannel } from "./messageChannels/telegram.js";
@@ -29,6 +32,7 @@ export type TelegramNotificationPublicState = {
 
 type BookingRequestTelegramPayload = {
   id: string;
+  approved_reservation_id?: string | null;
   hote_nom: string;
   telephone?: string | null;
   email?: string | null;
@@ -39,14 +43,17 @@ type BookingRequestTelegramPayload = {
   message_client?: string | null;
   hold_expires_at: Date | string;
   gite: {
+    id?: string;
     nom: string;
     email?: string | null;
   };
-  pricing_snapshot: BookingQuote;
+  pricing_snapshot: Pick<BookingQuote, "nb_nuits" | "total_global"> &
+    Partial<BookingQuote>;
   options?: OptionsInput | null;
 };
 
-const settingsFile = () => organizationDataPath("telegram-notifications-settings.json");
+const settingsFile = () =>
+  organizationDataPath("telegram-notifications-settings.json");
 
 const ensureDataDir = () => {
   if (!fs.existsSync(env.DATA_DIR)) {
@@ -112,9 +119,18 @@ export const normalizeTelegramNotificationConfig = (
       ? input.bot_token.trim()
       : fallback.bot_token,
   chat_ids: normalizeChatIds(input?.chat_ids, fallback.chat_ids),
-  recipient_user_ids: normalizeChatIds(input?.recipient_user_ids, fallback.recipient_user_ids),
-  notify_gite_checked: toBoolean(input?.notify_gite_checked, fallback.notify_gite_checked),
-  gite_check_mentions: normalizeChatIds(input?.gite_check_mentions, fallback.gite_check_mentions)
+  recipient_user_ids: normalizeChatIds(
+    input?.recipient_user_ids,
+    fallback.recipient_user_ids,
+  ),
+  notify_gite_checked: toBoolean(
+    input?.notify_gite_checked,
+    fallback.notify_gite_checked,
+  ),
+  gite_check_mentions: normalizeChatIds(
+    input?.gite_check_mentions,
+    fallback.gite_check_mentions,
+  )
     .map((name) => name.replace(/^@/, ""))
     .filter((name) => /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(name))
     .map((name) => `@${name}`),
@@ -207,6 +223,25 @@ const escapeHtml = (value: unknown) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
+const bookingManagementLink = (
+  payload: BookingRequestTelegramPayload,
+  reservationId = payload.approved_reservation_id,
+) => {
+  const action = buildBookingManagementAction(payload, reservationId);
+  return action
+    ? `<a href="${escapeHtml(action.url).replace(/"/g, "&quot;")}">${action.label}</a>`
+    : "";
+};
+
+const bookingGuestDetails = (payload: BookingRequestTelegramPayload) => [
+  `<b>Client</b>: ${escapeHtml(payload.hote_nom.slice(0, 160))}`,
+  `<b>Téléphone</b>: ${escapeHtml(payload.telephone?.trim().slice(0, 100) || "Non renseigné")}`,
+  `<b>Email</b>: ${escapeHtml(payload.email?.trim().slice(0, 254) || "Non renseigné")}`,
+  payload.message_client?.trim()
+    ? `<b>Message</b>: ${escapeHtml(payload.message_client.trim().slice(0, 400))}`
+    : "",
+];
+
 const formatDateTimeFr = (value: Date | string) =>
   new Date(value).toLocaleString("fr-FR", {
     dateStyle: "medium",
@@ -224,8 +259,10 @@ const formatPrice = (value: number) =>
 export const sendTelegramMessage = async (
   text: string,
   config = readTelegramNotificationConfig(),
+  explicitRecipients?: string[],
 ) => {
-  const recipients = await resolveTelegramNotificationRecipients(config);
+  const recipients =
+    explicitRecipients ?? (await resolveTelegramNotificationRecipients(config));
   const result = await telegramMessageChannel.send({
     message: text,
     recipients,
@@ -246,33 +283,34 @@ export const resolveTelegramNotificationRecipients = async (
         select: { telegram_chat_id: true },
       })
     : [];
-  return [...new Set([
-    ...config.chat_ids,
-    ...users.map((user) => user.telegram_chat_id?.trim() ?? "").filter(Boolean),
-  ])];
+  return [
+    ...new Set([
+      ...config.chat_ids,
+      ...users
+        .map((user) => user.telegram_chat_id?.trim() ?? "")
+        .filter(Boolean),
+    ]),
+  ];
 };
 
 export const buildBookingRequestCreatedMessage = (
   payload: BookingRequestTelegramPayload,
 ) =>
   [
-    "<b>Nouvelle demande de réservation Booked</b>",
+    "<b>Nouvelle demande de réservation</b>",
     "",
-    `<b>Gîte</b>: ${escapeHtml(payload.gite.nom)}`,
+    `<b>Gîte</b>: ${escapeHtml(payload.gite.nom.slice(0, 160))}`,
     `<b>Séjour</b>: du ${escapeHtml(formatBookedDateInput(payload.date_entree))} au ${escapeHtml(formatBookedDateInput(payload.date_sortie))} (${payload.pricing_snapshot.nb_nuits} nuit(s))`,
     `<b>Voyageurs</b>: ${payload.nb_adultes} adulte(s), ${payload.nb_enfants_2_17} enfant(s)`,
     `<b>Options</b>: ${buildBookingOptionsSummary(payload)}`,
     `<b>Total estimatif</b>: ${escapeHtml(formatPrice(payload.pricing_snapshot.total_global))}`,
+    "<b>Statut</b>: en attente d’approbation manuelle",
     `<b>Blocage jusqu'au</b>: ${escapeHtml(formatDateTimeFr(payload.hold_expires_at))}`,
     "",
-    `<b>Client</b>: ${escapeHtml(payload.hote_nom)}`,
-    `<b>Téléphone</b>: ${escapeHtml(payload.telephone?.trim() || "Non renseigné")}`,
-    `<b>Email</b>: ${escapeHtml(payload.email?.trim() || "Non renseigné")}`,
-    payload.message_client?.trim()
-      ? `<b>Message</b>: ${escapeHtml(payload.message_client.trim())}`
-      : "",
+    ...bookingGuestDetails(payload),
     "",
     `Demande #${escapeHtml(payload.id)}`,
+    bookingManagementLink(payload),
   ]
     .filter(Boolean)
     .join("\n");
@@ -285,59 +323,161 @@ export const notifyBookingRequestCreatedOnTelegram = async (
     return { sent_count: 0, skipped_reason: "event_disabled" as const };
   }
 
-  return sendTelegramMessage(buildBookingRequestCreatedMessage(payload), config);
+  return sendTelegramMessage(
+    buildBookingRequestCreatedMessage(payload),
+    config,
+  );
 };
 
 const buildBookingOptionsSummary = (payload: BookingRequestTelegramPayload) => {
-  const details: string[] = [];
-  const options = payload.options;
-  const prices = payload.pricing_snapshot.options_detail;
-  const priced = (amount?: number) => typeof amount === "number" ? ` : ${formatPrice(amount)}` : "";
-  if (options?.draps?.enabled) details.push(`Draps (${options.draps.nb_lits ?? 0} lit(s))${priced(prices?.draps)}`);
-  if (options?.linge_toilette?.enabled) details.push(`Linge de toilette (${options.linge_toilette.nb_personnes ?? 0} personne(s))${priced(prices?.linge)}`);
-  if (options?.menage?.enabled) details.push(`Ménage${priced(prices?.menage)}`);
-  if (options?.depart_tardif?.enabled) details.push(`Départ tardif${priced(prices?.depart_tardif)}`);
-  if (options?.chiens?.enabled) details.push(`Chiens (${options.chiens.nb ?? 0})${priced(prices?.chiens)}`);
-  return details.length ? details.map(escapeHtml).join(" ; ") : "aucune";
+  const summary =
+    buildBookingRequestOptionsTemplateValues(payload).optionsSummary;
+  return summary
+    ? "\n" + escapeHtml(summary.split("\n").slice(1).join("\n"))
+    : "aucune";
 };
 
-export const buildBookingRequestApprovedTelegramMessage = (payload: BookingRequestTelegramPayload) => {
+export const buildBookingRequestApprovedTelegramMessage = (
+  payload: BookingRequestTelegramPayload,
+) => {
   return [
-    "✅ <b>Demande Booked approuvée</b>",
+    "✅ <b>Réservation approuvée manuellement</b>",
     "",
-    `<b>Gîte</b>: ${escapeHtml(payload.gite.nom)}`,
+    `<b>Gîte</b>: ${escapeHtml(payload.gite.nom.slice(0, 160))}`,
     `<b>Séjour</b>: du ${escapeHtml(formatBookedDateInput(payload.date_entree))} au ${escapeHtml(formatBookedDateInput(payload.date_sortie))}`,
-    `<b>Client</b>: ${escapeHtml(payload.hote_nom)}`,
+    ...bookingGuestDetails(payload),
     `<b>Options</b>: ${buildBookingOptionsSummary(payload)}`,
     `<b>Total</b>: ${escapeHtml(formatPrice(payload.pricing_snapshot.total_global))}`,
+    "<b>Règlement</b>: sur place",
     `Demande #${escapeHtml(payload.id)}`,
+    bookingManagementLink(payload),
   ].join("\n");
 };
 
-export const notifyBookingRequestApprovedOnTelegram = async (payload: BookingRequestTelegramPayload) => {
-  const config = readTelegramNotificationConfig();
-  if (!config.notify_booking_request_approved) return { sent_count: 0, skipped_reason: "event_disabled" as const };
-  return sendTelegramMessage(buildBookingRequestApprovedTelegramMessage(payload), config);
+export const buildBookingPaymentTelegramMessage = (
+  payload: BookingRequestTelegramPayload,
+  payment: BookingPaymentEmailInfo & { review_reason?: string | null },
+  existingReservation = false,
+) => {
+  if (
+    !["paid", "requires_review", "refunded", "partially_refunded"].includes(
+      payment.status,
+    )
+  ) {
+    throw new Error("Le paiement n’a pas encore de résultat à notifier.");
+  }
+  const refunded = payment.refunded_amount_cents > 0;
+  const review = payment.status === "requires_review";
+  const title = review
+    ? "⚠️ <b>Paiement à vérifier</b>"
+    : refunded
+      ? "↩️ <b>Remboursement enregistré</b>"
+      : existingReservation
+        ? "💳 <b>Paiement reçu sur une réservation</b>"
+        : "✅ <b>Réservation confirmée après paiement en ligne</b>";
+  const lines = [
+    title,
+    "",
+    `<b>Gîte</b>: ${escapeHtml(payload.gite.nom.slice(0, 160))}`,
+    `<b>Séjour</b>: du ${formatBookedDateInput(payload.date_entree)} au ${formatBookedDateInput(payload.date_sortie)} (${payload.pricing_snapshot.nb_nuits} nuit(s))`,
+    `<b>Voyageurs</b>: ${payload.nb_adultes} adulte(s), ${payload.nb_enfants_2_17} enfant(s)`,
+    ...bookingGuestDetails(payload),
+    `<b>Options</b>: ${buildBookingOptionsSummary(payload)}`,
+    `<b>Total du séjour</b>: ${formatPrice(payment.total_cents / 100)}`,
+    `<b>${!review && payment.purpose === "deposit" ? "Arrhes reçues" : "Paiement reçu"}</b>: ${formatPrice(payment.paid_amount_cents / 100)} (Stripe)`,
+  ];
+  if (review)
+    lines.push(
+      "<b>Suivi</b>: contrôler le dossier et le règlement avant toute confirmation.",
+      payment.review_reason
+        ? escapeHtml(payment.review_reason.slice(0, 400))
+        : "",
+    );
+  else if (refunded)
+    lines.push(
+      `<b>Montant remboursé</b>: ${formatPrice(payment.refunded_amount_cents / 100)}`,
+      "Le remboursement n’annule pas automatiquement le séjour.",
+    );
+  else {
+    const remaining =
+      payment.remaining_cents ??
+      Math.max(0, payment.total_cents - payment.paid_amount_cents);
+    lines.push(
+      `<b>Solde à régler sur place</b>: ${formatPrice(remaining / 100)}`,
+    );
+    if (!remaining) lines.push("Le séjour est réglé en totalité.");
+    if (!existingReservation)
+      lines.push("Aucune approbation manuelle n’est nécessaire.");
+  }
+  lines.push(
+    bookingManagementLink(
+      payload,
+      existingReservation ? payload.id : payload.approved_reservation_id,
+    ),
+  );
+  return lines.filter(Boolean).join("\n");
 };
 
-export const buildGiteCheckedMessage = (name: string, checkedAt: Date, mentions: string[] = [], checkedBy?: string | null) => [
-  `✅ <b>Gîte ${escapeHtml(name)} checké !</b>`,
-  checkedBy ? `Par ${escapeHtml(checkedBy)}` : "",
-  escapeHtml(formatDateTimeFr(checkedAt)),
-  mentions.map(escapeHtml).join(" "),
-].filter(Boolean).join("\n");
-
-export const notifyGiteCheckedOnTelegram = async (name: string, checkedAt: Date, checkedBy?: string | null) => {
+export const notifyBookingRequestApprovedOnTelegram = async (
+  payload: BookingRequestTelegramPayload,
+) => {
   const config = readTelegramNotificationConfig();
-  if (!config.notify_gite_checked) return { sent_count: 0, skipped_reason: "event_disabled" };
-  return sendTelegramMessage(buildGiteCheckedMessage(name, checkedAt, config.gite_check_mentions, checkedBy), config);
+  if (!config.notify_booking_request_approved)
+    return { sent_count: 0, skipped_reason: "event_disabled" as const };
+  return sendTelegramMessage(
+    buildBookingRequestApprovedTelegramMessage(payload),
+    config,
+  );
 };
 
-export const notifyCleaningCompletedOnTelegram = async (name: string, completedAt: Date, completedBy?: string | null) => {
+export const buildGiteCheckedMessage = (
+  name: string,
+  checkedAt: Date,
+  mentions: string[] = [],
+  checkedBy?: string | null,
+) =>
+  [
+    `✅ <b>Gîte ${escapeHtml(name)} checké !</b>`,
+    checkedBy ? `Par ${escapeHtml(checkedBy)}` : "",
+    escapeHtml(formatDateTimeFr(checkedAt)),
+    mentions.map(escapeHtml).join(" "),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+export const notifyGiteCheckedOnTelegram = async (
+  name: string,
+  checkedAt: Date,
+  checkedBy?: string | null,
+) => {
   const config = readTelegramNotificationConfig();
-  return sendTelegramMessage([
-    `🧹 <b>Ménage terminé : ${escapeHtml(name)}</b>`,
-    completedBy ? `Par ${escapeHtml(completedBy)}` : "",
-    escapeHtml(formatDateTimeFr(completedAt)),
-  ].filter(Boolean).join("\n"), config);
+  if (!config.notify_gite_checked)
+    return { sent_count: 0, skipped_reason: "event_disabled" };
+  return sendTelegramMessage(
+    buildGiteCheckedMessage(
+      name,
+      checkedAt,
+      config.gite_check_mentions,
+      checkedBy,
+    ),
+    config,
+  );
+};
+
+export const notifyCleaningCompletedOnTelegram = async (
+  name: string,
+  completedAt: Date,
+  completedBy?: string | null,
+) => {
+  const config = readTelegramNotificationConfig();
+  return sendTelegramMessage(
+    [
+      `🧹 <b>Ménage terminé : ${escapeHtml(name)}</b>`,
+      completedBy ? `Par ${escapeHtml(completedBy)}` : "",
+      escapeHtml(formatDateTimeFr(completedAt)),
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    config,
+  );
 };

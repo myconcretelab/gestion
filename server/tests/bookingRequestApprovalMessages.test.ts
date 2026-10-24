@@ -106,9 +106,9 @@ test("email, aperçu et Telegram indiquent les options et leurs montants", () =>
     assert.doesNotMatch(text, /L'option draps est bien notée/);
   }
   const createdTelegram = buildBookingRequestCreatedMessage(payload as any);
-  assert.match(createdTelegram, /Draps \(2 lit\(s\)\) : 24/);
+  assert.match(createdTelegram, /Draps : 12.*× 2 lits = 24/);
   const telegram = buildBookingRequestApprovedTelegramMessage(payload as any);
-  assert.match(telegram, /Draps \(2 lit\(s\)\) : 24/);
+  assert.match(telegram, /Draps : 12.*× 2 lits = 24/);
   assert.match(telegram, /Ménage : 60/);
   assert.match(telegram, /Camille &lt;Test&gt;/);
   assert.match(telegram, /La Grée &amp; Co/);

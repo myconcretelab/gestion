@@ -1,5 +1,10 @@
 import { sendBookingPaymentEmails } from "../../services/bookingRequestEmail.js";
+import { env } from "../../config/env.js";
 import { buildBookingConfirmation } from "./confirmation.js";
+import {
+  queueBookingPaymentTelegram,
+  runBookingTelegramJobBatch,
+} from "./telegram.js";
 import {
   applyReservationLinkSession,
   sendReservationLinkReceipt,
@@ -248,6 +253,7 @@ export const deliverPaymentNotification = async (id: string) => {
         payment_link: true,
       },
     });
+    await queueBookingPaymentTelegram(payment);
     if (payment.reservation_id && payment.reservation) {
       await sendReservationLinkReceipt(payment);
       await prisma.bookingPayment.update({
@@ -441,6 +447,8 @@ export const startBookingPaymentsWorker = () => {
     running = true;
     try {
       await reconcileBookingPayments();
+      if (env.ORGANIZATION_JOB_WORKER_ENABLED)
+        await runBookingTelegramJobBatch();
     } finally {
       running = false;
     }
