@@ -46,6 +46,12 @@ Le détail d’une demande et la fiche de réservation affichent les montants en
 
 Les emails de confirmation au client et au propriétaire contiennent le détail des options, le paiement reçu, le solde et la référence. Aucun email d’attente d’approbation n’est envoyé pour le parcours carte.
 
+## Présentation des fiches WordPress locales
+
+Le partage du code par liens symboliques ne synchronise pas la base WordPress. Pour retrouver la présentation des fiches de production, attribuer aux pages locales le modèle `page-gite` (métadonnée `_wp_page_template`) et le gîte local (`_booked_default_gite_id`). Ce modèle apporte la galerie, le contenu à gauche et le formulaire Booked à droite ; les colonnes s’empilent sur mobile. Éviter de conserver un second calendrier ou une seconde galerie dans le corps de la page. Sauvegarder le contenu et les métadonnées avant de modifier une attribution existante.
+
+La page `test-reservation-options` est une page d’essai du formulaire seul. Les fiches locales de démonstration permettent de tester le parcours complet dans la présentation du site.
+
 ## Vérifications
 
 - `npm run test` et `npm run build` dans Gestion.
