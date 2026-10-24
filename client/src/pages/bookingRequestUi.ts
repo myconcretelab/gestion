@@ -1,5 +1,17 @@
 import type { BookingRequest, BookingRequestStatus } from "../utils/types";
 
+export const getBookingRequestOptionLines = (request: BookingRequest) => {
+  const options = request.options;
+  const prices = request.pricing_snapshot.options_detail;
+  return [
+    { enabled: options.draps?.enabled, label: `Draps (${options.draps?.nb_lits ?? 0} lit(s))`, amount: prices?.draps },
+    { enabled: options.linge_toilette?.enabled, label: `Linge de toilette (${options.linge_toilette?.nb_personnes ?? 0} personne(s))`, amount: prices?.linge },
+    { enabled: options.menage?.enabled, label: "Ménage", amount: prices?.menage },
+    { enabled: options.depart_tardif?.enabled, label: "Départ tardif", amount: prices?.depart_tardif },
+    { enabled: options.chiens?.enabled, label: `Chiens (${options.chiens?.nb ?? 0})`, amount: prices?.chiens },
+  ].filter((line) => line.enabled);
+};
+
 export const requestStatusLabels: Record<BookingRequestStatus, string> = {
   pending: "À traiter",
   approved: "Approuvée",

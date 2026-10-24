@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildApprovedReservationHref, formatBookingRequestCreatedAt } from "../src/pages/bookingRequestUi";
+import { buildApprovedReservationHref, formatBookingRequestCreatedAt, getBookingRequestOptionLines } from "../src/pages/bookingRequestUi";
 
 const now = new Date(2026, 7, 19, 18, 30);
+
+test("affiche le chien et sa quantité avec le montant enregistré, y compris offert", () => {
+  const request = { options: { chiens: { enabled: true, nb: 1 } }, pricing_snapshot: { options_detail: { chiens: 15 } } } as any;
+  assert.deepEqual(getBookingRequestOptionLines(request), [{ enabled: true, label: "Chiens (1)", amount: 15 }]);
+  request.pricing_snapshot.options_detail.chiens = 0;
+  assert.equal(getBookingRequestOptionLines(request)[0].amount, 0);
+  request.options.chiens.enabled = false;
+  assert.deepEqual(getBookingRequestOptionLines(request), []);
+});
 
 test("formats recent booking requests with relative French day labels", () => {
   assert.match(

@@ -19994,6 +19994,37 @@ button.personal-expenses-status:disabled {
   flex-wrap: wrap;
 }
 
+.booking-request-detail-page__options {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+}
+
+.booking-request-detail-page__options h2 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.booking-request-detail-page__options ul {
+  list-style: none;
+  padding: 0;
+}
+
+.booking-request-detail-page__options li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.booking-request-detail-page__options-editor fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .booking-requests-page__pricing {
   display: grid;
   gap: 8px;

@@ -356,6 +356,33 @@ const resolveOptionAmounts = (params: {
   };
 };
 
+// Editing services must keep the accommodation and tax already quoted to the guest.
+export const reviseBookingRequestOptions = (params: {
+  gite: BookedQuoteGite;
+  options: OptionsInput;
+  quote: BookingQuote;
+  nbAdultes: number;
+}) => {
+  const options = normalizeOptionsForGite(params.gite, params.options);
+  if (params.options.chiens?.enabled && !options.chiens?.enabled) {
+    throw new BookedValidationError({ code: "pets_not_allowed", message: "Autorisez les animaux pour ce séjour avant d’ajouter un chien." });
+  }
+  const quote = params.quote;
+  if (!Number.isFinite(quote.total_global) || !Number.isFinite(quote.total_options) || !(quote.nb_nuits > 0)) {
+    throw new BookedValidationError({ code: "invalid_quote", message: "L’estimation de cette demande est incomplète. Vérifiez les dates avant de modifier les options.", statusCode: 409 });
+  }
+  const amounts = resolveOptionAmounts({ gite: params.gite, options, nbNuits: quote.nb_nuits, nbAdultes: params.nbAdultes });
+  return {
+    options,
+    quote: {
+      ...quote,
+      total_options: amounts.total_options,
+      options_detail: amounts.options_detail,
+      total_global: round2(quote.total_global - quote.total_options + amounts.total_options),
+    },
+  };
+};
+
 export const computeSeasonQuote = async (params: {
   gite: BookedQuoteGite;
   dateEntree: Date;

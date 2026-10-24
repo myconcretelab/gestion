@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
@@ -13,6 +13,7 @@ import {
   getBookingRequestHoldExpiresAt,
   hydrateBookingRequest,
   parseBookedDateInput,
+  reviseBookingRequestOptions,
   type BookingQuote,
 } from "../services/booked.js";
 import { buildBookingRequestApprovedSms, sendBookingRequestApprovedEmail, sendBookingRequestRejectedEmail } from "../services/bookingRequestEmail.js";
@@ -22,6 +23,7 @@ import { round2 } from "../utils/money.js";
 import { sendOvhSms } from "../services/ovhSms.js";
 import { notifyBookingRequestApprovedOnTelegram } from "../services/telegramNotifications.js";
 import type { OptionsInput } from "../services/contractCalculator.js";
+import { optionsSchema } from "./shared/rentalDocument.js";
 
 const router = Router();
 
@@ -44,6 +46,16 @@ const internalNoteSchema = z.object({
 const dateUpdateSchema = z.object({
   date_entree: z.string().trim().min(1),
   date_sortie: z.string().trim().min(1),
+});
+
+const optionsUpdateSchema = z.object({
+  options: optionsSchema.pick({ draps: true, linge_toilette: true, menage: true, depart_tardif: true, chiens: true, regle_animaux_acceptes: true }).superRefine((options, ctx) => {
+    for (const [key, count] of [["draps", options.draps?.nb_lits], ["linge_toilette", options.linge_toilette?.nb_personnes], ["chiens", options.chiens?.nb]] as const) {
+      if (options[key]?.enabled && !(Number(count) > 0)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "Indiquez une quantité supérieure à zéro pour l’option choisie." });
+      }
+    }
+  }),
 });
 
 const quoteGiteSelect = {
@@ -117,6 +129,9 @@ const buildReservationComment = (internalNote?: string | null, clientMessage?: s
 };
 
 const mapBookedError = (error: unknown) => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+    return { status: 409, body: { error: "La demande a été modifiée entre-temps. Rechargez sa fiche avant de réessayer.", code: "request_changed" } };
+  }
   if (error instanceof BookedValidationError) {
     return {
       status: error.statusCode,
@@ -259,6 +274,44 @@ router.post("/:id/dates", async (req, res, next) => {
     if (mapped) {
       return res.status(mapped.status).json(mapped.body);
     }
+    next(error);
+  }
+});
+
+router.post("/:id/options", async (req, res, next) => {
+  try {
+    await expireStaleBookingRequests();
+    const payload = optionsUpdateSchema.parse(req.body ?? {});
+    const bookingRequest = await loadBookingRequest(req.params.id);
+    if (!bookingRequest) return res.status(404).json({ error: "Demande introuvable." });
+    ensureBookingRequestPending(bookingRequest);
+    const gite = await prisma.gite.findUnique({ where: { id: bookingRequest.gite_id }, select: quoteGiteSelect });
+    if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
+
+    const previous = fromJsonString<OptionsInput>(bookingRequest.options, {});
+    const options: OptionsInput = { ...previous, ...payload.options };
+    for (const key of ["draps", "linge_toilette", "menage", "depart_tardif", "chiens"] as const) {
+      if (payload.options[key]) options[key] = { ...previous[key], ...payload.options[key] };
+    }
+    const revised = reviseBookingRequestOptions({
+      gite, options,
+      quote: fromJsonString<BookingQuote>(bookingRequest.pricing_snapshot, {} as BookingQuote),
+      nbAdultes: bookingRequest.nb_adultes,
+    });
+    const updated = await prisma.bookingRequest.update({
+      where: {
+        id: bookingRequest.id,
+        status: "pending",
+        hold_expires_at: { gt: new Date() },
+        updatedAt: bookingRequest.updatedAt,
+      },
+      data: { options: encodeJsonField(revised.options), pricing_snapshot: encodeBookingRequestPricingSnapshot(revised.quote) },
+      include: bookingRequestInclude,
+    });
+    return res.json(toBookingRequestPayload(updated));
+  } catch (error) {
+    const mapped = mapBookedError(error);
+    if (mapped) return res.status(mapped.status).json(mapped.body);
     next(error);
   }
 });
@@ -422,7 +475,7 @@ router.post("/:id/approve", async (req, res, next) => {
       });
 
       return tx.bookingRequest.update({
-        where: { id: bookingRequest.id },
+        where: { id: bookingRequest.id, status: "pending", updatedAt: bookingRequest.updatedAt, hold_expires_at: { gt: new Date() } },
         data: {
           status: "approved",
           decided_at: new Date(),

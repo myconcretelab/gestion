@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { apiFetch, isAbortError, isApiError } from "../utils/api";
 import { formatDate, formatEuro } from "../utils/format";
-import type { BookingRequest } from "../utils/types";
+import type { BookingRequest, ContratOptions, Gite } from "../utils/types";
+import { computeReservationOptionsPreview } from "../utils/reservationOptions";
 import { buildPhoneHref, formatPhoneForDisplay } from "../utils/phone";
 import { dispatchBookingRequestsChanged } from "../utils/bookingRequestsBadge";
 import { dispatchRecentImportedReservationsCreated } from "../utils/recentImportsBadge";
@@ -16,10 +17,12 @@ import {
   formatBookingRequestCreatedAt,
   getRequestTimelineLabel,
   getRequestTimelineValue,
+  getBookingRequestOptionLines,
   requestStatusDetail,
   requestStatusLabels,
 } from "./bookingRequestUi";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
+import ReservationOptionsEditor from "./shared/ReservationOptionsEditor";
 
 type ApprovalEmailComposerState = {
   requestId: string;
@@ -56,6 +59,10 @@ const BookingRequestDetailPage = () => {
   const [savingDates, setSavingDates] = useState(false);
   const [savingInternalNote, setSavingInternalNote] = useState(false);
   const [emailComposer, setEmailComposer] = useState<ApprovalEmailComposerState | null>(null);
+  const [optionsEditor, setOptionsEditor] = useState<{ options: ContratOptions; gite: Gite } | null>(null);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [savingOptions, setSavingOptions] = useState(false);
+  const editingStay = Boolean(optionsEditor) || loadingOptions || savingOptions || Boolean(dateEditor) || savingDates;
   const phoneHref = buildPhoneHref(request?.telephone);
   const gitePhoto = request?.gite?.photos?.[0] ?? null;
 
@@ -63,6 +70,10 @@ const BookingRequestDetailPage = () => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setNotice(null);
+    setOptionsEditor(null);
+    setDateEditor(null);
+    setEmailComposer(null);
 
     apiFetch<BookingRequest>(`/booking-requests/${requestId}`, { signal: controller.signal })
       .then((loadedRequest) => {
@@ -238,6 +249,44 @@ const BookingRequestDetailPage = () => {
     }
   };
 
+  const openOptionsEditor = async () => {
+    if (!request || request.status !== "pending") return;
+    setLoadingOptions(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const gite = await apiFetch<Gite>(`/gites/${request.gite_id}`);
+      setOptionsEditor({ gite, options: {
+        ...request.options,
+        regle_animaux_acceptes: request.options.regle_animaux_acceptes ?? gite.regle_animaux_acceptes,
+      } });
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Impossible de charger les options.");
+    } finally {
+      setLoadingOptions(false);
+    }
+  };
+
+  const saveOptionsEditor = async () => {
+    if (!request || !optionsEditor) return;
+    setSavingOptions(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await apiFetch<BookingRequest>(`/booking-requests/${request.id}/options`, {
+        method: "POST", json: { options: optionsEditor.options },
+      });
+      setRequest(updated);
+      setOptionsEditor(null);
+      setEmailComposer(null);
+      setNotice("Options enregistrées et total mis à jour. L’email d’approbation reprendra ces options. Aucun email n’a été envoyé.");
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Mise à jour des options impossible.");
+    } finally {
+      setSavingOptions(false);
+    }
+  };
+
   const sendComposedApproval = async () => {
     if (!emailComposer || !request || emailComposer.requestId !== request.id) return;
     await approveRequest({
@@ -302,7 +351,7 @@ const BookingRequestDetailPage = () => {
                     type="button"
                     className="button-secondary booking-requests-page__date-edit-button"
                     onClick={openDateEditor}
-                    disabled={savingDates || Boolean(submittingAction)}
+                    disabled={editingStay || Boolean(submittingAction)}
                   >
                     Modifier les dates
                   </button>
@@ -351,6 +400,49 @@ const BookingRequestDetailPage = () => {
 
             <div className="booking-request-detail-page__content-grid">
               <div>
+                <section className="booking-request-detail-page__options">
+                  <h2>Options du séjour</h2>
+                  {getBookingRequestOptionLines(request).length ? (
+                    <ul>
+                      {getBookingRequestOptionLines(request).map((line) => (
+                        <li key={line.label}><span>{line.label}</span><strong>{typeof line.amount === "number" ? formatEuro(line.amount) : ""}</strong></li>
+                      ))}
+                    </ul>
+                  ) : <p>Aucune option choisie.</p>}
+                  {request.status === "pending" && !optionsEditor ? (
+                    <button type="button" className="button-secondary" onClick={() => void openOptionsEditor()} disabled={editingStay || Boolean(submittingAction)}>
+                      {loadingOptions ? "Chargement…" : "Modifier les options"}
+                    </button>
+                  ) : null}
+                  {optionsEditor ? (
+                    <div className="booking-request-detail-page__options-editor">
+                      <p>Les tarifs ci-dessous s’ajoutent au séjour. Le prix de l’hébergement est conservé.</p>
+                      <fieldset disabled={savingOptions}>
+                        <label className="checkbox-row">
+                          <input type="checkbox" checked={optionsEditor.options.regle_animaux_acceptes ?? false}
+                            onChange={(event) => setOptionsEditor({ ...optionsEditor, options: { ...optionsEditor.options, regle_animaux_acceptes: event.target.checked,
+                              ...(!event.target.checked ? { chiens: { ...optionsEditor.options.chiens, enabled: false } } : {}),
+                            } })} />
+                          Animaux acceptés pour ce séjour
+                        </label>
+                        <ReservationOptionsEditor
+                          options={optionsEditor.options}
+                          preview={computeReservationOptionsPreview(optionsEditor.options, { nights: request.nb_nuits, gite: optionsEditor.gite })}
+                          gite={optionsEditor.gite}
+                          guestCount={request.nb_adultes + request.nb_enfants_2_17}
+                          onChange={(options) => setOptionsEditor({ ...optionsEditor, options })}
+                          layout="compact"
+                          showDeclaredToggle={false}
+                        />
+                      </fieldset>
+                      <p><strong>Total des options : {formatEuro(computeReservationOptionsPreview(optionsEditor.options, { nights: request.nb_nuits, gite: optionsEditor.gite }).total)}</strong></p>
+                      <div className="actions">
+                        <button type="button" onClick={() => void saveOptionsEditor()} disabled={savingOptions}>{savingOptions ? "Enregistrement…" : "Enregistrer les options"}</button>
+                        <button type="button" className="button-secondary" onClick={() => setOptionsEditor(null)} disabled={savingOptions}>Annuler</button>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
                 {request.message_client ? (
                   <div className="booking-request-detail-page__message">
                     <strong>Message du client</strong>
@@ -425,13 +517,13 @@ const BookingRequestDetailPage = () => {
 
             {request.status === "pending" ? (
               <div className="actions booking-request-detail-page__actions">
-                <button type="button" onClick={() => void openApprovalEmailComposer()} disabled={Boolean(submittingAction)}>
+                <button type="button" onClick={() => void openApprovalEmailComposer()} disabled={Boolean(submittingAction) || editingStay}>
                   {submittingAction === "approve-email" ? "Préparation…" : "Prévisualiser puis approuver"}
                 </button>
-                <button type="button" className="button-secondary" onClick={() => void approveRequest()} disabled={Boolean(submittingAction)}>
+                <button type="button" className="button-secondary" onClick={() => void approveRequest()} disabled={Boolean(submittingAction) || editingStay}>
                   {submittingAction === "approve" ? "Envoi…" : request.email ? "Approuver sans relecture" : "Approuver sans email"}
                 </button>
-                <button type="button" className="button-secondary" onClick={() => void rejectRequest()} disabled={Boolean(submittingAction)}>
+                <button type="button" className="button-secondary" onClick={() => void rejectRequest()} disabled={Boolean(submittingAction) || editingStay}>
                   {submittingAction === "reject" ? "Refus…" : "Rejeter"}
                 </button>
               </div>
