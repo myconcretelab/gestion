@@ -205,7 +205,10 @@ const buildApprovedTemplateValues = (
                     context.payment.total_cents -
                       context.payment.paid_amount_cents,
                   )) > 0
-              ? "Solde à régler sur place : " +
+              ? "Vous avez déjà réglé " +
+                formatPrice(context.payment.paid_amount_cents / 100) +
+                (context.payment.purpose === "deposit" ? " d’arrhes." : ".") +
+                " Le solde à régler sur place est de " +
                 formatPrice(
                   (context.payment.remaining_cents ??
                     Math.max(

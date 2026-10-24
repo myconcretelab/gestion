@@ -118,7 +118,11 @@ test("un ancien texte « total à régler sur place » s’adapte au solde réel
   const partial = buildBookingEmailMessage("bookingRequestApproved", payload, {
     payment: { ...payment, purpose: "deposit", paid_amount_cents: 9000 },
   });
-  assert.match(partial.text, /Solde à régler sur place : 270,00/);
+  assert.match(
+    partial.text,
+    /Vous avez déjà réglé 90,00\s*€ d’arrhes\. Le solde à régler sur place est de 270,00\s*€/,
+  );
+  assert.match(partial.html, /Vous avez déjà réglé 90,00/);
 });
 test("accusé de réception et refus conservent leur statut ; les coordonnées client restent dans la notification propriétaire", () => {
   const received = buildBookingEmailMessage("bookingRequestReceived", payload, {
