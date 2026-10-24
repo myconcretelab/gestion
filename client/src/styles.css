@@ -20025,6 +20025,10 @@ button.personal-expenses-status:disabled {
   border: 0;
 }
 
+.booking-request-detail-page__options-editor .checkbox-row input {
+  accent-color: var(--primary);
+}
+
 .booking-requests-page__pricing {
   display: grid;
   gap: 8px;
