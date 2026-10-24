@@ -1,4 +1,5 @@
 export type ActionIconName =
+  | "link"
   | "menu"
   | "chevron"
   | "edit"
@@ -15,6 +16,11 @@ export type ActionIconName =
   | "check";
 
 const paths: Record<ActionIconName, JSX.Element> = {
+  link: (
+    <>
+      <path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M13 7l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" />
+    </>
+  ),
   menu: (
     <>
       <path d="M9 6h11M9 12h11M9 18h11" />

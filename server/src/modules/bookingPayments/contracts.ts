@@ -1,6 +1,6 @@
 import prisma from "../../db/prisma.js";
 import { hydrateBookingRequest } from "../../services/booked.js";
-import { cents } from "./service.js";
+import { cents } from "./money.js";
 
 export const paidBookingForReservation = async (
   reservationId?: string | null,
@@ -25,14 +25,36 @@ export const contractStripeTracking = async (
     arrhes: number;
   },
 ) => {
-  const paid = await paidBookingForReservation(reservationId);
-  if (!paid) return {};
-  const { request, payment } = paid;
+  if (!reservationId) return {};
+  const summary = (await reservationPaymentsForIds([reservationId])).get(
+    reservationId,
+  );
+  if (!summary) return {};
+  if (summary.status === "requires_review")
+    throw Object.assign(
+      new Error("Vérifiez le paiement Stripe avant de renseigner le contrat."),
+      { statusCode: 409 },
+    );
+  const original = await paidBookingForReservation(reservationId);
+  const direct = original
+    ? null
+    : await prisma.bookingPayment.findFirst({
+        where: { reservation_id: reservationId, paid_at: { not: null } },
+        include: { payment_link: true },
+        orderBy: { createdAt: "asc" },
+      });
+  const recorded = original
+    ? {
+        gite_id: original.request.gite_id,
+        start: original.request.date_entree.toISOString(),
+        end: original.request.date_sortie.toISOString(),
+      }
+    : JSON.parse(direct!.payment_link!.terms_json);
   if (
-    request.gite_id !== terms.giteId ||
-    +request.date_entree !== +terms.dateDebut ||
-    +request.date_sortie !== +terms.dateFin ||
-    payment.total_cents !== cents(terms.total)
+    recorded.gite_id !== terms.giteId ||
+    +new Date(recorded.start) !== +terms.dateDebut ||
+    +new Date(recorded.end) !== +terms.dateFin ||
+    cents(summary.total) !== cents(terms.total)
   ) {
     throw Object.assign(
       new Error(
@@ -41,52 +63,98 @@ export const contractStripeTracking = async (
       { statusCode: 409 },
     );
   }
-  const amount = payment.paid_amount_cents - payment.refunded_amount_cents;
+  const amount = cents(summary.total - summary.remaining);
   const arrhesPaid = amount >= cents(terms.arrhes);
+  const priorContract =
+    summary.offline_received > 0
+      ? await prisma.contrat.findFirst({
+          where: { reservation_id: reservationId },
+          orderBy: { date_creation: "desc" },
+        })
+      : null;
   return {
     statut_paiement_arrhes: arrhesPaid ? "recu" : "non_recu",
-    date_paiement_arrhes: arrhesPaid ? payment.paid_at : null,
-    mode_paiement_arrhes: arrhesPaid ? "Stripe" : null,
-    statut_paiement_solde:
-      amount >= payment.total_cents ? "regle" : "non_regle",
+    date_paiement_arrhes: arrhesPaid
+      ? priorContract?.date_paiement_arrhes || new Date(summary.paid_at!)
+      : null,
+    mode_paiement_arrhes: arrhesPaid
+      ? priorContract?.mode_paiement_arrhes || "Stripe"
+      : null,
+    statut_paiement_solde: summary.remaining <= 0 ? "regle" : "non_regle",
   };
 };
 export const reservationPaymentsForIds = async (reservationIds: string[]) => {
-  const ids = [...new Set(reservationIds)];
-  if (!ids.length) return new Map();
-  const requests = await prisma.bookingRequest.findMany({
-    where: {
-      approved_reservation_id: { in: ids },
-      status: "approved",
-      payment: { is: { paid_at: { not: null } } },
-    },
-    include: { payment: true },
-  });
+  const receipts = reservationIds.length
+    ? await prisma.bookingPayment.findMany({
+        where: {
+          paid_at: { not: null },
+          OR: [
+            { reservation_id: { in: reservationIds } },
+            {
+              booking_request: {
+                is: {
+                  approved_reservation_id: { in: reservationIds },
+                  status: "approved",
+                },
+              },
+            },
+          ],
+        },
+        include: { booking_request: true, payment_link: true },
+        orderBy: { paid_at: "asc" },
+      })
+    : [];
+  const grouped = new Map<string, typeof receipts>();
+  for (const row of receipts) {
+    const id =
+      row.reservation_id || row.booking_request?.approved_reservation_id;
+    if (id) grouped.set(id, [...(grouped.get(id) || []), row]);
+  }
   return new Map(
-    requests
-      .filter((request) => request.payment && request.approved_reservation_id)
-      .map((request) => {
-        const payment = request.payment!;
-        const amount = Math.max(
-          0,
-          payment.paid_amount_cents - payment.refunded_amount_cents,
-        );
-        const quote = hydrateBookingRequest(request).pricing_snapshot;
-        return [
-          request.approved_reservation_id!,
-          {
-            amount_paid: amount / 100,
-            deposit: quote.arrhes_theoriques,
-            total: payment.total_cents / 100,
-            remaining: Math.max(0, payment.total_cents - amount) / 100,
-            refunded_amount: payment.refunded_amount_cents / 100,
-            purpose: payment.purpose,
-            status: payment.status,
-            paid_at: payment.paid_at,
-            request_id: request.id,
-          },
-        ];
-      }),
+    [...grouped].map(([id, rows]) => {
+      const last = rows[rows.length - 1];
+      const request = rows.find((row) => row.booking_request)?.booking_request;
+      const quote = request
+        ? hydrateBookingRequest(request).pricing_snapshot
+        : null;
+      const amount = rows.reduce(
+        (sum, row) => sum + row.paid_amount_cents - row.refunded_amount_cents,
+        0,
+      );
+      const offline = Math.max(
+        0,
+        ...rows.map((row) => row.payment_link?.offline_received_cents || 0),
+      );
+      const refund = rows.reduce(
+        (sum, row) => sum + row.refunded_amount_cents,
+        0,
+      );
+      const remaining = Math.max(0, last.total_cents - amount - offline);
+      return [
+        id,
+        {
+          amount_paid: Math.max(0, amount) / 100,
+          offline_received: offline / 100,
+          deposit:
+            quote?.arrhes_theoriques ??
+            (last.payment_link?.deposit_cents || 0) / 100,
+          total: last.total_cents / 100,
+          remaining: remaining / 100,
+          refunded_amount: refund / 100,
+          purpose:
+            amount >= last.total_cents
+              ? "full"
+              : rows.every((row) => row.purpose === "deposit")
+                ? "deposit"
+                : "balance",
+          status: rows.some((row) => row.status === "requires_review")
+            ? "requires_review"
+            : last.status,
+          paid_at: last.paid_at,
+          request_id: request?.id ?? null,
+        },
+      ];
+    }),
   );
 };
 export const reservationPaymentPrefill = async (reservationId: string) =>

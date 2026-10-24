@@ -1651,6 +1651,8 @@ model Reservation {
 
   gite                          Gite?                   @relation(fields: [gite_id], references: [id])
   placeholder                   ReservationPlaceholder? @relation(fields: [placeholder_id], references: [id])
+  payment_links                 ReservationPaymentLink[]
+  online_payments               BookingPayment[]
   approved_booking_requests     BookingRequest[]        @relation("ApprovedBookingRequest")
   arrival_cleaning_checked_by   AppUser?                @relation("ArrivalCleaningCheckedBy", fields: [arrival_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
   departure_cleaning_checked_by AppUser?                @relation("DepartureCleaningCheckedBy", fields: [departure_cleaning_checked_by_user_id], references: [id], onDelete: SetNull)
@@ -1692,10 +1694,34 @@ model GiteSeasonRate {
   @@map("gite_season_rates")
 }
 
+model ReservationPaymentLink {
+  id                     String   @id @default(cuid())
+  organization_id        String   @default("org_historical_broceliande")
+  reservation_id         String
+  code                   String   @unique
+  purpose                String
+  amount_cents           Int
+  total_cents            Int
+  deposit_cents          Int
+  offline_received_cents Int      @default(0)
+  terms_json             String
+  status                 String   @default("active")
+  expires_at             DateTime
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  reservation            Reservation @relation(fields: [reservation_id], references: [id], onDelete: Restrict)
+  payments               BookingPayment[]
+
+  @@index([organization_id, reservation_id, status])
+  @@map("reservation_payment_links")
+}
+
 model BookingPayment {
   id                    String   @id @default(cuid())
   organization_id       String   @default("org_historical_broceliande")
-  booking_request_id    String   @unique
+  booking_request_id    String?  @unique
+  reservation_id        String?
+  payment_link_id       String?
   purpose               String
   amount_cents          Int
   total_cents           Int
@@ -1713,7 +1739,9 @@ model BookingPayment {
   notification_lease_at DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
-  booking_request       BookingRequest @relation(fields: [booking_request_id], references: [id], onDelete: Restrict)
+  reservation           Reservation? @relation(fields: [reservation_id], references: [id], onDelete: Restrict)
+  payment_link          ReservationPaymentLink? @relation(fields: [payment_link_id], references: [id], onDelete: Restrict)
+  booking_request       BookingRequest? @relation(fields: [booking_request_id], references: [id], onDelete: Restrict)
 
   @@index([organization_id, status, createdAt])
   @@map("booking_payments")

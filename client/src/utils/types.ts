@@ -356,7 +356,7 @@ export type ReservationLinkedContract = {
 export type Reservation = {
   online_payment?: {
     amount_paid: number; deposit: number; total: number; remaining: number;
-    paid_at: string; purpose: string; status: string; refunded_amount: number; request_id: string;
+    paid_at: string; purpose: string; status: string; refunded_amount: number; request_id: string | null;
   } | null;
   id: string;
   gite_id?: string | null;

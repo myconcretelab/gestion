@@ -1,0 +1,28 @@
+.reservation-payment-link {
+  width: min(620px, 100%);
+}
+.reservation-payment-link .reservation-details-drawer__body {
+  align-content: start;
+}
+.reservation-payment-link .reservation-details-drawer__header-copy {
+  flex: 1;
+  max-width: none;
+}
+.reservation-payment-link .reservation-details-drawer__header-side {
+  flex: 0 0 auto;
+  width: auto;
+}
+.reservation-payment-link .note,
+.reservation-payment-link h3,
+.reservation-payment-link .field-hint {
+  margin: 0;
+}
+.reservation-payment-link input[type="radio"] {
+  width: auto;
+  accent-color: var(--primary);
+}
+.reservation-payment-link fieldset label > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

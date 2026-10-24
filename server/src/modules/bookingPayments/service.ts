@@ -1,3 +1,7 @@
+import {
+  applyReservationLinkSession,
+  sendReservationLinkReceipt,
+} from "./reservationLinks.js";
 import crypto from "node:crypto";
 import type Stripe from "stripe";
 import prisma from "../../db/prisma.js";
@@ -16,12 +20,8 @@ import {
 import { sendSmtpMail } from "../../services/mailer.js";
 import { buildBookingRequestOptionsTemplateValues } from "@contrats/shared";
 
-export const cents = (amount: number) => {
-  const value = Math.round(amount * 100);
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new Error("Montant de réservation invalide.");
-  return value;
-};
+export { cents } from "./money.js";
+import { cents } from "./money.js";
 export const paymentAmounts = (
   quote: BookingQuote,
   purpose: "deposit" | "full",
@@ -140,6 +140,9 @@ export const applyVerifiedSession = async (
     session.client_reference_id !== payment.id
   )
     return "ignored";
+  if (payment.reservation_id)
+    return applyReservationLinkSession(session, payment.id);
+  if (!payment.booking_request) return "ignored";
   if (session.payment_status !== "paid") {
     if (session.status === "expired") {
       await prisma.$transaction(async (tx) => {
@@ -149,7 +152,7 @@ export const applyVerifiedSession = async (
         });
         if (changed.count)
           await tx.bookingRequest.updateMany({
-            where: { id: payment.booking_request_id, status: "pending" },
+            where: { id: payment.booking_request_id!, status: "pending" },
             data: { status: "expired", decided_at: new Date() },
           });
       });
@@ -162,13 +165,14 @@ export const applyVerifiedSession = async (
       : session.payment_intent?.id;
   if (!intent) return "ignored";
   return prisma.$transaction(async (tx) => {
-    await lockBookingGite(tx, payment.booking_request.gite_id);
+    await lockBookingGite(tx, payment.booking_request!.gite_id);
     const current = await tx.bookingPayment.findUniqueOrThrow({
       where: { id: payment.id },
       include: { booking_request: true },
     });
     if (current.paid_at) return "duplicate";
     const request = current.booking_request;
+    if (!request) return "ignored";
     let review =
       session.currency !== current.currency ||
       session.amount_total !== current.amount_cents
@@ -242,8 +246,21 @@ export const deliverPaymentNotification = async (id: string) => {
   try {
     const payment = await prisma.bookingPayment.findUniqueOrThrow({
       where: { id },
-      include: { booking_request: { include: { gite: true } } },
+      include: {
+        booking_request: { include: { gite: true } },
+        reservation: { include: { gite: true } },
+      },
     });
+    if (payment.reservation_id && payment.reservation) {
+      await sendReservationLinkReceipt(payment);
+      await prisma.bookingPayment.update({
+        where: { id },
+        data: { notification_sent_at: new Date(), notification_lease_at: null },
+      });
+      return;
+    }
+    if (!payment.booking_request)
+      throw new Error("Demande de paiement introuvable.");
     const request = hydrateBookingRequest(payment.booking_request);
     const review = payment.status === "requires_review";
     const refund = payment.refunded_amount_cents > 0;
@@ -294,7 +311,10 @@ export const refreshPayment = async (id: string) => {
   let payment = await prisma.bookingPayment.findUniqueOrThrow({
     where: { id },
   });
-  if (payment.status === "pending" && !payment.stripe_session_id) {
+  if (
+    ["pending", "creating"].includes(payment.status) &&
+    !payment.stripe_session_id
+  ) {
     const { stripe } = await getBookingStripe();
     let found = false;
     for await (const session of stripe.checkout.sessions.list({
@@ -305,9 +325,17 @@ export const refreshPayment = async (id: string) => {
         session.client_reference_id === payment.id &&
         session.metadata?.booking_payment_id === payment.id
       ) {
-        await prisma.bookingPayment.update({
-          where: { id },
-          data: { stripe_session_id: session.id },
+        await prisma.bookingPayment.updateMany({
+          where: {
+            id,
+            paid_at: null,
+            status: { in: ["pending", "creating"] },
+            stripe_session_id: null,
+          },
+          data: {
+            stripe_session_id: session.id,
+            ...(payment.status === "creating" ? { status: "pending" } : {}),
+          },
         });
         await applyVerifiedSession(session);
         found = true;
@@ -317,13 +345,18 @@ export const refreshPayment = async (id: string) => {
     if (!found && payment.expires_at.getTime() + 180_000 < Date.now()) {
       await prisma.$transaction(async (tx) => {
         await tx.bookingPayment.updateMany({
-          where: { id, status: "pending", stripe_session_id: null },
+          where: {
+            id,
+            status: { in: ["pending", "creating"] },
+            stripe_session_id: null,
+          },
           data: { status: "expired" },
         });
-        await tx.bookingRequest.updateMany({
-          where: { id: payment.booking_request_id, status: "pending" },
-          data: { status: "expired" },
-        });
+        if (payment.booking_request_id)
+          await tx.bookingRequest.updateMany({
+            where: { id: payment.booking_request_id!, status: "pending" },
+            data: { status: "expired" },
+          });
       });
     }
     payment = await prisma.bookingPayment.findUniqueOrThrow({ where: { id } });
@@ -378,7 +411,7 @@ export const publicPaymentStatus = async (
   return {
     status: updated.status,
     confirmed:
-      updated.booking_request.status === "approved" &&
+      updated.booking_request?.status === "approved" &&
       updated.status === "paid",
     purpose: updated.purpose,
     amount_paid: updated.paid_amount_cents / 100,
@@ -398,7 +431,7 @@ export const reconcileBookingPayments = async () => {
       const rows = await prisma.bookingPayment.findMany({
         where: {
           OR: [
-            { status: "pending" },
+            { status: { in: ["pending", "creating"] } },
             {
               status: {
                 in: [

@@ -157,6 +157,8 @@ test("les modules financiers et les méthodes d'écriture sont identifiés", () 
   assert.equal(isAmountsOnlyApiPath("/contracts/abc/pdf"), true);
   assert.equal(isAmountsOnlyApiPath("/statistics"), true);
   assert.equal(isAmountsOnlyApiPath("/reservations"), false);
+  assert.equal(isAmountsOnlyApiPath("/reservations/stay/payment-links"), true);
+  assert.equal(isAmountsOnlyApiPath("/reservations/stay/payment-links/link/revoke"), true);
   assert.equal(isWriteMethod("PATCH"), true);
   assert.equal(isWriteMethod("GET"), false);
   assert.equal(containsMonetaryFields({ commentaire: "ok", prix_total: 50 }), true);

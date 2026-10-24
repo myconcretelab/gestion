@@ -1,3 +1,4 @@
+import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
 import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import {
@@ -1120,6 +1121,7 @@ const ReservationsPage = () => {
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [paymentLinkReservation, setPaymentLinkReservation] = useState<Reservation | null>(null);
   const [draggedGiteId, setDraggedGiteId] = useState<string | null>(null);
   const [dragOverGiteId, setDragOverGiteId] = useState<string | null>(null);
   const [reorderingTabs, setReorderingTabs] = useState(false);
@@ -6412,6 +6414,7 @@ const ReservationsPage = () => {
                                       onSelect: () => { splitReservationByMonth(reservation).catch((err) => setError((err as Error).message)); },
                                     } satisfies ActionMenuItem] : []),
                                     { id: "options", label: "Options et frais", icon: "options", description: hasFees ? "Des options sont déjà renseignées" : undefined, onSelect: () => toggleDetails(reservation) },
+                                    ...(reservation.gite_id ? [{ id: "payment-link", label: "Lien de paiement Stripe", icon: "link", disabled: isEditing || rowSaveState === "saving", onSelect: () => setPaymentLinkReservation(reservation) } satisfies ActionMenuItem] : []),
                                     ...(reservation.airbnb_url ? [{ id: "airbnb", label: "Ouvrir sur Airbnb", icon: "external", href: reservation.airbnb_url, external: true } satisfies ActionMenuItem] : []),
                                     ...(telephoneHref ? [{ id: "phone", label: "Appeler", description: reservation.telephone ?? undefined, icon: "phone", href: telephoneHref } satisfies ActionMenuItem] : []),
                                     ...(reservation.gite_id ? [
@@ -6573,6 +6576,7 @@ const ReservationsPage = () => {
           </section>
         </div>
       ) : null}
+      {paymentLinkReservation ? <ReservationPaymentLinkDialog reservation={paymentLinkReservation} onClose={() => setPaymentLinkReservation(null)} /> : null}
     </div>
   );
 };

@@ -161,6 +161,7 @@ export const redactMonetaryJson: RequestHandler = (_req, res, next) => {
 };
 
 export const isAmountsOnlyApiPath = (path: string) =>
+  /^\/reservations\/[^/]+\/payment-links(?:\/|$)/.test(path) ||
   [
     "/contracts",
     "/invoices",

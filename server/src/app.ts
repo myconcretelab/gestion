@@ -1,3 +1,4 @@
+import { reservationPaymentLinksRouter, publicReservationPaymentRouter } from "./modules/bookingPayments/linkRoutes.js";
 import { bookingStripeWebhook, bookingPaymentRouter } from "./modules/bookingPayments/routes.js";
 import express from "express";
 import cors from "cors";
@@ -134,6 +135,8 @@ export const createApp = () => {
       ],
     })
   );
+
+  app.use("/p", publicReservationPaymentRouter);
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
@@ -292,6 +295,7 @@ export const createApp = () => {
   app.use("/api/invoices", invoicesRouter);
   app.use("/api/purchase-invoices", createSuperPdpInboxRouter());
   app.use("/api/superpdp-workshop", createSuperPdpWorkshopRouter());
+  app.use("/api/reservations", reservationPaymentLinksRouter);
   app.use("/api/reservations", reservationsRouter);
   app.use("/api/booked", bookingPaymentRouter);
   app.use("/api/booked", bookedRouter);

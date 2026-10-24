@@ -46,6 +46,16 @@ Le détail d’une demande et la fiche de réservation affichent les montants en
 
 Les emails de confirmation au client et au propriétaire contiennent le détail des options, le paiement reçu, le solde et la référence. Aucun email d’attente d’approbation n’est envoyé pour le parcours carte.
 
+## Liens courts depuis une réservation
+
+Dans le menu d’actions d’une ligne de réservation : **Lien de paiement Stripe**. Le panneau propose les arrhes encore dues ou le montant restant du séjour, puis un lien à copier dans un SMS. Un contrat existant fixe les montants ; sinon le calcul utilise les montants de la réservation, ses frais et sa taxe enregistrée. Les règlements Stripe et les paiements reçus renseignés sur le contrat sont déduits. Pour une réservation de plateforme, vérifier les sommes déjà encaissées avant de demander un paiement.
+
+Le lien privé est de la forme `APP_PUBLIC_URL/p/<code aléatoire de 22 caractères>`, valable sept jours. Il ne contient aucune coordonnée du client et sa page n’est pas indexable. Un aperçu SMS en GET ne crée pas de session Stripe : le client doit appuyer sur le bouton de paiement. La session carte expire après environ 31 minutes ; le même lien reste réutilisable tant qu’il est actif. Aucun lien déjà payé ne permet un second paiement.
+
+Chaque reçu est rattaché à la réservation existante, sans nouvelle demande ni réservation. Le contrat et le récapitulatif des paiements cumulent les arrhes et le solde, y compris si les arrhes proviennent initialement de Booked. Un lien peut être annulé ; toute session ouverte doit d’abord être clôturée chez Stripe. Les dates, montants et règlements sont revérifiés au lancement et à la réception du paiement. Un changement concurrent ou un remboursement impose une vérification manuelle plutôt qu’un nouveau prélèvement.
+
+`APP_PUBLIC_URL` doit désigner l’adresse publique HTTPS de Gestion. En local, les liens `http://localhost:4001/p/…` fonctionnent uniquement sur cet ordinateur. Cette version reste limitée au bac à sable Stripe ; les liens et emails de test ne doivent pas être envoyés aux clients comme moyens d’encaissement réels.
+
 ## Présentation des fiches WordPress locales
 
 Le partage du code par liens symboliques ne synchronise pas la base WordPress. Pour retrouver la présentation des fiches de production, attribuer aux pages locales le modèle `page-gite` (métadonnée `_wp_page_template`) et le gîte local (`_booked_default_gite_id`). Ce modèle apporte la galerie, le contenu à gauche et le formulaire Booked à droite ; les colonnes s’empilent sur mobile. Éviter de conserver un second calendrier ou une seconde galerie dans le corps de la page. Sauvegarder le contenu et les métadonnées avant de modifier une attribution existante.
@@ -57,4 +67,4 @@ La page `test-reservation-options` est une page d’essai du formulaire seul. Le
 - `npm run test` et `npm run build` dans Gestion.
 - Dans Booked, importer et exécuter `runBookingFlowChecks`, `runBookingI18nChecks` et `runBookingPaymentChecks` avec Chromium Playwright.
 - Essais du vrai bac à sable : totalité, refus de carte, arrhes et annulation ; vérifier le reçu et Mailpit, ainsi que l’absence de double réservation.
-- Les migrations SQLite et PostgreSQL ajoutent uniquement le registre `booking_payments`. Appliquer les migrations à la base locale après sauvegarde. Un futur déploiement serveur nécessitera une sauvegarde récupérable et le déploiement complet ; un simple déploiement léger ne suffit pas.
+- Les migrations SQLite et PostgreSQL ajoutent le registre `booking_payments` et les liens `reservation_payment_links`, avec rattachement facultatif des paiements à une réservation existante. Appliquer les migrations à la base locale après sauvegarde. Un futur déploiement serveur nécessitera une sauvegarde récupérable et le déploiement complet ; un simple déploiement léger ne suffit pas.

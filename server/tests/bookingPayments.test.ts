@@ -526,3 +526,64 @@ test("webhook HTTP : signature obligatoire, corps brut et remboursement idempote
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("arrhes Booked puis solde par lien : registre unique et contrat entièrement réglé", async () => {
+  const f = await fixture();
+  await inOrg(async () => {
+    await service.applyVerifiedSession(f.session);
+    const request = await db.default.bookingRequest.findUniqueOrThrow({
+      where: { id: f.request.id },
+    });
+    const { createReservationPaymentLink } =
+      await import("../src/modules/bookingPayments/reservationLinks.js");
+    const link = await createReservationPaymentLink(
+      request.approved_reservation_id!,
+      "balance",
+    );
+    assert.equal(link.amount, 270);
+    const row = await db.default.reservationPaymentLink.findUniqueOrThrow({
+      where: { id: link.id },
+    });
+    const receipt = await db.default.bookingPayment.create({
+      data: {
+        reservation_id: request.approved_reservation_id!,
+        payment_link_id: row.id,
+        purpose: "balance",
+        amount_cents: 27000,
+        total_cents: 36000,
+        access_token_hash: crypto.randomBytes(32).toString("hex"),
+        expires_at: new Date(),
+        status: "pending",
+      },
+    });
+    await service.applyVerifiedSession({
+      ...f.session,
+      id: "cs_test_balance_" + receipt.id,
+      metadata: { organization_id: org, booking_payment_id: receipt.id },
+      client_reference_id: receipt.id,
+      payment_intent: "pi_balance_" + receipt.id,
+      amount_total: 27000,
+    });
+    const summary = await contracts.reservationPaymentPrefill(
+      request.approved_reservation_id!,
+    );
+    assert.equal(summary!.amount_paid, 360);
+    assert.equal(summary!.remaining, 0);
+    assert.equal(summary!.request_id, request.id);
+    assert.equal(
+      (
+        await contracts.contractStripeTracking(
+          request.approved_reservation_id,
+          {
+            giteId: request.gite_id,
+            dateDebut: request.date_entree,
+            dateFin: request.date_sortie,
+            total: 360,
+            arrhes: 90,
+          },
+        )
+      ).statut_paiement_solde,
+      "regle",
+    );
+  });
+});
