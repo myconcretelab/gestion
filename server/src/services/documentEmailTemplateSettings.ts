@@ -1,12 +1,15 @@
+import {
+  bookingEmailTemplateKeys,
+  defaultBookingEmailTextSettings,
+  type BookingEmailTemplateKey,
+} from "@contrats/shared";
 import fs from "node:fs";
 import path from "node:path";
 import defaults from "../content/documentEmailTemplates.json" with { type: "json" };
 import { env } from "../config/env.js";
 
 export type DocumentEmailTemplateType =
-  | "contrat"
-  | "facture"
-  | "bookingRequestApproved";
+  "contrat" | "facture" | "bookingRequestApproved" | BookingEmailTemplateKey;
 
 export type DocumentEmailTemplate = {
   subject: string;
@@ -34,13 +37,14 @@ export type ContractDocumentEmailTextTemplate = DocumentEmailTextTemplate & {
 };
 
 export type InvoiceDocumentEmailTextTemplate = DocumentEmailTextTemplate;
-export type ApprovedBookingDocumentEmailTextTemplate = ContractDocumentEmailTextTemplate & { smsBody: string };
+export type ApprovedBookingDocumentEmailTextTemplate =
+  ContractDocumentEmailTextTemplate & { smsBody: string };
 
 export type DocumentEmailTextSettings = {
   contrat: ContractDocumentEmailTextTemplate;
   facture: InvoiceDocumentEmailTextTemplate;
   bookingRequestApproved: ApprovedBookingDocumentEmailTextTemplate;
-};
+} & Record<BookingEmailTemplateKey, DocumentEmailTextTemplate>;
 
 const SETTINGS_FILE = path.join(
   env.DATA_DIR,
@@ -53,7 +57,18 @@ const ensureDataDir = () => {
   }
 };
 
-const DEFAULT_TEMPLATES = defaults as DocumentEmailTemplateSettings;
+const DEFAULT_TEMPLATES = {
+  ...defaults,
+  ...(Object.fromEntries(
+    bookingEmailTemplateKeys.map((key) => [
+      key,
+      {
+        subject: defaultBookingEmailTextSettings[key].subject,
+        bodyLines: defaultBookingEmailTextSettings[key].body.split("\n"),
+      },
+    ]),
+  ) as Record<BookingEmailTemplateKey, DocumentEmailTemplate>),
+} as DocumentEmailTemplateSettings;
 const LEGACY_CONTRACT_ARRHES_LINE =
   "Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de {{arrhesMontant}} avant le {{arrhesDateLimiteLong}}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit {{soldeMontant}}, sera à régler à votre arrivée.";
 const MODERN_CONTRACT_ARRHES_LINE = "{{arrhesInstruction}}";
@@ -63,8 +78,7 @@ const MODERN_CONTRACT_DELIVERY_INTRO_LINE =
   "Suite à votre appel, veuillez trouver {{documentDeliveryIntroContract}} le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.";
 const LEGACY_INVOICE_DELIVERY_INTRO_LINE =
   "Je vous joins un lien de téléchargement vers votre facture.";
-const MODERN_INVOICE_DELIVERY_INTRO_LINE =
-  "{{documentDeliveryIntroSentence}}";
+const MODERN_INVOICE_DELIVERY_INTRO_LINE = "{{documentDeliveryIntroSentence}}";
 const LEGACY_CONTRACT_DELIVERY_LABEL_LINE =
   "Lien de téléchargement du contrat :";
 const LEGACY_INVOICE_DELIVERY_LABEL_LINE = "Le lien de téléchargement :";
@@ -88,7 +102,7 @@ const normalizeContractBodyLines = (lines: string[]) =>
           ? MODERN_DELIVERY_LABEL_LINE
           : line.trim() === LEGACY_DELIVERY_VALUE_LINE
             ? MODERN_DELIVERY_VALUE_LINE
-            : line
+            : line,
   );
 
 const normalizeInvoiceBodyLines = (lines: string[]) =>
@@ -99,7 +113,7 @@ const normalizeInvoiceBodyLines = (lines: string[]) =>
         ? MODERN_DELIVERY_LABEL_LINE
         : line.trim() === LEGACY_DELIVERY_VALUE_LINE
           ? MODERN_DELIVERY_VALUE_LINE
-          : line
+          : line,
   );
 
 const normalizeTemplate = (
@@ -126,7 +140,20 @@ const normalizeSettings = (
     input?.bookingRequestApproved,
     DEFAULT_TEMPLATES.bookingRequestApproved,
   );
+  bookingRequestApproved.bodyLines = bookingRequestApproved.bodyLines.map(
+    (line) =>
+      line.replace(
+        /{{\s*totalGlobal\s*}}\s+à régler sur place\.?/g,
+        "{{totalGlobal}}. {{stayPaymentInstruction}}",
+      ),
+  );
   return {
+    ...(Object.fromEntries(
+      bookingEmailTemplateKeys.map((key) => [
+        key,
+        normalizeTemplate(input?.[key], DEFAULT_TEMPLATES[key]),
+      ]),
+    ) as Record<BookingEmailTemplateKey, DocumentEmailTemplate>),
     contrat: {
       ...contrat,
       bodyLines: normalizeContractBodyLines(contrat.bodyLines),
@@ -137,12 +164,23 @@ const normalizeSettings = (
     },
     bookingRequestApproved: {
       ...bookingRequestApproved,
-      bodyLines: bookingRequestApproved.bodyLines.some((line) => /\{\{\s*options(Summary|Draps|LingeToilette|Menage|DepartTardif|Chiens)\s*\}\}/.test(line))
+      bodyLines: bookingRequestApproved.bodyLines.some((line) =>
+        /\{\{\s*options(Summary|Draps|LingeToilette|Menage|DepartTardif|Chiens)\s*\}\}/.test(
+          line,
+        ),
+      )
         ? bookingRequestApproved.bodyLines
         : (() => {
             const lines = [...bookingRequestApproved.bodyLines];
-            const recapIndex = lines.findIndex((line) => line.includes("Récapitulatif :"));
-            lines.splice(recapIndex < 0 ? lines.length : recapIndex + 1, 0, "", "{{optionsSummary}}");
+            const recapIndex = lines.findIndex((line) =>
+              line.includes("Récapitulatif :"),
+            );
+            lines.splice(
+              recapIndex < 0 ? lines.length : recapIndex + 1,
+              0,
+              "",
+              "{{optionsSummary}}",
+            );
             return lines;
           })(),
     },
@@ -184,6 +222,18 @@ export const mergeDocumentEmailTemplateSettings = (
 ): DocumentEmailTemplateSettings =>
   normalizeSettings({
     ...current,
+    ...Object.fromEntries(
+      bookingEmailTemplateKeys.map((key) => [
+        key,
+        patch[key]
+          ? {
+              ...current[key],
+              subject: patch[key]!.subject,
+              bodyLines: patch[key]!.body.replace(/\r\n/g, "\n").split("\n"),
+            }
+          : current[key],
+      ]),
+    ),
     contrat: patch.contrat
       ? {
           ...current.contrat,
@@ -227,6 +277,15 @@ export const mergeDocumentEmailTemplateSettings = (
 export const buildDocumentEmailTextSettingsResponse = (
   settings = readDocumentEmailTemplateSettings(),
 ): DocumentEmailTextSettings => ({
+  ...(Object.fromEntries(
+    bookingEmailTemplateKeys.map((key) => [
+      key,
+      {
+        subject: settings[key].subject,
+        body: settings[key].bodyLines.join("\n"),
+      },
+    ]),
+  ) as Record<BookingEmailTemplateKey, DocumentEmailTextTemplate>),
   contrat: {
     subject: settings.contrat.subject,
     body: settings.contrat.bodyLines.join("\n"),

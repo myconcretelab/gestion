@@ -1,18 +1,56 @@
 {
   "contrat": {
     "subject": "Contrat {{giteName}} {{documentNumber}}",
-    "bodyLines": ["{{greeting}}", "", "Suite à votre appel, veuillez trouver {{documentDeliveryIntroContract}} le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.", "", "{{documentDeliveryLabel}}", "{{documentDeliveryValue}}", "", "{{arrhesInstruction}}", "", "N'hésitez pas à nous contacter si vous avez des questions.", "", "Bien cordialement"],
+    "bodyLines": [
+      "{{greeting}}",
+      "",
+      "Suite à votre appel, veuillez trouver {{documentDeliveryIntroContract}} le contrat de location pour votre séjour de {{stayDuration}} {{giteReference}}, du {{dateDebutLong}}, à partir de {{heureArrivee}} au {{dateFinLong}}, {{heureDepart}}.",
+      "",
+      "{{documentDeliveryLabel}}",
+      "{{documentDeliveryValue}}",
+      "",
+      "{{arrhesInstruction}}",
+      "",
+      "N'hésitez pas à nous contacter si vous avez des questions.",
+      "",
+      "Bien cordialement"
+    ],
     "activities": [],
     "guideUrl": "",
     "destinationUrl": ""
   },
   "facture": {
     "subject": "Facture {{giteName}} {{documentNumber}}",
-    "bodyLines": ["{{greeting}}", "", "{{documentDeliveryIntroSentence}}", "En espérant que vous avez passé un agréable séjour{{giteSentence}}", "{{documentDeliveryLabel}}", "{{documentDeliveryValue}}", "", "Bien cordialement"]
+    "bodyLines": [
+      "{{greeting}}",
+      "",
+      "{{documentDeliveryIntroSentence}}",
+      "En espérant que vous avez passé un agréable séjour{{giteSentence}}",
+      "{{documentDeliveryLabel}}",
+      "{{documentDeliveryValue}}",
+      "",
+      "Bien cordialement"
+    ]
   },
   "bookingRequestApproved": {
     "subject": "Votre réservation est acceptée · {{giteName}}",
-    "bodyLines": ["{{greeting}}", "", "Votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.", "", "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.", "", "{{optionsSummary}}", "", "{{beddingReminder}}", "", "N'hésitez pas à nous contacter si vous avez des questions.", "", "Bien cordialement"],
+    "bodyLines": [
+      "{{greeting}}",
+      "",
+      "Votre séjour du {{dateEntreeLong}} au {{dateSortieLong}} est accepté.",
+      "",
+      "Récapitulatif : {{stayDuration}}, {{travellersSummary}}, total estimatif {{totalGlobal}}.",
+      "",
+      "{{optionsSummary}}",
+      "",
+      "{{paymentSummary}}",
+      "",
+      "{{beddingReminder}}",
+      "",
+      "N'hésitez pas à nous contacter si vous avez des questions.",
+      "",
+      "Bien cordialement"
+    ],
     "activities": [],
     "guideUrl": "",
     "destinationUrl": "",

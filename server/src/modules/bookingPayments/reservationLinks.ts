@@ -5,7 +5,15 @@ import { env } from "../../config/env.js";
 import { getOrganizationId } from "../organizations/context.js";
 import { bookingPaymentsEnabled, getBookingStripe } from "./provider.js";
 import { reservationBalance, paymentError } from "./reservationBalance.js";
-import { sendSmtpMail } from "../../services/mailer.js";
+import {
+  sendBookingPaymentEmails,
+  type BookingRequestEmailPayload,
+} from "../../services/bookingRequestEmail.js";
+import {
+  paidBookingForReservation,
+  reservationPaymentPrefill,
+} from "./contracts.js";
+import { fromJsonString } from "../../utils/jsonFields.js";
 
 export const paymentLinkUrl = (code: string) => {
   const base = new URL(env.APP_PUBLIC_URL);
@@ -398,31 +406,72 @@ export const revokeReservationPaymentLink = async (
 };
 export const sendReservationLinkReceipt = async (payment: any) => {
   const reservation = payment.reservation;
-  const euro = (value: number) =>
-    new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: "EUR",
-    }).format(value / 100);
-  const review =
-    payment.status === "requires_review" || payment.refunded_amount_cents > 0;
-  const recipients = [reservation.email, reservation.gite?.email].filter(
-    Boolean,
-  ) as string[];
-  const text = [
-    `Bonjour ${reservation.hote_nom},`,
-    review
-      ? "Un paiement ou remboursement de votre séjour nécessite une vérification. Nous vous contacterons."
-      : "Votre paiement par carte a bien été reçu et enregistré sur votre réservation.",
-    `${reservation.gite?.nom || "Séjour"} · du ${reservation.date_entree.toLocaleDateString("fr-FR", { timeZone: "UTC" })} au ${reservation.date_sortie.toLocaleDateString("fr-FR", { timeZone: "UTC" })}`,
-    `Montant reçu : ${euro(payment.paid_amount_cents)}`,
-    `Référence de réservation : ${reservation.id}`,
-  ].join("\n");
-  for (const to of new Set(recipients))
-    await sendSmtpMail({
-      to,
-      subject: review
-        ? "Paiement du séjour — suivi nécessaire"
-        : "Paiement reçu pour votre réservation",
-      text,
-    });
+  const terms = fromJsonString<any>(payment.payment_link?.terms_json, {});
+  const options = terms.options || fromJsonString(reservation.options, {});
+  const original = await paidBookingForReservation(reservation.id);
+  const originalQuote =
+    original && original.request.options === reservation.options
+      ? fromJsonString<any>(original.request.pricing_snapshot, {})
+      : null;
+  const fees =
+    typeof terms.fees === "number"
+      ? terms.fees
+      : Number(reservation.frais_optionnels_montant);
+  const detail =
+    originalQuote?.total_options === fees
+      ? originalQuote.options_detail
+      : undefined;
+  const selected = [
+    ["draps", "draps"],
+    ["linge_toilette", "linge"],
+    ["menage", "menage"],
+    ["depart_tardif", "depart_tardif"],
+    ["chiens", "chiens"],
+  ].filter(([key]) => options[key]?.enabled);
+  const summary = await reservationPaymentPrefill(reservation.id);
+  const payload: BookingRequestEmailPayload = {
+    id: reservation.id,
+    hote_nom: reservation.hote_nom,
+    email: reservation.email,
+    telephone: reservation.telephone,
+    gite: reservation.gite,
+    date_entree: terms.start || reservation.date_entree,
+    date_sortie: terms.end || reservation.date_sortie,
+    nb_adultes: reservation.nb_adultes,
+    nb_enfants_2_17: reservation.nb_enfants_2_17,
+    hold_expires_at: payment.expires_at,
+    options,
+    pricing_snapshot: {
+      nb_nuits: Math.round(
+        (+new Date(terms.end || reservation.date_sortie) -
+          +new Date(terms.start || reservation.date_entree)) /
+          86400000,
+      ),
+      montant_hebergement:
+        typeof terms.price === "number"
+          ? terms.price - terms.discount
+          : reservation.prix_total - reservation.remise_montant,
+      total_options: fees,
+      total_global: payment.total_cents / 100,
+      arrhes_theoriques: (payment.payment_link?.deposit_cents || 0) / 100,
+      ...(detail
+        ? {
+            options_detail: detail,
+            options_unit_prices: originalQuote.options_unit_prices,
+          }
+        : selected.length === 1
+          ? { options_detail: { [selected[0][1]]: fees } as any }
+          : {}),
+    },
+  };
+  await sendBookingPaymentEmails(
+    payload,
+    {
+      ...payment,
+      remaining_cents: summary
+        ? Math.round(summary.remaining * 100)
+        : undefined,
+    },
+    true,
+  );
 };

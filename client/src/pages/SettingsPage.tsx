@@ -1,3 +1,5 @@
+import BookingEmailTemplatesEditor from "./shared/BookingEmailTemplatesEditor";
+import { bookingEmailTemplateKeys, defaultBookingEmailTextSettings, type BookingEmailTemplateKey } from "@contrats/shared";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { apiFetch, buildApiUrl } from "../utils/api";
@@ -497,7 +499,7 @@ type DocumentEmailTextSettings = {
     guideUrl: string;
     destinationUrl: string;
   };
-};
+} & Record<BookingEmailTemplateKey, DocumentEmailTextTemplate>;
 
 type TelegramNotificationConfig = {
   enabled: boolean;
@@ -845,6 +847,7 @@ const DEFAULT_SMS_TEXT_SETTINGS: SmsTextSettings = {
 };
 
 const DEFAULT_DOCUMENT_EMAIL_TEXT_SETTINGS: DocumentEmailTextSettings = {
+  ...defaultBookingEmailTextSettings,
   contrat: {
     subject: "Contrat {{giteName}} {{documentNumber}}",
     body: [
@@ -2393,6 +2396,10 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
 
   const applyDocumentEmailTextSettings = (data: DocumentEmailTextSettings) => {
     const nextSettings: DocumentEmailTextSettings = {
+      ...Object.fromEntries(bookingEmailTemplateKeys.map(key => [key, {
+        subject: data?.[key]?.subject?.trim() || defaultBookingEmailTextSettings[key].subject,
+        body: data?.[key]?.body?.trim() || defaultBookingEmailTextSettings[key].body,
+      }])) as Record<BookingEmailTemplateKey, DocumentEmailTextTemplate>,
       contrat: {
         subject:
           String(data?.contrat?.subject ?? "").trim() ||
@@ -3393,6 +3400,9 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
         {
           method: "PUT",
           json: {
+            ...Object.fromEntries(bookingEmailTemplateKeys.map(key => [key, {
+              subject: documentEmailTextDraft[key].subject.trim(), body: documentEmailTextDraft[key].body.trim(),
+            }])) ,
             contrat: {
               subject: documentEmailTextDraft.contrat.subject.trim(),
               body: documentEmailTextDraft.contrat.body.trim(),
@@ -5759,7 +5769,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
               </div>
               <p className="settings-cluster__text">
                 Définissez les sujets et textes par défaut utilisés pour les
-                e-mails de contrat et de facture.
+                e-mails de réservation, de contrat et de facture.
               </p>
             </div>
             <div className="settings-cluster__grid">
@@ -5949,7 +5959,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
 
                       <div className="settings-sms-text-row">
                         <div className="settings-sms-text-row__header">
-                          <strong>Acceptation Booked</strong>
+                          <strong>Confirmation de réservation · approbation ou paiement Stripe</strong>
                         </div>
                         <label className="field">
                           Sujet
@@ -6086,6 +6096,15 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                       </div>
                     </div>
 
+                    <BookingEmailTemplatesEditor
+                      templates={documentEmailTextDraft}
+                      disabled={savingDocumentEmailTexts}
+                      onChange={(key, field, value) => {
+                        setDocumentEmailTextNotice(null);
+                        setDocumentEmailTextError(null);
+                        setDocumentEmailTextDraft(previous => ({ ...previous, [key]: { ...previous[key], [field]: value } }));
+                      }}
+                    />
                     <div className="actions" style={{ marginTop: 16 }}>
                       <button
                         type="button"

@@ -110,3 +110,5 @@ export * from "./invoiceThemes.js";
 
 export * from "./touristTax.js";
 export * from "./bookingRequestOptionDetails.js";
+
+export * from "./bookingEmailTemplates.js";

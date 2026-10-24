@@ -1,3 +1,12 @@
+import {
+  renderEmailPresentation,
+  type EmailBranding,
+} from "./emailPresentation.js";
+import {
+  resolveEmailPresentation,
+  organizationEmailVariables,
+  type EmailGite,
+} from "./emailBranding.js";
 import fs from "fs/promises";
 import { env } from "../config/env.js";
 import {
@@ -7,14 +16,7 @@ import {
 import { sendSmtpMail } from "./mailer.js";
 import { buildGiteNameWithPreposition } from "../utils/giteName.js";
 
-type DocumentGite = {
-  nom?: string | null;
-  nom_avec_preposition?: string | null;
-  email?: string | null;
-  adresse_ligne1?: string | null;
-  adresse_ligne2?: string | null;
-  telephones?: unknown;
-};
+type DocumentGite = EmailGite;
 
 type BaseDocumentEmail = {
   locataire_nom: string;
@@ -125,7 +127,10 @@ const formatGiteAddress = (gite?: DocumentGite | null) =>
 
 const formatOwnerPhone = (value: unknown) => {
   if (Array.isArray(value)) {
-    return value.map((phone) => String(phone ?? "").trim()).filter(Boolean).join(" / ");
+    return value
+      .map((phone) => String(phone ?? "").trim())
+      .filter(Boolean)
+      .join(" / ");
   }
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -133,7 +138,10 @@ const formatOwnerPhone = (value: unknown) => {
   try {
     const parsed = JSON.parse(trimmed);
     if (Array.isArray(parsed)) {
-      return parsed.map((phone) => String(phone ?? "").trim()).filter(Boolean).join(" / ");
+      return parsed
+        .map((phone) => String(phone ?? "").trim())
+        .filter(Boolean)
+        .join(" / ");
     }
   } catch {
     return trimmed;
@@ -158,7 +166,8 @@ const buildArrhesInstruction = (params: {
   datePaiementArrhes?: string | Date | null;
   modePaiementArrhes?: string | null;
 }) => {
-  if (params.statutPaiementSolde === "regle") return `Votre séjour est déjà réglé en totalité. Aucun solde de location ne sera à régler à votre arrivée. Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}.`;
+  if (params.statutPaiementSolde === "regle")
+    return `Votre séjour est déjà réglé en totalité. Aucun solde de location ne sera à régler à votre arrivée. Merci de nous retourner le contrat signé avant le ${params.arrhesDateLimiteLong}.`;
   if (params.statutPaiementArrhes === "recu") {
     const dateText = params.datePaiementArrhes
       ? ` le ${formatLongDate(params.datePaiementArrhes)}`
@@ -178,51 +187,13 @@ const buildArrhesInstruction = (params: {
   return `Si vous souhaitez confirmer la réservation, merci de nous retourner le contrat signé et accompagné du règlement des arrhes de ${params.arrhesMontant} avant le ${params.arrhesDateLimiteLong}. Il est possible de faire un virement. Le RIB est en bas du contrat. Le solde de la location, soit ${params.soldeMontant}, sera à régler à votre arrivée.`;
 };
 
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-
-const linkifyHtml = (value: string) =>
-  escapeHtml(value).replace(
-    /(https?:\/\/[^\s<]+)/g,
-    '<a href="$1" target="_blank" rel="noreferrer noopener">$1</a>',
-  );
-
-const buildHtmlFromLines = (lines: string[]) => {
-  const paragraphs: string[] = [];
-  let currentBlock: string[] = [];
-
-  const flushBlock = () => {
-    if (currentBlock.length === 0) return;
-    paragraphs.push(
-      `<p>${currentBlock.map((line) => linkifyHtml(line)).join("<br />")}</p>`,
-    );
-    currentBlock = [];
-  };
-
-  for (const line of lines) {
-    if (line === "") {
-      flushBlock();
-      continue;
-    }
-    currentBlock.push(line);
-  }
-
-  flushBlock();
-  return paragraphs.join("");
-};
-
 const renderBodyLines = (
   bodyLines: string[],
   values: Record<string, string>,
 ) => {
   const renderedLines = bodyLines
     .map((line) => renderTemplateLine(line, values))
-    .map((line) => line.replace(/\s{2,}/g, " ").trim());
+    .map((line) => line.replace(/[ \t]{2,}/g, " ").trim());
   const compactedLines: string[] = [];
 
   for (const line of renderedLines) {
@@ -243,7 +214,8 @@ const normalizeRecipient = (value: string | null | undefined) =>
 
 const resolveDeliveryMode = (
   value?: DocumentEmailDeliveryMode | null,
-): DocumentEmailDeliveryMode => (value === "download_link" ? "download_link" : "attachment");
+): DocumentEmailDeliveryMode =>
+  value === "download_link" ? "download_link" : "attachment";
 
 const buildDeliveryTemplateValues = (
   documentType: "contrat" | "facture",
@@ -320,7 +292,7 @@ const normalizeCustomEmailContent = (
   return {
     subject,
     text,
-    html: buildHtmlFromLines(text.split("\n")),
+    html: "",
   };
 };
 
@@ -330,14 +302,18 @@ export const buildContractEmailMessage = (
     documentUrl?: string | null;
     customMessage?: CustomEmailContent;
     deliveryMode?: DocumentEmailDeliveryMode | null;
+    branding?: EmailBranding;
   },
 ): BuiltEmailMessage => {
   const template = readDocumentEmailTemplateSettings().contrat;
   const giteName = String(contract.gite?.nom ?? "").trim();
   const giteNameWithPreposition = buildGiteNameWithPreposition(contract.gite);
-  const deliveryMode = resolveDeliveryMode(options?.deliveryMode ?? "download_link");
+  const deliveryMode = resolveDeliveryMode(
+    options?.deliveryMode ?? "download_link",
+  );
   const documentUrl = String(options?.documentUrl ?? "").trim();
   const templateValues: Record<string, string> = {
+    ...organizationEmailVariables(options?.branding),
     greeting: buildGreeting(contract.locataire_nom),
     documentUrl,
     giteName,
@@ -354,11 +330,15 @@ export const buildContractEmailMessage = (
     heureDepart: formatTime(contract.heure_depart),
     arrhesMontant: formatEuroText(contract.arrhes_montant),
     arrhesDateLimiteLong: formatLongDate(contract.arrhes_date_limite),
-    soldeMontant: formatEuroText(contract.statut_paiement_solde === "regle" ? 0 : contract.solde_montant),
+    soldeMontant: formatEuroText(
+      contract.statut_paiement_solde === "regle" ? 0 : contract.solde_montant,
+    ),
     arrhesInstruction: buildArrhesInstruction({
       arrhesMontant: formatEuroText(contract.arrhes_montant),
       arrhesDateLimiteLong: formatLongDate(contract.arrhes_date_limite),
-      soldeMontant: formatEuroText(contract.statut_paiement_solde === "regle" ? 0 : contract.solde_montant),
+      soldeMontant: formatEuroText(
+        contract.statut_paiement_solde === "regle" ? 0 : contract.solde_montant,
+      ),
       statutPaiementSolde: contract.statut_paiement_solde,
       statutPaiementArrhes: contract.statut_paiement_arrhes,
       datePaiementArrhes: contract.date_paiement_arrhes,
@@ -377,7 +357,21 @@ export const buildContractEmailMessage = (
     html: "",
   };
 
-  return normalizeCustomEmailContent(options?.customMessage, fallback);
+  const message = normalizeCustomEmailContent(options?.customMessage, fallback);
+  return {
+    ...message,
+    html: renderEmailPresentation({
+      subject: message.subject,
+      text: message.text,
+      branding: options?.branding || { name: giteName || "Votre séjour" },
+      label: "Votre contrat de location",
+      facts: [
+        { label: "Gîte", value: giteName },
+        { label: "Arrivée", value: formatLongDate(contract.date_debut) },
+        { label: "Départ", value: formatLongDate(contract.date_fin) },
+      ],
+    }),
+  };
 };
 
 export const buildInvoiceEmailMessage = (
@@ -386,14 +380,18 @@ export const buildInvoiceEmailMessage = (
     documentUrl?: string | null;
     customMessage?: CustomEmailContent;
     deliveryMode?: DocumentEmailDeliveryMode | null;
+    branding?: EmailBranding;
   },
 ): BuiltEmailMessage => {
   const template = readDocumentEmailTemplateSettings().facture;
   const giteName = String(invoice.gite?.nom ?? "").trim();
   const giteNameWithPreposition = buildGiteNameWithPreposition(invoice.gite);
-  const deliveryMode = resolveDeliveryMode(options?.deliveryMode ?? "download_link");
+  const deliveryMode = resolveDeliveryMode(
+    options?.deliveryMode ?? "download_link",
+  );
   const documentUrl = String(options?.documentUrl ?? "").trim();
   const templateValues: Record<string, string> = {
+    ...organizationEmailVariables(options?.branding),
     greeting: buildGreeting(invoice.locataire_nom),
     documentUrl,
     giteName,
@@ -413,7 +411,17 @@ export const buildInvoiceEmailMessage = (
     html: "",
   };
 
-  return normalizeCustomEmailContent(options?.customMessage, fallback);
+  const message = normalizeCustomEmailContent(options?.customMessage, fallback);
+  return {
+    ...message,
+    html: renderEmailPresentation({
+      subject: message.subject,
+      text: message.text,
+      branding: options?.branding || { name: giteName || "Votre séjour" },
+      label: "Votre facture",
+      facts: [{ label: "Facture", value: invoice.numero_facture }],
+    }),
+  };
 };
 
 const ensureAttachmentReadable = async (attachmentPath: string) => {
@@ -431,6 +439,7 @@ export const sendContractEmail = async (
     documentUrl?: string | null;
     customMessage?: CustomEmailContent;
     deliveryMode?: DocumentEmailDeliveryMode | null;
+    branding?: EmailBranding;
   },
 ) => {
   const recipient = normalizeRecipient(
@@ -447,10 +456,15 @@ export const sendContractEmail = async (
   if (deliveryMode === "attachment") {
     await ensureAttachmentReadable(attachmentPath);
   }
-  const message = buildContractEmailMessage(contract, {
-    ...options,
-    deliveryMode,
-  });
+  const presentation = await resolveEmailPresentation(contract.gite);
+  const message = buildContractEmailMessage(
+    { ...contract, gite: presentation.gite },
+    {
+      ...options,
+      branding: presentation.branding,
+      deliveryMode,
+    },
+  );
   return sendSmtpMail({
     to: recipient,
     subject: message.subject,
@@ -477,6 +491,7 @@ export const sendInvoiceEmail = async (
     documentUrl?: string | null;
     customMessage?: CustomEmailContent;
     deliveryMode?: DocumentEmailDeliveryMode | null;
+    branding?: EmailBranding;
   },
 ) => {
   const recipient = normalizeRecipient(
@@ -493,10 +508,15 @@ export const sendInvoiceEmail = async (
   if (deliveryMode === "attachment") {
     await ensureAttachmentReadable(attachmentPath);
   }
-  const message = buildInvoiceEmailMessage(invoice, {
-    ...options,
-    deliveryMode,
-  });
+  const presentation = await resolveEmailPresentation(invoice.gite);
+  const message = buildInvoiceEmailMessage(
+    { ...invoice, gite: presentation.gite },
+    {
+      ...options,
+      branding: presentation.branding,
+      deliveryMode,
+    },
+  );
   return sendSmtpMail({
     to: recipient,
     subject: message.subject,

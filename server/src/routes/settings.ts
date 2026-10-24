@@ -1,3 +1,4 @@
+import { bookingEmailTemplateKeys } from "@contrats/shared";
 import { partialInputSchema } from "../utils/validation.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -299,6 +300,7 @@ const documentEmailTextTemplateSchema = z.object({
   body: z.string().trim().min(1).max(20_000),
 });
 const documentEmailTextSettingsSchema = z.object({
+  ...Object.fromEntries(bookingEmailTemplateKeys.map(key => [key, documentEmailTextTemplateSchema.optional()])),
   contrat: documentEmailTextTemplateSchema.extend({
     activitiesList: z.string().max(20_000).default(""),
     guideUrl: z.string().trim().max(2_000).default(""),

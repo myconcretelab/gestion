@@ -1,3 +1,4 @@
+import { sendBookingPaymentEmails } from "../../services/bookingRequestEmail.js";
 import {
   applyReservationLinkSession,
   sendReservationLinkReceipt,
@@ -17,8 +18,6 @@ import {
   hydrateBookingRequest,
   type BookingQuote,
 } from "../../services/booked.js";
-import { sendSmtpMail } from "../../services/mailer.js";
-import { buildBookingRequestOptionsTemplateValues } from "@contrats/shared";
 
 export { cents } from "./money.js";
 import { cents } from "./money.js";
@@ -223,10 +222,6 @@ export const applyVerifiedSession = async (
   });
 };
 
-const money = (value: number) =>
-  new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(
-    value / 100,
-  );
 export const deliverPaymentNotification = async (id: string) => {
   const lease = await prisma.bookingPayment.updateMany({
     where: {
@@ -249,6 +244,7 @@ export const deliverPaymentNotification = async (id: string) => {
       include: {
         booking_request: { include: { gite: true } },
         reservation: { include: { gite: true } },
+        payment_link: true,
       },
     });
     if (payment.reservation_id && payment.reservation) {
@@ -262,38 +258,7 @@ export const deliverPaymentNotification = async (id: string) => {
     if (!payment.booking_request)
       throw new Error("Demande de paiement introuvable.");
     const request = hydrateBookingRequest(payment.booking_request);
-    const review = payment.status === "requires_review";
-    const refund = payment.refunded_amount_cents > 0;
-    const subject = review
-      ? "Paiement reçu — réservation à vérifier"
-      : refund
-        ? "Remboursement de votre réservation"
-        : `Réservation confirmée — ${request.gite.nom}`;
-    const details = buildBookingRequestOptionsTemplateValues(request);
-    const text = [
-      `Bonjour ${request.hote_nom},`,
-      "",
-      review
-        ? "Votre paiement a été reçu, mais votre réservation nécessite une vérification. Nous vous contacterons rapidement. Elle n’est pas encore confirmée."
-        : refund
-          ? "Un remboursement de votre réservation a été enregistré."
-          : "Votre réservation est confirmée après réception de votre paiement par carte.",
-      `${request.gite.nom} · du ${new Date(request.date_entree).toLocaleDateString("fr-FR", { timeZone: "UTC" })} au ${new Date(request.date_sortie).toLocaleDateString("fr-FR", { timeZone: "UTC" })}`,
-      `Total du séjour : ${money(payment.total_cents)}`,
-      details.optionsSummary,
-      `${payment.purpose === "deposit" ? "Arrhes" : "Séjour complet"} — montant encaissé par Stripe : ${money(payment.paid_amount_cents)}`,
-      refund
-        ? `Montant remboursé : ${money(payment.refunded_amount_cents)}`
-        : `Solde à régler sur place : ${money(Math.max(0, payment.total_cents - payment.paid_amount_cents))}`,
-      `Référence : ${payment.booking_request_id}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const recipients = [request.email, request.gite.email].filter(
-      Boolean,
-    ) as string[];
-    for (const to of new Set(recipients))
-      await sendSmtpMail({ to, subject, text });
+    await sendBookingPaymentEmails(request, payment);
     await prisma.bookingPayment.update({
       where: { id },
       data: { notification_sent_at: new Date(), notification_lease_at: null },

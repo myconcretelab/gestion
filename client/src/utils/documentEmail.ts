@@ -133,7 +133,7 @@ const renderBodyLines = (
 ) => {
   const renderedLines = bodyLines
     .map((line) => renderTemplateLine(line, values))
-    .map((line) => line.replace(/\s{2,}/g, " ").trim());
+    .map((line) => line.replace(/[ \t]{2,}/g, " ").trim());
   const compactedLines: string[] = [];
 
   for (const line of renderedLines) {
@@ -448,6 +448,7 @@ export const buildBookingRequestApprovedEmailDraft = (
       ? `Bonjour ${request.hote_nom.trim()},`
       : "Bonjour,",
     clientName: request.hote_nom.trim(),
+    stayPaymentInstruction: "Ce montant sera à régler sur place.",
     giteName,
     giteNameWithPreposition,
     giteAddress: formatGiteAddress(request.gite?.adresse_ligne1, request.gite?.adresse_ligne2),

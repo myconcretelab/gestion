@@ -46,6 +46,14 @@ Le détail d’une demande et la fiche de réservation affichent les montants en
 
 Les emails de confirmation au client et au propriétaire contiennent le détail des options, le paiement reçu, le solde et la référence. Aucun email d’attente d’approbation n’est envoyé pour le parcours carte.
 
+## Textes et présentation des emails
+
+Dans **Paramètres → Emails**, les messages de réservation reprennent les textes enregistrés et leurs variables. Le même modèle **Confirmation de réservation** sert après une approbation manuelle et après un paiement Stripe. `{{stayPaymentInstruction}}` adapte la consigne au paiement reçu ; `{{paymentSummary}}` affiche les arrhes ou le paiement reçu et le solde. Une ancienne confirmation qui omet ce dernier bloc reçoit automatiquement les informations de règlement. `{{optionsSummary}}` détaille tarifs, quantités, nuits et montants des options sélectionnées.
+
+Les accusés de réception, notifications propriétaire, refus, reçus de liens de paiement et messages de vérification ou de remboursement ont aussi leurs textes personnalisables. Ils partagent avec les contrats et factures une présentation HTML adaptée au mobile : identité de l’organisation, logo, photo principale publique du gîte et coordonnées. Une version texte reste fournie. Les images et informations absentes sont simplement omises ; les textes personnalisés restent conservés. Un logo peut être configuré dans l’identité de l’organisation, avec une URL HTTPS ou un chemin local servi par Gestion.
+
+En local, consulter les messages dans Mailpit (`http://127.0.0.1:10000`). Les réservations de démonstration doivent utiliser des noms **TEST** et des adresses fictives. Les tests automatisés des modèles emploient un dossier temporaire pour ne pas modifier les textes enregistrés sur l’installation locale.
+
 ## Liens courts depuis une réservation
 
 Dans le menu d’actions d’une ligne de réservation : **Lien de paiement Stripe**. Le panneau propose les arrhes encore dues ou le montant restant du séjour, puis un lien à copier dans un SMS. Un contrat existant fixe les montants ; sinon le calcul utilise les montants de la réservation, ses frais et sa taxe enregistrée. Les règlements Stripe et les paiements reçus renseignés sur le contrat sont déduits. Pour une réservation de plateforme, vérifier les sommes déjà encaissées avant de demander un paiement.
