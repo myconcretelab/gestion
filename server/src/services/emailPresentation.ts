@@ -66,6 +66,7 @@ export const renderEmailPresentation = ({
   label = "Votre séjour",
   facts = [],
   highlights = [],
+  action,
 }: {
   subject: string;
   text: string;
@@ -73,6 +74,7 @@ export const renderEmailPresentation = ({
   label?: string;
   facts?: Array<{ label: string; value: string }>;
   highlights?: Highlight[];
+  action?: { label: string; url: string };
 }) => {
   const color = /^#[a-f\d]{6}$/i.test(branding.color || "")
     ? branding.color!
@@ -80,6 +82,7 @@ export const renderEmailPresentation = ({
   const logo = emailHttpUrl(branding.logoUrl),
     photo = emailHttpUrl(branding.photoUrl),
     website = emailHttpUrl(branding.website);
+  const actionUrl = emailHttpUrl(action?.url);
   const body = text
     .split(/\n\s*\n/)
     .map((block) => {
@@ -150,6 +153,15 @@ export const renderEmailPresentation = ({
       ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e3e3d9;border-bottom:1px solid #e3e3d9;margin-bottom:24px;"><tr>' +
         details +
         "</tr></table>"
+      : "") +
+    (actionUrl
+      ? '<p style="margin:0 0 24px;"><a href="' +
+        escapeEmailHtml(actionUrl) +
+        '" style="display:inline-block;background:' +
+        color +
+        ';color:#fff;text-decoration:none;font-size:16px;font-weight:bold;padding:13px 20px;border-radius:8px;">' +
+        escapeEmailHtml(action?.label) +
+        "</a></p>"
       : "") +
     '<div class="body" style="font-size:16px;line-height:1.65;">' +
     body +

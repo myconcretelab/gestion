@@ -52,6 +52,8 @@ Dans **Paramètres → Emails**, les messages de réservation reprennent les tex
 
 Les accusés de réception, notifications propriétaire, refus, reçus de liens de paiement et messages de vérification ou de remboursement ont aussi leurs textes personnalisables. Ils partagent avec les contrats et factures une présentation HTML adaptée au mobile : identité de l’organisation, logo, photo principale publique du gîte et coordonnées. Une version texte reste fournie. Les images et informations absentes sont simplement omises ; les textes personnalisés restent conservés. Un logo peut être configuré dans l’identité de l’organisation, avec une URL HTTPS ou un chemin local servi par Gestion.
 
+Les notifications destinées au propriétaire affichent un bouton **Voir la demande**. Après confirmation par paiement des arrhes ou de la totalité, le bouton **Voir la réservation** ouvre Gestion sur l’année, le mois et le gîte concernés, avec défilement et mise en évidence de la réservation. Le lien est aussi fourni dans la version texte. Ces liens internes utilisent `APP_PUBLIC_URL`, nécessitent la connexion habituelle à Gestion et ne sont ajoutés ni aux messages client ni à la page de confirmation publique.
+
 En local, consulter les messages dans Mailpit (`http://127.0.0.1:10000`). Les réservations de démonstration doivent utiliser des noms **TEST** et des adresses fictives. Les tests automatisés des modèles emploient un dossier temporaire pour ne pas modifier les textes enregistrés sur l’installation locale.
 
 ## Page de retour après paiement

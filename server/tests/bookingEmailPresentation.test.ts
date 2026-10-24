@@ -180,6 +180,74 @@ test("les paiements à vérifier ne sont pas présentés comme une réservation 
   assert.match(message.text, /Aucun nouveau paiement/);
   assert.doesNotMatch(message.text, /réservation.*confirmée|Solde.*359/);
 });
+test("la notification propriétaire ouvre la demande, sans lien interne dans l’accusé client", () => {
+  const owner = buildBookingEmailMessage("bookingRequestOwner", payload, {
+    branding,
+  });
+  const actionUrl = owner.text.split("\n").at(-1)!;
+  assert.equal(
+    new URL(actionUrl).pathname.endsWith("/demandes/fictitious-request"),
+    true,
+  );
+  assert.ok(owner.html.includes('href="' + actionUrl + '"'));
+  assert.match(owner.html, />Voir la demande<\/a>/);
+  const guest = buildBookingEmailMessage("bookingRequestReceived", payload, {
+    branding,
+  });
+  assert.doesNotMatch(guest.text + guest.html, /Voir la demande|\/demandes\//);
+});
+test("les copies propriétaire après arrhes ou totalité ciblent la réservation, son gîte et sa période", () => {
+  const confirmed = {
+    ...payload,
+    approved_reservation_id: "reservation-123",
+    gite: { ...payload.gite, id: "gite-1" },
+  };
+  for (const purpose of ["deposit", "full"]) {
+    const payment = {
+      purpose,
+      total_cents: 36000,
+      paid_amount_cents: purpose === "deposit" ? 9000 : 36000,
+      refunded_amount_cents: 0,
+      status: "paid",
+    };
+    const owner = buildBookingEmailMessage(
+      "bookingRequestApproved",
+      confirmed,
+      { branding, payment, audience: "owner" },
+    );
+    const target = new URL(owner.text.split("\n").at(-1)!);
+    assert.equal(target.pathname.endsWith("/reservations"), true);
+    assert.equal(target.searchParams.get("year"), "2027");
+    assert.equal(target.searchParams.get("month"), "2");
+    assert.equal(target.searchParams.get("tab"), "gite-1");
+    assert.equal(target.searchParams.get("focus"), "reservation-123");
+    assert.match(owner.html, />Voir la réservation<\/a>/);
+    assert.doesNotMatch(target.href, /token|secret/);
+    const guest = buildBookingEmailMessage(
+      "bookingRequestApproved",
+      confirmed,
+      { branding, payment },
+    );
+    assert.doesNotMatch(
+      guest.text + guest.html,
+      /\/reservations\?|Voir la réservation|reservation-123/,
+    );
+    const receipt = buildBookingEmailMessage(
+      "bookingPaymentReceipt",
+      { ...payload, id: "existing-reservation" },
+      {
+        branding,
+        payment,
+        audience: "owner",
+        reservationId: "existing-reservation",
+      },
+    );
+    assert.equal(
+      new URL(receipt.text.split("\n").at(-1)!).searchParams.get("focus"),
+      "existing-reservation",
+    );
+  }
+});
 test("la présentation échappe le contenu et ignore les adresses d’images non HTTP", () => {
   const html = renderEmailPresentation({
     subject: "<script>alert(1)</script>",
@@ -189,8 +257,12 @@ test("la présentation échappe le contenu et ignore les adresses d’images non
       logoUrl: "javascript:bad",
       photoUrl: "file:///secret",
     },
+    action: { label: "Lien invalide", url: "javascript:bad" },
   });
-  assert.doesNotMatch(html, /<script>|src="javascript|src="file:/);
+  assert.doesNotMatch(
+    html,
+    /<script>|src="javascript|src="file:|href="javascript/,
+  );
   assert.match(html, /&lt;img/);
   assert.equal(emailHttpUrl("https://user:secret@example.test/image"), "");
   assert.equal(

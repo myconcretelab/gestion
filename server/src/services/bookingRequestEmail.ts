@@ -30,6 +30,7 @@ export type BookingPaymentEmailInfo = {
 };
 export type BookingRequestEmailPayload = {
   id: string;
+  approved_reservation_id?: string | null;
   hote_nom: string;
   telephone?: string | null;
   email?: string | null;
@@ -163,6 +164,38 @@ const renderSubjectTemplate = (
   values: Record<string, string>,
 ) => renderEmailTemplateLine(subject, values).replace(/\s+/g, " ").trim();
 
+const ownerBookingAction = (
+  payload: BookingRequestEmailPayload,
+  reservationId?: string | null,
+) => {
+  try {
+    const url = new URL(env.APP_PUBLIC_URL);
+    if (
+      !["https:", "http:"].includes(url.protocol) ||
+      url.username ||
+      url.password
+    )
+      return;
+    url.search = "";
+    url.hash = "";
+    const basePath = url.pathname.replace(/\/$/, "");
+    if (reservationId) {
+      const arrival = new Date(payload.date_entree);
+      if (!Number.isFinite(arrival.getTime())) return;
+      url.pathname = basePath + "/reservations";
+      url.searchParams.set("year", String(arrival.getUTCFullYear()));
+      url.searchParams.set("month", String(arrival.getUTCMonth() + 1));
+      if (payload.gite.id) url.searchParams.set("tab", payload.gite.id);
+      url.searchParams.set("focus", reservationId);
+      return { label: "Voir la réservation", url: url.href };
+    }
+    url.pathname = basePath + "/demandes/" + encodeURIComponent(payload.id);
+    return { label: "Voir la demande", url: url.href };
+  } catch {
+    return;
+  }
+};
+
 const buildApprovedTemplateValues = (
   payload: BookingRequestEmailPayload,
   context?: {
@@ -274,6 +307,8 @@ export const buildBookingEmailMessage = (
     payment?: BookingPaymentEmailInfo;
     decisionNote?: string;
     customMessage?: BookingRequestDecisionEmailContent;
+    audience?: "client" | "owner";
+    reservationId?: string | null;
   },
 ) => {
   const { values } = buildApprovedTemplateValues(payload, context);
@@ -313,20 +348,46 @@ export const buildBookingEmailMessage = (
     name: payload.gite.nom,
     website: payload.gite.site_web || undefined,
   };
+  // Internal navigation belongs only in the owner's copy, never the guest receipt
+  // or the public confirmation page (which uses the same message builder).
+  const action =
+    type === "bookingRequestOwner" || context?.audience === "owner"
+      ? ownerBookingAction(
+          payload,
+          context?.reservationId || payload.approved_reservation_id,
+        )
+      : undefined;
   return {
     recipient:
       context?.customMessage?.recipient?.trim() || payload.email?.trim() || "",
     subject,
-    text,
+    text: action ? text + "\n\n" + action.label + " :\n" + action.url : text,
     html: renderEmailPresentation({
       subject,
       text,
       branding,
+      action,
       label: labels[type],
       facts: [
         { label: "Gîte", value: payload.gite.nom },
-        { label: "Arrivée", value: new Date(payload.date_entree).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) },
-        { label: "Départ", value: new Date(payload.date_sortie).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) },
+        {
+          label: "Arrivée",
+          value: new Date(payload.date_entree).toLocaleDateString("fr-FR", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            timeZone: "UTC",
+          }),
+        },
+        {
+          label: "Départ",
+          value: new Date(payload.date_sortie).toLocaleDateString("fr-FR", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            timeZone: "UTC",
+          }),
+        },
       ],
       highlights: [
         {
@@ -442,13 +503,19 @@ export const sendBookingPaymentEmails = async (
         : existingReservation
           ? "bookingPaymentReceipt"
           : "bookingRequestApproved";
-  const message = buildBookingEmailMessage(type, context.payload, {
-    ...context,
-    payment,
-  });
-  for (const to of new Set(
-    [payload.email, context.payload.gite.email].filter(Boolean) as string[],
-  ))
+  const recipients = new Map<string, "client" | "owner">();
+  if (payload.email?.trim()) recipients.set(payload.email.trim(), "client");
+  const owner = context.payload.gite.email?.trim();
+  if (owner) recipients.set(owner, "owner");
+  for (const [to, audience] of recipients) {
+    const message = buildBookingEmailMessage(type, context.payload, {
+      ...context,
+      payment,
+      audience,
+      reservationId: existingReservation
+        ? payload.id
+        : payload.approved_reservation_id,
+    });
     await sendSmtpMail({
       to,
       replyTo: resolveReplyTo(context.payload.gite.email),
@@ -456,6 +523,7 @@ export const sendBookingPaymentEmails = async (
       text: message.text,
       html: message.html,
     });
+  }
 };
 
 export const buildBookingRequestApprovedSms = (
