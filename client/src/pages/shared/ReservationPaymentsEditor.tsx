@@ -21,6 +21,7 @@ type Props = {
   tracking: ReservationPaymentTracking;
   detailsId?: string;
   monthlyTotal?: number;
+  showOrigin?: boolean;
   onBusyChange?: (busy: boolean) => void;
   onUpdated?: (
     tracking: ReservationPaymentTracking,
@@ -48,6 +49,7 @@ export default function ReservationPaymentsEditor({
   tracking: initial,
   detailsId,
   monthlyTotal,
+  showOrigin = true,
   onUpdated,
   onBusyChange,
 }: Props) {
@@ -193,19 +195,21 @@ export default function ReservationPaymentsEditor({
       className="reservation-payment-details"
       aria-label="Détail du règlement"
     >
-      <label className="reservation-ledger__origin">
-        <span>Origine de la réservation</span>
-        <select
-          aria-label="Origine de la réservation"
-          value={source}
-          disabled={busy || !canWrite}
-          onChange={(event) => void changeSource(event.target.value)}
-        >
-          {BOOKING_SOURCES.map((item) => (
-            <option key={item}>{item}</option>
-          ))}
-        </select>
-      </label>
+      {showOrigin ? (
+        <label className="reservation-ledger__origin">
+          <span>Origine de la réservation</span>
+          <select
+            aria-label="Origine de la réservation"
+            value={source}
+            disabled={busy || !canWrite}
+            onChange={(event) => void changeSource(event.target.value)}
+          >
+            {BOOKING_SOURCES.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <div className="reservation-payment-details__row">
         <span>Total du séjour</span>
         <strong>{formatEuro(tracking.total)}</strong>

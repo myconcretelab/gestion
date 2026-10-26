@@ -232,6 +232,7 @@ export default function ReservationPaymentPopover({
             </div>
             {isReservationPaymentTracking(reservation.payment_tracking) ? (
               <ReservationPaymentsEditor
+                showOrigin={false}
                 reservation={reservation}
                 tracking={reservation.payment_tracking}
                 onUpdated={onUpdated}
