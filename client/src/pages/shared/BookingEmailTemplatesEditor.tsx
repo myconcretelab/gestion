@@ -1,4 +1,3 @@
-import { EmailVariable } from "./EmailTextPreview";
 import {
   bookingEmailTemplateKeys,
   bookingEmailTemplates,
@@ -20,22 +19,12 @@ export default function BookingEmailTemplatesEditor({
 }) {
   return (
     <div className="settings-sms-text-list settings-sms-texts" style={{ marginTop: 20 }}>
-      <p className="note">
+      <p className="field-hint">
         Ces textes utilisent la même présentation que les contrats : logo de
         l’organisation, photo principale publique du gîte et coordonnées. Les
         confirmations envoyées aux clients après paiement reprennent le modèle «
         Confirmation de réservation » ci-dessus. Les notifications aux
         propriétaires utilisent leurs propres modèles ci-dessous.
-      </p>
-      <p className="field-hint">
-        Variables de règlement : <EmailVariable name="paymentSummary" />,{" "}
-        <EmailVariable name="paidAmount" />, <EmailVariable name="remainingAmount" />,{" "}
-        <EmailVariable name="arrhesMontant" />,{" "}
-        <EmailVariable name="stayPaymentInstruction" />. Autres variables :{" "}
-        <EmailVariable name="holdExpiresAt" />, <EmailVariable name="clientDetails" />,{" "}
-        <EmailVariable name="clientMessage" />, <EmailVariable name="decisionNote" />,{" "}
-        <EmailVariable name="requestReference" />. Les mêmes variables de séjour et
-        d’options sont disponibles dans tous les modèles de réservation.
       </p>
       {bookingEmailTemplateKeys.map((key) => (
         <details key={key} className="settings-sms-text-row">
