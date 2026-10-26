@@ -6349,7 +6349,6 @@ const ReservationsPage = () => {
                                         else saveAndCloseExistingRow(reservation.id).catch((err) => setError((err as Error).message));
                                       },
                                     } satisfies ActionMenuItem] : []),
-                                    { id: "duplicate", label: "Dupliquer", icon: "copy", onSelect: () => duplicateIntoNewRow(reservation, monthIndex, rowIndex) },
                                     ...(canSplitByMonth ? [{
                                       id: "split", label: splittingId === reservation.id ? "Scission en cours…" : "Scinder par mois", icon: "split",
                                       description: isEditing ? "Enregistrez la ligne avant de scinder" : undefined,
@@ -6357,7 +6356,6 @@ const ReservationsPage = () => {
                                       onSelect: () => { splitReservationByMonth(reservation).catch((err) => setError((err as Error).message)); },
                                     } satisfies ActionMenuItem] : []),
                                     { id: "options", label: "Options et frais", icon: "options", description: hasFees ? "Des options sont déjà renseignées" : undefined, onSelect: () => toggleDetails(reservation) },
-                                    { id: "payments", label: "Origine et règlements", icon: "link", to: `/reservations/${reservation.id}/reglements` },
                                     ...(reservation.gite_id ? [{ id: "payment-link", label: "Lien de paiement Stripe", icon: "link", disabled: isEditing || rowSaveState === "saving", onSelect: () => setPaymentLinkReservation(reservation) } satisfies ActionMenuItem] : []),
                                     ...(reservation.airbnb_url ? [{ id: "airbnb", label: "Ouvrir sur Airbnb", icon: "external", href: reservation.airbnb_url, external: true } satisfies ActionMenuItem] : []),
                                     ...(telephoneHref ? [{ id: "phone", label: "Appeler", description: reservation.telephone ?? undefined, icon: "phone", href: telephoneHref } satisfies ActionMenuItem] : []),
@@ -6366,6 +6364,7 @@ const ReservationsPage = () => {
                                       { id: "invoice", label: "Créer une facture", icon: "invoice", to: `/factures/nouvelle?fromReservationId=${encodeURIComponent(reservation.id)}` } satisfies ActionMenuItem,
                                     ] : []),
                                     { id: "delete", label: deletingId === reservation.id ? "Suppression en cours…" : "Supprimer", icon: "trash", danger: true, separatorBefore: true, disabled: deletingId === reservation.id, onSelect: () => { void removeReservation(reservation); } },
+                                    { id: "duplicate", label: "Dupliquer", icon: "copy", separatorBefore: true, onSelect: () => duplicateIntoNewRow(reservation, monthIndex, rowIndex) },
                                   ]}
                                 />
                               </div>
