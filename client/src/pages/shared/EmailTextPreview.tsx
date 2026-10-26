@@ -54,9 +54,7 @@ const exampleValues: Record<string, string> = {
 };
 
 export default function EmailTextPreview() {
-  const [text, setText] = useState(
-    "L’arrivée se fait à partir de {{heureArrivee}} et le départ avant {{heureDepart}}.",
-  );
+  const [text, setText] = useState("");
   const unknownVariables = [...new Set(
     [...text.matchAll(/{{(\w+)}}/g)]
       .map(match => match[1])
