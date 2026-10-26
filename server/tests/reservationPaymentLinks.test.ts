@@ -28,6 +28,7 @@ before(async () => {
     APP_PUBLIC_URL: "http://localhost:4001",
     SMTP_HOST: "",
     SMTP_FROM: "",
+    BOOKING_STRIPE_MODE: "test",
     BOOKING_STRIPE_SECRET_KEY: "sk_test_no_network",
     BOOKING_STRIPE_ACCOUNT_ID: "acct_fixture",
     BOOKING_STRIPE_ORGANIZATION_ID: org,
