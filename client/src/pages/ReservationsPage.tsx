@@ -1091,6 +1091,18 @@ const matchesMobileInlineBreakpoint = () =>
   typeof window.matchMedia === "function" &&
   window.matchMedia(`(max-width: ${MOBILE_INLINE_INSERT_BREAKPOINT}px)`).matches;
 
+const ReservationTableDate = ({ value }: { value: string }) => {
+  const formatted = formatDate(value);
+  const yearSeparator = formatted.lastIndexOf("/");
+  if (yearSeparator < 0) return <span>{formatted}</span>;
+  return (
+    <time className="reservations-table-date" dateTime={value} aria-label={formatted}>
+      <span>{formatted.slice(0, yearSeparator)}<span className="reservations-table-date__separator">/</span></span>
+      <span className="reservations-table-date__year">{formatted.slice(yearSeparator + 1)}</span>
+    </time>
+  );
+};
+
 const ReservationsPage = () => {
   const currentYear = new Date().getUTCFullYear();
   const location = useLocation();
@@ -5171,7 +5183,7 @@ const ReservationsPage = () => {
                 </div>
 
                 {isMonthExpanded && (
-                  <div id={monthPanelId}>
+                  <div id={monthPanelId} className="reservations-table-container">
                     <table className="table reservations-table">
                   <colgroup>
                     <col className="reservations-col reservations-col--insert" />
@@ -5195,12 +5207,12 @@ const ReservationsPage = () => {
                       <th className="reservations-col-date reservations-col-sortie">Sortie</th>
                       <th className="reservations-col-nights">Nuits</th>
                       <th className="reservations-col-adults">Adultes</th>
-                      <th>Prix/nuit</th>
+                      <th>Prix<span className="reservations-table-heading__suffix">/nuit</span></th>
                       <th>Total</th>
                       <th className="reservations-col-fees">Options</th>
                       <th>Origine</th>
                       <th>Commentaire</th>
-                      <th>Actions</th>
+                      <th className="table-actions-cell">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5869,7 +5881,7 @@ const ReservationsPage = () => {
                                   onClick={() => openInlineField(reservation, "date_entree", inlineOccurrenceId)}
                                   title="Modifier la date d'entrée"
                                 >
-                                  {formatDate(reservation.date_entree)}
+                                  <ReservationTableDate value={reservation.date_entree} />
                                 </button>
                               )}
                             </td>
@@ -5925,7 +5937,7 @@ const ReservationsPage = () => {
                                   onClick={() => openInlineField(reservation, "date_sortie", inlineOccurrenceId)}
                                   title="Modifier la date de sortie"
                                 >
-                                  {formatDate(reservation.date_sortie)}
+                                  <ReservationTableDate value={reservation.date_sortie} />
                                 </button>
                               )}
                             </td>
@@ -6368,7 +6380,10 @@ const ReservationsPage = () => {
                                         : `Ajouter un commentaire pour ${getEditableHostName(reservation.hote_nom)}`
                                     }
                                   >
-                                    {visibleComment || "Ajouter un commentaire"}
+                                    {visibleComment ? <span className="reservations-comment-trigger__text">{visibleComment}</span> : <>
+                                      <span className="reservations-comment-placeholder__full">Ajouter un commentaire</span>
+                                      <span className="reservations-comment-placeholder__short">Ajouter</span>
+                                    </>}
                                   </button>
                                 </div>
                               )}
@@ -6393,18 +6408,13 @@ const ReservationsPage = () => {
                                       onSelect: () => { markReservationAsVerified(reservation).catch((err) => setError((err as Error).message)); },
                                       disabled: rowSaveState === "saving" || deletingId === reservation.id,
                                     } satisfies ActionMenuItem] : []),
-                                    {
-                                      id: "edit", label: isEditing ? "Enregistrer" : "Modifier", icon: isEditing ? "save" : "edit",
+                                    ...(isEditing ? [{
+                                      id: "save", label: "Enregistrer", icon: "save",
                                       onSelect: () => {
-                                        if (isEditing) {
-                                          if (isDetailsExpanded) saveExistingRow(reservation.id).catch((err) => setError((err as Error).message));
-                                          else saveAndCloseExistingRow(reservation.id).catch((err) => setError((err as Error).message));
-                                          return;
-                                        }
-                                        setEditingRows((previous) => ({ ...previous, [reservation.id]: true }));
-                                        setDrafts((previous) => ({ ...previous, [reservation.id]: previous[reservation.id] ?? toDraft(reservation) }));
+                                        if (isDetailsExpanded) saveExistingRow(reservation.id).catch((err) => setError((err as Error).message));
+                                        else saveAndCloseExistingRow(reservation.id).catch((err) => setError((err as Error).message));
                                       },
-                                    },
+                                    } satisfies ActionMenuItem] : []),
                                     { id: "duplicate", label: "Dupliquer", icon: "copy", onSelect: () => duplicateIntoNewRow(reservation, monthIndex, rowIndex) },
                                     ...(canSplitByMonth ? [{
                                       id: "split", label: splittingId === reservation.id ? "Scission en cours…" : "Scinder par mois", icon: "split",
