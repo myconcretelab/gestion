@@ -1,3 +1,4 @@
+import { EmailVariable } from "./EmailTextPreview";
 import {
   bookingEmailTemplateKeys,
   bookingEmailTemplates,
@@ -27,13 +28,13 @@ export default function BookingEmailTemplatesEditor({
         propriétaires utilisent leurs propres modèles ci-dessous.
       </p>
       <p className="field-hint">
-        Variables de règlement : <code>{"{{paymentSummary}}"}</code>,{" "}
-        <code>{"{{paidAmount}}"}</code>, <code>{"{{remainingAmount}}"}</code>,{" "}
-        <code>{"{{arrhesMontant}}"}</code>,{" "}
-        <code>{"{{stayPaymentInstruction}}"}</code>. Autres variables :{" "}
-        <code>{"{{holdExpiresAt}}"}</code>, <code>{"{{clientDetails}}"}</code>,{" "}
-        <code>{"{{clientMessage}}"}</code>, <code>{"{{decisionNote}}"}</code>,{" "}
-        <code>{"{{requestReference}}"}</code>. Les mêmes variables de séjour et
+        Variables de règlement : <EmailVariable name="paymentSummary" />,{" "}
+        <EmailVariable name="paidAmount" />, <EmailVariable name="remainingAmount" />,{" "}
+        <EmailVariable name="arrhesMontant" />,{" "}
+        <EmailVariable name="stayPaymentInstruction" />. Autres variables :{" "}
+        <EmailVariable name="holdExpiresAt" />, <EmailVariable name="clientDetails" />,{" "}
+        <EmailVariable name="clientMessage" />, <EmailVariable name="decisionNote" />,{" "}
+        <EmailVariable name="requestReference" />. Les mêmes variables de séjour et
         d’options sont disponibles dans tous les modèles de réservation.
       </p>
       {bookingEmailTemplateKeys.map((key) => (

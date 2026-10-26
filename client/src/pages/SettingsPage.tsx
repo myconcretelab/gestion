@@ -1,4 +1,4 @@
-import EmailTextPreview from "./shared/EmailTextPreview";
+import EmailTextPreview, { EmailTextPreviewProvider, EmailVariable } from "./shared/EmailTextPreview";
 import BookingEmailTemplatesEditor from "./shared/BookingEmailTemplatesEditor";
 import { bookingEmailTemplateKeys, defaultBookingEmailTextSettings, type BookingEmailTemplateKey } from "@contrats/shared";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -5763,6 +5763,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
               className="settings-cluster"
               aria-labelledby="nav-settings-email-texts"
             >
+            <EmailTextPreviewProvider>
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Communication</div>
@@ -5781,22 +5782,22 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                 </div>
                 <div className="section-title">Textes d'emails</div>
                 <div className="field-hint">
-                  Variables disponibles selon le type: {"{{greeting}}"},{" "}
-                  {"{{documentUrl}}"}, {"{{giteName}}"}, {"{{giteNameWithPreposition}}"}, {"{{documentNumber}}"},{" "}
-                  {"{{giteAddress}}"}, {"{{ownerPhone}}"},{" "}
-                  {"{{locataireNom}}"}, {"{{giteSentence}}"},{" "}
-                  {"{{giteReference}}"}, {"{{stayDuration}}"},{" "}
-                  {"{{dateDebutLong}}"}, {"{{heureArrivee}}"},{" "}
-                  {"{{dateFinLong}}"}, {"{{heureDepart}}"},{" "}
-                  {"{{arrhesMontant}}"}, {"{{arrhesDateLimiteLong}}"},{" "}
-                  {"{{arrhesInstruction}}"}, {"{{soldeMontant}}"},{" "}
-                  {"{{activitiesList}}"}, {"{{guideUrl}}"}, {"{{destinationUrl}}"},{" "}
-                  {"{{clientName}}"}, {"{{dateEntreeLong}}"},{" "}
-                  {"{{dateSortieLong}}"}, {"{{travellersSummary}}"},{" "}
-                  {"{{totalGlobal}}"}, {"{{totalOptions}}"}, {"{{beddingReminder}}"}, {"{{optionsSummary}}"}
+                  Variables disponibles selon le type: <EmailVariable name="greeting" />,{" "}
+                  <EmailVariable name="documentUrl" />, <EmailVariable name="giteName" />, <EmailVariable name="giteNameWithPreposition" />, <EmailVariable name="documentNumber" />,{" "}
+                  <EmailVariable name="giteAddress" />, <EmailVariable name="ownerPhone" />,{" "}
+                  <EmailVariable name="locataireNom" />, <EmailVariable name="giteSentence" />,{" "}
+                  <EmailVariable name="giteReference" />, <EmailVariable name="stayDuration" />,{" "}
+                  <EmailVariable name="dateDebutLong" />, <EmailVariable name="heureArrivee" />,{" "}
+                  <EmailVariable name="dateFinLong" />, <EmailVariable name="heureDepart" />,{" "}
+                  <EmailVariable name="arrhesMontant" />, <EmailVariable name="arrhesDateLimiteLong" />,{" "}
+                  <EmailVariable name="arrhesInstruction" />, <EmailVariable name="soldeMontant" />,{" "}
+                  <EmailVariable name="activitiesList" />, <EmailVariable name="guideUrl" />, <EmailVariable name="destinationUrl" />,{" "}
+                  <EmailVariable name="clientName" />, <EmailVariable name="dateEntreeLong" />,{" "}
+                  <EmailVariable name="dateSortieLong" />, <EmailVariable name="travellersSummary" />,{" "}
+                  <EmailVariable name="totalGlobal" />, <EmailVariable name="totalOptions" />, <EmailVariable name="beddingReminder" />, <EmailVariable name="optionsSummary" />
                 </div>
                 <div className="field-hint">
-                  Options : <code>{"{{optionsSummary}}"}</code> détaille toutes les options choisies (tarif, quantité et montant). Pour les placer séparément : {"{{optionsDraps}}"}, {"{{optionsLingeToilette}}"}, {"{{optionsMenage}}"}, {"{{optionsDepartTardif}}"}, {"{{optionsChiens}}"}. Les options non choisies restent vides.
+                  Options : <EmailVariable name="optionsSummary" /> détaille toutes les options choisies (tarif, quantité et montant). Pour les placer séparément : <EmailVariable name="optionsDraps" />, <EmailVariable name="optionsLingeToilette" />, <EmailVariable name="optionsMenage" />, <EmailVariable name="optionsDepartTardif" />, <EmailVariable name="optionsChiens" />. Les options non choisies restent vides.
                 </div>
                 {loadingDocumentEmailTexts ? (
                   <div className="field-hint" style={{ marginTop: 12 }}>
@@ -6025,7 +6026,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             }}
                             disabled={savingDocumentEmailTexts}
                           />
-                          <small>Envoyé après l’email si un numéro est renseigné. Variables : <code>{"{{clientName}}"}</code>, <code>{"{{giteName}}"}</code>, <code>{"{{giteNameWithPreposition}}"}</code>, <code>{"{{dateEntree}}"}</code>, <code>{"{{dateSortie}}"}</code>.</small>
+                          <small>Envoyé après l’email si un numéro est renseigné. Variables : <EmailVariable name="clientName" />, <EmailVariable name="giteName" />, <EmailVariable name="giteNameWithPreposition" />, <EmailVariable name="dateEntree" />, <EmailVariable name="dateSortie" />.</small>
                         </label>
                         <label className="field">
                           Activités suggérées
@@ -6142,6 +6143,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                 )}
               </div>
             </div>
+            </EmailTextPreviewProvider>
             </section>
           ) : null}
 

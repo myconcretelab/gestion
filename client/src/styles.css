@@ -21579,3 +21579,52 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 /* Keep the final gîte actions above the shared completion assistant. */
 .gites-page { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
 .gites-editor-section [id], .gites-editor-section[id] { scroll-margin-top: 100px; }
+
+.email-variable {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.email-variable__button {
+  padding: 2px 5px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-family: monospace;
+  font-size: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.email-variable__button:hover,
+.email-variable__button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.email-variable__popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(320px, 75vw);
+  padding: 10px 12px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.email-variable:hover .email-variable__popover,
+.email-variable:focus-within .email-variable__popover {
+  visibility: visible;
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { createContext, useContext, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 
 const exampleValues: Record<string, string> = {
   greeting: "Bonjour Camille Martin,",
@@ -53,8 +53,61 @@ const exampleValues: Record<string, string> = {
   requestReference: "Référence de réservation : RES-2026-001",
 };
 
-export default function EmailTextPreview() {
+type PreviewContextValue = {
+  text: string;
+  setText: (value: string) => void;
+  inputRef: RefObject<HTMLTextAreaElement>;
+  insertVariable: (key: string) => void;
+};
+
+const PreviewContext = createContext<PreviewContextValue | null>(null);
+
+export function EmailTextPreviewProvider({ children }: { children: ReactNode }) {
   const [text, setText] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const insertVariable = (key: string) => {
+    const input = inputRef.current;
+    const start = input?.selectionStart ?? text.length;
+    const end = input?.selectionEnd ?? start;
+    const variable = `{{${key}}}`;
+    setText(text.slice(0, start) + variable + text.slice(end));
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + variable.length, start + variable.length);
+    });
+  };
+  return (
+    <PreviewContext.Provider value={{ text, setText, inputRef, insertVariable }}>
+      {children}
+    </PreviewContext.Provider>
+  );
+}
+
+export function EmailVariable({ name }: { name: string }) {
+  const preview = useContext(PreviewContext);
+  const tooltipId = useId();
+  const example = exampleValues[name];
+  return (
+    <span className="email-variable">
+      <button
+        type="button"
+        className="email-variable__button"
+        aria-label={`Insérer {{${name}}} dans le texte à tester`}
+        aria-describedby={tooltipId}
+        onMouseDown={event => event.preventDefault()}
+        onClick={() => preview?.insertVariable(name)}
+      >
+        {`{{${name}}}`}
+      </button>
+      <span id={tooltipId} role="tooltip" className="email-variable__popover">
+        Exemple : {example === "" ? "(vide si l’option n’est pas choisie)" : example ?? "Aucun exemple disponible"}
+      </span>
+    </span>
+  );
+}
+
+export default function EmailTextPreview() {
+  const { text, setText, inputRef } = useContext(PreviewContext)!;
   const unknownVariables = [...new Set(
     [...text.matchAll(/{{(\w+)}}/g)]
       .map(match => match[1])
@@ -70,11 +123,11 @@ export default function EmailTextPreview() {
       <p className="field-hint">
         Écrivez ou collez un texte avec des variables : l’aperçu se met à jour immédiatement.
         Les valeurs sont fictives et leur disponibilité dépend du type d’email.
-        Ce test ne modifie pas vos modèles.
+        Cliquez sur une variable de la liste pour l’insérer ici ; survolez-la pour voir un exemple. Ce test ne modifie pas vos modèles.
       </p>
       <label className="field">
         Texte à tester
-        <textarea rows={3} value={text} onChange={event => setText(event.target.value)} />
+        <textarea ref={inputRef} rows={3} value={text} onChange={event => setText(event.target.value)} />
       </label>
       <div className="field">
         <span>Aperçu avec des valeurs d’exemple</span>
