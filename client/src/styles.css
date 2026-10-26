@@ -10554,6 +10554,15 @@ body {
   background: #ffffff;
 }
 
+details.settings-sms-text-row > summary {
+  cursor: pointer;
+  color: var(--primary-strong);
+}
+
+details.settings-sms-text-row[open] > summary {
+  margin-bottom: 10px;
+}
+
 .settings-sms-text-row__header {
   display: flex;
   align-items: center;

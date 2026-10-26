@@ -5806,10 +5806,10 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                       className="settings-sms-texts"
                       style={{ marginTop: 16 }}
                     >
-                      <div className="settings-sms-text-row">
-                        <div className="settings-sms-text-row__header">
+                      <details className="settings-sms-text-row">
+                        <summary>
                           <strong>Contrat</strong>
-                        </div>
+                        </summary>
                         <label className="field">
                           Sujet
                           <input
@@ -5911,12 +5911,12 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             />
                           </label>
                         </div>
-                      </div>
+                      </details>
 
-                      <div className="settings-sms-text-row">
-                        <div className="settings-sms-text-row__header">
+                      <details className="settings-sms-text-row">
+                        <summary>
                           <strong>Facture</strong>
-                        </div>
+                        </summary>
                         <label className="field">
                           Sujet
                           <input
@@ -5955,12 +5955,12 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             disabled={savingDocumentEmailTexts}
                           />
                         </label>
-                      </div>
+                      </details>
 
-                      <div className="settings-sms-text-row">
-                        <div className="settings-sms-text-row__header">
+                      <details className="settings-sms-text-row">
+                        <summary>
                           <strong>Confirmation de réservation · approbation ou paiement Stripe</strong>
-                        </div>
+                        </summary>
                         <label className="field">
                           Sujet
                           <input
@@ -6093,7 +6093,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             />
                           </label>
                         </div>
-                      </div>
+                      </details>
                     </div>
 
                     <BookingEmailTemplatesEditor

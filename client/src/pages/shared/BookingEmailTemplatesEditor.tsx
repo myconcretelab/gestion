@@ -18,7 +18,7 @@ export default function BookingEmailTemplatesEditor({
   ) => void;
 }) {
   return (
-    <div className="settings-sms-text-list" style={{ marginTop: 20 }}>
+    <div className="settings-sms-text-list settings-sms-texts" style={{ marginTop: 20 }}>
       <p className="note">
         Ces textes utilisent la même présentation que les contrats : logo de
         l’organisation, photo principale publique du gîte et coordonnées. Les
