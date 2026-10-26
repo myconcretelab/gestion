@@ -1,3 +1,4 @@
+import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
 import { createPortal } from "react-dom";
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { apiFetch, buildApiUrl, isApiError } from "../../utils/api";
@@ -17,18 +18,7 @@ type ContractReturnDrawerProps = {
 
 const APP_SCROLL_LOCK_CLASS = "app-scroll-locked";
 
-const RESERVATION_PAYMENT_SOURCES = [
-  "Abritel",
-  "Airbnb",
-  "Chèque",
-  "Espèces",
-  "HomeExchange",
-  "Virement",
-  "A définir",
-  "Gites de France",
-] as const;
-
-const ARRHES_PAYMENT_MODES = ["Chèque", "Virement", "Espèces", "A définir"] as const;
+const ARRHES_PAYMENT_MODES = ["Chèque", "Virement", "Espèces", "Carte", "Versement plateforme", "Autre", "Stripe", "A définir"] as const;
 const SIGNED_DOCUMENT_MAX_BYTES = 12 * 1024 * 1024;
 const SIGNED_DOCUMENT_ALLOWED_MIME_TYPES = new Map<string, string>([
   ["application/pdf", ".pdf"],
@@ -180,7 +170,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
       .then((data) => {
         if (!active) return;
         setReservation(data);
-        setReservationPaymentSource(data.source_paiement ?? "");
+        setReservationPaymentSource(getBookingSource(data));
         setOptions(mergeReservationOptions(data.options ?? contract.options));
       })
       .catch((err) => {
@@ -261,12 +251,14 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
           nb_enfants_2_17: childrenCount,
           statut_reception_contrat: contractReceived ? "recu" : "non_recu",
           date_reception_contrat: contractReceived ? receptionDate || null : null,
-          statut_paiement_arrhes: arrhesPaid ? "recu" : "non_recu",
-          date_paiement_arrhes: arrhesPaid ? arrhesDate || null : null,
-          mode_paiement_arrhes: arrhesPaid ? arrhesPaymentMode || null : null,
+          ...(!reservation?.payments_managed ? {
+            statut_paiement_arrhes: arrhesPaid ? "recu" : "non_recu",
+            date_paiement_arrhes: arrhesPaid ? arrhesDate || null : null,
+            mode_paiement_arrhes: arrhesPaid ? arrhesPaymentMode || null : null,
+          } : {}),
           commentaire_interne: internalComment,
           reservation: {
-            source_paiement: reservationPaymentSource || null,
+            booking_source: reservationPaymentSource || undefined,
             options,
           },
         },
@@ -418,6 +410,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                   <input
                     type="checkbox"
                     checked={arrhesPaid}
+                    disabled={reservation?.payments_managed || loading}
                     onChange={(event) => {
                       const checked = event.target.checked;
                       setArrhesPaid(checked);
@@ -433,7 +426,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 <input
                   type="date"
                   value={arrhesDate}
-                  disabled={!arrhesPaid}
+                  disabled={!arrhesPaid || reservation?.payments_managed || loading}
                   onChange={(event) => setArrhesDate(event.target.value)}
                 />
               </label>
@@ -442,7 +435,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 Mode de paiement des arrhes
                 <select
                   value={arrhesPaymentMode}
-                  disabled={!arrhesPaid}
+                  disabled={!arrhesPaid || reservation?.payments_managed || loading}
                   onChange={(event) => setArrhesPaymentMode(event.target.value)}
                 >
                   <option value="">À renseigner</option>
@@ -454,6 +447,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 </select>
               </label>
 
+              {contract.reservation_id ? <a href={`/reservations/${contract.reservation_id}/reglements`}>Voir et saisir les règlements ↗</a> : null}
               <div className="contract-return-drawer__amount-card">
                 <span>Montant des arrhes prévues</span>
                 <strong>{formatEuro(contract.arrhes_montant)}</strong>
@@ -499,13 +493,13 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 {loading ? <div className="note">Chargement de la réservation liée...</div> : null}
                 <div className="contract-return-drawer__grid contract-return-drawer__grid--compact">
                   <label className="field">
-                    Source de paiement réservation
+                    Origine de la réservation
                     <select
                       value={reservationPaymentSource}
                       onChange={(event) => setReservationPaymentSource(event.target.value)}
                     >
                       <option value="">À renseigner</option>
-                      {RESERVATION_PAYMENT_SOURCES.map((item) => (
+                      {BOOKING_SOURCES.map((item) => (
                         <option key={item} value={item}>
                           {item}
                         </option>

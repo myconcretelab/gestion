@@ -357,6 +357,9 @@ export type ReservationLinkedContract = {
 };
 
 export type Reservation = {
+  booking_source?: string | null;
+  payments_managed?: boolean;
+  payment_tracking?: import("@contrats/shared").ReservationPaymentTracking | null;
   online_payment?: {
     amount_paid: number; deposit: number; total: number; remaining: number;
     offline_received?: number;
@@ -556,6 +559,7 @@ export type InvoiceExtraFee = {
 };
 
 export type Contrat = {
+  payments_managed?: boolean;
   id: string;
   numero_contrat: string;
   gite_id: string;
@@ -597,7 +601,7 @@ export type Contrat = {
   statut_paiement_arrhes: "non_recu" | "recu";
   date_paiement_arrhes?: string | null;
   statut_paiement_solde: "non_regle" | "regle";
-  mode_paiement_arrhes?: "Chèque" | "Virement" | "Espèces" | "A définir" | "Stripe" | null;
+  mode_paiement_arrhes?: "Chèque" | "Virement" | "Espèces" | "A définir" | "Stripe" | "Carte" | "Versement plateforme" | "Autre" | null;
   notes?: string | null;
   commentaire_interne?: string | null;
   reservation_id?: string | null;

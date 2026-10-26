@@ -1,4 +1,6 @@
+export { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
 export const RESERVATION_SOURCES = [
+  "Direct",
   "Abritel",
   "Airbnb",
   "Chèque",

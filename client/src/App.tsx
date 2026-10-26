@@ -14,6 +14,7 @@ const ContratDetailPage = lazy(() => import("./pages/ContratDetailPage"));
 const FacturesListPage = lazy(() => import("./pages/FacturesListPage"));
 const FactureFormPage = lazy(() => import("./pages/FactureFormPage"));
 const FactureDetailPage = lazy(() => import("./pages/FactureDetailPage"));
+const ReservationPaymentsPage = lazy(() => import("./pages/ReservationPaymentsPage"));
 const ReservationsPage = lazy(() => import("./features/reservations"));
 const BookingRequestsPage = lazy(() => import("./pages/BookingRequestsPage"));
 const BookingRequestDetailPage = lazy(() => import("./pages/BookingRequestDetailPage"));
@@ -1072,6 +1073,7 @@ const App = () => {
             <Route path="/factures/:id/edition" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureFormPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures/:id" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureDetailPage /></AmountsAccess></PageAccess>} />
             <Route path="/reservations/mobile" element={<PageAccess allowed={canAccessPage("reservations")}><MobileReservationEditorPage /></PageAccess>} />
+            <Route path="/reservations/:id/reglements" element={<PageAccess allowed={canAccessPage("reservations")}><AmountsAccess allowed={canViewAmounts}><ReservationPaymentsPage /></AmountsAccess></PageAccess>} />
             <Route path="/reservations" element={<PageAccess allowed={canAccessPage("reservations")}><ReservationsPage /></PageAccess>} />
             <Route path="/calendrier" element={<PageAccess allowed={canAccessPage("calendar")}><CalendrierPage /></PageAccess>} />
             <Route path="/planning-relais" element={<Navigate to="/taches" replace />} />

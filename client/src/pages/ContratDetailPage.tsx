@@ -292,7 +292,7 @@ const ContratDetailPage = () => {
     ? contrat.locataire_tel.replace(/\s+/g, "")
     : "";
   const receptionDateEnabled = contractReceived || Boolean(receptionDateInput);
-  const arrhesDateEnabled = arrhesPaid || Boolean(arrhesPaymentDateInput);
+  const arrhesDateEnabled = !contrat.payments_managed && (arrhesPaid || Boolean(arrhesPaymentDateInput));
   const showArrhesDeadline = !arrhesPaid && Boolean(contrat.arrhes_date_limite);
   const pdfVersion =
     contrat.date_derniere_modif ?? contrat.date_creation ?? Date.now();
@@ -466,6 +466,7 @@ const ContratDetailPage = () => {
               </label>
               <span>Reçu en retour</span>
             </div>
+            {contrat.reservation_id ? <a href={`/reservations/${contrat.reservation_id}/reglements`}>Voir et saisir les règlements ↗</a> : null}
             <div className="arrhes-card__editor">
               <label className="field">
                 Date de réception du contrat
@@ -517,7 +518,7 @@ const ContratDetailPage = () => {
                   <input
                     type="checkbox"
                     checked={arrhesPaid}
-                    disabled={arrhesUpdating}
+                    disabled={arrhesUpdating || contrat.payments_managed}
                     onChange={toggleArrhes}
                   />
                   <span className="slider" />
@@ -536,7 +537,7 @@ const ContratDetailPage = () => {
                     <input
                       type="checkbox"
                       checked={balancePaid}
-                      disabled={balanceUpdating}
+                      disabled={balanceUpdating || contrat.payments_managed}
                       onChange={toggleBalance}
                     />
                     <span className="slider" />

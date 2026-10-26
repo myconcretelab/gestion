@@ -1,3 +1,5 @@
+import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
+import { reservationPaymentChanged } from "./shared/ReservationPaymentsEditor";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
 import { GiteTasksButton } from "./shared/GiteTasksDrawer";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,9 +22,6 @@ import {
   buildCalendarReservationReturnHref,
   buildMobileReservationEditorHref,
 } from "./shared/mobileReservationEditor";
-import {
-  RESERVATION_SOURCES,
-} from "./shared/reservationSources";
 import type { Contrat, Gite, Reservation } from "../utils/types";
 
 const MONTHS = [
@@ -144,6 +143,8 @@ type CalendarReservation = Pick<
   Partial<
     Pick<
       Reservation,
+      | "booking_source"
+      | "payment_tracking"
       | "options"
       | "telephone"
       | "commentaire"
@@ -711,25 +712,25 @@ const CalendrierPage = () => {
     reservation: CalendarReservation,
     source: string
   ) => {
-    if (source === reservation.source_paiement) return;
+    if (source === getBookingSource(reservation)) return;
 
     setSourceUpdating(true);
     setSourceUpdateError(null);
     try {
-      const updated = await apiFetch<Reservation>(`/reservations/${reservation.id}/source`, {
+      const updated = await apiFetch<{ id: string; booking_source: string }>(`/reservations/${reservation.id}/booking-source`, {
         method: "PATCH",
-        json: { source_paiement: source },
+        json: { booking_source: source },
       });
       setReservations((previous) =>
         previous.map((item) =>
-          item.id === updated.id ? { ...item, source_paiement: updated.source_paiement } : item
+          item.id === updated.id ? { ...item, booking_source: updated.booking_source } : item
         )
       );
       setReservationDetailsById((previous) => ({
         ...previous,
         [reservation.id]: {
           ...previous[reservation.id],
-          source_paiement: updated.source_paiement,
+          booking_source: updated.booking_source,
         },
       }));
       setSourcePickerReservationId(null);
@@ -880,6 +881,17 @@ const CalendrierPage = () => {
   const schoolHolidayRangeFrom = `${year}-01-01`;
   const schoolHolidayRangeTo = usesViewportScroll ? `${year + 1}-06-30` : `${year}-12-31`;
   const schoolHolidayDates = useMemo(() => buildSchoolHolidayDateSet(schoolHolidays), [schoolHolidays]);
+
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ reservationId: string; tracking: ReservationPaymentTracking; booking_source: string }>).detail;
+      setReservationDetailsById((previous) => previous[detail.reservationId] ? {
+        ...previous, [detail.reservationId]: { ...previous[detail.reservationId], payment_tracking: detail.tracking, booking_source: detail.booking_source },
+      } : previous);
+    };
+    window.addEventListener(reservationPaymentChanged, changed);
+    return () => window.removeEventListener(reservationPaymentChanged, changed);
+  }, []);
 
   const mobileActionReservation = useMemo(
     () => (mobileActionReservationId ? reservationsForGite.find((reservation) => reservation.id === mobileActionReservationId) ?? null : null),
@@ -1737,8 +1749,8 @@ const CalendrierPage = () => {
                                       {
                                         gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
                                         "--calendar-reservation-span": String(segment.endColumn - segment.startColumn + 1),
-                                        "--calendar-reservation-bg": getPaymentColorFromMap(segment.reservation.source_paiement, paymentColorMap),
-                                        "--calendar-reservation-fg": getPaymentTextColorFromMap(segment.reservation.source_paiement, paymentColorMap),
+                                        "--calendar-reservation-bg": getPaymentColorFromMap(getBookingSource(segment.reservation), paymentColorMap),
+                                        "--calendar-reservation-fg": getPaymentTextColorFromMap(getBookingSource(segment.reservation), paymentColorMap),
                                       } as CSSProperties
                                     }
                                     onMouseEnter={() =>
@@ -1900,7 +1912,7 @@ const CalendrierPage = () => {
                     )}
                   </strong>
                 </div>
-                <small>{hoveredReservationDetails.reservation.source_paiement || "Source non renseignée"}</small>
+                <small>{getBookingSource(hoveredReservationDetails.reservation)}</small>
                 {hoveredReservationDetails.reservation.commentaire ? (
                   <p className="calendar-stay__note">{hoveredReservationDetails.reservation.commentaire}</p>
                 ) : null}
@@ -1981,8 +1993,8 @@ const CalendrierPage = () => {
                 </strong>
               </div>
               <div className="calendar-floating-popover__row">
-                <span>Source</span>
-                <strong>{hoveredReservationDetails.reservation.source_paiement || "Non renseignée"}</strong>
+                <span>Origine</span>
+                <strong>{getBookingSource(hoveredReservationDetails.reservation)}</strong>
               </div>
               {hoveredReservationDetails.reservation.commentaire ? (
                 <p className="calendar-floating-popover__note">{hoveredReservationDetails.reservation.commentaire}</p>
@@ -2051,9 +2063,9 @@ const CalendrierPage = () => {
           sourcePicker={
             sourcePickerReservationId === mobileActionReservation.id
               ? {
-                  label: "Source ou moyen de paiement",
-                  value: mobileActionReservation.source_paiement || "A définir",
-                  options: RESERVATION_SOURCES,
+                  label: "Origine de la réservation",
+                  value: getBookingSource(mobileActionReservation),
+                  options: BOOKING_SOURCES,
                   busy: sourceUpdating,
                   error: sourceUpdateError,
                   onChange: (source) => {

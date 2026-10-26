@@ -68,6 +68,7 @@ router.get("/", async (req, res, next) => {
           remise_montant: true,
           prix_par_nuit: true,
           prix_total: true,
+          booking_source: true,
           source_paiement: true,
           frais_optionnels_montant: true,
           frais_optionnels_declares: true,

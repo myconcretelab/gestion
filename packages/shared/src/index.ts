@@ -112,3 +112,4 @@ export * from "./touristTax.js";
 export * from "./bookingRequestOptionDetails.js";
 
 export * from "./bookingEmailTemplates.js";
+export * from "./reservationPayments.js";

@@ -9,7 +9,7 @@ import { GiteTasksButton, type GiteTaskSummary } from "./GiteTasksDrawer";
 
 type ReservationInfo = Pick<Reservation, "id" | "date_entree" | "date_sortie" | "nb_nuits" | "prix_total" | "source_paiement"> &
   Partial<Pick<Reservation, "options" | "commentaire" | "telephone" | "airbnb_url" |
-    "online_payment" | "linked_contract" | "remise_montant" | "frais_optionnels_montant" | "nb_adultes" | "nb_enfants_2_17" |
+    "booking_source" | "payment_tracking" | "online_payment" | "linked_contract" | "remise_montant" | "frais_optionnels_montant" | "nb_adultes" | "nb_enfants_2_17" |
     "energy_consumption_kwh" | "energy_cost_eur" | "energy_live_consumption_kwh" | "energy_live_cost_eur">>;
 
 type Props = Pick<ComponentProps<typeof MobileReservationActionsBar>,
@@ -29,7 +29,7 @@ const formatShortDate = (value: string) => new Date(value).toLocaleDateString("f
 });
 
 const MobileReservationInfoDrawer = ({
-  reservation,
+  reservation: providedReservation,
   total,
   paymentLoading,
   paymentError,
@@ -40,6 +40,8 @@ const MobileReservationInfoDrawer = ({
   highlightedCard,
   ...props
 }: Props) => {
+  const [localUpdate, setLocalUpdate] = useState<{ id: string; payment_tracking: Reservation["payment_tracking"]; booking_source?: string } | null>(null);
+  const reservation = localUpdate?.id === providedReservation.id ? { ...providedReservation, ...localUpdate } : providedReservation;
   const [paymentExpanded, setPaymentExpanded] = useState(false);
   const paymentDetailsId = useId();
   useEffect(() => { setPaymentExpanded(false); }, [reservation.id, props.open]);
@@ -64,13 +66,14 @@ const MobileReservationInfoDrawer = ({
         },
         ...(energyCost !== null ? [{ label: "Conso", value: formatEuro(energyCost) }] : []),
       ]}
-      highlightedCard={paymentExpanded && !reservation.online_payment?.refunded_amount && reservation.online_payment?.status !== "requires_review" ? highlightedCard : undefined}
+      highlightedCard={!reservation.payment_tracking && paymentExpanded && !reservation.online_payment?.refunded_amount && reservation.online_payment?.status !== "requires_review" ? highlightedCard : undefined}
       paymentInfo={paymentExpanded ? paymentLoading || paymentError ? (
         <section id={paymentDetailsId} className="reservation-payment-details" aria-label="Détail du règlement">
           <p role="status">{paymentError || "Chargement des règlements…"}</p>
         </section>
       ) : <ReservationPaymentDetails reservation={reservation}
-        detailsId={paymentDetailsId} monthlyTotal={total} onChangeSource={onToggleSource} /> : null}
+        detailsId={paymentDetailsId} monthlyTotal={total} onChangeSource={onToggleSource}
+        onUpdated={(payment_tracking, booking_source) => setLocalUpdate({ id: reservation.id, payment_tracking, booking_source })} /> : null}
       note={reservation.commentaire}
       phoneHref={buildTelephoneHref(reservation.telephone)}
       smsHref={buildSmsHref(reservation.telephone ?? "")}

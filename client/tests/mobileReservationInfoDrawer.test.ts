@@ -56,7 +56,7 @@ test("le chargement et une erreur de lecture restent distincts d'un paiement non
 test("un utilisateur sans accès aux montants ne voit pas la proportion payée", () => {
   try {
     setCurrentAuthUser({ permissions: { canViewAmounts: false, isOwner: false }, pageAccess: [] } as any);
-    const html = render({ reservation: { ...reservation, linked_contract: {
+    const html = render({ reservation: { ...reservation, payment_tracking: {}, linked_contract: {
       id: "c", arrhes_montant: 40, total_montant: 200,
       statut_paiement_arrhes: "recu", statut_paiement_solde: "non_regle",
     } } });
@@ -109,6 +109,6 @@ test("les arrhes par chèque montrent leur montant et leur date sans assimiler l
   assert.match(html, /Chèque · 24\/10\/2026/);
   assert.match(html, /40,00/);
   assert.match(html, /160,00/);
-  assert.match(html, /Source \/ moyen prévu : Virement/);
+  assert.match(html, /Information historique : Virement/);
   assert.match(html, /Modifier la source ou le moyen de paiement/);
 });

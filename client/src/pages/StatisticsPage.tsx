@@ -805,7 +805,7 @@ const StatisticsPage = () => {
 
               <div className="stats-gite-bottom charty">
                 <div>
-                  <p className="stats-subtitle">Répartition des paiements</p>
+                  <p className="stats-subtitle">Origine des réservations</p>
                   <PaymentPieChart payments={stats.payments} sourceColors={sourceColors} />
                 </div>
                 <div>

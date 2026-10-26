@@ -1,3 +1,5 @@
+import { BOOKING_SOURCES } from "@contrats/shared";
+import { assertLegacyTrackingEditable, syncManagedContractPayments, isManagedReservation, getContractPaymentContext } from "../modules/reservationPayments/ledger.js";
 import { contractStripeTracking } from "../modules/bookingPayments/contracts.js";
 import { Router, type NextFunction, type Response } from "express";
 import { z } from "zod";
@@ -49,7 +51,7 @@ const emptyStringToNull = (value: unknown) => {
 };
 
 const nullableDateString = z.preprocess(emptyStringToNull, z.string().trim().min(1).nullable()).optional();
-const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir", "Stripe"] as const;
+const arrhesPaymentModeValues = ["Chèque", "Virement", "Espèces", "A définir", "Stripe", "Carte", "Versement plateforme", "Autre"] as const;
 const SIGNED_CONTRACT_MAX_BYTES = 12 * 1024 * 1024;
 const SIGNED_CONTRACT_ALLOWED_MIME_TYPES = new Map<string, string>([
   ["application/pdf", ".pdf"],
@@ -154,6 +156,7 @@ const returnProcessingSchema = z.object({
   commentaire_interne: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   reservation: z
     .object({
+      booking_source: z.enum(BOOKING_SOURCES).optional(),
       source_paiement: z.preprocess(emptyStringToNull, z.enum(reservationPaymentSourceValues).nullable()).optional(),
       options: optionsSchema.optional(),
     })
@@ -220,7 +223,8 @@ const hydrateContract = (contrat: any) => ({
   gite: contrat.gite ? hydrateGite(contrat.gite) : undefined,
 });
 
-const hydrateContractForTrackingStatusResponse = (contrat: any) => ({
+const hydrateContractForTrackingStatusResponse = async (contrat: any) => ({
+  payments_managed: await isManagedReservation(contrat.reservation_id),
   ...hydrateContract(contrat),
   date_reception_contrat: contrat.statut_reception_contrat === "recu" ? contrat.date_reception_contrat : null,
   date_paiement_arrhes: contrat.statut_paiement_arrhes === "recu" ? contrat.date_paiement_arrhes : null,
@@ -702,7 +706,7 @@ router.get("/:id", async (req, res, next) => {
       include: { gite: true },
     });
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
-    res.json(hydrateContract(contrat));
+    res.json({ ...hydrateContract(contrat), payments_managed: await isManagedReservation(contrat.reservation_id) });
   } catch (err) {
     next(err);
   }
@@ -808,7 +812,7 @@ router.post("/", async (req, res, next) => {
       optionsTotal: totals.optionsTotal,
     });
 
-    const contrat = await prisma.contrat.create({
+    let contrat = await prisma.contrat.create({
       data: {
         numero_contrat: numeroContrat,
         gite_id: data.gite_id,
@@ -849,6 +853,10 @@ router.post("/", async (req, res, next) => {
       include: { gite: true },
     });
 
+    if (await isManagedReservation(reservationId)) {
+      await syncManagedContractPayments(reservationId);
+      contrat = (await getContractPaymentContext(contrat.id))!;
+    }
     const contractForPdf = toContractRenderInput(contrat);
     await generateContractPdf({
       contract: contractForPdf,
@@ -1096,7 +1104,7 @@ router.patch("/:id/reception", async (req, res, next) => {
       },
       include: { gite: true },
     });
-    res.json(hydrateContractForTrackingStatusResponse(contrat));
+    res.json(await hydrateContractForTrackingStatusResponse(contrat));
   } catch (err) {
     next(err);
   }
@@ -1107,10 +1115,11 @@ router.patch("/:id/arrhes", async (req, res, next) => {
     const data = arrhesStatusSchema.parse(req.body);
     const existing = await prisma.contrat.findUnique({
       where: { id: req.params.id },
-      select: { date_paiement_arrhes: true },
+      select: { date_paiement_arrhes: true, reservation_id: true },
     });
     if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
 
+    await assertLegacyTrackingEditable(existing);
     const contrat = await prisma.contrat.update({
       where: { id: req.params.id },
       data: {
@@ -1121,7 +1130,7 @@ router.patch("/:id/arrhes", async (req, res, next) => {
       },
       include: { gite: true },
     });
-    res.json(hydrateContractForTrackingStatusResponse(contrat));
+    res.json(await hydrateContractForTrackingStatusResponse(contrat));
   } catch (err) {
     next(err);
   }
@@ -1130,6 +1139,9 @@ router.patch("/:id/arrhes", async (req, res, next) => {
 router.patch("/:id/solde", async (req, res, next) => {
   try {
     const data = balanceStatusSchema.parse(req.body);
+    const existing = await getContractPaymentContext(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+    await assertLegacyTrackingEditable(existing);
     const contrat = await prisma.contrat.update({
       where: { id: req.params.id },
       data: {
@@ -1138,7 +1150,7 @@ router.patch("/:id/solde", async (req, res, next) => {
       include: { gite: true },
     });
 
-    res.json(hydrateContractForTrackingStatusResponse(contrat));
+    res.json(await hydrateContractForTrackingStatusResponse(contrat));
   } catch (err) {
     next(err);
   }
@@ -1153,6 +1165,11 @@ router.patch("/:id/return-processing", async (req, res, next) => {
     });
     if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
 
+    if ((data.statut_paiement_arrhes !== undefined && data.statut_paiement_arrhes !== existing.statut_paiement_arrhes) ||
+      (data.mode_paiement_arrhes !== undefined && data.mode_paiement_arrhes !== existing.mode_paiement_arrhes) ||
+      (data.date_paiement_arrhes !== undefined && (data.date_paiement_arrhes?.slice(0, 10) ?? null) !== (existing.date_paiement_arrhes?.toISOString().slice(0, 10) ?? null))) {
+      await assertLegacyTrackingEditable(existing);
+    }
     const nextAdults = data.nb_adultes ?? existing.nb_adultes;
     const nextChildren = data.nb_enfants_2_17 ?? existing.nb_enfants_2_17;
     const occupancyError = validateDocumentOccupancy({
@@ -1206,6 +1223,7 @@ router.patch("/:id/return-processing", async (req, res, next) => {
         if (data.nb_adultes !== undefined) {
           reservationUpdate.nb_adultes = nextReservationAdults;
         }
+        if (data.reservation.booking_source !== undefined) reservationUpdate.booking_source = data.reservation.booking_source;
         if (data.reservation.source_paiement !== undefined) {
           reservationUpdate.source_paiement = data.reservation.source_paiement;
         }
@@ -1267,7 +1285,7 @@ router.patch("/:id/return-processing", async (req, res, next) => {
       });
     });
 
-    res.json(hydrateContractForTrackingStatusResponse(updatedContract));
+    res.json(await hydrateContractForTrackingStatusResponse(updatedContract));
   } catch (err) {
     next(err);
   }
@@ -1404,6 +1422,7 @@ router.patch("/:id/tracking-dates", async (req, res, next) => {
       nextData.date_reception_contrat = parseOptionalTrackedDate(data.date_reception_contrat, "date_reception_contrat") ?? null;
     }
     if (data.date_paiement_arrhes !== undefined) {
+      await assertLegacyTrackingEditable(existing);
       nextData.date_paiement_arrhes = parseOptionalTrackedDate(data.date_paiement_arrhes, "date_paiement_arrhes") ?? null;
     }
 

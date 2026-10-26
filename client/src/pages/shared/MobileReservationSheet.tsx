@@ -1,3 +1,4 @@
+import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
 import { createPortal } from "react-dom";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { formatEuro } from "../../utils/format";
@@ -135,7 +136,6 @@ const MobileReservationSheet = ({
   computedTotal,
   adultOptions,
   nightlySuggestions,
-  sourceOptions,
   optionCountMax,
   optionPreview,
   gitePricing,
@@ -449,13 +449,13 @@ const MobileReservationSheet = ({
               </div>
 
               <label className="field field--small calendar-quick-create-sheet__host-field">
-                Source
+                Origine
                 <select
-                  data-reservation-field="source_paiement"
-                  value={draft.source_paiement}
-                  onChange={(event) => onFieldChange("source_paiement", event.target.value)}
+                  data-reservation-field="booking_source"
+                  value={draft.booking_source || getBookingSource({ source_paiement: draft.source_paiement })}
+                  onChange={(event) => onFieldChange("booking_source", event.target.value)}
                 >
-                  {sourceOptions.map((source) => (
+                  {BOOKING_SOURCES.map((source) => (
                     <option key={source} value={source}>
                       {source}
                     </option>

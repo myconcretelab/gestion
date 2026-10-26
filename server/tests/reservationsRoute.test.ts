@@ -41,6 +41,7 @@ test("GET /reservations/:id expose le moyen des arrhes et conserve le total d'un
   const prisma = (await import("../src/db/prisma.ts")).default as any;
   const original = {
     reservationFindUnique: prisma.reservation.findUnique,
+    reservationFindMany: prisma.reservation.findMany,
     contractFindMany: prisma.contrat.findMany,
     bookingPaymentFindMany: prisma.bookingPayment.findMany,
     queryRaw: prisma.$queryRaw,
@@ -55,6 +56,7 @@ test("GET /reservations/:id expose le moyen des arrhes et conserve le total d'un
       id: "r", date_entree: new Date("2026-10-26"), date_sortie: new Date("2026-10-30"),
       nb_nuits: 4, prix_total: 1400, options: "{}", energy_tracking: "[]",
     });
+    prisma.reservation.findMany = async () => [];
     prisma.contrat.findMany = async ({ select }: any) => {
       assert.equal(select.mode_paiement_arrhes, true);
       assert.equal(select.date_paiement_arrhes, true);
@@ -81,6 +83,7 @@ test("GET /reservations/:id expose le moyen des arrhes et conserve le total d'un
     }
   } finally {
     prisma.reservation.findUnique = original.reservationFindUnique;
+    prisma.reservation.findMany = original.reservationFindMany;
     prisma.contrat.findMany = original.contractFindMany;
     prisma.bookingPayment.findMany = original.bookingPaymentFindMany;
     prisma.$queryRaw = original.queryRaw;

@@ -199,7 +199,8 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
     data: {
       ...buildReservationOriginData({ originSystem: "app", exportToIcal: true }),
       ...reservationData,
-      source_paiement: "A définir",
+      booking_source: "Direct",
+      source_paiement: "Direct",
       commentaire: null,
     },
     select: { id: true },

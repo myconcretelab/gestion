@@ -48,8 +48,10 @@ const createReservationPayload = () => ({
 
 test("GET /reservations/:id retourne la reservation hydratee", async () => {
   const originalFindUnique = prisma.reservation.findUnique;
+  const originalFindMany = prisma.reservation.findMany;
 
   try {
+    prisma.reservation.findMany = async () => [];
     prisma.reservation.findUnique = async () => ({
       id: "reservation-1",
       gite_id: "gite-1",
@@ -107,6 +109,7 @@ test("GET /reservations/:id retourne la reservation hydratee", async () => {
     assert.equal((response.body as any).date_entree.toISOString(), "2026-03-21T00:00:00.000Z");
   } finally {
     prisma.reservation.findUnique = originalFindUnique;
+    prisma.reservation.findMany = originalFindMany;
   }
 });
 

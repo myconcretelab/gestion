@@ -17,7 +17,7 @@ const PaymentPieChart = ({ payments, sourceColors }: PaymentPieChartProps) => {
   }));
 
   if (!data.length) {
-    return <div className="stats-empty-chart">Aucun paiement</div>;
+    return <div className="stats-empty-chart">Aucune réservation</div>;
   }
 
   const renderLegend = () => {

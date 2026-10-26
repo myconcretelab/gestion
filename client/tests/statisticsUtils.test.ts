@@ -301,3 +301,11 @@ test("l'année en cours est arrêtée au jour courant et les frais fixes sont pr
   assert.equal(report.monthCount, (217 / 365) * 12);
   assert.equal(report.monthlyAverage, 103.7);
 });
+
+test("la répartition utilise l'origine tandis que le classement historique des déclarations reste stable", () => {
+  const entry = { ...payload.entriesByGite.g1[0], paiement: "Espèces", origine: "Direct" };
+  const parsed = parseStatisticsPayload({ ...payload, entriesByGite: { g1: [entry] } });
+  assert.deepEqual(computeGiteStats(parsed.entriesByGite.g1, 2026, 5).payments, { Direct: 250 });
+  assert.equal(getEntryUrssafBase(entry), 0, "le changement d'origine ne reclassifie pas l'historique");
+  assert.equal(getEntryUrssafBase({ ...entry, paiement: "Direct" }), 220);
+});

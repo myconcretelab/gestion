@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 import { PrismaClient as SqliteClient } from "../generated/sqlite-client/index.js";
-import { PrismaClient as PostgresClient } from "../generated/postgres-client/index.js";
+import { PrismaClient as PostgresClient, Prisma as PostgresPrisma } from "../generated/postgres-client/index.js";
 
 const args = process.argv.slice(2);
 
@@ -98,6 +98,11 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
   }
 };
 
+const parseNullableJson = (value: unknown) => {
+  const parsed = parseJson<PostgresPrisma.InputJsonValue | null>(value, null);
+  return parsed === null ? PostgresPrisma.DbNull : parsed;
+};
+
 const main = async () => {
   console.log("Migration SQLite -> PostgreSQL");
   console.log(`Source: ${maskUrl(sqliteUrl)}`);
@@ -141,7 +146,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments, invoiceSequences, superPdpConnections] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments, invoiceSequences, superPdpConnections, recordedPayments, bookingRequests, bookingPayments, reservationPaymentLinks] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -160,6 +165,10 @@ const main = async () => {
         tableNames.has("fiscal_establishments") ? sqlite.fiscalEstablishment.findMany() : Promise.resolve([]),
         tableNames.has("invoice_sequences") ? sqlite.invoiceSequence.findMany() : Promise.resolve([]),
         tableNames.has("superpdp_connections") ? sqlite.superPdpConnection.findMany() : Promise.resolve([]),
+        tableNames.has("reservation_recorded_payments") ? sqlite.reservationRecordedPayment.findMany() : Promise.resolve([]),
+        tableNames.has("booking_requests") ? sqlite.bookingRequest.findMany() : Promise.resolve([]),
+        tableNames.has("booking_payments") ? sqlite.bookingPayment.findMany() : Promise.resolve([]),
+        tableNames.has("reservation_payment_links") ? sqlite.reservationPaymentLink.findMany() : Promise.resolve([]),
       ]);
 
     console.log(`Gestionnaires: ${gestionnaires.length}`);
@@ -195,6 +204,10 @@ const main = async () => {
         postgres.planningRelayAssignment.deleteMany(),
         postgres.planningRelayWorker.deleteMany(),
         postgres.intervenantExpense.deleteMany(),
+        postgres.reservationRecordedPayment.deleteMany(),
+        postgres.bookingPayment.deleteMany(),
+        postgres.reservationPaymentLink.deleteMany(),
+        postgres.bookingRequest.deleteMany(),
         postgres.reservation.deleteMany(),
         postgres.reservationPlaceholder.deleteMany(),
         postgres.planningRelayPeriod.deleteMany(),
@@ -245,10 +258,10 @@ const main = async () => {
       const { id, telephones, prix_nuit_liste, frais_gestion, public_translations, ...rest } = gite;
       const data = {
         id,
-        public_translations: parseJson(public_translations, null as unknown),
+        public_translations: parseNullableJson(public_translations),
         telephones: parseJson(telephones, [] as string[]),
-        prix_nuit_liste: parseJson(prix_nuit_liste, null as number[] | null),
-        frais_gestion: parseJson(frais_gestion, null as unknown),
+        prix_nuit_liste: parseNullableJson(prix_nuit_liste),
+        frais_gestion: parseNullableJson(frais_gestion),
         ...rest,
       };
 
@@ -357,6 +370,25 @@ const main = async () => {
         create: data,
         update,
       });
+    }
+
+    // Preserve the complete payment history when changing database engines.
+    for (const request of bookingRequests) {
+      const { id, options, pricing_snapshot, ...rest } = request;
+      const data = { ...rest, options: parseJson(options, {}), pricing_snapshot: parseJson(pricing_snapshot, {}) };
+      await postgres.bookingRequest.upsert({ where: { id }, create: { id, ...data }, update: data });
+    }
+    for (const link of reservationPaymentLinks) {
+      const { id, ...data } = link;
+      await postgres.reservationPaymentLink.upsert({ where: { id }, create: { id, ...data }, update: data });
+    }
+    for (const payment of bookingPayments) {
+      const { id, ...data } = payment;
+      await postgres.bookingPayment.upsert({ where: { id }, create: { id, ...data }, update: data });
+    }
+    for (const payment of recordedPayments) {
+      const { id, ...data } = payment;
+      await postgres.reservationRecordedPayment.upsert({ where: { id }, create: { id, ...data }, update: data });
     }
 
     for (const period of planningRelayPeriods) {

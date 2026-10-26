@@ -1,8 +1,8 @@
-import { computeTouristTax } from "@contrats/shared";
+import { computeTouristTax, legacyPaymentMethod, isReservationPaymentTracking } from "@contrats/shared";
 import type { Reservation } from "./types";
 
 export type PaymentSummaryReservation = Pick<Reservation, "prix_total"> & Partial<Pick<Reservation,
-  "linked_contract" | "online_payment" | "remise_montant" | "frais_optionnels_montant" |
+  "payment_tracking" | "booking_source" | "source_paiement" | "linked_contract" | "online_payment" | "remise_montant" | "frais_optionnels_montant" |
   "options" | "nb_nuits" | "nb_adultes" | "nb_enfants_2_17" | "date_entree"
 >>;
 
@@ -10,6 +10,16 @@ const money = (value: number | null | undefined) =>
   Number.isFinite(value) ? Math.max(0, Math.round(Number(value) * 100) / 100) : 0;
 
 export const getReservationPaymentSummary = (reservation: PaymentSummaryReservation) => {
+  const tracking = reservation.payment_tracking;
+  if (isReservationPaymentTracking(tracking)) {
+    const unknown = tracking.total <= 0 || (!tracking.managed && !tracking.entries.length && Boolean(legacyPaymentMethod(reservation.source_paiement)));
+    const state = tracking.requires_review ? "review" : unknown ? "unknown" : tracking.remaining === 0 ? "paid" : tracking.received > 0 ? "partial" : "unpaid";
+    return { total: tracking.total, received: tracking.received, remaining: unknown ? null : tracking.remaining,
+      state, review: tracking.requires_review, offlineDeposit: 0, otherOffline: 0, balanceReceived: 0,
+      progress: tracking.total > 0 ? Math.min(100, Math.round(tracking.received / tracking.total * 100)) : 0,
+      label: state === "review" ? "À vérifier" : state === "unknown" ? "Non renseigné" : state === "paid" ? "Payé" : state === "unpaid" ? "À régler"
+        : tracking.received <= tracking.deposit ? "Arrhes reçues" : "Paiement partiel" };
+  }
   const contract = reservation.linked_contract;
   const payment = reservation.online_payment;
   const accommodation = money(reservation.prix_total - money(reservation.remise_montant));

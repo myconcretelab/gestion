@@ -1628,6 +1628,8 @@ model Reservation {
   nb_enfants_2_17                       Int       @default(0)
   prix_par_nuit                         Float
   prix_total                            Float
+  booking_source                        String?
+  payments_managed                      Boolean   @default(false)
   source_paiement                       String?
   commentaire                           String?
   arrival_cleaning_checked_at           DateTime?
@@ -1651,6 +1653,7 @@ model Reservation {
 
   gite                          Gite?                   @relation(fields: [gite_id], references: [id])
   placeholder                   ReservationPlaceholder? @relation(fields: [placeholder_id], references: [id])
+  recorded_payments             ReservationRecordedPayment[]
   payment_links                 ReservationPaymentLink[]
   online_payments               BookingPayment[]
   approved_booking_requests     BookingRequest[]        @relation("ApprovedBookingRequest")
@@ -1804,4 +1807,23 @@ model GiteMonthlyEnergyReading {
   @@index([year, month], map: "gite_monthly_energy_readings_period_idx")
   @@index([gite_id, year, month], map: "gite_monthly_energy_readings_gite_period_idx")
   @@map("gite_monthly_energy_readings")
+}
+
+model ReservationRecordedPayment {
+  id                String    @id @default(cuid())
+  reservation_id    String
+  amount_cents      Int
+  method            String?
+  purpose           String    @default("payment")
+  paid_on           DateTime?
+  note              String?
+  origin            String    @default("manual")
+  voided_at         DateTime?
+  createdAt         DateTime  @default(now())
+  organization_id   String    @default("org_historical_broceliande")
+
+  reservation Reservation @relation(fields: [reservation_id], references: [id], onDelete: Restrict)
+
+  @@index([organization_id, reservation_id], map: "reservation_recorded_payments_org_reservation_idx")
+  @@map("reservation_recorded_payments")
 }

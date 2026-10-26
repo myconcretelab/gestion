@@ -1,4 +1,4 @@
-import { computeTouristTax, type TouristTaxStay } from "@contrats/shared";
+import { getBookingSource, computeTouristTax, type TouristTaxStay } from "@contrats/shared";
 import {
   areReservationOptionsAllDeclared,
   buildQuickReservationOptions,
@@ -23,6 +23,7 @@ export type QuickReservationDraft = {
   date_sortie: string;
   nb_adultes: number;
   prix_par_nuit: string;
+  booking_source?: string;
   source_paiement: string;
   commentaire: string;
   option_menage: boolean;
@@ -133,7 +134,8 @@ export const buildNewQuickReservationDraft = (params: {
   date_sortie: params.exitIso,
   nb_adultes: clampQuickReservationAdults(params.defaultAdults, params.gite),
   prix_par_nuit: params.nightlySuggestion > 0 ? String(params.nightlySuggestion) : "",
-  source_paiement: DEFAULT_RESERVATION_SOURCE,
+  booking_source: "Direct",
+  source_paiement: "Direct",
   commentaire: "",
   option_menage: false,
   option_depart_tardif: false,
@@ -155,6 +157,7 @@ export const buildQuickReservationDraftFromReservation = (params: {
     date_sortie: normalizeIsoDate(reservation.date_sortie),
     nb_adultes: clampQuickReservationAdults(reservation.nb_adultes, gite),
     prix_par_nuit: String(reservation.prix_par_nuit ?? ""),
+    booking_source: getBookingSource(reservation),
     source_paiement: reservation.source_paiement?.trim() || DEFAULT_RESERVATION_SOURCE,
     commentaire: reservation.commentaire ?? "",
     option_menage: Boolean(reservation.options?.menage?.enabled),
@@ -500,6 +503,7 @@ export const buildQuickReservationSavePayload = (params: {
       nb_adultes: adults,
       prix_par_nuit: round2(nightly),
       price_driver: "nightly" as const,
+      booking_source: draft.booking_source || getBookingSource({ source_paiement: draft.source_paiement }),
       source_paiement: draft.source_paiement || DEFAULT_RESERVATION_SOURCE,
       commentaire: draft.commentaire.trim() || undefined,
       frais_optionnels_montant: optionsPreview.total,

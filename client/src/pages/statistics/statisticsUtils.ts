@@ -1,3 +1,4 @@
+import { getBookingSource } from "@contrats/shared";
 import { getPaymentColor } from "../../utils/paymentColors";
 
 export type StatisticsGite = {
@@ -63,6 +64,7 @@ export type StatisticsEntry = {
   revenus: number;
   fraisOptionnelsTotal: number;
   fraisOptionnelsDeclares: number;
+  origine?: string;
   paiement: string;
   proprietaires: string;
 };
@@ -149,7 +151,7 @@ type ActivityStart = string | Date | null | undefined;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const URSSAF_PAYMENTS = ["Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"];
+const URSSAF_PAYMENTS = ["Direct","Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"];
 
 const DEFAULT_EXPENSE_SETTINGS: StatisticsExpenseSettings = {
   categories: [
@@ -504,7 +506,7 @@ export const computeGiteStats = (
   const payments: Record<string, number> = {};
 
   for (const entry of filtered) {
-    const payment = entry.paiement?.trim() || "Indéfini";
+    const payment = entry.origine || getBookingSource({ source_paiement: entry.paiement });
     payments[payment] = (payments[payment] ?? 0) + getEntryGrossCA(entry);
   }
 

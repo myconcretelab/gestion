@@ -1,3 +1,5 @@
+import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
+import { reservationPaymentChanged } from "./shared/ReservationPaymentsEditor";
 import TodayIntervenantHours from "./shared/TodayIntervenantHours";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
 import GiteTasksDrawer, { GiteTasksButton } from "./shared/GiteTasksDrawer";
@@ -18,9 +20,6 @@ import {
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import { getReservationOptionBadges, type ReservationOptionBadge } from "../utils/reservationOptionBadges";
 import { buildMobileReservationEditorHref } from "./shared/mobileReservationEditor";
-import {
-  RESERVATION_SOURCES,
-} from "./shared/reservationSources";
 import type { Gite, Reservation } from "../utils/types";
 import type { AppUser } from "../utils/auth";
 import { isCleaningReadinessLate, isCleaningReadinessVisible } from "./cleaningTaskStatus";
@@ -459,11 +458,7 @@ const buildTodayEvents = (reservations: Reservation[], todayIso: string, lastVis
         giteId: primaryReservation.gite_id,
         giteName: primaryReservation.gite.nom,
         gitePrefix: primaryReservation.gite.prefixe_contrat,
-        source:
-          arrivalReservation?.source_paiement ??
-          departureReservation?.source_paiement ??
-          primaryReservation.source_paiement ??
-          null,
+        source: getBookingSource(arrivalReservation || departureReservation || primaryReservation),
         arrivalReservation,
         departureReservation,
         primaryReservation,
@@ -926,6 +921,19 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         : null,
     [lastVisibleIso, mobileActionState, reservations, todayIso]
   );
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ reservationId: string; tracking: ReservationPaymentTracking; booking_source: string }>).detail;
+      setPrimaryOverview((previous) => previous ? { ...previous, reservations: previous.reservations.map((row) => row.id === detail.reservationId
+        ? { ...row, payment_tracking: detail.tracking, booking_source: detail.booking_source } : row) } : previous);
+      setMobilePaymentDetails((previous) => previous?.id === detail.reservationId && previous.reservation ? {
+        ...previous, reservation: { ...previous.reservation, payment_tracking: detail.tracking, booking_source: detail.booking_source },
+      } : previous);
+    };
+    window.addEventListener(reservationPaymentChanged, changed);
+    return () => window.removeEventListener(reservationPaymentChanged, changed);
+  }, []);
+
   const mobileActionReservation = useMemo(
     () =>
       mobileActionState?.mode === "actions"
@@ -958,21 +966,21 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   };
 
   const updateMobileReservationSource = async (reservation: Reservation, source: string) => {
-    if (source === reservation.source_paiement) return;
+    if (source === getBookingSource(reservation)) return;
 
     setSourceUpdating(true);
     setSourceUpdateError(null);
     try {
-      const updated = await apiFetch<Reservation>(`/reservations/${reservation.id}/source`, {
+      const updated = await apiFetch<{ id: string; booking_source: string }>(`/reservations/${reservation.id}/booking-source`, {
         method: "PATCH",
-        json: { source_paiement: source },
+        json: { booking_source: source },
       });
       setPrimaryOverview((previous) =>
         previous
           ? {
               ...previous,
               reservations: previous.reservations.map((item) =>
-                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement ?? null } : item
+                item.id === updated.id ? { ...item, booking_source: updated.booking_source } : item
               ),
             }
           : previous
@@ -982,7 +990,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
           ? {
               ...previous,
               new_reservations: previous.new_reservations.map((item) =>
-                item.id === updated.id ? { ...item, source_paiement: updated.source_paiement ?? null } : item
+                item.id === updated.id ? { ...item, booking_source: updated.booking_source } : item
               ),
             }
           : previous
@@ -1071,7 +1079,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               id: reservation.id,
               startRatio: getTimelineRatio(startIndex, totalDays),
               endRatio: getTimelineRatio(endIndex, totalDays),
-              color: getPaymentColorFromMap(reservation.source_paiement, paymentColorMap),
+              color: getPaymentColorFromMap(getBookingSource(reservation), paymentColorMap),
             } satisfies TimelineStay;
           })
           .sort((left, right) => left.startRatio - right.startRatio);
@@ -2226,7 +2234,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             {notificationItems.map((item) => {
               if (item.kind === "reservation") {
                 const reservation = item.reservation;
-                const reservationSourceColor = getPaymentColorFromMap(reservation.source_paiement, paymentColorMap);
+                const reservationSourceColor = getPaymentColorFromMap(getBookingSource(reservation), paymentColorMap);
 
                 return (
                   <article
@@ -2528,6 +2536,8 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
           title={getReservationGuestName(mobileActionReservation)}
           reservation={{ ...mobileActionReservation,
             ...(mobilePaymentDetails?.id === mobileActionReservation.id && mobilePaymentDetails.reservation ? {
+              payment_tracking: mobilePaymentDetails.reservation.payment_tracking,
+              booking_source: mobilePaymentDetails.reservation.booking_source,
               linked_contract: mobilePaymentDetails.reservation.linked_contract,
               online_payment: mobilePaymentDetails.reservation.online_payment,
             } : {}),
@@ -2556,9 +2566,9 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
           sourcePicker={
             sourcePickerReservationId === mobileActionReservation.id
               ? {
-                  label: "Source ou moyen de paiement",
-                  value: mobileActionReservation.source_paiement || "A définir",
-                  options: RESERVATION_SOURCES,
+                  label: "Origine de la réservation",
+                  value: getBookingSource(mobileActionReservation),
+                  options: BOOKING_SOURCES,
                   busy: sourceUpdating,
                   error: sourceUpdateError,
                   onChange: (source) => {

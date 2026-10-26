@@ -1,3 +1,6 @@
+import reservationPaymentsRouter from "./reservationPayments.js";
+import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
+import { loadReservationPaymentTracking, setReservationBookingSource, hasRecordedPayments, moveRecordedPayments, assertReservationPaymentsDeletable } from "../modules/reservationPayments/ledger.js";
 import { reservationPaymentsForIds } from "../modules/bookingPayments/contracts.js";
 import { createTouristTaxStay, parseTouristTaxSettings } from "@contrats/shared";
 import { Router } from "express";
@@ -277,6 +280,7 @@ const calendarReservationSelect = {
   frais_optionnels_montant: true,
   frais_optionnels_declares: true,
   source_paiement: true,
+  booking_source: true,
 } as const;
 
 const emptyStringToNull = (value: unknown) => {
@@ -305,6 +309,7 @@ const reservationPayloadSchema = z.object({
   prix_par_nuit: optionalNumberField,
   prix_total: optionalNumberField,
   price_driver: z.enum(["nightly", "total"]).optional(),
+  booking_source: z.enum(BOOKING_SOURCES).optional(),
   source_paiement: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   commentaire: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   frais_optionnels_montant: z.coerce.number().min(0).optional().default(0),
@@ -403,6 +408,7 @@ const normalizeTextKey = (value: string) =>
     .replace(/[^a-z0-9]+/g, "");
 
 const RESERVATION_SOURCES = [
+  "Direct",
   "Abritel",
   "Airbnb",
   "Chèque",
@@ -419,6 +425,7 @@ const DEFAULT_RESERVATION_SOURCE: ReservationSource = "A définir";
 const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
 
 const SOURCE_BY_NORMALIZED_KEY = new Map<string, ReservationSource>([
+  [normalizeTextKey("Direct"), "Direct"],
   [normalizeTextKey("Abritel"), "Abritel"],
   [normalizeTextKey("Airbnb"), "Airbnb"],
   [normalizeTextKey("Airbnb (Not available)"), "A définir"],
@@ -707,7 +714,7 @@ const buildReservationSegmentRecords = (
   const priceTotalsBySegment = allocateAmountByNights(computed.prixTotal, segments);
   const optionalFeesBySegment = allocateAmountByNights(round2(payload.frais_optionnels_montant ?? 0), segments);
   const encodedOptions = encodeJsonField(payload.options ?? {});
-  const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
+  const source_paiement = resolveReservationSource(payload.booking_source && ["Direct", "Airbnb", "Abritel", "Gites de France", "HomeExchange"].includes(payload.booking_source) ? payload.booking_source : payload.source_paiement, { strict: true });
 
   return {
     computed,
@@ -734,6 +741,7 @@ const buildReservationSegmentRecords = (
           nb_enfants_2_17: payload.nb_enfants_2_17 ?? 0,
           prix_par_nuit: prixParNuit,
           prix_total: prixTotal,
+          booking_source: payload.booking_source ?? null,
           source_paiement,
           commentaire: payload.commentaire ?? null,
           remise_montant: 0,
@@ -827,6 +835,7 @@ const hydrateReservation = (reservation: any) => {
 
   return {
     ...reservation,
+    booking_source: getBookingSource(reservation),
     origin_system: getReservationOriginSystem(reservation),
     origin_reference: reservation.origin_reference ?? null,
     export_to_ical: shouldExportReservationToIcal(reservation),
@@ -1086,9 +1095,10 @@ const attachLinkedContractsToReservations = async <T extends { id: string; stay_
     }
   }
 
-  const [contracts, paymentsByReservationId] = await Promise.all([
+  const [contracts, paymentsByReservationId, trackingByReservationId] = await Promise.all([
     loadLinkedContracts([...new Set([...visibleReservationIds, ...groupedReservationRows.map((row) => row.id)])]),
     reservationPaymentsForIds(visibleReservationIds),
+    loadReservationPaymentTracking(visibleReservationIds),
   ]);
 
   const linkedContractByReservationId = new Map<
@@ -1113,6 +1123,7 @@ const attachLinkedContractsToReservations = async <T extends { id: string; stay_
 
   return reservations.map((reservation) => ({
     ...reservation,
+    payment_tracking: trackingByReservationId.get(reservation.id) ?? null,
     online_payment: paymentsByReservationId.get(reservation.id) ?? null,
     linked_contract:
       linkedContractByReservationId.get(reservation.id) ??
@@ -2152,6 +2163,14 @@ router.get("/placeholders", async (_req, res, next) => {
   }
 });
 
+router.use("/:id/payments", reservationPaymentsRouter);
+router.patch("/:id/booking-source", async (req, res, next) => {
+  try {
+    const { booking_source } = z.object({ booking_source: z.enum(BOOKING_SOURCES) }).strict().parse(req.body);
+    res.json(await setReservationBookingSource(req.params.id, booking_source));
+  } catch (error) { next(error); }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const reservation = await prisma.reservation.findUnique({
@@ -2387,6 +2406,9 @@ router.post("/:id/split", async (req, res, next) => {
       return res.status(400).json({ error: "La réservation ne peut pas être scindée sans gîte ou placeholder." });
     }
 
+    if (existing.payments_managed || await hasRecordedPayments(existing.id)) {
+      return res.status(409).json({ error: "Ce séjour contient des règlements. Conservez-le en une seule réservation pour préserver son historique." });
+    }
     const segments = splitReservationByMonth(existing.date_entree, existing.date_sortie);
     if (segments.length <= 1) {
       return res.status(400).json({ error: "La réservation ne chevauche pas plusieurs mois." });
@@ -2443,6 +2465,7 @@ router.post("/:id/split", async (req, res, next) => {
             nb_enfants_2_17: existing.nb_enfants_2_17 ?? 0,
             prix_par_nuit: prixParNuit,
             prix_total: prixTotal,
+            booking_source: existing.booking_source,
             source_paiement: existing.source_paiement,
             commentaire: existing.commentaire,
             remise_montant: 0,
@@ -2505,13 +2528,13 @@ router.put("/:id", async (req, res, next) => {
     const association = normalizeAssociation(payload);
     const targetTaxSettings = await ensureAssociationExists(association);
     if (association.gite_id !== existing.gite_id) payload.options.tourist_tax = targetTaxSettings ? createTouristTaxStay(targetTaxSettings) : undefined;
-    const source_paiement = resolveReservationSource(payload.source_paiement, { strict: true });
+    const source_paiement = resolveReservationSource(payload.source_paiement === undefined ? existing.source_paiement : payload.source_paiement, { strict: true });
 
     const computed = computeReservationFields(payload);
     const existingGroupRows = existing.stay_group_id
       ? await prisma.reservation.findMany({
           where: { stay_group_id: existing.stay_group_id },
-          select: { id: true },
+          select: { id: true, payments_managed: true },
         })
       : [{ id: existing.id }];
     const existingGroupIds = existingGroupRows.map((row) => row.id);
@@ -2548,6 +2571,8 @@ router.put("/:id", async (req, res, next) => {
           nb_enfants_2_17: payload.nb_enfants_2_17 ?? 0,
           prix_par_nuit: computed.prixParNuit,
           prix_total: computed.prixTotal,
+          booking_source: payload.booking_source ?? existing.booking_source,
+          payments_managed: existingGroupRows.some((row: any) => row.payments_managed) || existing.payments_managed,
           source_paiement,
           commentaire: payload.commentaire ?? null,
           remise_montant: 0,
@@ -2588,6 +2613,7 @@ router.put("/:id", async (req, res, next) => {
           where: { reservation_id: { in: siblingIds } },
           data: { reservation_id: existing.id },
         });
+        await moveRecordedPayments(siblingIds, existing.id, tx);
         await tx.reservation.deleteMany({
           where: { id: { in: siblingIds } },
         });
@@ -2607,6 +2633,7 @@ router.delete("/:id", async (req, res, next) => {
     const existing = await prisma.reservation.findUnique({ where: { id: req.params.id }, select: { id: true, stay_group_id: true } });
     if (!existing) return res.status(404).json({ error: "Réservation introuvable" });
 
+    await assertReservationPaymentsDeletable(existing.id);
     if (existing.stay_group_id) {
       await prisma.reservation.deleteMany({ where: { stay_group_id: existing.stay_group_id } });
     } else {

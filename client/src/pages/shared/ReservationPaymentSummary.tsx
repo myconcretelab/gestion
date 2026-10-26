@@ -1,3 +1,5 @@
+import ReservationPaymentsEditor from "./ReservationPaymentsEditor";
+import { isReservationPaymentTracking, type ReservationPaymentTracking } from "@contrats/shared";
 import { canCurrentUserAccessPage, canCurrentUserViewAmounts } from "../../utils/auth";
 import { formatDate, formatEuro } from "../../utils/format";
 import { getReservationPaymentSummary, type PaymentSummaryReservation } from "../../utils/reservationPaymentSummary";
@@ -5,7 +7,7 @@ import type { Reservation } from "../../utils/types";
 import { isPlatformReservationSource } from "./reservationSources";
 
 type Props = {
-  reservation: PaymentSummaryReservation & Pick<Reservation, "source_paiement">;
+  reservation: PaymentSummaryReservation & Pick<Reservation, "source_paiement"> & Partial<Pick<Reservation, "id">>;
   expanded: boolean;
   onToggle: () => void;
   detailsId: string;
@@ -39,10 +41,14 @@ export const ReservationPaymentTile = ({ reservation, expanded, onToggle, detail
   );
 };
 
-export const ReservationPaymentDetails = ({ reservation, detailsId, monthlyTotal, onChangeSource }: Omit<Props, "expanded" | "onToggle"> & {
+export const ReservationPaymentDetails = ({ reservation, detailsId, monthlyTotal, onChangeSource, onUpdated }: Omit<Props, "expanded" | "onToggle"> & {
   onChangeSource: () => void;
+  onUpdated?: (tracking: ReservationPaymentTracking, bookingSource?: string) => void;
 }) => {
   const summary = getReservationPaymentSummary(reservation);
+  if (isReservationPaymentTracking(reservation.payment_tracking) && reservation.id) return <ReservationPaymentsEditor key={reservation.id}
+    reservation={{ ...reservation, id: reservation.id }} tracking={reservation.payment_tracking}
+    detailsId={detailsId} monthlyTotal={monthlyTotal} onUpdated={onUpdated} />;
   const contract = reservation.linked_contract;
   const payment = reservation.online_payment;
   const source = reservation.source_paiement;
@@ -75,12 +81,12 @@ export const ReservationPaymentDetails = ({ reservation, detailsId, monthlyTotal
         </div>
       ) : <p>Aucun règlement renseigné. Le moyen prévu ne confirme pas la réception du paiement.</p>}
       {summary.review ? <p role="status">Vérifiez les paiements et remboursements avant de réclamer un solde.</p> : null}
-      {source ? <p>{isPlatformReservationSource(source) ? "Plateforme" : "Source / moyen prévu"} : {source}</p> : null}
+      {source ? <p>{isPlatformReservationSource(source) ? "Plateforme" : "Information historique"} : {source}</p> : null}
       <div className="reservation-payment-details__actions">
         {contract && canCurrentUserViewAmounts() && canCurrentUserAccessPage("contracts") ?
           <a href={`/contrats/${contract.id}`}>Gérer les règlements ↗</a> : null}
         {!isPlatformReservationSource(source) ? <button type="button" onClick={onChangeSource}
-          aria-label="Modifier la source ou le moyen de paiement">Modifier le moyen prévu</button> : null}
+          aria-label="Modifier la source ou le moyen de paiement">Modifier l’origine</button> : null}
       </div>
       {payment?.request_id && canCurrentUserAccessPage("booking_requests") ?
         <a href={`/demandes/${payment.request_id}`}>Voir le paiement en ligne ↗</a> : null}

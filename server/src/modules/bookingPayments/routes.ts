@@ -1,3 +1,4 @@
+import { syncManagedContractPayments } from "../reservationPayments/ledger.js";
 import {
   Router,
   type Request,
@@ -110,6 +111,13 @@ export const bookingStripeWebhook = async (
                 notification_sent_at: null,
               },
             });
+            const refundedPayments = await prisma.bookingPayment.findMany({
+              where: { stripe_mode: config.mode, stripe_payment_intent: intent }, include: { booking_request: true },
+            });
+            for (const payment of refundedPayments) {
+              const reservationId = payment.reservation_id || payment.booking_request?.approved_reservation_id;
+              if (reservationId) await syncManagedContractPayments(reservationId);
+            }
           }
         }
       },

@@ -1,3 +1,5 @@
+import { getContractReceiptStatus } from "@contrats/shared";
+import { getReservationPaymentTracking, loadReservationPaymentTracking } from "../reservationPayments/ledger.js";
 import prisma from "../../db/prisma.js";
 import { hydrateBookingRequest } from "../../services/booked.js";
 import { cents } from "./money.js";
@@ -29,7 +31,14 @@ export const contractStripeTracking = async (
   const summary = (await reservationPaymentsForIds([reservationId])).get(
     reservationId,
   );
-  if (!summary) return {};
+  const reservation = await prisma.reservation.findUnique({ where: { id: reservationId }, select: { payments_managed: true } });
+  const managed = reservation?.payments_managed ? await getReservationPaymentTracking(reservationId) : null;
+  const managedStatuses = () => {
+    if (!managed) return {};
+    const status = getContractReceiptStatus(managed, terms.arrhes, terms.total);
+    return { ...status, date_paiement_arrhes: status.date_paiement_arrhes ? new Date(status.date_paiement_arrhes) : null };
+  };
+  if (!summary) return managedStatuses();
   if (summary.status === "requires_review")
     throw Object.assign(
       new Error("Vérifiez le paiement Stripe avant de renseigner le contrat."),
@@ -63,6 +72,7 @@ export const contractStripeTracking = async (
       { statusCode: 409 },
     );
   }
+  if (managed) return managedStatuses();
   const amount = cents(summary.total - summary.remaining);
   const arrhesPaid = amount >= cents(terms.arrhes);
   const priorContract =
@@ -110,7 +120,7 @@ export const reservationPaymentsForIds = async (reservationIds: string[]) => {
       row.reservation_id || row.booking_request?.approved_reservation_id;
     if (id) grouped.set(id, [...(grouped.get(id) || []), row]);
   }
-  return new Map(
+  const result = new Map(
     [...grouped].map(([id, rows]) => {
       const last = rows[rows.length - 1];
       const request = rows.find((row) => row.booking_request)?.booking_request;
@@ -156,6 +166,19 @@ export const reservationPaymentsForIds = async (reservationIds: string[]) => {
       ];
     }),
   );
+  if (result.size) {
+    const managedRows = await prisma.reservation.findMany({ where: { id: { in: [...result.keys()] }, payments_managed: true }, select: { id: true } });
+    const tracking = await loadReservationPaymentTracking(managedRows.map((row) => row.id));
+    for (const [id, state] of tracking) {
+      const summary = result.get(id);
+      if (!summary) continue;
+      summary.offline_received = state.entries.filter((row) => row.origin !== "stripe" && !row.voided_at).reduce((total, row) => total + cents(row.amount), 0) / 100;
+      summary.remaining = state.remaining;
+      summary.total = state.total;
+      summary.deposit = state.deposit;
+    }
+  }
+  return result;
 };
 export const reservationPaymentPrefill = async (reservationId: string) =>
   (await reservationPaymentsForIds([reservationId])).get(reservationId) ?? null;

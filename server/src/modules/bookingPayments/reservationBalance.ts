@@ -1,3 +1,4 @@
+import { getReservationPaymentTracking } from "../reservationPayments/ledger.js";
 import crypto from "node:crypto";
 import { bookingStripeConfig } from "./provider.js";
 import prisma, { type TenantTransactionClient } from "../../db/prisma.js";
@@ -88,7 +89,8 @@ export const reservationBalance = async (
       ?.pricing_snapshot,
     {},
   );
-  const total = contract
+  const managedTracking = reservation.payments_managed ? await getReservationPaymentTracking(id, db) : null;
+  const total = managedTracking ? cents(managedTracking.total) : contract
     ? cents(Number(contract.arrhes_montant) + Number(contract.solde_montant))
     : rawTotal;
   const deposit = contract
@@ -117,12 +119,14 @@ export const reservationBalance = async (
     contract?.statut_paiement_solde === "regle"
       ? Math.max(0, cents(Number(contract.solde_montant)) - stripeForBalance)
       : 0;
-  const offline = Math.max(
+  const offline = managedTracking
+    ? managedTracking.entries.filter((entry) => entry.origin !== "stripe" && !entry.voided_at).reduce((amount, entry) => amount + cents(entry.amount), 0)
+    : Math.max(
     offlineDeposit + offlineBalance,
     0,
     ...links.map((row) => row.offline_received_cents),
   );
-  const received = stripePaid + offline;
+  const received = managedTracking ? cents(managedTracking.received) : stripePaid + offline;
   const terms = {
     reservation_id: id,
     gite_id: reservation.gite_id,

@@ -1,3 +1,4 @@
+import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import type { TouristTaxStay } from "@contrats/shared";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -20,7 +21,6 @@ import {
 import type { Gite, Reservation } from "../utils/types";
 import {
   DEFAULT_QUICK_RESERVATION_SMS_SNIPPETS,
-  RESERVATION_SOURCES,
   buildNewQuickReservationDraft,
   buildQuickReservationDraftFromReservation,
   buildQuickReservationSavePayload,
@@ -724,13 +724,13 @@ const MobileReservationEditorPage = () => {
               </label>
 
               <label className="field field--small calendar-quick-create-sheet__host-field calendar-quick-create-sheet__host-field--source">
-                <span className="calendar-quick-create-sheet__source-label">Mode de paiement</span>
+                <span className="calendar-quick-create-sheet__source-label">Origine</span>
                 <select
-                  data-reservation-field="source_paiement"
-                  value={quickReservationDraft.source_paiement}
-                  onChange={(event) => handleQuickReservationFieldChange("source_paiement", event.target.value)}
+                  data-reservation-field="booking_source"
+                  value={quickReservationDraft.booking_source || getBookingSource({ source_paiement: quickReservationDraft.source_paiement })}
+                  onChange={(event) => handleQuickReservationFieldChange("booking_source", event.target.value)}
                 >
-                  {RESERVATION_SOURCES.map((source) => (
+                  {BOOKING_SOURCES.map((source) => (
                     <option key={source} value={source}>
                       {source}
                     </option>

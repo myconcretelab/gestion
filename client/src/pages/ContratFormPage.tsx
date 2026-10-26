@@ -823,6 +823,7 @@ const ContratFormPage = () => {
               Statut arrhes
               <select
                 value={statutArrhes}
+                disabled={Boolean(editingContract?.payments_managed)}
                 onChange={(e) => {
                   clearFieldError("statut_paiement_arrhes");
                   const nextStatus = e.target.value as "non_recu" | "recu";
@@ -844,6 +845,7 @@ const ContratFormPage = () => {
                   <input
                     type="date"
                     value={datePaiementArrhes}
+                    disabled={Boolean(editingContract?.payments_managed)}
                     onChange={(e) => {
                       clearFieldError("date_paiement_arrhes");
                       setDatePaiementArrhes(e.target.value);
@@ -855,6 +857,7 @@ const ContratFormPage = () => {
                   Mode de paiement
                   <select
                     value={modePaiementArrhes}
+                    disabled={Boolean(editingContract?.payments_managed)}
                     onChange={(e) => {
                       clearFieldError("mode_paiement_arrhes");
                       setModePaiementArrhes(e.target.value);
@@ -865,6 +868,9 @@ const ContratFormPage = () => {
                     <option value="Virement">Virement</option>
                     <option value="Stripe">Stripe — carte bancaire</option>
                     <option value="Espèces">Espèces</option>
+                    <option value="Carte">Carte</option>
+                    <option value="Versement plateforme">Versement plateforme</option>
+                    <option value="Autre">Autre</option>
                     <option value="A définir">A définir</option>
                   </select>
                   {renderFieldError("mode_paiement_arrhes")}

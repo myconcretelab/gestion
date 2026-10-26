@@ -164,3 +164,12 @@ test("les modules financiers et les méthodes d'écriture sont identifiés", () 
   assert.equal(containsMonetaryFields({ commentaire: "ok", prix_total: 50 }), true);
   assert.equal(containsMonetaryFields({ commentaire: "ok", adults_count: 2 }), false);
 });
+
+test("le registre des règlements est réservé aux droits sur les montants, y compris les annulations", () => {
+  for (const path of ["/reservations/r/payments", "/reservations/r/payments/p/void"]) {
+    assert.equal(isAmountsOnlyApiPath(path), true);
+    assert.equal(getRequiredBusinessPermission("POST", path), "reservations:write");
+  }
+  const redacted = redactMonetaryValues({ booking_source: "Direct", payment_tracking: { received: 200, remaining: 800, entries: [{ amount: 200 }] } });
+  assert.deepEqual(redacted, { booking_source: "Direct", payment_tracking: {} });
+});

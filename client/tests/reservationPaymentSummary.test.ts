@@ -116,3 +116,14 @@ test("le total inclut la taxe collectée par l'hôte sans doubler une taxe inclu
   assert.equal(summary({ ...reservation, options: { tourist_tax: { ...stay, settings: { ...settings, included: true } } } }).total, 250);
   assert.equal(summary({ ...reservation, options: { tourist_tax: { ...stay, collector: "platform" } } }).total, 250);
 });
+
+test("le registre fait autorité sur des statuts de contrat anciens ou un snapshot Stripe", () => {
+  const result = summary({ prix_total: 1000, linked_contract: { ...contract, statut_paiement_solde: "regle" }, online_payment: online,
+    payment_tracking: { managed: true, total: 1000, received: 300, remaining: 700, deposit: 200, overpaid: 0, requires_review: false, entries: [] } });
+  assert.equal(result.received, 300); assert.equal(result.remaining, 700); assert.equal(result.label, "Paiement partiel");
+});
+test("l'ancien moyen sans montant garde un état non renseigné tant que l'historique n'a pas été rapproché", () => {
+  const result = summary({ prix_total: 1000, source_paiement: "Chèque",
+    payment_tracking: { managed: false, total: 1000, received: 0, remaining: 1000, deposit: 200, overpaid: 0, requires_review: false, entries: [] } });
+  assert.equal(result.label, "Non renseigné"); assert.equal(result.remaining, null);
+});

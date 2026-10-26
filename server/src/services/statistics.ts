@@ -1,4 +1,4 @@
-import { reservationTouristTax } from "@contrats/shared";
+import { getBookingSource, reservationTouristTax } from "@contrats/shared";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type StatisticsGite = {
@@ -29,6 +29,7 @@ export type StatisticsReservation = {
   options?: unknown;
   nb_enfants_2_17?: number;
   remise_montant?: number;
+  booking_source?: string | null;
   source_paiement: string | null;
   frais_optionnels_montant: number;
   frais_optionnels_declares: boolean;
@@ -46,6 +47,7 @@ export type StatisticsEntry = {
   revenus: number;
   fraisOptionnelsTotal: number;
   fraisOptionnelsDeclares: number;
+  origine?: string;
   paiement: string;
   proprietaires: string;
 };
@@ -80,6 +82,7 @@ export type StatisticsReservationSegment = {
   revenus: number;
   fraisOptionnelsTotal: number;
   fraisOptionnelsDeclares: number;
+  origine?: string;
   paiement: string;
 };
 
@@ -199,6 +202,7 @@ export const buildStatisticsReservationSegments = (
       revenus: accommodationForSegment,
       fraisOptionnelsTotal: optionalFeesForSegment,
       fraisOptionnelsDeclares: declaredOptionalFeesForSegment,
+      origine: getBookingSource(reservation),
       paiement: (reservation.source_paiement ?? "Indéfini").trim() || "Indéfini",
     };
   });
@@ -248,6 +252,7 @@ export const buildStatisticsPayload = (params: {
         revenus: segment.revenus,
         fraisOptionnelsTotal: segment.fraisOptionnelsTotal,
         fraisOptionnelsDeclares: segment.fraisOptionnelsDeclares,
+        origine: segment.origine,
         paiement: segment.paiement,
         proprietaires: gite.proprietaires_noms,
       });

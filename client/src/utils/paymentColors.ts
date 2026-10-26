@@ -1,4 +1,5 @@
 export const DEFAULT_PAYMENT_SOURCE_COLORS: Record<string, string> = {
+  Direct: "#247595",
   Airbnb: "#FF1920",
   Abritel: "#2D8CFF",
   "Gites de France": "#FFD700",

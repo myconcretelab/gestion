@@ -63,7 +63,8 @@ export const bookingReservationData = (
     nb_enfants_2_17: bookingRequest.nb_enfants_2_17,
     prix_par_nuit: averageNightly,
     prix_total: pricingSnapshot.montant_hebergement,
-    source_paiement: "A définir",
+    booking_source: "Direct",
+    source_paiement: "Direct",
     commentaire: buildReservationComment(
       resolvedInternalNote,
       bookingRequest.message_client,

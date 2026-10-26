@@ -1,3 +1,5 @@
+import { getReservationPaymentSummary } from "../utils/reservationPaymentSummary";
+import { BOOKING_SOURCES, getBookingSource, isReservationPaymentTracking } from "@contrats/shared";
 import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
 import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
@@ -88,6 +90,7 @@ type ReservationDraft = {
   nb_enfants_2_17: number;
   prix_par_nuit: number;
   prix_total: number;
+  booking_source: string;
   source_paiement: string;
   commentaire: string;
   frais_optionnels_montant: number;
@@ -183,7 +186,7 @@ type InlineEditableField =
   | "nb_adultes"
   | "prix_par_nuit"
   | "prix_total"
-  | "source_paiement"
+  | "booking_source"
   | "commentaire";
 
 type InlineCell = {
@@ -306,23 +309,12 @@ const MONTHS = [
   "Décembre",
 ];
 
-const RESERVATION_SOURCES = [
-  "Abritel",
-  "Airbnb",
-  "Chèque",
-  "Espèces",
-  "HomeExchange",
-  "Virement",
-  "A définir",
-  "Gites de France",
-] as const;
-
 const DEFAULT_RESERVATION_SOURCE = "A définir";
 const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 const UNKNOWN_HOST_NAME = "Hôte inconnu";
 const ALL_GITES_TAB = "all-gites";
 const UNASSIGNED_TAB = "unassigned";
-const URSSAF_MONTHLY_SOURCES = ["Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"] as const;
+const URSSAF_MONTHLY_SOURCES = ["Direct","Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"] as const;
 const SERVICE_OPTION_KEYS: ReservationServiceOptionKey[] = ["draps", "linge_toilette", "menage", "depart_tardif", "chiens"];
 const INLINE_EDITABLE_FIELDS: InlineEditableField[] = [
   "hote_nom",
@@ -331,9 +323,9 @@ const INLINE_EDITABLE_FIELDS: InlineEditableField[] = [
   "nb_adultes",
   "prix_par_nuit",
   "prix_total",
-  "source_paiement",
+  "booking_source",
 ];
-const INLINE_PICKER_FIELDS: InlineEditableField[] = ["date_entree", "date_sortie", "source_paiement"];
+const INLINE_PICKER_FIELDS: InlineEditableField[] = ["date_entree", "date_sortie", "booking_source"];
 const DETAILS_CLOSE_ANIMATION_MS = 280;
 const ROW_SAVED_FADE_MS = 900;
 
@@ -362,6 +354,7 @@ const normalizeTextKey = (value: string) =>
     .replace(/[^a-z0-9]+/g, "");
 
 const SOURCE_BY_NORMALIZED_KEY: Record<string, string> = {
+  [normalizeTextKey("Direct")]: "Direct",
   [normalizeTextKey("Abritel")]: "Abritel",
   [normalizeTextKey("Airbnb")]: "Airbnb",
   [normalizeTextKey("Airbnb (Not available)")]: "A définir",
@@ -957,6 +950,7 @@ const toDraft = (reservation: Reservation): ReservationDraft => {
     nb_enfants_2_17: reservation.nb_enfants_2_17 ?? 0,
     prix_par_nuit: Number(reservation.prix_par_nuit ?? 0),
     prix_total: Number(reservation.prix_total ?? 0),
+    booking_source: getBookingSource(reservation),
     source_paiement: normalizeReservationSource(reservation.source_paiement),
     commentaire: stripIcalToVerifyMarker(reservation.commentaire),
     frais_optionnels_montant: Number(reservation.frais_optionnels_montant ?? 0),
@@ -990,7 +984,8 @@ const buildEmptyDraft = (
     nb_enfants_2_17: overrides.nb_enfants_2_17 ?? 0,
     prix_par_nuit: nightlyPrice,
     prix_total: overrides.prix_total ?? 0,
-    source_paiement: overrides.source_paiement ?? DEFAULT_RESERVATION_SOURCE,
+    booking_source: overrides.booking_source ?? "Direct",
+    source_paiement: overrides.source_paiement ?? "Direct",
     commentaire: overrides.commentaire ?? "",
     frais_optionnels_montant: overrides.frais_optionnels_montant ?? 0,
     frais_optionnels_libelle: overrides.frais_optionnels_libelle ?? "",
@@ -1013,6 +1008,7 @@ const toPayload = (draft: ReservationDraft, options?: ContratOptions, keepIcalTo
     nb_nuits: draft.nb_nuits,
     prix_par_nuit: draft.prix_par_nuit,
     prix_total: draft.prix_total,
+    booking_source: draft.booking_source,
     source_paiement: normalizeReservationSource(draft.source_paiement),
     commentaire: buildCommentWithIcalToVerifyMarker(draft.commentaire, keepIcalToVerifyMarker),
     frais_optionnels_montant: draft.frais_optionnels_montant,
@@ -2822,7 +2818,7 @@ const ReservationsPage = () => {
               [reservation.id]: previous[reservation.id] ?? toDraft(reservation),
             }));
           });
-          focusInlineField(reservation.id, nextField, { openPicker: nextField === "source_paiement" });
+          focusInlineField(reservation.id, nextField, { openPicker: nextField === "booking_source" });
         }
       }
       return;
@@ -4451,11 +4447,11 @@ const ReservationsPage = () => {
             data-grid-month={monthIndex}
             data-grid-row={newRowIndex}
             data-grid-col={7}
-            value={newRow.source_paiement}
+            value={newRow.booking_source}
             onChange={(event) =>
               updateNewRow(monthIndex, (prev) => ({
                 ...prev,
-                source_paiement: normalizeReservationSource(event.target.value),
+                booking_source: event.target.value,
               }))
             }
             onKeyDown={(event) =>
@@ -4469,7 +4465,7 @@ const ReservationsPage = () => {
               })
             }
           >
-            {RESERVATION_SOURCES.map((source) => (
+            {BOOKING_SOURCES.map((source) => (
               <option key={source} value={source}>
                 {source}
               </option>
@@ -5202,7 +5198,7 @@ const ReservationsPage = () => {
                       <th>Prix/nuit</th>
                       <th>Total</th>
                       <th className="reservations-col-fees">Options</th>
-                      <th>Source</th>
+                      <th>Origine</th>
                       <th>Commentaire</th>
                       <th>Actions</th>
                     </tr>
@@ -5261,6 +5257,7 @@ const ReservationsPage = () => {
                       const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
+                      const paymentSummary = isReservationPaymentTracking(reservation.payment_tracking) ? getReservationPaymentSummary(reservation) : null;
                       const linkedContract = reservation.linked_contract ?? null;
                       const hasRemainingDuePill = linkedContract?.statut_paiement_arrhes === "recu";
                       const isRemainingDuePaid = linkedContract?.statut_paiement_solde === "regle";
@@ -5306,7 +5303,7 @@ const ReservationsPage = () => {
                         isCurrentReservation &&
                         Boolean(reservation.gite_id) &&
                         !hasOpenEnergySession;
-                      const normalizedSourceLabel = normalizeReservationSource(reservation.source_paiement);
+                      const normalizedSourceLabel = getBookingSource(reservation);
                       const reservationSourceColor = getPaymentColorFromMap(
                         normalizedSourceLabel,
                         paymentColorMap,
@@ -5734,9 +5731,9 @@ const ReservationsPage = () => {
                                           ? "reservations-current-pill--balance-paid"
                                           : "reservations-current-pill--balance"
                                       }`}
-                                      onClick={() => void toggleLinkedContractBalanceStatus(reservation)}
+                                      onClick={() => { if (reservation.payment_tracking?.managed) window.location.assign(`/reservations/${reservation.id}/reglements`); else void toggleLinkedContractBalanceStatus(reservation); }}
                                       disabled={isRemainingDueUpdating}
-                                      title={`${
+                                      title={reservation.payment_tracking?.managed ? "Voir les règlements de la réservation" : `${
                                         isRemainingDuePaid
                                           ? "Marquer le restant dû comme non payé"
                                           : "Marquer le restant dû comme payé"
@@ -6161,6 +6158,12 @@ const ReservationsPage = () => {
                                   </span>
                                 </button>
                               )}
+                              {!isEditing && paymentSummary ? <Link
+                                className={`reservation-payment-inline${paymentSummary.state === "paid" ? " reservation-payment-inline--paid" : ""}`}
+                                to={`/reservations/${reservation.id}/reglements`} title="Voir et saisir les règlements">
+                                {paymentSummary.state === "paid" ? "✓ Payé" : paymentSummary.state === "partial" && paymentSummary.remaining !== null
+                                  ? `Reste ${formatEuro(paymentSummary.remaining)}` : paymentSummary.label}
+                              </Link> : null}
                             </td>
                             <td className="reservations-col-fees">
                               <button
@@ -6233,40 +6236,40 @@ const ReservationsPage = () => {
                               </button>
                             </td>
                             <td>
-                              {isEditing || isInlineFieldActive(reservation.id, "source_paiement", inlineOccurrenceId) ? (
+                              {isEditing || isInlineFieldActive(reservation.id, "booking_source", inlineOccurrenceId) ? (
                                 <select
                                   data-grid-month={monthIndex}
                                   data-grid-row={gridRowIndex}
                                   data-grid-col={7}
                                   data-inline-row-id={!isEditing ? reservation.id : undefined}
-                                  data-inline-field={!isEditing ? "source_paiement" : undefined}
-                                  value={draft.source_paiement}
+                                  data-inline-field={!isEditing ? "booking_source" : undefined}
+                                  value={draft.booking_source}
                                   autoFocus={!isEditing}
                                   onChange={(event) => {
                                     if (!isEditing) {
                                       const nextDraft = {
                                         ...(draftsRef.current[reservation.id] ?? toDraft(reservation)),
-                                        source_paiement: normalizeReservationSource(event.target.value),
+                                        booking_source: event.target.value,
                                       };
                                       setDrafts((previous) => ({ ...previous, [reservation.id]: nextDraft }));
-                                      saveInlineField(reservation, "source_paiement", nextDraft).catch((err) =>
+                                      saveInlineField(reservation, "booking_source", nextDraft).catch((err) =>
                                         setError((err as Error).message)
                                       );
                                       return;
                                     }
                                     updateExistingField(reservation, (prev) => ({
                                       ...prev,
-                                      source_paiement: normalizeReservationSource(event.target.value),
+                                      booking_source: event.target.value,
                                     }));
                                   }}
                                   onBlur={() => {
                                     if (!isEditing) {
-                                      handleInlineBlur(reservation, "source_paiement", inlineOccurrenceId);
+                                      handleInlineBlur(reservation, "booking_source", inlineOccurrenceId);
                                     }
                                   }}
                                   onKeyDown={(event) => {
                                     if (!isEditing) {
-                                      handleInlineKeyDown(event, reservation, "source_paiement", inlineOccurrenceId);
+                                      handleInlineKeyDown(event, reservation, "booking_source", inlineOccurrenceId);
                                       return;
                                     }
                                     handleGridKeyDown(event, {
@@ -6280,7 +6283,7 @@ const ReservationsPage = () => {
                                     });
                                   }}
                                 >
-                                  {RESERVATION_SOURCES.map((source) => (
+                                  {BOOKING_SOURCES.map((source) => (
                                     <option key={source} value={source}>
                                       {source}
                                     </option>
@@ -6290,8 +6293,8 @@ const ReservationsPage = () => {
                                 <button
                                   type="button"
                                   className="reservations-source-inline-trigger"
-                                  onClick={() => openInlineField(reservation, "source_paiement", inlineOccurrenceId)}
-                                  title="Modifier la source"
+                                  onClick={() => openInlineField(reservation, "booking_source", inlineOccurrenceId)}
+                                  title="Modifier l’origine"
                                 >
                                   <span className="reservations-source-inline-label">
                                     <span className="reservations-source-dot" aria-hidden="true" />
@@ -6414,6 +6417,7 @@ const ReservationsPage = () => {
                                       onSelect: () => { splitReservationByMonth(reservation).catch((err) => setError((err as Error).message)); },
                                     } satisfies ActionMenuItem] : []),
                                     { id: "options", label: "Options et frais", icon: "options", description: hasFees ? "Des options sont déjà renseignées" : undefined, onSelect: () => toggleDetails(reservation) },
+                                    { id: "payments", label: "Origine et règlements", icon: "link", to: `/reservations/${reservation.id}/reglements` },
                                     ...(reservation.gite_id ? [{ id: "payment-link", label: "Lien de paiement Stripe", icon: "link", disabled: isEditing || rowSaveState === "saving", onSelect: () => setPaymentLinkReservation(reservation) } satisfies ActionMenuItem] : []),
                                     ...(reservation.airbnb_url ? [{ id: "airbnb", label: "Ouvrir sur Airbnb", icon: "external", href: reservation.airbnb_url, external: true } satisfies ActionMenuItem] : []),
                                     ...(telephoneHref ? [{ id: "phone", label: "Appeler", description: reservation.telephone ?? undefined, icon: "phone", href: telephoneHref } satisfies ActionMenuItem] : []),
