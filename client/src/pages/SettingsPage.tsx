@@ -1,3 +1,4 @@
+import EmailTextPreview from "./shared/EmailTextPreview";
 import BookingEmailTemplatesEditor from "./shared/BookingEmailTemplatesEditor";
 import { bookingEmailTemplateKeys, defaultBookingEmailTextSettings, type BookingEmailTemplateKey } from "@contrats/shared";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -5773,6 +5774,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
               </p>
             </div>
             <div className="settings-cluster__grid">
+              <EmailTextPreview />
               <div className="card settings-card settings-card--blue settings-card--span-12">
                 <div className="settings-card__topline">
                   <span className="settings-card__tag">Modèles email</span>
