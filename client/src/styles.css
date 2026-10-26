@@ -4281,6 +4281,134 @@ body.app-scroll-locked {
   outline-offset: 2px;
 }
 
+.mobile-reservation-actions__detail.reservation-payment-tile {
+  position: relative;
+  align-content: start;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  padding-bottom: 13px;
+}
+
+.reservation-payment-tile__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
+.reservation-payment-tile__status {
+  font-size: 0.61rem;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.reservation-payment-tile--partial,
+.reservation-payment-tile--paid,
+.reservation-payment-tile[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  background: color-mix(in srgb, var(--primary) 18%, rgba(255, 255, 255, 0.08));
+}
+
+.reservation-payment-tile--paid .reservation-payment-tile__status {
+  color: color-mix(in srgb, var(--primary) 35%, white);
+}
+
+.reservation-payment-tile__track {
+  position: absolute;
+  inset: auto 10px 5px;
+  height: 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.reservation-payment-tile__track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.reservation-payment-tile:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.reservation-payment-details {
+  min-width: 0;
+  margin-top: 3px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  gap: 10px;
+  font-size: 0.76rem;
+  max-height: min(48dvh, 360px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.reservation-payment-details__row,
+.reservation-payment-details__balance {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.reservation-payment-details__row > span {
+  display: grid;
+  gap: 3px;
+}
+
+.reservation-payment-details__row small,
+.reservation-payment-details p {
+  font-size: 0.67rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+}
+
+.reservation-payment-details__row > strong,
+.reservation-payment-details__balance > strong {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.reservation-payment-details__balance {
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+.reservation-payment-details__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.reservation-payment-details a,
+.reservation-payment-details__actions button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: color-mix(in srgb, var(--primary) 35%, white);
+  font: inherit;
+  font-size: 0.69rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 .mobile-reservation-actions__source-picker {
   margin-top: 4px;
   display: grid;

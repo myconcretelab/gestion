@@ -674,6 +674,9 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const [notificationDayCount, setNotificationDayCount] = useState(() => widgetPreferences.options.notificationArchive.dayCount);
   const [notificationSliderValue, setNotificationSliderValue] = useState(() => widgetPreferences.options.notificationArchive.dayCount);
   const [mobileActionState, setMobileActionState] = useState<TodayMobileActionState>(null);
+  const [mobilePaymentDetails, setMobilePaymentDetails] = useState<{
+    id: string; reservation?: Reservation; error?: string;
+  } | null>(null);
   const [sourcePickerReservationId, setSourcePickerReservationId] = useState<string | null>(null);
   const [sourceUpdating, setSourceUpdating] = useState(false);
   const [sourceUpdateError, setSourceUpdateError] = useState<string | null>(null);
@@ -930,6 +933,23 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         : null,
     [mobileActionState, reservations]
   );
+
+  const mobilePaymentReservationId = mobileActionReservation?.id;
+  useEffect(() => {
+    if (!mobilePaymentReservationId || currentUser?.permissions.canViewAmounts === false) return;
+    const controller = new AbortController();
+    setMobilePaymentDetails({ id: mobilePaymentReservationId });
+    void apiFetch<Reservation>(`/reservations/${mobilePaymentReservationId}`, { signal: controller.signal })
+      .then((reservation) => {
+        if (!controller.signal.aborted) setMobilePaymentDetails({ id: mobilePaymentReservationId, reservation });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setMobilePaymentDetails({
+          id: mobilePaymentReservationId, error: "Impossible de charger les règlements. Rouvrez la fiche pour réessayer.",
+        });
+      });
+    return () => controller.abort();
+  }, [mobilePaymentReservationId, currentUser?.permissions.canViewAmounts]);
 
   const closeMobileReservationActions = () => {
     setMobileActionState(null);
@@ -2506,7 +2526,15 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         <MobileReservationInfoDrawer
           open
           title={getReservationGuestName(mobileActionReservation)}
-          reservation={mobileActionReservation}
+          reservation={{ ...mobileActionReservation,
+            ...(mobilePaymentDetails?.id === mobileActionReservation.id && mobilePaymentDetails.reservation ? {
+              linked_contract: mobilePaymentDetails.reservation.linked_contract,
+              online_payment: mobilePaymentDetails.reservation.online_payment,
+            } : {}),
+          }}
+          paymentLoading={currentUser?.permissions.canViewAmounts !== false &&
+            (mobilePaymentDetails?.id !== mobileActionReservation.id || (!mobilePaymentDetails.reservation && !mobilePaymentDetails.error))}
+          paymentError={mobilePaymentDetails?.id === mobileActionReservation.id ? mobilePaymentDetails.error : null}
           giteId={mobileActionReservation.gite_id}
           giteName={mobileActionReservation.gite?.nom}
           onTasksChanged={(summary) => {

@@ -350,12 +350,16 @@ export type ReservationLinkedContract = {
   statut_paiement_arrhes: "non_recu" | "recu";
   statut_paiement_solde: "non_regle" | "regle";
   arrhes_montant?: number;
+  mode_paiement_arrhes?: Contrat["mode_paiement_arrhes"];
+  date_paiement_arrhes?: string | null;
+  total_montant?: number;
   solde_montant: number;
 };
 
 export type Reservation = {
   online_payment?: {
     amount_paid: number; deposit: number; total: number; remaining: number;
+    offline_received?: number;
     paid_at: string; purpose: string; status: string; refunded_amount: number; request_id: string | null;
   } | null;
   id: string;

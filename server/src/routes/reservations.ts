@@ -257,6 +257,8 @@ const reservationLinkedContractSelect = {
   heure_arrivee: true,
   heure_depart: true,
   statut_paiement_arrhes: true,
+  mode_paiement_arrhes: true,
+  date_paiement_arrhes: true,
   statut_paiement_solde: true,
   arrhes_montant: true,
   solde_montant: true,
@@ -967,6 +969,9 @@ const hydrateReservationLinkedContract = (contract: any) => ({
       ? contract.heure_depart.trim()
       : null,
   statut_paiement_arrhes: contract.statut_paiement_arrhes,
+  mode_paiement_arrhes: contract.mode_paiement_arrhes ?? null,
+  date_paiement_arrhes: contract.date_paiement_arrhes ?? null,
+  total_montant: round2(toNumber(contract.arrhes_montant) + toNumber(contract.solde_montant)),
   statut_paiement_solde: contract.statut_paiement_solde,
   arrhes_montant: toNumber(contract.arrhes_montant),
   solde_montant: getRemainingDueAmount(
@@ -985,6 +990,8 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
       heure_arrivee: string | null;
       heure_depart: string | null;
       statut_paiement_arrhes: string;
+      mode_paiement_arrhes: string | null;
+      date_paiement_arrhes: Date | null;
       statut_paiement_solde: string;
       arrhes_montant: number;
       solde_montant: number;
@@ -1000,6 +1007,8 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
         heure_arrivee: string | null;
         heure_depart: string | null;
         statut_paiement_arrhes: string;
+        mode_paiement_arrhes: string | null;
+        date_paiement_arrhes: Date | null;
         statut_paiement_solde: string;
         arrhes_montant: number;
         solde_montant: number;
@@ -1012,6 +1021,8 @@ const loadLinkedContracts = async (reservationIds: string[]) => {
         "heure_arrivee",
         "heure_depart",
         "statut_paiement_arrhes",
+        "mode_paiement_arrhes",
+        "date_paiement_arrhes",
         "statut_paiement_solde",
         "arrhes_montant",
         "solde_montant"

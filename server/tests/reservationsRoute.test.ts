@@ -36,6 +36,59 @@ const getRouteHandler = (router: any, method: "get" | "post" | "patch", routePat
   return layer.route.stack[0].handle as (req: any, res: any, next: (err?: unknown) => void) => Promise<void>;
 };
 
+test("GET /reservations/:id expose le moyen des arrhes et conserve le total d'un contrat réglé", async () => {
+  const previousUrl = process.env.DATABASE_URL;
+  const prisma = (await import("../src/db/prisma.ts")).default as any;
+  const original = {
+    reservationFindUnique: prisma.reservation.findUnique,
+    contractFindMany: prisma.contrat.findMany,
+    bookingPaymentFindMany: prisma.bookingPayment.findMany,
+    queryRaw: prisma.$queryRaw,
+  };
+  const contract = {
+    id: "c", reservation_id: "r", numero_contrat: "TEST", arrhes_montant: 280, solde_montant: 1120,
+    statut_paiement_arrhes: "recu", statut_paiement_solde: "regle",
+    mode_paiement_arrhes: "Chèque", date_paiement_arrhes: new Date("2026-10-13T12:00:00Z"),
+  };
+  try {
+    prisma.reservation.findUnique = async () => ({
+      id: "r", date_entree: new Date("2026-10-26"), date_sortie: new Date("2026-10-30"),
+      nb_nuits: 4, prix_total: 1400, options: "{}", energy_tracking: "[]",
+    });
+    prisma.contrat.findMany = async ({ select }: any) => {
+      assert.equal(select.mode_paiement_arrhes, true);
+      assert.equal(select.date_paiement_arrhes, true);
+      return [contract];
+    };
+    prisma.bookingPayment.findMany = async () => [];
+    prisma.$queryRaw = async (query: any) => {
+      assert.match(query.strings.join(""), /"mode_paiement_arrhes"/);
+      assert.match(query.strings.join(""), /"date_paiement_arrhes"/);
+      return [contract];
+    };
+    const router = (await import("../src/routes/reservations.ts")).default;
+    for (const url of ["postgresql://fixture", "file:fixture.db"]) {
+      process.env.DATABASE_URL = url;
+      const response = createMockResponse();
+      let nextError: unknown = null;
+      await getRouteHandler(router, "get", "/:id")({ params: { id: "r" } }, response, (error) => { nextError = error; });
+      assert.equal(nextError, null);
+      const linked = (response.body as any).linked_contract;
+      assert.equal(linked.total_montant, 1400);
+      assert.equal(linked.solde_montant, 0);
+      assert.equal(linked.mode_paiement_arrhes, "Chèque");
+      assert.equal(linked.date_paiement_arrhes.toISOString(), "2026-10-13T12:00:00.000Z");
+    }
+  } finally {
+    prisma.reservation.findUnique = original.reservationFindUnique;
+    prisma.contrat.findMany = original.contractFindMany;
+    prisma.bookingPayment.findMany = original.bookingPaymentFindMany;
+    prisma.$queryRaw = original.queryRaw;
+    if (previousUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousUrl;
+  }
+});
+
 test("GET /reservations/recent-imports/count inclut les réservations Booked", async () => {
   const prismaModule = await import("../src/db/prisma.ts");
   const prisma = prismaModule.default as any;

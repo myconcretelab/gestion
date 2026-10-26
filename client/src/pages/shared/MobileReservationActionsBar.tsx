@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { ReservationOptionBadge } from "../../utils/reservationOptionBadges";
 import ReservationContractIcon from "./ReservationContractIcon";
 import ReservationOptionBadges from "./ReservationOptionBadges";
@@ -14,6 +14,7 @@ type MobileReservationActionsBarProps = {
     value: string;
     onClick?: () => void;
     ariaLabel?: string;
+    content?: ReactNode;
   }>;
   note?: string | null;
   cleaningCheck?: ReactNode;
@@ -190,6 +191,7 @@ const MobileReservationActionsBar = ({
             {details?.length ? (
               <div className="mobile-reservation-actions__details">
                 {details.map((detail) => {
+                  if (detail.content) return <Fragment key={detail.label}>{detail.content}</Fragment>;
                   const content = (
                     <>
                       <span className="mobile-reservation-actions__detail-label">{detail.label}</span>
