@@ -23,6 +23,7 @@ export const AUTOMATIC_PAYMENT_PLATFORMS = [
 ] as const;
 export type ReservationPaymentSettings = {
   platform_payments_received_automatically: boolean;
+  first_payment_default: "full" | "deposit";
 };
 export type ReservationPaymentMethod =
   (typeof RESERVATION_PAYMENT_METHODS)[number];
@@ -53,6 +54,7 @@ export type ReservationPaymentEntry = {
   refunded_amount?: number;
 };
 export type ReservationPaymentTracking = {
+  first_payment_default?: ReservationPaymentSettings["first_payment_default"];
   managed: boolean;
   total: number;
   deposit: number;
@@ -68,6 +70,20 @@ export type ReservationPaymentTracking = {
     expected: number;
     extras_remaining: number;
   };
+};
+
+export const getSuggestedReservationPayment = (
+  tracking: ReservationPaymentTracking,
+) => {
+  const depositDue = Math.max(
+    0,
+    Math.min(tracking.remaining, tracking.deposit - tracking.received),
+  );
+  if (tracking.platform || tracking.received > 0)
+    return { purpose: "balance" as const, amount: tracking.remaining };
+  if (tracking.first_payment_default === "deposit" && depositDue > 0)
+    return { purpose: "deposit" as const, amount: depositDue };
+  return { purpose: "full" as const, amount: tracking.remaining };
 };
 
 export const isReservationPaymentTracking = (

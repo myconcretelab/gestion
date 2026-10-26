@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   BOOKING_SOURCES,
   getBookingSource,
+  getSuggestedReservationPayment,
   legacyPaymentMethod,
   RESERVATION_PAYMENT_METHODS,
   type ReservationPaymentTracking,
@@ -76,12 +77,9 @@ export default function ReservationPaymentsEditor({
         0,
         Math.min(tracking.remaining, tracking.deposit - tracking.received),
       );
-  const [purpose, setPurpose] = useState(
-    depositDue > 0 ? "deposit" : "balance",
-  );
-  const [amount, setAmount] = useState(
-    String(depositDue > 0 ? depositDue : tracking.remaining),
-  );
+  const suggestion = getSuggestedReservationPayment(tracking);
+  const [purpose, setPurpose] = useState<string>(suggestion.purpose);
+  const [amount, setAmount] = useState(String(suggestion.amount));
   const [method, setMethod] = useState(
     legacyPaymentMethod(reservation.source_paiement) || "Virement",
   );
@@ -363,7 +361,13 @@ export default function ReservationPaymentsEditor({
           aria-expanded={false}
           aria-controls={formId}
           disabled={busy}
-          onClick={() => setExpanded(true)}
+          onClick={() => {
+            const next = getSuggestedReservationPayment(tracking);
+            setPurpose(next.purpose);
+            setAmount(String(next.amount));
+            requestId.current = crypto.randomUUID();
+            setExpanded(true);
+          }}
         >
           ＋ Ajouter un règlement
         </button>
@@ -387,10 +391,16 @@ export default function ReservationPaymentsEditor({
                   requestId.current = crypto.randomUUID();
                   if (event.target.value === "deposit" && depositDue > 0)
                     setAmount(String(depositDue));
-                  if (event.target.value === "balance")
+                  if (
+                    event.target.value === "balance" ||
+                    event.target.value === "full"
+                  )
                     setAmount(String(tracking.remaining));
                 }}
               >
+                {tracking.received === 0 && !tracking.platform ? (
+                  <option value="full">Totalité du séjour</option>
+                ) : null}
                 <option value="deposit">Arrhes</option>
                 <option value="balance">Solde</option>
                 <option value="payment">Versement partiel</option>

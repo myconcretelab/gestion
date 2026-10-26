@@ -409,6 +409,25 @@ test("l'API valide les dates réelles, les centimes, les moyens et refuse un mon
     });
     assert.equal(response.status, 201);
     assert.equal(((await response.json()) as any).remaining, 900);
+    const firstFull = await stay();
+    await contractFor(firstFull.id);
+    const fullResponse = await fetch(
+      `http://127.0.0.1:${address.port}/reservations/${firstFull.id}/payments`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payment(1000, { purpose: "full" })),
+      },
+    );
+    assert.equal(fullResponse.status, 201);
+    assert.equal(((await fullResponse.json()) as any).remaining, 0);
+    const paidContract = await inOrg(() =>
+      db.default.contrat.findFirstOrThrow({
+        where: { reservation_id: firstFull.id },
+      }),
+    );
+    assert.equal(paidContract.statut_paiement_arrhes, "recu");
+    assert.equal(paidContract.statut_paiement_solde, "regle");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -812,5 +831,68 @@ test("les encaissements réels existants ne sont jamais doublés par la récepti
       state.entries.some((entry) => entry.origin === "platform"),
       false,
     );
+  });
+});
+
+test("la préférence du premier règlement conserve la compatibilité avec les anciens réglages et reste isolée par compte", async () => {
+  const r = await stay();
+  await inOrg(async () => {
+    try {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+      });
+      await db.default.organizationRuntimeSetting.updateMany({
+        where: { key: "reservation-payments" },
+        data: {
+          value_json: JSON.stringify({
+            platform_payments_received_automatically: true,
+          }),
+        },
+      });
+      assert.equal(
+        (await paymentSettings.readReservationPaymentSettings())
+          .first_payment_default,
+        "full",
+      );
+      assert.equal(
+        (await ledger.getReservationPaymentTracking(r.id))
+          .first_payment_default,
+        "full",
+      );
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+        first_payment_default: "deposit",
+      });
+      assert.equal(
+        (await paymentSettings.readReservationPaymentSettings())
+          .first_payment_default,
+        "deposit",
+      );
+      assert.equal(
+        (await ledger.getReservationPaymentTracking(r.id))
+          .first_payment_default,
+        "deposit",
+      );
+      assert.equal(
+        (
+          await inOrg(
+            () => paymentSettings.readReservationPaymentSettings(),
+            "org_other_first_payment",
+          )
+        ).first_payment_default,
+        "full",
+      );
+      await assert.rejects(
+        paymentSettings.saveReservationPaymentSettings({
+          platform_payments_received_automatically: true,
+          first_payment_default: "invalid",
+        }),
+      );
+    } finally {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+        first_payment_default: "full",
+      });
+    }
   });
 });

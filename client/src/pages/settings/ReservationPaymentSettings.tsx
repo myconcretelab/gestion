@@ -31,12 +31,12 @@ export default function ReservationPaymentSettings() {
         <div>
           <div className="settings-cluster__eyebrow">Réservations</div>
           <h2 className="settings-cluster__title">
-            Règlements des plateformes
+            Règlements des réservations
           </h2>
         </div>
         <p className="settings-cluster__text">
-          Choisissez comment suivre les montants encaissés par Airbnb, Abritel
-          et Gîtes de France.
+          Choisissez le montant proposé au premier règlement et le suivi des
+          paiements des plateformes.
         </p>
       </div>
       <div className="card settings-card">
@@ -76,6 +76,29 @@ export default function ReservationPaymentSettings() {
               }
             }}
           >
+            <label className="field">
+              Montant proposé au premier règlement
+              <select
+                value={settings.first_payment_default ?? "full"}
+                disabled={busy || !canCurrentUserWritePage("settings")}
+                onChange={(event) => {
+                  setSettings({
+                    ...settings,
+                    first_payment_default: event.target
+                      .value as Settings["first_payment_default"],
+                  });
+                  setNotice("");
+                }}
+              >
+                <option value="full">Totalité du séjour (par défaut)</option>
+                <option value="deposit">Arrhes</option>
+              </select>
+            </label>
+            <p className="field-hint">
+              Le montant et la nature restent modifiables avant
+              l’enregistrement. Après un premier versement, le solde restant est
+              proposé.
+            </p>
             <label className="checkbox-inline">
               <input
                 type="checkbox"
@@ -83,6 +106,7 @@ export default function ReservationPaymentSettings() {
                 disabled={busy || !canCurrentUserWritePage("settings")}
                 onChange={(event) => {
                   setSettings({
+                    ...settings,
                     platform_payments_received_automatically:
                       event.target.checked,
                   });

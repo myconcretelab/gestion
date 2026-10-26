@@ -27,7 +27,7 @@ const paymentSchema = z
         "Utilisez au plus deux décimales.",
       ),
     method: z.enum(RESERVATION_PAYMENT_METHODS),
-    purpose: z.enum(["deposit", "balance", "payment"]),
+    purpose: z.enum(["deposit", "balance", "payment", "full"]),
     paid_on: dateSchema,
     note: z.string().trim().max(500).nullable().optional(),
   })

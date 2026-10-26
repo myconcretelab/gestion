@@ -6,13 +6,16 @@ import { writeRuntimeSetting } from "../modules/organizations/runtimeSettings.js
 export const reservationPaymentSettingsSchema = z
   .object({
     platform_payments_received_automatically: z.boolean(),
+    first_payment_default: z.enum(["full", "deposit"]).default("full"),
   })
   .strict();
 const definition = {
   key: "reservation-payments",
   version: 1,
   schema: reservationPaymentSettingsSchema,
-  defaultValue: { platform_payments_received_automatically: true },
+  defaultValue: reservationPaymentSettingsSchema.parse({
+    platform_payments_received_automatically: true,
+  }),
 };
 export const readReservationPaymentSettings = async (
   db: TenantTransactionClient = prisma,

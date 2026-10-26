@@ -305,6 +305,7 @@ export const loadReservationPaymentTracking = async (
         .map((row) => Math.round(row.amount * 100)),
     );
     const tracking: ReservationPaymentTracking = {
+      first_payment_default: settings.first_payment_default,
       managed,
       total: total / 100,
       deposit: deposit / 100,
