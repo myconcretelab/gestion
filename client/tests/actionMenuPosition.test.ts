@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { actionMenuPosition } from "../src/pages/shared/actionMenuPosition.ts";
 
+test("le popover de règlement utilise une largeur adaptée sans déborder de l’écran", () => {
+  for (const width of [320, 768, 1440]) {
+    const result = actionMenuPosition({ top: 200, bottom: 240, left: width - 140, right: width - 40 },
+      { width, height: 800 }, 500, 400);
+    assert.equal(result.width, Math.min(400, width - 24));
+    assert.ok(result.left >= 12);
+    assert.ok(result.left + result.width <= width - 12);
+  }
+});
+
 test("le menu s’aligne au bouton et reste dans l’écran sur mobile", () => {
   const desktop = actionMenuPosition(
     { top: 30, bottom: 66, left: 900, right: 1000 },

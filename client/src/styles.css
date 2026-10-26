@@ -13383,7 +13383,7 @@ button.personal-expenses-status:disabled {
 .reservations-table {
   margin-top: 16px;
   table-layout: fixed;
-  min-width: 840px;
+  min-width: 960px;
 }
 
 .reservations-table th {
@@ -13610,7 +13610,7 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table col.reservations-col--host {
-  width: 14%;
+  width: 12%;
 }
 
 .reservations-table col.reservations-col--entry {
@@ -13622,7 +13622,7 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table col.reservations-col--nights {
-  width: 6%;
+  width: 5%;
 }
 
 .reservations-table col.reservations-col--adults {
@@ -13630,19 +13630,23 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table col.reservations-col--nightly {
-  width: 9%;
+  width: 8%;
 }
 
 .reservations-table col.reservations-col--total {
-  width: 10%;
+  width: 9%;
 }
 
 .reservations-table col.reservations-col--fees {
-  width: 10%;
+  width: 8%;
 }
 
 .reservations-table col.reservations-col--source {
-  width: 10%;
+  width: 8%;
+}
+
+.reservations-table col.reservations-col--balance {
+  width: 11%;
 }
 
 .reservations-table col.reservations-col--comment {
@@ -13695,7 +13699,7 @@ button.personal-expenses-status:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-@container reservation-table (max-width: 839px) {
+@container reservation-table (max-width: 959px) {
   .reservations-table-container {
     overflow-x: auto;
   }
@@ -22064,3 +22068,79 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .reservation-payment-inline--paid,
 .reservation-payment-inline:hover,
 .reservation-payment-inline:focus-visible { color: var(--primary); }
+
+.reservation-payment-balance {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+}
+.reservation-payment-balance > strong { font-size: 0.78rem; overflow-wrap: anywhere; }
+.reservation-payment-balance__status { color: var(--muted); font-size: 0.64rem; }
+.reservation-payment-balance:hover,
+.reservation-payment-balance[aria-expanded="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.reservation-payment-balance:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.reservation-payment-balance--paid > strong,
+.reservation-payment-balance--paid .reservation-payment-balance__status { color: var(--primary); }
+.reservation-payment-balance .reservation-payment-tile__track { inset: auto 8px 7px; background: var(--primary-soft); height: 4px; }
+.reservation-payment-popover {
+  position: fixed;
+  z-index: 1600;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow-strong);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.reservation-payment-popover:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.reservation-payment-popover__header { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.reservation-payment-popover__header > div { display: grid; gap: 4px; }
+.reservation-payment-popover__header span { font-size: 0.75rem; color: var(--muted); }
+.reservation-payment-popover__header > button {
+  border: 1px solid var(--border); border-radius: 8px; background: var(--subtle); color: inherit;
+  min-width: 32px; min-height: 32px; font-size: 1.3rem; cursor: pointer;
+}
+.reservation-payment-popover .reservation-payment-details {
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.reservation-payment-popover .reservation-payment-details__row small,
+.reservation-payment-popover .reservation-payment-details p { color: var(--muted); }
+.reservation-payment-popover .reservation-ledger__origin select,
+.reservation-payment-popover .reservation-ledger__form select,
+.reservation-payment-popover .reservation-ledger__form input {
+  background: var(--field-bg);
+  color: var(--ink);
+  border-color: var(--field-border);
+  color-scheme: light;
+}
+.reservation-payment-popover select option { background: var(--card); color: var(--ink); }
+.reservation-payment-popover .reservation-ledger__form { border-color: var(--border); }
+.reservation-payment-popover .reservation-ledger__add,
+.reservation-payment-popover .reservation-ledger__form-actions button[type="submit"] {
+  background: var(--primary-soft);
+  border-color: var(--primary-strong);
+  color: var(--ink);
+}
+.reservation-payment-popover .reservation-ledger__form-actions button[type="button"] { border-color: var(--border); }
+.reservation-payment-popover .reservation-ledger__error { color: var(--ink) !important; }

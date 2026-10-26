@@ -31,7 +31,7 @@ export const getBookingSource = (reservation: {
     reservation.source_paiement || "",
   )
     ? reservation.source_paiement!
-    : "À préciser");
+    : "Direct");
 
 export type ReservationPaymentEntry = {
   id: string;

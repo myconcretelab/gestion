@@ -1,5 +1,5 @@
-import { getReservationPaymentSummary } from "../utils/reservationPaymentSummary";
-import { BOOKING_SOURCES, getBookingSource, isReservationPaymentTracking } from "@contrats/shared";
+import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
+import ReservationPaymentPopover from "./shared/ReservationPaymentPopover";
 import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
 import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
@@ -51,7 +51,6 @@ import {
   getReservationEnergyAverageDailyCost,
 } from "../utils/reservationEnergy";
 import { getReservationMonthlyAmountsForMonth } from "../utils/reservationMonthlyAmounts";
-import { getReservationRemainingDueAmount } from "../utils/reservationBalance";
 import { getReservationsLocationPeriod } from "../utils/reservationNavigation";
 import {
   computeSeasonalReservationPrice,
@@ -64,7 +63,6 @@ import {
   type SchoolHoliday,
 } from "../utils/schoolHolidays";
 import type {
-  Contrat,
   ContratOptions,
   Gite,
   Reservation,
@@ -1145,7 +1143,6 @@ const ReservationsPage = () => {
   const [commentDialogSaving, setCommentDialogSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [splittingId, setSplittingId] = useState<string | null>(null);
-  const [balanceStatusUpdatingByContractId, setBalanceStatusUpdatingByContractId] = useState<Record<string, boolean>>({});
   const [startingEnergyById, setStartingEnergyById] = useState<Record<string, boolean>>({});
   const [startingMonthlyEnergyByKey, setStartingMonthlyEnergyByKey] = useState<Record<string, boolean>>({});
   const [newRows, setNewRows] = useState<Record<number, ReservationDraft>>({});
@@ -1488,51 +1485,19 @@ const ReservationsPage = () => {
     });
   };
 
-  const toggleLinkedContractBalanceStatus = async (reservation: Reservation) => {
-    const linkedContract = reservation.linked_contract;
-    if (!linkedContract) return;
-
-    const nextStatus =
-      linkedContract.statut_paiement_solde === "regle" ? "non_regle" : "regle";
-
-    setBalanceStatusUpdatingByContractId((previous) => ({
-      ...previous,
-      [linkedContract.id]: true,
-    }));
-
-    try {
-      const updated = await apiFetch<Contrat>(`/contracts/${linkedContract.id}/solde`, {
-        method: "PATCH",
-        json: {
-          statut_paiement_solde: nextStatus,
-        },
-      });
-
-      setReservations((previous) =>
-        previous.map((item) =>
-          item.linked_contract?.id === updated.id
-            ? {
-                ...item,
-                linked_contract: item.linked_contract
-                  ? {
-                      ...item.linked_contract,
-                      statut_paiement_solde: updated.statut_paiement_solde,
-                      solde_montant: updated.solde_montant,
-                    }
-                  : item.linked_contract,
-              }
-            : item,
-        ),
-      );
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBalanceStatusUpdatingByContractId((previous) => {
-        const next = { ...previous };
-        delete next[linkedContract.id];
-        return next;
-      });
+  const updatePaymentTracking = (
+    reservation: Reservation,
+    payment_tracking: ReservationPaymentTracking,
+    booking_source?: string,
+  ) => {
+    const matchesStay = (row: Reservation) => row.id === reservation.id ||
+      Boolean(reservation.stay_group_id && row.stay_group_id === reservation.stay_group_id);
+    setReservations((previous) => previous.map((row) => matchesStay(row)
+      ? { ...row, payment_tracking, ...(booking_source ? { booking_source } : {}) } : row));
+    if (booking_source) {
+      const ids = new Set(reservations.filter(matchesStay).map((row) => row.id));
+      setDrafts((previous) => Object.fromEntries(Object.entries(previous).map(([id, draft]) =>
+        [id, ids.has(id) ? { ...draft, booking_source } : draft])));
     }
   };
 
@@ -4484,6 +4449,7 @@ const ReservationsPage = () => {
             ))}
           </select>
         </td>
+        <td className="reservations-balance-cell"><span className="muted">—</span></td>
         <td>
           <textarea
             data-grid-month={monthIndex}
@@ -5196,6 +5162,7 @@ const ReservationsPage = () => {
                     <col className="reservations-col reservations-col--total" />
                     <col className="reservations-col reservations-col--fees" />
                     <col className="reservations-col reservations-col--source" />
+                    <col className="reservations-col reservations-col--balance" />
                     <col className="reservations-col reservations-col--comment" />
                     <col className="reservations-col reservations-col--actions" />
                   </colgroup>
@@ -5211,6 +5178,7 @@ const ReservationsPage = () => {
                       <th>Total</th>
                       <th className="reservations-col-fees">Options</th>
                       <th>Origine</th>
+                      <th>Reste à payer</th>
                       <th>Commentaire</th>
                       <th className="table-actions-cell">Actions</th>
                     </tr>
@@ -5269,16 +5237,6 @@ const ReservationsPage = () => {
                       const visibleComment = stripIcalToVerifyMarker(reservation.commentaire);
                       const canSplitByMonth = needsMonthSplit(reservation.date_entree, reservation.date_sortie);
                       const rowStatusLabel = statusLabel(rowSaveState);
-                      const paymentSummary = isReservationPaymentTracking(reservation.payment_tracking) ? getReservationPaymentSummary(reservation) : null;
-                      const linkedContract = reservation.linked_contract ?? null;
-                      const hasRemainingDuePill = linkedContract?.statut_paiement_arrhes === "recu";
-                      const isRemainingDuePaid = linkedContract?.statut_paiement_solde === "regle";
-                      const remainingDueAmount = linkedContract
-                        ? getReservationRemainingDueAmount(reservation, linkedContract)
-                        : 0;
-                      const isRemainingDueUpdating = linkedContract
-                        ? Boolean(balanceStatusUpdatingByContractId[linkedContract.id])
-                        : false;
                       const telephoneHref = buildTelephoneHref(reservation.telephone);
                       const hasOpenEnergySession = Boolean(
                         reservation.energy_tracking?.some((entry) => entry.status === "open"),
@@ -5637,7 +5595,7 @@ const ReservationsPage = () => {
                         <Fragment key={reservation.id}>
                           {showGroupHeader && (
                             <tr className="reservations-gite-group-row">
-                              <td colSpan={12}>
+                              <td colSpan={13}>
                                 <div className="reservations-gite-group-row__label">{groupLabel}</div>
                                 {groupSummary && (
                                   <div className="reservations-gite-group-row__meta">
@@ -5699,7 +5657,6 @@ const ReservationsPage = () => {
                               isArrivalTomorrow ||
                               isDepartureTomorrow ||
                               isIcalToVerify ||
-                              hasRemainingDuePill ||
                               holidayNightCount > 0 ? (
                                 <div className="reservations-row-flags">
                                   {isRecentImported ? (
@@ -5734,29 +5691,6 @@ const ReservationsPage = () => {
                                     >
                                       Vacances · {formatNightsLabel(holidayNightCount)}
                                     </span>
-                                  ) : null}
-                                  {hasRemainingDuePill && linkedContract ? (
-                                    <button
-                                      type="button"
-                                      className={`reservations-current-pill reservations-current-pill--interactive ${
-                                        isRemainingDuePaid
-                                          ? "reservations-current-pill--balance-paid"
-                                          : "reservations-current-pill--balance"
-                                      }`}
-                                      onClick={() => { if (reservation.payment_tracking?.managed) window.location.assign(`/reservations/${reservation.id}/reglements`); else void toggleLinkedContractBalanceStatus(reservation); }}
-                                      disabled={isRemainingDueUpdating}
-                                      title={reservation.payment_tracking?.managed ? "Voir les règlements de la réservation" : `${
-                                        isRemainingDuePaid
-                                          ? "Marquer le restant dû comme non payé"
-                                          : "Marquer le restant dû comme payé"
-                                      } · ${formatEuro(remainingDueAmount)}`}
-                                    >
-                                      {isRemainingDueUpdating
-                                        ? "Mise à jour..."
-                                        : isRemainingDuePaid
-                                          ? "Restant dû payé"
-                                          : `Restant dû : ${formatEuro(remainingDueAmount)}`}
-                                    </button>
                                   ) : null}
                                 </div>
                               ) : null}
@@ -6170,12 +6104,6 @@ const ReservationsPage = () => {
                                   </span>
                                 </button>
                               )}
-                              {!isEditing && paymentSummary ? <Link
-                                className={`reservation-payment-inline${paymentSummary.state === "paid" ? " reservation-payment-inline--paid" : ""}`}
-                                to={`/reservations/${reservation.id}/reglements`} title="Voir et saisir les règlements">
-                                {paymentSummary.state === "paid" ? "✓ Payé" : paymentSummary.state === "partial" && paymentSummary.remaining !== null
-                                  ? `Reste ${formatEuro(paymentSummary.remaining)}` : paymentSummary.label}
-                              </Link> : null}
                             </td>
                             <td className="reservations-col-fees">
                               <button
@@ -6310,6 +6238,12 @@ const ReservationsPage = () => {
                                   </span>
                                 </button>
                               )}
+                            </td>
+                            <td className="reservations-balance-cell">
+                              <ReservationPaymentPopover
+                                reservation={reservation}
+                                onUpdated={(tracking, source) => updatePaymentTracking(reservation, tracking, source)}
+                              />
                             </td>
                             <td className="reservations-comment-cell">
                               {((isEditing && !isDetailsExpanded && !isDetailsClosing) ||
@@ -6479,7 +6413,7 @@ const ReservationsPage = () => {
                           ) : null}
                           {isDetailsInlineVisible && (
                             <tr className={`reservations-row-details ${isDetailsClosing ? "reservations-row-details--closing" : ""}`}>
-                              <td colSpan={12}>
+                              <td colSpan={13}>
                                 <div className="reservations-row-details-content">{reservationDetailsContent}</div>
                               </td>
                             </tr>

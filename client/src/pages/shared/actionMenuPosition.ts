@@ -2,10 +2,11 @@ export function actionMenuPosition(
   anchor: { top: number; bottom: number; left: number; right: number },
   viewport: { width: number; height: number; left?: number; top?: number },
   contentHeight: number,
+  preferredWidth = 288,
 ) {
   const margin = 12;
   const gap = 8;
-  const width = Math.min(288, Math.max(0, viewport.width - margin * 2));
+  const width = Math.min(preferredWidth, Math.max(0, viewport.width - margin * 2));
   const minLeft = (viewport.left ?? 0) + margin;
   const minTop = (viewport.top ?? 0) + margin;
   const right = (viewport.left ?? 0) + viewport.width - margin;

@@ -186,7 +186,7 @@ test("une source historique ne crée aucun règlement fictif", async () => {
     assert.equal(state.entries.length, 0);
     assert.equal(state.received, 0);
     assert.equal(state.managed, false);
-    assert.equal(ledger.getBookingSource(r), "À préciser");
+    assert.equal(ledger.getBookingSource(r), "Direct");
   });
 });
 test("reprise des arrhes du contrat sans inventer leur date ni doubler les sommes", async () => {

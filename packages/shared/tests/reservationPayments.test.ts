@@ -15,10 +15,15 @@ test("l'origine explicite reste indépendante du moyen historique", () => {
     "Airbnb",
   );
 });
-test("seules les anciennes plateformes permettent de retrouver une origine certaine", () => {
+test("les anciennes origines hors plateforme deviennent Direct sans changer le moyen historique", () => {
   assert.equal(getBookingSource({ source_paiement: "Airbnb" }), "Airbnb");
-  assert.equal(getBookingSource({ source_paiement: "Chèque" }), "À préciser");
-  assert.equal(getBookingSource({ source_paiement: "Espèces" }), "À préciser");
+  for (const source_paiement of ["Direct", "Chèque", "Espèces", "Virement", "A définir", null]) {
+    assert.equal(getBookingSource({ source_paiement }), "Direct");
+  }
+  for (const source_paiement of ["Abritel", "Gites de France", "HomeExchange"]) {
+    assert.equal(getBookingSource({ source_paiement }), source_paiement);
+  }
+  assert.equal(getBookingSource({ booking_source: "À préciser", source_paiement: "Chèque" }), "À préciser");
 });
 test("une plateforme ou Stripe n'est pas assimilée à un moyen de paiement manuel", () => {
   assert.equal(legacyPaymentMethod("Chèque"), "Chèque");

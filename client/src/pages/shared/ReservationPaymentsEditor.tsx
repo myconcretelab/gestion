@@ -20,6 +20,7 @@ type Props = {
   tracking: ReservationPaymentTracking;
   detailsId?: string;
   monthlyTotal?: number;
+  onBusyChange?: (busy: boolean) => void;
   onUpdated?: (
     tracking: ReservationPaymentTracking,
     bookingSource?: string,
@@ -47,6 +48,7 @@ export default function ReservationPaymentsEditor({
   detailsId,
   monthlyTotal,
   onUpdated,
+  onBusyChange,
 }: Props) {
   const [tracking, setTracking] = useState(initial);
   const bookingSource = getBookingSource(reservation);
@@ -59,6 +61,9 @@ export default function ReservationPaymentsEditor({
   }, [bookingSource]);
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
   const [error, setError] = useState<string | null>(null);
   const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
