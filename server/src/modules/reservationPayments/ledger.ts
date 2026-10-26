@@ -3,6 +3,7 @@ import {
   getContractReceiptStatus,
   getBookingSource,
   legacyPaymentMethod,
+  AUTOMATIC_PAYMENT_PLATFORMS,
   type ReservationPaymentEntry,
   type ReservationPaymentTracking,
 } from "@contrats/shared";
@@ -10,6 +11,7 @@ import prisma, { type TenantTransactionClient } from "../../db/prisma.js";
 import { fromJsonString } from "../../utils/jsonFields.js";
 import { cents } from "../bookingPayments/money.js";
 import type { OptionsInput } from "../../services/contractCalculator.js";
+import { readReservationPaymentSettings } from "../../services/reservationPaymentSettings.js";
 
 export const ledgerError = (message: string, statusCode = 409) =>
   Object.assign(new Error(message), { statusCode });
@@ -65,7 +67,7 @@ export const loadReservationPaymentTracking = async (
   const stays = ids.length ? await loadStays(ids, db) : [];
   if (!stays.length) return new Map<string, ReservationPaymentTracking>();
   const allIds = stays.map((row) => row.id);
-  const [contracts, receipts, payments] = await Promise.all([
+  const [contracts, receipts, payments, settings] = await Promise.all([
     db.contrat.findMany({
       where: { reservation_id: { in: allIds } },
       orderBy: [{ date_creation: "desc" }, { id: "desc" }],
@@ -92,6 +94,7 @@ export const loadReservationPaymentTracking = async (
       where: { reservation_id: { in: allIds } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     }),
+    readReservationPaymentSettings(db),
   ]);
   const groups = new Map<string, Stay[]>();
   stays.forEach((row) =>
@@ -141,11 +144,20 @@ export const loadReservationPaymentTracking = async (
       (tax?.accommodation_amount ?? accommodation) +
       sum(rows.map((row) => Number(row.frais_optionnels_montant))) +
       (tax?.host_amount || 0);
-    const total = contract
-      ? cents(Number(contract.arrhes_montant) + Number(contract.solde_montant))
-      : stripe.length
-        ? stripe[stripe.length - 1].total_cents
-        : cents(rawTotal);
+    const source = getBookingSource(first);
+    const isPlatform = (
+      AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]
+    ).includes(source);
+    // Platform stays can acquire local extras after an older contract or card payment.
+    const total = isPlatform
+      ? cents(rawTotal)
+      : contract
+        ? cents(
+            Number(contract.arrhes_montant) + Number(contract.solde_montant),
+          )
+        : stripe.length
+          ? stripe[stripe.length - 1].total_cents
+          : cents(rawTotal);
     const deposit = contract
       ? cents(Number(contract.arrhes_montant))
       : quote.arrhes_theoriques !== undefined
@@ -202,7 +214,16 @@ export const loadReservationPaymentTracking = async (
       const offlineTotal = Math.max(
         offlineDeposit + offlineBalance,
         0,
-        ...stripe.map((row) => row.payment_link?.offline_received_cents || 0),
+        ...stripe.map((row) =>
+          Math.max(
+            0,
+            (row.payment_link?.offline_received_cents || 0) -
+              (fromJsonString<{ platform_automatic_received?: number }>(
+                row.payment_link?.terms_json,
+                {},
+              ).platform_automatic_received ?? 0),
+          ),
+        ),
       );
       if (offlineDeposit > 0)
         entries.push({
@@ -227,6 +248,52 @@ export const loadReservationPaymentTracking = async (
           voided_at: null,
         });
     }
+    const platformAccommodation = Math.min(
+      total,
+      cents(tax?.accommodation_amount ?? accommodation),
+    );
+    const actualPlatformReceived = sum(
+      entries
+        .filter(
+          (entry) =>
+            !entry.voided_at &&
+            (entry.origin === "legacy" ||
+              entry.method === "Versement plateforme" ||
+              entry.purpose === "deposit"),
+        )
+        .map((entry) => cents(entry.amount)),
+    );
+    const localReceived = sum(
+      entries
+        .filter(
+          (entry) =>
+            !entry.voided_at &&
+            entry.origin !== "legacy" &&
+            entry.method !== "Versement plateforme" &&
+            entry.purpose !== "deposit",
+        )
+        .map((entry) => cents(entry.amount)),
+    );
+    const localTotal = Math.max(0, total - platformAccommodation);
+    const platformExpected = Math.max(
+      0,
+      platformAccommodation -
+        actualPlatformReceived -
+        Math.max(0, localReceived - localTotal),
+    );
+    const automatic = settings.platform_payments_received_automatically;
+    if (isPlatform && automatic && platformExpected > 0) {
+      entries.push({
+        id: `platform-auto-${first.id}`,
+        amount: platformExpected / 100,
+        method: "Versement plateforme",
+        purpose: "full",
+        paid_on: null,
+        note: `Hébergement considéré reçu automatiquement de ${source}. Les options et la taxe à encaisser sur place restent dues.`,
+        origin: "platform",
+        voided_at: null,
+      });
+    }
     entries.sort(
       (a, b) =>
         (a.paid_on || "").localeCompare(b.paid_on || "") ||
@@ -249,6 +316,23 @@ export const loadReservationPaymentTracking = async (
           row.status === "requires_review" || row.refunded_amount_cents > 0,
       ),
       entries,
+      ...(isPlatform
+        ? {
+            platform: {
+              source,
+              automatic,
+              accommodation: platformAccommodation / 100,
+              expected: automatic ? 0 : platformExpected / 100,
+              extras_remaining:
+                Math.max(
+                  0,
+                  localTotal -
+                    localReceived -
+                    Math.max(0, actualPlatformReceived - platformAccommodation),
+                ) / 100,
+            },
+          }
+        : {}),
     };
     rows.forEach((row) => result.set(row.id, tracking));
   }

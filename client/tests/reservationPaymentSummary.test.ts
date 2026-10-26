@@ -127,3 +127,11 @@ test("l'ancien moyen sans montant garde un état non renseigné tant que l'histo
     payment_tracking: { managed: false, total: 1000, received: 0, remaining: 1000, deposit: 200, overpaid: 0, requires_review: false, entries: [] } });
   assert.equal(result.label, "Non renseigné"); assert.equal(result.remaining, null);
 });
+
+test("les plateformes distinguent les options à encaisser du versement attendu", () => {
+  const tracking = { managed: false, total: 1040, deposit: 200, received: 1000, remaining: 40, overpaid: 0, requires_review: false, entries: [],
+    platform: { source: "Airbnb", automatic: true, accommodation: 1000, expected: 0, extras_remaining: 40 } };
+  assert.equal(summary({ prix_total: 1000, payment_tracking: tracking }).label, "Options à régler");
+  assert.equal(summary({ prix_total: 1000, source_paiement: "Chèque", payment_tracking: { ...tracking, received: 0, remaining: 1040,
+    platform: { ...tracking.platform, automatic: false, expected: 1000 } } }).label, "Versement attendu");
+});

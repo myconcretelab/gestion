@@ -10,6 +10,7 @@ import { apiFetch } from "../../utils/api";
 import {
   canCurrentUserViewAmounts,
   canCurrentUserWritePage,
+  canCurrentUserAccessPage,
 } from "../../utils/auth";
 import { formatDate, formatEuro } from "../../utils/format";
 import type { Reservation } from "../../utils/types";
@@ -67,10 +68,12 @@ export default function ReservationPaymentsEditor({
   const [error, setError] = useState<string | null>(null);
   const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
-  const depositDue = Math.max(
-    0,
-    Math.min(tracking.remaining, tracking.deposit - tracking.received),
-  );
+  const depositDue = tracking.platform
+    ? 0
+    : Math.max(
+        0,
+        Math.min(tracking.remaining, tracking.deposit - tracking.received),
+      );
   const [purpose, setPurpose] = useState(
     depositDue > 0 ? "deposit" : "balance",
   );
@@ -85,6 +88,7 @@ export default function ReservationPaymentsEditor({
   const formId = useId();
   const unconfirmedHistory =
     !tracking.managed &&
+    !tracking.platform &&
     !tracking.entries.length &&
     Boolean(legacyPaymentMethod(reservation.source_paiement));
   const canWrite =
@@ -227,18 +231,28 @@ export default function ReservationPaymentsEditor({
         >
           <div className="reservation-payment-details__row">
             <span>
-              {entry.voided_at ? "Saisie annulée · " : "✓ "}
-              {purposeLabel(entry.purpose)}
+              {entry.voided_at
+                ? "Saisie annulée · "
+                : entry.origin === "platform"
+                  ? "≈ "
+                  : "✓ "}
+              {entry.origin === "platform"
+                ? "Hébergement"
+                : purposeLabel(entry.purpose)}
               <small>
                 {entry.method || "Moyen non renseigné"} ·{" "}
-                {entry.paid_on
-                  ? formatDate(entry.paid_on)
-                  : "Date non renseignée"}
+                {entry.origin === "platform"
+                  ? "Considéré reçu automatiquement"
+                  : entry.paid_on
+                    ? formatDate(entry.paid_on)
+                    : "Date non renseignée"}
               </small>
               {entry.origin === "legacy" ? (
                 <small>Historique repris</small>
               ) : null}
-              {entry.note ? <small>{entry.note}</small> : null}
+              {entry.note && entry.origin !== "platform" ? (
+                <small>{entry.note}</small>
+              ) : null}
               {entry.refunded_amount ? (
                 <small>
                   Après remboursement de {formatEuro(entry.refunded_amount)}
@@ -247,7 +261,10 @@ export default function ReservationPaymentsEditor({
             </span>
             <strong>{formatEuro(entry.amount)}</strong>
           </div>
-          {canWrite && !entry.voided_at && entry.origin !== "stripe" ? (
+          {canWrite &&
+          !entry.voided_at &&
+          entry.origin !== "stripe" &&
+          entry.origin !== "platform" ? (
             confirmVoid === entry.id ? (
               <div className="reservation-ledger__void-confirm">
                 <span>Annuler cette saisie ?</span>
@@ -279,6 +296,30 @@ export default function ReservationPaymentsEditor({
           ) : null}
         </div>
       ))}
+      {tracking.platform ? (
+        <div className="reservation-ledger__platform">
+          <p>
+            {tracking.platform.automatic
+              ? `L’hébergement est considéré reçu de ${tracking.platform.source}, selon les paramètres de votre compte.`
+              : `Le versement de ${tracking.platform.source} doit être enregistré à sa réception.`}
+          </p>
+          {tracking.platform.expected > 0 ? (
+            <div className="reservation-payment-details__row">
+              <span>Attendu de {tracking.platform.source}</span>
+              <strong>{formatEuro(tracking.platform.expected)}</strong>
+            </div>
+          ) : null}
+          <div className="reservation-payment-details__row">
+            <span>Options et taxe à encaisser sur place</span>
+            <strong>{formatEuro(tracking.platform.extras_remaining)}</strong>
+          </div>
+          {canCurrentUserAccessPage("settings") ? (
+            <a href="/parametres/reglements">
+              Modifier le réglage des plateformes ↗
+            </a>
+          ) : null}
+        </div>
+      ) : null}
       <div className="reservation-payment-details__balance">
         <span>
           {unconfirmedHistory

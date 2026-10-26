@@ -11,6 +11,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), "reservation-ledger-"));
 let db: typeof import("../src/db/prisma.js");
 let context: typeof import("../src/modules/organizations/context.js");
 let ledger: typeof import("../src/modules/reservationPayments/ledger.js");
+let paymentSettings: typeof import("../src/services/reservationPaymentSettings.js");
 const org = "org_ledger_test";
 const inOrg = <T>(fn: () => T, organizationId = org) =>
   context.runWithOrganization(
@@ -95,6 +96,8 @@ before(async () => {
   db = await import("../src/db/prisma.js");
   context = await import("../src/modules/organizations/context.js");
   ledger = await import("../src/modules/reservationPayments/ledger.js");
+  paymentSettings =
+    await import("../src/services/reservationPaymentSettings.js");
   await db.systemPrisma.organization.create({
     data: { id: org, slug: org, name: "Test" },
   });
@@ -455,6 +458,7 @@ test("un ancien lien Stripe ne réintroduit pas un règlement manuel annulé", a
       await import("../src/modules/bookingPayments/reservationBalance.js");
     const balance = await reservationBalance(r.id);
     assert.equal(balance.offline, 0);
+    assert.equal("platform_automatic_received" in balance.terms, false);
     assert.equal(balance.balanceDue, 20000);
     const { reservationPaymentPrefill } =
       await import("../src/modules/bookingPayments/contracts.js");
@@ -495,7 +499,11 @@ test("les montants et dates des nouveaux contrats reprennent les règlements dé
 });
 
 test("changer l'origine conserve le classement historique et les réservations avec règlements ne sont pas supprimables", async () => {
-  const r = await stay({ source_paiement: "Espèces", booking_source: null });
+  const r = await stay({
+    source_paiement: "Espèces",
+    booking_source: null,
+    frais_optionnels_montant: 100,
+  });
   await inOrg(async () => {
     await ledger.setReservationBookingSource(r.id, "Airbnb");
     const changed = await db.default.reservation.findUniqueOrThrow({
@@ -509,6 +517,300 @@ test("changer l'origine conserve le classement historique et les réservations a
     await assert.rejects(
       ledger.assertReservationPaymentsDeletable(r.id),
       /historique de règlements/,
+    );
+  });
+});
+
+test("les plateformes sont considérées reçues par défaut sans créer de règlement daté", async () => {
+  for (const source of ["Airbnb", "Abritel", "Gites de France"]) {
+    const r = await stay({ booking_source: source, source_paiement: source });
+    await inOrg(async () => {
+      const state = await ledger.getReservationPaymentTracking(r.id);
+      assert.equal(state.received, 1000);
+      assert.equal(state.remaining, 0);
+      assert.equal(state.platform?.automatic, true);
+      assert.equal(state.entries[0].origin, "platform");
+      assert.equal(state.entries[0].paid_on, null);
+      assert.equal(
+        await db.default.reservationRecordedPayment.count({
+          where: { reservation_id: r.id },
+        }),
+        0,
+      );
+    });
+  }
+  const exchange = await stay({
+    booking_source: "HomeExchange",
+    source_paiement: "HomeExchange",
+  });
+  assert.equal(
+    (await inOrg(() => ledger.getReservationPaymentTracking(exchange.id)))
+      .received,
+    0,
+  );
+});
+
+test("les options Airbnb restent dues, leur paiement et son annulation conservent l'hébergement automatique", async () => {
+  const r = await stay({
+    booking_source: "Airbnb",
+    frais_optionnels_montant: 60,
+  });
+  await inOrg(async () => {
+    let state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.total, 1060);
+    assert.equal(state.remaining, 60);
+    const input = payment(20, { purpose: "balance" });
+    state = await ledger.addReservationPayment(r.id, input);
+    assert.equal(state.received, 1020);
+    assert.equal(state.remaining, 40);
+    assert.equal(state.platform?.extras_remaining, 40);
+    assert.equal(
+      state.entries.filter((entry) => entry.origin === "platform").length,
+      1,
+    );
+    const stored = await db.default.reservationRecordedPayment.findMany({
+      where: { reservation_id: r.id },
+    });
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].amount_cents, 2000);
+    state = await ledger.voidReservationPayment(r.id, input.id);
+    assert.equal(state.remaining, 60);
+    await assert.rejects(
+      ledger.voidReservationPayment(r.id, `platform-auto-${r.id}`),
+      /introuvable/,
+    );
+  });
+});
+
+test("désactiver la réception automatique conserve les paiements réels et reste propre au compte", async () => {
+  const r = await stay({
+    booking_source: "Airbnb",
+    frais_optionnels_montant: 60,
+  });
+  await inOrg(async () => {
+    try {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: false,
+      });
+      assert.equal(
+        (await paymentSettings.readReservationPaymentSettings())
+          .platform_payments_received_automatically,
+        false,
+      );
+      const other = await inOrg(
+        () => paymentSettings.readReservationPaymentSettings(),
+        "org_other_platform_settings",
+      );
+      assert.equal(other.platform_payments_received_automatically, true);
+      let state = await ledger.getReservationPaymentTracking(r.id);
+      assert.equal(state.received, 0);
+      assert.equal(state.remaining, 1060);
+      assert.equal(state.platform?.expected, 1000);
+      const receipt = payment(500, { method: "Versement plateforme" });
+      state = await ledger.addReservationPayment(r.id, receipt);
+      assert.equal(state.remaining, 560);
+      assert.equal(state.platform?.expected, 500);
+      assert.equal(state.platform?.extras_remaining, 60);
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+      });
+      state = await ledger.getReservationPaymentTracking(r.id);
+      assert.equal(state.received, 1000);
+      assert.equal(state.remaining, 60);
+      assert.equal(
+        state.entries.find((entry) => entry.origin === "platform")?.amount,
+        500,
+      );
+      await ledger.addReservationPayment(r.id, payment(60));
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: false,
+      });
+      state = await ledger.getReservationPaymentTracking(r.id);
+      assert.equal(state.received, 560);
+      assert.equal(state.remaining, 500);
+      assert.equal(state.platform?.extras_remaining, 0);
+    } finally {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+      });
+    }
+  });
+});
+
+test("un ancien contrat payé n'est pas compté deux fois sur une plateforme", async () => {
+  const r = await stay({
+    booking_source: "Airbnb",
+    frais_optionnels_montant: 60,
+  });
+  await contractFor(r.id, {
+    statut_paiement_arrhes: "recu",
+    statut_paiement_solde: "regle",
+  });
+  await inOrg(async () => {
+    const state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.received, 1000);
+    assert.equal(state.remaining, 60);
+    assert.equal(
+      state.entries.some((entry) => entry.origin === "platform"),
+      false,
+    );
+  });
+});
+
+test("les segments Airbnb couvrent l'hébergement une seule fois et cumulent leurs options", async () => {
+  const group = randomUUID();
+  const a = await stay({
+    booking_source: "Airbnb",
+    stay_group_id: group,
+    prix_total: 600,
+    frais_optionnels_montant: 20,
+  });
+  const b = await stay({
+    booking_source: "Airbnb",
+    stay_group_id: group,
+    prix_total: 400,
+    frais_optionnels_montant: 30,
+    date_entree: new Date("2040-01-03"),
+  });
+  await inOrg(async () => {
+    const state = await ledger.addReservationPayment(b.id, payment(50));
+    assert.equal(state.received, 1050);
+    assert.equal(state.remaining, 0);
+    assert.deepEqual(await ledger.getReservationPaymentTracking(a.id), state);
+  });
+});
+
+test("le réglage rejette les valeurs ambiguës au lieu de convertir une chaîne en booléen", async () => {
+  await inOrg(async () => {
+    await assert.rejects(
+      paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: "false",
+      }),
+    );
+    await assert.rejects(paymentSettings.saveReservationPaymentSettings({}));
+  });
+});
+
+test("un paiement carte des options ne fige pas leur montant et ne transforme pas l'automatisme en encaissement réel", async () => {
+  const r = await stay({
+    booking_source: "Airbnb",
+    frais_optionnels_montant: 60,
+  });
+  await inOrg(async () => {
+    const link = await db.default.reservationPaymentLink.create({
+      data: {
+        reservation_id: r.id,
+        stripe_mode: "test",
+        code: randomUUID(),
+        purpose: "balance",
+        amount_cents: 6000,
+        total_cents: 106000,
+        deposit_cents: 20000,
+        offline_received_cents: 100000,
+        terms_json: JSON.stringify({ platform_automatic_received: 100000 }),
+        status: "paid",
+        expires_at: new Date("2040-01-01"),
+      },
+    });
+    await db.default.bookingPayment.create({
+      data: {
+        reservation_id: r.id,
+        payment_link_id: link.id,
+        stripe_mode: "test",
+        purpose: "balance",
+        amount_cents: 6000,
+        total_cents: 106000,
+        access_token_hash: randomUUID(),
+        expires_at: new Date("2040-01-01"),
+        paid_amount_cents: 6000,
+        paid_at: new Date(),
+        status: "paid",
+      },
+    });
+    let state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.received, 1060);
+    assert.equal(state.remaining, 0);
+    assert.equal(
+      state.entries.filter((entry) => entry.origin === "legacy").length,
+      0,
+    );
+    await db.default.reservation.update({
+      where: { id: r.id },
+      data: { frais_optionnels_montant: 100 },
+    });
+    state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.total, 1100);
+    assert.equal(state.remaining, 40);
+    try {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: false,
+      });
+      state = await ledger.getReservationPaymentTracking(r.id);
+      assert.equal(state.received, 60);
+      assert.equal(state.remaining, 1040);
+      assert.equal(state.platform?.extras_remaining, 40);
+      const { reservationBalance } =
+        await import("../src/modules/bookingPayments/reservationBalance.js");
+      const balance = await reservationBalance(r.id);
+      assert.equal(balance.balanceDue, 4000);
+      assert.equal(balance.depositDue, 0);
+      assert.equal(balance.terms.platform_automatic_received, 0);
+    } finally {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+      });
+    }
+  });
+});
+
+test("la taxe collectée sur place n'est pas couverte par le versement automatique", async () => {
+  const settings = {
+    version: 1,
+    classified: true,
+    stars: 3,
+    included: false,
+    fixed_rate: 1.5,
+    percentage: 4,
+    cap: 4,
+    additional_percentage: 0,
+    accommodation_vat_rate: 0,
+    authority: "",
+    effective_from: "2026-01-01",
+  };
+  const r = await stay({
+    booking_source: "Airbnb",
+    frais_optionnels_montant: 40,
+    options: JSON.stringify({
+      tourist_tax: {
+        settings,
+        collector: "host",
+        platform: "",
+        infants: 0,
+        exempt_adults: 0,
+        exemption_reason: "",
+      },
+    }),
+  });
+  await inOrg(async () => {
+    const state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.received, 1000);
+    assert.equal(state.total, 1052);
+    assert.equal(state.remaining, 52);
+    assert.equal(state.platform?.extras_remaining, 52);
+  });
+});
+
+test("les encaissements réels existants ne sont jamais doublés par la réception automatique", async () => {
+  const r = await stay({ booking_source: "Direct" });
+  await inOrg(async () => {
+    await ledger.addReservationPayment(r.id, payment(1000));
+    await ledger.setReservationBookingSource(r.id, "Airbnb");
+    const state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.received, 1000);
+    assert.equal(state.overpaid, 0);
+    assert.equal(
+      state.entries.some((entry) => entry.origin === "platform"),
+      false,
     );
   });
 });

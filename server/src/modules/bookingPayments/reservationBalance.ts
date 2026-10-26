@@ -2,7 +2,11 @@ import { getReservationPaymentTracking } from "../reservationPayments/ledger.js"
 import crypto from "node:crypto";
 import { bookingStripeConfig } from "./provider.js";
 import prisma, { type TenantTransactionClient } from "../../db/prisma.js";
-import { computeTouristTax } from "@contrats/shared";
+import {
+  computeTouristTax,
+  AUTOMATIC_PAYMENT_PLATFORMS,
+  getBookingSource,
+} from "@contrats/shared";
 import { fromJsonString } from "../../utils/jsonFields.js";
 import { cents } from "./money.js";
 import type { OptionsInput } from "../../services/contractCalculator.js";
@@ -89,10 +93,18 @@ export const reservationBalance = async (
       ?.pricing_snapshot,
     {},
   );
-  const managedTracking = reservation.payments_managed ? await getReservationPaymentTracking(id, db) : null;
-  const total = managedTracking ? cents(managedTracking.total) : contract
-    ? cents(Number(contract.arrhes_montant) + Number(contract.solde_montant))
-    : rawTotal;
+  const platform = (AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]).includes(
+    getBookingSource(reservation),
+  );
+  const managedTracking =
+    reservation.payments_managed || platform
+      ? await getReservationPaymentTracking(id, db)
+      : null;
+  const total = managedTracking
+    ? cents(managedTracking.total)
+    : contract
+      ? cents(Number(contract.arrhes_montant) + Number(contract.solde_montant))
+      : rawTotal;
   const deposit = contract
     ? cents(Number(contract.arrhes_montant))
     : oldQuote.arrhes_theoriques !== undefined
@@ -120,13 +132,17 @@ export const reservationBalance = async (
       ? Math.max(0, cents(Number(contract.solde_montant)) - stripeForBalance)
       : 0;
   const offline = managedTracking
-    ? managedTracking.entries.filter((entry) => entry.origin !== "stripe" && !entry.voided_at).reduce((amount, entry) => amount + cents(entry.amount), 0)
+    ? managedTracking.entries
+        .filter((entry) => entry.origin !== "stripe" && !entry.voided_at)
+        .reduce((amount, entry) => amount + cents(entry.amount), 0)
     : Math.max(
-    offlineDeposit + offlineBalance,
-    0,
-    ...links.map((row) => row.offline_received_cents),
-  );
-  const received = managedTracking ? cents(managedTracking.received) : stripePaid + offline;
+        offlineDeposit + offlineBalance,
+        0,
+        ...links.map((row) => row.offline_received_cents),
+      );
+  const received = managedTracking
+    ? cents(managedTracking.received)
+    : stripePaid + offline;
   const terms = {
     reservation_id: id,
     gite_id: reservation.gite_id,
@@ -141,6 +157,14 @@ export const reservationBalance = async (
     discount: Number(reservation.remise_montant),
     fees: Number(reservation.frais_optionnels_montant),
     options,
+    ...(platform
+      ? {
+          platform_automatic_received:
+            managedTracking?.entries
+              .filter((entry) => entry.origin === "platform")
+              .reduce((amount, entry) => amount + cents(entry.amount), 0) ?? 0,
+        }
+      : {}),
   };
   const fingerprint = crypto
     .createHash("sha256")
@@ -156,7 +180,11 @@ export const reservationBalance = async (
     deposit,
     received,
     offline,
-    depositDue: Math.max(0, Math.min(total - received, deposit - received)),
-    balanceDue: Math.max(0, total - received),
+    depositDue: platform
+      ? 0
+      : Math.max(0, Math.min(total - received, deposit - received)),
+    balanceDue: managedTracking?.platform
+      ? cents(managedTracking.platform.extras_remaining)
+      : Math.max(0, total - received),
   };
 };

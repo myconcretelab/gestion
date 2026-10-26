@@ -126,3 +126,11 @@ Les arrhes et soldes déjà marqués reçus sur un contrat sont présentés comm
 Les statuts du contrat suivent alors les règlements ; ses anciens interrupteurs ne peuvent plus les remplacer. Les liens Stripe déduisent les versements manuels actifs, y compris après annulation d'une saisie. Un paiement Stripe en cours bloque une modification concurrente du registre ; les remboursements nécessitent une vérification. Les requêtes d'ajout utilisent un identifiant idempotent pour éviter les doublons après une interruption réseau. L'accès au registre et aux annulations exige les droits de modification des réservations et d'accès aux montants. Une réservation contenant des écritures, même annulées, est conservée.
 
 Le déploiement de cette évolution exige le mode complet et la migration `20261026120000_reservation_payment_ledger`, disponible pour SQLite et PostgreSQL. Elle ajoute les champs et le registre sans modifier les valeurs historiques ni créer de paiements. Une sauvegarde récupérable est requise avant la migration en production.
+
+## Règlements des plateformes
+
+Dans **Paramètres → Hébergements → Règlements**, le réglage **Considérer automatiquement l’argent des plateformes comme reçu** est activé par défaut, séparément pour chaque compte. Il couvre Airbnb, Abritel et Gîtes de France ; HomeExchange est exclu.
+
+Seul l’hébergement, remise déduite, est considéré reçu. Les draps, les options ajoutées dans Gestion et la taxe à collecter sur place restent à encaisser. Par exemple, 1 000 € d’hébergement et 60 € de draps affichent 1 000 € considérés reçus et 60 € restants. Le paiement des options peut être saisi depuis le popover du listing. Les liens Stripe portent uniquement sur les suppléments à encaisser sur place, même si le versement de la plateforme reste attendu.
+
+Le popover identifie le montant considéré reçu automatiquement, sans lui attribuer de date de versement. Désactiver le réglage retire cet automatisme, y compris sur l’historique, et permet de saisir les encaissements réels avec le moyen **Versement plateforme**. Les paiements déjà enregistrés restent conservés et ne sont pas comptés deux fois. Le montant automatique est recalculé, sans créer de paiement dans le registre ; il ne peut pas être annulé comme une saisie manuelle.

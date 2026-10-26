@@ -22144,3 +22144,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 }
 .reservation-payment-popover .reservation-ledger__form-actions button[type="button"] { border-color: var(--border); }
 .reservation-payment-popover .reservation-ledger__error { color: var(--ink) !important; }
+
+.reservation-ledger__platform { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--primary-strong); }
+.reservation-payment-popover .reservation-payment-details a { color: var(--ink); }
+.reservation-payment-settings input[type="checkbox"] { accent-color: var(--primary); }

@@ -16,6 +16,14 @@ export const RESERVATION_PAYMENT_METHODS = [
   "Autre",
 ] as const;
 export type BookingSource = (typeof BOOKING_SOURCES)[number];
+export const AUTOMATIC_PAYMENT_PLATFORMS = [
+  "Airbnb",
+  "Abritel",
+  "Gites de France",
+] as const;
+export type ReservationPaymentSettings = {
+  platform_payments_received_automatically: boolean;
+};
 export type ReservationPaymentMethod =
   (typeof RESERVATION_PAYMENT_METHODS)[number];
 export const legacyPaymentMethod = (
@@ -40,7 +48,7 @@ export type ReservationPaymentEntry = {
   purpose: string;
   paid_on: string | null;
   note: string | null;
-  origin: "manual" | "legacy" | "stripe";
+  origin: "manual" | "legacy" | "stripe" | "platform";
   voided_at: string | null;
   refunded_amount?: number;
 };
@@ -53,6 +61,13 @@ export type ReservationPaymentTracking = {
   overpaid: number;
   requires_review: boolean;
   entries: ReservationPaymentEntry[];
+  platform?: {
+    source: string;
+    automatic: boolean;
+    accommodation: number;
+    expected: number;
+    extras_remaining: number;
+  };
 };
 
 export const isReservationPaymentTracking = (

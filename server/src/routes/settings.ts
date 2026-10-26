@@ -1,4 +1,8 @@
 import { bookingEmailTemplateKeys } from "@contrats/shared";
+import {
+  readReservationPaymentSettings,
+  saveReservationPaymentSettings,
+} from "../services/reservationPaymentSettings.js";
 import { partialInputSchema } from "../utils/validation.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -1379,6 +1383,21 @@ router.post(
 
 router.get("/import-log", (req, res) => {
   res.json(buildImportLogResponse(req.query.limit));
+});
+
+router.get("/reservation-payments", async (_req, res, next) => {
+  try {
+    res.json(await readReservationPaymentSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+router.put("/reservation-payments", async (req, res, next) => {
+  try {
+    res.json(await saveReservationPaymentSettings(req.body));
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get("/declaration-nights", async (_req, res, next) => {

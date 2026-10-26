@@ -12,12 +12,13 @@ const money = (value: number | null | undefined) =>
 export const getReservationPaymentSummary = (reservation: PaymentSummaryReservation) => {
   const tracking = reservation.payment_tracking;
   if (isReservationPaymentTracking(tracking)) {
-    const unknown = tracking.total <= 0 || (!tracking.managed && !tracking.entries.length && Boolean(legacyPaymentMethod(reservation.source_paiement)));
+    const unknown = tracking.total <= 0 || (!tracking.platform && !tracking.managed && !tracking.entries.length && Boolean(legacyPaymentMethod(reservation.source_paiement)));
     const state = tracking.requires_review ? "review" : unknown ? "unknown" : tracking.remaining === 0 ? "paid" : tracking.received > 0 ? "partial" : "unpaid";
     return { total: tracking.total, received: tracking.received, remaining: unknown ? null : tracking.remaining,
       state, review: tracking.requires_review, offlineDeposit: 0, otherOffline: 0, balanceReceived: 0,
       progress: tracking.total > 0 ? Math.min(100, Math.round(tracking.received / tracking.total * 100)) : 0,
-      label: state === "review" ? "À vérifier" : state === "unknown" ? "Non renseigné" : state === "paid" ? "Payé" : state === "unpaid" ? "À régler"
+      label: state === "review" ? "À vérifier" : state === "unknown" ? "Non renseigné" : state === "paid" ? "Payé"
+        : tracking.platform?.expected ? "Versement attendu" : tracking.platform ? "Options à régler" : state === "unpaid" ? "À régler"
         : tracking.received <= tracking.deposit ? "Arrhes reçues" : "Paiement partiel" };
   }
   const contract = reservation.linked_contract;
