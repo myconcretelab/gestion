@@ -24,7 +24,11 @@ export const readReservationPaymentSettings = async (
     where: { key: definition.key },
   });
   return row
-    ? definition.schema.parse(JSON.parse(row.value_json))
+    ? definition.schema.parse(
+        typeof row.value_json === "string"
+          ? JSON.parse(row.value_json)
+          : row.value_json,
+      )
     : definition.defaultValue;
 };
 export const saveReservationPaymentSettings = (value: unknown) =>

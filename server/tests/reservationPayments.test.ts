@@ -834,6 +834,26 @@ test("les encaissements réels existants ne sont jamais doublés par la récepti
   });
 });
 
+test("les réglages de paiement acceptent le texte SQLite et le JSON PostgreSQL", async () => {
+  const expected = {
+    platform_payments_received_automatically: false,
+    first_payment_default: "deposit",
+  };
+  for (const value_json of [JSON.stringify(expected), expected]) {
+    const database = {
+      organizationRuntimeSetting: {
+        findFirst: async () => ({ value_json }),
+      },
+    } as unknown as NonNullable<
+      Parameters<typeof paymentSettings.readReservationPaymentSettings>[0]
+    >;
+    assert.deepEqual(
+      await paymentSettings.readReservationPaymentSettings(database),
+      expected,
+    );
+  }
+});
+
 test("la préférence du premier règlement conserve la compatibilité avec les anciens réglages et reste isolée par compte", async () => {
   const r = await stay();
   await inOrg(async () => {
