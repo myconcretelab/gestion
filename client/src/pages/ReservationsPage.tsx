@@ -6218,10 +6218,6 @@ const ReservationsPage = () => {
                                       <span className="reservations-energy-inline__item" title="Coût électricité">
                                         {formatEuro(displayedEnergyCost)}
                                       </span>
-                                      <span className="reservations-energy-inline__dot">·</span>
-                                      <span className="reservations-energy-inline__item" title="Consommation électricité">
-                                        {formatKwh(displayedEnergyKwh)} kWh
-                                      </span>
                                       {displayedEnergyDailyCost !== null ? (
                                         <>
                                           <span className="reservations-energy-inline__dot">·</span>

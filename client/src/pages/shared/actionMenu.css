@@ -43,7 +43,7 @@
   z-index: 1400;
   box-sizing: border-box;
   width: min(288px, calc(100vw - 24px));
-  max-height: 448px;
+  max-height: calc(100dvh - 24px);
   padding: 6px;
   overflow-y: auto;
   overscroll-behavior: contain;

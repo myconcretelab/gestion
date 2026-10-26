@@ -65,21 +65,25 @@ export default function ActionMenu({
       const anchor = triggerRef.current?.getBoundingClientRect();
       const panel = panelRef.current;
       if (!anchor || !panel) return;
+      const visualViewport = window.visualViewport;
+      const viewport = {
+        width: visualViewport?.width ?? document.documentElement.clientWidth,
+        height: visualViewport?.height ?? window.innerHeight,
+        left: visualViewport?.offsetLeft ?? 0,
+        top: visualViewport?.offsetTop ?? 0,
+      };
       if (
-        anchor.bottom <= 0 ||
-        anchor.top >= window.innerHeight ||
-        anchor.right <= 0 ||
-        anchor.left >= window.innerWidth
+        anchor.bottom <= viewport.top ||
+        anchor.top >= viewport.top + viewport.height ||
+        anchor.right <= viewport.left ||
+        anchor.left >= viewport.left + viewport.width
       ) {
         close();
         return;
       }
       const next = actionMenuPosition(
         anchor,
-        {
-          width: document.documentElement.clientWidth,
-          height: window.innerHeight,
-        },
+        viewport,
         panel.scrollHeight + 2,
       );
       setPosition((previous) =>
@@ -92,11 +96,15 @@ export default function ActionMenu({
     };
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
     const observer = new ResizeObserver(reposition);
     if (panelRef.current) observer.observe(panelRef.current);
     return () => {
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("scroll", reposition);
       observer.disconnect();
     };
   }, [open, close]);

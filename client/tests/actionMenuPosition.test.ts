@@ -31,7 +31,7 @@ test("la dernière ligne ouvre son menu vers le haut sans masquer ses actions", 
     600,
   );
   assert.equal(menu.placement, "above");
-  assert.equal(menu.maxHeight, 448);
+  assert.equal(menu.maxHeight, 600);
   assert.equal(menu.top + menu.maxHeight, 692);
   assert.ok(menu.top >= 12);
 });
@@ -46,4 +46,55 @@ test("un petit écran conserve une zone défilable à l’intérieur du menu", (
   assert.ok(menu.maxHeight < 200);
   assert.ok(menu.maxHeight > 0);
   assert.ok(menu.top + menu.maxHeight <= 268);
+});
+
+test("un menu long préfère le haut quand toutes les actions y tiennent", () => {
+  const menu = actionMenuPosition(
+    { top: 510, bottom: 546, left: 300, right: 336 },
+    { width: 390, height: 850 },
+    420,
+  );
+  assert.equal(menu.placement, "above");
+  assert.equal(menu.top, 82);
+  assert.ok(menu.maxHeight >= 420);
+});
+
+test("un menu long s’ouvre à côté du bouton pour utiliser toute la hauteur", () => {
+  for (const [left, placement] of [
+    [800, "left"],
+    [40, "right"],
+  ] as const) {
+    const anchor = { top: 280, bottom: 316, left, right: left + 36 };
+    const menu = actionMenuPosition(anchor, { width: 900, height: 600 }, 620);
+    assert.equal(menu.placement, placement);
+    assert.equal(menu.maxHeight, 576);
+    assert.ok(menu.top >= 12);
+    assert.ok(menu.top + menu.maxHeight <= 588);
+    if (placement === "left")
+      assert.equal(menu.left + menu.width, anchor.left - 8);
+    else assert.equal(menu.left, anchor.right + 8);
+  }
+});
+
+test("le menu reste sous le bouton lorsque ses actions y tiennent déjà", () => {
+  const menu = actionMenuPosition(
+    { top: 40, bottom: 76, left: 800, right: 836 },
+    { width: 900, height: 600 },
+    300,
+  );
+  assert.equal(menu.placement, "below");
+  assert.equal(menu.top, 84);
+});
+
+test("le placement suit la partie visible de l’écran lors d’un zoom", () => {
+  const viewport = { left: 250, top: 150, width: 390, height: 280 };
+  const menu = actionMenuPosition(
+    { top: 250, bottom: 292, left: 550, right: 586 },
+    viewport,
+    650,
+  );
+  assert.ok(menu.left >= 262);
+  assert.ok(menu.left + menu.width <= 628);
+  assert.ok(menu.top >= 162);
+  assert.ok(menu.top + menu.maxHeight <= 418);
 });
