@@ -13622,19 +13622,19 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table col.reservations-col--nights {
-  width: 5%;
-}
-
-.reservations-table col.reservations-col--adults {
   width: 6%;
 }
 
+.reservations-table col.reservations-col--adults {
+  width: 5.5%;
+}
+
 .reservations-table col.reservations-col--nightly {
-  width: 8%;
+  width: 7%;
 }
 
 .reservations-table col.reservations-col--total {
-  width: 9%;
+  width: 8%;
 }
 
 .reservations-table col.reservations-col--fees {
@@ -13642,11 +13642,11 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table col.reservations-col--source {
-  width: 8%;
+  width: 7.5%;
 }
 
 .reservations-table col.reservations-col--balance {
-  width: 11%;
+  width: 10%;
 }
 
 .reservations-table col.reservations-col--comment {
@@ -13735,12 +13735,6 @@ button.personal-expenses-status:disabled {
     max-width: 100%;
   }
 
-  .reservations-table .nights-chip {
-    white-space: normal;
-    text-align: center;
-    line-height: 1.25;
-  }
-
   .reservations-table .reservations-fees-cell {
     max-width: 100%;
     flex-wrap: wrap;
@@ -13773,6 +13767,19 @@ button.personal-expenses-status:disabled {
   }
 }
 
+@container reservation-table (max-width: 1000px) {
+  .reservations-table .nights-chip {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
+  }
+}
+
+.reservations-table .reservations-col-adults,
+.reservations-table .reservations-col-adults .reservations-source-inline-trigger {
+  text-align: center;
+}
+
 .reservations-table td.reservations-col-date {
   position: relative;
   overflow: visible;
@@ -13784,6 +13791,7 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-table td.reservations-col-adults input {
+  text-align: center;
   min-width: 40px;
   padding-left: 6px;
   padding-right: 6px;
