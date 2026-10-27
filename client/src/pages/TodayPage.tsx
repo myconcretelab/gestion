@@ -1,5 +1,7 @@
 import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
 import { reservationPaymentChanged } from "./shared/ReservationPaymentsEditor";
+import TodayReservationClickSetting from "./shared/TodayReservationClickSetting";
+import TodayReservationDetailsDrawer from "./shared/TodayReservationDetailsDrawer";
 import TodayIntervenantHours from "./shared/TodayIntervenantHours";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
 import GiteTasksDrawer, { GiteTasksButton } from "./shared/GiteTasksDrawer";
@@ -669,6 +671,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
   const [deferredOverview, setDeferredOverview] = useState<TodayDeferredOverviewPayload | null>(null);
   const [notificationDayCount, setNotificationDayCount] = useState(() => widgetPreferences.options.notificationArchive.dayCount);
   const [notificationSliderValue, setNotificationSliderValue] = useState(() => widgetPreferences.options.notificationArchive.dayCount);
+  const [desktopActionEventId, setDesktopActionEventId] = useState<string | null>(null);
   const [mobileActionState, setMobileActionState] = useState<TodayMobileActionState>(null);
   const [mobilePaymentDetails, setMobilePaymentDetails] = useState<{
     id: string; reservation?: Reservation; error?: string;
@@ -827,6 +830,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_RESERVATION_BREAKPOINT}px)`);
     const updateScrollMode = (matches: boolean) => {
       setUsesViewportScroll((current) => (current === matches ? current : matches));
+      if (matches) setDesktopActionEventId(null);
     };
 
     updateScrollMode(mediaQuery.matches);
@@ -1176,6 +1180,10 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
 
   const openMobileActionForEvent = (event: TodayEvent) => {
     if (!usesViewportScroll) {
+      if (widgetPreferences.options.timeline.desktopReservationAction === "drawer") {
+        setDesktopActionEventId(event.id);
+        return;
+      }
       navigate(buildReservationFocusHref(event));
       return;
     }
@@ -1195,6 +1203,10 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         : { mode: "actions", reservationId: event.primaryReservation.id, cleaningCheckOccurrence };
     });
   };
+
+  const desktopActionEvent = !usesViewportScroll
+    ? todayEvents.find((event) => event.id === desktopActionEventId) ?? null
+    : null;
 
   const getMobileCardActionProps = (event: TodayEvent) =>
     usesViewportScroll
@@ -2095,6 +2107,12 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
             </header>
 
             <div className="today-widget-manager__content">
+              <TodayReservationClickSetting
+                value={widgetPreferences.options.timeline.desktopReservationAction}
+                onChange={(desktopReservationAction) => updateWidgetPreferences((current) => ({
+                  ...current, options: { ...current.options, timeline: { desktopReservationAction } },
+                }))}
+              />
               {TODAY_WIDGET_CATALOG.map((catalogWidget) => {
                 const widget = widgetPreferences.widgets[catalogWidget.id];
                 const enabledOrder = widgetPreferences.order.filter((id) => widgetPreferences.widgets[id].enabled);
@@ -2498,6 +2516,19 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
       </div>
 
       {error ? <div className="note">{error}</div> : null}
+
+      {desktopActionEvent ? (
+        <TodayReservationDetailsDrawer
+          key={desktopActionEvent.id}
+          reservations={[
+            ...(desktopActionEvent.departureReservation ? [{ label: "Départ", reservation: desktopActionEvent.departureReservation }] : []),
+            ...(desktopActionEvent.arrivalReservation ? [{ label: "Arrivée", reservation: desktopActionEvent.arrivalReservation }] : []),
+          ]}
+          initialReservationId={desktopActionEvent.primaryReservation.id}
+          onClose={() => setDesktopActionEventId(null)}
+          onOpenReservation={(reservation) => navigate(buildReservationHref(reservation.id, reservation.gite_id, reservation.date_entree))}
+        />
+      ) : null}
 
       {usesViewportScroll && mobileActionState?.mode === "rotation-choice" && mobileActionEvent ? (
         <MobileReservationActionsBar

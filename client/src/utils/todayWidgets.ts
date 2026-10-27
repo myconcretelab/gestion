@@ -1,6 +1,7 @@
 export const TODAY_WIDGET_IDS = ["trash", "occupancy", "hours", "notification_archive", "revenue"] as const;
 
 export type TodayWidgetId = (typeof TODAY_WIDGET_IDS)[number];
+export type TodayReservationClickAction = "drawer" | "reservation";
 export type TodayWidgetWidth = "small" | "medium" | "large" | "full";
 export type TodayRevenueMetricId = "previous_month" | "current_month" | "next_month" | "last_24_months";
 
@@ -20,6 +21,7 @@ export type TodayWidgetPreferences = {
   order: TodayWidgetId[];
   widgets: Record<TodayWidgetId, { enabled: boolean; width: TodayWidgetWidth }>;
   options: {
+    timeline: { desktopReservationAction: TodayReservationClickAction };
     trash: { showNextPickup: boolean; collections: TrashCollection[] };
     occupancy: { showGauge: boolean; showPercentage: boolean; showCount: boolean };
     hours: { showDatePicker: boolean; showTotals: boolean; quickMinutes: number[] };
@@ -67,6 +69,7 @@ export const DEFAULT_TODAY_WIDGET_PREFERENCES: TodayWidgetPreferences = {
     revenue: { enabled: true, width: "full" },
   },
   options: {
+    timeline: { desktopReservationAction: "drawer" },
     trash: {
       showNextPickup: true,
       collections: [
@@ -132,6 +135,9 @@ export const normalizeTodayWidgetPreferences = (value: unknown): TodayWidgetPref
       return [id, { enabled: typeof candidate?.enabled === "boolean" ? candidate.enabled : defaults.enabled, width: isWidgetWidth(candidate?.width) ? candidate.width : defaults.width }];
     })) as TodayWidgetPreferences["widgets"],
     options: {
+      timeline: {
+        desktopReservationAction: sourceOptions.timeline?.desktopReservationAction === "reservation" ? "reservation" : "drawer",
+      },
       trash: {
         showNextPickup: typeof sourceOptions.trash?.showNextPickup === "boolean" ? sourceOptions.trash.showNextPickup : true,
         collections: sourceCollections.map((collection, index) => normalizeCollection(collection, index, usedCollectionIds)),

@@ -22205,33 +22205,33 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
   border: 1px solid var(--border); border-radius: 8px; background: var(--subtle); color: inherit;
   min-width: 32px; min-height: 32px; font-size: 1.3rem; cursor: pointer;
 }
-.reservation-payment-popover .reservation-payment-details {
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-payment-details {
   max-height: none;
   overflow: visible;
   border: 0;
   padding: 0;
   background: transparent;
 }
-.reservation-payment-popover .reservation-payment-details__row small,
-.reservation-payment-popover .reservation-payment-details p { color: var(--muted); }
-.reservation-payment-popover .reservation-ledger__origin select,
-.reservation-payment-popover .reservation-ledger__form select,
-.reservation-payment-popover .reservation-ledger__form input {
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-payment-details__row small,
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-payment-details p { color: var(--muted); }
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__origin select,
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__form select,
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__form input {
   background: var(--field-bg);
   color: var(--ink);
   border-color: var(--field-border);
   color-scheme: light;
 }
-.reservation-payment-popover select option { background: var(--card); color: var(--ink); }
-.reservation-payment-popover .reservation-ledger__form { border-color: var(--border); }
-.reservation-payment-popover .reservation-ledger__add,
-.reservation-payment-popover .reservation-ledger__form-actions button[type="submit"] {
+:is(.reservation-payment-popover, .today-reservation-drawer) select option { background: var(--card); color: var(--ink); }
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__form { border-color: var(--border); }
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__add,
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__form-actions button[type="submit"] {
   background: var(--primary-soft);
   border-color: var(--primary-strong);
   color: var(--ink);
 }
-.reservation-payment-popover .reservation-ledger__form-actions button[type="button"] { border-color: var(--border); }
-.reservation-payment-popover .reservation-ledger__error { color: var(--ink) !important; }
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__form-actions button[type="button"] { border-color: var(--border); }
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__error { color: var(--ink) !important; }
 
 .reservation-ledger__extras { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--primary-strong); }
 .reservation-option-details {
@@ -22259,5 +22259,30 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
   box-shadow: none;
 }
 .reservation-option-details__gift { color: var(--primary); font-size: 0.63rem; }
-.reservation-payment-popover .reservation-payment-details a { color: var(--ink); }
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-payment-details a { color: var(--ink); }
 .reservation-payment-settings input[type="checkbox"] { accent-color: var(--primary); }
+
+.today-reservation-click-setting {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+}
+.today-reservation-click-setting label { display: grid; gap: 10px; min-width: 0; font-size: .82rem; }
+.today-reservation-click-setting select { width: 100%; min-width: 0; }
+.today-reservation-click-setting p { margin: 0; color: var(--muted); font-size: .75rem; line-height: 1.5; }
+.today-reservation-drawer .reservation-details-drawer__body { align-content: start; }
+.today-reservation-drawer__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.today-reservation-drawer__facts > div { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.today-reservation-drawer__facts dt { color: var(--muted); font-size: .78rem; }
+.today-reservation-drawer__facts dd { margin: 0; font-weight: 800; }
+.today-reservation-drawer__contacts { display: flex; flex-wrap: wrap; gap: 12px 20px; overflow-wrap: anywhere; }
+.today-reservation-drawer__section { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.today-reservation-drawer__section h3 { margin: 0; font-size: .9rem; }
+.today-reservation-drawer__section p { margin: 0; }
+.today-reservation-drawer__note { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.today-reservation-drawer__choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.today-reservation-drawer__choices button { flex: 1; background: var(--card); color: var(--ink); border: 1px solid var(--border); }
+.today-reservation-drawer__choices button[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--primary); }

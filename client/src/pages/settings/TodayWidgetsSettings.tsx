@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import TodayReservationClickSetting from "../shared/TodayReservationClickSetting";
 import type { AppUser } from "../../utils/auth";
 import {
   DEFAULT_TODAY_WIDGET_PREFERENCES,
@@ -110,6 +111,13 @@ export default function TodayWidgetsSettings({ currentUser }: { currentUser?: Ap
         </div>
         <p className="settings-cluster__text">Installez les widgets utiles, choisissez leur ordre et configurez précisément les informations qu’ils affichent.</p>
       </div>
+
+      <TodayReservationClickSetting
+        value={draft.options.timeline.desktopReservationAction}
+        onChange={(desktopReservationAction) => update((current) => ({
+          ...current, options: { ...current.options, timeline: { desktopReservationAction } },
+        }))}
+      />
 
       <div className="widget-settings__section">
         <div className="widget-settings__section-heading">

@@ -65,3 +65,19 @@ test("trash collections calculate weekly periods, cut-off times and alternating 
   assert.equal(beforeCutoff && getTrashCollectionColor(collection, beforeCutoff), "#FFCB05");
   assert.equal(afterCutoff && getTrashCollectionColor(collection, afterCutoff), "#104911");
 });
+
+test("le clic sur une réservation ouvre le panneau par défaut, y compris pour les anciens réglages", () => {
+  for (const value of [null, {}, { options: { trash: { showNextPickup: false } } }, { options: { timeline: { desktopReservationAction: "unknown" } } }]) {
+    assert.equal(normalizeTodayWidgetPreferences(value).options.timeline.desktopReservationAction, "drawer");
+  }
+});
+
+test("le choix d’ouvrir la page Réservations survit à l’enregistrement des préférences", () => {
+  const preferences = normalizeTodayWidgetPreferences({
+    options: { timeline: { desktopReservationAction: "reservation" }, occupancy: { showCount: false } },
+  });
+  const restored = normalizeTodayWidgetPreferences(JSON.parse(JSON.stringify(preferences)));
+  assert.equal(restored.options.timeline.desktopReservationAction, "reservation");
+  assert.equal(restored.options.occupancy.showCount, false);
+  assert.equal(normalizeTodayWidgetPreferences(DEFAULT_TODAY_WIDGET_PREFERENCES).options.timeline.desktopReservationAction, "drawer");
+});
