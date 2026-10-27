@@ -9,11 +9,11 @@ export default function TodayReservationClickSetting({ value, onChange }: {
       <label>
         <strong>Clic sur un rond de réservation (ordinateur)</strong>
         <select value={value} onChange={(event) => onChange(event.target.value === "reservation" ? "reservation" : "drawer")}>
-          <option value="drawer">Ouvrir le panneau de détail</option>
+          <option value="drawer">Ouvrir le panneau d’édition</option>
           <option value="reservation">Ouvrir la page Réservations</option>
         </select>
       </label>
-      <p>Le panneau permet de consulter le séjour sans quitter Aujourd’hui. Sur mobile, le clic conserve les actions habituelles.</p>
+      <p>Le panneau permet de modifier toute la réservation sans quitter Aujourd’hui. Sur mobile, le clic conserve les actions habituelles.</p>
     </section>
   );
 }
