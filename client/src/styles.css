@@ -13872,7 +13872,7 @@ button.personal-expenses-status:disabled {
   z-index: 80;
   width: max-content;
   min-width: 230px;
-  max-width: min(340px, calc(100vw - 32px));
+  max-width: min(420px, calc(100vw - 32px));
   padding: 10px 12px;
   border: 1px solid rgba(191, 219, 254, 0.95);
   border-radius: 12px;
@@ -13905,7 +13905,7 @@ button.personal-expenses-status:disabled {
 
 .reservations-fees-detail__row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   font-size: 0.74rem;
@@ -22153,6 +22153,31 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .reservation-payment-popover .reservation-ledger__form-actions button[type="button"] { border-color: var(--border); }
 .reservation-payment-popover .reservation-ledger__error { color: var(--ink) !important; }
 
-.reservation-ledger__platform { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--primary-strong); }
+.reservation-ledger__extras { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--primary-strong); }
+.reservation-option-details {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  font-size: 0.7rem;
+}
+.reservation-option-details__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.reservation-option-details__item > span { display: inline-flex; align-items: center; }
+.reservation-option-details .reservation-option-badge {
+  width: 20px;
+  height: 20px;
+  flex-basis: 20px;
+  font-size: 0.6rem;
+  box-shadow: none;
+}
+.reservation-option-details__gift { color: var(--primary); font-size: 0.63rem; }
 .reservation-payment-popover .reservation-payment-details a { color: var(--ink); }
 .reservation-payment-settings input[type="checkbox"] { accent-color: var(--primary); }

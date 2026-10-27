@@ -22,6 +22,7 @@ import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import GiteTabs, { type GiteTabItem } from "./shared/GiteTabs";
 import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
 import ReservationOptionsEditor from "./shared/ReservationOptionsEditor";
+import ReservationOptionDetails from "./shared/ReservationOptionDetails";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
 import { mergeOptions } from "./shared/rentalForm";
 import {
@@ -214,6 +215,7 @@ type ReservationFeesBreakdown = {
 };
 
 type ReservationFeesDetails = {
+  kind: "options" | "extra";
   label: string;
   amount: number;
 };
@@ -888,12 +890,13 @@ const getReservationFeeDetails = (reservation: Reservation, feeBreakdown: Reserv
   const optionsAmount = round2(Math.max(0, feeBreakdown.total - feeBreakdown.extra));
   if (optionsAmount > 0 || (optionsLabel && feeBreakdown.extra <= 0)) {
     details.push({
+      kind: "options",
       label: optionsLabel || "Options",
       amount: feeBreakdown.extra > 0 ? optionsAmount : feeBreakdown.total,
     });
   }
   if (feeBreakdown.extra > 0) {
-    details.push({ label: invoiceFeesLabel || "Option complémentaire", amount: feeBreakdown.extra });
+    details.push({ kind: "extra", label: invoiceFeesLabel || "Option complémentaire", amount: feeBreakdown.extra });
   }
   return details;
 };
@@ -6140,7 +6143,9 @@ const ReservationsPage = () => {
                                           <span className="reservations-fees-detail__title">Détail des options</span>
                                           {feeDetails.map((detail) => (
                                             <span className="reservations-fees-detail__row" key={`${reservation.id}-${detail.label}`}>
-                                              <span>{detail.label}</span>
+                                              {detail.kind === "options" ? (
+                                                <ReservationOptionDetails options={reservation.options} fallbackLabel={detail.label} />
+                                              ) : <span>{detail.label}</span>}
                                               <strong>{formatEuro(detail.amount)}</strong>
                                             </span>
                                           ))}
