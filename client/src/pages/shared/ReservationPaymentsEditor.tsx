@@ -11,14 +11,15 @@ import { apiFetch } from "../../utils/api";
 import {
   canCurrentUserViewAmounts,
   canCurrentUserWritePage,
-  canCurrentUserAccessPage,
 } from "../../utils/auth";
 import { formatDate, formatEuro } from "../../utils/format";
+import { getReservationOptionBadges } from "../../utils/reservationOptionBadges";
 import type { Reservation } from "../../utils/types";
+import ReservationOptionDetails from "./ReservationOptionDetails";
 
 export const reservationPaymentChanged = "reservation:payment-changed";
 type Props = {
-  reservation: Pick<Reservation, "id" | "source_paiement" | "booking_source">;
+  reservation: Pick<Reservation, "id" | "source_paiement" | "booking_source" | "options">;
   tracking: ReservationPaymentTracking;
   detailsId?: string;
   monthlyTotal?: number;
@@ -55,6 +56,7 @@ export default function ReservationPaymentsEditor({
   onBusyChange,
 }: Props) {
   const [tracking, setTracking] = useState(initial);
+  const optionBadges = getReservationOptionBadges(reservation.options);
   const bookingSource = getBookingSource(reservation);
   const [source, setSource] = useState(bookingSource);
   useEffect(() => {
@@ -241,14 +243,14 @@ export default function ReservationPaymentsEditor({
               {entry.origin === "platform"
                 ? "Hébergement"
                 : purposeLabel(entry.purpose)}
-              <small>
-                {entry.method || "Moyen non renseigné"} ·{" "}
-                {entry.origin === "platform"
-                  ? "Considéré reçu automatiquement"
-                  : entry.paid_on
+              {entry.origin !== "platform" ? (
+                <small>
+                  {entry.method || "Moyen non renseigné"} ·{" "}
+                  {entry.paid_on
                     ? formatDate(entry.paid_on)
                     : "Date non renseignée"}
-              </small>
+                </small>
+              ) : null}
               {entry.origin === "legacy" ? (
                 <small>Historique repris</small>
               ) : null}
@@ -298,27 +300,20 @@ export default function ReservationPaymentsEditor({
           ) : null}
         </div>
       ))}
-      {tracking.platform ? (
-        <div className="reservation-ledger__platform">
-          <p>
-            {tracking.platform.automatic
-              ? `L’hébergement est considéré reçu de ${tracking.platform.source}, selon les paramètres de votre compte.`
-              : `Le versement de ${tracking.platform.source} doit être enregistré à sa réception.`}
-          </p>
-          {tracking.platform.expected > 0 ? (
+      {optionBadges.length > 0 || tracking.platform ? (
+        <div className="reservation-ledger__extras">
+          <ReservationOptionDetails options={reservation.options} />
+          {tracking.platform && tracking.platform.expected > 0 ? (
             <div className="reservation-payment-details__row">
               <span>Attendu de {tracking.platform.source}</span>
               <strong>{formatEuro(tracking.platform.expected)}</strong>
             </div>
           ) : null}
-          <div className="reservation-payment-details__row">
-            <span>Options et taxe à encaisser sur place</span>
-            <strong>{formatEuro(tracking.platform.extras_remaining)}</strong>
-          </div>
-          {canCurrentUserAccessPage("settings") ? (
-            <a href="/parametres/reglements">
-              Modifier le réglage des plateformes ↗
-            </a>
+          {tracking.platform ? (
+            <div className="reservation-payment-details__row">
+              <span>Options et taxe à encaisser sur place</span>
+              <strong>{formatEuro(tracking.platform.extras_remaining)}</strong>
+            </div>
           ) : null}
         </div>
       ) : null}
