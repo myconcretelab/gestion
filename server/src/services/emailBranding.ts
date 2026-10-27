@@ -37,7 +37,7 @@ export const resolveEmailPresentation = async (gite?: EmailGite | null) => {
                 { id: "asc" },
               ],
               take: 1,
-              select: { url: true, alt: true },
+              select: { id: true, url: true, alt: true },
             },
           },
         })
@@ -58,7 +58,14 @@ export const resolveEmailPresentation = async (gite?: EmailGite | null) => {
       "Votre séjour",
     color: config?.primaryColor,
     logoUrl: emailHttpUrl(config?.logoUrl, env.APP_PUBLIC_URL),
-    photoUrl: emailHttpUrl(photo?.url, env.APP_PUBLIC_URL),
+    // Uploaded files use an authenticated management URL in storage. Email
+    // recipients need the existing public route for this public photo instead.
+    photoUrl: emailHttpUrl(
+      photo?.url.startsWith("/api/")
+        ? `/api/public/gites/photos/${encodeURIComponent(photo.id)}`
+        : photo?.url,
+      env.APP_PUBLIC_URL,
+    ),
     photoAlt: photo?.alt || house?.nom || "",
     website: emailHttpUrl(house?.site_web || config?.website),
     signature: config?.emailSignature,
