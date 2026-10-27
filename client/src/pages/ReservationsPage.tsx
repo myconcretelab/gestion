@@ -22,6 +22,8 @@ import { Link, useLocation } from "react-router-dom";
 import { OccupationGaugeDial } from "./statistics/components/OccupationGauge";
 import GiteTabs, { type GiteTabItem } from "./shared/GiteTabs";
 import ReservationDetailsDrawer from "./shared/ReservationDetailsDrawer";
+import ReservationContactFields from "./shared/ReservationContactFields";
+import ReservationEmailDialog from "./shared/ReservationEmailDialog";
 import ReservationOptionsEditor from "./shared/ReservationOptionsEditor";
 import ReservationOptionDetails from "./shared/ReservationOptionDetails";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
@@ -1132,6 +1134,7 @@ const ReservationsPage = () => {
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [paymentLinkReservation, setPaymentLinkReservation] = useState<Reservation | null>(null);
+  const [emailReservation, setEmailReservation] = useState<Reservation | null>(null);
   const [draggedGiteId, setDraggedGiteId] = useState<string | null>(null);
   const [dragOverGiteId, setDragOverGiteId] = useState<string | null>(null);
   const [reorderingTabs, setReorderingTabs] = useState(false);
@@ -5401,52 +5404,20 @@ const ReservationsPage = () => {
                               Relevé de départ manuel pour afficher la consommation en cours.
                             </div>
                           ) : null}
-                          <div className="reservations-contact-card">
-                            <div className="reservations-contact-card__title">Contact</div>
-                            <div className="grid-2">
-                              <div className="field">
-                                <span>Téléphone</span>
-                                {isEditing ? (
-                                  <input
-                                    value={draft.telephone}
-                                    onChange={(event) =>
-                                      updateExistingField(reservation, (prev) => ({
-                                        ...prev,
-                                        telephone: event.target.value,
-                                      }))
-                                    }
-                                  />
-                                ) : reservation.telephone && telephoneHref ? (
-                                  <a className="detail-link" href={telephoneHref}>
-                                    {reservation.telephone}
-                                  </a>
-                                ) : (
-                                  <span className="detail-value">—</span>
-                                )}
-                              </div>
-                              <div className="field">
-                                <span>Email</span>
-                                {isEditing ? (
-                                  <input
-                                    type="email"
-                                    value={draft.email}
-                                    onChange={(event) =>
-                                      updateExistingField(reservation, (prev) => ({
-                                        ...prev,
-                                        email: event.target.value,
-                                      }))
-                                    }
-                                  />
-                                ) : reservation.email ? (
-                                  <a className="detail-link" href={`mailto:${reservation.email}`}>
-                                    {reservation.email}
-                                  </a>
-                                ) : (
-                                  <span className="detail-value">—</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                          <ReservationContactFields
+                            telephone={isEditing ? draft.telephone : reservation.telephone ?? ""}
+                            email={isEditing ? draft.email : reservation.email ?? ""}
+                            editing={isEditing}
+                            onTelephoneChange={(telephone) => updateExistingField(reservation, (prev) => ({ ...prev, telephone }))}
+                            onEmailChange={(email) => updateExistingField(reservation, (prev) => ({ ...prev, email }))}
+                            onComposeEmail={() => setEmailReservation({
+                              ...reservation,
+                              email: isEditing ? draft.email : reservation.email,
+                              hote_nom: isEditing ? draft.hote_nom : reservation.hote_nom,
+                              date_entree: isEditing ? draft.date_entree : reservation.date_entree,
+                              date_sortie: isEditing ? draft.date_sortie : reservation.date_sortie,
+                            })}
+                          />
                           <div className={`reservations-options-builder ${isDetailsDrawerVisible ? "reservations-options-builder--drawer" : ""}`}>
                             <div className="reservations-options-builder__head">
                               <div>
@@ -6525,6 +6496,7 @@ const ReservationsPage = () => {
           </section>
         </div>
       ) : null}
+      {emailReservation ? <ReservationEmailDialog key={emailReservation.id} reservation={emailReservation} onClose={() => setEmailReservation(null)} /> : null}
       {paymentLinkReservation ? <ReservationPaymentLinkDialog reservation={paymentLinkReservation} onClose={() => setPaymentLinkReservation(null)} /> : null}
     </div>
   );

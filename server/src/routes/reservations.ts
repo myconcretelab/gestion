@@ -46,6 +46,9 @@ import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.j
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { verifyScopedApiToken } from "../services/apiTokens.js";
 import { recordCleaningCheckIntervention, removeUnpaidCleaningCheckIntervention } from "../services/userInterventions.js";
+import { sendSmtpMail } from "../services/mailer.js";
+import { resolveEmailPresentation } from "../services/emailBranding.js";
+import { renderEmailPresentation } from "../services/emailPresentation.js";
 
 const router = Router();
 
@@ -2222,6 +2225,35 @@ router.patch("/:id/source", async (req, res, next) => {
     }
 
     return res.json(await hydrateReservationWithLinkedContract(updated));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const reservationEmailSchema = z.object({
+  recipient: z.string().trim().email(),
+  subject: z.string().trim().min(1).max(200).refine((value) => !/[\r\n]/.test(value), "Sujet invalide"),
+  body: z.string().trim().min(1).max(20000),
+});
+
+router.post("/:id/send-email", async (req, res, next) => {
+  try {
+    const message = reservationEmailSchema.parse(req.body);
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, gite: { select: { id: true, nom: true, email: true } } },
+    });
+    if (!reservation) return res.status(404).json({ error: "Réservation introuvable" });
+
+    const { branding } = await resolveEmailPresentation(reservation.gite);
+    await sendSmtpMail({
+      to: message.recipient,
+      subject: message.subject,
+      text: message.body,
+      html: renderEmailPresentation({ subject: message.subject, text: message.body, branding }),
+      replyTo: reservation.gite?.email?.trim() || env.SMTP_REPLY_TO?.trim() || undefined,
+    });
+    return res.json({ ok: true });
   } catch (err) {
     next(err);
   }
