@@ -94,12 +94,15 @@ const parseHexColor = (value: string) => {
   };
 };
 
-export const getPaymentTextColorFromMap = (label: string | null | undefined, paymentColorMap: Record<string, string>) => {
-  const rgb = parseHexColor(getPaymentColorFromMap(label, paymentColorMap));
+export const getContrastTextColor = (color: string) => {
+  const rgb = parseHexColor(color);
   if (!rgb) return "#111827";
   const luminance = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
   return luminance >= 160 ? "#111827" : "#ffffff";
 };
+
+export const getPaymentTextColorFromMap = (label: string | null | undefined, paymentColorMap: Record<string, string>) =>
+  getContrastTextColor(getPaymentColorFromMap(label, paymentColorMap));
 
 export const getPaymentTextColor = (label: string | null | undefined, overrides?: Record<string, string | null | undefined>) =>
   getPaymentTextColorFromMap(label, overrides ? buildPaymentColorMap(overrides) : DEFAULT_PAYMENT_COLOR_MAP);

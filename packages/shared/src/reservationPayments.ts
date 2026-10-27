@@ -24,9 +24,41 @@ export const AUTOMATIC_PAYMENT_PLATFORMS = [
 export type ReservationPaymentSettings = {
   platform_payments_received_automatically: boolean;
   first_payment_default: "full" | "deposit";
+  shortcuts: ReservationPaymentShortcut[];
 };
 export type ReservationPaymentMethod =
   (typeof RESERVATION_PAYMENT_METHODS)[number];
+export type ReservationPaymentShortcut = {
+  id: string;
+  label: string;
+  target: "remaining" | "deposit";
+  method: ReservationPaymentMethod;
+  color: string;
+};
+export const DEFAULT_RESERVATION_PAYMENT_SHORTCUTS: ReservationPaymentShortcut[] =
+  [
+    {
+      id: "balance-cheque",
+      label: "Chq.",
+      target: "remaining",
+      method: "Chèque",
+      color: "#2563EB",
+    },
+    {
+      id: "balance-cash",
+      label: "Esp.",
+      target: "remaining",
+      method: "Espèces",
+      color: "#15803D",
+    },
+    {
+      id: "balance-transfer",
+      label: "Vir.",
+      target: "remaining",
+      method: "Virement",
+      color: "#7C3AED",
+    },
+  ];
 export const legacyPaymentMethod = (
   value?: string | null,
 ): ReservationPaymentMethod | null =>
@@ -55,6 +87,7 @@ export type ReservationPaymentEntry = {
 };
 export type ReservationPaymentTracking = {
   first_payment_default?: ReservationPaymentSettings["first_payment_default"];
+  payment_shortcuts?: ReservationPaymentShortcut[];
   managed: boolean;
   total: number;
   deposit: number;
@@ -69,6 +102,32 @@ export type ReservationPaymentTracking = {
     accommodation: number;
     expected: number;
     extras_remaining: number;
+  };
+};
+
+export const getReservationPaymentShortcutValue = (
+  tracking: ReservationPaymentTracking,
+  shortcut: Pick<ReservationPaymentShortcut, "target">,
+) => {
+  const remaining = Math.max(0, Math.round(tracking.remaining * 100));
+  const depositDue = tracking.platform
+    ? 0
+    : Math.max(
+        0,
+        Math.min(
+          remaining,
+          Math.round(tracking.deposit * 100) -
+            Math.round(tracking.received * 100),
+        ),
+      );
+  return {
+    purpose:
+      shortcut.target === "deposit"
+        ? ("deposit" as const)
+        : tracking.received > 0 || tracking.platform
+          ? ("balance" as const)
+          : ("full" as const),
+    amount: (shortcut.target === "deposit" ? depositDue : remaining) / 100,
   };
 };
 

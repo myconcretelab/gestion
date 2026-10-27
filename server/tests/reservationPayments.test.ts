@@ -6,6 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import express from "express";
+import {
+  DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+  getReservationPaymentShortcutValue,
+} from "@contrats/shared";
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "reservation-ledger-"));
 let db: typeof import("../src/db/prisma.js");
@@ -835,11 +839,15 @@ test("les encaissements réels existants ne sont jamais doublés par la récepti
 });
 
 test("les réglages de paiement acceptent le texte SQLite et le JSON PostgreSQL", async () => {
-  const expected = {
+  const stored = {
     platform_payments_received_automatically: false,
     first_payment_default: "deposit",
   };
-  for (const value_json of [JSON.stringify(expected), expected]) {
+  const expected = {
+    ...stored,
+    shortcuts: DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+  };
+  for (const value_json of [JSON.stringify(stored), stored]) {
     const database = {
       organizationRuntimeSetting: {
         findFirst: async () => ({ value_json }),
@@ -852,6 +860,253 @@ test("les réglages de paiement acceptent le texte SQLite et le JSON PostgreSQL"
       expected,
     );
   }
+});
+
+test("les trois raccourcis par défaut règlent tout le restant avec le moyen choisi", async () => {
+  for (const shortcut of DEFAULT_RESERVATION_PAYMENT_SHORTCUTS) {
+    const r = await stay();
+    await inOrg(async () => {
+      const before = await ledger.getReservationPaymentTracking(r.id);
+      assert.deepEqual(
+        before.payment_shortcuts,
+        DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+      );
+      const input = payment(1000, {
+        method: shortcut.method,
+        purpose: "full",
+        shortcut_id: shortcut.id,
+      });
+      let state = await ledger.addReservationPayment(r.id, input);
+      assert.equal(state.remaining, 0);
+      assert.equal(state.entries.length, 1);
+      assert.equal(state.entries[0].method, shortcut.method);
+      state = await ledger.addReservationPayment(r.id, input);
+      assert.equal(
+        state.entries.length,
+        1,
+        "réessayer la même saisie ne double pas le règlement",
+      );
+      await assert.rejects(
+        ledger.addReservationPayment(r.id, { ...input, id: randomUUID() }),
+        /a changé/,
+      );
+      state = await ledger.voidReservationPayment(r.id, input.id);
+      assert.equal(state.remaining, 1000);
+    });
+  }
+});
+
+test("un raccourci déduit les arrhes du contrat et le paiement Stripe", async () => {
+  const shortcut = DEFAULT_RESERVATION_PAYMENT_SHORTCUTS[0];
+  for (const origin of ["contract", "stripe"]) {
+    const r = await stay();
+    await contractFor(
+      r.id,
+      origin === "contract"
+        ? { statut_paiement_arrhes: "recu", mode_paiement_arrhes: "Virement" }
+        : {},
+    );
+    await inOrg(async () => {
+      if (origin === "stripe")
+        await db.default.bookingPayment.create({
+          data: {
+            reservation_id: r.id,
+            stripe_mode: "test",
+            purpose: "deposit",
+            amount_cents: 20000,
+            total_cents: 100000,
+            access_token_hash: randomUUID(),
+            expires_at: new Date("2040-01-01"),
+            paid_amount_cents: 20000,
+            paid_at: new Date(),
+            status: "paid",
+          },
+        });
+      const before = await ledger.getReservationPaymentTracking(r.id);
+      assert.equal(before.remaining, 800);
+      const state = await ledger.addReservationPayment(
+        r.id,
+        payment(800, {
+          method: shortcut.method,
+          purpose: "balance",
+          shortcut_id: shortcut.id,
+        }),
+      );
+      assert.equal(state.received, 1000);
+      assert.equal(state.remaining, 0);
+      assert.equal(state.entries.length, 2);
+      const contract = await db.default.contrat.findFirstOrThrow({
+        where: { reservation_id: r.id },
+      });
+      assert.equal(contract.statut_paiement_solde, "regle");
+      assert.equal(contract.statut_paiement_arrhes, "recu");
+    });
+  }
+});
+
+test("les raccourcis personnalisés d'arrhes fonctionnent hors contrat et restent isolés par compte", async () => {
+  const r = await stay();
+  const shortcut = {
+    id: "external-deposit",
+    label: "Arrhes",
+    target: "deposit" as const,
+    method: "Chèque" as const,
+    color: "#FFFF00",
+  };
+  await inOrg(async () => {
+    try {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+        shortcuts: [shortcut],
+      });
+      assert.deepEqual(
+        (await paymentSettings.readReservationPaymentSettings()).shortcuts,
+        [shortcut],
+      );
+      assert.deepEqual(
+        (
+          await inOrg(
+            () => paymentSettings.readReservationPaymentSettings(),
+            "org_shortcuts_other",
+          )
+        ).shortcuts,
+        DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+      );
+      let state = await ledger.getReservationPaymentTracking(r.id);
+      const value = getReservationPaymentShortcutValue(state, shortcut);
+      assert.equal(value.amount, 200);
+      state = await ledger.addReservationPayment(
+        r.id,
+        payment(value.amount, {
+          ...value,
+          method: shortcut.method,
+          shortcut_id: shortcut.id,
+        }),
+      );
+      assert.equal(state.received, 200);
+      assert.equal(state.remaining, 800);
+      assert.equal(
+        getReservationPaymentShortcutValue(state, shortcut).amount,
+        0,
+      );
+      const { contractStripeTracking } =
+        await import("../src/modules/bookingPayments/contracts.js");
+      const contract = await contractStripeTracking(r.id, {
+        giteId: "ledger-gite",
+        dateDebut: r.date_entree,
+        dateFin: r.date_sortie,
+        total: 1000,
+        arrhes: 200,
+      });
+      assert.equal(contract.mode_paiement_arrhes, "Chèque");
+      assert.equal(contract.statut_paiement_arrhes, "recu");
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+        shortcuts: [],
+      });
+      assert.deepEqual(
+        (await ledger.getReservationPaymentTracking(r.id)).payment_shortcuts,
+        [],
+      );
+      await assert.rejects(
+        ledger.addReservationPayment(
+          r.id,
+          payment(200, {
+            ...value,
+            method: shortcut.method,
+            shortcut_id: shortcut.id,
+          }),
+        ),
+        /supprimé/,
+      );
+    } finally {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+      });
+    }
+  });
+});
+
+test("un raccourci périmé refuse les montants modifiés et les changements de configuration", async () => {
+  const r = await stay();
+  const shortcut = DEFAULT_RESERVATION_PAYMENT_SHORTCUTS[0];
+  await inOrg(async () => {
+    await ledger.addReservationPayment(r.id, payment(100));
+    for (const override of [
+      { amount: 1000 },
+      { amount: 800 },
+      { purpose: "deposit" },
+      { method: "Espèces" },
+      { shortcut_id: "unknown" },
+    ])
+      await assert.rejects(
+        ledger.addReservationPayment(
+          r.id,
+          payment(900, {
+            purpose: "balance",
+            method: shortcut.method,
+            shortcut_id: shortcut.id,
+            ...override,
+          }),
+        ),
+        /a changé|supprimé/,
+      );
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(r.id)).entries.length,
+      1,
+    );
+    try {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+        shortcuts: [{ ...shortcut, target: "deposit" }],
+      });
+      await assert.rejects(
+        ledger.addReservationPayment(
+          r.id,
+          payment(900, {
+            purpose: "balance",
+            method: shortcut.method,
+            shortcut_id: shortcut.id,
+          }),
+        ),
+        /a changé/,
+      );
+      assert.equal(
+        (await ledger.getReservationPaymentTracking(r.id)).received,
+        100,
+      );
+    } finally {
+      await paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+      });
+    }
+  });
+});
+
+test("les réglages refusent les raccourcis invalides ou dupliqués", async () => {
+  await inOrg(async () => {
+    const shortcut = DEFAULT_RESERVATION_PAYMENT_SHORTCUTS[0];
+    for (const patch of [
+      { label: " " },
+      { target: "both" },
+      { method: "Bitcoin" },
+      { color: "red" },
+      { id: "" },
+    ]) {
+      await assert.rejects(
+        paymentSettings.saveReservationPaymentSettings({
+          platform_payments_received_automatically: true,
+          shortcuts: [{ ...shortcut, ...patch }],
+        }),
+      );
+    }
+    await assert.rejects(
+      paymentSettings.saveReservationPaymentSettings({
+        platform_payments_received_automatically: true,
+        shortcuts: [shortcut, shortcut],
+      }),
+    );
+  });
 });
 
 test("la préférence du premier règlement conserve la compatibilité avec les anciens réglages et reste isolée par compte", async () => {

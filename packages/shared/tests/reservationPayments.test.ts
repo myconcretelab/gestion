@@ -4,7 +4,91 @@ import {
   getBookingSource,
   legacyPaymentMethod,
   getSuggestedReservationPayment,
+  getReservationPaymentShortcutValue,
 } from "../src/reservationPayments.js";
+
+test("les raccourcis encaissent le montant restant sans supposer des arrhes déjà reçues", () => {
+  const tracking = {
+    managed: false,
+    total: 1000,
+    deposit: 300,
+    received: 0,
+    remaining: 1000,
+    overpaid: 0,
+    requires_review: false,
+    entries: [],
+  };
+  assert.deepEqual(
+    getReservationPaymentShortcutValue(tracking, { target: "remaining" }),
+    { purpose: "full", amount: 1000 },
+  );
+  assert.deepEqual(
+    getReservationPaymentShortcutValue(tracking, { target: "deposit" }),
+    { purpose: "deposit", amount: 300 },
+  );
+  const partial = { ...tracking, received: 100, remaining: 900 };
+  assert.deepEqual(
+    getReservationPaymentShortcutValue(partial, { target: "deposit" }),
+    { purpose: "deposit", amount: 200 },
+  );
+  assert.deepEqual(
+    getReservationPaymentShortcutValue(partial, { target: "remaining" }),
+    { purpose: "balance", amount: 900 },
+  );
+  assert.equal(
+    getReservationPaymentShortcutValue(
+      { ...tracking, received: 300, remaining: 700 },
+      { target: "deposit" },
+    ).amount,
+    0,
+  );
+  assert.equal(
+    getReservationPaymentShortcutValue(
+      { ...tracking, received: 1000, remaining: 0 },
+      { target: "remaining" },
+    ).amount,
+    0,
+  );
+});
+
+test("les raccourcis conservent les centimes et ne demandent pas d'arrhes aux plateformes", () => {
+  const tracking = {
+    managed: true,
+    total: 1,
+    deposit: 0.3,
+    received: 0.1,
+    remaining: 0.9,
+    overpaid: 0,
+    requires_review: false,
+    entries: [],
+  };
+  assert.equal(
+    getReservationPaymentShortcutValue(tracking, { target: "deposit" }).amount,
+    0.2,
+  );
+  const platform = {
+    ...tracking,
+    total: 1060,
+    deposit: 300,
+    received: 1000,
+    remaining: 60,
+    platform: {
+      source: "Airbnb",
+      automatic: true,
+      accommodation: 1000,
+      expected: 0,
+      extras_remaining: 60,
+    },
+  };
+  assert.deepEqual(
+    getReservationPaymentShortcutValue(platform, { target: "remaining" }),
+    { purpose: "balance", amount: 60 },
+  );
+  assert.equal(
+    getReservationPaymentShortcutValue(platform, { target: "deposit" }).amount,
+    0,
+  );
+});
 
 test("le premier règlement propose la totalité par défaut et les arrhes sur choix explicite", () => {
   const tracking = {

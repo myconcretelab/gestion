@@ -30,6 +30,7 @@ const paymentSchema = z
     purpose: z.enum(["deposit", "balance", "payment", "full"]),
     paid_on: dateSchema,
     note: z.string().trim().max(500).nullable().optional(),
+    shortcut_id: z.string().trim().min(1).max(80).optional(),
   })
   .strict();
 router.get<{ id: string }>("/", async (req, res, next) => {

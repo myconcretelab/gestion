@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import type { ReservationPaymentSettings as Settings } from "@contrats/shared";
+import {
+  DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+  RESERVATION_PAYMENT_METHODS,
+  type ReservationPaymentSettings as Settings,
+  type ReservationPaymentShortcut,
+} from "@contrats/shared";
 import { apiFetch } from "../../utils/api";
 import { canCurrentUserWritePage } from "../../utils/auth";
+import { getContrastTextColor } from "../../utils/paymentColors";
 
 export default function ReservationPaymentSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -22,6 +28,27 @@ export default function ReservationPaymentSettings() {
       });
     return () => controller.abort();
   }, []);
+  const shortcuts =
+    settings?.shortcuts ?? DEFAULT_RESERVATION_PAYMENT_SHORTCUTS;
+  const setShortcuts = (items: ReservationPaymentShortcut[]) => {
+    if (!settings) return;
+    setSettings({ ...settings, shortcuts: items });
+    setNotice("");
+  };
+  const updateShortcut = (
+    id: string,
+    patch: Partial<ReservationPaymentShortcut>,
+  ) =>
+    setShortcuts(
+      shortcuts.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    );
+  const moveShortcut = (index: number, direction: number) => {
+    const items = [...shortcuts];
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= items.length) return;
+    [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
+    setShortcuts(items);
+  };
   return (
     <section
       className="settings-cluster reservation-payment-settings"
@@ -127,6 +154,161 @@ export default function ReservationPaymentSettings() {
               avec le moyen « Versement plateforme ». Les règlements déjà saisis
               sont conservés. HomeExchange n’est pas concerné.
             </p>
+            <fieldset
+              className="reservation-shortcut-settings"
+              disabled={busy || !canCurrentUserWritePage("settings")}
+            >
+              <legend>Raccourcis de règlement</legend>
+              <p className="field-hint">
+                Ces boutons enregistrent un règlement en un clic, à la date du
+                jour. Ils apparaissent à côté de « Ajouter un règlement », avec
+                le montant à encaisser. Les arrhes déjà reçues par contrat, en
+                ligne ou saisies manuellement sont déduites.
+              </p>
+              <div className="reservation-shortcut-settings__list">
+                {shortcuts.map((shortcut, index) => (
+                  <div
+                    key={shortcut.id}
+                    className="reservation-shortcut-settings__item"
+                  >
+                    <label className="field">
+                      Libellé court
+                      <input
+                        aria-label={`Libellé du raccourci ${index + 1}`}
+                        required
+                        maxLength={12}
+                        value={shortcut.label}
+                        onChange={(event) =>
+                          updateShortcut(shortcut.id, {
+                            label: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      Montant à encaisser
+                      <select
+                        aria-label={`Montant du raccourci ${index + 1}`}
+                        value={shortcut.target}
+                        onChange={(event) =>
+                          updateShortcut(shortcut.id, {
+                            target: event.target
+                              .value as ReservationPaymentShortcut["target"],
+                          })
+                        }
+                      >
+                        <option value="remaining">Tout le reste à payer</option>
+                        <option value="deposit">Arrhes restantes</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      Moyen de paiement
+                      <select
+                        aria-label={`Moyen du raccourci ${index + 1}`}
+                        value={shortcut.method}
+                        onChange={(event) =>
+                          updateShortcut(shortcut.id, {
+                            method: event.target
+                              .value as ReservationPaymentShortcut["method"],
+                          })
+                        }
+                      >
+                        {RESERVATION_PAYMENT_METHODS.map((method) => (
+                          <option key={method}>{method}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field reservation-shortcut-settings__color">
+                      Couleur
+                      <input
+                        aria-label={`Couleur du raccourci ${index + 1}`}
+                        type="color"
+                        value={shortcut.color}
+                        onChange={(event) =>
+                          updateShortcut(shortcut.id, {
+                            color: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <div className="reservation-shortcut-settings__tools">
+                      <span
+                        className="reservation-shortcut-settings__preview"
+                        style={{
+                          backgroundColor: shortcut.color,
+                          color: getContrastTextColor(shortcut.color),
+                        }}
+                      >
+                        {shortcut.label || "Aperçu"}
+                      </span>
+                      <div className="reservation-shortcut-settings__order">
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={index === 0}
+                          aria-label={`Avancer le raccourci ${index + 1}`}
+                          onClick={() => moveShortcut(index, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={index === shortcuts.length - 1}
+                          aria-label={`Reculer le raccourci ${index + 1}`}
+                          onClick={() => moveShortcut(index, 1)}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          aria-label={`Supprimer le raccourci ${index + 1}`}
+                          onClick={() =>
+                            setShortcuts(
+                              shortcuts.filter(
+                                (item) => item.id !== shortcut.id,
+                              ),
+                            )
+                          }
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {!shortcuts.length ? (
+                <p className="field-hint">
+                  Aucun raccourci. La saisie détaillée reste disponible.
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="secondary"
+                disabled={shortcuts.length >= 20}
+                onClick={() =>
+                  setShortcuts([
+                    ...shortcuts,
+                    {
+                      id: crypto.randomUUID(),
+                      label: "Nouveau",
+                      target: "remaining",
+                      method: "Virement",
+                      color: "#2563EB",
+                    },
+                  ])
+                }
+              >
+                ＋ Ajouter un raccourci
+              </button>
+              <p className="field-hint">
+                Pour des arrhes reçues hors contrat, utilisez un raccourci «
+                Arrhes restantes » ou la saisie détaillée avec la nature «
+                Arrhes » pour choisir un autre montant ou une autre date.
+              </p>
+            </fieldset>
             {canCurrentUserWritePage("settings") ? (
               <div className="actions">
                 <button disabled={busy} type="submit">

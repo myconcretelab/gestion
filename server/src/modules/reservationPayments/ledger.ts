@@ -2,6 +2,7 @@ import {
   computeTouristTax,
   getContractReceiptStatus,
   getBookingSource,
+  getReservationPaymentShortcutValue,
   legacyPaymentMethod,
   AUTOMATIC_PAYMENT_PLATFORMS,
   type ReservationPaymentEntry,
@@ -306,6 +307,7 @@ export const loadReservationPaymentTracking = async (
     );
     const tracking: ReservationPaymentTracking = {
       first_payment_default: settings.first_payment_default,
+      payment_shortcuts: settings.shortcuts,
       managed,
       total: total / 100,
       deposit: deposit / 100,
@@ -449,6 +451,7 @@ export type NewRecordedPayment = {
   purpose: string;
   paid_on: string;
   note?: string | null;
+  shortcut_id?: string;
 };
 export const addReservationPayment = async (
   id: string,
@@ -479,6 +482,24 @@ export const addReservationPayment = async (
       throw ledgerError(
         "Vérifiez le paiement en ligne ou son remboursement avant d’ajouter un règlement.",
       );
+    if (input.shortcut_id) {
+      const shortcut = tracking.payment_shortcuts?.find(
+        (item) => item.id === input.shortcut_id,
+      );
+      if (!shortcut)
+        throw ledgerError("Ce raccourci a été supprimé. Actualisez la fiche.");
+      const expected = getReservationPaymentShortcutValue(tracking, shortcut);
+      if (
+        expected.amount <= 0 ||
+        cents(input.amount) !== cents(expected.amount) ||
+        input.method !== shortcut.method ||
+        input.purpose !== expected.purpose
+      ) {
+        throw ledgerError(
+          "Le montant ou le raccourci a changé. Actualisez la fiche avant de réessayer.",
+        );
+      }
+    }
     if (cents(input.amount) > cents(tracking.remaining))
       throw ledgerError(
         "Le règlement dépasse le reste à payer. Actualisez la fiche et vérifiez le montant.",

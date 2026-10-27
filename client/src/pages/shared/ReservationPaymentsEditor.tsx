@@ -3,9 +3,12 @@ import {
   BOOKING_SOURCES,
   getBookingSource,
   getSuggestedReservationPayment,
+  getReservationPaymentShortcutValue,
+  DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
   legacyPaymentMethod,
   RESERVATION_PAYMENT_METHODS,
   type ReservationPaymentTracking,
+  type ReservationPaymentShortcut,
 } from "@contrats/shared";
 import { apiFetch } from "../../utils/api";
 import {
@@ -13,13 +16,17 @@ import {
   canCurrentUserWritePage,
 } from "../../utils/auth";
 import { formatDate, formatEuro } from "../../utils/format";
+import { getContrastTextColor } from "../../utils/paymentColors";
 import { getReservationOptionBadges } from "../../utils/reservationOptionBadges";
 import type { Reservation } from "../../utils/types";
 import ReservationOptionDetails from "./ReservationOptionDetails";
 
 export const reservationPaymentChanged = "reservation:payment-changed";
 type Props = {
-  reservation: Pick<Reservation, "id" | "source_paiement" | "booking_source" | "options">;
+  reservation: Pick<
+    Reservation,
+    "id" | "source_paiement" | "booking_source" | "options"
+  >;
   tracking: ReservationPaymentTracking;
   detailsId?: string;
   monthlyTotal?: number;
@@ -45,6 +52,15 @@ const purposeLabel = (purpose: string) =>
       : purpose === "full"
         ? "Séjour"
         : "Versement";
+type PaymentInput = {
+  id: string;
+  amount: number;
+  method: string;
+  purpose: string;
+  paid_on: string;
+  note: string | null;
+  shortcut_id?: string;
+};
 
 export default function ReservationPaymentsEditor({
   reservation,
@@ -73,6 +89,8 @@ export default function ReservationPaymentsEditor({
   const [error, setError] = useState<string | null>(null);
   const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
+  const saving = useRef(false);
+  const shortcutRequest = useRef<{ key: string; id: string } | null>(null);
   const depositDue = tracking.platform
     ? 0
     : Math.max(
@@ -111,9 +129,9 @@ export default function ReservationPaymentsEditor({
       }),
     );
   };
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (busy) return;
+  const recordPayment = async (input: PaymentInput) => {
+    if (busy || saving.current) return;
+    saving.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -121,20 +139,14 @@ export default function ReservationPaymentsEditor({
         `/reservations/${reservation.id}/payments`,
         {
           method: "POST",
-          json: {
-            id: requestId.current,
-            amount: Number(amount.replace(",", ".")),
-            method,
-            purpose,
-            paid_on: paidOn,
-            note: note.trim() || null,
-          },
+          json: input,
         },
       );
       publish(next);
       setExpanded(false);
       setNote("");
       requestId.current = crypto.randomUUID();
+      shortcutRequest.current = null;
       setAmount(String(next.remaining));
       setPurpose("balance");
     } catch (error) {
@@ -144,8 +156,37 @@ export default function ReservationPaymentsEditor({
           : "Impossible d’enregistrer le règlement.",
       );
     } finally {
+      saving.current = false;
       setBusy(false);
     }
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    await recordPayment({
+      id: requestId.current,
+      amount: Number(amount.replace(",", ".")),
+      method,
+      purpose,
+      paid_on: paidOn,
+      note: note.trim() || null,
+    });
+  };
+  const useShortcut = async (shortcut: ReservationPaymentShortcut) => {
+    if (busy || saving.current || !canWrite || tracking.requires_review) return;
+    const value = getReservationPaymentShortcutValue(tracking, shortcut);
+    if (value.amount <= 0) return;
+    const paid_on = today();
+    const key = JSON.stringify([shortcut.id, value, shortcut.method, paid_on]);
+    if (shortcutRequest.current?.key !== key)
+      shortcutRequest.current = { key, id: crypto.randomUUID() };
+    await recordPayment({
+      id: shortcutRequest.current.id,
+      ...value,
+      method: shortcut.method,
+      paid_on,
+      note: null,
+      shortcut_id: shortcut.id,
+    });
   };
   const voidEntry = async (id: string) => {
     if (busy) return;
@@ -350,22 +391,64 @@ export default function ReservationPaymentsEditor({
       tracking.remaining > 0 &&
       !tracking.requires_review &&
       !expanded ? (
-        <button
-          type="button"
-          className="reservation-ledger__add"
-          aria-expanded={false}
-          aria-controls={formId}
-          disabled={busy}
-          onClick={() => {
-            const next = getSuggestedReservationPayment(tracking);
-            setPurpose(next.purpose);
-            setAmount(String(next.amount));
-            requestId.current = crypto.randomUUID();
-            setExpanded(true);
-          }}
-        >
-          ＋ Ajouter un règlement
-        </button>
+        <div className="reservation-ledger__add-row">
+          <button
+            type="button"
+            className="reservation-ledger__add"
+            aria-expanded={false}
+            aria-controls={formId}
+            disabled={busy}
+            onClick={() => {
+              const next = getSuggestedReservationPayment(tracking);
+              setPurpose(next.purpose);
+              setAmount(String(next.amount));
+              requestId.current = crypto.randomUUID();
+              setExpanded(true);
+            }}
+          >
+            ＋ Ajouter un règlement
+          </button>
+          <div
+            className="reservation-ledger__shortcuts"
+            role="group"
+            aria-label="Règlements en un clic"
+          >
+            {(
+              tracking.payment_shortcuts ??
+              DEFAULT_RESERVATION_PAYMENT_SHORTCUTS
+            ).map((shortcut) => {
+              const value = getReservationPaymentShortcutValue(
+                tracking,
+                shortcut,
+              );
+              if (value.amount <= 0) return null;
+              const label = `${shortcut.target === "deposit" ? "Encaisser les arrhes restantes" : "Encaisser tout le reste à payer"} : ${formatEuro(value.amount)} par ${shortcut.method.toLowerCase()}`;
+              return (
+                <button
+                  key={shortcut.id}
+                  type="button"
+                  className="reservation-ledger__shortcut"
+                  style={{
+                    backgroundColor: shortcut.color,
+                    color: getContrastTextColor(shortcut.color),
+                  }}
+                  aria-label={label}
+                  title={label}
+                  disabled={busy}
+                  onClick={() => void useShortcut(shortcut)}
+                >
+                  <span>{shortcut.label}</span>
+                  <small>
+                    {formatEuro(value.amount, {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    })}
+                  </small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       ) : null}
       {expanded ? (
         <form

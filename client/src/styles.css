@@ -22108,6 +22108,41 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .reservation-ledger__form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .reservation-ledger__form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .reservation-ledger__form-actions button[type="button"] { background: transparent; border-color: rgba(255,255,255,.2); }
+.reservation-ledger__add-row { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
+.reservation-ledger__add-row > .reservation-ledger__add { flex: 1; min-width: 0; min-height: 54px; padding: 8px; line-height: 1.35; }
+.reservation-ledger__shortcuts { display: flex; gap: 6px; max-width: 64%; overflow-x: auto; scrollbar-width: thin; }
+.reservation-ledger__shortcuts:empty { display: none; }
+.reservation-ledger__shortcut {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; min-width: 48px; max-width: 88px; min-height: 54px; padding: 7px 6px;
+  border: 0; border-radius: 10px; font: inherit; cursor: pointer; box-shadow: none;
+}
+.reservation-ledger__shortcut span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; font-weight: 700; }
+.reservation-ledger__shortcut small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 0.6rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reservation-ledger__shortcut:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; }
+.reservation-ledger__shortcut:disabled { opacity: .55; cursor: wait; }
+.reservation-shortcut-settings { min-width: 0; margin: 24px 0; padding: 18px 0 0; border: 0; border-top: 1px solid var(--border); }
+.reservation-shortcut-settings legend { padding: 0 10px 0 0; font-weight: 700; }
+.reservation-shortcut-settings__list { display: grid; gap: 12px; margin: 16px 0; }
+.reservation-shortcut-settings__item { display: grid; grid-template-columns: minmax(90px, .8fr) minmax(160px, 1.6fr) minmax(140px, 1.2fr) 64px; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--subtle); }
+.reservation-shortcut-settings__item .field { min-width: 0; margin: 0; }
+.reservation-shortcut-settings__item input,
+.reservation-shortcut-settings__item select { width: 100%; min-width: 0; }
+.reservation-shortcut-settings__color input { min-height: 40px; padding: 4px; cursor: pointer; }
+.reservation-shortcut-settings__tools { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.reservation-shortcut-settings__preview { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; min-height: 40px; padding: 8px; border-radius: 10px; font-weight: 700; font-size: .8rem; }
+.reservation-shortcut-settings__order { display: flex; gap: 6px; }
+.reservation-shortcut-settings__order button { min-width: 38px; min-height: 38px; padding: 6px 10px; }
+@media (max-width: 900px) {
+  .reservation-shortcut-settings__item { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .reservation-shortcut-settings__item { grid-template-columns: minmax(0, 1fr) 64px; }
+  .reservation-shortcut-settings__item > .field:first-child { grid-column: 1; grid-row: 1; }
+  .reservation-shortcut-settings__item > .field:nth-child(4) { grid-column: 2; grid-row: 1; }
+  .reservation-shortcut-settings__item > .field:nth-child(2),
+  .reservation-shortcut-settings__item > .field:nth-child(3) { grid-column: 1 / -1; }
+}
 .reservation-ledger__error { color: white !important; border-left: 2px solid var(--primary); padding-left: 8px; }
 .reservation-ledger-page { width: min(100%, 680px); margin: 0 auto; padding: 16px; }
 .reservation-ledger-page__card { background: #1e293b; color: white; padding: 8px; border-radius: 18px; }
