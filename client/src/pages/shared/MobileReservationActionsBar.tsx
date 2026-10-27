@@ -183,6 +183,7 @@ const MobileReservationActionsBar = ({
 
   const hasThreePrimaryActions = Boolean(onEdit && smsHref && phoneHref && !airbnbUrl);
   const normalizedNote = note?.trim();
+  const hasContent = Boolean(optionBadges.length || details?.length || sourcePicker || highlightedCard || paymentInfo || normalizedNote);
 
   return (
     <div className="mobile-reservation-actions" role="status" aria-live="polite">
@@ -191,6 +192,23 @@ const MobileReservationActionsBar = ({
           <div className="mobile-reservation-actions__copy">
             <strong>{title}</strong>
             {subtitle ? <span className="mobile-reservation-actions__subtitle">{subtitle}</span> : null}
+          </div>
+          <div className="mobile-reservation-actions__aside">
+            {tasksButton}
+            {cleaningCheck}
+            <button
+              type="button"
+              className="mobile-reservation-actions__close"
+              aria-label="Fermer la barre d'actions"
+              onClick={onClose}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+
+        {hasContent ? (
+          <div className="mobile-reservation-actions__body">
             <ReservationOptionBadges badges={optionBadges} />
             {details?.length ? (
               <div className="mobile-reservation-actions__details">
@@ -282,19 +300,7 @@ const MobileReservationActionsBar = ({
             {paymentInfo}
             {normalizedNote ? <p className="mobile-reservation-actions__note">{normalizedNote}</p> : null}
           </div>
-          <div className="mobile-reservation-actions__aside">
-            {tasksButton}
-            {cleaningCheck}
-            <button
-              type="button"
-              className="mobile-reservation-actions__close"
-              aria-label="Fermer la barre d'actions"
-              onClick={onClose}
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        </div>
+        ) : null}
 
         {mode === "rotation-choice" ? (
           <div className="mobile-reservation-actions__choices">
