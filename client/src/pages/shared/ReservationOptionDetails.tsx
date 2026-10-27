@@ -28,7 +28,7 @@ export default function ReservationOptionDetails({ options, fallbackLabel }: Pro
               <ReservationOptionBadges badges={[badge]} />
             </span>
             <span>{badge.label}{quantity !== undefined ? ` ×${quantity}` : ""}</span>
-            {option?.offert ? <span className="reservation-option-details__gift">offert</span> : null}
+            {badge.key === "menage" && options?.menage?.inclus ? <span className="reservation-option-details__gift">inclus</span> : option?.offert ? <span className="reservation-option-details__gift">offert</span> : null}
           </span>
         );
       })}

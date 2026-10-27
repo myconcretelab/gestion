@@ -4,6 +4,7 @@ export type BookingOptionUnitPrices = Record<OptionKey, number>;
 type Option = {
   enabled?: boolean;
   offert?: boolean;
+  inclus?: boolean;
   nb_lits?: number;
   nb_personnes?: number;
   nb?: number;
@@ -58,6 +59,8 @@ export const buildBookingRequestOptionsTemplateValues = (
     ]
       .filter(Boolean)
       .join(", ");
+    if (key === "menage" && option.inclus)
+      return `${label} : inclus dans le prix du séjour`;
     if (option.offert)
       return `${label} : offert${context ? ` (${context})` : ""}`;
     const amount = snapshot.options_detail?.[key];

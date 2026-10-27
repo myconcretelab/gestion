@@ -1,3 +1,4 @@
+import CleaningBillingControl from "./CleaningBillingControl";
 import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
 import { createPortal } from "react-dom";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -492,8 +493,8 @@ const MobileReservationSheet = ({
                   <div className="calendar-quick-create-sheet__options-card">
                     <label className="calendar-quick-create-sheet__toggle-row">
                       <div>
-                        <span className="calendar-quick-create-sheet__toggle-title">Option ménage</span>
-                        <span className="calendar-quick-create-sheet__toggle-meta">{formatEuro(gitePricing.menage)}</span>
+                        <span className="calendar-quick-create-sheet__toggle-title">Ménage fin de séjour</span>
+                        <span className="calendar-quick-create-sheet__toggle-meta">{draft.option_menage && draft.menage_facturation === "included" ? "Inclus" : draft.option_menage && draft.menage_facturation === "gift" ? "Offert" : formatEuro(gitePricing.menage)}</span>
                       </div>
                       <span className="calendar-quick-create-sheet__switch-control">
                         <input
@@ -505,6 +506,10 @@ const MobileReservationSheet = ({
                         <span aria-hidden="true" />
                       </span>
                     </label>
+                    {draft.option_menage ? (
+                      <CleaningBillingControl value={draft.menage_facturation ?? "extra"}
+                        onChange={(mode) => onFieldChange("menage_facturation", mode)} />
+                    ) : null}
 
                     <label className="calendar-quick-create-sheet__toggle-row">
                       <div>

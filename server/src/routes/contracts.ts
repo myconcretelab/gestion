@@ -1,3 +1,4 @@
+import { cleaningBillingSuffix } from "@contrats/shared";
 import { BOOKING_SOURCES } from "@contrats/shared";
 import { assertLegacyTrackingEditable, syncManagedContractPayments, isManagedReservation, getContractPaymentContext } from "../modules/reservationPayments/ledger.js";
 import { contractStripeTracking } from "../modules/bookingPayments/contracts.js";
@@ -247,7 +248,7 @@ const summarizeReservationOptions = (options: OptionsInput) => {
     declarationFlags.push(Boolean(options.linge_toilette.declared));
   }
   if (options.menage?.enabled) {
-    labels.push(`Ménage${options.menage.offert ? " offert" : ""}`);
+    labels.push(`Ménage${cleaningBillingSuffix(options.menage)}`);
     declarationFlags.push(Boolean(options.menage.declared));
   }
   if (options.depart_tardif?.enabled) {

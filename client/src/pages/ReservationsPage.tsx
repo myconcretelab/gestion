@@ -1,3 +1,4 @@
+import { cleaningBillingSuffix } from "@contrats/shared";
 import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
 import ReservationPaymentPopover from "./shared/ReservationPaymentPopover";
 import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
@@ -759,7 +760,7 @@ const computeReservationOptionsPreview = (
       : round2(Number(gite?.options_linge_toilette_par_personne ?? 0) * lingeQty)
     : 0;
   const menage = options.menage.enabled
-    ? options.menage.offert
+    ? (options.menage.offert || options.menage.inclus)
       ? 0
       : round2(Number(gite?.options_menage_forfait ?? 0))
     : 0;
@@ -777,7 +778,7 @@ const computeReservationOptionsPreview = (
   const labels: string[] = [];
   if (options.draps.enabled) labels.push(`Draps x${drapsQty}${options.draps.offert ? " offerts" : ""}`);
   if (options.linge_toilette.enabled) labels.push(`Linge x${lingeQty}${options.linge_toilette.offert ? " offert" : ""}`);
-  if (options.menage.enabled) labels.push(`Ménage${options.menage.offert ? " offert" : ""}`);
+  if (options.menage.enabled) labels.push(`Ménage${cleaningBillingSuffix(options.menage)}`);
   if (options.depart_tardif.enabled) labels.push(`Départ tardif${options.depart_tardif.offert ? " offert" : ""}`);
   if (options.chiens.enabled) labels.push(`Chiens x${chiensQty}${options.chiens.offert ? " offerts" : ""}`);
 

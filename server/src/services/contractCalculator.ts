@@ -6,7 +6,7 @@ export type OptionsInput = {
   tourist_tax?: TouristTaxStay;
   draps?: { enabled: boolean; nb_lits?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
-  menage?: { enabled: boolean; offert?: boolean; declared?: boolean };
+  menage?: { enabled: boolean; offert?: boolean; inclus?: boolean; declared?: boolean };
   depart_tardif?: { enabled: boolean; prix_forfait?: number; offert?: boolean; declared?: boolean };
   chiens?: { enabled: boolean; nb?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
   regle_animaux_acceptes?: boolean;
@@ -87,7 +87,7 @@ export const computeTotals = (params: {
       ? 0
       : round2(lingeTarif * (params.options.linge_toilette?.nb_personnes ?? 0))
     : 0;
-  const menage = params.options.menage?.enabled ? (params.options.menage?.offert ? 0 : round2(menageTarif)) : 0;
+  const menage = params.options.menage?.enabled ? ((params.options.menage?.offert || params.options.menage?.inclus) ? 0 : round2(menageTarif)) : 0;
   const departTardif = params.options.depart_tardif?.enabled
     ? params.options.depart_tardif?.offert
       ? 0

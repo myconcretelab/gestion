@@ -2,6 +2,7 @@ import type { TouristTaxResult } from "./touristTax.js";
 type Option = {
   enabled?: boolean;
   offert?: boolean;
+  inclus?: boolean;
   nb_lits?: number;
   nb_personnes?: number;
   nb?: number;
@@ -58,11 +59,12 @@ export function invoiceReservationServices(
   ) => {
     const option = options[key];
     if (!option?.enabled || quantity <= 0) return;
+    const included = key === "menage" && option.inclus;
     services.push({
       key,
-      label: `${label}${option.offert ? " · offert" : ""}`,
+      label: `${label}${included ? " · inclus dans le prix du séjour" : option.offert ? " · offert" : ""}`,
       quantity,
-      unit_price_ttc: option.offert ? 0 : money(price),
+      unit_price_ttc: option.offert || included ? 0 : money(price),
     });
   };
   add(
@@ -91,14 +93,16 @@ export function invoiceReservationServices(
     options.chiens?.prix_unitaire ?? gite.options_chiens_forfait,
   );
   const recorded = money(reservation.frais_optionnels_montant);
+  const isUnbilled = (key: string) =>
+    options[key as keyof Options]?.offert ||
+    (key === "menage" && options.menage?.inclus);
   const reconstructed = money(
     services.reduce((sum, row) => sum + row.quantity * row.unit_price_ttc, 0),
   );
   const mismatch =
-    reconstructed !== recorded &&
-    services.some((row) => !options[row.key as keyof Options]?.offert);
+    reconstructed !== recorded && services.some((row) => !isUnbilled(row.key));
   const serviceLabels = services
-    .filter((row) => !options[row.key as keyof Options]?.offert)
+    .filter((row) => !isUnbilled(row.key))
     .map((row) => `${row.label} × ${row.quantity}`)
     .join(", ");
   const aggregateLabel = mismatch
@@ -112,9 +116,7 @@ export function invoiceReservationServices(
     useStructuredOptions: !mismatch,
     extraFee,
     services: [
-      ...services.filter(
-        (row) => !mismatch || options[row.key as keyof Options]?.offert,
-      ),
+      ...services.filter((row) => !mismatch || isUnbilled(row.key)),
       ...(extraFee.montant > 0
         ? [
             {

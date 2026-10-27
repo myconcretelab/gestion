@@ -1,3 +1,5 @@
+import { cleaningBillingPatch, getCleaningBillingMode } from "@contrats/shared";
+import CleaningBillingControl from "./CleaningBillingControl";
 import { formatEuro } from "../../utils/format";
 import {
   mergeReservationOptions,
@@ -96,6 +98,7 @@ const ReservationOptionsEditor = ({
             ...previous.menage,
             enabled,
             offert: enabled ? previous.menage?.offert ?? false : false,
+            inclus: enabled ? previous.menage?.inclus ?? false : false,
             declared: enabled ? previous.menage?.declared ?? false : false,
           },
         };
@@ -312,24 +315,12 @@ const ReservationOptionsEditor = ({
             <span className="field-hint">Forfait {formatEuro(gite?.options_menage_forfait ?? 0)}</span>
             <div className="reservations-option-switches">
               <div className="switch-group switch-group--table">
-                <span>Activer</span>
+                <span>Prévu</span>
                 <label className="switch switch--compact">
                   <input
                     type="checkbox"
                     checked={normalizedOptions.menage?.enabled ?? false}
                     onChange={(event) => toggleServiceOption("menage", event.target.checked)}
-                  />
-                  <span className="slider" />
-                </label>
-              </div>
-              <div className="switch-group switch-group--table">
-                <span>Offert</span>
-                <label className="switch switch--compact switch--pink">
-                  <input
-                    type="checkbox"
-                    checked={normalizedOptions.menage?.offert ?? false}
-                    disabled={!normalizedOptions.menage?.enabled}
-                    onChange={(event) => setOffert("menage", event.target.checked)}
                   />
                   <span className="slider" />
                 </label>
@@ -349,6 +340,10 @@ const ReservationOptionsEditor = ({
                 </div>
               ) : null}
             </div>
+            {normalizedOptions.menage?.enabled ? (
+              <CleaningBillingControl value={getCleaningBillingMode(normalizedOptions.menage)}
+                onChange={(mode) => commit((previous) => ({ ...previous, menage: { ...previous.menage, ...cleaningBillingPatch(mode) } }))} />
+            ) : null}
           </div>
           <div className="reservations-option-controls">
             <div className="reservations-option-fields">
@@ -360,7 +355,7 @@ const ReservationOptionsEditor = ({
               ) : null}
             </div>
             <div className="reservations-option-footer">
-              <span className="reservations-option-amount">{formatEuro(preview.byKey.menage)}</span>
+              <span className="reservations-option-amount">{normalizedOptions.menage?.enabled && normalizedOptions.menage.inclus ? "Inclus" : formatEuro(preview.byKey.menage)}</span>
             </div>
           </div>
         </div>

@@ -6,6 +6,7 @@ export type ReservationOptionBadge = {
   label: string;
   color: string;
   muted?: boolean;
+  detail?: string;
 };
 
 const OPTION_BADGE_DEFINITIONS = [
@@ -34,5 +35,6 @@ export const getReservationOptionBadges = (
   const options = parseOptions(value);
   return OPTION_BADGE_DEFINITIONS.filter(({ key }) => options[key]?.enabled).map((definition) => ({
     ...definition,
+    ...(definition.key === "menage" && options.menage?.inclus ? { detail: "Inclus dans le prix du séjour" } : {}),
   }));
 };

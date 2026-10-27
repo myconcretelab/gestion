@@ -1,3 +1,4 @@
+import CleaningBillingControl from "./shared/CleaningBillingControl";
 import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import type { TouristTaxStay } from "@contrats/shared";
@@ -855,9 +856,9 @@ const MobileReservationEditorPage = () => {
                   <div className="calendar-quick-create-sheet__options-card">
                     <label className="calendar-quick-create-sheet__toggle-row">
                       <div>
-                        <span className="calendar-quick-create-sheet__toggle-title">Option ménage</span>
+                        <span className="calendar-quick-create-sheet__toggle-title">Ménage fin de séjour</span>
                         <span className="calendar-quick-create-sheet__toggle-meta">
-                          {formatEuro(Number(selectedGite.options_menage_forfait ?? 0))}
+                          {quickReservationDraft.option_menage && quickReservationDraft.menage_facturation === "included" ? "Inclus" : quickReservationDraft.option_menage && quickReservationDraft.menage_facturation === "gift" ? "Offert" : formatEuro(Number(selectedGite.options_menage_forfait ?? 0))}
                         </span>
                       </div>
                       <span className="calendar-quick-create-sheet__switch-control">
@@ -870,6 +871,10 @@ const MobileReservationEditorPage = () => {
                         <span aria-hidden="true" />
                       </span>
                     </label>
+                    {quickReservationDraft.option_menage ? (
+                      <CleaningBillingControl value={quickReservationDraft.menage_facturation ?? "extra"}
+                        onChange={(mode) => handleQuickReservationFieldChange("menage_facturation", mode)} />
+                    ) : null}
 
                     <label className="calendar-quick-create-sheet__toggle-row">
                       <div>

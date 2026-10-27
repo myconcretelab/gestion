@@ -1,3 +1,4 @@
+import { cleaningBillingPatch, type CleaningBillingMode, cleaningBillingSuffix } from "@contrats/shared";
 import type { ContratOptions, Gite } from "./types";
 
 export type ReservationServiceOptionKey = "draps" | "linge_toilette" | "menage" | "depart_tardif" | "chiens";
@@ -44,6 +45,7 @@ export const toNonNegativeInt = (value: unknown, fallback = 0) => {
 export const buildQuickReservationOptions = (params: {
   baseOptions?: ContratOptions | null;
   menageEnabled: boolean;
+  menageBillingMode?: CleaningBillingMode;
   departTardifEnabled: boolean;
   drapsCount: number;
   serviettesCount: number;
@@ -69,6 +71,7 @@ export const buildQuickReservationOptions = (params: {
     menage: {
       ...baseOptions.menage,
       enabled: params.menageEnabled,
+      ...(params.menageBillingMode ? cleaningBillingPatch(params.menageBillingMode) : {}),
     },
     depart_tardif: {
       ...baseOptions.depart_tardif,
@@ -111,7 +114,7 @@ export const computeReservationOptionsPreview = (
       : round2(Number(params.gite?.options_linge_toilette_par_personne ?? 0) * lingeQty)
     : 0;
   const menage = options.menage.enabled
-    ? options.menage.offert
+    ? (options.menage.offert || options.menage.inclus)
       ? 0
       : round2(Number(params.gite?.options_menage_forfait ?? 0))
     : 0;
@@ -129,7 +132,7 @@ export const computeReservationOptionsPreview = (
   const labels: string[] = [];
   if (options.draps.enabled) labels.push(`Draps x${drapsQty}${options.draps.offert ? " offerts" : ""}`);
   if (options.linge_toilette.enabled) labels.push(`Serviettes x${lingeQty}${options.linge_toilette.offert ? " offertes" : ""}`);
-  if (options.menage.enabled) labels.push(`Ménage${options.menage.offert ? " offert" : ""}`);
+  if (options.menage.enabled) labels.push(`Ménage${cleaningBillingSuffix(options.menage)}`);
   if (options.depart_tardif.enabled) labels.push(`Départ tardif${options.depart_tardif.offert ? " offert" : ""}`);
   if (options.chiens.enabled) labels.push(`Chiens x${chiensQty}${options.chiens.offert ? " offerts" : ""}`);
 

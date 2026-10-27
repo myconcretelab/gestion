@@ -14844,6 +14844,47 @@ button.personal-expenses-status:disabled {
   margin-top: 4px;
 }
 
+.cleaning-billing {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  min-width: 0;
+  font-weight: 400;
+}
+
+.cleaning-billing__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.cleaning-billing__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cleaning-billing__choices button {
+  padding: 8px 10px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+  color: inherit;
+  font-size: 0.8rem;
+}
+
+.cleaning-billing__choices button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--primary-strong);
+}
+
+.calendar-quick-create-sheet__options-card > .cleaning-billing {
+  padding: 0 16px 16px;
+  margin-top: 0;
+}
+
 .reservations-option-controls {
   display: flex;
   align-items: center;

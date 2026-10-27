@@ -25,7 +25,7 @@ const ReservationOptionBadges = ({
 }: ReservationOptionBadgesProps) => {
   if (badges.length === 0) return null;
 
-  const labels = badges.map((badge) => `${badge.label}${badge.muted ? " (départ)" : ""}`).join(", ");
+  const labels = badges.map((badge) => `${badge.label}${badge.detail ? ` · ${badge.detail}` : ""}${badge.muted ? " (départ)" : ""}`).join(", ");
 
   return (
     <span
@@ -46,7 +46,7 @@ const ReservationOptionBadges = ({
             "--reservation-option-color": badge.color,
             ...(layout === "orbit" ? getOrbitPosition(index, badges.length) : {}),
           } as CSSProperties}
-          title={`${badge.label}${badge.muted ? " · départ" : ""}`}
+          title={`${badge.label}${badge.detail ? ` · ${badge.detail}` : ""}${badge.muted ? " · départ" : ""}`}
           aria-hidden="true"
         >
           {badge.letter}

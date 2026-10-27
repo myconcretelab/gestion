@@ -834,7 +834,9 @@ const buildOptionsBandRowsHtml = (params: {
       );
     }
   }
-  if (options.menage?.enabled) {
+  if (options.menage?.enabled && options.menage.inclus) {
+    rows.push('<tr class="band-option"><td>Ménage fin de séjour — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.menage?.enabled) {
     const tarif = toNumber(gite.options_menage_forfait);
     const base = round2(tarif);
     rows.push(
@@ -1255,7 +1257,9 @@ const buildInvoiceOptionsRowsHtml = (params: {
       billedAmount: totals.optionsDetail.linge,
     });
   }
-  if (options.menage?.enabled) {
+  if (options.menage?.enabled && options.menage.inclus) {
+    rows.push('<tr><td>Ménage fin de séjour — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.menage?.enabled) {
     const baseAmount = round2(toNumber(gite.options_menage_forfait));
     addOptionRows({
       label: "Ménage fin de séjour",

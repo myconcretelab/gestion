@@ -1,3 +1,4 @@
+import { getCleaningBillingMode, type CleaningBillingMode } from "@contrats/shared";
 import { getBookingSource, computeTouristTax, type TouristTaxStay } from "@contrats/shared";
 import {
   areReservationOptionsAllDeclared,
@@ -27,6 +28,7 @@ export type QuickReservationDraft = {
   source_paiement: string;
   commentaire: string;
   option_menage: boolean;
+  menage_facturation?: CleaningBillingMode;
   option_depart_tardif: boolean;
   option_draps: number;
   option_serviettes: number;
@@ -138,6 +140,7 @@ export const buildNewQuickReservationDraft = (params: {
   source_paiement: "Direct",
   commentaire: "",
   option_menage: false,
+  menage_facturation: "extra",
   option_depart_tardif: false,
   option_draps: 0,
   option_serviettes: 0,
@@ -161,6 +164,7 @@ export const buildQuickReservationDraftFromReservation = (params: {
     source_paiement: reservation.source_paiement?.trim() || DEFAULT_RESERVATION_SOURCE,
     commentaire: reservation.commentaire ?? "",
     option_menage: Boolean(reservation.options?.menage?.enabled),
+    menage_facturation: getCleaningBillingMode(reservation.options?.menage),
     option_depart_tardif: Boolean(reservation.options?.depart_tardif?.enabled),
     option_draps: reservation.options?.draps?.enabled
       ? clampQuickReservationOptionCount(
@@ -277,7 +281,7 @@ const formatQuickReservationOptionSmsSummary = (params: {
   const items: string[] = [];
 
   if (options.menage.enabled) {
-    items.push(formatQuickReservationOptionSmsItem("ménage", optionsPreview.byKey.menage, "offert"));
+    items.push(formatQuickReservationOptionSmsItem("ménage", optionsPreview.byKey.menage, options.menage.inclus ? "inclus dans le prix du séjour" : "offert"));
   }
 
   if (options.draps.enabled) {
@@ -336,6 +340,7 @@ export const computeQuickReservationDerivedState = (params: {
     ? buildQuickReservationOptions({
         baseOptions: editingReservation?.options,
         menageEnabled: draft.option_menage,
+        menageBillingMode: draft.menage_facturation,
         departTardifEnabled: draft.option_depart_tardif,
         drapsCount: draft.option_draps,
         serviettesCount: draft.option_serviettes,
@@ -482,6 +487,7 @@ export const buildQuickReservationSavePayload = (params: {
   const options = buildQuickReservationOptions({
     baseOptions,
     menageEnabled: draft.option_menage,
+    menageBillingMode: draft.menage_facturation,
     departTardifEnabled: draft.option_depart_tardif,
     drapsCount: draft.option_draps,
     serviettesCount: draft.option_serviettes,

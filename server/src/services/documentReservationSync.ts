@@ -1,3 +1,4 @@
+import { cleaningBillingSuffix } from "@contrats/shared";
 import prisma from "../db/prisma.js";
 import { type OptionsInput } from "./contractCalculator.js";
 import { sanitizeReservationAmount } from "./reservationPricing.js";
@@ -53,7 +54,7 @@ const toReservationOptionsSummary = (options: OptionsInput) => {
     declarationFlags.push(Boolean(options.linge_toilette.declared));
   }
   if (options.menage?.enabled) {
-    labels.push(`Ménage${options.menage.offert ? " offert" : ""}`);
+    labels.push(`Ménage${cleaningBillingSuffix(options.menage)}`);
     declarationFlags.push(Boolean(options.menage.declared));
   }
   if (options.depart_tardif?.enabled) {

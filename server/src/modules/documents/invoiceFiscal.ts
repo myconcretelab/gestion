@@ -161,16 +161,17 @@ export const proposeInvoiceFiscal = (
             ? "depart_tardif"
             : key;
       const offered = options[optionKey]?.enabled && options[optionKey]?.offert;
+      const included = optionKey === "menage" && options.menage?.enabled && options.menage.inclus;
       const quantity = options[optionKey]?.enabled
         ? Math.max(1, quantities[key])
         : 1;
       add(
-        `${labels[key]}${offered ? " · offert" : ""}`,
+        `${labels[key]}${included ? " · inclus dans le prix du séjour" : offered ? " · offert" : ""}`,
         Math.round((totals.optionsDetail[key] / quantity) * 100) / 100,
         quantity,
         undefined,
         "C62",
-        Boolean(offered),
+        Boolean(offered || included),
       );
     }
   }

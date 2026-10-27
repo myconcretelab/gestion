@@ -1,3 +1,4 @@
+import { cleaningBillingSuffix } from "@contrats/shared";
 import crypto from "node:crypto";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { fromJsonString, encodeJsonField } from "../../utils/jsonFields.js";
@@ -11,7 +12,7 @@ const buildOptionalFeesLabel = (options: OptionsInput) => {
   const labels: string[] = [];
   if (options.draps?.enabled) labels.push("Draps");
   if (options.linge_toilette?.enabled) labels.push("Linge");
-  if (options.menage?.enabled) labels.push("Ménage");
+  if (options.menage?.enabled) labels.push(`Ménage${cleaningBillingSuffix(options.menage)}`);
   if (options.depart_tardif?.enabled) labels.push("Départ tardif");
   if (options.chiens?.enabled) labels.push("Chiens");
   return labels.join(" · ") || null;

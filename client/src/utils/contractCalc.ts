@@ -72,7 +72,7 @@ export const computeTotals = (params: {
       ? 0
       : round2(lingeTarif * (params.options.linge_toilette.nb_personnes ?? 0))
     : 0;
-  const menage = params.options.menage?.enabled ? (params.options.menage?.offert ? 0 : round2(menageTarif)) : 0;
+  const menage = params.options.menage?.enabled ? ((params.options.menage?.offert || params.options.menage?.inclus) ? 0 : round2(menageTarif)) : 0;
   const departTardif = params.options.depart_tardif?.enabled
     ? params.options.depart_tardif?.offert
       ? 0

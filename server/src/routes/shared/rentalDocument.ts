@@ -23,7 +23,8 @@ export const optionsSchema = z.object({
       declared: z.boolean().optional(),
     })
     .optional(),
-  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional(), declared: z.boolean().optional() }).optional(),
+  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional(), inclus: z.boolean().optional(), declared: z.boolean().optional() })
+    .refine((option) => !(option.offert && option.inclus), { message: "Le ménage ne peut pas être à la fois inclus et offert." }).optional(),
   depart_tardif: z
     .object({
       enabled: z.boolean(),

@@ -1,3 +1,5 @@
+import { cleaningBillingPatch, getCleaningBillingMode } from "@contrats/shared";
+import CleaningBillingControl from "./shared/CleaningBillingControl";
 import { createTouristTaxStay } from "@contrats/shared";
 import { reservationAmountToCollect } from "@contrats/shared";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
@@ -1067,7 +1069,7 @@ const FactureFormPage = () => {
             </div>
             <div className="option-actions">
               <div className="switch-group">
-                <span>Activer</span>
+                <span>Prévu</span>
                 <label className="switch">
                   <input
                     type="checkbox"
@@ -1075,6 +1077,7 @@ const FactureFormPage = () => {
                     onChange={(e) =>
                       updateOption("menage", {
                         enabled: e.target.checked,
+                        inclus: e.target.checked ? options.menage?.inclus ?? false : false,
                         offert: e.target.checked
                           ? (options.menage?.offert ?? false)
                           : false,
@@ -1084,22 +1087,12 @@ const FactureFormPage = () => {
                   <span className="slider" />
                 </label>
               </div>
-              <div className="switch-group">
-                <span>Offert</span>
-                <label className="switch switch--pink">
-                  <input
-                    type="checkbox"
-                    checked={options.menage?.offert}
-                    disabled={!options.menage?.enabled}
-                    onChange={(e) =>
-                      updateOption("menage", { offert: e.target.checked })
-                    }
-                  />
-                  <span className="slider" />
-                </label>
-              </div>
             </div>
           </div>
+          {options.menage?.enabled ? (
+            <CleaningBillingControl value={getCleaningBillingMode(options.menage)}
+              onChange={(mode) => updateOption("menage", cleaningBillingPatch(mode))} />
+          ) : null}
         </div>
 
         <div className="option-card">
