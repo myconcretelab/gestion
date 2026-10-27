@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { ReservationOptionBadge } from "../../utils/reservationOptionBadges";
 import ReservationContractIcon from "./ReservationContractIcon";
 import ReservationOptionBadges from "./ReservationOptionBadges";
@@ -30,6 +30,8 @@ type MobileReservationActionsBarProps = {
   onSelectDeparture?: () => void;
   arrivalLabel?: string;
   departureLabel?: string;
+  arrivalStyle?: CSSProperties;
+  departureStyle?: CSSProperties;
   optionBadges?: ReservationOptionBadge[];
   arrivalOptionBadges?: ReservationOptionBadge[];
   departureOptionBadges?: ReservationOptionBadge[];
@@ -169,6 +171,8 @@ const MobileReservationActionsBar = ({
   onSelectDeparture,
   arrivalLabel = "Arrivée",
   departureLabel = "Départ",
+  arrivalStyle,
+  departureStyle,
   optionBadges = [],
   arrivalOptionBadges = [],
   departureOptionBadges = [],
@@ -294,11 +298,11 @@ const MobileReservationActionsBar = ({
 
         {mode === "rotation-choice" ? (
           <div className="mobile-reservation-actions__choices">
-            <button type="button" className="mobile-reservation-actions__choice" onClick={onSelectDeparture}>
+            <button type="button" className="mobile-reservation-actions__choice" style={departureStyle} onClick={onSelectDeparture}>
               <span>{departureLabel}</span>
               <ReservationOptionBadges badges={departureOptionBadges} />
             </button>
-            <button type="button" className="mobile-reservation-actions__choice" onClick={onSelectArrival}>
+            <button type="button" className="mobile-reservation-actions__choice" style={arrivalStyle} onClick={onSelectArrival}>
               <span>{arrivalLabel}</span>
               <ReservationOptionBadges badges={arrivalOptionBadges} />
             </button>

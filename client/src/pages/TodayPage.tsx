@@ -16,6 +16,7 @@ import {
   DEFAULT_PAYMENT_SOURCE_COLORS,
   buildPaymentColorMap,
   getPaymentColorFromMap,
+  getPaymentTextColorFromMap,
 } from "../utils/paymentColors";
 import { buildSmsHref, buildTelephoneHref } from "../utils/sms";
 import { getReservationOptionBadges, type ReservationOptionBadge } from "../utils/reservationOptionBadges";
@@ -2525,6 +2526,14 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
           }}
           arrivalLabel={`Arrivée · ${getReservationGuestName(mobileActionEvent.arrivalReservation)}`}
           departureLabel={`Départ · ${getReservationGuestName(mobileActionEvent.departureReservation)}`}
+          arrivalStyle={{
+            backgroundColor: getPaymentColorFromMap(getBookingSource(mobileActionEvent.arrivalReservation ?? {}), paymentColorMap),
+            color: getPaymentTextColorFromMap(getBookingSource(mobileActionEvent.arrivalReservation ?? {}), paymentColorMap),
+          }}
+          departureStyle={{
+            backgroundColor: getPaymentColorFromMap(getBookingSource(mobileActionEvent.departureReservation ?? {}), paymentColorMap),
+            color: getPaymentTextColorFromMap(getBookingSource(mobileActionEvent.departureReservation ?? {}), paymentColorMap),
+          }}
           arrivalOptionBadges={getReservationOptionBadges(mobileActionEvent.arrivalReservation?.options)}
           departureOptionBadges={getReservationOptionBadges(mobileActionEvent.departureReservation?.options)}
         />
