@@ -21,6 +21,7 @@ const BookingRequestDetailPage = lazy(() => import("./pages/BookingRequestDetail
 const MobileReservationEditorPage = lazy(() => import("./pages/MobileReservationEditorPage"));
 const CalendrierPage = lazy(() => import("./pages/CalendrierPage"));
 const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
+const ReportsPrototypePage = lazy(() => import("./features/finance/reports/ReportsPrototypePage"));
 const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const ProfessionalExpensesPage = lazy(() => import("./pages/ProfessionalExpensesPage"));
 const PurchaseInvoicesPage = lazy(() => import("./pages/PurchaseInvoicesPage"));
@@ -461,6 +462,15 @@ const App = () => {
       pageId: "statistics" as const,
       label: "Statistiques",
       isActive: isStatsSection,
+      desktopOverflow: true,
+      requiresAmounts: true,
+      module: "finances" as const,
+    },
+    {
+      to: "/rapports",
+      pageId: "statistics" as const,
+      label: "Rapports · Aperçu",
+      isActive: location.pathname === "/rapports" || location.pathname.startsWith("/rapports/"),
       desktopOverflow: true,
       requiresAmounts: true,
       module: "finances" as const,
@@ -1081,6 +1091,7 @@ const App = () => {
             <Route path="/taches" element={<PageAccess allowed={canAccessPage("planning_relay")}><TasksPage /></PageAccess>} />
             <Route path="/menages/partages" element={<PageAccess allowed={canAccessPage("planning_relay") && (!currentUser || currentUser.permissions.isOwner || (currentUser.status !== "worker" && currentUser.permissions.canWrite))}><OperationsPrintPage /></PageAccess>} />
             <Route path="/statistiques" element={<PageAccess allowed={canAccessPage("statistics")}><AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess></PageAccess>} />
+            <Route path="/rapports/*" element={<PageAccess allowed={canAccessPage("statistics") && moduleEnabled("finances")}><AmountsAccess allowed={canViewAmounts}><ReportsPrototypePage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-personnels" element={<PageAccess allowed={canAccessPage("personal_expenses")}><AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures-achat" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><PurchaseInvoicesPage /></AmountsAccess></PageAccess>} />
