@@ -1,6 +1,8 @@
 import {
   createPrototypeState,
   REPORT_CATEGORIES,
+  REPORT_PAYMENT_METHODS,
+  REPORT_OPERATORS,
   type PrototypeState,
   type ReportDefinition,
 } from "./reportPrototype";
@@ -25,7 +27,12 @@ function isReport(value: unknown): value is ReportDefinition {
     isStringArray(value.categories) &&
     value.categories.every((id) =>
       REPORT_CATEGORIES.some((category) => category.id === id),
-    )
+    ) &&
+    (value.accommodationPaymentMethods === undefined ||
+      (isStringArray(value.accommodationPaymentMethods) &&
+        value.accommodationPaymentMethods.every((id) =>
+          REPORT_PAYMENT_METHODS.some((method) => method.id === id),
+        )))
   );
 }
 
@@ -35,13 +42,42 @@ export function parsePrototypeState(raw: string | null): PrototypeState {
     const data: unknown = JSON.parse(raw);
     if (
       !isObject(data) ||
-      data.version !== 1 ||
+      ![1, 2].includes(Number(data.version)) ||
       !Array.isArray(data.reports) ||
       !data.reports.every(isReport) ||
       !isObject(data.drafts) ||
       !Object.values(data.drafts).every(isReport) ||
       !isObject(data.overrides) ||
       !isObject(data.progress)
+    )
+      return createPrototypeState();
+    if (
+      data.propertyOperators !== undefined &&
+      (!isObject(data.propertyOperators) ||
+        !Object.values(data.propertyOperators).every(
+          (id) =>
+            id === null ||
+            REPORT_OPERATORS.some((operator) => operator.id === id),
+        ))
+    )
+      return createPrototypeState();
+    if (
+      data.operationEdits !== undefined &&
+      (!isObject(data.operationEdits) ||
+        !Object.values(data.operationEdits).every(
+          (edit) =>
+            isObject(edit) &&
+            (edit.paymentDate === undefined ||
+              (typeof edit.paymentDate === "string" &&
+                /^\d{4}-\d{2}-\d{2}$/.test(edit.paymentDate) &&
+                new Date(`${edit.paymentDate}T12:00:00Z`)
+                  .toISOString()
+                  .slice(0, 10) === edit.paymentDate)) &&
+            (edit.paymentMethod === undefined ||
+              REPORT_PAYMENT_METHODS.some(
+                (method) => method.id === edit.paymentMethod,
+              )),
+        ))
     )
       return createPrototypeState();
     for (const overrides of Object.values(data.overrides)) {
@@ -109,13 +145,84 @@ export function parsePrototypeState(raw: string | null): PrototypeState {
               row.effectiveDate === null ||
               typeof row.effectiveDate === "string"
             ) ||
-            !(row.paymentDate === null || typeof row.paymentDate === "string")
+            !(
+              row.paymentDate === null || typeof row.paymentDate === "string"
+            ) ||
+            (row.paymentMethod !== undefined &&
+              !REPORT_PAYMENT_METHODS.some(
+                (method) => method.id === row.paymentMethod,
+              )) ||
+            (row.issues !== undefined &&
+              (!Array.isArray(row.issues) ||
+                !row.issues.every(
+                  (issue) =>
+                    isObject(issue) &&
+                    ["operator", "payment"].includes(String(issue.kind)) &&
+                    typeof issue.message === "string" &&
+                    typeof issue.actionLabel === "string",
+                )))
           )
             return createPrototypeState();
         }
       }
     }
-    return data as PrototypeState;
+    const defaults = createPrototypeState();
+    const descriptions: Record<string, string> = {
+      "Préparer une base de recettes par exploitant.":
+        "Recettes de l’exploitant.",
+      "Rassembler les nuitées des hébergements concernés.":
+        "Nuitées par logement.",
+      "Retrouver les recettes des logements d’un propriétaire.":
+        "Recettes des logements du propriétaire.",
+      "Composer votre propre suivi à partir des recettes.":
+        "Recettes des catégories sélectionnées.",
+    };
+    const normalize = (report: ReportDefinition): ReportDefinition => ({
+      ...report,
+      description: descriptions[report.description] ?? report.description,
+      accommodationPaymentMethods:
+        report.accommodationPaymentMethods ??
+        REPORT_PAYMENT_METHODS.map((method) => method.id),
+    });
+    const restored = data as unknown as PrototypeState;
+    return {
+      ...restored,
+      version: 2,
+      propertyOperators: {
+        ...defaults.propertyOperators,
+        ...restored.propertyOperators,
+      },
+      operationEdits: restored.operationEdits ?? {},
+      reports: restored.reports.map(normalize),
+      drafts: Object.fromEntries(
+        Object.entries(restored.drafts).map(([key, report]) => [
+          key,
+          normalize(report),
+        ]),
+      ),
+      progress: Object.fromEntries(
+        Object.entries(restored.progress).map(([key, progress]) => [
+          key,
+          progress.snapshot
+            ? {
+                ...progress,
+                snapshot: {
+                  ...progress.snapshot,
+                  definition: normalize(progress.snapshot.definition),
+                  result: {
+                    ...progress.snapshot.result,
+                    rows: progress.snapshot.result.rows.map((row) => ({
+                      ...row,
+                      paymentMethod: row.paymentMethod ?? "unknown",
+                      issues: row.issues ?? [],
+                    })),
+                  },
+                },
+              }
+            : progress,
+        ]),
+      ),
+    };
   } catch {
     return createPrototypeState();
   }

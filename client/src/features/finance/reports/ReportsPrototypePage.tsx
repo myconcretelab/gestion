@@ -19,6 +19,7 @@ import { ReportDialog, ReportIcon } from "./ReportUi";
 import ReportsOverview from "./ReportsOverview";
 import ReportDetail from "./ReportDetail";
 import ReportEditor from "./ReportEditor";
+import ReportSourceEditor from "./ReportSourceEditor";
 import "./reports.css";
 
 export type ReportWorkspace = {
@@ -51,6 +52,11 @@ export default function ReportsPrototypePage() {
     : "2026-10";
   const notify = useCallback((message: string) => setNotice(message), []);
   useEffect(() => {
+    if (Number(state.version) !== 2) {
+      setState(parsePrototypeState(JSON.stringify(state)));
+    }
+  }, [state]);
+  useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [location.pathname]);
   useEffect(() => {
@@ -66,6 +72,9 @@ export default function ReportsPrototypePage() {
     const timeout = window.setTimeout(() => setNotice(""), 4500);
     return () => window.clearTimeout(timeout);
   }, [notice]);
+  if (Number(state.version) !== 2) {
+    return <p role="status">Mise à jour des données de démonstration…</p>;
+  }
   const workspace: ReportWorkspace = {
     state,
     setState,
@@ -84,7 +93,9 @@ export default function ReportsPrototypePage() {
       <aside className="rp-demo-banner" aria-label="Version de démonstration">
         <div>
           <span className="rp-demo-label">Aperçu interactif</span>
-          <span>Des exemples fictifs pour explorer vos futurs rapports.</span>
+          <span>
+            Données fictives · Modifications conservées dans cet onglet.
+          </span>
         </div>
         <button
           type="button"
@@ -103,6 +114,10 @@ export default function ReportsPrototypePage() {
       )}
       <Routes>
         <Route index element={<ReportsOverview workspace={workspace} />} />
+        <Route
+          path="corriger/:issueType/:sourceId"
+          element={<ReportSourceEditor workspace={workspace} />}
+        />
         <Route
           path="nouveau"
           element={<ReportEditor workspace={workspace} />}

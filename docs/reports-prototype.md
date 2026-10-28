@@ -15,6 +15,16 @@ le droit d’écriture des statistiques.
 - Préparation, confirmation simulée et copie figée consultable dans l’historique.
 - Export CSV des opérations du calcul courant ou d’une copie confirmée.
 - Parcours adaptés aux petits écrans et aux thèmes de l’application.
+- Alertes avec accès direct à un formulaire de rattachement du gîte ou de saisie
+  de l’encaissement. Les corrections de ces données recalculent les rapports
+  concernés, sans modifier les copies confirmées.
+- Filtre des modes de paiement sous la catégorie Hébergement et ventilation de
+  ses recettes incluses par virement, chèque, espèces ou carte. Les autres
+  catégories restent indépendantes de ce filtre. Le canal de réservation est
+  affiché séparément du mode de paiement.
+- Explication du choix de date : un paiement reçu le 25 octobre pour une arrivée
+  le 2 novembre apparaît en octobre avec la date du paiement, et en novembre
+  avec la date d’arrivée.
 
 Toutes les données sont fictives. Aucun appel financier ni envoi à un organisme
 n’est réalisé. Les règles des exemples n’ont pas de valeur réglementaire. Le suivi
@@ -24,6 +34,9 @@ Les essais sont conservés dans le `sessionStorage` de l’onglet, pas dans la b
 Une fermeture de l’onglet peut les perdre. Si le stockage est indisponible, un
 message le précise et le parcours reste utilisable en mémoire. La réinitialisation
 ne concerne que ces exemples. Les fonctions financières existantes sont inchangées.
+Les formulaires ouverts depuis les alertes ne modifient que ces exemples. Les
+essais de la première version sont repris automatiquement, y compris les
+brouillons et les montants des copies confirmées.
 
 ## Vérification
 

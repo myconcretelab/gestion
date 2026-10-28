@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPrototypePage";
 import {
   cadenceLabel,
-  evaluateReport,
+  evaluatePrototypeReport,
   formatReportValue,
   getReportPeriod,
   reportPeriodKey,
@@ -25,7 +25,7 @@ export default function ReportsOverview({
   const [search, setSearch] = useState("");
   const summaries = state.reports.map((report) => {
     const key = reportPeriodKey(report, month);
-    const result = evaluateReport(report, month, state.overrides[key]);
+    const result = evaluatePrototypeReport(state, report, month);
     const progress = state.progress[key];
     return { report, result, progress, status: reportStatus(progress, result) };
   });
@@ -53,13 +53,7 @@ export default function ReportsOverview({
     <>
       <header className="rp-page-header">
         <div>
-          <p className="rp-eyebrow">Votre activité, en clair</p>
-          <h1>
-            Rapports et déclarations<span className="rp-title-dot">.</span>
-          </h1>
-          <p className="rp-page-description">
-            Les bons chiffres, pour chaque démarche et chaque interlocuteur.
-          </p>
+          <h1>Rapports et déclarations</h1>
         </div>
         {canEdit && (
           <Link to={href("/nouveau")} className="rp-button">
@@ -70,7 +64,7 @@ export default function ReportsOverview({
       </header>
       <div className="rp-overview-top">
         <div className="rp-period-card">
-          <span className="rp-overline">Votre période de travail</span>
+          <span className="rp-overline">Période</span>
           <label className="rp-period-picker">
             <ReportIcon name="clock" />
             <span className="rp-sr-only">Période de travail</span>
@@ -91,8 +85,7 @@ export default function ReportsOverview({
             {String(state.reports.length).padStart(2, "0")}
           </span>
           <div>
-            <strong>rapports à portée de main</strong>
-            <span>Un périmètre clair pour chaque besoin.</span>
+            <strong>rapports</strong>
           </div>
         </div>
         <div className="rp-stat-card">
@@ -104,7 +97,7 @@ export default function ReportsOverview({
             <span>
               {done
                 ? `${done} rapport${done > 1 ? "s" : ""} prêt${done > 1 ? "s" : ""} ou confirmé${done > 1 ? "s" : ""}.`
-                : "Quelques vérifications avant de finaliser."}
+                : "Aucun rapport finalisé sur cette période."}
             </span>
           </div>
         </div>
@@ -112,8 +105,7 @@ export default function ReportsOverview({
       <section className="rp-panel" aria-labelledby="rp-reports-heading">
         <div className="rp-panel-heading">
           <div>
-            <h2 id="rp-reports-heading">Vos rapports</h2>
-            <p>Choisissez un rapport pour préparer votre période.</p>
+            <h2 id="rp-reports-heading">Rapports</h2>
           </div>
           <label className="rp-search">
             <ReportIcon name="search" />
@@ -151,7 +143,7 @@ export default function ReportsOverview({
             <span>Avancement</span>
             <span />
           </div>
-          {sorted.map(({ report, result, status, progress }) => (
+          {sorted.map(({ report, result, status }) => (
             <article key={report.id} className="rp-report-row">
               <div className="rp-report-row__identity">
                 <ReportKindIcon kind={report.kind} />
@@ -230,35 +222,6 @@ export default function ReportsOverview({
             </ReportEmpty>
           )}
         </div>
-      </section>
-      <section className="rp-how-it-works" aria-labelledby="rp-how-heading">
-        <div>
-          <span className="rp-overline">Un fil conducteur simple</span>
-          <h2 id="rp-how-heading">De vos opérations à votre rapport.</h2>
-        </div>
-        <ol>
-          <li>
-            <span>01</span>
-            <div>
-              <strong>Rassembler</strong>
-              <p>Les opérations suivent les règles de votre rapport.</p>
-            </div>
-          </li>
-          <li>
-            <span>02</span>
-            <div>
-              <strong>Vérifier</strong>
-              <p>Chaque montant explique d’où il vient.</p>
-            </div>
-          </li>
-          <li>
-            <span>03</span>
-            <div>
-              <strong>Finaliser</strong>
-              <p>Vous gardez une copie de ce que vous confirmez.</p>
-            </div>
-          </li>
-        </ol>
       </section>
     </>
   );

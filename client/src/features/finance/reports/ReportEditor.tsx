@@ -1,18 +1,19 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPrototypePage";
+import AccommodationBreakdown from "./AccommodationBreakdown";
 import {
   categoryLabel,
   cadenceLabel,
   createReport,
-  evaluateReport,
+  evaluatePrototypeReport,
   formatReportValue,
   getReportPeriod,
   propertyName,
   REPORT_CATEGORIES,
+  REPORT_PAYMENT_METHODS,
   REPORT_PROPERTIES,
   REPORT_TEMPLATES,
-  reportPeriodKey,
   type ReportCadence,
   type ReportDefinition,
   type ReportKind,
@@ -93,14 +94,8 @@ export default function ReportEditor({
         </Link>
         <header className="rp-page-header">
           <div>
-            <p className="rp-eyebrow">Un rapport à votre image</p>
-            <h1>
-              Partez du bon modèle<span className="rp-title-dot">.</span>
-            </h1>
-            <p className="rp-page-description">
-              Choisissez un point de départ. Vous ajusterez ensuite le périmètre
-              et les règles.
-            </p>
+            <h1>Nouveau rapport</h1>
+            <p className="rp-page-description">Sélectionnez un modèle.</p>
           </div>
         </header>
         {templates}
@@ -122,14 +117,8 @@ export default function ReportEditor({
       },
     }));
   };
-  const result = evaluateReport(
-    draft,
-    month,
-    state.overrides[reportPeriodKey(draft, month)],
-  );
-  const baseline = base
-    ? evaluateReport(base, month, state.overrides[reportPeriodKey(base, month)])
-    : null;
+  const result = evaluatePrototypeReport(state, draft, month);
+  const baseline = base ? evaluatePrototypeReport(state, base, month) : null;
   const previousIds = new Set(
     baseline?.rows
       .filter((row) => row.status === "included")
@@ -200,7 +189,7 @@ export default function ReportEditor({
     notify(
       base
         ? "Les nouvelles règles sont appliquées. Les copies confirmées sont conservées."
-        : "Votre rapport de démonstration est créé.",
+        : "Rapport créé.",
     );
     navigate(href(`/${draft.id}`));
   };
@@ -212,13 +201,9 @@ export default function ReportEditor({
       </Link>
       <header className="rp-page-header rp-page-header--editor">
         <div>
-          <p className="rp-eyebrow">Votre rapport, vos repères</p>
-          <h1>
-            {base ? "Ajuster les règles" : "Composer votre rapport"}
-            <span className="rp-title-dot">.</span>
-          </h1>
+          <h1>{base ? "Modifier les règles" : "Nouveau rapport"}</h1>
           <p className="rp-page-description">
-            Voyez ce qui change avant d’appliquer vos choix.
+            Le brouillon doit être appliqué pour modifier le rapport.
           </p>
         </div>
         <span className="rp-save-indicator">
@@ -256,8 +241,8 @@ export default function ReportEditor({
             <div className="rp-section-title">
               <span>01</span>
               <div>
-                <h2>Les essentiels</h2>
-                <p>Un nom et un destinataire faciles à retrouver.</p>
+                <h2>Identification</h2>
+                <p>Nom, destinataire et description du rapport.</p>
               </div>
             </div>
             <label className="rp-field">
@@ -307,7 +292,7 @@ export default function ReportEditor({
             <div className="rp-section-title">
               <span>02</span>
               <div>
-                <h2>Le périmètre</h2>
+                <h2>Périmètre</h2>
                 <p>Les opérations qui alimentent ce rapport.</p>
               </div>
             </div>
@@ -390,13 +375,64 @@ export default function ReportEditor({
                   : "Une même recette peut alimenter plusieurs rapports."}
               </p>
             </fieldset>
+            {draft.kind !== "tourist" &&
+              draft.categories.includes("accommodation") && (
+                <fieldset className="rp-choice-fieldset rp-accommodation-methods">
+                  <legend>Hébergement : modes de paiement inclus</legend>
+                  <p className="rp-field-help">
+                    Ce filtre concerne uniquement les recettes d’hébergement.
+                    Les autres catégories gardent tous leurs modes de paiement.
+                  </p>
+                  <div className="rp-category-choices">
+                    {REPORT_PAYMENT_METHODS.map((method) => (
+                      <label
+                        key={method.id}
+                        className={
+                          draft.accommodationPaymentMethods.includes(method.id)
+                            ? "is-selected"
+                            : ""
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={draft.accommodationPaymentMethods.includes(
+                            method.id,
+                          )}
+                          onChange={(event) =>
+                            update({
+                              accommodationPaymentMethods: event.target.checked
+                                ? [
+                                    ...draft.accommodationPaymentMethods,
+                                    method.id,
+                                  ]
+                                : draft.accommodationPaymentMethods.filter(
+                                    (id) => id !== method.id,
+                                  ),
+                            })
+                          }
+                        />
+                        {method.label}
+                      </label>
+                    ))}
+                  </div>
+                  {!draft.accommodationPaymentMethods.length && (
+                    <p className="rp-field-help">
+                      Aucun mode sélectionné : toutes les recettes d’hébergement
+                      seront hors périmètre.
+                    </p>
+                  )}
+                </fieldset>
+              )}
           </section>
           <section className="rp-panel rp-editor-section">
             <div className="rp-section-title">
               <span>03</span>
               <div>
-                <h2>Le rythme et les dates</h2>
-                <p>La période et le point de départ du calcul.</p>
+                <h2>Période et date de référence</h2>
+                <p>
+                  Choisissez la date qui détermine le mois ou le trimestre du
+                  rapport.
+                </p>
               </div>
             </div>
             <label className="rp-field">
@@ -413,18 +449,18 @@ export default function ReportEditor({
               </select>
             </label>
             <fieldset className="rp-choice-fieldset">
-              <legend>Date de rattachement</legend>
+              <legend>Quelle date détermine la période ?</legend>
               <div className="rp-radio-choices">
                 {[
                   {
                     id: "payment" as const,
-                    label: "Date d’encaissement",
-                    text: "Le versement rejoint la période où il a été reçu.",
+                    label: "Date du paiement reçu",
+                    text: "L’opération apparaît dans le mois du paiement.",
                   },
                   {
                     id: "stay" as const,
-                    label: "Début du séjour",
-                    text: "Dans cet aperçu, le séjour rejoint son mois d’arrivée.",
+                    label: "Date d’arrivée",
+                    text: "L’opération apparaît dans le mois de l’arrivée.",
                   },
                 ]
                   .filter(
@@ -451,20 +487,45 @@ export default function ReportEditor({
                     </label>
                   ))}
               </div>
+              <div className="rp-date-example">
+                <strong>
+                  Exemple : paiement le 25 octobre, arrivée le 2 novembre
+                </strong>
+                <dl>
+                  <div
+                    className={
+                      draft.dateBasis === "payment" ? "is-selected" : ""
+                    }
+                  >
+                    <dt>Date du paiement reçu</dt>
+                    <dd>Rapport d’octobre</dd>
+                  </div>
+                  <div
+                    className={draft.dateBasis === "stay" ? "is-selected" : ""}
+                  >
+                    <dt>Date d’arrivée</dt>
+                    <dd>Rapport de novembre</dd>
+                  </div>
+                </dl>
+                <p>
+                  Dans le prototype, le choix « Date d’arrivée » rattache le
+                  séjour entier au mois de l’arrivée.
+                </p>
+              </div>
             </fieldset>
           </section>
         </div>
         <aside className="rp-editor-preview" aria-label="Aperçu du rapport">
           <div className="rp-preview-card">
             <div className="rp-preview-card__top">
-              <span className="rp-overline">Votre aperçu</span>
+              <span className="rp-overline">Aperçu</span>
               <ReportBadge tone="primary">En direct</ReportBadge>
             </div>
             <ReportKindIcon kind={draft.kind} />
-            <h2>{draft.name || "Votre rapport"}</h2>
+            <h2>{draft.name || "Rapport"}</h2>
             <p className="rp-muted">
               {getReportPeriod(month, draft.cadence).label} ·{" "}
-              {draft.recipient || "Votre destinataire"}
+              {draft.recipient || "Destinataire"}
             </p>
             <div
               className="rp-preview-value"
@@ -521,11 +582,10 @@ export default function ReportEditor({
                 </dd>
               </div>
             </dl>
+            <AccommodationBreakdown report={draft} result={result} />
             {changed && (
               <div className="rp-impact" aria-live="polite">
-                <strong>
-                  {base ? "Effet de vos changements" : "Votre sélection"}
-                </strong>
+                <strong>{base ? "Effet du brouillon" : "Sélection"}</strong>
                 <span>
                   {additions} opération{additions > 1 ? "s" : ""} ajoutée
                   {additions > 1 ? "s" : ""}
@@ -577,15 +637,13 @@ export default function ReportEditor({
             </p>
           )}
           <span className="rp-muted">
-            {base
-              ? "Votre rapport reste inchangé tant que vous n’appliquez pas le brouillon."
-              : "Vous pourrez ajuster ce rapport à tout moment."}
+            {base ? "Brouillon non appliqué." : "Brouillon de création."}
           </span>
           <Link
             className="rp-button rp-button--secondary"
             to={href(base ? `/${base.id}` : "")}
           >
-            Revenir plus tard
+            Fermer le brouillon
           </Link>
           <button type="submit" className="rp-button">
             <ReportIcon name="check" />

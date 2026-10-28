@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPrototypePage";
+import AccommodationBreakdown from "./AccommodationBreakdown";
+import { sourceCorrectionHref } from "./ReportSourceEditor";
 import {
   categoryLabel,
-  evaluateReport,
+  evaluatePrototypeReport,
+  paymentMethodLabel,
   formatReportValue,
   getReportPeriod,
   propertyName,
@@ -67,7 +70,7 @@ export default function ReportDetail({
       </div>
     );
   const key = reportPeriodKey(report, month);
-  const result = evaluateReport(report, month, state.overrides[key]);
+  const result = evaluatePrototypeReport(state, report, month);
   const progress = state.progress[key];
   const snapshots = Object.entries(state.progress)
     .filter(
@@ -97,6 +100,19 @@ export default function ReportDetail({
         .toLocaleLowerCase("fr")
         .includes(search.toLocaleLowerCase("fr")),
   );
+  const issueLinks = result.rows
+    .filter((row) => row.status === "review")
+    .flatMap((row) =>
+      row.issues.map((issue) => ({
+        row,
+        issue,
+        id: `${issue.kind}:${issue.kind === "operator" ? row.propertyId : row.id}`,
+      })),
+    )
+    .filter(
+      (item, index, items) =>
+        items.findIndex((other) => other.id === item.id) === index,
+    );
   const exportCsv = () => {
     const url = URL.createObjectURL(
       new Blob([reportCsv(displayedReport, displayedResult)], {
@@ -110,7 +126,7 @@ export default function ReportDetail({
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify("L’export des données de démonstration est prêt.");
+    notify("Export CSV généré.");
   };
   const correct = (row: EvaluatedOperation, override?: OperationOverride) => {
     if (!canEdit || snapshot) return;
@@ -168,10 +184,7 @@ export default function ReportDetail({
             {getReportPeriod(displayedMonth, displayedReport.cadence).label} ·{" "}
             {displayedReport.recipient}
           </p>
-          <h1>
-            {displayedReport.name}
-            <span className="rp-title-dot">.</span>
-          </h1>
+          <h1>{displayedReport.name}</h1>
           <p className="rp-page-description">{displayedReport.description}</p>
         </div>
         <div className="rp-header-actions">
@@ -269,10 +282,46 @@ export default function ReportDetail({
                 report,
                 result.total - progress!.snapshot!.result.total,
               )}
-              . La copie confirmée reste disponible.
+              .{" "}
+              <button
+                type="button"
+                className="rp-text-button"
+                onClick={() => {
+                  setSnapshotKey(key);
+                  setFilter("included");
+                }}
+              >
+                Consulter la copie confirmée
+              </button>
             </p>
           </div>
         </div>
+      )}
+      {!snapshot && issueLinks.length > 0 && (
+        <section className="rp-problems" aria-label="Problèmes à corriger">
+          <h2>Problèmes à corriger</h2>
+          {issueLinks.map(({ row, issue, id }) => (
+            <div className="rp-notice" key={id}>
+              <ReportIcon name="info" />
+              <div>
+                <strong>{issue.message}</strong>
+                {issue.kind === "payment" && (
+                  <p>
+                    {row.guest} · {row.reservation} ·{" "}
+                    {categoryLabel(row.category)}
+                  </p>
+                )}
+              </div>
+              <Link
+                className="rp-text-button"
+                to={sourceCorrectionHref(workspace, report.id, row, issue)}
+              >
+                {canEdit ? issue.actionLabel : "Consulter"}
+                <ReportIcon name="arrow" />
+              </Link>
+            </div>
+          ))}
+        </section>
       )}
       <section className="rp-report-summary" aria-label="Synthèse du rapport">
         <div className="rp-total-card">
@@ -299,21 +348,25 @@ export default function ReportDetail({
               ? "Date d’encaissement"
               : "Début du séjour"}
           </div>
+          <AccommodationBreakdown
+            report={displayedReport}
+            result={displayedResult}
+          />
         </div>
         <div className="rp-next-step">
-          <span className="rp-overline">Votre prochaine étape</span>
+          <span className="rp-overline">État du rapport</span>
           <h2>
             {snapshot
-              ? "Une trace facile à retrouver."
+              ? "Copie enregistrée"
               : differs
-                ? "Comprendre la différence."
+                ? "Écart depuis la confirmation"
                 : result.reviewCount
-                  ? "Un dernier regard sur les détails."
+                  ? "Opérations à corriger"
                   : progress?.snapshot
-                    ? "Tout est conservé."
+                    ? "Transmission confirmée"
                     : progress?.ready
-                      ? "Votre préparation est terminée."
-                      : "Vérifiez, puis finalisez."}
+                      ? "Rapport prêt"
+                      : "Préparation du rapport"}
           </h2>
           <p>
             {snapshot
@@ -391,8 +444,11 @@ export default function ReportDetail({
       <section className="rp-panel" aria-labelledby="rp-operations-heading">
         <div className="rp-panel-heading">
           <div>
-            <h2 id="rp-operations-heading">Le détail, en toute transparence</h2>
-            <p>Ouvrez une opération pour comprendre son traitement.</p>
+            <h2 id="rp-operations-heading">Opérations</h2>
+            <p>
+              Sélectionnez une opération pour consulter ses dates et son
+              traitement.
+            </p>
           </div>
           <label className="rp-search">
             <ReportIcon name="search" />
@@ -459,7 +515,7 @@ export default function ReportDetail({
                 <span>
                   <strong>{row.guest}</strong>
                   <small>
-                    {row.reservation} · {row.channel}
+                    {row.reservation} · {paymentMethodLabel(row.paymentMethod)}
                   </small>
                 </span>
               </span>
@@ -482,7 +538,7 @@ export default function ReportDetail({
                 search
                   ? "Aucune opération correspondante"
                   : filter === "review"
-                    ? "Tout est vérifié pour cette sélection"
+                    ? "Aucune opération à vérifier"
                     : "Aucune opération dans cette sélection"
               }
             >
@@ -501,6 +557,15 @@ export default function ReportDetail({
           formattedValue={formatReportValue(displayedReport, selectedRow.value)}
           canEdit={canEdit && !snapshot}
           existingOverride={state.overrides[key]?.[selectedRow.id]}
+          correctionLinks={selectedRow.issues.map((issue) => ({
+            issue,
+            href: sourceCorrectionHref(
+              workspace,
+              report.id,
+              selectedRow,
+              issue,
+            ),
+          }))}
           onClose={() => setSelectedRow(null)}
           onSave={(override) => correct(selectedRow, override)}
         />
@@ -552,9 +617,7 @@ export default function ReportDetail({
                   },
                 }));
                 setConfirming(false);
-                notify(
-                  "La copie de démonstration est conservée dans cet onglet.",
-                );
+                notify("Copie enregistrée dans cet onglet.");
               }}
             >
               Confirmer dans la démonstration
@@ -564,11 +627,11 @@ export default function ReportDetail({
       )}
       {historyOpen && (
         <ReportDialog
-          title="L’historique de votre rapport"
+          title="Historique du rapport"
           onClose={() => setHistoryOpen(false)}
         >
           {!snapshots.length ? (
-            <ReportEmpty title="Votre historique commence ici">
+            <ReportEmpty title="Aucune copie enregistrée">
               Une copie apparaîtra lorsque vous confirmerez la transmission
               d’une période dans la démonstration.
             </ReportEmpty>
@@ -621,6 +684,7 @@ function OperationDialog({
   formattedValue,
   canEdit,
   existingOverride,
+  correctionLinks,
   onClose,
   onSave,
 }: {
@@ -629,6 +693,10 @@ function OperationDialog({
   formattedValue: string;
   canEdit: boolean;
   existingOverride?: OperationOverride;
+  correctionLinks: Array<{
+    issue: EvaluatedOperation["issues"][number];
+    href: string;
+  }>;
   onClose: () => void;
   onSave: (override?: OperationOverride) => void;
 }) {
@@ -639,7 +707,7 @@ function OperationDialog({
     if (canEdit && note.trim()) onSave({ status, note: note.trim() });
   };
   return (
-    <ReportDialog title="Comprendre cette opération" onClose={onClose}>
+    <ReportDialog title="Détail de l’opération" onClose={onClose}>
       <div className="rp-operation-detail-heading">
         <div>
           <strong>{row.guest}</strong>
@@ -663,6 +731,14 @@ function OperationDialog({
           <dd>{dateLabel(row.paymentDate)}</dd>
         </div>
         <div>
+          <dt>Mode de paiement</dt>
+          <dd>{paymentMethodLabel(row.paymentMethod)}</dd>
+        </div>
+        <div>
+          <dt>Canal de réservation</dt>
+          <dd>{row.channel}</dd>
+        </div>
+        <div>
           <dt>Rapport</dt>
           <dd>{reportName}</dd>
         </div>
@@ -680,8 +756,24 @@ function OperationDialog({
           {statusLabels[row.status]}
         </ReportBadge>
         <p>{row.reason}</p>
+        {canEdit &&
+          correctionLinks
+            .filter(
+              (item, index, items) =>
+                items.findIndex((other) => other.href === item.href) === index,
+            )
+            .map(({ issue, href }) => (
+              <Link
+                className="rp-button rp-button--secondary"
+                key={href}
+                to={href}
+              >
+                {issue.actionLabel}
+                <ReportIcon name="arrow" />
+              </Link>
+            ))}
       </div>
-      {canEdit ? (
+      {canEdit && !row.issues.length ? (
         <form onSubmit={save} className="rp-correction-form">
           <h3>Corriger pour cette période</h3>
           <p className="rp-muted">

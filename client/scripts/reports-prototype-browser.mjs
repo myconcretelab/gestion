@@ -113,9 +113,17 @@ try {
   const page = await createPage();
   await page.goto(`${origin}/rapports`);
   await page
-    .getByRole("heading", { name: "Rapports et déclarations." })
+    .getByRole("heading", { name: "Rapports et déclarations" })
     .waitFor();
   assert.equal(await page.locator(".rp-report-row").count(), 4);
+  assert.equal(
+    await page
+      .getByText(
+        /Les bons chiffres|Quelques vérifications avant|Un fil conducteur/,
+      )
+      .count(),
+    0,
+  );
   await page.getByRole("button", { name: "Favoris", exact: true }).click();
   assert.equal(await page.locator(".rp-report-row").count(), 1);
   await page
@@ -198,9 +206,9 @@ try {
   await page.getByRole("checkbox", { name: "Ménage", exact: true }).uncheck();
   await capture(page, "reports-editor-desktop.png");
   await page
-    .getByRole("link", { name: "Revenir plus tard", exact: true })
+    .getByRole("link", { name: "Fermer le brouillon", exact: true })
     .click();
-  await page.getByRole("heading", { name: "Relevé propriétaire." }).waitFor();
+  await page.getByRole("heading", { name: "Relevé propriétaire" }).waitFor();
   await page.reload();
   await page
     .getByRole("link", { name: "Reprendre le brouillon", exact: true })
@@ -219,14 +227,14 @@ try {
   await page
     .getByRole("button", { name: "Appliquer les règles", exact: true })
     .click();
-  await page.getByRole("heading", { name: "Recettes du verger." }).waitFor();
+  await page.getByRole("heading", { name: "Recettes du verger" }).waitFor();
   await page.getByRole("button", { name: /Historique/ }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /octobre 2026/ })
     .click();
   assert.equal(await page.locator(".rp-total-value").innerText(), initialTotal);
-  await page.getByRole("heading", { name: "Relevé propriétaire." }).waitFor();
+  await page.getByRole("heading", { name: "Relevé propriétaire" }).waitFor();
 
   // Creation, mobile preview, keyboard dialog dismissal and empty states.
   await page
@@ -268,7 +276,7 @@ try {
   await page
     .getByRole("button", { name: "Créer ce rapport", exact: true })
     .click();
-  await page.getByRole("heading", { name: "Mes prestations." }).waitFor();
+  await page.getByRole("heading", { name: "Mes prestations" }).waitFor();
   await page.getByRole("button", { name: /^Examiner/ }).click();
   await page.getByRole("button", { name: /Lou Bernard/ }).click();
   assert.equal(await page.getByRole("dialog").isVisible(), true);
@@ -323,11 +331,122 @@ try {
     .getByRole("alert")
     .filter({ hasText: "ce navigateur ne permet pas" })
     .waitFor();
+
+  // Alerts open the relevant source form and resolve all affected operations.
+  const fixes = await createPage();
+  await fixes.goto(`${origin}/rapports/demo-social`);
+  await fixes
+    .getByRole("link", { name: "Rattacher le gîte", exact: true })
+    .click();
+  await fixes
+    .getByRole("heading", {
+      name: "Rattacher le gîte à un exploitant",
+      exact: true,
+    })
+    .waitFor();
+  await fixes.getByLabel("Exploitant").selectOption("operator-a");
+  await fixes.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await fixes
+    .getByRole("heading", { name: "Cotisations sociales", exact: true })
+    .waitFor();
+  assert.equal(
+    await fixes
+      .getByRole("link", { name: "Rattacher le gîte", exact: true })
+      .count(),
+    0,
+  );
+  await fixes
+    .getByRole("link", { name: "Renseigner l’encaissement", exact: true })
+    .click();
+  await fixes.getByLabel("Date du paiement reçu").fill("2026-10-11");
+  await fixes.getByLabel("Mode de paiement").selectOption("cash");
+  await fixes.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await fixes
+    .getByRole("button", { name: "Marquer comme prêt", exact: true })
+    .waitFor();
+  assert.equal(
+    await fixes
+      .getByRole("region", { name: "Problèmes à corriger", exact: true })
+      .count(),
+    0,
+  );
+  await fixes.reload();
+  await fixes
+    .getByRole("button", { name: "Marquer comme prêt", exact: true })
+    .waitFor();
+
+  // Changing the reference date and housing payment methods updates only the draft.
+  const rules = await createPage();
+  await rules.goto(`${origin}/rapports/demo-owner/modifier`);
+  await rules
+    .getByRole("heading", { name: "Modifier les règles", exact: true })
+    .waitFor();
+  assert.equal(
+    (await rules.locator(".rp-preview-value").innerText())
+      .replace(/\s/g, "")
+      .includes("2125,00"),
+    true,
+  );
+  await rules.getByRole("radio", { name: /Date d’arrivée/ }).check();
+  assert.equal(
+    (await rules.locator(".rp-preview-value").innerText())
+      .replace(/\s/g, "")
+      .includes("1535,00"),
+    true,
+  );
+  await rules.getByRole("radio", { name: /Date du paiement reçu/ }).check();
+  const methods = rules.getByRole("group", {
+    name: "Hébergement : modes de paiement inclus",
+    exact: true,
+  });
+  for (const method of ["Virement", "Chèque", "Espèces", "Non renseigné"])
+    await methods
+      .getByRole("checkbox", { name: method, exact: true })
+      .uncheck();
+  assert.equal(
+    (await rules.locator(".rp-preview-value").innerText()).includes("855,00"),
+    true,
+  );
+  assert.equal(
+    await rules
+      .getByRole("checkbox", { name: "Ménage", exact: true })
+      .isChecked(),
+    true,
+  );
+  await rules
+    .getByRole("button", { name: "Appliquer les règles", exact: true })
+    .click();
+  await rules
+    .getByRole("heading", { name: "Relevé propriétaire", exact: true })
+    .waitFor();
+  assert.equal(
+    (await rules.locator(".rp-total-value").innerText()).includes("855,00"),
+    true,
+  );
+  assert.equal(
+    (
+      await rules
+        .getByRole("region", {
+          name: "Hébergement par mode de paiement",
+          exact: true,
+        })
+        .innerText()
+    ).includes("760,00"),
+    true,
+  );
+  await rules.setViewportSize({ width: 390, height: 844 });
+  await rules
+    .getByRole("link", { name: "Modifier les règles", exact: true })
+    .click();
+  assert.equal(await overflow(rules), false);
+  await capture(rules, "reports-payment-methods-mobile.png");
+  await fixes.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await overflow(fixes), false);
   await noStorage
     .getByRole("link", { name: "Relevé propriétaire", exact: true })
     .click();
   await noStorage
-    .getByRole("heading", { name: "Relevé propriétaire." })
+    .getByRole("heading", { name: "Relevé propriétaire" })
     .waitFor();
 
   // Narrow viewports and all installed themes must preserve a usable layout.

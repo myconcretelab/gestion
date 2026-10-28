@@ -7,6 +7,23 @@ export const REPORT_CATEGORIES = [
   { id: "tourist_tax", label: "Taxe de séjour" },
 ] as const;
 export type ReportCategory = (typeof REPORT_CATEGORIES)[number]["id"];
+export const REPORT_PAYMENT_METHODS = [
+  { id: "transfer", label: "Virement" },
+  { id: "cheque", label: "Chèque" },
+  { id: "cash", label: "Espèces" },
+  { id: "card", label: "Carte bancaire" },
+  { id: "unknown", label: "Non renseigné" },
+] as const;
+export type ReportPaymentMethod = (typeof REPORT_PAYMENT_METHODS)[number]["id"];
+export const REPORT_OPERATORS = [
+  { id: "operator-a", name: "Entreprise A · Exemple" },
+  { id: "operator-b", name: "Entreprise B · Exemple" },
+] as const;
+export const DEFAULT_PROPERTY_OPERATORS: Record<string, string | null> = {
+  orchard: "operator-a",
+  woods: null,
+  mill: "operator-b",
+};
 export const REPORT_PROPERTIES = [
   { id: "orchard", name: "La Maison du verger", initials: "MV" },
   { id: "woods", name: "Le Refuge des bois", initials: "RB" },
@@ -23,6 +40,7 @@ export type ReportDefinition = {
   dateBasis: "payment" | "stay";
   cadence: ReportCadence;
   categories: ReportCategory[];
+  accommodationPaymentMethods: ReportPaymentMethod[];
   propertyIds: string[];
   favorite: boolean;
 };
@@ -37,11 +55,25 @@ export type ReportOperation = {
   paymentDate: string | null;
   stayDate: string;
   channel: string;
+  paymentMethod: ReportPaymentMethod;
   reviewReason?: string;
 };
 export type OperationStatus = "included" | "review" | "excluded";
 export type OperationOverride = { status: OperationStatus; note: string };
+export type ReportIssue = {
+  kind: "operator" | "payment";
+  message: string;
+  actionLabel: string;
+};
+export type ReportSources = {
+  propertyOperators: Record<string, string | null>;
+  operationEdits: Record<
+    string,
+    { paymentDate?: string; paymentMethod?: ReportPaymentMethod }
+  >;
+};
 export type EvaluatedOperation = ReportOperation & {
+  issues: ReportIssue[];
   status: OperationStatus;
   reason: string;
   value: number;
@@ -63,8 +95,8 @@ export type ReportProgress = {
   ready?: boolean;
   snapshot?: ReportSnapshot;
 };
-export type PrototypeState = {
-  version: 1;
+export type PrototypeState = ReportSources & {
+  version: 2;
   reports: ReportDefinition[];
   drafts: Record<string, ReportDefinition>;
   overrides: Record<string, Record<string, OperationOverride>>;
@@ -86,22 +118,22 @@ export const REPORT_TEMPLATES: Array<{
   {
     kind: "social",
     name: "Cotisations sociales",
-    description: "Préparer une base de recettes par exploitant.",
+    description: "Recettes de l’exploitant.",
   },
   {
     kind: "tourist",
     name: "Nuitées et taxe de séjour",
-    description: "Rassembler les nuitées des hébergements concernés.",
+    description: "Nuitées par logement.",
   },
   {
     kind: "owner",
     name: "Relevé propriétaire",
-    description: "Retrouver les recettes des logements d’un propriétaire.",
+    description: "Recettes des logements du propriétaire.",
   },
   {
     kind: "custom",
     name: "Rapport personnalisé",
-    description: "Composer votre propre suivi à partir des recettes.",
+    description: "Recettes des catégories sélectionnées.",
   },
 ];
 
@@ -122,6 +154,9 @@ export function createReport(kind: ReportKind, id: string): ReportDefinition {
             : "Mon suivi",
     dateBasis: kind === "tourist" ? "stay" : "payment",
     cadence: "monthly",
+    accommodationPaymentMethods: REPORT_PAYMENT_METHODS.map(
+      (method) => method.id,
+    ),
     categories:
       kind === "tourist"
         ? ["accommodation"]
@@ -156,6 +191,20 @@ const makeOperation = (
   nights,
   ...(reviewReason ? { reviewReason } : {}),
   channel,
+  paymentMethod:
+    (
+      {
+        "101": "transfer",
+        "102": "transfer",
+        "103": "cheque",
+        "104": "card",
+        "105": "transfer",
+        "106": "cash",
+        "107": "transfer",
+        "108": "card",
+        "109": "cheque",
+      } as Record<string, ReportPaymentMethod>
+    )[id.split("-")[0]] ?? "unknown",
 });
 
 export const DEMO_OPERATIONS: ReportOperation[] = [
@@ -255,7 +304,7 @@ export const DEMO_OPERATIONS: ReportOperation[] = [
     "2026-10-18",
     "2026-10-15",
     12,
-    "Le rattachement à l’exploitant reste à confirmer.",
+    undefined,
     "Plateforme",
   ),
   makeOperation(
@@ -322,6 +371,8 @@ export const categoryLabel = (id: ReportCategory) =>
   REPORT_CATEGORIES.find((category) => category.id === id)!.label;
 export const propertyName = (id: string) =>
   REPORT_PROPERTIES.find((property) => property.id === id)?.name ?? id;
+export const paymentMethodLabel = (id: ReportPaymentMethod) =>
+  REPORT_PAYMENT_METHODS.find((method) => method.id === id)!.label;
 export const cadenceLabel = (cadence: ReportCadence) =>
   ({ monthly: "Mensuel", quarterly: "Trimestriel", yearly: "Annuel" })[cadence];
 
@@ -358,10 +409,15 @@ export function evaluateReport(
   month: string,
   overrides: Record<string, OperationOverride> = {},
   operations = DEMO_OPERATIONS,
+  sources: ReportSources = {
+    propertyOperators: DEFAULT_PROPERTY_OPERATORS,
+    operationEdits: {},
+  },
 ): ReportResult {
   const period = getReportPeriod(month, report.cadence);
   const rows: EvaluatedOperation[] = [];
-  for (const operation of operations) {
+  for (const original of operations) {
+    const operation = { ...original, ...sources.operationEdits[original.id] };
     const effectiveDate =
       report.dateBasis === "payment"
         ? operation.paymentDate
@@ -371,28 +427,70 @@ export function evaluateReport(
     if (candidateDate < period.start || candidateDate >= period.end) continue;
     const inProperty = report.propertyIds.includes(operation.propertyId);
     const inCategory = report.categories.includes(operation.category);
+    const inPaymentMethod =
+      report.kind === "tourist" ||
+      operation.category !== "accommodation" ||
+      report.accommodationPaymentMethods.includes(operation.paymentMethod);
+    const override = overrides[operation.id];
+    const issues: ReportIssue[] = [];
+    if (
+      (inProperty && inCategory && inPaymentMethod) ||
+      override?.status === "included"
+    ) {
+      if (
+        report.kind === "social" &&
+        !sources.propertyOperators[operation.propertyId]
+      )
+        issues.push({
+          kind: "operator",
+          message: `${propertyName(operation.propertyId)} : aucun exploitant rattaché.`,
+          actionLabel: "Rattacher le gîte",
+        });
+      if (!effectiveDate)
+        issues.push({
+          kind: "payment",
+          message: "Date d’encaissement manquante.",
+          actionLabel: "Renseigner l’encaissement",
+        });
+      if (
+        report.kind !== "tourist" &&
+        operation.category === "accommodation" &&
+        operation.paymentMethod === "unknown"
+      )
+        issues.push({
+          kind: "payment",
+          message: "Mode de paiement manquant.",
+          actionLabel: "Renseigner l’encaissement",
+        });
+    }
     let status: OperationStatus =
-      !inProperty || !inCategory
+      !inProperty || !inCategory || !inPaymentMethod
         ? "excluded"
-        : !effectiveDate || operation.reviewReason
+        : issues.length
           ? "review"
           : "included";
     let reason = !inProperty
       ? "Ce logement ne fait pas partie du périmètre."
       : !inCategory
         ? "Cette catégorie ne fait pas partie du périmètre."
-        : !effectiveDate
-          ? "La date d’encaissement est manquante."
-          : (operation.reviewReason ??
-            `Inclus selon la catégorie « ${categoryLabel(operation.category)} » et le logement.`);
-    const override = overrides[operation.id];
+        : !inPaymentMethod
+          ? `Mode de paiement non sélectionné pour l’hébergement : ${paymentMethodLabel(operation.paymentMethod)}.`
+          : issues.length
+            ? issues.map((issue) => issue.message).join(" ")
+            : `Logement et catégorie inclus dans le rapport${operation.category === "accommodation" && report.kind !== "tourist" ? ` · ${paymentMethodLabel(operation.paymentMethod)}` : ""}.`;
     if (override) {
-      status = override.status;
-      reason = `Correction pour ce rapport : ${override.note}`;
+      status =
+        override.status === "included" && issues.length
+          ? "review"
+          : override.status;
+      reason =
+        status === "review" && issues.length
+          ? issues.map((issue) => issue.message).join(" ")
+          : `Correction pour ce rapport : ${override.note}`;
     }
     const value =
       report.kind === "tourist" ? operation.nights : operation.amountCents;
-    rows.push({ ...operation, status, reason, value, effectiveDate });
+    rows.push({ ...operation, status, reason, value, effectiveDate, issues });
   }
   rows.sort(
     (a, b) =>
@@ -414,13 +512,84 @@ export function evaluateReport(
 
 export function createPrototypeState(): PrototypeState {
   return {
-    version: 1,
+    version: 2,
+    propertyOperators: { ...DEFAULT_PROPERTY_OPERATORS },
+    operationEdits: {},
     reports: REPORT_TEMPLATES.map((template) =>
       createReport(template.kind, `demo-${template.kind}`),
     ),
     drafts: {},
     overrides: {},
     progress: {},
+  };
+}
+
+export function evaluatePrototypeReport(
+  state: PrototypeState,
+  report: ReportDefinition,
+  month: string,
+) {
+  return evaluateReport(
+    report,
+    month,
+    state.overrides[reportPeriodKey(report, month)],
+    undefined,
+    state,
+  );
+}
+
+export function accommodationBreakdown(result: ReportResult) {
+  return REPORT_PAYMENT_METHODS.map((method) => {
+    const rows = result.rows.filter(
+      (row) =>
+        row.status === "included" &&
+        row.category === "accommodation" &&
+        row.paymentMethod === method.id,
+    );
+    return {
+      ...method,
+      count: rows.length,
+      total: rows.reduce((sum, row) => sum + row.value, 0),
+    };
+  }).filter((group) => group.count > 0);
+}
+
+export function applySourceCorrection(
+  state: PrototypeState,
+  correction:
+    | { kind: "operator"; propertyId: string; operatorId: string }
+    | {
+        kind: "payment";
+        operationId: string;
+        paymentDate: string;
+        paymentMethod: ReportPaymentMethod;
+      },
+): PrototypeState {
+  return {
+    ...state,
+    propertyOperators:
+      correction.kind === "operator"
+        ? {
+            ...state.propertyOperators,
+            [correction.propertyId]: correction.operatorId,
+          }
+        : state.propertyOperators,
+    operationEdits:
+      correction.kind === "payment"
+        ? {
+            ...state.operationEdits,
+            [correction.operationId]: {
+              paymentDate: correction.paymentDate,
+              paymentMethod: correction.paymentMethod,
+            },
+          }
+        : state.operationEdits,
+    progress: Object.fromEntries(
+      Object.entries(state.progress).map(([key, progress]) => [
+        key,
+        { ...progress, ready: false },
+      ]),
+    ),
   };
 }
 
@@ -440,6 +609,9 @@ export function snapshotDiffers(
   snapshot: ReportSnapshot,
   result: ReportResult,
 ) {
+  const recordedMethods = new Map(
+    snapshot.result.rows.map((row) => [row.id, row.paymentMethod]),
+  );
   const signature = (value: ReportResult) =>
     JSON.stringify(
       value.rows.map((row) => [
@@ -447,7 +619,7 @@ export function snapshotDiffers(
         row.status,
         row.value,
         row.effectiveDate,
-        row.reason,
+        recordedMethods.get(row.id) === "unknown" ? null : row.paymentMethod,
       ]),
     );
   return signature(snapshot.result) !== signature(result);
@@ -482,6 +654,8 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
     "Voyageur fictif",
     "Logement fictif",
     "Catégorie",
+    "Mode de paiement",
+    "Canal de réservation",
     "Date retenue",
     report.kind === "tourist" ? "Nuitées" : "Montant EUR",
     "Traitement",
@@ -501,6 +675,8 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
         row.guest,
         propertyName(row.propertyId),
         categoryLabel(row.category),
+        paymentMethodLabel(row.paymentMethod),
+        row.channel,
         row.effectiveDate ?? "À vérifier",
         report.kind === "tourist" ? row.value : row.value / 100,
         labels[row.status],
