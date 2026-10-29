@@ -24,6 +24,7 @@ import bookingRequestsRouter from "./routes/bookingRequests.js";
 import statisticsRouter from "./routes/statistics.js";
 import settingsRouter from "./modules/settings/routes.js";
 import usersRouter from "./routes/users.js";
+import notificationsRouter from "./modules/notifications/routes.js";
 import intervenantsRouter from "./routes/intervenants.js";
 import intervenantHoursRouter from "./routes/intervenantHours.js";
 import userInterventionsRouter from "./routes/userInterventions.js";
@@ -304,6 +305,7 @@ export const createApp = () => {
   app.use("/api/statistics", statisticsRouter);
   app.use("/api/reports", reportsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/notifications", notificationsRouter);
   app.use("/api/settings", productSettingsRouter);
   app.use("/api/users", usersRouter);
   app.use("/api/intervenants/hours", intervenantHoursRouter);

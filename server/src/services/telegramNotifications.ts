@@ -260,13 +260,14 @@ export const sendTelegramMessage = async (
   text: string,
   config = readTelegramNotificationConfig(),
   explicitRecipients?: string[],
+  pushKey?: string,
 ) => {
   const recipients =
     explicitRecipients ?? (await resolveTelegramNotificationRecipients(config));
   const result = await telegramMessageChannel.send({
     message: text,
     recipients,
-    options: config,
+    options: { ...config, owner_push: { key: pushKey } },
   });
   return {
     sent_count: result.sent_count,

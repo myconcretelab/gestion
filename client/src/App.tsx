@@ -6,6 +6,7 @@ import { APP_NOTICE_EVENT, type AppNotice } from "./utils/appNotices";
 import { BOOKING_REQUESTS_CHANGED_EVENT } from "./utils/bookingRequestsBadge";
 import { RECENT_IMPORTED_RESERVATIONS_CREATED_EVENT } from "./utils/recentImportsBadge";
 import type { ModuleKey, PublicInstallationConfig } from "./utils/installation";
+import { clearPushOnAccountChange, disableDeviceNotifications } from "./utils/pushNotifications";
 
 const GitesPage = lazy(() => import("./features/properties"));
 const ContratsListPage = lazy(() => import("./pages/ContratsListPage"));
@@ -28,6 +29,7 @@ const PurchaseInvoicesPage = lazy(() => import("./pages/PurchaseInvoicesPage"));
 const SandboxWorkshopPage = lazy(() => import("./pages/SandboxWorkshopPage"));
 const SeasonRatesPage = lazy(() => import("./pages/SeasonRatesPage"));
 const SettingsPage = lazy(() => import("./features/settings"));
+const NotificationSettings = lazy(() => import("./pages/settings/NotificationSettings"));
 const IntervenantsPage = lazy(() => import("./pages/IntervenantsPage"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
 const OperationsPrintPage = lazy(() => import("./pages/OperationsPrintPage"));
@@ -330,6 +332,10 @@ const App = () => {
   const isAuthenticated = authSession?.authenticated ?? false;
   const isAuthRequired = authSession?.required ?? false;
   const currentUser = authSession?.user ?? null;
+  const currentUserId = currentUser?.id;
+  useEffect(() => {
+    if (currentUserId) void clearPushOnAccountChange(currentUserId).catch(() => undefined);
+  }, [currentUserId]);
   const canViewAmounts = currentUser?.permissions.canViewAmounts ?? true;
   const canWrite = currentUser?.permissions.canWrite ?? true;
   const canAccessPage = (page: AppPageId) => !currentUser || currentUser.permissions.isOwner || currentUser.pageAccess.includes(page);
@@ -558,6 +564,7 @@ const App = () => {
   };
 
   const logout = async () => {
+    await disableDeviceNotifications().catch(() => undefined);
     try {
       await apiFetch("/auth/logout", { method: "POST" });
     } catch {
@@ -1103,6 +1110,7 @@ const App = () => {
             {(["organisation", "entreprises", "hebergements", "documents", "canaux", "connexions", "equipe-acces", "donnees", "systeme"] as const).map((section) => (
               <Route key={section} path={`/parametres/${section}`} element={<PageAccess allowed={canAccessPage("settings")}><ProductSettingsPage /></PageAccess>} />
             ))}
+            <Route path="/parametres/notifications" element={<PageAccess allowed={canAccessPage("settings")}><NotificationSettings currentUser={currentUser} /></PageAccess>} />
             <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
             <Route path="/abonnement" element={<PageAccess allowed={canAccessPage("settings")}><BillingPage /></PageAccess>} />
             <Route path="/administration/facturation" element={<Navigate to="/admin" replace />} />

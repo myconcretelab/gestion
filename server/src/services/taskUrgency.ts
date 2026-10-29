@@ -429,6 +429,11 @@ export const runTaskUrgencyReminders = async (
         options: {
           ...telegram,
           has_explicit_recipients: true,
+          owner_push: {
+            userIds: [group.recipient.id],
+            url: "/aujourdhui",
+            key: `tasks:${group.recipient.id}:${due.map((task) => `${task.id}:${task.urgency_version}:${task.urgency_last_sent_at?.toISOString() ?? "first"}`).join(",")}`,
+          },
           reply_markup: { inline_keyboard: keyboard },
         },
       });

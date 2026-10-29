@@ -3,6 +3,10 @@ import type {
   MessageDelivery,
   MessageSendRequest,
 } from "./types.js";
+import {
+  sendOwnerPushNotification,
+  type OwnerPushTarget,
+} from "../webPushNotifications.js";
 
 export type TelegramMessageChannelOptions = {
   enabled: boolean;
@@ -11,11 +15,14 @@ export type TelegramMessageChannelOptions = {
   recipient_user_ids?: string[];
   parse_mode?: "HTML" | null;
   has_explicit_recipients?: boolean;
+  owner_push?: OwnerPushTarget;
   reply_markup?: {
-    inline_keyboard: Array<Array<{
-      text: string;
-      url: string;
-    }>>;
+    inline_keyboard: Array<
+      Array<{
+        text: string;
+        url: string;
+      }>
+    >;
   };
 };
 
@@ -60,7 +67,11 @@ export const telegramMessageChannel: MessageChannel = {
     const options = rawOptions as TelegramMessageChannelOptions | undefined;
     const missing = [];
     if (!options?.bot_token.trim()) missing.push("bot_token");
-    if (!options?.has_explicit_recipients && !options?.chat_ids.length && !options?.recipient_user_ids?.length) {
+    if (
+      !options?.has_explicit_recipients &&
+      !options?.chat_ids.length &&
+      !options?.recipient_user_ids?.length
+    ) {
       missing.push("chat_ids");
     }
     return {
@@ -70,67 +81,83 @@ export const telegramMessageChannel: MessageChannel = {
   },
   send: async (request) => {
     const options = getOptions(request);
-    if (!options?.enabled) {
-      return {
-        channel: "telegram",
-        sent_count: 0,
-        skipped_reason: "disabled",
-        deliveries: [],
-      };
-    }
-    if (process.env.NODE_ENV === "test") {
-      return {
-        channel: "telegram",
-        sent_count: 0,
-        skipped_reason: "test_environment",
-        deliveries: [],
-      };
-    }
-    if (!options.bot_token.trim()) {
-      return {
-        channel: "telegram",
-        sent_count: 0,
-        skipped_reason: "missing_bot_token",
-        deliveries: [],
-      };
-    }
+    if (!options?.enabled || !options.owner_push)
+      return sendTelegramOnly(request);
+    // Both channels run independently; a push failure must never cancel a
+    // Telegram delivery, and a Telegram outage must not suppress push alerts.
+    const [telegram, push] = await Promise.allSettled([
+      sendTelegramOnly(request),
+      sendOwnerPushNotification(request.message, options.owner_push),
+    ]);
+    if (push.status === "rejected")
+      console.error("Impossible de préparer les notifications sur appareil.");
+    if (telegram.status === "rejected") throw telegram.reason;
+    return telegram.value;
+  },
+};
 
-    const recipients = [
-      ...new Set(
-        (request.recipients ?? options.chat_ids)
-          .map((recipient) => recipient.trim())
-          .filter(Boolean),
-      ),
-    ];
-    if (recipients.length === 0) {
-      return {
-        channel: "telegram",
-        sent_count: 0,
-        skipped_reason: "missing_chat_ids",
-        deliveries: [],
-      };
-    }
-
-    const deliveries: MessageDelivery[] = [];
-    for (const chatId of recipients) {
-      await postTelegramMessage({
-        botToken: options.bot_token,
-        chatId,
-        text: request.message,
-        parseMode: options.parse_mode === null ? null : "HTML",
-        replyMarkup: options.reply_markup,
-      });
-      deliveries.push({
-        recipient: chatId,
-        provider: "telegram",
-      });
-    }
-
+const sendTelegramOnly = async (request: MessageSendRequest) => {
+  const options = getOptions(request);
+  if (!options?.enabled) {
     return {
       channel: "telegram",
-      sent_count: deliveries.length,
-      skipped_reason: null,
-      deliveries,
+      sent_count: 0,
+      skipped_reason: "disabled",
+      deliveries: [],
     };
-  },
+  }
+  if (process.env.NODE_ENV === "test") {
+    return {
+      channel: "telegram",
+      sent_count: 0,
+      skipped_reason: "test_environment",
+      deliveries: [],
+    };
+  }
+  if (!options.bot_token.trim()) {
+    return {
+      channel: "telegram",
+      sent_count: 0,
+      skipped_reason: "missing_bot_token",
+      deliveries: [],
+    };
+  }
+
+  const recipients = [
+    ...new Set(
+      (request.recipients ?? options.chat_ids)
+        .map((recipient) => recipient.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (recipients.length === 0) {
+    return {
+      channel: "telegram",
+      sent_count: 0,
+      skipped_reason: "missing_chat_ids",
+      deliveries: [],
+    };
+  }
+
+  const deliveries: MessageDelivery[] = [];
+  for (const chatId of recipients) {
+    await postTelegramMessage({
+      botToken: options.bot_token,
+      chatId,
+      text: request.message,
+      parseMode: options.parse_mode === null ? null : "HTML",
+      replyMarkup: options.reply_markup,
+    });
+    deliveries.push({
+      recipient: chatId,
+      provider: "telegram",
+    });
+  }
+
+  return {
+    channel: "telegram",
+    sent_count: deliveries.length,
+    skipped_reason: null,
+    deliveries,
+  };
 };

@@ -51,6 +51,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       { label: "E-mails", path: "emails", navId: "nav-settings-email-texts" },
       { label: "SMS", path: "sms", navId: "nav-settings-sms" },
       { label: "Telegram", path: "telegram", navId: "nav-settings-telegram" },
+      { label: "Notifications", path: "notifications", navId: "nav-settings-notifications" },
       { label: "E-mail quotidien", path: "email-quotidien", navId: "nav-settings-daily-reservation-email" },
     ],
   },

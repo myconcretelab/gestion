@@ -262,6 +262,7 @@ const sendCleaningCheckReminders = async (
         recipients,
         options: {
           ...config,
+          owner_push: { key, url: "/menages" },
           ...(origin && actionUrl ? {
             reply_markup: { inline_keyboard: [[{ text: pendingKind === "cleaning" ? "Voir les ménages" : "✅ C'est fait !", url: actionUrl }]] },
           } : {}),
@@ -336,7 +337,7 @@ export const runTelegramDeadlineNotifications = async (
         const result = await sendMessage("telegram", {
           message,
           recipients,
-          options: config,
+          options: { ...config, owner_push: { key } },
         });
         if (result.sent_count > 0) {
           state.notified[key] = now.toISOString();

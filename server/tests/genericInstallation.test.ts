@@ -116,6 +116,7 @@ test("une sauvegarde standard est validée puis restaurée sans secrets", () => 
     "CREATE TABLE gites(ical_export_token TEXT, airbnb_listing_id TEXT); INSERT INTO gites VALUES ('secret-token', 'listing');",
     "CREATE TABLE planning_relay_periods(share_nonce TEXT, public_code_hash TEXT, public_origin TEXT); INSERT INTO planning_relay_periods VALUES ('nonce', 'hash', 'https://example.test');",
     "CREATE TABLE auth_sessions(id TEXT); CREATE TABLE api_tokens(id TEXT); CREATE TABLE document_shares(id TEXT); CREATE TABLE password_reset_tokens(id TEXT); CREATE TABLE security_throttles(id TEXT);",
+    "CREATE TABLE organization_runtime_settings(key TEXT, value_json TEXT); INSERT INTO organization_runtime_settings VALUES ('web-push.vapid', 'secret'), ('web-push.subscription:device', 'secret'), ('task-urgency-reminders', '{}');",
   ].join(" ");
   assert.equal(spawnSync("sqlite3", [database, schema]).status, 0);
   fs.writeFileSync(path.join(dataDir, "pdfs", "sample.pdf"), "pdf"); fs.writeFileSync(path.join(dataDir, "server-auth-settings.json"), "secret");
@@ -127,6 +128,7 @@ test("une sauvegarde standard est validée puis restaurée sans secrets", () => 
     const restore = spawnSync(process.execPath, ["scripts/installation-data.mjs", "restore", archive, "--apply", "--confirm-replace"], { cwd: serverRoot, env, encoding: "utf8" }); assert.equal(restore.status, 0, restore.stderr || restore.stdout);
     assert.equal(spawnSync("sqlite3", [database, "SELECT value FROM business_data;"], { encoding: "utf8" }).stdout.trim(), "database-original");
     assert.equal(spawnSync("sqlite3", [database, "SELECT url FROM ical_sources;"], { encoding: "utf8" }).stdout.trim(), "redacted://not-exported/1");
+    assert.equal(spawnSync("sqlite3", [database, "SELECT key FROM organization_runtime_settings;"], { encoding: "utf8" }).stdout.trim(), "task-urgency-reminders");
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 

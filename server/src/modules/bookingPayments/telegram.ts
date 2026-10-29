@@ -115,7 +115,12 @@ const deliver: OrganizationJobHandler = async (job) => {
     content.paymentInfo,
     existing,
   );
-  const result = await sendTelegramMessage(message, config, [input.chatId]);
+  const result = await sendTelegramMessage(
+    message,
+    config,
+    [input.chatId],
+    `payment:${input.paymentId}:${input.state}`,
+  );
   if (!result.sent_count && result.skipped_reason !== "test_environment")
     throw new Error("Notification Telegram non remise.");
   return result;
