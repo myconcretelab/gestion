@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPrototypePage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
+import ReportPageHeader from "./ReportPageHeader";
 import {
   categoryLabel,
   cadenceLabel,
@@ -11,7 +12,6 @@ import {
   getReportPeriod,
   propertyName,
   REPORT_CATEGORIES,
-  REPORT_PAYMENT_METHODS,
   REPORT_PROPERTIES,
   REPORT_TEMPLATES,
   type ReportCadence,
@@ -88,16 +88,10 @@ export default function ReportEditor({
   if (!draft)
     return (
       <>
-        <Link className="rp-back-link" to={href()}>
-          <ReportIcon name="back" />
-          Tous les rapports
-        </Link>
-        <header className="rp-page-header">
-          <div>
-            <h1>Nouveau rapport</h1>
-            <p className="rp-page-description">Sélectionnez un modèle.</p>
-          </div>
-        </header>
+        <ReportPageHeader
+          title="Nouveau rapport"
+          back={{ to: href(), label: "Tous les rapports" }}
+        />
         {templates}
         <p className="rp-template-note">
           <ReportIcon name="info" />
@@ -195,24 +189,31 @@ export default function ReportEditor({
   };
   return (
     <>
-      <Link className="rp-back-link" to={href(base ? `/${base.id}` : "")}>
-        <ReportIcon name="back" />
-        {base ? "Revenir au rapport" : "Tous les rapports"}
-      </Link>
-      <header className="rp-page-header rp-page-header--editor">
-        <div>
-          <h1>{base ? "Modifier les règles" : "Nouveau rapport"}</h1>
-          <p className="rp-page-description">
-            Le brouillon doit être appliqué pour modifier le rapport.
-          </p>
-        </div>
-        <span className="rp-save-indicator">
-          <ReportIcon name={storageError ? "info" : "check"} />
-          {storageError
-            ? "Brouillon en mémoire uniquement"
-            : "Brouillon conservé dans cet onglet"}
-        </span>
-      </header>
+      <ReportPageHeader
+        title={base ? "Réglages" : "Nouveau rapport"}
+        back={{
+          to: href(base ? `/${base.id}` : ""),
+          label: base ? "Revenir au rapport" : "Tous les rapports",
+        }}
+        status={
+          state.drafts[draftKey] && changed ? (
+            <ReportBadge tone="attention">Brouillon non appliqué</ReportBadge>
+          ) : undefined
+        }
+        meta={
+          <>
+            <span>{base?.name ?? draft.name}</span>
+            {state.drafts[draftKey] && (
+              <span className="rp-save-indicator">
+                <ReportIcon name={storageError ? "info" : "check"} />
+                {storageError
+                  ? "En mémoire uniquement"
+                  : "Enregistré dans cet onglet"}
+              </span>
+            )}
+          </>
+        }
+      />
       <div className="rp-mobile-panes" aria-label="Vue de l’éditeur">
         <button
           type="button"
@@ -242,7 +243,6 @@ export default function ReportEditor({
               <span>01</span>
               <div>
                 <h2>Identification</h2>
-                <p>Nom, destinataire et description du rapport.</p>
               </div>
             </div>
             <label className="rp-field">
@@ -293,7 +293,6 @@ export default function ReportEditor({
               <span>02</span>
               <div>
                 <h2>Périmètre</h2>
-                <p>Les opérations qui alimentent ce rapport.</p>
               </div>
             </div>
             <fieldset
@@ -375,64 +374,12 @@ export default function ReportEditor({
                   : "Une même recette peut alimenter plusieurs rapports."}
               </p>
             </fieldset>
-            {draft.kind !== "tourist" &&
-              draft.categories.includes("accommodation") && (
-                <fieldset className="rp-choice-fieldset rp-accommodation-methods">
-                  <legend>Hébergement : modes de paiement inclus</legend>
-                  <p className="rp-field-help">
-                    Ce filtre concerne uniquement les recettes d’hébergement.
-                    Les autres catégories gardent tous leurs modes de paiement.
-                  </p>
-                  <div className="rp-category-choices">
-                    {REPORT_PAYMENT_METHODS.map((method) => (
-                      <label
-                        key={method.id}
-                        className={
-                          draft.accommodationPaymentMethods.includes(method.id)
-                            ? "is-selected"
-                            : ""
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          checked={draft.accommodationPaymentMethods.includes(
-                            method.id,
-                          )}
-                          onChange={(event) =>
-                            update({
-                              accommodationPaymentMethods: event.target.checked
-                                ? [
-                                    ...draft.accommodationPaymentMethods,
-                                    method.id,
-                                  ]
-                                : draft.accommodationPaymentMethods.filter(
-                                    (id) => id !== method.id,
-                                  ),
-                            })
-                          }
-                        />
-                        {method.label}
-                      </label>
-                    ))}
-                  </div>
-                  {!draft.accommodationPaymentMethods.length && (
-                    <p className="rp-field-help">
-                      Aucun mode sélectionné : toutes les recettes d’hébergement
-                      seront hors périmètre.
-                    </p>
-                  )}
-                </fieldset>
-              )}
           </section>
           <section className="rp-panel rp-editor-section">
             <div className="rp-section-title">
               <span>03</span>
               <div>
                 <h2>Période et date de référence</h2>
-                <p>
-                  Choisissez la date qui détermine le mois ou le trimestre du
-                  rapport.
-                </p>
               </div>
             </div>
             <label className="rp-field">
@@ -518,11 +465,9 @@ export default function ReportEditor({
         <aside className="rp-editor-preview" aria-label="Aperçu du rapport">
           <div className="rp-preview-card">
             <div className="rp-preview-card__top">
-              <span className="rp-overline">Aperçu</span>
+              <h2>{draft.name || "Rapport"}</h2>
               <ReportBadge tone="primary">En direct</ReportBadge>
             </div>
-            <ReportKindIcon kind={draft.kind} />
-            <h2>{draft.name || "Rapport"}</h2>
             <p className="rp-muted">
               {getReportPeriod(month, draft.cadence).label} ·{" "}
               {draft.recipient || "Destinataire"}

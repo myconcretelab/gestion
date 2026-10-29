@@ -40,7 +40,6 @@ export type ReportDefinition = {
   dateBasis: "payment" | "stay";
   cadence: ReportCadence;
   categories: ReportCategory[];
-  accommodationPaymentMethods: ReportPaymentMethod[];
   propertyIds: string[];
   favorite: boolean;
 };
@@ -96,7 +95,7 @@ export type ReportProgress = {
   snapshot?: ReportSnapshot;
 };
 export type PrototypeState = ReportSources & {
-  version: 2;
+  version: 3;
   reports: ReportDefinition[];
   drafts: Record<string, ReportDefinition>;
   overrides: Record<string, Record<string, OperationOverride>>;
@@ -154,9 +153,6 @@ export function createReport(kind: ReportKind, id: string): ReportDefinition {
             : "Mon suivi",
     dateBasis: kind === "tourist" ? "stay" : "payment",
     cadence: "monthly",
-    accommodationPaymentMethods: REPORT_PAYMENT_METHODS.map(
-      (method) => method.id,
-    ),
     categories:
       kind === "tourist"
         ? ["accommodation"]
@@ -427,16 +423,9 @@ export function evaluateReport(
     if (candidateDate < period.start || candidateDate >= period.end) continue;
     const inProperty = report.propertyIds.includes(operation.propertyId);
     const inCategory = report.categories.includes(operation.category);
-    const inPaymentMethod =
-      report.kind === "tourist" ||
-      operation.category !== "accommodation" ||
-      report.accommodationPaymentMethods.includes(operation.paymentMethod);
     const override = overrides[operation.id];
     const issues: ReportIssue[] = [];
-    if (
-      (inProperty && inCategory && inPaymentMethod) ||
-      override?.status === "included"
-    ) {
+    if ((inProperty && inCategory) || override?.status === "included") {
       if (
         report.kind === "social" &&
         !sources.propertyOperators[operation.propertyId]
@@ -464,7 +453,7 @@ export function evaluateReport(
         });
     }
     let status: OperationStatus =
-      !inProperty || !inCategory || !inPaymentMethod
+      !inProperty || !inCategory
         ? "excluded"
         : issues.length
           ? "review"
@@ -473,11 +462,9 @@ export function evaluateReport(
       ? "Ce logement ne fait pas partie du périmètre."
       : !inCategory
         ? "Cette catégorie ne fait pas partie du périmètre."
-        : !inPaymentMethod
-          ? `Mode de paiement non sélectionné pour l’hébergement : ${paymentMethodLabel(operation.paymentMethod)}.`
-          : issues.length
-            ? issues.map((issue) => issue.message).join(" ")
-            : `Logement et catégorie inclus dans le rapport${operation.category === "accommodation" && report.kind !== "tourist" ? ` · ${paymentMethodLabel(operation.paymentMethod)}` : ""}.`;
+        : issues.length
+          ? issues.map((issue) => issue.message).join(" ")
+          : `Logement et catégorie inclus dans le rapport${operation.category === "accommodation" && report.kind !== "tourist" ? ` · ${paymentMethodLabel(operation.paymentMethod)}` : ""}.`;
     if (override) {
       status =
         override.status === "included" && issues.length
@@ -512,7 +499,7 @@ export function evaluateReport(
 
 export function createPrototypeState(): PrototypeState {
   return {
-    version: 2,
+    version: 3,
     propertyOperators: { ...DEFAULT_PROPERTY_OPERATORS },
     operationEdits: {},
     reports: REPORT_TEMPLATES.map((template) =>

@@ -52,7 +52,7 @@ export default function ReportsPrototypePage() {
     : "2026-10";
   const notify = useCallback((message: string) => setNotice(message), []);
   useEffect(() => {
-    if (Number(state.version) !== 2) {
+    if (Number(state.version) !== 3) {
       setState(parsePrototypeState(JSON.stringify(state)));
     }
   }, [state]);
@@ -72,7 +72,7 @@ export default function ReportsPrototypePage() {
     const timeout = window.setTimeout(() => setNotice(""), 4500);
     return () => window.clearTimeout(timeout);
   }, [notice]);
-  if (Number(state.version) !== 2) {
+  if (Number(state.version) !== 3) {
     return <p role="status">Mise à jour des données de démonstration…</p>;
   }
   const workspace: ReportWorkspace = {

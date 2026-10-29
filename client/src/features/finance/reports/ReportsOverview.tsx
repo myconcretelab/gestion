@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import ReportPageHeader from "./ReportPageHeader";
 import type { ReportWorkspace } from "./ReportsPrototypePage";
 import {
   cadenceLabel,
@@ -51,17 +52,17 @@ export default function ReportsOverview({
   );
   return (
     <>
-      <header className="rp-page-header">
-        <div>
-          <h1>Rapports et déclarations</h1>
-        </div>
-        {canEdit && (
-          <Link to={href("/nouveau")} className="rp-button">
-            <ReportIcon name="plus" />
-            {state.drafts.new ? "Reprendre la création" : "Créer un rapport"}
-          </Link>
-        )}
-      </header>
+      <ReportPageHeader
+        title="Rapports et déclarations"
+        actions={
+          canEdit && (
+            <Link to={href("/nouveau")} className="rp-button">
+              <ReportIcon name="plus" />
+              Créer un rapport
+            </Link>
+          )
+        }
+      />
       <div className="rp-overview-top">
         <div className="rp-period-card">
           <span className="rp-overline">Période</span>

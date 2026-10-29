@@ -27,12 +27,7 @@ function isReport(value: unknown): value is ReportDefinition {
     isStringArray(value.categories) &&
     value.categories.every((id) =>
       REPORT_CATEGORIES.some((category) => category.id === id),
-    ) &&
-    (value.accommodationPaymentMethods === undefined ||
-      (isStringArray(value.accommodationPaymentMethods) &&
-        value.accommodationPaymentMethods.every((id) =>
-          REPORT_PAYMENT_METHODS.some((method) => method.id === id),
-        )))
+    )
   );
 }
 
@@ -42,7 +37,7 @@ export function parsePrototypeState(raw: string | null): PrototypeState {
     const data: unknown = JSON.parse(raw);
     if (
       !isObject(data) ||
-      ![1, 2].includes(Number(data.version)) ||
+      ![1, 2, 3].includes(Number(data.version)) ||
       !Array.isArray(data.reports) ||
       !data.reports.every(isReport) ||
       !isObject(data.drafts) ||
@@ -177,17 +172,18 @@ export function parsePrototypeState(raw: string | null): PrototypeState {
       "Composer votre propre suivi à partir des recettes.":
         "Recettes des catégories sélectionnées.",
     };
-    const normalize = (report: ReportDefinition): ReportDefinition => ({
-      ...report,
-      description: descriptions[report.description] ?? report.description,
-      accommodationPaymentMethods:
-        report.accommodationPaymentMethods ??
-        REPORT_PAYMENT_METHODS.map((method) => method.id),
-    });
+    const normalize = (report: ReportDefinition): ReportDefinition => {
+      const { accommodationPaymentMethods: _removed, ...definition } =
+        report as ReportDefinition & { accommodationPaymentMethods?: unknown };
+      return {
+        ...definition,
+        description: descriptions[report.description] ?? report.description,
+      };
+    };
     const restored = data as unknown as PrototypeState;
     return {
       ...restored,
-      version: 2,
+      version: 3,
       propertyOperators: {
         ...defaults.propertyOperators,
         ...restored.propertyOperators,

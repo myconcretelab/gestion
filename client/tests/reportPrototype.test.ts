@@ -5,7 +5,6 @@ import {
   applySourceCorrection,
   accommodationBreakdown,
   evaluatePrototypeReport,
-  REPORT_PAYMENT_METHODS,
   createReport,
   DEMO_OPERATIONS,
   evaluateReport,
@@ -316,16 +315,16 @@ test("la saisie d’un encaissement déplace l’opération vers sa période de 
   );
 });
 
-test("le filtre de paiement concerne l’hébergement et conserve les autres catégories", () => {
+test("les anciens filtres de paiement n’excluent plus aucune recette d’hébergement", () => {
   const report = {
     ...createReport("owner", "r1"),
     accommodationPaymentMethods: ["card" as const],
   };
   const result = evaluateReport(report, "2026-10");
-  assert.equal(result.total, 85500);
+  assert.equal(result.total, 212500);
   assert.equal(
     result.rows.find((row) => row.id === "101-stay")!.status,
-    "excluded",
+    "included",
   );
   assert.equal(
     result.rows.find((row) => row.id === "101-cleaning")!.status,
@@ -337,12 +336,15 @@ test("le filtre de paiement concerne l’hébergement et conserve les autres cat
   );
   assert.deepEqual(
     accommodationBreakdown(result).map((group) => [group.id, group.total]),
-    [["card", 76000]],
+    [
+      ["transfer", 127000],
+      ["card", 76000],
+    ],
   );
   assert.equal(
     evaluateReport({ ...report, accommodationPaymentMethods: [] }, "2026-10")
       .total,
-    9500,
+    212500,
   );
 });
 
@@ -381,7 +383,7 @@ test("plusieurs paiements d’un même hébergement sont ventilés sans confondr
       {},
       operations,
     ).total,
-    18000,
+    68000,
   );
 });
 
@@ -416,15 +418,70 @@ test("les essais du premier prototype migrent en conservant les brouillons et le
     }
   }
   const restored = parsePrototypeState(JSON.stringify(legacy));
-  assert.equal(restored.version, 2);
+  assert.equal(restored.version, 3);
   assert.equal(restored.drafts[report.id].name, "Brouillon conservé");
-  assert.deepEqual(
-    restored.reports[0].accommodationPaymentMethods,
-    REPORT_PAYMENT_METHODS.map((method) => method.id),
-  );
+  assert.equal("accommodationPaymentMethods" in restored.reports[0], false);
   assert.equal(
     restored.progress[reportPeriodKey(report, "2026-10")].snapshot!.result
       .total,
     state.progress[reportPeriodKey(report, "2026-10")].snapshot!.result.total,
+  );
+});
+
+test("la reprise des filtres supprimés rétablit les recettes courantes et conserve les anciennes copies", () => {
+  const state = createPrototypeState();
+  const report = state.reports[2];
+  const result = evaluatePrototypeReport(state, report, "2026-10");
+  const rows = result.rows.map((row) =>
+    row.category === "accommodation" && row.paymentMethod !== "card"
+      ? {
+          ...row,
+          status: "excluded" as const,
+          reason: "Ancien filtre de paiement",
+        }
+      : row,
+  );
+  const historical = {
+    ...result,
+    rows,
+    total: rows.reduce(
+      (sum, row) => sum + (row.status === "included" ? row.value : 0),
+      0,
+    ),
+    includedCount: rows.filter((row) => row.status === "included").length,
+    excludedCount: rows.filter((row) => row.status === "excluded").length,
+  };
+  const legacy = {
+    ...state,
+    version: 2,
+    reports: state.reports.map((item) => ({
+      ...item,
+      accommodationPaymentMethods: ["card"],
+    })),
+    drafts: { [report.id]: { ...report, accommodationPaymentMethods: [] } },
+    progress: {
+      [reportPeriodKey(report, "2026-10")]: {
+        snapshot: {
+          confirmedAt: "2026-10-28T12:00:00Z",
+          definition: { ...report, accommodationPaymentMethods: ["card"] },
+          result: historical,
+        },
+      },
+    },
+  };
+  const restored = parsePrototypeState(JSON.stringify(legacy));
+  assert.equal("accommodationPaymentMethods" in restored.reports[2], false);
+  assert.equal(
+    "accommodationPaymentMethods" in restored.drafts[report.id],
+    false,
+  );
+  assert.equal(
+    evaluatePrototypeReport(restored, restored.reports[2], "2026-10").total,
+    212500,
+  );
+  assert.equal(
+    restored.progress[reportPeriodKey(report, "2026-10")].snapshot!.result
+      .total,
+    85500,
   );
 });

@@ -18,10 +18,13 @@ le droit d’écriture des statistiques.
 - Alertes avec accès direct à un formulaire de rattachement du gîte ou de saisie
   de l’encaissement. Les corrections de ces données recalculent les rapports
   concernés, sans modifier les copies confirmées.
-- Filtre des modes de paiement sous la catégorie Hébergement et ventilation de
-  ses recettes incluses par virement, chèque, espèces ou carte. Les autres
-  catégories restent indépendantes de ce filtre. Le canal de réservation est
-  affiché séparément du mode de paiement.
+- Ventilation des recettes d’hébergement par virement, chèque, espèces ou carte,
+  sans filtre d’exclusion par mode de paiement. Les anciens réglages de filtre
+  sont supprimés des rapports et brouillons à la reprise des essais. Les copies
+  confirmées conservent leurs montants et leurs opérations historiques.
+- En-têtes communs compacts : retour visible, titre et statut sur une même ligne,
+  période et destinataire regroupés. Le bouton « Réglages » conserve son libellé
+  même lorsqu’un brouillon existe ; celui-ci est indiqué dans l’éditeur.
 - Explication du choix de date : un paiement reçu le 25 octobre pour une arrivée
   le 2 novembre apparaît en octobre avec la date du paiement, et en novembre
   avec la date d’arrivée.

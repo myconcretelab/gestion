@@ -5,6 +5,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
+import ReportPageHeader from "./ReportPageHeader";
 import type { ReportWorkspace } from "./ReportsPrototypePage";
 import {
   applySourceCorrection,
@@ -109,25 +110,20 @@ export default function ReportSourceEditor({
   };
   return (
     <>
-      <Link className="rp-back-link" to={returnHref}>
-        <ReportIcon name="back" />
-        Revenir au rapport
-      </Link>
-      <header className="rp-page-header">
-        <div>
-          <h1>
-            {issueType === "operator"
-              ? "Rattacher le gîte à un exploitant"
-              : "Renseigner l’encaissement"}
-          </h1>
-        </div>
-      </header>
-      <form className="rp-panel rp-source-editor" onSubmit={save}>
-        <h2>
-          {issueType === "operator"
+      <ReportPageHeader
+        title={
+          issueType === "operator"
+            ? "Rattacher le gîte à un exploitant"
+            : "Renseigner l’encaissement"
+        }
+        back={{ to: returnHref, label: "Revenir au rapport" }}
+        meta={
+          issueType === "operator"
             ? property!.name
-            : `${operation!.guest} · ${operation!.reservation}`}
-        </h2>
+            : `${operation!.guest} · ${operation!.reservation}`
+        }
+      />
+      <form className="rp-panel rp-source-editor" onSubmit={save}>
         <p className="rp-muted">
           {issueType === "operator"
             ? "Ce rattachement s’applique à toutes les opérations de ce gîte dans la démonstration."

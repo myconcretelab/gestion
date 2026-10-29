@@ -130,6 +130,45 @@ try {
     .getByRole("button", { name: "Tous les rapports", exact: true })
     .click();
   await capture(page, "reports-desktop.png");
+  const headerPage = await createPage();
+  await headerPage.goto(`${origin}/rapports/demo-social`);
+  await headerPage
+    .getByRole("heading", { name: "Cotisations sociales", exact: true })
+    .waitFor();
+  const header = headerPage.locator(".rp-page-header");
+  assert.equal(await header.locator(".rp-page-description").count(), 0);
+  assert.equal(
+    await header.getByRole("link", { name: "Réglages", exact: true }).count(),
+    1,
+  );
+  const titleBox = await header
+    .getByRole("heading", { name: "Cotisations sociales", exact: true })
+    .boundingBox();
+  const badgeBox = await header
+    .getByText("4 à vérifier", { exact: true })
+    .boundingBox();
+  assert.ok(
+    Math.abs(
+      titleBox.y + titleBox.height / 2 - badgeBox.y - badgeBox.height / 2,
+    ) < 8,
+    "Status is on the title line",
+  );
+  assert.ok(
+    (await header.boundingBox()).height < 100,
+    "Desktop report header stays compact",
+  );
+  const backBox = await header
+    .getByRole("link", { name: "Tous les rapports", exact: true })
+    .boundingBox();
+  assert.ok(
+    backBox.width >= 44 && backBox.height >= 44,
+    "Back button has a visible, usable target",
+  );
+  await capture(headerPage, "reports-detail-desktop.png");
+  await headerPage.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await overflow(headerPage), false);
+  await capture(headerPage, "reports-detail-header-mobile.png");
+
   assert.equal(await overflow(page), false);
 
   // Confirm a report, change a single operation, and verify that the frozen copy survives.
@@ -197,9 +236,7 @@ try {
     .click();
 
   // Drafts survive navigation/reload, and editing doesn't alter a published report until applied.
-  await page
-    .getByRole("link", { name: "Modifier les règles", exact: true })
-    .click();
+  await page.getByRole("link", { name: "Réglages", exact: true }).click();
   await page
     .getByLabel("Nom du rapport", { exact: true })
     .fill("Recettes du verger");
@@ -210,9 +247,13 @@ try {
     .click();
   await page.getByRole("heading", { name: "Relevé propriétaire" }).waitFor();
   await page.reload();
-  await page
-    .getByRole("link", { name: "Reprendre le brouillon", exact: true })
-    .click();
+  assert.equal(
+    await page
+      .getByRole("link", { name: "Reprendre le brouillon", exact: true })
+      .count(),
+    0,
+  );
+  await page.getByRole("link", { name: "Réglages", exact: true }).click();
   assert.equal(
     await page.getByLabel("Nom du rapport", { exact: true }).inputValue(),
     "Recettes du verger",
@@ -375,12 +416,10 @@ try {
     .getByRole("button", { name: "Marquer comme prêt", exact: true })
     .waitFor();
 
-  // Changing the reference date and housing payment methods updates only the draft.
+  // Reference dates remain editable; payment methods only provide a breakdown.
   const rules = await createPage();
   await rules.goto(`${origin}/rapports/demo-owner/modifier`);
-  await rules
-    .getByRole("heading", { name: "Modifier les règles", exact: true })
-    .waitFor();
+  await rules.getByRole("heading", { name: "Réglages", exact: true }).waitFor();
   assert.equal(
     (await rules.locator(".rp-preview-value").innerText())
       .replace(/\s/g, "")
@@ -395,22 +434,19 @@ try {
     true,
   );
   await rules.getByRole("radio", { name: /Date du paiement reçu/ }).check();
-  const methods = rules.getByRole("group", {
-    name: "Hébergement : modes de paiement inclus",
-    exact: true,
-  });
-  for (const method of ["Virement", "Chèque", "Espèces", "Non renseigné"])
-    await methods
-      .getByRole("checkbox", { name: method, exact: true })
-      .uncheck();
-  assert.equal(
-    (await rules.locator(".rp-preview-value").innerText()).includes("855,00"),
-    true,
-  );
   assert.equal(
     await rules
-      .getByRole("checkbox", { name: "Ménage", exact: true })
-      .isChecked(),
+      .getByRole("group", {
+        name: "Hébergement : modes de paiement inclus",
+        exact: true,
+      })
+      .count(),
+    0,
+  );
+  assert.equal(
+    (await rules.locator(".rp-preview-value").innerText())
+      .replace(/\s/g, "")
+      .includes("2125,00"),
     true,
   );
   await rules
@@ -420,26 +456,23 @@ try {
     .getByRole("heading", { name: "Relevé propriétaire", exact: true })
     .waitFor();
   assert.equal(
-    (await rules.locator(".rp-total-value").innerText()).includes("855,00"),
+    (await rules.locator(".rp-total-value").innerText())
+      .replace(/\s/g, "")
+      .includes("2125,00"),
     true,
   );
-  assert.equal(
-    (
-      await rules
-        .getByRole("region", {
-          name: "Hébergement par mode de paiement",
-          exact: true,
-        })
-        .innerText()
-    ).includes("760,00"),
-    true,
-  );
+  const breakdown = await rules
+    .getByRole("region", {
+      name: "Hébergement par mode de paiement",
+      exact: true,
+    })
+    .innerText();
+  assert.equal(breakdown.includes("Virement"), true);
+  assert.equal(breakdown.includes("Carte bancaire"), true);
   await rules.setViewportSize({ width: 390, height: 844 });
-  await rules
-    .getByRole("link", { name: "Modifier les règles", exact: true })
-    .click();
+  await rules.getByRole("link", { name: "Réglages", exact: true }).click();
   assert.equal(await overflow(rules), false);
-  await capture(rules, "reports-payment-methods-mobile.png");
+  await capture(rules, "reports-settings-mobile.png");
   await fixes.setViewportSize({ width: 390, height: 844 });
   assert.equal(await overflow(fixes), false);
   await noStorage

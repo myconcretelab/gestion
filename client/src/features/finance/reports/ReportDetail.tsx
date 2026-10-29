@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPrototypePage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
+import ReportPageHeader from "./ReportPageHeader";
 import { sourceCorrectionHref } from "./ReportSourceEditor";
 import {
   categoryLabel,
@@ -174,93 +175,90 @@ export default function ReportDetail({
   };
   return (
     <>
-      <Link className="rp-back-link" to={href()}>
-        <ReportIcon name="back" />
-        Tous les rapports
-      </Link>
-      <header className="rp-page-header">
-        <div>
-          <p className="rp-eyebrow">
-            {getReportPeriod(displayedMonth, displayedReport.cadence).label} ·{" "}
-            {displayedReport.recipient}
-          </p>
-          <h1>{displayedReport.name}</h1>
-          <p className="rp-page-description">{displayedReport.description}</p>
-        </div>
-        <div className="rp-header-actions">
-          <button
-            type="button"
-            className="rp-button rp-button--secondary"
-            onClick={exportCsv}
+      <ReportPageHeader
+        title={displayedReport.name}
+        back={{ to: href(), label: "Tous les rapports" }}
+        status={
+          <ReportBadge
+            tone={
+              snapshot
+                ? "complete"
+                : differs || result.reviewCount
+                  ? "attention"
+                  : progress?.ready
+                    ? "primary"
+                    : progress?.snapshot
+                      ? "complete"
+                      : "neutral"
+            }
           >
-            <ReportIcon name="download" />
-            Exporter
-          </button>
-          {canEdit && (
-            <Link
-              className="rp-button rp-button--secondary"
-              to={href(`/${report.id}/modifier`)}
-            >
-              <ReportIcon name="settings" />
-              {state.drafts[report.id]
-                ? "Reprendre le brouillon"
-                : "Modifier les règles"}
-            </Link>
-          )}
-        </div>
-      </header>
-      <div className="rp-detail-toolbar">
-        <ReportBadge
-          tone={
-            snapshot
-              ? "complete"
-              : differs || result.reviewCount
-                ? "attention"
-                : progress?.ready
-                  ? "primary"
-                  : progress?.snapshot
-                    ? "complete"
-                    : "neutral"
-          }
-        >
-          {snapshot ? "Copie confirmée" : currentStatus}
-        </ReportBadge>
-        <div>
-          {snapshot ? (
-            <button
-              className="rp-text-button"
-              type="button"
-              onClick={() => {
-                setSnapshotKey(null);
-                setFilter("included");
-              }}
-            >
-              Revenir au calcul courant
-            </button>
-          ) : (
-            progress?.snapshot && (
+            {snapshot ? "Copie confirmée" : currentStatus}
+          </ReportBadge>
+        }
+        meta={
+          <>
+            <span>
+              {getReportPeriod(displayedMonth, displayedReport.cadence).label}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{displayedReport.recipient}</span>
+            {snapshot ? (
               <button
                 className="rp-text-button"
                 type="button"
                 onClick={() => {
-                  setSnapshotKey(key);
+                  setSnapshotKey(null);
                   setFilter("included");
                 }}
               >
-                Voir la copie confirmée
+                Revenir au calcul courant
               </button>
-            )
-          )}
-          <button
-            type="button"
-            className="rp-text-button"
-            onClick={() => setHistoryOpen(true)}
-          >
-            <ReportIcon name="clock" />
-            Historique{snapshots.length ? ` (${snapshots.length})` : ""}
-          </button>
-        </div>
-      </div>
+            ) : (
+              progress?.snapshot && (
+                <button
+                  className="rp-text-button"
+                  type="button"
+                  onClick={() => {
+                    setSnapshotKey(key);
+                    setFilter("included");
+                  }}
+                >
+                  Voir la copie confirmée
+                </button>
+              )
+            )}
+          </>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              className="rp-button rp-button--secondary"
+              onClick={() => setHistoryOpen(true)}
+            >
+              <ReportIcon name="clock" />
+              Historique{snapshots.length ? ` (${snapshots.length})` : ""}
+            </button>
+            <button
+              type="button"
+              className="rp-button rp-button--secondary"
+              onClick={exportCsv}
+            >
+              <ReportIcon name="download" />
+              Exporter
+            </button>
+            {canEdit && (
+              <Link
+                className="rp-button rp-button--secondary"
+                to={href(`/${report.id}/modifier`)}
+              >
+                <ReportIcon name="settings" />
+                Réglages
+              </Link>
+            )}
+          </>
+        }
+      />
       {snapshot && (
         <div className="rp-notice rp-notice--primary">
           <ReportIcon name="check" />
@@ -445,10 +443,6 @@ export default function ReportDetail({
         <div className="rp-panel-heading">
           <div>
             <h2 id="rp-operations-heading">Opérations</h2>
-            <p>
-              Sélectionnez une opération pour consulter ses dates et son
-              traitement.
-            </p>
           </div>
           <label className="rp-search">
             <ReportIcon name="search" />
