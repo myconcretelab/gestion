@@ -27,6 +27,14 @@ Les anciennes déclarations sociales et de nuitées apparaissent dans un histori
 
 La préparation est invalidée si les règles ou les sources changent. La confirmation conserve une copie des règles et opérations de la période. Une seule confirmation par rapport et période est autorisée ; elle ne peut pas être écrasée. Une modification ultérieure montre l’écart avec le calcul courant. Une période sans recette peut être confirmée à zéro.
 
+## Rappels dans Réservations
+
+Les rapports sociaux et de nuitées produisent des rappels dès la clôture de leur période, selon leur fréquence mensuelle, trimestrielle ou annuelle. Il s’agit de périodes à traiter, sans présumer d’une date limite légale. Les rapports internes ne produisent pas de rappel. Le début est déterminé par la première activité ou confirmation connue ; un rapport social continue à rappeler les périodes sans encaissement après cette date. Un rapport de nuitées sans activité ne produit pas de rappel.
+
+`GET /api/reports/reminders?year=2026` renvoie uniquement les résumés utiles, avec les mêmes protections que les rapports. La liste concerne l’année sélectionnée ; pour l’année courante, elle comprend aussi la dernière période de l’année précédente. Le logement sélectionné filtre les rappels par périmètre du rapport, sans modifier celui-ci. Trois lignes sont affichées, la suite est dépliable. Les rappels se rechargent après une modification de réservation ou au retour dans l’onglet. Un échec du chargement est signalé avec un bouton de nouvelle tentative.
+
+Une transmission confirmée retire le rappel. Une modification des données faisant diverger la copie confirmée fait réapparaître « Écart à examiner ». « Prêt » ne signifie pas transmis et conserve le rappel. Les anciennes confirmations sont respectées lorsqu’elles couvrent chaque mois et chaque logement du périmètre, par identifiant ; elles ne sont pas déduites des noms affichés. Elles ne remplacent ni les montants ni les copies des nouveaux rapports.
+
 Les brouillons sont conservés dans l’onglet, séparément par utilisateur et organisation. Une panne d’enregistrement conserve le brouillon et affiche une erreur. Les règles appliquées et confirmations sont sur le serveur. Les anciennes données fictives du prototype ne sont jamais importées. Un échec API ne fait jamais apparaître d’exemples à la place des données réelles.
 
 ## Migration et validation

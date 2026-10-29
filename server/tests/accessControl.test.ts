@@ -176,6 +176,9 @@ test("le registre des règlements est réservé aux droits sur les montants, y c
 
 test("les rapports exigent les droits de déclaration et d’accès aux montants ; la ventilation relève des réservations", () => {
   assert.equal(getRequiredBusinessPermission("GET", "/reports"), "declarations:read");
+  assert.equal(getRequiredBusinessPermission("GET", "/reports/reminders"), "declarations:read");
+  assert.equal(getRequiredPageForApiPath("/reports/reminders"), "statistics");
+  assert.equal(isAmountsOnlyApiPath("/reports/reminders"), true);
   assert.equal(getRequiredBusinessPermission("POST", "/reports/commands"), "declarations:write");
   assert.equal(getRequiredPageForApiPath("/reports"), "statistics");
   assert.equal(getRequiredBusinessPermission("PUT", "/reservations/r/reporting-allocation"), "reservations:write");

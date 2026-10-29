@@ -494,6 +494,7 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       subject: `${row.gestionnaire.prenom} ${row.gestionnaire.nom}`,
       value: cents(Number(row.amount)),
       confirmedAt: row.declared_at.toISOString(),
+      propertyIds: gites.filter((gite) => gite.gestionnaire_id === row.gestionnaire_id).map((gite) => gite.id),
     })),
     ...nightHistory.map((row) => ({
       id: row.id,
@@ -502,6 +503,7 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       subject: row.gite.nom,
       value: row.guest_nights,
       confirmedAt: row.declared_at.toISOString(),
+      propertyIds: [row.gite_id],
     })),
   ];
   return {

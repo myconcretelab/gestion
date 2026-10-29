@@ -140,6 +140,7 @@ export type LegacyReportDeclaration = {
   subject: string;
   value: number;
   confirmedAt: string;
+  propertyIds?: string[];
 };
 export type ReportWorkspaceData = ReportState & {
   organizationId: string;

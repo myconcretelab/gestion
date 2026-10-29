@@ -9,6 +9,7 @@ import {
   evaluateReport,
   reportPeriodKey,
   snapshotDiffers,
+  buildReportReminders,
   type ReportCommand,
   type ReportWorkspaceData,
 } from "@contrats/shared";
@@ -296,6 +297,7 @@ test("les anciennes déclarations sont reprises sans reconstruction de leurs op�
     const manager = await db.default.gestionnaire.create({
       data: { prenom: "Ancien", nom: "Propriétaire" },
     });
+    await db.default.gite.update({ where: { id: gite }, data: { gestionnaire_id: manager.id } });
     await db.default.urssafDeclaration.create({
       data: {
         year: 2025,
@@ -317,6 +319,8 @@ test("les anciennes déclarations sont reprises sans reconstruction de leurs op�
       12,
     );
     assert.deepEqual(state.progress, {});
+    assert.deepEqual(state.legacyDeclarations.map((row) => row.propertyIds), [[gite], [gite]]);
+    assert.deepEqual(buildReportReminders(state, 2026, new Date("2026-01-05T12:00:00Z")), []);
   }));
 test("les définitions persistent, les versions concurrentes et les faits périmés sont refusés", () =>
   fixture(async ({ gite }) => {

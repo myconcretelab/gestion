@@ -10,6 +10,7 @@ import {
   evaluateReport,
   reportPeriodKey,
   reportMutationSchema,
+  buildReportReminders,
 } from "@contrats/shared";
 
 const { chromium } = createRequire(
@@ -162,6 +163,8 @@ try {
       failMutation: 0,
       conflict: false,
       reads: 0,
+      reminderReads: 0,
+      failReminders: false,
     };
     await page.route("**/api/**", async (route) => {
       const request = route.request();
@@ -203,6 +206,43 @@ try {
           },
           modules: { finances },
         };
+      else if (pathname === "/api/reports/reminders" && method === "GET") {
+        fixture.reminderReads++;
+        status = fixture.failReminders ? 503 : 200;
+        body = fixture.failReminders
+          ? { error: "Indisponible" }
+          : {
+              reminders: buildReportReminders(
+                fixture.state,
+                Number(new URL(request.url()).searchParams.get("year")),
+                new Date("2026-11-05T12:00:00Z"),
+              ),
+            };
+      } else if (pathname === "/api/gites")
+        body = fixture.state.properties.map((property) => ({
+          id: property.id,
+          nom: property.name,
+          prefixe_contrat: property.initials,
+          capacite_max: 4,
+          prix_nuit: 100,
+          ordre: 0,
+        }));
+      else if (pathname === "/api/reservations/years") body = [2026];
+      else if (
+        [
+          "/api/reservations",
+          "/api/reservations/placeholders",
+          "/api/reservations/monthly-energy/eligible-gites",
+          "/api/reservations/monthly-energy",
+          "/api/school-holidays",
+        ].includes(pathname)
+      )
+        body = [];
+      else if (pathname === "/api/reservations/live-energy") body = {};
+      else if (pathname === "/api/statistics")
+        body = { gites: [], entriesByGite: {}, availableYears: [2026] };
+      else if (pathname === "/api/settings/source-colors")
+        body = { colors: {}, available_sources: [] };
       else if (pathname === "/api/reports" && method === "GET") {
         fixture.reads++;
         if (fixture.failRead-- > 0) {
@@ -602,6 +642,101 @@ try {
   await blocked
     .getByRole("heading", { name: "Rapports et déclarations" })
     .waitFor();
+  const { page: reservations, fixture: reservationFixture } =
+    await createPage();
+  reservationFixture.state.reports = [
+    { ...reservationFixture.state.reports[0], propertyIds: ["g1"] },
+  ];
+  reservationFixture.state.operations = [
+    reservationFixture.state.operations[0],
+  ];
+  const reservationUrl = `${origin}/reservations?year=2026&month=10&tab=all-gites`;
+  await reservations.goto(reservationUrl);
+  const reminders = reservations.getByRole("region", {
+    name: /Déclarations à traiter/,
+  });
+  await reminders.waitFor();
+  assert.match(await reminders.innerText(), /octobre 2026/);
+  assert.equal(await reminders.locator("li").count(), 1);
+  await capture(reservations, "reservations-reminder-desktop.png");
+  for (const width of [360, 390, 768]) {
+    await reservations.setViewportSize({ width, height: 844 });
+    assert.equal(
+      await reminders.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+      true,
+    );
+    if (width === 390)
+      await reminders.screenshot({
+        path: path.join(screenshots, "reservations-reminder-mobile.png"),
+      });
+  }
+  await reservations.getByRole("tab", { name: /Le Refuge des bois/ }).click();
+  assert.equal(await reminders.count(), 0);
+  await reservations.getByRole("tab", { name: /La Maison du verger/ }).click();
+  await reminders.waitFor();
+  reservationFixture.state.operations[0].paymentDate = "2026-06-10";
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders
+    .getByRole("button", { name: "Voir 2 autres déclarations", exact: true })
+    .waitFor();
+  assert.equal(await reminders.locator("li").count(), 3);
+  await reminders
+    .getByRole("button", { name: "Voir 2 autres déclarations", exact: true })
+    .click();
+  assert.equal(await reminders.locator("li").count(), 5);
+  await reminders
+    .getByRole("button", { name: "Réduire la liste", exact: true })
+    .click();
+  assert.equal(await reminders.locator("li").count(), 3);
+  reservationFixture.state.operations[0].paymentDate = "2026-10-10";
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders
+    .getByText("octobre 2026 · Entreprise Martin", { exact: true })
+    .waitFor();
+  await reminders.getByRole("link", { name: /^Ouvrir/ }).click();
+  assert.match(reservations.url(), /\/rapports\/social\?periode=2026-10/);
+  await reservations
+    .getByRole("button", { name: "Marquer comme prêt", exact: true })
+    .click();
+  await reservations
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .click();
+  await reservations
+    .getByRole("dialog")
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .click();
+  await reservations
+    .getByRole("button", { name: "Voir la copie confirmée", exact: true })
+    .waitFor();
+  await reservations.goto(reservationUrl);
+  await reservations.waitForResponse((response) =>
+    response.url().includes("/reports/reminders"),
+  );
+  assert.equal(await reminders.count(), 0);
+  reservationFixture.state.operations[0].amountCents += 100;
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders.getByText("Écart à examiner", { exact: true }).waitFor();
+  reservationFixture.failReminders = true;
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reservations
+    .getByText("Les rappels de déclaration sont indisponibles.", {
+      exact: true,
+    })
+    .waitFor();
+  reservationFixture.failReminders = false;
+  await reservations
+    .getByRole("button", { name: "Réessayer", exact: true })
+    .click();
+  await reminders.waitFor();
+  for (const options of [{ canViewAmounts: false }, { finances: false }]) {
+    const { page: hidden, fixture: hiddenFixture } = await createPage(options);
+    await hidden.goto(reservationUrl);
+    await hidden.waitForLoadState("networkidle");
+    assert.equal(hiddenFixture.reminderReads, 0);
+    assert.equal(await hidden.locator(".reservation-declarations").count(), 0);
+  }
   assert.deepEqual(unexpectedRequests, []);
   assert.deepEqual(runtimeErrors, []);
   console.log(

@@ -3,6 +3,7 @@ import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } fr
 import ReservationPaymentPopover from "./shared/ReservationPaymentPopover";
 import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
 import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
+import ReservationDeclarationReminders from "../features/finance/reports/ReservationDeclarationReminders";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import {
   Fragment,
@@ -4340,6 +4341,14 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
         <div className="section-title">Réservations</div>
 
         <GiteTabs activeId={activeTab} items={reservationTabItems} onChange={handleTabChange} sticky />
+
+        {reportsEnabled && activeTab && <ReservationDeclarationReminders
+          key={year}
+          year={year}
+          propertyId={activeTab === ALL_GITES_TAB ? undefined : activeTab}
+          refreshKey={reservations}
+          currentTimeMs={currentTimeMs}
+        />}
 
         {activeTab === UNASSIGNED_TAB && placeholders.length > 0 && (
           <div className="field-hint reservations-unassigned-hint">
