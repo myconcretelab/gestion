@@ -2590,6 +2590,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               online_payment: mobilePaymentDetails.reservation.online_payment,
               telephone: mobilePaymentDetails.reservation.telephone,
               email: mobilePaymentDetails.reservation.email,
+              options: mobilePaymentDetails.reservation.options,
             } : {}),
           }}
           paymentLoading={currentUser?.permissions.canViewAmounts !== false &&

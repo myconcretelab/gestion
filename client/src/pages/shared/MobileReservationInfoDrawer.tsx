@@ -104,6 +104,7 @@ const MobileReservationInfoDrawer = ({
         <ReservationPaymentLinkDialog key={reservation.id} reservation={{
           id: reservation.id, hote_nom: props.title, date_entree: reservation.date_entree,
           date_sortie: reservation.date_sortie, telephone: reservation.telephone, email: reservation.email,
+          nb_nuits: reservation.nb_nuits, options: reservation.options,
         }} onClose={() => setPaymentLinkOpen(false)} />
       </Suspense> : null}
     </>
