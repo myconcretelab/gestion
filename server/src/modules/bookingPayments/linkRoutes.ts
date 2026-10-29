@@ -79,7 +79,9 @@ const withPublicLink =
     );
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
-    res.setHeader("Referrer-Policy", "no-referrer");
+    // no-referrer makes form POSTs send Origin: null, failing our origin check.
+    // Keep the origin for our form without disclosing the private URL to Stripe.
+    res.setHeader("Referrer-Policy", "same-origin");
     const throttle = await enforceRequestRateLimit(
       req,
       res,

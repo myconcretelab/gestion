@@ -338,6 +338,7 @@ test("aperçu public : aucun Checkout créé, aucune coordonnée exposée, HTML 
     );
     assert.equal(res.status, 200);
     assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal(res.headers.get("referrer-policy"), "same-origin");
     assert.match(res.headers.get("x-robots-tag")!, /noindex/);
     const body = await res.text();
     assert.match(body, /&lt;Gîte fictif&gt;/);
@@ -369,6 +370,45 @@ test("aperçu public : aucun Checkout créé, aucune coordonnée exposée, HTML 
       const refunded = await fetch(origin);
       assert.match(await refunded.text(), /suivi nécessaire/);
     });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("le formulaire conserve son origine et refuse les origines étrangères ou masquées", async () => {
+  const { publicReservationPaymentRouter } =
+    await import("../src/modules/bookingPayments/linkRoutes.js");
+  const app = express();
+  app.use("/p", publicReservationPaymentRouter);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  try {
+    const url = `http://127.0.0.1:${(server.address() as any).port}/p/invalid-code`;
+    const page = await fetch(url);
+    assert.equal(page.headers.get("referrer-policy"), "same-origin");
+    const before = await inOrg(() => db.default.bookingPayment.count());
+    for (const origin of [
+      "http://localhost:4001",
+      "https://foreign.example",
+      "null",
+    ]) {
+      const response = await fetch(url + "/checkout", {
+        method: "POST",
+        headers: { Origin: origin },
+        redirect: "manual",
+      });
+      // A trusted origin reaches link validation; others stop before any checkout.
+      assert.equal(
+        response.status,
+        origin === "http://localhost:4001" ? 404 : 403,
+      );
+      const body = await response.text();
+      assert.match(
+        body,
+        origin === "http://localhost:4001" ? /introuvable/ : /Action refusée/,
+      );
+    }
+    assert.equal(await inOrg(() => db.default.bookingPayment.count()), before);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
