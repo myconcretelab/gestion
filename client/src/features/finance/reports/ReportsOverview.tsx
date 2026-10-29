@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import ReportPageHeader from "./ReportPageHeader";
-import type { ReportWorkspace } from "./ReportsPrototypePage";
+import type { ReportWorkspace } from "./ReportsPage";
 import {
   cadenceLabel,
-  evaluatePrototypeReport,
+  evaluateWorkspaceReport,
   formatReportValue,
   getReportPeriod,
   reportPeriodKey,
   reportStatus,
-} from "./reportPrototype";
+} from "./reportModel";
 import {
   ReportBadge,
   ReportEmpty,
@@ -18,7 +18,17 @@ import {
 } from "./ReportUi";
 
 export default function ReportsOverview({
-  workspace: { state, setState, month, setMonth, href, canEdit },
+  workspace: {
+    state,
+    mutate,
+    month,
+    setMonth,
+    href,
+    canEdit,
+    saving,
+    loading,
+    refresh,
+  },
 }: {
   workspace: ReportWorkspace;
 }) {
@@ -26,7 +36,7 @@ export default function ReportsOverview({
   const [search, setSearch] = useState("");
   const summaries = state.reports.map((report) => {
     const key = reportPeriodKey(report, month);
-    const result = evaluatePrototypeReport(state, report, month);
+    const result = evaluateWorkspaceReport(state, report, month);
     const progress = state.progress[key];
     return { report, result, progress, status: reportStatus(progress, result) };
   });
@@ -55,12 +65,23 @@ export default function ReportsOverview({
       <ReportPageHeader
         title="Rapports et déclarations"
         actions={
-          canEdit && (
-            <Link to={href("/nouveau")} className="rp-button">
-              <ReportIcon name="plus" />
-              Créer un rapport
-            </Link>
-          )
+          <div className="rp-header-actions">
+            <button
+              type="button"
+              className="rp-icon-button"
+              aria-label="Actualiser les données"
+              disabled={saving || loading}
+              onClick={refresh}
+            >
+              <ReportIcon name="refresh" />
+            </button>
+            {canEdit && (
+              <Link to={href("/nouveau")} className="rp-button">
+                <ReportIcon name="plus" />
+                Créer un rapport
+              </Link>
+            )}
+          </div>
         }
       />
       <div className="rp-overview-top">
@@ -77,9 +98,6 @@ export default function ReportsOverview({
               onChange={(event) => setMonth(event.target.value)}
             />
           </label>
-          <span className="rp-muted">
-            Exemples disponibles de septembre à novembre 2026
-          </span>
         </div>
         <div className="rp-stat-card">
           <span className="rp-stat-number">
@@ -193,16 +211,13 @@ export default function ReportsOverview({
                   className={`rp-icon-button${report.favorite ? " is-favorite" : ""}`}
                   aria-label={`${report.favorite ? "Retirer des" : "Ajouter aux"} favoris : ${report.name}`}
                   aria-pressed={report.favorite}
-                  disabled={!canEdit}
+                  disabled={!canEdit || saving}
                   onClick={() =>
-                    setState((previous) => ({
-                      ...previous,
-                      reports: previous.reports.map((item) =>
-                        item.id === report.id
-                          ? { ...item, favorite: !item.favorite }
-                          : item,
-                      ),
-                    }))
+                    void mutate({
+                      type: "favorite",
+                      reportId: report.id,
+                      favorite: !report.favorite,
+                    })
                   }
                 >
                   <ReportIcon name="star" />
@@ -224,6 +239,36 @@ export default function ReportsOverview({
           )}
         </div>
       </section>
+      {state.legacyDeclarations.length > 0 && (
+        <details className="rp-panel rp-legacy-history">
+          <summary>
+            Déclarations historiques ({state.legacyDeclarations.length})
+          </summary>
+          <p className="rp-muted">
+            Montants enregistrés avant les nouveaux rapports. Les opérations et
+            les règles utilisées à l’époque ne sont pas disponibles ; ces
+            montants sont conservés tels quels.
+          </p>
+          <div className="rp-history-list">
+            {state.legacyDeclarations
+              .filter((row) => row.period.startsWith(month.slice(0, 4)))
+              .map((row) => (
+                <div key={`${row.kind}:${row.id}`}>
+                  <span>
+                    <strong>{row.subject}</strong>
+                    <small>
+                      {row.period} ·{" "}
+                      {row.kind === "social"
+                        ? "Cotisations sociales"
+                        : "Nuitées"}
+                    </small>
+                  </span>
+                  <b>{formatReportValue(row, row.value)}</b>
+                </div>
+              ))}
+          </div>
+        </details>
+      )}
     </>
   );
 }

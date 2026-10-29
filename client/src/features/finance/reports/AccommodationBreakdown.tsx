@@ -3,7 +3,7 @@ import {
   formatReportValue,
   type ReportDefinition,
   type ReportResult,
-} from "./reportPrototype";
+} from "./reportModel";
 
 export default function AccommodationBreakdown({
   report,
@@ -12,7 +12,11 @@ export default function AccommodationBreakdown({
   report: ReportDefinition;
   result: ReportResult;
 }) {
-  if (report.kind === "tourist" || !report.categories.includes("accommodation"))
+  if (
+    report.kind === "tourist" ||
+    report.dateBasis !== "payment" ||
+    !report.categories.includes("accommodation")
+  )
     return null;
   const groups = accommodationBreakdown(result);
   return (

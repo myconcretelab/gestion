@@ -146,7 +146,7 @@ const main = async () => {
       process.exit(1);
     }
 
-    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments, invoiceSequences, superPdpConnections, recordedPayments, bookingRequests, bookingPayments, reservationPaymentLinks] =
+    const [gestionnaires, gites, counters, contrats, factures, factureCounters, placeholders, reservations, planningRelayPeriods, planningRelayWorkers, planningRelayAssignments, guestNightDeclarations, urssafDeclarations, fiscalEntities, fiscalEstablishments, invoiceSequences, superPdpConnections, recordedPayments, bookingRequests, bookingPayments, reservationPaymentLinks, financeReportStores] =
       await Promise.all([
         tableNames.has("gestionnaires") ? sqlite.gestionnaire.findMany() : Promise.resolve([]),
         sqlite.gite.findMany(),
@@ -169,6 +169,7 @@ const main = async () => {
         tableNames.has("booking_requests") ? sqlite.bookingRequest.findMany() : Promise.resolve([]),
         tableNames.has("booking_payments") ? sqlite.bookingPayment.findMany() : Promise.resolve([]),
         tableNames.has("reservation_payment_links") ? sqlite.reservationPaymentLink.findMany() : Promise.resolve([]),
+        tableNames.has("finance_report_stores") ? sqlite.financeReportStore.findMany() : Promise.resolve([]),
       ]);
 
     console.log(`Gestionnaires: ${gestionnaires.length}`);
@@ -205,6 +206,7 @@ const main = async () => {
         postgres.planningRelayWorker.deleteMany(),
         postgres.intervenantExpense.deleteMany(),
         postgres.reservationRecordedPayment.deleteMany(),
+        postgres.financeReportStore.deleteMany(),
         postgres.bookingPayment.deleteMany(),
         postgres.reservationPaymentLink.deleteMany(),
         postgres.bookingRequest.deleteMany(),
@@ -386,6 +388,11 @@ const main = async () => {
       const { id, ...data } = payment;
       await postgres.bookingPayment.upsert({ where: { id }, create: { id, ...data }, update: data });
     }
+    for (const store of financeReportStores) {
+      const { id, ...data } = store;
+      await postgres.financeReportStore.upsert({ where: { id }, create: { id, ...data }, update: data });
+    }
+
     for (const payment of recordedPayments) {
       const { id, ...data } = payment;
       await postgres.reservationRecordedPayment.upsert({ where: { id }, create: { id, ...data }, update: data });

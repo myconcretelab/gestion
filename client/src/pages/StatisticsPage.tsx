@@ -178,22 +178,6 @@ const buildChartGroups = (params: {
   }));
 };
 
-const copyRounded = (value: number) => {
-  const text = String(Math.round(value));
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "absolute";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textarea);
-};
 
 const readFileAsBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -518,7 +502,7 @@ const StatisticsPage = () => {
           </div>
 
           <div className="stats-switches">
-            <StatSwitch label="Mode déclaration" checked={showUrssaf} onChange={setShowUrssaf} />
+            <StatSwitch label="Ancien calcul fiscal" checked={showUrssaf} onChange={setShowUrssaf} />
             <StatSwitch label="Stats" checked={showStats} onChange={setShowStats} />
             <label className={`stats-import-button${legacyImportBusy ? " is-disabled" : ""}`}>
               {legacyImportBusy ? "Analyse…" : "Importer un Excel"}
@@ -620,17 +604,15 @@ const StatisticsPage = () => {
 
         {showUrssaf ? (
           <div className="stats-urssaf">
+            <p>Ancien calcul selon les dates de séjour et les anciens indicateurs d’options. <a href={`/rapports?periode=${typeof selectedYear === "number" ? selectedYear : currentYear}-${String(selectedMonth || 1).padStart(2, "0")}`}>Ouvrir les rapports sur encaissements →</a></p>
             <div className="stats-urssaf-managers">
               {urssafByManager.map((manager, index) => (
                 <div key={manager.managerId} className="stats-urssaf-manager">
-                  <span className={`stats-urssaf-owner stats-urssaf-owner--${index % 4}`}>URSSAF {manager.manager}</span>
+                  <span className={`stats-urssaf-owner stats-urssaf-owner--${index % 4}`}>Ancienne base · {manager.manager}</span>
                   <span className="stats-urssaf-value">{formatEuro(manager.amount)}</span>
-                  <button type="button" className="stats-copy-btn" onClick={() => copyRounded(manager.amount)}>
-                    copier
-                  </button>
                 </div>
               ))}
-              {urssafByManager.length === 0 ? <div>Aucun montant URSSAF sur la période.</div> : null}
+              {urssafByManager.length === 0 ? <div>Aucun ancien montant sur la période.</div> : null}
             </div>
             <div className="stats-urssaf-nights">
               {gites.map((gite) => (

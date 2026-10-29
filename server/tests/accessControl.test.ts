@@ -173,3 +173,13 @@ test("le registre des règlements est réservé aux droits sur les montants, y c
   const redacted = redactMonetaryValues({ booking_source: "Direct", payment_tracking: { received: 200, remaining: 800, entries: [{ amount: 200 }] } });
   assert.deepEqual(redacted, { booking_source: "Direct", payment_tracking: {} });
 });
+
+test("les rapports exigent les droits de déclaration et d’accès aux montants ; la ventilation relève des réservations", () => {
+  assert.equal(getRequiredBusinessPermission("GET", "/reports"), "declarations:read");
+  assert.equal(getRequiredBusinessPermission("POST", "/reports/commands"), "declarations:write");
+  assert.equal(getRequiredPageForApiPath("/reports"), "statistics");
+  assert.equal(getRequiredBusinessPermission("PUT", "/reservations/r/reporting-allocation"), "reservations:write");
+  for (const path of ["/reports", "/REPORTS/COMMANDS", "/reports/commands", "/reservations/r/reporting-allocation", "/RESERVATIONS/R/REPORTING-ALLOCATION"]) assert.equal(isAmountsOnlyApiPath(path), true);
+  assert.equal(hasBusinessPermission(worker, "declarations:read"), false);
+  assert.equal(hasBusinessPermission({ ...worker, pageAccess: ["statistics"], permissions: { ...worker.permissions, canWrite: false } }, "declarations:write"), false);
+});

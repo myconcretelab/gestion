@@ -114,3 +114,6 @@ export * from "./bookingRequestOptionDetails.js";
 
 export * from "./bookingEmailTemplates.js";
 export * from "./reservationPayments.js";
+
+export * from "./reports.js";
+export * from "./reportApi.js";

@@ -1,23 +1,21 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import type { ReportWorkspace } from "./ReportsPrototypePage";
+import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
 import ReportPageHeader from "./ReportPageHeader";
 import {
   categoryLabel,
   cadenceLabel,
   createReport,
-  evaluatePrototypeReport,
+  evaluateWorkspaceReport,
   formatReportValue,
   getReportPeriod,
-  propertyName,
   REPORT_CATEGORIES,
-  REPORT_PROPERTIES,
   REPORT_TEMPLATES,
   type ReportCadence,
   type ReportDefinition,
   type ReportKind,
-} from "./reportPrototype";
+} from "./reportModel";
 import {
   ReportBadge,
   ReportDialog,
@@ -31,8 +29,18 @@ export default function ReportEditor({
   workspace: ReportWorkspace;
 }) {
   const { reportId } = useParams();
-  const { state, setState, month, href, canEdit, notify, storageError } =
-    workspace;
+  const {
+    state,
+    setDraft,
+    mutate,
+    saving,
+    propertyName,
+    month,
+    href,
+    canEdit,
+    notify,
+    storageError,
+  } = workspace;
   const navigate = useNavigate();
   const [choosingTemplate, setChoosingTemplate] = useState(false);
   const [mobilePane, setMobilePane] = useState("settings");
@@ -41,11 +49,24 @@ export default function ReportEditor({
   const draft = state.drafts[draftKey] ?? base;
   const [error, setError] = useState("");
   const choose = (kind: ReportKind) => {
-    const next = createReport(kind, `demo-${crypto.randomUUID()}`);
-    setState((previous) => ({
-      ...previous,
-      drafts: { ...previous.drafts, [draftKey]: next },
-    }));
+    const next = {
+      ...createReport(kind, crypto.randomUUID()),
+      propertyIds: state.properties.map((property) => property.id),
+    };
+    if (kind === "social") {
+      next.operatorId =
+        state.operators.find((operator) => !operator.legacy)?.id ?? null;
+      next.propertyIds = state.properties
+        .filter(
+          (property) =>
+            !next.operatorId || property.operatorId === next.operatorId,
+        )
+        .map((property) => property.id);
+      next.recipient =
+        state.operators.find((operator) => operator.id === next.operatorId)
+          ?.name ?? "À renseigner";
+    }
+    setDraft(draftKey, next);
     setChoosingTemplate(false);
   };
   if (!canEdit)
@@ -95,24 +116,17 @@ export default function ReportEditor({
         {templates}
         <p className="rp-template-note">
           <ReportIcon name="info" />
-          Ces modèles illustrent le parcours. Leurs règles devront être validées
-          avant un usage réel.
+          Sélectionnez les logements, les catégories et la période à utiliser.
         </p>
       </>
     );
 
   const update = (patch: Partial<ReportDefinition>) => {
     setError("");
-    setState((previous) => ({
-      ...previous,
-      drafts: {
-        ...previous.drafts,
-        [draftKey]: { ...(previous.drafts[draftKey] ?? draft), ...patch },
-      },
-    }));
+    setDraft(draftKey, { ...draft, ...patch });
   };
-  const result = evaluatePrototypeReport(state, draft, month);
-  const baseline = base ? evaluatePrototypeReport(state, base, month) : null;
+  const result = evaluateWorkspaceReport(state, draft, month);
+  const baseline = base ? evaluateWorkspaceReport(state, base, month) : null;
   const previousIds = new Set(
     baseline?.rows
       .filter((row) => row.status === "included")
@@ -128,58 +142,46 @@ export default function ReportEditor({
     !base ||
     JSON.stringify({ ...draft, favorite: base.favorite }) !==
       JSON.stringify(base);
-  const publish = (event: FormEvent) => {
+  const publish = async (event: FormEvent) => {
     event.preventDefault();
     if (
       !draft.name.trim() ||
       !draft.recipient.trim() ||
       !draft.propertyIds.length ||
-      !draft.categories.length
+      !draft.categories.length ||
+      (draft.kind === "social" && !draft.operatorId)
     ) {
       setError(
-        "Renseignez un nom, un destinataire, au moins un logement et une catégorie.",
+        "Renseignez un nom, un destinataire, au moins un logement, une catégorie et l’exploitant pour un rapport social.",
       );
       setMobilePane("settings");
-      const fieldId = !draft.name.trim()
-        ? "rp-report-name"
-        : !draft.recipient.trim()
-          ? "rp-report-recipient"
-          : !draft.propertyIds.length
-            ? "rp-report-properties"
-            : "rp-report-categories";
+      const fieldId =
+        draft.kind === "social" && !draft.operatorId
+          ? "rp-report-operator"
+          : !draft.name.trim()
+            ? "rp-report-name"
+            : !draft.recipient.trim()
+              ? "rp-report-recipient"
+              : !draft.propertyIds.length
+                ? "rp-report-properties"
+                : "rp-report-categories";
       window.requestAnimationFrame(() =>
         document.getElementById(fieldId)?.focus(),
       );
       return;
     }
-    setState((previous) => {
-      const current = previous.reports.find((report) => report.id === draft.id);
-      const published = {
-        ...draft,
-        name: draft.name.trim(),
-        recipient: draft.recipient.trim(),
-        favorite: current?.favorite ?? draft.favorite,
-      };
-      const drafts = { ...previous.drafts };
-      delete drafts[draftKey];
-      // A new definition invalidates readiness; confirmed snapshots remain immutable.
-      const progress = Object.fromEntries(
-        Object.entries(previous.progress).map(([key, value]) => [
-          key,
-          key.startsWith(`${draft.id}:`) ? { ...value, ready: false } : value,
-        ]),
-      );
-      return {
-        ...previous,
-        drafts,
-        progress,
-        reports: current
-          ? previous.reports.map((report) =>
-              report.id === draft.id ? published : report,
-            )
-          : [...previous.reports, published],
-      };
-    });
+    if (
+      !(await mutate({
+        type: "save",
+        definition: {
+          ...draft,
+          name: draft.name.trim(),
+          recipient: draft.recipient.trim(),
+        },
+      }))
+    )
+      return;
+    setDraft(draftKey, null);
     notify(
       base
         ? "Les nouvelles règles sont appliquées. Les copies confirmées sont conservées."
@@ -234,7 +236,7 @@ export default function ReportEditor({
       </div>
       <form
         className={`rp-editor rp-editor--${mobilePane}`}
-        onSubmit={publish}
+        onSubmit={(event) => void publish(event)}
         noValidate
       >
         <div className="rp-editor-settings">
@@ -295,6 +297,45 @@ export default function ReportEditor({
                 <h2>Périmètre</h2>
               </div>
             </div>
+            {draft.kind === "social" && (
+              <label className="rp-field">
+                Exploitant
+                <select
+                  id="rp-report-operator"
+                  value={draft.operatorId ?? ""}
+                  onChange={(event) => {
+                    const operatorId = event.target.value || null;
+                    const operator = state.operators.find(
+                      (row) => row.id === operatorId,
+                    );
+                    update({
+                      operatorId,
+                      recipient: operator?.name ?? draft.recipient,
+                      propertyIds: state.properties
+                        .filter(
+                          (property) =>
+                            !operatorId ||
+                            !property.operatorId ||
+                            property.operatorId === operatorId,
+                        )
+                        .map((property) => property.id),
+                    });
+                  }}
+                >
+                  <option value="">Rattachement à vérifier</option>
+                  {state.operators.map((operator) => (
+                    <option key={operator.id} value={operator.id}>
+                      {operator.name}
+                      {operator.legacy ? " · propriétaire historique" : ""}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Le rattachement à l’établissement facturant est utilisé. Un
+                  propriétaire historique reste à confirmer.
+                </small>
+              </label>
+            )}
             <fieldset
               className="rp-choice-fieldset"
               id="rp-report-properties"
@@ -302,7 +343,7 @@ export default function ReportEditor({
             >
               <legend>Logements concernés</legend>
               <div className="rp-property-choices">
-                {REPORT_PROPERTIES.map((property) => (
+                {state.properties.map((property) => (
                   <label
                     key={property.id}
                     className={`rp-property-choice${draft.propertyIds.includes(property.id) ? " is-selected" : ""}`}
@@ -310,6 +351,12 @@ export default function ReportEditor({
                     <input
                       type="checkbox"
                       checked={draft.propertyIds.includes(property.id)}
+                      disabled={
+                        draft.kind === "social" &&
+                        Boolean(draft.operatorId) &&
+                        Boolean(property.operatorId) &&
+                        draft.operatorId !== property.operatorId
+                      }
                       onChange={(event) =>
                         update({
                           propertyIds: event.target.checked
@@ -341,7 +388,9 @@ export default function ReportEditor({
               <div className="rp-category-choices">
                 {REPORT_CATEGORIES.filter(
                   (category) =>
-                    draft.kind !== "tourist" || category.id === "accommodation",
+                    (draft.kind !== "tourist" ||
+                      category.id === "accommodation") &&
+                    (draft.kind !== "social" || category.id !== "tourist_tax"),
                 ).map((category) => (
                   <label
                     key={category.id}
@@ -370,7 +419,7 @@ export default function ReportEditor({
               </div>
               <p className="rp-field-help">
                 {draft.kind === "tourist"
-                  ? "L’aperçu compte les nuitées des lignes d’hébergement. Il ne calcule pas un montant de taxe."
+                  ? "Le rapport compte les personnes hébergées par nuit, y compris les enfants. Il ne calcule pas un montant de taxe."
                   : "Une même recette peut alimenter plusieurs rapports."}
               </p>
             </fieldset>
@@ -406,13 +455,20 @@ export default function ReportEditor({
                   },
                   {
                     id: "stay" as const,
-                    label: "Date d’arrivée",
-                    text: "L’opération apparaît dans le mois de l’arrivée.",
+                    label:
+                      draft.kind === "tourist"
+                        ? "Date des nuitées"
+                        : "Date d’arrivée",
+                    text:
+                      draft.kind === "tourist"
+                        ? "Les nuitées sont réparties dans chaque mois du séjour."
+                        : "Le montant du séjour apparaît dans le mois de l’arrivée.",
                   },
                 ]
                   .filter(
                     (choice) =>
-                      draft.kind !== "tourist" || choice.id === "stay",
+                      (draft.kind !== "tourist" || choice.id === "stay") &&
+                      (draft.kind !== "social" || choice.id === "payment"),
                   )
                   .map((choice) => (
                     <label
@@ -434,31 +490,42 @@ export default function ReportEditor({
                     </label>
                   ))}
               </div>
-              <div className="rp-date-example">
-                <strong>
-                  Exemple : paiement le 25 octobre, arrivée le 2 novembre
-                </strong>
-                <dl>
-                  <div
-                    className={
-                      draft.dateBasis === "payment" ? "is-selected" : ""
-                    }
-                  >
-                    <dt>Date du paiement reçu</dt>
-                    <dd>Rapport d’octobre</dd>
-                  </div>
-                  <div
-                    className={draft.dateBasis === "stay" ? "is-selected" : ""}
-                  >
-                    <dt>Date d’arrivée</dt>
-                    <dd>Rapport de novembre</dd>
-                  </div>
-                </dl>
-                <p>
-                  Dans le prototype, le choix « Date d’arrivée » rattache le
-                  séjour entier au mois de l’arrivée.
+              {draft.kind !== "social" && draft.kind !== "tourist" ? (
+                <div className="rp-date-example">
+                  <strong>
+                    Exemple : paiement le 25 octobre, arrivée le 2 novembre
+                  </strong>
+                  <dl>
+                    <div
+                      className={
+                        draft.dateBasis === "payment" ? "is-selected" : ""
+                      }
+                    >
+                      <dt>Date du paiement reçu</dt>
+                      <dd>Rapport d’octobre</dd>
+                    </div>
+                    <div
+                      className={
+                        draft.dateBasis === "stay" ? "is-selected" : ""
+                      }
+                    >
+                      <dt>Date d’arrivée</dt>
+                      <dd>Rapport de novembre</dd>
+                    </div>
+                  </dl>
+                  <p>
+                    Le choix « Date d’arrivée » rattache le montant prévu du
+                    séjour au mois de l’arrivée. Le choix « Date du paiement
+                    reçu » utilise uniquement les règlements enregistrés.
+                  </p>
+                </div>
+              ) : (
+                <p className="rp-muted">
+                  {draft.kind === "tourist"
+                    ? "Une nuitée correspond à une personne hébergée pendant une nuit. Les séjours à cheval sur deux mois sont répartis entre ces mois."
+                    : "Chaque règlement est retenu dans la période de son encaissement, indépendamment des dates du séjour."}
                 </p>
-              </div>
+              )}
             </fieldset>
           </section>
         </div>
@@ -590,7 +657,7 @@ export default function ReportEditor({
           >
             Fermer le brouillon
           </Link>
-          <button type="submit" className="rp-button">
+          <button type="submit" className="rp-button" disabled={saving}>
             <ReportIcon name="check" />
             {base ? "Appliquer les règles" : "Créer ce rapport"}
           </button>

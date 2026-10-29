@@ -85,7 +85,7 @@ export const getRequiredBusinessPermission = (method: string, requestPath: strin
   if (path.startsWith("/invoices")) return familyPermission("invoices", method);
   if (path.startsWith("/statistics")) return isWriteMethod(method) ? "finances:write" : "statistics:read";
   if (/^\/(?:personal-expenses|professional-expenses)/.test(path)) return familyPermission("finances", method);
-  if (/^\/(?:guest-night-declarations|urssaf-declarations)/.test(path)) return familyPermission("declarations", method);
+  if (/^\/(?:guest-night-declarations|urssaf-declarations|reports)/.test(path)) return familyPermission("declarations", method);
   if (path.startsWith("/cleaning-tasks")) return (path.endsWith("/status") || path.endsWith("/note")) && isWriteMethod(method) ? "cleaning:execute" : familyPermission("planning", method);
   if (path.startsWith("/action-tasks")) {
     if (path.startsWith("/action-tasks/reminder-settings")) return familyPermission("settings", method);
@@ -161,6 +161,8 @@ export const redactMonetaryJson: RequestHandler = (_req, res, next) => {
 };
 
 export const isAmountsOnlyApiPath = (path: string) =>
+  /^\/reports(?:\/|$)/i.test(path) ||
+  /^\/reservations\/[^/]+\/reporting-allocation(?:\/|$)/i.test(path) ||
   /^\/reservations\/[^/]+\/payments(?:\/|$)/.test(path) ||
   /^\/reservations\/[^/]+\/payment-links(?:\/|$)/.test(path) ||
   [
@@ -170,6 +172,7 @@ export const isAmountsOnlyApiPath = (path: string) =>
     "/personal-expenses",
     "/professional-expenses",
     "/urssaf-declarations",
+    "/reports",
   ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
 export const isWriteMethod = (method: string) =>
@@ -181,6 +184,7 @@ const PAGE_API_PREFIXES: Array<[string, AppPageId]> = [
   ["/contracts", "contracts"],
   ["/invoices", "invoices"],
   ["/statistics", "statistics"],
+  ["/reports", "statistics"],
   ["/professional-expenses", "professional_expenses"],
   ["/personal-expenses", "personal_expenses"],
   ["/planning-relay-periods", "planning_relay"],

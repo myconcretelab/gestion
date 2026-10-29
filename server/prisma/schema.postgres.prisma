@@ -23,6 +23,7 @@ model Organization {
   settings              OrganizationSettings?
   memberships           Membership[]
   runtime_settings      OrganizationRuntimeSetting[]
+  finance_report_store  FinanceReportStore?
   jobs                  OrganizationJob[]
   job_attempts          OrganizationJobAttempt[]
   audit_logs            AuditLog[]
@@ -1640,6 +1641,7 @@ model Reservation {
   commission_channel_mode               String?   @default("euro")
   commission_channel_value              Decimal   @default(0) @db.Decimal(10, 2)
   frais_optionnels_montant              Decimal   @default(0) @db.Decimal(10, 2)
+  reporting_amounts                     String?
   frais_optionnels_libelle              String?
   frais_optionnels_declares             Boolean   @default(false)
   options                               Json      @default("{}")
@@ -1826,4 +1828,16 @@ model ReservationRecordedPayment {
 
   @@index([organization_id, reservation_id], map: "reservation_recorded_payments_org_reservation_idx")
   @@map("reservation_recorded_payments")
+}
+
+// Versioned report definitions, period corrections and immutable confirmations.
+model FinanceReportStore {
+  id              String   @id @default(cuid())
+  organization_id String   @unique
+  revision        Int      @default(0)
+  data_json       String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  @@map("finance_report_stores")
 }

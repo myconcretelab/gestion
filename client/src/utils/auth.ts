@@ -53,6 +53,8 @@ export const setCurrentAuthUser = (user: AppUser | null) => {
   currentUser = user;
 };
 
+export const getCurrentAuthUserId = () => currentUser?.id ?? "anonymous";
+
 export const canCurrentUserViewAmounts = () =>
   currentUser?.permissions.canViewAmounts ?? true;
 export const canCurrentUserManageIntegrations = () => currentUser?.permissions.isOwner ?? false;

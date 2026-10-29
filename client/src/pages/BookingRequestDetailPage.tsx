@@ -440,7 +440,6 @@ const BookingRequestDetailPage = () => {
                           guestCount={request.nb_adultes + request.nb_enfants_2_17}
                           onChange={(options) => setOptionsEditor({ ...optionsEditor, options })}
                           layout="compact"
-                          showDeclaredToggle={false}
                         />
                       </fieldset>
                       <p><strong>Total des options : {formatEuro(computeReservationOptionsPreview(optionsEditor.options, { nights: request.nb_nuits, gite: optionsEditor.gite }).total)}</strong></p>

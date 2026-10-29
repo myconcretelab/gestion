@@ -30,7 +30,6 @@ import ReservationContractIcon from "./shared/ReservationContractIcon";
 import { mergeOptions } from "./shared/rentalForm";
 import {
   computeGuestNightsByGite,
-  computeUrssafByManager,
   parseStatisticsPayload,
   type ParsedStatisticsPayload,
   type StatisticsPayload,
@@ -223,40 +222,6 @@ type ReservationFeesDetails = {
   amount: number;
 };
 
-type GuestNightDeclarationRow = {
-  year: number;
-  month: number;
-  gite_id: string;
-  guest_nights: number;
-  declared_at: string;
-};
-type GuestNightDeclarationsByKey = Record<string, GuestNightDeclarationRow>;
-type GuestNightUndeclaredItem = {
-  month: number;
-  giteId: string;
-  giteName: string;
-  managerName: string | null;
-  guestNights: number;
-};
-
-type UrssafDeclarationRow = {
-  year: number;
-  month: number;
-  manager_id: string;
-  amount: number;
-  declared_at: string;
-};
-type UrssafDeclarationsByKey = Record<string, UrssafDeclarationRow>;
-type UrssafUndeclaredMonthItem = {
-  month: number;
-  amount: number;
-  zeroTotalReservationsCount: number;
-  managers: Array<{
-    managerId: string;
-    amount: number;
-  }>;
-};
-
 type ReservationsViewSnapshot = {
   monthExpandedByIndex: Record<number, boolean>;
   scrollAnchor:
@@ -265,10 +230,6 @@ type ReservationsViewSnapshot = {
         sectionTopInViewport: number;
       }
     | null;
-};
-
-type DeclarationNightsSettings = {
-  excluded_sources: string[];
 };
 
 type ReservationsStickyOffsets = {
@@ -291,11 +252,7 @@ type ReservationMonthlyAmounts = {
   undeclaredFees: number;
 };
 
-type MonthlyUrssafBreakdown = {
-  baseRevenue: number;
-  declaredFees: number;
-  undeclaredFeesExcluded: number;
-};
+
 
 const MONTHS = [
   "Janvier",
@@ -317,7 +274,6 @@ const ICAL_TO_VERIFY_MARKER = "[ICAL_TO_VERIFY]";
 const UNKNOWN_HOST_NAME = "Hôte inconnu";
 const ALL_GITES_TAB = "all-gites";
 const UNASSIGNED_TAB = "unassigned";
-const URSSAF_MONTHLY_SOURCES = ["Direct","Abritel", "Airbnb", "Cheque", "Chèque", "Virement", "Gites de France"] as const;
 const SERVICE_OPTION_KEYS: ReservationServiceOptionKey[] = ["draps", "linge_toilette", "menage", "depart_tardif", "chiens"];
 const INLINE_EDITABLE_FIELDS: InlineEditableField[] = [
   "hote_nom",
@@ -346,7 +302,6 @@ const IMPORT_COLUMN_FIELDS: Array<{ key: ImportColumnField; label: string; requi
   { key: "gite_abbreviation", label: "Abréviation gîte" },
   { key: "frais_optionnels_montant", label: "Montant options" },
   { key: "frais_optionnels_libelle", label: "Libellé options" },
-  { key: "frais_optionnels_declares", label: "Options déclarées" },
 ];
 
 const normalizeTextKey = (value: string) =>
@@ -382,7 +337,6 @@ const needsReservationCompletion = (reservation: Reservation) =>
   round2(Number(reservation.prix_total ?? 0)) === 0 &&
   normalizeTextKey(reservation.source_paiement ?? "") !== "homeexchange";
 
-const URSSAF_MONTHLY_SOURCE_KEY_SET = new Set(URSSAF_MONTHLY_SOURCES.map((source) => normalizeTextKey(source)));
 
 const getEditableHostName = (value: string | null | undefined) => {
   const trimmed = String(value ?? "").trim();
@@ -554,15 +508,6 @@ const normalizeReservationMonthlyEnergySummary = (
     is_partial_month: value.is_partial_month === true,
   };
 };
-
-const buildUrssafDeclarationCheckKey = (year: number, month: number, managerId: string) =>
-  `${year}-${pad2(month)}-${managerId}`;
-
-const buildGuestNightDeclarationCheckKey = (year: number, month: number, giteId: string) =>
-  `${year}-${pad2(month)}-${giteId}`;
-
-const formatManagerDisplayName = (manager: Gite["gestionnaire"] | null | undefined) =>
-  [manager?.nom?.trim(), manager?.prenom?.trim()].filter(Boolean).join(" ");
 
 const isUrssafConcernedMonth = (
   targetYear: number,
@@ -1063,23 +1008,6 @@ const csvEscape = (value: unknown) => {
   return text;
 };
 const csvAmount = (value: number) => round2(Number(value ?? 0)).toFixed(2).replace(".", ",");
-const copyRoundedAmount = (value: number) => {
-  const text = String(Math.round(Math.max(0, Number(value ?? 0))));
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text);
-    return;
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "absolute";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  document.body.removeChild(textarea);
-};
-
 const scheduleLazyTask = (callback: () => void) => {
   if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
     const id = window.requestIdleCallback(() => callback(), { timeout: 1200 });
@@ -1107,7 +1035,7 @@ const ReservationTableDate = ({ value }: { value: string }) => {
   );
 };
 
-const ReservationsPage = () => {
+const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean }) => {
   const currentYear = new Date().getUTCFullYear();
   const location = useLocation();
   const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -1164,11 +1092,6 @@ const ReservationsPage = () => {
   const [importing, setImporting] = useState(false);
   const [reservationOptions, setReservationOptions] = useState<Record<string, ContratOptions>>({});
   const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
-  const [declarationExcludedSources, setDeclarationExcludedSources] = useState<string[]>(["Airbnb"]);
-  const [guestNightDeclarationsByKey, setGuestNightDeclarationsByKey] = useState<GuestNightDeclarationsByKey>({});
-  const [savingGuestNightDeclarationByKey, setSavingGuestNightDeclarationByKey] = useState<Record<string, boolean>>({});
-  const [urssafDeclarationsByKey, setUrssafDeclarationsByKey] = useState<UrssafDeclarationsByKey>({});
-  const [savingUrssafDeclarationByMonth, setSavingUrssafDeclarationByMonth] = useState<Record<number, boolean>>({});
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
   const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
@@ -1300,27 +1223,6 @@ const ReservationsPage = () => {
   useEffect(() => {
     void loadStatistics();
   }, [loadStatistics]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    apiFetch<DeclarationNightsSettings>("/settings/declaration-nights")
-      .then((data) => {
-        if (cancelled) return;
-        setDeclarationExcludedSources(
-          Array.isArray(data.excluded_sources)
-            ? [...new Set(data.excluded_sources.map((item) => String(item ?? "").trim()).filter(Boolean))]
-            : []
-        );
-      })
-      .catch(() => {
-        if (cancelled) return;
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -3148,39 +3050,6 @@ const ReservationsPage = () => {
     return giteById.get(giteId) ?? null;
   };
 
-  const getMonthlyUrssafBreakdown = useCallback(
-    (list: Reservation[], monthIndex: number, declarationStatus: "declared" | "undeclared"): MonthlyUrssafBreakdown => {
-      let baseRevenue = 0;
-      let declaredFees = 0;
-      let undeclaredFeesExcluded = 0;
-
-      list.forEach((reservation) => {
-        const giteId = String(reservation.gite_id ?? "").trim();
-        const managerId = giteId ? giteById.get(giteId)?.gestionnaire?.id ?? null : null;
-        if (!managerId) return;
-
-        const normalizedSourceKey = normalizeTextKey(normalizeReservationSource(reservation.source_paiement));
-        if (!URSSAF_MONTHLY_SOURCE_KEY_SET.has(normalizedSourceKey)) return;
-
-        const declarationKey = buildUrssafDeclarationCheckKey(year, monthIndex, managerId);
-        const isDeclared = Boolean(urssafDeclarationsByKey[declarationKey]);
-        if ((declarationStatus === "declared") !== isDeclared) return;
-
-        const monthlyAmounts = getReservationMonthlyAmounts(reservation, monthIndex);
-        baseRevenue = round2(baseRevenue + monthlyAmounts.baseRevenue);
-        declaredFees = round2(declaredFees + monthlyAmounts.declaredFees);
-        undeclaredFeesExcluded = round2(undeclaredFeesExcluded + monthlyAmounts.undeclaredFees);
-      });
-
-      return {
-        baseRevenue,
-        declaredFees,
-        undeclaredFeesExcluded,
-      };
-    },
-    [getReservationMonthlyAmounts, giteById, urssafDeclarationsByKey, year]
-  );
-
   const updateReservationOptionsSelection = (
     reservation: Reservation,
     draft: ReservationDraft,
@@ -3350,63 +3219,6 @@ const ReservationsPage = () => {
   const isAllGitesTab = activeTab === ALL_GITES_TAB;
   const showUnassignedTab = reservations.some((reservation) => !reservation.gite_id);
 
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch<GuestNightDeclarationRow[]>(`/guest-night-declarations?year=${year}`)
-      .then((rows) => {
-        if (cancelled) return;
-        const loadedDeclarations: GuestNightDeclarationsByKey = {};
-        rows.forEach((item) => {
-          const key = buildGuestNightDeclarationCheckKey(item.year, item.month, item.gite_id);
-          loadedDeclarations[key] = {
-            ...item,
-            guest_nights: toNonNegativeInt(item.guest_nights),
-          };
-        });
-        setGuestNightDeclarationsByKey((previous) => ({ ...previous, ...loadedDeclarations }));
-      })
-      .catch(() => {
-        if (cancelled) return;
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [year]);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch<UrssafDeclarationRow[]>(`/urssaf-declarations?year=${year}`)
-      .then((rows) => {
-        if (cancelled) return;
-        const loadedDeclarations: UrssafDeclarationsByKey = {};
-        rows.forEach((item) => {
-          const key = buildUrssafDeclarationCheckKey(item.year, item.month, item.manager_id);
-          loadedDeclarations[key] = {
-            ...item,
-            amount: round2(Math.max(0, Number(item.amount ?? 0))),
-          };
-        });
-        setUrssafDeclarationsByKey((previous) => ({ ...previous, ...loadedDeclarations }));
-      })
-      .catch(() => {
-        if (cancelled) return;
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [year]);
-
-  const activeManagerIds = useMemo(() => {
-    if (activeTab === UNASSIGNED_TAB || !activeTab) return [] as string[];
-    if (activeTab === ALL_GITES_TAB) {
-      return [...new Set(gites.map((gite) => gite.gestionnaire?.id).filter((managerId): managerId is string => Boolean(managerId)))];
-    }
-    const managerId = giteById.get(activeTab)?.gestionnaire?.id ?? null;
-    return managerId ? [managerId] : [];
-  }, [activeTab, giteById, gites]);
-
   const activeGuestNightGiteIds = useMemo(() => {
     if (activeTab === UNASSIGNED_TAB || !activeTab) return [] as string[];
     if (activeTab === ALL_GITES_TAB) {
@@ -3415,168 +3227,18 @@ const ReservationsPage = () => {
     return giteById.has(activeTab) ? [activeTab] : [];
   }, [activeTab, giteById, gites]);
 
-  const activeGuestNightManagerTitle = useMemo(() => {
-    if (!activeTab || activeTab === ALL_GITES_TAB || activeTab === UNASSIGNED_TAB) return null;
-    const managerName = formatManagerDisplayName(giteById.get(activeTab)?.gestionnaire);
-    return managerName || null;
-  }, [activeTab, giteById]);
-
   const guestNightSummaryByMonthForActiveTab = useMemo(() => {
-    const byMonth = new Map<number, { guestNights: number; undeclaredGuestNights: number }>();
-    if (!statisticsDataset) return byMonth;
-    if (activeGuestNightGiteIds.length === 0) return byMonth;
-
+    const byMonth = new Map<number, { guestNights: number }>();
+    if (!statisticsDataset || !activeGuestNightGiteIds.length) return byMonth;
     const activeGiteIdSet = new Set(activeGuestNightGiteIds);
-    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
-      let guestNights = 0;
-      let undeclaredGuestNights = 0;
-      const guestNightsByGite = computeGuestNightsByGite(
-        statisticsDataset.entriesByGite,
-        statisticsDataset.gites,
-        year,
-        monthIndex,
-        declarationExcludedSources
-      );
-
-      guestNightsByGite.forEach((item) => {
-        if (!activeGiteIdSet.has(item.giteId)) return;
-        guestNights += item.guestNights;
-        const key = buildGuestNightDeclarationCheckKey(year, monthIndex, item.giteId);
-        if (!guestNightDeclarationsByKey[key]) {
-          undeclaredGuestNights += item.guestNights;
-        }
-      });
-
-      byMonth.set(monthIndex, { guestNights, undeclaredGuestNights });
+    for (let monthIndex = 1; monthIndex <= 12; monthIndex++) {
+      const guestNights = computeGuestNightsByGite(statisticsDataset.entriesByGite, statisticsDataset.gites, year, monthIndex, [])
+        .filter(item => activeGiteIdSet.has(item.giteId)).reduce((sum, item) => sum + item.guestNights, 0);
+      byMonth.set(monthIndex, { guestNights });
     }
-
     return byMonth;
-  }, [activeGuestNightGiteIds, declarationExcludedSources, guestNightDeclarationsByKey, statisticsDataset, year]);
+  }, [activeGuestNightGiteIds, statisticsDataset, year]);
 
-  const undeclaredGuestNightItemsForActiveTab = useMemo<GuestNightUndeclaredItem[]>(() => {
-    const items: GuestNightUndeclaredItem[] = [];
-    if (!statisticsDataset) return items;
-    if (activeGuestNightGiteIds.length === 0) return items;
-    if (year !== currentPeriod.year) return items;
-
-    const activeGiteIdSet = new Set(activeGuestNightGiteIds);
-    for (let monthIndex = 1; monthIndex < currentPeriod.month; monthIndex += 1) {
-      const guestNightsByGite = computeGuestNightsByGite(
-        statisticsDataset.entriesByGite,
-        statisticsDataset.gites,
-        year,
-        monthIndex,
-        declarationExcludedSources
-      );
-
-      guestNightsByGite.forEach((item) => {
-        if (!activeGiteIdSet.has(item.giteId)) return;
-        const key = buildGuestNightDeclarationCheckKey(year, monthIndex, item.giteId);
-        if (guestNightDeclarationsByKey[key]) return;
-        items.push({
-          month: monthIndex,
-          giteId: item.giteId,
-          giteName: item.giteName,
-          managerName: item.managerName,
-          guestNights: toNonNegativeInt(item.guestNights),
-        });
-      });
-    }
-
-    return items.sort(
-      (left, right) =>
-        left.month - right.month ||
-        left.giteName.localeCompare(right.giteName, "fr", { sensitivity: "base" })
-    );
-  }, [activeGuestNightGiteIds, currentPeriod.month, currentPeriod.year, declarationExcludedSources, guestNightDeclarationsByKey, statisticsDataset, year]);
-
-  const showGuestNightReminder = undeclaredGuestNightItemsForActiveTab.length > 0;
-  const guestNightReminderPeriodLabel = String(year);
-
-  const activeUrssafManagerTitle = useMemo(() => {
-    if (!activeTab || activeManagerIds.length !== 1) return null;
-
-    if (activeTab !== ALL_GITES_TAB) {
-      const activeManagerName = formatManagerDisplayName(giteById.get(activeTab)?.gestionnaire);
-      return activeManagerName || null;
-    }
-
-    const managerName = formatManagerDisplayName(
-      gites.find((gite) => gite.gestionnaire?.id === activeManagerIds[0])?.gestionnaire
-    );
-    return managerName || null;
-  }, [activeManagerIds, activeTab, giteById, gites]);
-
-  const declaredUrssafByMonthForActiveTab = useMemo(() => {
-    if (activeManagerIds.length === 0) return new Map<number, { amount: number; count: number }>();
-    const activeManagerIdSet = new Set(activeManagerIds);
-    const byMonth = new Map<number, { amount: number; count: number }>();
-    Object.values(urssafDeclarationsByKey).forEach((item) => {
-      if (item.year !== year) return;
-      if (!activeManagerIdSet.has(item.manager_id)) return;
-      const current = byMonth.get(item.month) ?? { amount: 0, count: 0 };
-      current.amount = round2(current.amount + Math.max(0, Number(item.amount ?? 0)));
-      current.count += 1;
-      byMonth.set(item.month, current);
-    });
-    return byMonth;
-  }, [activeManagerIds, urssafDeclarationsByKey, year]);
-
-  const undeclaredUrssafItemsForActiveTab = useMemo<UrssafUndeclaredMonthItem[]>(() => {
-    const items: UrssafUndeclaredMonthItem[] = [];
-    if (!statisticsDataset) return items;
-    if (activeManagerIds.length === 0) return items;
-    if (year !== currentPeriod.year) return items;
-
-    const activeManagerIdSet = new Set(activeManagerIds);
-    for (let monthIndex = 1; monthIndex < currentPeriod.month; monthIndex += 1) {
-      const monthlyTotalsByManager = computeUrssafByManager(
-        statisticsDataset.entriesByGite,
-        statisticsDataset.gites,
-        year,
-        monthIndex
-      );
-      const undeclaredManagers = monthlyTotalsByManager
-        .filter((manager) => {
-          if (!activeManagerIdSet.has(manager.managerId)) return false;
-          const key = buildUrssafDeclarationCheckKey(year, monthIndex, manager.managerId);
-          return !urssafDeclarationsByKey[key];
-        })
-        .map((manager) => ({
-          managerId: manager.managerId,
-          amount: round2(Math.max(0, Number(manager.amount ?? 0))),
-        }))
-        .filter((manager) => manager.amount > 0);
-
-      if (undeclaredManagers.length === 0) continue;
-
-      const amount = round2(undeclaredManagers.reduce((sum, manager) => sum + manager.amount, 0));
-      if (amount <= 0) continue;
-      const zeroTotalReservationsCount = (reservationsByMonth.get(monthIndex) ?? []).reduce((count, reservation) => {
-        return needsReservationCompletion(reservation) ? count + 1 : count;
-      }, 0);
-
-      items.push({
-        month: monthIndex,
-        amount,
-        zeroTotalReservationsCount,
-        managers: undeclaredManagers,
-      });
-    }
-
-    return items.sort((left, right) => left.month - right.month);
-  }, [activeManagerIds, currentPeriod.month, currentPeriod.year, reservationsByMonth, statisticsDataset, urssafDeclarationsByKey, year]);
-
-  const undeclaredUrssafByMonthForActiveTab = useMemo(() => {
-    const byMonth = new Map<number, number>();
-    undeclaredUrssafItemsForActiveTab.forEach((item) => {
-      byMonth.set(item.month, item.amount);
-    });
-    return byMonth;
-  }, [undeclaredUrssafItemsForActiveTab]);
-
-  const showUrssafReminder = undeclaredUrssafItemsForActiveTab.length > 0;
-  const urssafReminderPeriodLabel = String(year);
   const currentMonthStartUtc = useMemo(() => {
     const now = new Date();
     return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
@@ -3746,87 +3408,6 @@ const ReservationsPage = () => {
     setMonthExpanded(monthIndex, !isExpanded);
   };
 
-  const markUrssafMonthDeclarationDone = async (item: UrssafUndeclaredMonthItem) => {
-    if (savingUrssafDeclarationByMonth[item.month]) return;
-    setSavingUrssafDeclarationByMonth((previous) => ({
-      ...previous,
-      [item.month]: true,
-    }));
-
-    try {
-      const savedRows = await Promise.all(
-        item.managers.map((manager) =>
-          apiFetch<UrssafDeclarationRow>("/urssaf-declarations", {
-            method: "POST",
-            json: {
-              year,
-              month: item.month,
-              manager_id: manager.managerId,
-              amount: manager.amount,
-            },
-          })
-        )
-      );
-
-      setUrssafDeclarationsByKey((previous) => {
-        const next = { ...previous };
-        savedRows.forEach((saved) => {
-          const key = buildUrssafDeclarationCheckKey(saved.year, saved.month, saved.manager_id);
-          next[key] = {
-            ...saved,
-            amount: round2(Math.max(0, Number(saved.amount ?? 0))),
-          };
-        });
-        return next;
-      });
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSavingUrssafDeclarationByMonth((previous) => ({
-        ...previous,
-        [item.month]: false,
-      }));
-    }
-  };
-
-  const markGuestNightDeclarationDone = async (item: GuestNightUndeclaredItem) => {
-    const declarationKey = buildGuestNightDeclarationCheckKey(year, item.month, item.giteId);
-    if (savingGuestNightDeclarationByKey[declarationKey]) return;
-
-    setSavingGuestNightDeclarationByKey((previous) => ({
-      ...previous,
-      [declarationKey]: true,
-    }));
-
-    try {
-      const saved = await apiFetch<GuestNightDeclarationRow>("/guest-night-declarations", {
-        method: "POST",
-        json: {
-          year,
-          month: item.month,
-          gite_id: item.giteId,
-          guest_nights: item.guestNights,
-        },
-      });
-
-      setGuestNightDeclarationsByKey((previous) => ({
-        ...previous,
-        [buildGuestNightDeclarationCheckKey(saved.year, saved.month, saved.gite_id)]: {
-          ...saved,
-          guest_nights: toNonNegativeInt(saved.guest_nights),
-        },
-      }));
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSavingGuestNightDeclarationByKey((previous) => {
-        const next = { ...previous };
-        delete next[declarationKey];
-        return next;
-      });
-    }
-  };
-
   const unresolvedImportRequiredFields =
     importPreview?.missing_required_fields.filter((field) => !(importColumnMap[field] ?? "").trim()) ?? [];
   const exportRows = useMemo(() => {
@@ -3929,8 +3510,6 @@ const ReservationsPage = () => {
       "Prix/nuit (€)",
       "Total (€)",
       "Options (€)",
-      "Options déclarées (€)",
-      "Options non déclarées (€)",
       "Source paiement",
       "Commentaire",
     ];
@@ -3944,8 +3523,6 @@ const ReservationsPage = () => {
         ? reservation.placeholder.label || reservation.placeholder.abbreviation
         : "";
       const feesAmount = round2(Number(reservation.frais_optionnels_montant ?? 0));
-      const feesDeclared = reservation.frais_optionnels_declares ? feesAmount : 0;
-      const feesUndeclared = reservation.frais_optionnels_declares ? 0 : feesAmount;
       return [
         giteName,
         placeholderLabel,
@@ -3959,8 +3536,6 @@ const ReservationsPage = () => {
         csvAmount(Number(reservation.prix_par_nuit ?? 0)),
         csvAmount(Number(reservation.prix_total ?? 0)),
         csvAmount(feesAmount),
-        csvAmount(feesDeclared),
-        csvAmount(feesUndeclared),
         reservation.source_paiement ?? "",
         stripIcalToVerifyMarker(reservation.commentaire),
       ];
@@ -4197,8 +3772,6 @@ const ReservationsPage = () => {
     options: { inline?: boolean } = {}
   ) => {
     const newRowFeesAmount = round2(Math.max(0, newRow.frais_optionnels_montant ?? 0));
-    const newRowDeclaredFees = newRow.frais_optionnels_declares ? newRowFeesAmount : 0;
-    const newRowUndeclaredFees = newRow.frais_optionnels_declares ? 0 : newRowFeesAmount;
     const newRowGite = (newRow.gite_id ? giteById.get(newRow.gite_id) : null) ?? activeGite ?? null;
     const nightlySuggestions = getGiteNightlyPriceSuggestions(newRowGite);
 
@@ -4421,9 +3994,7 @@ const ReservationsPage = () => {
         </td>
         <td className="reservations-col-fees">
           <div className="reservations-fees-cell">
-            <span className="reservations-fee-pill reservations-fee-pill--declared">{formatEuro(newRowDeclaredFees)}</span>
-            <span className="reservations-fees-separator">/</span>
-            <span className="reservations-fee-pill reservations-fee-pill--undeclared">{formatEuro(newRowUndeclaredFees)}</span>
+            <span className="reservations-fee-pill">{formatEuro(newRowFeesAmount)}</span>
           </div>
         </td>
         <td>
@@ -4778,161 +4349,12 @@ const ReservationsPage = () => {
 
         {!activeTab && <div className="field-hint">Créez un gîte pour commencer à saisir des réservations.</div>}
 
-        {activeTab && showGuestNightReminder && (
-          <div className="reservations-urssaf-reminder reservations-urssaf-reminder--guest-nights">
-            <div className="reservations-urssaf-reminder__head">
-              <strong>
-                {[
-                  "Déclaration taxe de séjour",
-                  activeGuestNightManagerTitle,
-                  guestNightReminderPeriodLabel,
-                  activeGite?.nom
-                ]
-                  .filter(Boolean)
-                  .join(" • ")}
-              </strong>
-              <div className="reservations-urssaf-reminder__head-actions">
-                <span>
-                  {formatPluralLabel(undeclaredGuestNightItemsForActiveTab.length, "déclaration", "déclarations")} non faite(s)
-                </span>
-                <a
-                  className="table-action table-action--neutral reservations-urssaf-reminder__link"
-                  href="https://ploermelcommunaute.taxesejour.fr/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Accéder au site
-                </a>
-              </div>
-            </div>
-            <div className="reservations-urssaf-reminder__list">
-              {undeclaredGuestNightItemsForActiveTab.map((item) => {
-                const declarationKey = buildGuestNightDeclarationCheckKey(year, item.month, item.giteId);
-                const titleParts = [`${MONTHS[item.month - 1]} ${year}`];
-                if (activeTab === ALL_GITES_TAB) {
-                  titleParts.push(item.giteName);
-                }
-                const titleLabel = titleParts.join(" • ");
-
-                return (
-                  <div key={declarationKey} className="reservations-urssaf-reminder__item">
-                    <div>
-                      <div className="reservations-urssaf-reminder__manager">{titleLabel}</div>
-                      <div className="reservations-urssaf-reminder__amount">
-                        {formatPluralLabel(item.guestNights, "nuitée", "nuitées")}
-                      </div>
-                    </div>
-                    <div className="reservations-urssaf-reminder__actions">
-                      <button
-                        type="button"
-                        className="table-action table-action--neutral reservations-urssaf-reminder__copy"
-                        onClick={() => {
-                          copyRoundedAmount(item.guestNights);
-                        }}
-                        title={`Copier le nombre de nuitées pour ${titleLabel}`}
-                      >
-                        Copier
-                      </button>
-                      <button
-                        type="button"
-                        className="table-action table-action--primary reservations-urssaf-reminder__check"
-                        onClick={() => {
-                          void markGuestNightDeclarationDone(item);
-                        }}
-                        title={`Valider la déclaration des nuitées pour ${titleLabel}`}
-                        disabled={Boolean(savingGuestNightDeclarationByKey[declarationKey])}
-                      >
-                        Déclaré
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {activeTab && showUrssafReminder && (
-          <div className="reservations-urssaf-reminder">
-            <div className="reservations-urssaf-reminder__head">
-              <strong>
-                {activeUrssafManagerTitle
-                  ? `Déclaration URSSAF ${activeUrssafManagerTitle}: ${urssafReminderPeriodLabel}`
-                  : `Déclaration URSSAF: ${urssafReminderPeriodLabel}`}
-              </strong>
-              <div className="reservations-urssaf-reminder__head-actions">
-                <span>{formatPluralLabel(undeclaredUrssafItemsForActiveTab.length, "mois", "mois")} non déclaré(s)</span>
-                <a
-                  className="table-action table-action--neutral reservations-urssaf-reminder__link"
-                  href="https://www.autoentrepreneur.urssaf.fr/portail/accueil.html"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Accéder au site
-                </a>
-              </div>
-            </div>
-            <div className="reservations-urssaf-reminder__list">
-              {undeclaredUrssafItemsForActiveTab.map((item) => (
-                <div key={item.month} className="reservations-urssaf-reminder__item">
-                  <div>
-                    <div className="reservations-urssaf-reminder__manager">
-                      {MONTHS[item.month - 1]} {year}
-                    </div>
-                    <div className="reservations-urssaf-reminder__amount">{formatEuro(item.amount)}</div>
-                    {item.zeroTotalReservationsCount > 0 ? (
-                      <div className="reservations-urssaf-reminder__flags">
-                        <span
-                          className="reservations-summary-pill reservations-summary-pill--needs-completion"
-                          title={`${formatPluralLabel(
-                            item.zeroTotalReservationsCount,
-                            "réservation",
-                            "réservations"
-                          )} avec un total à 0€ sur ce mois`}
-                        >
-                          Réservation à compléter
-                        </span>
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="reservations-urssaf-reminder__actions">
-                    <button
-                      type="button"
-                      className="table-action table-action--neutral reservations-urssaf-reminder__copy"
-                      onClick={() => {
-                        copyRoundedAmount(item.amount);
-                      }}
-                      title={`Copier le montant URSSAF arrondi pour ${MONTHS[item.month - 1]} ${year}`}
-                    >
-                      Copier
-                    </button>
-                    <button
-                      type="button"
-                      className="table-action table-action--primary reservations-urssaf-reminder__check"
-                      onClick={() => {
-                        void markUrssafMonthDeclarationDone(item);
-                      }}
-                      title={`Valider la déclaration URSSAF de ${MONTHS[item.month - 1]} ${year}`}
-                      disabled={Boolean(savingUrssafDeclarationByMonth[item.month])}
-                    >
-                      Déclaré
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {activeTab &&
           monthsToRender.map((monthIndex) => {
             const list = reservationsByMonth.get(monthIndex) ?? [];
             const summary = monthSummary(list, monthIndex);
-            const declaredUrssafBreakdown = getMonthlyUrssafBreakdown(list, monthIndex, "declared");
-            const undeclaredUrssafBreakdown = getMonthlyUrssafBreakdown(list, monthIndex, "undeclared");
             const guestNightSummary = guestNightSummaryByMonthForActiveTab.get(monthIndex) ?? {
               guestNights: 0,
-              undeclaredGuestNights: 0,
             };
             const addAllowed = activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB && Boolean(activeGite?.id);
             const newRow = newRows[monthIndex] ?? (addAllowed && activeGite ? buildEmptyDraft(year, monthIndex, activeGite) : null);
@@ -4959,10 +4381,7 @@ const ReservationsPage = () => {
                 groupedSummaries.set(key, monthSummary(group, monthIndex));
               });
             }
-            const declaredUrssafForMonth = declaredUrssafByMonthForActiveTab.get(monthIndex);
-            const undeclaredUrssafForMonth = undeclaredUrssafByMonthForActiveTab.get(monthIndex) ?? 0;
             const holidaySegments = holidaySegmentsByMonth.get(monthIndex) ?? [];
-            const monthHasPendingUrssafReminder = undeclaredUrssafForMonth > 0;
             const monthHasZeroTotalReservations =
               summary.zeroTotalReservationsCount > 0 && isUrssafConcernedMonth(year, monthIndex, currentPeriod);
             const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
@@ -4994,9 +4413,7 @@ const ReservationsPage = () => {
 
             return (
               <section
-                className={`reservations-month ${isAllGitesTab ? "reservations-month--all-gites" : ""} ${
-                  monthHasPendingUrssafReminder ? "reservations-month--urssaf-pending" : ""
-                } ${!isMonthExpanded ? "reservations-month--collapsed" : ""}`}
+                className={`reservations-month ${isAllGitesTab ? "reservations-month--all-gites" : ""} ${!isMonthExpanded ? "reservations-month--collapsed" : ""}`}
                 key={monthIndex}
                 data-month-index={monthIndex}
               >
@@ -5035,17 +4452,13 @@ const ReservationsPage = () => {
                       <span className="reservations-summary-pill reservations-summary-pill--guest-nights">
                         Total {formatPluralLabel(guestNightSummary.guestNights, "nuitée", "nuitées")}
                       </span>
-                      <span className="reservations-summary-pill reservations-summary-pill--guest-nights-declared">
-                        {formatPluralLabel(guestNightSummary.undeclaredGuestNights, "nuitée", "nuitées")} à déclarer
-                      </span>
                       {renderSummaryPopoverPill({
                         pillClassName: "reservations-summary-pill reservations-summary-pill--revenue",
                         label: `${formatEuro(summary.revenue)} revenus`,
                         title: `Total du mois ${MONTHS[monthIndex - 1]}`,
                         rows: [
                           { label: "Nuitées", value: formatEuro(summary.baseRevenue) },
-                          { label: "Options déclarées", value: formatEuro(summary.declaredFees) },
-                          { label: "Options non déclarées", value: formatEuro(summary.undeclaredFees) },
+                          { label: "Options", value: formatEuro(summary.fees) },
                           { label: "Total", value: formatEuro(summary.revenue) },
                         ],
                         note: "Les séjours à cheval sur deux mois sont proratisés sur le mois affiché.",
@@ -5086,44 +4499,8 @@ const ReservationsPage = () => {
                           Réservation à compléter
                         </span>
                       ) : null}
-                      {declaredUrssafForMonth ? (
-                        renderSummaryPopoverPill({
-                          pillClassName: "reservations-summary-pill reservations-summary-pill--urssaf",
-                          label: `${formatEuro(declaredUrssafForMonth.amount)} URSSAF déclaré`,
-                          title: `Base URSSAF déclarée ${MONTHS[monthIndex - 1]}`,
-                          rows: [
-                            { label: "Nuitées déclarables", value: formatEuro(declaredUrssafBreakdown.baseRevenue) },
-                            { label: "Options déclarées incluses", value: formatEuro(declaredUrssafBreakdown.declaredFees) },
-                            {
-                              label: "Options non déclarées exclues",
-                              value: formatEuro(declaredUrssafBreakdown.undeclaredFeesExcluded),
-                            },
-                            { label: "Total déclaré", value: formatEuro(declaredUrssafForMonth.amount) },
-                          ],
-                          note: `Montant déclaré pour ${formatPluralLabel(
-                            declaredUrssafForMonth.count,
-                            "gestionnaire",
-                            "gestionnaires"
-                          )}.`,
-                        })
-                      ) : null}
-                      {undeclaredUrssafForMonth > 0 ? (
-                        renderSummaryPopoverPill({
-                          pillClassName: "reservations-summary-pill reservations-summary-pill--urssaf-undeclared",
-                          label: `${formatEuro(undeclaredUrssafForMonth)} URSSAF non déclaré`,
-                          title: `Base URSSAF à déclarer ${MONTHS[monthIndex - 1]}`,
-                          rows: [
-                            { label: "Nuitées déclarables", value: formatEuro(undeclaredUrssafBreakdown.baseRevenue) },
-                            { label: "Options déclarées incluses", value: formatEuro(undeclaredUrssafBreakdown.declaredFees) },
-                            {
-                              label: "Options non déclarées exclues",
-                              value: formatEuro(undeclaredUrssafBreakdown.undeclaredFeesExcluded),
-                            },
-                            { label: "Total à déclarer", value: formatEuro(undeclaredUrssafForMonth) },
-                          ],
-                          note: "L'URSSAF retient les nuitées et les seules options marquées comme déclarées.",
-                        })
-                      ) : null}
+                      {reportsEnabled && <Link className="reservations-summary-pill" to={`/rapports?periode=${year}-${String(monthIndex).padStart(2, "0")}`} onClick={event => event.stopPropagation()}>Rapports et déclarations →</Link>}
+
                     </div>
                   </div>
                   <div className="reservations-month__head-side">
@@ -6097,13 +5474,7 @@ const ReservationsPage = () => {
                               >
                                 <span className="reservations-fees-stack">
                                   <span className="reservations-fees-cell">
-                                    <span className="reservations-fee-pill reservations-fee-pill--declared" title="Options déclarées">
-                                      {formatEuro(feeBreakdown.declared)}
-                                    </span>
-                                    <span className="reservations-fees-separator">/</span>
-                                    <span className="reservations-fee-pill reservations-fee-pill--undeclared" title="Options non déclarées">
-                                      {formatEuro(feeBreakdown.undeclared)}
-                                    </span>
+                                    <span className="reservations-fee-pill" title="Total des options">{formatEuro(feeBreakdown.total)}</span>
                                     {feeDetails.length > 0 ? (
                                       <span
                                         className="reservations-fees-detail"

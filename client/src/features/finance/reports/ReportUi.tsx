@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import { type ReportKind } from "./reportPrototype";
+import { type ReportKind } from "./reportModel";
 
 type IconName =
+  | "refresh"
   | "arrow"
   | "back"
   | "check"
@@ -19,6 +20,9 @@ type IconName =
   | "undo"
   | "home";
 const paths: Record<IconName, ReactNode> = {
+  refresh: (
+    <path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 11-1l3 6M4 12l3 6a7 7 0 0 0 11-1" />
+  ),
   arrow: (
     <>
       <path d="M5 12h14m-6-6 6 6-6 6" />

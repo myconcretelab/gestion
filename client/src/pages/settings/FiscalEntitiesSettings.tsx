@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   fiscalEntitySchema,
@@ -520,6 +521,7 @@ export default function FiscalEntitiesSettings() {
 
   return (
     <div className="fiscal-settings" ref={settingsRef}>
+      {new URLSearchParams(window.location.search).get("back")?.startsWith("/rapports/") && <Link className="reservation-ledger-back" to={new URLSearchParams(window.location.search).get("back")!}>← Revenir au rapport</Link>}
       <header className="fiscal-page-header">
         <div className="fiscal-eyebrow">Organisation · Facturation</div>
         <h2>Entreprises et facturation</h2>

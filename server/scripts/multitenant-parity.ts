@@ -11,7 +11,7 @@ const TABLES = [
   "electronic_invoice_payments",
   "electronic_invoice_transmissions", "electronic_invoice_events",
   "expense_categories", "expense_recurring_rules", "expense_entries", "urssaf_declarations",
-  "guest_night_declarations", "ical_sources", "contrats", "contrat_counters", "factures", "facture_counters",
+  "finance_report_stores", "guest_night_declarations", "ical_sources", "contrats", "contrat_counters", "factures", "facture_counters",
   "reservation_placeholders", "planning_relay_periods", "planning_relay_workers", "intervenant_hour_entries",
   "user_interventions", "intervenant_expenses", "planning_relay_assignments", "reservations", "gite_season_rates",
   "booking_requests", "gite_monthly_energy_readings",

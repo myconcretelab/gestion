@@ -1,13 +1,16 @@
 import { isReservationPaymentTracking } from "@contrats/shared";
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import { formatDate } from "../utils/format";
 import type { Reservation } from "../utils/types";
+import { sanitizeMobileReservationBackHref } from "./shared/mobileReservationEditor";
 import ReservationPaymentsEditor from "./shared/ReservationPaymentsEditor";
 
 export default function ReservationPaymentsPage() {
   const { id } = useParams();
+  const [params] = useSearchParams();
+  const back = sanitizeMobileReservationBackHref(params.get("back"), "/reservations");
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function ReservationPaymentsPage() {
   }, [id]);
   return (
     <main className="reservation-ledger-page">
-      <Link to="/reservations">← Réservations</Link>
+      <Link to={back} className="reservation-ledger-back">← {back.startsWith("/rapports") ? "Revenir au rapport" : "Réservations"}</Link>
       <h1>Règlements de la réservation</h1>
       {error ? (
         <p role="alert">{error}</p>

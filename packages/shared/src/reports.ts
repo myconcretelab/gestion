@@ -1,4 +1,3 @@
-/** Demonstration only: these rules never participate in the application's financial calculations. */
 export const REPORT_CATEGORIES = [
   { id: "accommodation", label: "Hébergement" },
   { id: "cleaning", label: "Ménage" },
@@ -12,23 +11,11 @@ export const REPORT_PAYMENT_METHODS = [
   { id: "cheque", label: "Chèque" },
   { id: "cash", label: "Espèces" },
   { id: "card", label: "Carte bancaire" },
+  { id: "platform", label: "Versement plateforme" },
+  { id: "other", label: "Autre" },
   { id: "unknown", label: "Non renseigné" },
 ] as const;
 export type ReportPaymentMethod = (typeof REPORT_PAYMENT_METHODS)[number]["id"];
-export const REPORT_OPERATORS = [
-  { id: "operator-a", name: "Entreprise A · Exemple" },
-  { id: "operator-b", name: "Entreprise B · Exemple" },
-] as const;
-export const DEFAULT_PROPERTY_OPERATORS: Record<string, string | null> = {
-  orchard: "operator-a",
-  woods: null,
-  mill: "operator-b",
-};
-export const REPORT_PROPERTIES = [
-  { id: "orchard", name: "La Maison du verger", initials: "MV" },
-  { id: "woods", name: "Le Refuge des bois", initials: "RB" },
-  { id: "mill", name: "Le Petit Moulin", initials: "PM" },
-] as const;
 export type ReportKind = "social" | "tourist" | "owner" | "custom";
 export type ReportCadence = "monthly" | "quarterly" | "yearly";
 export type ReportDefinition = {
@@ -42,6 +29,7 @@ export type ReportDefinition = {
   categories: ReportCategory[];
   propertyIds: string[];
   favorite: boolean;
+  operatorId?: string | null;
 };
 export type ReportOperation = {
   id: string;
@@ -56,16 +44,28 @@ export type ReportOperation = {
   channel: string;
   paymentMethod: ReportPaymentMethod;
   reviewReason?: string;
+  propertyLabel?: string;
+  reservationId?: string;
+  basis?: "payment" | "stay" | "nights";
+  allocationNote?: string;
+  categoryUncertain?: boolean;
 };
 export type OperationStatus = "included" | "review" | "excluded";
-export type OperationOverride = { status: OperationStatus; note: string };
+export type OperationOverride = {
+  status: OperationStatus;
+  note: string;
+  sourceSignature?: string;
+};
 export type ReportIssue = {
-  kind: "operator" | "payment";
+  kind: "operator" | "payment" | "settings" | "fiscal" | "correction";
+  sourceId?: string;
   message: string;
   actionLabel: string;
 };
 export type ReportSources = {
   propertyOperators: Record<string, string | null>;
+  operatorIssues?: Record<string, string>;
+  socialIssues?: Record<string, { message: string; entityId: string }>;
   operationEdits: Record<
     string,
     { paymentDate?: string; paymentMethod?: ReportPaymentMethod }
@@ -87,14 +87,16 @@ export type ReportResult = {
 };
 export type ReportSnapshot = {
   confirmedAt: string;
+  confirmedBy?: string | null;
   definition: ReportDefinition;
   result: ReportResult;
 };
 export type ReportProgress = {
   ready?: boolean;
   snapshot?: ReportSnapshot;
+  readyFingerprint?: string;
 };
-export type PrototypeState = ReportSources & {
+export type ReportState = ReportSources & {
   version: 3;
   reports: ReportDefinition[];
   drafts: Record<string, ReportDefinition>;
@@ -102,7 +104,6 @@ export type PrototypeState = ReportSources & {
   progress: Record<string, ReportProgress>;
 };
 
-const allProperties = REPORT_PROPERTIES.map((property) => property.id);
 const revenueCategories: ReportCategory[] = [
   "accommodation",
   "cleaning",
@@ -121,7 +122,7 @@ export const REPORT_TEMPLATES: Array<{
   },
   {
     kind: "tourist",
-    name: "Nuitées et taxe de séjour",
+    name: "Nuitées",
     description: "Nuitées par logement.",
   },
   {
@@ -143,14 +144,7 @@ export function createReport(kind: ReportKind, id: string): ReportDefinition {
     kind,
     name: template.name,
     description: template.description,
-    recipient:
-      kind === "social"
-        ? "Exploitant · Exemple"
-        : kind === "tourist"
-          ? "Collectivité · Exemple"
-          : kind === "owner"
-            ? "Propriétaire · Exemple"
-            : "Mon suivi",
+    recipient: "À renseigner",
     dateBasis: kind === "tourist" ? "stay" : "payment",
     cadence: "monthly",
     categories:
@@ -159,214 +153,15 @@ export function createReport(kind: ReportKind, id: string): ReportDefinition {
         : kind === "custom"
           ? ["cleaning", "linen", "extras"]
           : [...revenueCategories],
-    propertyIds: kind === "owner" ? ["orchard"] : [...allProperties],
+    propertyIds: [],
+    operatorId: null,
     favorite: kind === "social",
   };
 }
 
-const makeOperation = (
-  id: string,
-  guest: string,
-  propertyId: string,
-  category: ReportCategory,
-  amountCents: number,
-  stayDate: string,
-  paymentDate: string | null,
-  nights = 0,
-  reviewReason?: string,
-  channel = "Direct",
-): ReportOperation => ({
-  id,
-  reservation: `EX-${id.split("-")[0]}`,
-  guest,
-  propertyId,
-  category,
-  amountCents,
-  stayDate,
-  paymentDate,
-  nights,
-  ...(reviewReason ? { reviewReason } : {}),
-  channel,
-  paymentMethod:
-    (
-      {
-        "101": "transfer",
-        "102": "transfer",
-        "103": "cheque",
-        "104": "card",
-        "105": "transfer",
-        "106": "cash",
-        "107": "transfer",
-        "108": "card",
-        "109": "cheque",
-      } as Record<string, ReportPaymentMethod>
-    )[id.split("-")[0]] ?? "unknown",
-});
-
-export const DEMO_OPERATIONS: ReportOperation[] = [
-  makeOperation(
-    "101-stay",
-    "Camille Martin",
-    "orchard",
-    "accommodation",
-    68000,
-    "2026-10-03",
-    "2026-10-01",
-    8,
-  ),
-  makeOperation(
-    "101-cleaning",
-    "Camille Martin",
-    "orchard",
-    "cleaning",
-    6500,
-    "2026-10-03",
-    "2026-10-01",
-  ),
-  makeOperation(
-    "101-linen",
-    "Camille Martin",
-    "orchard",
-    "linen",
-    3000,
-    "2026-10-03",
-    "2026-10-01",
-  ),
-  makeOperation(
-    "102-stay",
-    "Alex Moreau",
-    "woods",
-    "accommodation",
-    92000,
-    "2026-10-06",
-    "2026-09-28",
-    12,
-    undefined,
-    "Plateforme",
-  ),
-  makeOperation(
-    "102-cleaning",
-    "Alex Moreau",
-    "woods",
-    "cleaning",
-    8000,
-    "2026-10-06",
-    "2026-10-06",
-  ),
-  makeOperation(
-    "103-stay",
-    "Lou Bernard",
-    "mill",
-    "accommodation",
-    54000,
-    "2026-10-10",
-    "2026-10-08",
-    6,
-  ),
-  makeOperation(
-    "103-extra",
-    "Lou Bernard",
-    "mill",
-    "extras",
-    2500,
-    "2026-10-10",
-    null,
-  ),
-  makeOperation(
-    "104-stay",
-    "Sacha Petit",
-    "orchard",
-    "accommodation",
-    76000,
-    "2026-10-14",
-    "2026-10-12",
-    10,
-  ),
-  makeOperation(
-    "104-tax",
-    "Sacha Petit",
-    "orchard",
-    "tourist_tax",
-    1800,
-    "2026-10-14",
-    "2026-10-12",
-  ),
-  makeOperation(
-    "105-stay",
-    "Charlie Dubois",
-    "woods",
-    "accommodation",
-    84000,
-    "2026-10-18",
-    "2026-10-15",
-    12,
-    undefined,
-    "Plateforme",
-  ),
-  makeOperation(
-    "105-linen",
-    "Charlie Dubois",
-    "woods",
-    "linen",
-    4500,
-    "2026-10-18",
-    "2026-10-15",
-  ),
-  makeOperation(
-    "106-stay",
-    "Noa Laurent",
-    "mill",
-    "accommodation",
-    48000,
-    "2026-10-22",
-    "2026-10-20",
-    6,
-  ),
-  makeOperation(
-    "106-refund",
-    "Noa Laurent",
-    "mill",
-    "extras",
-    -3500,
-    "2026-10-22",
-    "2026-10-23",
-  ),
-  makeOperation(
-    "107-stay",
-    "Alix Robert",
-    "orchard",
-    "accommodation",
-    59000,
-    "2026-11-02",
-    "2026-10-25",
-    8,
-  ),
-  makeOperation(
-    "108-stay",
-    "Morgan Richard",
-    "woods",
-    "accommodation",
-    72000,
-    "2026-11-08",
-    "2026-11-01",
-    10,
-  ),
-  makeOperation(
-    "109-stay",
-    "Robin Simon",
-    "mill",
-    "accommodation",
-    46000,
-    "2026-09-18",
-    "2026-09-12",
-    6,
-  ),
-];
-
 export const categoryLabel = (id: ReportCategory) =>
   REPORT_CATEGORIES.find((category) => category.id === id)!.label;
-export const propertyName = (id: string) =>
-  REPORT_PROPERTIES.find((property) => property.id === id)?.name ?? id;
+export const propertyName = (id: string) => id;
 export const paymentMethodLabel = (id: ReportPaymentMethod) =>
   REPORT_PAYMENT_METHODS.find((method) => method.id === id)!.label;
 export const cadenceLabel = (cadence: ReportCadence) =>
@@ -400,19 +195,40 @@ export function getReportPeriod(month: string, cadence: ReportCadence) {
 export const reportPeriodKey = (report: ReportDefinition, month: string) =>
   `${report.id}:${getReportPeriod(month, report.cadence).key}`;
 
+export const operationSourceSignature = (operation: ReportOperation) =>
+  JSON.stringify([
+    operation.reservationId,
+    operation.propertyId,
+    operation.category,
+    operation.amountCents,
+    operation.nights,
+    operation.paymentDate,
+    operation.stayDate,
+    operation.paymentMethod,
+    operation.basis,
+    operation.categoryUncertain,
+    operation.reviewReason,
+  ]);
+
 export function evaluateReport(
   report: ReportDefinition,
   month: string,
   overrides: Record<string, OperationOverride> = {},
-  operations = DEMO_OPERATIONS,
+  operations: ReportOperation[] = [],
   sources: ReportSources = {
-    propertyOperators: DEFAULT_PROPERTY_OPERATORS,
+    propertyOperators: {},
     operationEdits: {},
   },
 ): ReportResult {
   const period = getReportPeriod(month, report.cadence);
   const rows: EvaluatedOperation[] = [];
   for (const original of operations) {
+    if (
+      original.basis &&
+      original.basis !==
+        (report.kind === "tourist" ? "nights" : report.dateBasis)
+    )
+      continue;
     const operation = { ...original, ...sources.operationEdits[original.id] };
     const effectiveDate =
       report.dateBasis === "payment"
@@ -420,19 +236,96 @@ export function evaluateReport(
         : operation.stayDate;
     // A missing payment date is surfaced in its stay period; it never enters the total automatically.
     const candidateDate = effectiveDate ?? operation.stayDate;
-    if (candidateDate < period.start || candidateDate >= period.end) continue;
+    if (
+      effectiveDate &&
+      (candidateDate < period.start || candidateDate >= period.end)
+    )
+      continue;
     const inProperty = report.propertyIds.includes(operation.propertyId);
-    const inCategory = report.categories.includes(operation.category);
+    const uncertainCategories =
+      operation.categoryUncertain && report.kind !== "tourist";
+    const optionalCategories: ReportCategory[] = [
+      "cleaning",
+      "linen",
+      "extras",
+    ];
+    const inCategory =
+      report.categories.includes(operation.category) ||
+      Boolean(
+        uncertainCategories &&
+        optionalCategories.some((category) =>
+          report.categories.includes(category),
+        ),
+      );
+    const operatorMismatch =
+      report.kind === "social" &&
+      Boolean(report.operatorId) &&
+      Boolean(sources.propertyOperators[operation.propertyId]) &&
+      sources.propertyOperators[operation.propertyId] !== report.operatorId;
     const override = overrides[operation.id];
     const issues: ReportIssue[] = [];
+    const staleCorrection = Boolean(
+      override?.sourceSignature &&
+      override.sourceSignature !== operationSourceSignature(operation),
+    );
+    if (staleCorrection)
+      issues.push({
+        kind: "correction",
+        message:
+          "Les données de cette correction ont changé. Réexaminez l’opération avant de finaliser le rapport.",
+        actionLabel: "Réexaminer la correction",
+      });
     if ((inProperty && inCategory) || override?.status === "included") {
+      if (report.kind === "social" && !report.operatorId)
+        issues.push({
+          kind: "settings",
+          message:
+            "Sélectionnez l’exploitant concerné dans les réglages du rapport.",
+          actionLabel: "Choisir l’exploitant",
+        });
       if (
         report.kind === "social" &&
-        !sources.propertyOperators[operation.propertyId]
+        sources.socialIssues?.[operation.propertyId]
+      )
+        issues.push({
+          kind: "fiscal",
+          sourceId: sources.socialIssues[operation.propertyId].entityId,
+          message: sources.socialIssues[operation.propertyId].message,
+          actionLabel: "Vérifier la TVA",
+        });
+      if (operatorMismatch)
+        issues.push({
+          kind: "settings",
+          message:
+            "Le rattachement du logement a changé : vérifiez l’exploitant sélectionné dans ce rapport.",
+          actionLabel: "Modifier le périmètre",
+        });
+      if (operation.reviewReason)
+        issues.push({
+          kind: "payment",
+          message: operation.reviewReason,
+          actionLabel: "Vérifier la réservation",
+        });
+      if (
+        uncertainCategories &&
+        !optionalCategories.every((category) =>
+          report.categories.includes(category),
+        )
+      )
+        issues.push({
+          kind: "payment",
+          message:
+            "La ventilation des prestations n’est pas renseignée. Le total des prestations est conservé.",
+          actionLabel: "Vérifier les prestations",
+        });
+      if (
+        report.kind === "social" &&
+        (!sources.propertyOperators[operation.propertyId] ||
+          sources.operatorIssues?.[operation.propertyId])
       )
         issues.push({
           kind: "operator",
-          message: `${propertyName(operation.propertyId)} : aucun exploitant rattaché.`,
+          message: `${operation.propertyLabel ?? propertyName(operation.propertyId)} : ${sources.operatorIssues?.[operation.propertyId] ?? "aucun exploitant rattaché."}`,
           actionLabel: "Rattacher le gîte",
         });
       if (!effectiveDate)
@@ -443,6 +336,7 @@ export function evaluateReport(
         });
       if (
         report.kind !== "tourist" &&
+        report.dateBasis === "payment" &&
         operation.category === "accommodation" &&
         operation.paymentMethod === "unknown"
       )
@@ -465,9 +359,9 @@ export function evaluateReport(
         : issues.length
           ? issues.map((issue) => issue.message).join(" ")
           : `Logement et catégorie inclus dans le rapport${operation.category === "accommodation" && report.kind !== "tourist" ? ` · ${paymentMethodLabel(operation.paymentMethod)}` : ""}.`;
-    if (override) {
+    if (override && report.kind !== "social" && report.kind !== "tourist") {
       status =
-        override.status === "included" && issues.length
+        staleCorrection || (override.status === "included" && issues.length)
           ? "review"
           : override.status;
       reason =
@@ -497,34 +391,6 @@ export function evaluateReport(
   };
 }
 
-export function createPrototypeState(): PrototypeState {
-  return {
-    version: 3,
-    propertyOperators: { ...DEFAULT_PROPERTY_OPERATORS },
-    operationEdits: {},
-    reports: REPORT_TEMPLATES.map((template) =>
-      createReport(template.kind, `demo-${template.kind}`),
-    ),
-    drafts: {},
-    overrides: {},
-    progress: {},
-  };
-}
-
-export function evaluatePrototypeReport(
-  state: PrototypeState,
-  report: ReportDefinition,
-  month: string,
-) {
-  return evaluateReport(
-    report,
-    month,
-    state.overrides[reportPeriodKey(report, month)],
-    undefined,
-    state,
-  );
-}
-
 export function accommodationBreakdown(result: ReportResult) {
   return REPORT_PAYMENT_METHODS.map((method) => {
     const rows = result.rows.filter(
@@ -539,45 +405,6 @@ export function accommodationBreakdown(result: ReportResult) {
       total: rows.reduce((sum, row) => sum + row.value, 0),
     };
   }).filter((group) => group.count > 0);
-}
-
-export function applySourceCorrection(
-  state: PrototypeState,
-  correction:
-    | { kind: "operator"; propertyId: string; operatorId: string }
-    | {
-        kind: "payment";
-        operationId: string;
-        paymentDate: string;
-        paymentMethod: ReportPaymentMethod;
-      },
-): PrototypeState {
-  return {
-    ...state,
-    propertyOperators:
-      correction.kind === "operator"
-        ? {
-            ...state.propertyOperators,
-            [correction.propertyId]: correction.operatorId,
-          }
-        : state.propertyOperators,
-    operationEdits:
-      correction.kind === "payment"
-        ? {
-            ...state.operationEdits,
-            [correction.operationId]: {
-              paymentDate: correction.paymentDate,
-              paymentMethod: correction.paymentMethod,
-            },
-          }
-        : state.operationEdits,
-    progress: Object.fromEntries(
-      Object.entries(state.progress).map(([key, progress]) => [
-        key,
-        { ...progress, ready: false },
-      ]),
-    ),
-  };
 }
 
 export const formatReportValue = (
@@ -637,9 +464,9 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
     return `"${safe.replace(/"/g, '""')}"`;
   };
   const headers = [
-    "Réservation d’exemple",
-    "Voyageur fictif",
-    "Logement fictif",
+    "Réservation",
+    "Voyageur",
+    "Logement",
     "Catégorie",
     "Mode de paiement",
     "Canal de réservation",
@@ -660,7 +487,7 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
       ...result.rows.map((row) => [
         row.reservation,
         row.guest,
-        propertyName(row.propertyId),
+        row.propertyLabel ?? propertyName(row.propertyId),
         categoryLabel(row.category),
         paymentMethodLabel(row.paymentMethod),
         row.channel,

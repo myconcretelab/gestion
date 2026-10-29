@@ -3,7 +3,7 @@ import { focusFormField } from "./shared/formCompletion";
 import { giteFormCompletion, giteCompletionProgress } from "./shared/giteFormCompletion";
 import TouristTaxSettingsEditor from "./shared/TouristTaxSettingsEditor";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiFetch, isApiError } from "../utils/api";
 import type { Gite, GitePhoto, ReservationPlaceholder, FiscalEstablishmentOption } from "../utils/types";
 import { getGiteColor } from "../utils/giteColors";
@@ -2707,6 +2707,7 @@ const GitesPage = () => {
 
   return (
     <div className="gites-page">
+      {searchParams.get("back")?.startsWith("/rapports/") && <Link className="reservation-ledger-back" to={searchParams.get("back")!}>← Revenir au rapport</Link>}
       <div className="gites-listing-shell">
         <div className="gites-header gites-header--listing">
           <div className="gites-tools">

@@ -1,16 +1,15 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { ReportWorkspace } from "./ReportsPrototypePage";
+import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
 import ReportPageHeader from "./ReportPageHeader";
-import { sourceCorrectionHref } from "./ReportSourceEditor";
+import { canAccessReportSource, sourceCorrectionHref } from "./reportSources";
 import {
   categoryLabel,
-  evaluatePrototypeReport,
+  evaluateWorkspaceReport,
   paymentMethodLabel,
   formatReportValue,
   getReportPeriod,
-  propertyName,
   reportCsv,
   reportPeriodKey,
   reportStatus,
@@ -18,7 +17,7 @@ import {
   type EvaluatedOperation,
   type OperationOverride,
   type OperationStatus,
-} from "./reportPrototype";
+} from "./reportModel";
 import {
   ReportBadge,
   ReportDialog,
@@ -48,9 +47,21 @@ export default function ReportDetail({
   workspace: ReportWorkspace;
 }) {
   const { reportId } = useParams();
-  const { state, setState, month, href, canEdit, notify } = workspace;
+  const {
+    state,
+    mutate,
+    saving,
+    loading,
+    refresh,
+    propertyName,
+    month,
+    href,
+    canEdit,
+    notify,
+  } = workspace;
   const [filter, setFilter] = useState<OperationStatus>("included");
   const [search, setSearch] = useState("");
+  const [showAllIssues, setShowAllIssues] = useState(false);
   const [selectedRow, setSelectedRow] = useState<EvaluatedOperation | null>(
     null,
   );
@@ -62,6 +73,13 @@ export default function ReportDetail({
     id: string;
     previous?: OperationOverride;
   } | null>(null);
+  useEffect(() => {
+    setLastCorrection(null);
+    setShowAllIssues(false);
+    setSnapshotKey(null);
+    setSelectedRow(null);
+    setHistoryOpen(false);
+  }, [reportId, month]);
   const report = state.reports.find((item) => item.id === reportId);
   if (!report)
     return (
@@ -71,7 +89,7 @@ export default function ReportDetail({
       </div>
     );
   const key = reportPeriodKey(report, month);
-  const result = evaluatePrototypeReport(state, report, month);
+  const result = evaluateWorkspaceReport(state, report, month);
   const progress = state.progress[key];
   const snapshots = Object.entries(state.progress)
     .filter(
@@ -107,7 +125,7 @@ export default function ReportDetail({
       row.issues.map((issue) => ({
         row,
         issue,
-        id: `${issue.kind}:${issue.kind === "operator" ? row.propertyId : row.id}`,
+        id: `${issue.kind}:${issue.kind === "operator" ? row.propertyId : issue.kind === "settings" ? report.id : issue.kind === "fiscal" ? issue.sourceId : (row.reservationId ?? row.id)}`,
       })),
     )
     .filter(
@@ -122,54 +140,43 @@ export default function ReportDetail({
     );
     const link = document.createElement("a");
     link.href = url;
-    link.download = `exemple-rapport-${report.kind}-${getReportPeriod(displayedMonth, displayedReport.cadence).start}.csv`;
+    link.download = `rapport-${report.kind}-${getReportPeriod(displayedMonth, displayedReport.cadence).start}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     notify("Export CSV généré.");
   };
-  const correct = (row: EvaluatedOperation, override?: OperationOverride) => {
+  const correct = async (
+    row: EvaluatedOperation,
+    override?: OperationOverride,
+  ) => {
     if (!canEdit || snapshot) return;
     const previous = state.overrides[key]?.[row.id];
+    if (
+      !(await mutate({
+        type: "override",
+        reportId: report.id,
+        operationId: row.id,
+        override: override ?? null,
+      }))
+    )
+      return;
     setLastCorrection({ key, id: row.id, previous });
-    setState((current) => {
-      const overrides = { ...current.overrides[key] };
-      if (override) overrides[row.id] = override;
-      else delete overrides[row.id];
-      return {
-        ...current,
-        overrides: { ...current.overrides, [key]: overrides },
-        progress: {
-          ...current.progress,
-          [key]: { ...current.progress[key], ready: false },
-        },
-      };
-    });
     setSelectedRow(null);
-    notify(
-      "La correction est appliquée à ce rapport et à cette période uniquement.",
-    );
+    notify("Correction enregistrée pour ce rapport et cette période.");
   };
-  const undo = () => {
+  const undo = async () => {
     if (!lastCorrection || !canEdit) return;
-    const correction = lastCorrection;
-    setState((current) => {
-      const overrides = { ...current.overrides[correction.key] };
-      if (correction.previous) overrides[correction.id] = correction.previous;
-      else delete overrides[correction.id];
-      return {
-        ...current,
-        overrides: { ...current.overrides, [correction.key]: overrides },
-        progress: {
-          ...current.progress,
-          [correction.key]: {
-            ...current.progress[correction.key],
-            ready: false,
-          },
-        },
-      };
-    });
+    if (
+      !(await mutate({
+        type: "override",
+        reportId: report.id,
+        operationId: lastCorrection.id,
+        override: lastCorrection.previous ?? null,
+      }))
+    )
+      return;
     setLastCorrection(null);
     notify("La dernière correction a été annulée.");
   };
@@ -231,6 +238,15 @@ export default function ReportDetail({
         }
         actions={
           <>
+            <button
+              type="button"
+              className="rp-icon-button"
+              aria-label="Actualiser les données"
+              disabled={saving || loading}
+              onClick={refresh}
+            >
+              <ReportIcon name="refresh" />
+            </button>
             <button
               type="button"
               className="rp-button rp-button--secondary"
@@ -298,27 +314,60 @@ export default function ReportDetail({
       {!snapshot && issueLinks.length > 0 && (
         <section className="rp-problems" aria-label="Problèmes à corriger">
           <h2>Problèmes à corriger</h2>
-          {issueLinks.map(({ row, issue, id }) => (
-            <div className="rp-notice" key={id}>
-              <ReportIcon name="info" />
-              <div>
-                <strong>{issue.message}</strong>
-                {issue.kind === "payment" && (
-                  <p>
-                    {row.guest} · {row.reservation} ·{" "}
-                    {categoryLabel(row.category)}
-                  </p>
-                )}
+          {(showAllIssues ? issueLinks : issueLinks.slice(0, 3)).map(
+            ({ row, issue, id }) => (
+              <div className="rp-notice" key={id}>
+                <ReportIcon name="info" />
+                <div>
+                  <strong>{issue.message}</strong>
+                  {issue.kind === "payment" && (
+                    <p>
+                      {row.guest} · {row.reservation} ·{" "}
+                      {categoryLabel(row.category)}
+                    </p>
+                  )}
+                </div>
+                <Link
+                  className="rp-text-button"
+                  to={sourceCorrectionHref(workspace, report.id, row, issue)}
+                  aria-disabled={!canAccessReportSource(issue, row)}
+                  onClick={(event) => {
+                    if (!canAccessReportSource(issue, row)) {
+                      event.preventDefault();
+                      notify(
+                        "Votre profil ne permet pas d’accéder à cette fiche. Demandez la correction à une personne autorisée.",
+                      );
+                    }
+                  }}
+                >
+                  {canEdit ? issue.actionLabel : "Consulter"}
+                  <ReportIcon name="arrow" />
+                </Link>
               </div>
-              <Link
-                className="rp-text-button"
-                to={sourceCorrectionHref(workspace, report.id, row, issue)}
-              >
-                {canEdit ? issue.actionLabel : "Consulter"}
-                <ReportIcon name="arrow" />
-              </Link>
-            </div>
-          ))}
+            ),
+          )}
+          {issueLinks.length > 3 && (
+            <button
+              type="button"
+              className="rp-text-button"
+              onClick={() => setShowAllIssues((value) => !value)}
+            >
+              {showAllIssues
+                ? "Réduire la liste"
+                : `Afficher les ${issueLinks.length - 3} autres problèmes`}
+            </button>
+          )}
+          {result.rows.some(
+            (row) =>
+              row.status === "review" &&
+              !row.paymentDate &&
+              report.dateBasis === "payment",
+          ) && (
+            <p className="rp-muted">
+              Les encaissements sans date restent à vérifier dans toutes les
+              périodes jusqu’à leur rattachement.
+            </p>
+          )}
         </section>
       )}
       <section className="rp-report-summary" aria-label="Synthèse du rapport">
@@ -333,7 +382,7 @@ export default function ReportDetail({
           </strong>
           <span>
             {displayedReport.kind === "tourist"
-              ? "Nuitées des hébergements retenus dans cet exemple."
+              ? "Une personne hébergée pendant une nuit = une nuitée. Les séjours sont répartis entre les mois concernés."
               : "Les opérations à vérifier et hors périmètre sont présentées séparément."}
           </span>
           <div className="rp-total-rule">
@@ -408,17 +457,11 @@ export default function ReportDetail({
               <button
                 type="button"
                 className="rp-button"
-                onClick={() => {
-                  setState((previous) => ({
-                    ...previous,
-                    progress: {
-                      ...previous.progress,
-                      [key]: { ...previous.progress[key], ready: true },
-                    },
-                  }));
-                  notify("Le rapport de démonstration est prêt.");
+                onClick={async () => {
+                  if (await mutate({ type: "ready", reportId: report.id }))
+                    notify("Rapport marqué comme prêt.");
                 }}
-                disabled={!result.includedCount}
+                disabled={saving}
               >
                 <ReportIcon name="check" />
                 Marquer comme prêt
@@ -476,7 +519,11 @@ export default function ReportDetail({
             ))}
           </div>
           {lastCorrection && canEdit && !snapshot && (
-            <button className="rp-text-button" type="button" onClick={undo}>
+            <button
+              className="rp-text-button"
+              type="button"
+              onClick={() => void undo()}
+            >
               <ReportIcon name="undo" />
               Annuler la dernière correction
             </button>
@@ -550,18 +597,25 @@ export default function ReportDetail({
           reportName={displayedReport.name}
           formattedValue={formatReportValue(displayedReport, selectedRow.value)}
           canEdit={canEdit && !snapshot}
+          canOverride={
+            report.kind !== "social" && report.kind !== "tourist" && !saving
+          }
+          sourceHref={
+            selectedRow.reservationId
+              ? `/reservations/${encodeURIComponent(selectedRow.reservationId)}/reglements?back=${encodeURIComponent(href(`/${report.id}`))}`
+              : undefined
+          }
           existingOverride={state.overrides[key]?.[selectedRow.id]}
-          correctionLinks={selectedRow.issues.map((issue) => ({
-            issue,
-            href: sourceCorrectionHref(
-              workspace,
-              report.id,
-              selectedRow,
+          correctionLinks={selectedRow.issues
+            .filter((issue) => issue.kind !== "correction")
+            .map((issue) => ({
               issue,
-            ),
-          }))}
+              href: canAccessReportSource(issue, selectedRow)
+                ? sourceCorrectionHref(workspace, report.id, selectedRow, issue)
+                : "",
+            }))}
           onClose={() => setSelectedRow(null)}
-          onSave={(override) => correct(selectedRow, override)}
+          onSave={(override) => void correct(selectedRow, override)}
         />
       )}
       {confirming && (
@@ -575,9 +629,9 @@ export default function ReportDetail({
             <span>{getReportPeriod(month, report.cadence).label}</span>
           </div>
           <p>
-            Dans cet aperçu, vous simulez une confirmation après une démarche
-            externe. Les chiffres, les règles et les opérations de cette période
-            seront conservés dans une copie figée.
+            Confirmez cette action après avoir effectué la démarche externe. Les
+            chiffres, les règles et les opérations de cette période seront
+            conservés sur le serveur dans une copie figée.
           </p>
           <p className="rp-muted">
             Cette action n’envoie aucune information à un organisme.
@@ -593,28 +647,17 @@ export default function ReportDetail({
             <button
               type="button"
               className="rp-button"
-              onClick={() => {
+              disabled={saving}
+              onClick={async () => {
                 if (!canEdit || result.reviewCount || progress?.snapshot)
                   return;
-                setState((previous) => ({
-                  ...previous,
-                  progress: {
-                    ...previous.progress,
-                    [key]: {
-                      ready: true,
-                      snapshot: {
-                        confirmedAt: new Date().toISOString(),
-                        definition: structuredClone(report),
-                        result: structuredClone(result),
-                      },
-                    },
-                  },
-                }));
-                setConfirming(false);
-                notify("Copie enregistrée dans cet onglet.");
+                if (await mutate({ type: "confirm", reportId: report.id })) {
+                  setConfirming(false);
+                  notify("Copie confirmée enregistrée.");
+                }
               }}
             >
-              Confirmer dans la démonstration
+              Confirmer la transmission
             </button>
           </div>
         </ReportDialog>
@@ -627,7 +670,7 @@ export default function ReportDetail({
           {!snapshots.length ? (
             <ReportEmpty title="Aucune copie enregistrée">
               Une copie apparaîtra lorsque vous confirmerez la transmission
-              d’une période dans la démonstration.
+              d’une période.
             </ReportEmpty>
           ) : (
             <div className="rp-history-list">
@@ -677,6 +720,8 @@ function OperationDialog({
   reportName,
   formattedValue,
   canEdit,
+  canOverride,
+  sourceHref,
   existingOverride,
   correctionLinks,
   onClose,
@@ -686,6 +731,8 @@ function OperationDialog({
   reportName: string;
   formattedValue: string;
   canEdit: boolean;
+  canOverride: boolean;
+  sourceHref?: string;
   existingOverride?: OperationOverride;
   correctionLinks: Array<{
     issue: EvaluatedOperation["issues"][number];
@@ -714,10 +761,14 @@ function OperationDialog({
       <dl className="rp-operation-facts">
         <div>
           <dt>Logement</dt>
-          <dd>{propertyName(row.propertyId)}</dd>
+          <dd>{row.propertyLabel ?? row.propertyId}</dd>
         </div>
         <div>
-          <dt>Début du séjour</dt>
+          <dt>
+            {row.basis === "nights"
+              ? "Première nuit de la période"
+              : "Début du séjour"}
+          </dt>
           <dd>{dateLabel(row.stayDate)}</dd>
         </div>
         <div>
@@ -737,6 +788,12 @@ function OperationDialog({
           <dd>{reportName}</dd>
         </div>
       </dl>
+      {sourceHref && (
+        <Link className="rp-text-button" to={sourceHref}>
+          Ouvrir les règlements de la réservation <ReportIcon name="arrow" />
+        </Link>
+      )}
+      {row.allocationNote && <p className="rp-muted">{row.allocationNote}</p>}
       <div className="rp-operation-explanation">
         <ReportBadge
           tone={
@@ -752,6 +809,7 @@ function OperationDialog({
         <p>{row.reason}</p>
         {canEdit &&
           correctionLinks
+            .filter((item) => Boolean(item.href))
             .filter(
               (item, index, items) =>
                 items.findIndex((other) => other.href === item.href) === index,
@@ -767,7 +825,9 @@ function OperationDialog({
               </Link>
             ))}
       </div>
-      {canEdit && !row.issues.length ? (
+      {canEdit &&
+      canOverride &&
+      row.issues.every((issue) => issue.kind === "correction") ? (
         <form onSubmit={save} className="rp-correction-form">
           <h3>Corriger pour cette période</h3>
           <p className="rp-muted">
@@ -815,7 +875,11 @@ function OperationDialog({
             >
               Fermer
             </button>
-            <button className="rp-button" type="submit" disabled={!note.trim()}>
+            <button
+              className="rp-button"
+              type="submit"
+              disabled={note.trim().length < 3}
+            >
               <ReportIcon name="check" />
               Appliquer la correction
             </button>

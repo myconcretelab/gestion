@@ -22,7 +22,6 @@ type ReservationOptionsEditorProps = {
   guestCount: number;
   onChange: (next: ContratOptions) => void;
   layout?: "full" | "compact" | "drawer";
-  showDeclaredToggle?: boolean;
 };
 
 const roundMoneyInput = (value: number) => {
@@ -38,7 +37,6 @@ const ReservationOptionsEditor = ({
   guestCount,
   onChange,
   layout = "full",
-  showDeclaredToggle = true,
 }: ReservationOptionsEditorProps) => {
   const normalizedOptions = mergeReservationOptions(options);
   const defaultGuestCount = Math.max(1, toNonNegativeInt(guestCount, 1));
@@ -116,16 +114,6 @@ const ReservationOptionsEditor = ({
     });
   };
 
-  const setDeclared = (key: ReservationServiceOptionKey, declared: boolean) => {
-    commit((previous) => {
-      if (key === "draps") return { ...previous, draps: { ...previous.draps, declared } };
-      if (key === "linge_toilette") return { ...previous, linge_toilette: { ...previous.linge_toilette, declared } };
-      if (key === "chiens") return { ...previous, chiens: { ...previous.chiens, declared } };
-      if (key === "menage") return { ...previous, menage: { ...previous.menage, declared } };
-      return { ...previous, depart_tardif: { ...previous.depart_tardif, declared } };
-    });
-  };
-
   const setOffert = (key: ReservationServiceOptionKey, offert: boolean) => {
     commit((previous) => {
       if (key === "draps") return { ...previous, draps: { ...previous.draps, offert } };
@@ -196,20 +184,6 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
-              {showDeclaredToggle ? (
-                <div className="switch-group switch-group--table">
-                  <span>Déclaré</span>
-                  <label className="switch switch--compact">
-                    <input
-                      type="checkbox"
-                      checked={normalizedOptions.draps?.declared ?? false}
-                      disabled={!normalizedOptions.draps?.enabled}
-                      onChange={(event) => setDeclared("draps", event.target.checked)}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              ) : null}
             </div>
           </div>
           <div className="reservations-option-controls">
@@ -273,20 +247,6 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
-              {showDeclaredToggle ? (
-                <div className="switch-group switch-group--table">
-                  <span>Déclaré</span>
-                  <label className="switch switch--compact">
-                    <input
-                      type="checkbox"
-                      checked={normalizedOptions.linge_toilette?.declared ?? false}
-                      disabled={!normalizedOptions.linge_toilette?.enabled}
-                      onChange={(event) => setDeclared("linge_toilette", event.target.checked)}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              ) : null}
             </div>
           </div>
           <div className="reservations-option-controls">
@@ -325,20 +285,6 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
-              {showDeclaredToggle ? (
-                <div className="switch-group switch-group--table">
-                  <span>Déclaré</span>
-                  <label className="switch switch--compact">
-                    <input
-                      type="checkbox"
-                      checked={normalizedOptions.menage?.declared ?? false}
-                      disabled={!normalizedOptions.menage?.enabled}
-                      onChange={(event) => setDeclared("menage", event.target.checked)}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              ) : null}
             </div>
             {normalizedOptions.menage?.enabled ? (
               <CleaningBillingControl value={getCleaningBillingMode(normalizedOptions.menage)}
@@ -390,20 +336,6 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
-              {showDeclaredToggle ? (
-                <div className="switch-group switch-group--table">
-                  <span>Déclaré</span>
-                  <label className="switch switch--compact">
-                    <input
-                      type="checkbox"
-                      checked={normalizedOptions.depart_tardif?.declared ?? false}
-                      disabled={!normalizedOptions.depart_tardif?.enabled}
-                      onChange={(event) => setDeclared("depart_tardif", event.target.checked)}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              ) : null}
             </div>
           </div>
           <div className="reservations-option-controls">
@@ -458,20 +390,6 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
-              {showDeclaredToggle ? (
-                <div className="switch-group switch-group--table">
-                  <span>Déclaré</span>
-                  <label className="switch switch--compact">
-                    <input
-                      type="checkbox"
-                      checked={normalizedOptions.chiens?.declared ?? false}
-                      disabled={!normalizedOptions.chiens?.enabled}
-                      onChange={(event) => setDeclared("chiens", event.target.checked)}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              ) : null}
             </div>
           </div>
           <div className="reservations-option-controls">

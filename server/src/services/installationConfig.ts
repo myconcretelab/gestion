@@ -194,10 +194,11 @@ export const isModuleEnabled = async (key: ModuleKey) => {
 };
 
 const ROUTE_MODULES: Array<[RegExp, ModuleKey]> = [
+  [/^\/reports(?:\/|$)|^\/reservations\/[^/]+\/reporting-allocation(?:\/|$)/i, "finances"],
   [/^\/(?:reservations|booking-requests|today)(?:\/|$)/, "reservations"],
   [/^\/contracts(?:\/|$)/, "contracts"],
   [/^\/invoices(?:\/|$)/, "invoices"],
-  [/^\/(?:statistics|professional-expenses|guest-night-declarations|urssaf-declarations)(?:\/|$)/, "finances"],
+  [/^\/(?:statistics|professional-expenses|guest-night-declarations|urssaf-declarations|reports)(?:\/|$)/, "finances"],
   [/^\/personal-expenses(?:\/|$)/, "personal_expenses"],
   [/^\/(?:planning-relay-periods|cleaning-tasks|action-tasks|intervenants|interventions)(?:\/|$)/, "worker_planning"],
   [/^\/(?:booked|public\/gites)(?:\/|$)/, "web_publication"],

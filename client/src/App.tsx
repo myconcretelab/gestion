@@ -21,7 +21,7 @@ const BookingRequestDetailPage = lazy(() => import("./pages/BookingRequestDetail
 const MobileReservationEditorPage = lazy(() => import("./pages/MobileReservationEditorPage"));
 const CalendrierPage = lazy(() => import("./pages/CalendrierPage"));
 const StatisticsPage = lazy(() => import("./pages/StatisticsPage"));
-const ReportsPrototypePage = lazy(() => import("./features/finance/reports/ReportsPrototypePage"));
+const ReportsPage = lazy(() => import("./features/finance/reports/ReportsPage"));
 const PersonalExpensesPage = lazy(() => import("./pages/PersonalExpensesPage"));
 const ProfessionalExpensesPage = lazy(() => import("./pages/ProfessionalExpensesPage"));
 const PurchaseInvoicesPage = lazy(() => import("./pages/PurchaseInvoicesPage"));
@@ -469,7 +469,7 @@ const App = () => {
     {
       to: "/rapports",
       pageId: "statistics" as const,
-      label: "Rapports · Aperçu",
+      label: "Rapports",
       isActive: location.pathname === "/rapports" || location.pathname.startsWith("/rapports/"),
       desktopOverflow: true,
       requiresAmounts: true,
@@ -1083,14 +1083,14 @@ const App = () => {
             <Route path="/factures/:id" element={<PageAccess allowed={canAccessPage("invoices")}><AmountsAccess allowed={canViewAmounts}><FactureDetailPage /></AmountsAccess></PageAccess>} />
             <Route path="/reservations/mobile" element={<PageAccess allowed={canAccessPage("reservations")}><MobileReservationEditorPage /></PageAccess>} />
             <Route path="/reservations/:id/reglements" element={<PageAccess allowed={canAccessPage("reservations")}><AmountsAccess allowed={canViewAmounts}><ReservationPaymentsPage /></AmountsAccess></PageAccess>} />
-            <Route path="/reservations" element={<PageAccess allowed={canAccessPage("reservations")}><ReservationsPage /></PageAccess>} />
+            <Route path="/reservations" element={<PageAccess allowed={canAccessPage("reservations")}><ReservationsPage reportsEnabled={canAccessPage("statistics") && moduleEnabled("finances") && canViewAmounts} /></PageAccess>} />
             <Route path="/calendrier" element={<PageAccess allowed={canAccessPage("calendar")}><CalendrierPage /></PageAccess>} />
             <Route path="/planning-relais" element={<Navigate to="/taches" replace />} />
             <Route path="/menages" element={<PageAccess allowed={canAccessPage("planning_relay")}><Navigate to="/taches?view=cleaning" replace /></PageAccess>} />
             <Route path="/taches" element={<PageAccess allowed={canAccessPage("planning_relay")}><TasksPage /></PageAccess>} />
             <Route path="/menages/partages" element={<PageAccess allowed={canAccessPage("planning_relay") && (!currentUser || currentUser.permissions.isOwner || (currentUser.status !== "worker" && currentUser.permissions.canWrite))}><OperationsPrintPage /></PageAccess>} />
             <Route path="/statistiques" element={<PageAccess allowed={canAccessPage("statistics")}><AmountsAccess allowed={canViewAmounts}><StatisticsPage /></AmountsAccess></PageAccess>} />
-            <Route path="/rapports/*" element={<PageAccess allowed={canAccessPage("statistics") && moduleEnabled("finances")}><AmountsAccess allowed={canViewAmounts}><ReportsPrototypePage /></AmountsAccess></PageAccess>} />
+            <Route path="/rapports/*" element={<PageAccess allowed={canAccessPage("statistics") && moduleEnabled("finances")}><AmountsAccess allowed={canViewAmounts}><ReportsPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-personnels" element={<PageAccess allowed={canAccessPage("personal_expenses")}><AmountsAccess allowed={canViewAmounts}><PersonalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/frais-professionnels" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><ProfessionalExpensesPage /></AmountsAccess></PageAccess>} />
             <Route path="/factures-achat" element={<PageAccess allowed={canAccessPage("professional_expenses")}><AmountsAccess allowed={canViewAmounts}><PurchaseInvoicesPage /></AmountsAccess></PageAccess>} />

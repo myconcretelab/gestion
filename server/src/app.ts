@@ -29,6 +29,7 @@ import intervenantHoursRouter from "./routes/intervenantHours.js";
 import userInterventionsRouter from "./routes/userInterventions.js";
 import professionalExpensesRouter from "./routes/professionalExpenses.js";
 import guestNightDeclarationsRouter from "./routes/guestNightDeclarations.js";
+import reportsRouter from "./modules/finance/reports/routes.js";
 import urssafDeclarationsRouter from "./routes/urssafDeclarations.js";
 import schoolHolidaysRouter from "./routes/schoolHolidays.js";
 import todayRouter from "./routes/today.js";
@@ -301,6 +302,7 @@ export const createApp = () => {
   app.use("/api/booked", bookedRouter);
   app.use("/api/booking-requests", bookingRequestsRouter);
   app.use("/api/statistics", statisticsRouter);
+  app.use("/api/reports", reportsRouter);
   app.use("/api/settings", settingsRouter);
   app.use("/api/settings", productSettingsRouter);
   app.use("/api/users", usersRouter);

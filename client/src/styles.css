@@ -22388,3 +22388,17 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .today-reservation-drawer__pending > p { margin: 0; font-weight: 700; }
 .today-reservation-drawer__error { padding: 14px; border: 1px solid var(--primary); background: var(--primary-soft); border-radius: 12px; }
 @media (max-width: 600px) { .today-reservation-drawer__fields { grid-template-columns: minmax(0, 1fr); } }
+
+.reservation-ledger-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-weight: 650;
+}

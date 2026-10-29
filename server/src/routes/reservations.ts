@@ -1,3 +1,4 @@
+import reportAllocationRouter from "../modules/finance/reports/allocationRoutes.js";
 import reservationPaymentsRouter from "./reservationPayments.js";
 import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
 import { loadReservationPaymentTracking, setReservationBookingSource, hasRecordedPayments, moveRecordedPayments, assertReservationPaymentsDeletable } from "../modules/reservationPayments/ledger.js";
@@ -2167,6 +2168,7 @@ router.get("/placeholders", async (_req, res, next) => {
 });
 
 router.use("/:id/payments", reservationPaymentsRouter);
+router.use("/:id/reporting-allocation", reportAllocationRouter);
 router.patch("/:id/booking-source", async (req, res, next) => {
   try {
     const { booking_source } = z.object({ booking_source: z.enum(BOOKING_SOURCES) }).strict().parse(req.body);
