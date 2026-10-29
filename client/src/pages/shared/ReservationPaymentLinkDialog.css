@@ -26,3 +26,38 @@
   align-items: center;
   gap: 10px;
 }
+
+.reservation-payment-link__share {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.reservation-payment-link__share-button {
+  display: inline-flex;
+  flex: 1 1 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.reservation-payment-link__share-button svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.reservation-payment-link__share-button:hover,
+.reservation-payment-link__share-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

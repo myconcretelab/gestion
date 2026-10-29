@@ -4178,6 +4178,56 @@ body.app-scroll-locked {
   gap: 8px;
 }
 
+.mobile-reservation-actions__payment-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  box-shadow: none;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.mobile-reservation-actions__payment-link svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+}
+
+.mobile-reservation-actions__payment-link svg:last-child {
+  width: 15px;
+  height: 15px;
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.mobile-reservation-actions__payment-link:hover {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.mobile-reservation-actions__payment-link:focus-visible {
+  outline: 2px solid var(--primary-soft);
+  outline-offset: 3px;
+}
+
+.mobile-reservation-payment-loading {
+  position: fixed;
+  inset: auto 20px 20px;
+  z-index: 100;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
 .mobile-reservation-actions__highlight-card {
   width: 100%;
   margin-top: 12px;

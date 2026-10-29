@@ -20,6 +20,7 @@ type MobileReservationActionsBarProps = {
   cleaningCheck?: ReactNode;
   tasksButton?: ReactNode;
   paymentInfo?: ReactNode;
+  paymentAction?: ReactNode;
   mode?: MobileReservationActionsBarMode;
   onClose: () => void;
   onEdit?: () => void;
@@ -161,6 +162,7 @@ const MobileReservationActionsBar = ({
   cleaningCheck,
   tasksButton,
   paymentInfo,
+  paymentAction,
   mode = "actions",
   onClose,
   onEdit,
@@ -183,7 +185,7 @@ const MobileReservationActionsBar = ({
 
   const hasThreePrimaryActions = Boolean(onEdit && smsHref && phoneHref && !airbnbUrl);
   const normalizedNote = note?.trim();
-  const hasContent = Boolean(optionBadges.length || details?.length || sourcePicker || highlightedCard || paymentInfo || normalizedNote);
+  const hasContent = Boolean(optionBadges.length || details?.length || sourcePicker || highlightedCard || paymentInfo || paymentAction || normalizedNote);
 
   return (
     <div className="mobile-reservation-actions" role="status" aria-live="polite">
@@ -245,6 +247,7 @@ const MobileReservationActionsBar = ({
                 })}
               </div>
             ) : null}
+            {paymentAction}
             {sourcePicker ? (
               <label className="mobile-reservation-actions__source-picker">
                 <span>{sourcePicker.label}</span>

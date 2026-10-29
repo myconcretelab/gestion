@@ -2,8 +2,9 @@ import "./ReservationPaymentLinkDialog.css";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, isAbortError } from "../../utils/api";
 import { formatDate, formatEuro } from "../../utils/format";
-import type { Reservation } from "../../utils/types";
+import type { PaymentLinkReservation } from "../../utils/reservationPaymentSharing";
 import ReservationDetailsDrawer from "./ReservationDetailsDrawer";
+import ReservationPaymentLinkShareActions from "./ReservationPaymentLinkShareActions";
 
 type PaymentLink = {
   id: string;
@@ -28,7 +29,7 @@ export default function ReservationPaymentLinkDialog({
   reservation,
   onClose,
 }: {
-  reservation: Reservation;
+  reservation: PaymentLinkReservation;
   onClose: () => void;
 }) {
   const [choices, setChoices] = useState<Choices | null>(null);
@@ -189,6 +190,10 @@ export default function ReservationPaymentLinkDialog({
                   activé sur le site en ligne.
                 </p>
               ) : null}
+              {link.status === "active" && !busy ? <>
+                <ReservationPaymentLinkShareActions reservation={reservation} link={link} />
+                <p className="field-hint">Le message est prérempli dans votre application. Vous pouvez le modifier avant de l’envoyer.</p>
+              </> : null}
               <div className="actions">
                 <button
                   type="button"

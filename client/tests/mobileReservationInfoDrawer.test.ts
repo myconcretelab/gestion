@@ -53,6 +53,26 @@ test("le chargement et une erreur de lecture restent distincts d'un paiement non
   assert.match(render({ paymentError: "Lecture impossible" }), /Indisponible/);
 });
 
+test("le lien de paiement est proposé uniquement en direct avec un contact et un gîte", () => {
+  for (const contact of [{ telephone: "0612345678" }, { email: "camille@example.com" }, { telephone: "0612345678", email: "camille@example.com" }]) {
+    assert.match(render({ giteId: "gite", reservation: { ...reservation, telephone: null, ...contact, booking_source: "Direct" } }), /Envoyer un lien de paiement Stripe/);
+  }
+  for (const overrides of [
+    {},
+    { giteId: "gite", reservation: { ...reservation, telephone: null, email: "  " } },
+    ...["Airbnb", "Abritel", "Autre", "À préciser"].map((booking_source) => ({ giteId: "gite", reservation: { ...reservation, booking_source } })),
+  ]) assert.doesNotMatch(render(overrides), /Envoyer un lien de paiement Stripe/);
+});
+
+test("le partage du paiement respecte les droits d’écriture et d’accès aux montants", () => {
+  try {
+    for (const permissions of [{ canWrite: false, canViewAmounts: true }, { canWrite: true, canViewAmounts: false }]) {
+      setCurrentAuthUser({ permissions: { ...permissions, isOwner: false }, pageAccess: ["reservations"] } as any);
+      assert.doesNotMatch(render({ giteId: "gite" }), /Envoyer un lien de paiement Stripe/);
+    }
+  } finally { setCurrentAuthUser(null); }
+});
+
 test("un utilisateur sans accès aux montants ne voit pas la proportion payée", () => {
   try {
     setCurrentAuthUser({ permissions: { canViewAmounts: false, isOwner: false }, pageAccess: [] } as any);

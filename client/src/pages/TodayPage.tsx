@@ -2588,6 +2588,8 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               booking_source: mobilePaymentDetails.reservation.booking_source,
               linked_contract: mobilePaymentDetails.reservation.linked_contract,
               online_payment: mobilePaymentDetails.reservation.online_payment,
+              telephone: mobilePaymentDetails.reservation.telephone,
+              email: mobilePaymentDetails.reservation.email,
             } : {}),
           }}
           paymentLoading={currentUser?.permissions.canViewAmounts !== false &&
