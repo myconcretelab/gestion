@@ -1,4 +1,7 @@
-import type { ReportWorkspaceData } from "./reportApi.js";
+import {
+  reportDefinitionSchema,
+  type ReportWorkspaceData,
+} from "./reportApi.js";
 import {
   evaluateReport,
   getReportPeriod,
@@ -16,6 +19,9 @@ export type ReportReminder = {
   propertyIds: string[];
   status: "prepare" | "ready" | "review" | "changed";
   reviewCount: number;
+  kind: "social" | "tourist";
+  total: number;
+  canCopy: boolean;
 };
 
 /** Closed reporting periods, not legal deadlines: the app does not submit declarations. */
@@ -121,6 +127,20 @@ export function buildReportReminders(
         )
           continue;
       }
+      const scopeValid = report.propertyIds.every((id) =>
+        state.properties.some((property) => property.id === id),
+      );
+      const operatorValid =
+        report.kind !== "social" ||
+        (state.operators.some(
+          (operator) => operator.id === report.operatorId && !operator.legacy,
+        ) &&
+          report.propertyIds.every(
+            (id) =>
+              state.propertyOperators[id] === report.operatorId &&
+              !state.operatorIssues?.[id] &&
+              !state.socialIssues?.[id],
+          ));
       reminders.push({
         id: key,
         reportId: report.id,
@@ -130,6 +150,14 @@ export function buildReportReminders(
         period: period.label,
         propertyIds: [...scope],
         reviewCount: result.reviewCount,
+        kind: report.kind,
+        total: result.total,
+        canCopy:
+          !progress?.snapshot &&
+          result.reviewCount === 0 &&
+          reportDefinitionSchema.safeParse(report).success &&
+          scopeValid &&
+          operatorValid,
         status: progress?.snapshot
           ? "changed"
           : result.reviewCount

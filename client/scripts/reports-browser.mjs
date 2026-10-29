@@ -650,6 +650,10 @@ try {
   reservationFixture.state.operations = [
     reservationFixture.state.operations[0],
   ];
+  reservationFixture.state.operations[0].amountCents = 123456;
+  await reservations
+    .context()
+    .grantPermissions(["clipboard-read", "clipboard-write"]);
   const reservationUrl = `${origin}/reservations?year=2026&month=10&tab=all-gites`;
   await reservations.goto(reservationUrl);
   const reminders = reservations.getByRole("region", {
@@ -658,6 +662,51 @@ try {
   await reminders.waitFor();
   assert.match(await reminders.innerText(), /octobre 2026/);
   assert.equal(await reminders.locator("li").count(), 1);
+  assert.match(
+    await reminders.locator(".reservation-declarations__value").innerText(),
+    /1\s*234,56\s*€/,
+  );
+  await reminders.getByRole("button", { name: /^Copier le montant/ }).click();
+  await reminders
+    .getByRole("button", { name: /^Copier le montant/ })
+    .getByText("Copié", { exact: true })
+    .waitFor();
+  assert.equal(
+    await reservations.evaluate(() => navigator.clipboard.readText()),
+    "1234,56",
+  );
+  await reservations.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("denied");
+        },
+      },
+    });
+  });
+  await reminders.getByRole("button", { name: /^Copier le montant/ }).click();
+  await reservations
+    .getByText("Copie impossible. Sélectionnez le montant pour le copier.", {
+      exact: true,
+    })
+    .waitFor();
+  await reservations.evaluate(() => {
+    delete navigator.clipboard;
+  });
+  reservationFixture.state.operations[0].paymentMethod = "unknown";
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders.getByText("1 à vérifier", { exact: true }).waitFor();
+  assert.equal(
+    await reminders.getByRole("button", { name: /^Copier/ }).count(),
+    0,
+  );
+  assert.match(await reminders.innerText(), /Total inclus · à vérifier/);
+  reservationFixture.state.operations[0].paymentMethod = "cash";
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders.getByRole("button", { name: /^Copier le montant/ }).waitFor();
+  assert.deepEqual(reservationFixture.commands, []);
+  await reservations.locator(".app-sync-notice").waitFor({ state: "hidden" });
   await capture(reservations, "reservations-reminder-desktop.png");
   for (const width of [360, 390, 768]) {
     await reservations.setViewportSize({ width, height: 844 });
@@ -682,6 +731,20 @@ try {
     .getByRole("button", { name: "Voir 2 autres déclarations", exact: true })
     .waitFor();
   assert.equal(await reminders.locator("li").count(), 3);
+  await reminders
+    .locator("li")
+    .nth(1)
+    .getByRole("button", { name: /^Copier le montant/ })
+    .click();
+  await reminders
+    .locator("li")
+    .nth(1)
+    .getByText("Copié", { exact: true })
+    .waitFor();
+  assert.equal(
+    await reservations.evaluate(() => navigator.clipboard.readText()),
+    "0,00",
+  );
   await reminders
     .getByRole("button", { name: "Voir 2 autres déclarations", exact: true })
     .click();
@@ -718,6 +781,11 @@ try {
   reservationFixture.state.operations[0].amountCents += 100;
   await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
   await reminders.getByText("Écart à examiner", { exact: true }).waitFor();
+  assert.equal(
+    await reminders.getByRole("button", { name: /^Copier/ }).count(),
+    0,
+  );
+  assert.match(await reminders.innerText(), /Total inclus · à vérifier/);
   reservationFixture.failReminders = true;
   await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
   await reservations
@@ -730,6 +798,28 @@ try {
     .getByRole("button", { name: "Réessayer", exact: true })
     .click();
   await reminders.waitFor();
+  reservationFixture.state.progress = {};
+  Object.assign(reservationFixture.state.reports[0], {
+    kind: "tourist",
+    name: "Nuitées",
+    dateBasis: "stay",
+    categories: ["accommodation"],
+  });
+  Object.assign(reservationFixture.state.operations[0], {
+    basis: "nights",
+    nights: 12,
+    stayDate: "2026-10-10",
+  });
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders.getByText("12 nuitées", { exact: true }).waitFor();
+  await reminders
+    .getByRole("button", { name: /^Copier le nombre de nuitées/ })
+    .click();
+  await reminders.getByText("Copié", { exact: true }).waitFor();
+  assert.equal(
+    await reservations.evaluate(() => navigator.clipboard.readText()),
+    "12",
+  );
   for (const options of [{ canViewAmounts: false }, { finances: false }]) {
     const { page: hidden, fixture: hiddenFixture } = await createPage(options);
     await hidden.goto(reservationUrl);

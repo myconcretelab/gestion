@@ -15,8 +15,10 @@ function workspace(): ReportWorkspaceData {
     organizationId: "org",
     revision: 0,
     factsRevision: "facts",
-    properties: [],
-    operators: [],
+    properties: [
+      { id: "g1", name: "Logement", initials: "L", operatorId: "e1" },
+    ],
+    operators: [{ id: "e1", name: "Entreprise", legacy: false }],
     reports: [
       {
         ...createReport("social", "social"),
@@ -88,8 +90,69 @@ test("ready remains actionable until transmission is confirmed; problems link to
     ready: true,
   };
   assert.equal(buildReportReminders(state, 2026, now)[0].status, "ready");
+  assert.equal(buildReportReminders(state, 2026, now)[0].canCopy, true);
   state.operations[0].paymentMethod = "unknown";
   assert.equal(buildReportReminders(state, 2026, now)[0].status, "review");
+  assert.equal(buildReportReminders(state, 2026, now)[0].canCopy, false);
+});
+test("reminders expose exact totals, including zero, and never allow copying a discrepancy", () => {
+  const state = workspace();
+  state.operations[0].amountCents = 123456;
+  const reminders = buildReportReminders(state, 2026, now);
+  assert.deepEqual(
+    reminders.map(({ total, canCopy, kind }) => ({ total, canCopy, kind })),
+    [
+      { total: 123456, canCopy: true, kind: "social" },
+      { total: 0, canCopy: true, kind: "social" },
+    ],
+  );
+  const definition = state.reports[0];
+  state.progress[reportPeriodKey(definition, "2026-08")] = {
+    snapshot: {
+      confirmedAt: now.toISOString(),
+      definition,
+      result: evaluateReport(
+        definition,
+        "2026-08",
+        {},
+        state.operations,
+        state,
+      ),
+    },
+  };
+  state.operations[0].amountCents++;
+  const changed = buildReportReminders(state, 2026, now)[0];
+  assert.equal(changed.total, 123457);
+  assert.equal(changed.canCopy, false);
+});
+test("zero receipts cannot hide invalid settings or an unconfirmed operator", () => {
+  for (const invalidate of [
+    (state: ReportWorkspaceData) => {
+      state.properties = [];
+    },
+    (state: ReportWorkspaceData) => {
+      state.operators[0].legacy = true;
+    },
+    (state: ReportWorkspaceData) => {
+      state.reports[0].operatorId = null;
+    },
+    (state: ReportWorkspaceData) => {
+      state.socialIssues = {
+        g1: { entityId: "e1", message: "TVA à renseigner" },
+      };
+    },
+    (state: ReportWorkspaceData) => {
+      state.reports[0].recipient = "";
+    },
+  ]) {
+    const state = workspace();
+    invalidate(state);
+    const empty = buildReportReminders(state, 2026, now).find(
+      (row) => row.month === "2026-09",
+    )!;
+    assert.equal(empty.total, 0);
+    assert.equal(empty.canCopy, false);
+  }
 });
 test("quarterly/yearly cadence and January rollover use unique completed periods", () => {
   const state = workspace();
@@ -176,6 +239,10 @@ test("internal reports do not trigger declarations, empty tourist periods do not
   };
   state.operations[0].basis = "nights";
   state.operations[0].nights = 5;
+  const reminder = buildReportReminders(state, 2026, now)[0];
+  assert.equal(reminder.kind, "tourist");
+  assert.equal(reminder.total, 5);
+  assert.equal(reminder.canCopy, true);
   assert.deepEqual(
     buildReportReminders(state, 2026, now).map((row) => row.month),
     ["2026-08"],
