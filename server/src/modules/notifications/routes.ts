@@ -2,6 +2,8 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { z } from "zod";
 import { getAuthenticatedAppUser } from "../../services/serverAuth.js";
+import { readTelegramNotificationConfig } from "../../services/telegramNotifications.js";
+import { isModuleEnabled } from "../../services/installationConfig.js";
 import {
   getPushPublicKey,
   listPushDevices,
@@ -26,6 +28,28 @@ router.use(async (req, res, next) => {
     res.locals.pushUserId = user.id;
     res.setHeader("Cache-Control", "no-store");
     next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/status", async (_req, res, next) => {
+  try {
+    const devices = await listPushDevices(res.locals.pushUserId);
+    const telegram = readTelegramNotificationConfig();
+    const telegramReady =
+      telegram.enabled &&
+      Boolean(telegram.bot_token) &&
+      (await isModuleEnabled("telegram"));
+    res.json({
+      push_active: devices.length > 0,
+      device_count: devices.length,
+      telegram_state: !telegramReady
+        ? "disabled"
+        : devices.length
+          ? "standby"
+          : "active",
+    });
   } catch (error) {
     next(error);
   }
@@ -75,7 +99,7 @@ router.delete("/subscriptions/:id", async (req, res, next) => {
 router.post("/test", async (_req, res, next) => {
   try {
     const result = await sendOwnerPushNotification(
-      "🔔 Notifications activées\nLes alertes de réservation et les rappels du propriétaire arrivent aussi ici. Telegram continue de fonctionner.",
+      "Test reçu\nVos alertes arriveront ici.",
       {
         userIds: [res.locals.pushUserId],
         key: `test:${crypto.randomUUID()}`,
@@ -83,12 +107,10 @@ router.post("/test", async (_req, res, next) => {
       },
     );
     if (!result.sent_count)
-      return res
-        .status(409)
-        .json({
-          error:
-            "Aucun appareil n’a accepté le test. Activez ou réactivez les notifications sur cet appareil.",
-        });
+      return res.status(409).json({
+        error:
+          "Aucun appareil n’a accepté le test. Activez ou réactivez les notifications sur cet appareil.",
+      });
     res.json(result);
   } catch (error) {
     next(error);

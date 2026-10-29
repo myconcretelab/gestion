@@ -39,6 +39,8 @@ import TaskReminderSettings from "./settings/TaskReminderSettings";
 import ReservationPaymentSettings from "./settings/ReservationPaymentSettings";
 import UserSettings from "./UserSettings";
 import SettingsShell from "./settings/SettingsShell";
+import NotificationDeliveryStatus from "./settings/NotificationDeliveryStatus";
+import "./settings/notificationSettings.css";
 
 type IcalPreviewItem = {
   id: string;
@@ -6146,7 +6148,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                   <h2 className="settings-cluster__title">Telegram</h2>
                 </div>
                 <p className="settings-cluster__text">
-                  Configurez l'envoi de notifications via un bot Telegram.
+                  Vos appareils sont prioritaires ; Telegram reste disponible en secours.
                 </p>
               </div>
               <div className="settings-cluster__grid">
@@ -6155,6 +6157,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                     <span className="settings-card__tag">Notifications</span>
                   </div>
                   <div className="section-title">Bot Telegram</div>
+                  <NotificationDeliveryStatus page="telegram" refreshKey={`${telegramNotificationState.config.enabled}:${telegramNotificationState.bot_configured}:${telegramNotificationNotice ?? ""}`} />
                   <div className="field-hint">
                     Les alertes d'échéance concernent uniquement les documents
                     déjà envoyés. Une seule alerte est envoyée par échéance.
@@ -6167,7 +6170,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                     <>
                       <div className="grid-2" style={{ marginTop: 16 }}>
                         <label className="field">
-                          Activation
+                          Alertes automatiques
                           <select
                             value={telegramNotificationDraft.enabled ? "1" : "0"}
                             onChange={(event) => {
@@ -6184,7 +6187,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             }
                           >
                             <option value="0">Désactivé</option>
-                            <option value="1">Activé</option>
+                            <option value="1">Activées · notifications prioritaires</option>
                           </select>
                         </label>
                         <label className="field">
@@ -6407,7 +6410,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                         >
                           {testingTelegramNotification
                             ? "Envoi..."
-                            : "Envoyer un test"}
+                            : "Tester Telegram uniquement"}
                         </button>
                         <button
                           type="button"

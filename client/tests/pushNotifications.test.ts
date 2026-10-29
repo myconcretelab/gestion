@@ -212,7 +212,7 @@ test("le service worker affiche une alerte sans page ouverte et garde un repli v
       },
     },
   });
-  assert.equal(notifications[1].title, "Gestion locative");
+  assert.equal(notifications[1].title, "Nouvelle alerte");
 });
 
 test("un clic ouvre le dossier mais ne suit jamais une URL externe ou une action Telegram signée", async () => {

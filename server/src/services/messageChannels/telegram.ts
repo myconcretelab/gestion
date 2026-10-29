@@ -5,6 +5,7 @@ import type {
 } from "./types.js";
 import {
   sendOwnerPushNotification,
+  telegramRecipientsAfterPush,
   type OwnerPushTarget,
 } from "../webPushNotifications.js";
 
@@ -83,16 +84,43 @@ export const telegramMessageChannel: MessageChannel = {
     const options = getOptions(request);
     if (!options?.enabled || !options.owner_push)
       return sendTelegramOnly(request);
-    // Both channels run independently; a push failure must never cancel a
-    // Telegram delivery, and a Telegram outage must not suppress push alerts.
-    const [telegram, push] = await Promise.allSettled([
-      sendTelegramOnly(request),
-      sendOwnerPushNotification(request.message, options.owner_push),
-    ]);
-    if (push.status === "rejected")
+    let push;
+    let recipients = request.recipients ?? options.chat_ids;
+    try {
+      push = await sendOwnerPushNotification(
+        request.message,
+        options.owner_push,
+      );
+      recipients = await telegramRecipientsAfterPush(
+        recipients,
+        push.handled_user_ids,
+        options.owner_push.userIds,
+        options.recipient_user_ids,
+        push.failed_user_ids,
+      );
+    } catch {
       console.error("Impossible de préparer les notifications sur appareil.");
-    if (telegram.status === "rejected") throw telegram.reason;
-    return telegram.value;
+    }
+    const pushDeliveries = (push?.handled_user_ids ?? []).map((recipient) => ({
+      recipient,
+      provider: "web-push",
+    }));
+    if (!recipients.length && pushDeliveries.length)
+      return {
+        channel: "web-push",
+        sent_count: pushDeliveries.length,
+        skipped_reason: null,
+        deliveries: pushDeliveries,
+      };
+    const telegram = await sendTelegramOnly({ ...request, recipients });
+    return pushDeliveries.length
+      ? {
+          ...telegram,
+          sent_count: telegram.sent_count + pushDeliveries.length,
+          skipped_reason: null,
+          deliveries: [...telegram.deliveries, ...pushDeliveries],
+        }
+      : telegram;
   },
 };
 

@@ -166,7 +166,7 @@ test("le contenu enlève le HTML et ouvre uniquement une page authentifiée de l
     '<b>Réservation confirmée</b>\n<b>Gîte</b>: Forêt &amp; Spa\n<a href="https://app.example.test/reservations?focus=one&amp;month=2">Voir</a>',
   );
   assert.equal(payload.title, "Réservation confirmée");
-  assert.match(payload.body, /Gîte: Forêt & Spa/);
+  assert.equal(payload.body, "Forêt & Spa");
   assert.equal(payload.url, "/reservations?focus=one&month=2");
   assert.equal(
     push.buildOwnerPushPayload("Test", { url: "https://evil.test/" }).url,
@@ -366,9 +366,13 @@ test("les API exigent un propriétaire connecté et ne permettent pas de retirer
   );
 });
 
-test("les notifications et Telegram fonctionnent indépendamment, sans modifier le résultat Telegram", async () => {
+test("les appareils prennent la priorité, les retries sont acquittés sans doublon et Telegram reprend en cas d’échec", async () => {
   await inOrg(() =>
-    push.savePushSubscription(`${org}-owner`, subscription("mirror"), "iPhone"),
+    push.savePushSubscription(
+      `${org}-owner`,
+      subscription("priority"),
+      "iPhone",
+    ),
   );
   const channel = (await import("../src/services/messageChannels/telegram.js"))
     .telegramMessageChannel;
@@ -376,53 +380,160 @@ test("les notifications et Telegram fonctionnent indépendamment, sans modifier 
   const pushMock = mock.method(webPush, "sendNotification", async () => {
     pushCount++;
   });
+  const chats: string[] = [];
+  mock.method(globalThis, "fetch", async (_url, init) => {
+    chats.push(JSON.parse(String(init?.body)).chat_id);
+    return new Response("{}", { status: 200 });
+  });
   const options = {
     ...telegram.buildDefaultTelegramNotificationConfig(),
     enabled: true,
     bot_token: "fake-token",
     chat_ids: ["owner-chat"],
-    owner_push: { key: "mirror1" },
+    owner_push: { key: "priority" },
   };
-  const first = await inOrg(() =>
-    channel.send({ message: "Nouvelle réservation", options }),
-  );
-  assert.equal(first.skipped_reason, "test_environment");
-  assert.equal(pushCount, 1);
-  // A failed push still returns exactly the Telegram result.
-  pushMock.mock.mockImplementation(async () => {
-    throw { statusCode: 503 };
-  });
-  const second = await inOrg(() =>
-    channel.send({
-      message: "Autre réservation",
-      options: { ...options, owner_push: { key: "mirror2" } },
-    }),
-  );
-  assert.equal(second.skipped_reason, "test_environment");
-  // Simulate a Telegram outage without contacting either external provider.
-  pushMock.mock.mockImplementation(async () => {
-    pushCount++;
-  });
-  mock.method(
-    globalThis,
-    "fetch",
-    async () => new Response("unavailable", { status: 503 }),
-  );
   process.env.NODE_ENV = "development";
   try {
-    await assert.rejects(
-      inOrg(() =>
-        channel.send({
-          message: "Troisième réservation",
-          options: { ...options, owner_push: { key: "mirror3" } },
-        }),
-      ),
-      /Telegram sendMessage failed/,
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await inOrg(() =>
+        channel.send({ message: "Réservation confirmée", options }),
+      );
+      assert.equal(result.channel, "web-push");
+      assert.equal(result.sent_count, 1);
+      assert.equal(result.skipped_reason, null);
+    }
+    assert.equal(pushCount, 1);
+    assert.deepEqual(chats, []);
+    pushMock.mock.mockImplementation(async () => {
+      throw { statusCode: 503 };
+    });
+    const fallback = await inOrg(() =>
+      channel.send({
+        message: "Autre réservation",
+        options: { ...options, owner_push: { key: "other" } },
+      }),
     );
-    assert.equal(pushCount, 2);
+    assert.equal(fallback.channel, "telegram");
+    assert.equal(fallback.sent_count, 1);
+    assert.deepEqual(chats, ["owner-chat"]);
+    pushMock.mock.mockImplementation(async () => {
+      throw { statusCode: 410 };
+    });
+    await inOrg(() =>
+      channel.send({
+        message: "Appareil expiré",
+        options: { ...options, owner_push: { key: "expired" } },
+      }),
+    );
+    assert.equal(
+      (await inOrg(() => push.listPushDevices(`${org}-owner`))).length,
+      0,
+    );
+    await inOrg(() => channel.send({ message: "Plus d’appareil", options }));
+    assert.deepEqual(chats, ["owner-chat", "owner-chat", "owner-chat"]);
   } finally {
     process.env.NODE_ENV = "test";
   }
+});
+
+test("la priorité est personnelle et conserve Telegram pour les autres propriétaires et les intervenants", async () => {
+  await inOrg(async () => {
+    await push.savePushSubscription(
+      `${org}-owner`,
+      subscription("owner-only"),
+      "iPhone",
+    );
+    await db.default.appUser.update({
+      where: { id: `${org}-owner` },
+      data: { telegram_chat_id: "owner-chat" },
+    });
+    await db.default.appUser.update({
+      where: { id: `${org}-second` },
+      data: { telegram_chat_id: "second-chat" },
+    });
+    await db.default.appUser.update({
+      where: { id: `${org}-worker` },
+      data: { telegram_chat_id: "worker-chat" },
+    });
+    assert.deepEqual(
+      await push.telegramRecipientsAfterPush(
+        ["owner-chat", "second-chat", "worker-chat"],
+        [`${org}-owner`],
+      ),
+      ["second-chat", "worker-chat"],
+    );
+    assert.deepEqual(
+      await push.telegramRecipientsAfterPush(
+        ["shared"],
+        [`${org}-owner`],
+        undefined,
+        [`${org}-owner`, `${org}-second`],
+      ),
+      ["shared"],
+    );
+    assert.deepEqual(
+      await push.telegramRecipientsAfterPush(
+        ["legacy-owner-chat"],
+        [`${org}-owner`],
+      ),
+      [],
+    );
+    assert.deepEqual(
+      await push.telegramRecipientsAfterPush(
+        ["legacy-owner-chat"],
+        [`${org}-owner`],
+        undefined,
+        [],
+        [`${org}-second`],
+      ),
+      ["legacy-owner-chat"],
+    );
+    assert.deepEqual(
+      await push.telegramRecipientsAfterPush(
+        ["worker-chat"],
+        [`${org}-owner`],
+        [`${org}-worker`],
+      ),
+      ["worker-chat"],
+    );
+  });
+});
+
+test("les deux réglages voient la même priorité et Telegram redevient actif au retrait du dernier appareil", async () => {
+  await inOrg(async () => {
+    telegram.writeTelegramNotificationConfig({
+      ...telegram.buildDefaultTelegramNotificationConfig(),
+      enabled: true,
+      bot_token: "test-token",
+      chat_ids: ["owner-chat"],
+    });
+    await db.default.organizationSettings.update({
+      where: { organization_id: org },
+      data: { modules_json: JSON.stringify({ telegram: true }) },
+    });
+  });
+  const status = async () =>
+    (
+      await fetch(`${origin}/api/notifications/status`, {
+        headers: { Cookie: cookies[`${org}-owner`] },
+      })
+    ).json();
+  assert.equal((await status()).telegram_state, "active");
+  await inOrg(() =>
+    push.savePushSubscription(`${org}-owner`, subscription("status"), "iPhone"),
+  );
+  assert.deepEqual(await status(), {
+    push_active: true,
+    device_count: 1,
+    telegram_state: "standby",
+  });
+  const [device] = await inOrg(() => push.listPushDevices(`${org}-owner`));
+  await inOrg(() => push.removePushDevice(`${org}-owner`, device.id));
+  assert.deepEqual(await status(), {
+    push_active: false,
+    device_count: 0,
+    telegram_state: "active",
+  });
 });
 
 test("le test d'envoi vise seulement les appareils du propriétaire connecté", async () => {
@@ -485,4 +596,42 @@ test("la bibliothèque chiffre réellement le contenu avec les clés du navigate
   assert.match(String(request.headers.Authorization), /^vapid /);
   assert.ok(Buffer.isBuffer(request.body));
   assert.equal(request.body.includes(Buffer.from("Client Test")), false);
+});
+
+test("les aperçus gardent des titres courts et l'information utile avant les détails secondaires", () => {
+  const booking = push.buildOwnerPushPayload(
+    "✅ <b>Réservation confirmée après paiement en ligne</b>\nGîte: Merlin\nSéjour: du 2027-02-10 au 2027-02-14 (4 nuit(s))\nVoyageurs: 2 adultes\nClient: Camille\nTéléphone: 0600000000\nArrhes reçues: 90,00 € (Stripe)\nAucune approbation manuelle n’est nécessaire.",
+  );
+  assert.equal(booking.title, "Réservation confirmée");
+  assert.equal(
+    booking.body,
+    "Merlin · Camille · 10/02–14/02 · 90,00 € d’arrhes",
+  );
+  const reminders = push.buildOwnerPushPayload(
+    "🔔 <b>Réservations à préparer</b>\n<b>Merlin</b>\n" +
+      Array.from({ length: 8 }, (_, i) => `${i + 1}. 🚨 Tâche ${i + 1}`).join(
+        "\n",
+      ) +
+      "\nLes locataires sont partis : vous pouvez intervenir.\n🚨 Rappel toutes les 60 minutes, jusqu’à validation.",
+  );
+  assert.equal(reminders.title, "8 tâches à faire");
+  assert.match(reminders.body, /^Merlin · Tâche 1 ; Tâche 2/);
+  assert.doesNotMatch(reminders.body, /locataires|minutes|🔔|🚨/);
+  const cleaning = push.buildOwnerPushPayload(
+    "🧹 Rappel : contrôle ménage à valider\nGîte: Merlin\nLocataire: Camille\nArrivée: 17:00\nLe contrôle n'a pas encore été validé.",
+  );
+  assert.equal(cleaning.title, "Contrôle à faire");
+  assert.equal(cleaning.body, "Merlin · Arrivée à 17:00 · Camille");
+  const overdue = push.buildOwnerPushPayload(
+    "<b>Facture impayée après l'échéance</b>\nFacture: F-2026-001\nClient: Camille\nGîte: Merlin\nDate limite: 30 juin 2026\nOuvrir la facture",
+  );
+  assert.equal(overdue.title, "Facture impayée");
+  assert.match(overdue.body, /^Merlin · Camille · F-2026-001/);
+  for (const payload of [booking, reminders, cleaning, overdue]) {
+    assert.ok(payload.title.length <= 24);
+    assert.doesNotMatch(
+      payload.title + payload.body,
+      /\p{Extended_Pictographic}|<b>|https?:|Telegram|from /u,
+    );
+  }
 });

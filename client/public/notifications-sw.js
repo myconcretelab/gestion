@@ -9,9 +9,9 @@ self.addEventListener("push", (event) => {
     payload = data && typeof data === "object" ? data : {};
   } catch { /* Show a visible fallback. */ }
   event.waitUntil(self.registration.showNotification(
-    typeof payload.title === "string" ? payload.title : "Gestion locative",
+    typeof payload.title === "string" ? payload.title : "Nouvelle alerte",
     {
-      body: typeof payload.body === "string" ? payload.body : "Une nouvelle alerte vous attend dans l’application.",
+      body: typeof payload.body === "string" ? payload.body : "Consultez votre suivi.",
       icon: "/icon-192.png",
       badge: "/icon-192.png",
       tag: typeof payload.tag === "string" ? payload.tag : undefined,

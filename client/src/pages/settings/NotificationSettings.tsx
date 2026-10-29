@@ -10,6 +10,8 @@ import {
   type PushState,
 } from "../../utils/pushNotifications";
 import SettingsShell from "./SettingsShell";
+import NotificationDeliveryStatus from "./NotificationDeliveryStatus";
+import "./notificationSettings.css";
 
 export default function NotificationSettings({
   currentUser,
@@ -65,9 +67,8 @@ export default function NotificationSettings({
       <section className="card" aria-labelledby="notifications-title">
         <h2 id="notifications-title">Notifications sur vos appareils</h2>
         <p>
-          Recevez aussi les alertes du propriétaire sur votre téléphone ou votre
-          ordinateur. Telegram continue d’envoyer ses messages comme
-          aujourd’hui.
+          Recevez vos alertes sur votre téléphone ou votre ordinateur. Telegram
+          reste disponible en secours, sans envoyer les mêmes alertes en double.
         </p>
         {!owner ? (
           <p>
@@ -76,6 +77,12 @@ export default function NotificationSettings({
           </p>
         ) : (
           <>
+            <NotificationDeliveryStatus
+              page="notifications"
+              refreshKey={JSON.stringify(
+                state?.devices.map((device) => device.id) ?? [],
+              )}
+            />
             <p className="field-hint">
               Les notifications reprennent les événements activés dans{" "}
               <Link to="/parametres/telegram">Telegram</Link> : demandes et
@@ -114,7 +121,7 @@ export default function NotificationSettings({
               </p>
             ) : null}
             {notice ? (
-              <p className="note" role="status">
+              <p className="note note--success" role="status">
                 {notice}
               </p>
             ) : null}
@@ -154,7 +161,7 @@ export default function NotificationSettings({
                                 state.publicKey,
                                 currentUser.id,
                               ),
-                            "Notifications activées sur cet appareil. Vous pouvez envoyer un test.",
+                            "Notifications activées. Telegram reste en veille pour vos alertes.",
                           );
                       }}
                     >
@@ -171,7 +178,7 @@ export default function NotificationSettings({
                               apiFetch("/notifications/test", {
                                 method: "POST",
                               }),
-                            "Test envoyé à vos appareils activés. Vérifiez le centre de notifications.",
+                            "Test envoyé. Vérifiez vos notifications.",
                           )
                         }
                       >
@@ -197,6 +204,11 @@ export default function NotificationSettings({
                   Activez chaque appareil séparément. Les alertes peuvent
                   afficher des informations de réservation sur l’écran
                   verrouillé, selon vos réglages système.
+                </p>
+                <p className="field-hint">
+                  Sur iPhone, la mention « from » suivie du nom de l’application
+                  est ajoutée par iOS. Les titres et résumés privilégient
+                  l’information utile.
                 </p>
                 {state.devices.length ? (
                   <>
