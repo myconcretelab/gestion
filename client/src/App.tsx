@@ -640,7 +640,6 @@ const App = () => {
     if (!installationConfig || typeof document === "undefined") return;
     const organization = installationConfig.organization;
     document.title = organization.publicDisplayName || organization.tradeName || "Gestion locative";
-    document.documentElement.style.setProperty("--primary", organization.primaryColor || "#315f4b");
     const existing = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (organization.faviconUrl) {
       const link = existing ?? document.createElement("link");

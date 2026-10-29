@@ -528,5 +528,5 @@
   border-radius: 8px;
   background: var(--primary-soft);
 }
-.invoice-stay-heading strong { color: var(--primary-strong); }
+.invoice-stay-heading strong { color: var(--primary-ink); }
 .invoice-stay-heading span, .invoice-stay-heading small { color: var(--muted); }

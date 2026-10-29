@@ -8,7 +8,7 @@ const fields: Array<[keyof OrganizationProfile, string, string?]> = [
   ["country", "Pays (ISO)"], ["email", "E-mail", "email"], ["phone", "Téléphone"], ["website", "Site web", "url"],
   ["iban", "IBAN"], ["bic", "BIC"], ["bankAccountHolder", "Titulaire du compte"], ["locale", "Langue"],
   ["currency", "Devise"], ["timezone", "Fuseau horaire"], ["logoUrl", "Logo (URL ou chemin)"],
-  ["faviconUrl", "Favicon (URL ou chemin)"], ["primaryColor", "Couleur principale", "color"],
+  ["faviconUrl", "Favicon (URL ou chemin)"], ["primaryColor", "Couleur des e-mails", "color"],
   ["emailSignature", "Signature e-mail"], ["smsSignature", "Signature SMS"], ["documentFooter", "Pied de document"],
   ["documentLocale", "Langue des documents"], ["documentDateFormat", "Format des dates"], ["documentPaymentTerms", "Conditions de paiement"],
 ];

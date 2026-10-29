@@ -10,12 +10,14 @@
   --muted: #6b7280;
   --border: #e5e7eb;
   --card: #ffffff;
-  --accent: #ff5a5f;
+  /* One application palette, shared by every appearance template. */
   --primary: #ff5a5f;
-  --primary-soft: #ffe5e6;
-  --primary-strong: rgba(255, 90, 95, 0.24);
-  --accent-dark: #e0484d;
-  --accent-soft: #ffe5e6;
+  --primary-soft: color-mix(in srgb, var(--primary) 16%, white);
+  --primary-strong: color-mix(in srgb, var(--primary) 24%, transparent);
+  --primary-ink: color-mix(in srgb, var(--primary) 70%, #5b0c10);
+  --accent: var(--primary);
+  --accent-dark: var(--primary-ink);
+  --accent-soft: var(--primary-soft);
   --nav: #ffffff;
   --nav-ink: #111827;
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
@@ -50,9 +52,9 @@ body.app-scroll-locked {
 }
 
 .calendar-page {
-  --calendar-accent: var(--accent);
-  --calendar-accent-soft: rgba(255, 90, 95, 0.12);
-  --calendar-accent-strong: rgba(255, 90, 95, 0.24);
+  --calendar-accent: var(--primary);
+  --calendar-accent-soft: var(--primary-soft);
+  --calendar-accent-strong: var(--primary-strong);
   --calendar-mobile-topbar-offset: 56px;
   --calendar-mobile-sticky-offset: 56px;
   --calendar-gap: 6px;
@@ -2309,7 +2311,7 @@ body.app-scroll-locked {
 .calendar-gite-button[aria-pressed="true"] {
   border-color: var(--primary);
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .calendar-gite-button:focus-visible {
@@ -4291,7 +4293,7 @@ body.app-scroll-locked {
   color: inherit;
   cursor: pointer;
   overflow: hidden;
-  padding-bottom: 13px;
+  padding-bottom: 19px;
 }
 
 .reservation-payment-tile__heading {
@@ -4323,10 +4325,10 @@ body.app-scroll-locked {
 
 .reservation-payment-tile__track {
   position: absolute;
-  inset: auto 10px 5px;
-  height: 3px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
+  inset: auto 10px 7px;
+  height: 6px;
+  border-radius: 999px;
+  background: #0f172a;
   overflow: hidden;
 }
 
@@ -6724,7 +6726,7 @@ body {
 }
 
 .operations-sms-preview > header strong {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 0.84rem;
 }
 
@@ -10372,7 +10374,7 @@ body {
 }
 
 .settings-card {
-  --settings-accent: #94a3b8;
+  --settings-accent: var(--primary-ink);
   position: relative;
   padding: 20px;
   background: #ffffff;
@@ -10402,24 +10404,8 @@ body {
   grid-column: span 12;
 }
 
-.settings-card--rose {
-  --settings-accent: #ff5a5f;
-}
-
-.settings-card--blue {
-  --settings-accent: #2271b1;
-}
-
-.settings-card--green {
-  --settings-accent: #00a32a;
-}
-
-.settings-card--sand {
-  --settings-accent: #dba617;
-}
-
 .settings-card--neutral {
-  --settings-accent: #646970;
+  --settings-accent: var(--muted);
 }
 
 .settings-card__topline {
@@ -10686,7 +10672,7 @@ body {
 
 details.settings-sms-text-row > summary {
   cursor: pointer;
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 details.settings-sms-text-row[open] > summary {
@@ -11287,6 +11273,12 @@ button.secondary {
   background: var(--chip);
   color: #111827;
   box-shadow: none;
+}
+
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--primary);
 }
 
 a.button-link {
@@ -12426,7 +12418,7 @@ button.warning {
 
 .personal-expenses-section-tabs button.active {
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .personal-expenses-section-tabs button span {
@@ -12476,7 +12468,7 @@ button.warning {
 }
 
 .personal-expenses-kpis__total strong {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .personal-expenses-charts {
@@ -12551,7 +12543,7 @@ button.warning {
   border: 1px solid color-mix(in srgb, var(--primary) 28%, #e5e7eb);
   border-radius: 999px;
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 0.76rem;
   font-weight: 850;
 }
@@ -12821,7 +12813,7 @@ button.warning {
 }
 
 .personal-expenses-recurring-summary__total > strong {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .personal-expenses-section-heading h2 {
@@ -14518,7 +14510,7 @@ button.personal-expenses-status:disabled {
 }
 
 .reservations-comment-dialog__eyebrow {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -15684,7 +15676,7 @@ button.personal-expenses-status:disabled {
 
 .contracts-locataire-link:hover,
 .contracts-locataire-link:focus-visible {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   border-bottom-color: var(--primary-strong);
 }
 
@@ -17020,7 +17012,7 @@ button.personal-expenses-status:disabled {
   gap: 12px;
   padding: 12px 14px;
   border-top: 1px solid var(--border);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 1rem;
   font-weight: 700;
 }
@@ -17712,7 +17704,7 @@ button.personal-expenses-status:disabled {
 }
 
 .stats-global-cards__reserved strong {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .stats-monthly-average {
@@ -18062,7 +18054,7 @@ button.personal-expenses-status:disabled {
   border: 1px solid color-mix(in srgb, var(--primary) 28%, #e5e7eb);
   border-radius: 999px;
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 0.8rem;
   font-weight: 800;
 }
@@ -18112,7 +18104,7 @@ button.personal-expenses-status:disabled {
 }
 
 .stats-intervenant-expenses__total span {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 0.7rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -18142,7 +18134,7 @@ button.personal-expenses-status:disabled {
   padding: 4px 9px;
   border-radius: 999px;
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 0.74rem;
   font-weight: 750;
 }
@@ -19856,12 +19848,12 @@ button.personal-expenses-status:disabled {
 }
 
 .booking-requests-page__group--pending .booking-requests-page__group-title {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .booking-requests-page__group--pending .booking-requests-page__group-title strong {
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .booking-requests-page__group--processed {
@@ -20254,7 +20246,7 @@ button.personal-expenses-status:disabled {
 }
 
 .booking-request-detail-page__back:hover {
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 
 .booking-request-detail-page__back svg {
@@ -20299,7 +20291,7 @@ button.personal-expenses-status:disabled {
   display: grid;
   place-items: center;
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 2rem;
   font-weight: 850;
 }
@@ -20317,7 +20309,7 @@ button.personal-expenses-status:disabled {
 .booking-request-detail-page__eyebrow {
   display: block;
   margin-bottom: 6px;
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-size: 0.72rem;
   font-weight: 850;
   letter-spacing: 0.08em;
@@ -21282,7 +21274,7 @@ button.personal-expenses-status:disabled {
   .booking-requests-page__search-toggle--active {
     border-color: var(--primary);
     background: var(--primary-soft);
-    color: var(--primary-strong);
+    color: var(--primary-ink);
   }
 
   .booking-requests-page__filters {
@@ -21658,7 +21650,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
   --admin-border: #292b31;
   --admin-muted: #8e9099;
   --admin-text: #f4f5f7;
-  --admin-accent: #9bd5c8;
+  --admin-accent: var(--primary);
   min-height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -21693,7 +21685,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .admin-nav { display: grid; gap: 8px; }
 .admin-nav button { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 17px; border: 1px solid transparent; border-radius: 13px; color: #a9abb2; background: transparent; font-weight: 700; text-align: left; cursor: pointer; }
 .admin-nav button:hover { color: #fff; background: #16171b; }
-.admin-nav button.is-active { color: #fff; background: #24252a; border-color: #45474f; box-shadow: inset 0 1px rgba(255,255,255,.03); }
+.admin-nav button.is-active { color: var(--primary); background: var(--primary-strong); border-color: var(--primary); box-shadow: inset 0 1px rgba(255,255,255,.03); }
 
 .admin-sidebar__footer { margin-top: auto; min-width: 0; display: grid; grid-template-columns: 42px minmax(0, 1fr) 34px; align-items: center; gap: 10px; padding: 18px 10px 0; border-top: 1px solid var(--admin-border); }
 .admin-avatar { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: #34415a; color: #fff; font-weight: 800; }
@@ -21711,8 +21703,8 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .admin-page-content { display: grid; gap: 26px; }
 
 .admin-primary-button, .admin-secondary-button, .admin-text-button, .admin-row-button { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; border-radius: 11px; font-weight: 750; cursor: pointer; text-decoration: none; }
-.admin-primary-button { padding: 0 18px; border: 1px solid #def7ef; background: #e7faf5; color: #10241f; }
-.admin-primary-button:hover { background: #fff; }
+.admin-primary-button { padding: 0 18px; border: 1px solid var(--primary); background: var(--primary); color: #fff; }
+.admin-primary-button:hover { background: var(--primary-ink); }
 .admin-primary-button:disabled, .admin-secondary-button:disabled { opacity: .5; cursor: not-allowed; }
 .admin-primary-button--full { width: 100%; }
 .admin-secondary-button { padding: 0 16px; border: 1px solid #33353c; background: #18191d; color: #d8dae0; }
@@ -21797,12 +21789,12 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .admin-form label, .admin-fieldset > label, .admin-quota-editor label { display: grid; gap: 7px; color: #b7bac2; font-size: .74rem; font-weight: 700; }
 .admin-form input, .admin-form select, .admin-fieldset input, .admin-fieldset select, .admin-fieldset textarea, .admin-quota-editor input, .admin-quota-editor select { width: 100%; min-height: 43px; padding: 9px 11px; border: 1px solid #353740; border-radius: 9px; outline: 0; background: #17181d; color: #f5f6f7; }
 .admin-form textarea, .admin-fieldset textarea { resize: vertical; }
-.admin-form input:focus, .admin-form select:focus, .admin-fieldset input:focus, .admin-fieldset select:focus, .admin-fieldset textarea:focus { border-color: #739d92; box-shadow: 0 0 0 3px rgba(115,157,146,.12); }
+.admin-form input:focus, .admin-form select:focus, .admin-fieldset input:focus, .admin-fieldset select:focus, .admin-fieldset textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-strong); }
 .admin-quota-list, .admin-compact-list { display: grid; gap: 13px; }
 .admin-quota-list > div > div { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; font-size: .75rem; }
 .admin-quota-list strong { color: #d8dae0; }
 .admin-progress { display: block; height: 7px; border-radius: 999px; background: #272930; overflow: hidden; }
-.admin-progress i { display: block; height: 100%; border-radius: inherit; background: #6ec5ad; }
+.admin-progress i { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
 .admin-progress.is-exceeded i { background: #ef747a; }
 .admin-compact-list > div { display: grid; gap: 4px; padding: 11px 13px; border: 1px solid #2b2d33; border-radius: 10px; background: #15161a; }
 .admin-compact-list strong { font-size: .78rem; }
@@ -21837,7 +21829,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .admin-switch-row > span { display: grid; gap: 4px; }
 .admin-switch-row strong { font-size: .8rem; }
 .admin-switch-row small { color: var(--admin-muted); font-size: .64rem; }
-.admin-switch-row input { width: 18px; height: 18px; accent-color: #6ac4aa; }
+.admin-switch-row input { width: 18px; height: 18px; accent-color: var(--primary); }
 .admin-quota-editor { display: grid; gap: 9px; }
 .admin-quota-editor > div { display: grid; grid-template-columns: minmax(190px, 1fr) 150px 120px; align-items: end; gap: 12px; padding: 12px 13px; border: 1px solid #2e3036; border-radius: 11px; background: #15161a; }
 .admin-quota-editor > div > span { align-self: center; display: grid; gap: 4px; }
@@ -22281,7 +22273,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .reservation-payment-balance:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .reservation-payment-balance--paid > strong,
 .reservation-payment-balance--paid .reservation-payment-balance__status { color: var(--primary); }
-.reservation-payment-balance .reservation-payment-tile__track { inset: auto 8px 7px; background: var(--primary-soft); height: 4px; }
+.reservation-payment-balance .reservation-payment-tile__track { inset: auto 8px 7px; background: var(--primary-soft); }
 .reservation-payment-popover {
   position: fixed;
   z-index: 1600;

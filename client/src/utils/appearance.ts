@@ -2,7 +2,7 @@ export const APPEARANCE_KEY = "contrats:appearance:v1";
 export const TEMPLATES = [
   { id: "classic", name: "Classique", description: "Clair, épuré et familier. L’apparence originale de votre espace." },
   { id: "retro", name: "Atelier rétro", description: "Bois chaleureux, cuivre brossé et commandes inspirées des amplis vintage." },
-  { id: "midnight", name: "Minuit", description: "Bleu nuit profond, surfaces perle et accents bleus pour une ambiance feutrée." },
+  { id: "midnight", name: "Minuit", description: "Bleu nuit profond, surfaces perle et accents rouges pour une ambiance feutrée." },
   { id: "garden", name: "Jardin", description: "Vert sauge, ivoire et lignes douces pour un espace naturellement apaisant." },
 ] as const;
 export type Appearance = { template: (typeof TEMPLATES)[number]["id"]; wood: number; copper: number };

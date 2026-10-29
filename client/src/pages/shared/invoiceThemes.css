@@ -166,7 +166,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 .is-selected .invoice-theme__check {
   background: var(--primary-soft);

@@ -25,7 +25,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 .po-cards {
   display: grid;
@@ -75,7 +75,7 @@
 .po-chip {
   display: inline-block;
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   border-radius: 30px;
   padding: 5px 10px;
   font-size: 0.78rem;
@@ -108,7 +108,7 @@
   padding: 16px 18px;
   background: var(--primary-soft);
   border-radius: 14px;
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   line-height: 1.6;
 }
 .po-choices {
@@ -182,7 +182,7 @@
   height: 28px;
   border-radius: 50%;
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   font-weight: 700;
 }
 .po-form label,
@@ -243,7 +243,7 @@
 .po-gites > label.is-selected {
   background: var(--primary-soft);
   border-color: var(--primary);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
 }
 .po-form label.po-check {
   display: flex;
@@ -495,7 +495,7 @@
 }
 .po-workspace-filter button[aria-pressed="true"] {
   background: var(--primary-soft);
-  color: var(--primary-strong);
+  color: var(--primary-ink);
   border-color: var(--primary);
 }
 .po-workspace-group {
