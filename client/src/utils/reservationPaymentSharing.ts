@@ -5,11 +5,7 @@ import type { Reservation } from "./types";
 
 export type PaymentLinkReservation = Pick<Reservation, "id" | "hote_nom" | "date_entree" | "date_sortie" | "nb_nuits" | "options" | "telephone" | "email">;
 
-export const buildPaymentLinkShareHrefs = (
-  reservation: PaymentLinkReservation,
-  link: { purpose: "deposit" | "balance"; amount: number; url: string },
-) => {
-  const dates = `du ${formatDate(reservation.date_entree)} au ${formatDate(reservation.date_sortie)}`;
+export const getPaymentLinkStaySummary = (reservation: Pick<PaymentLinkReservation, "nb_nuits" | "options">) => {
   const options = reservation.options;
   const optionLabels = getReservationOptionBadges(options).map(({ key, label }) => {
     const quantity = key === "draps" ? options?.draps?.nb_lits
@@ -21,11 +17,20 @@ export const buildPaymentLinkShareHrefs = (
       : options?.[key]?.offert ? (["draps", "chiens"].includes(key) ? " offerts" : key === "linge_toilette" ? " offertes" : " offert") : "";
     return `${label}${detail}${billing}`;
   });
+  return { nights: `${reservation.nb_nuits} nuit${reservation.nb_nuits > 1 ? "s" : ""}`, optionLabels };
+};
+
+export const buildPaymentLinkShareHrefs = (
+  reservation: PaymentLinkReservation,
+  link: { purpose: "deposit" | "balance"; amount: number; url: string },
+) => {
+  const dates = `du ${formatDate(reservation.date_entree)} au ${formatDate(reservation.date_sortie)}`;
+  const { nights, optionLabels } = getPaymentLinkStaySummary(reservation);
   const payment = link.purpose === "deposit" ? "Arrhes à régler" : "Montant restant à régler";
   const body = [
     `Bonjour ${reservation.hote_nom.trim()},`,
     "",
-    `Séjour ${dates} · ${reservation.nb_nuits} nuit${reservation.nb_nuits > 1 ? "s" : ""}.`,
+    `Séjour ${dates} · ${nights}.`,
     ...(optionLabels.length ? [`Options : ${optionLabels.join(", ")}.`] : []),
     `${payment} : ${formatEuro(link.amount)}.`,
     `Paiement sécurisé : ${link.url}`,

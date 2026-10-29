@@ -27,6 +27,54 @@
   gap: 10px;
 }
 
+.reservation-payment-link__stay {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--primary-strong);
+  border-radius: 16px;
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.reservation-payment-link__stay-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.reservation-payment-link__stay-heading h3,
+.reservation-payment-link__stay-heading strong {
+  font-size: 0.82rem;
+}
+
+.reservation-payment-link__stay ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.reservation-payment-link__stay li {
+  max-width: 100%;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: var(--card);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.reservation-payment-link__stay p {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
 .reservation-payment-link__share {
   display: flex;
   flex-wrap: wrap;

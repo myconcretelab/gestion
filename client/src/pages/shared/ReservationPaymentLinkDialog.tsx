@@ -2,7 +2,7 @@ import "./ReservationPaymentLinkDialog.css";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, isAbortError } from "../../utils/api";
 import { formatDate, formatEuro } from "../../utils/format";
-import type { PaymentLinkReservation } from "../../utils/reservationPaymentSharing";
+import { getPaymentLinkStaySummary, type PaymentLinkReservation } from "../../utils/reservationPaymentSharing";
 import ReservationDetailsDrawer from "./ReservationDetailsDrawer";
 import ReservationPaymentLinkShareActions from "./ReservationPaymentLinkShareActions";
 
@@ -108,6 +108,7 @@ export default function ReservationPaymentLinkDialog({
     purpose === "deposit" ? choices?.deposit_due : choices?.balance_due;
   const local =
     link && ["localhost", "127.0.0.1"].includes(new URL(link.url).hostname);
+  const staySummary = getPaymentLinkStaySummary(reservation);
   return (
     <ReservationDetailsDrawer
       className="reservation-payment-link"
@@ -146,6 +147,15 @@ export default function ReservationPaymentLinkDialog({
               <strong>{formatEuro(choices.received)}</strong>
             </div>
           </div>
+          <section className="reservation-payment-link__stay" aria-label="Détail du séjour">
+            <div className="reservation-payment-link__stay-heading">
+              <h3>Détail du séjour</h3>
+              <strong>{staySummary.nights}</strong>
+            </div>
+            {staySummary.optionLabels.length ? <ul aria-label="Options choisies">
+              {staySummary.optionLabels.map((label) => <li key={label}>{label}</li>)}
+            </ul> : <p>Aucune option sélectionnée.</p>}
+          </section>
           {choices.platform ? (
             <p className="note">
               Cette réservation provient d’une plateforme. Vérifiez que le
