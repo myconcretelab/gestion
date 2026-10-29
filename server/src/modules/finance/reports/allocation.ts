@@ -4,18 +4,39 @@ import {
   type ReportAllocation,
 } from "@contrats/shared";
 import prisma from "../../../db/prisma.js";
+import { fromJsonString } from "../../../utils/jsonFields.js";
+import type { NumericLike } from "../../../utils/money.js";
 const fail = (message: string, status = 409) =>
   Object.assign(new Error(message), { status, statusCode: status });
+/** SQLite stores JSON text; PostgreSQL returns JSON objects and Decimal amounts. */
+export function reportOptionsSignature(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (item && typeof item === "object")
+      return Object.fromEntries(
+        Object.entries(item)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, child]) => [key, canonical(child)]),
+      );
+    return item;
+  };
+  return JSON.stringify(canonical(fromJsonString(value, {})));
+}
 export const allocationSource = (row: {
-  options: string;
-  frais_optionnels_montant: number;
+  options: unknown;
+  frais_optionnels_montant: NumericLike;
 }) =>
   createHash("sha256")
-    .update(JSON.stringify([row.options, row.frais_optionnels_montant]))
+    .update(
+      JSON.stringify([
+        reportOptionsSignature(row.options),
+        Number(row.frais_optionnels_montant),
+      ]),
+    )
     .digest("hex");
 export function storedAllocation(row: {
-  options: string;
-  frais_optionnels_montant: number;
+  options: unknown;
+  frais_optionnels_montant: NumericLike;
   reporting_amounts: string | null;
 }) {
   if (!row.reporting_amounts) return null;
@@ -27,7 +48,7 @@ export function storedAllocation(row: {
     return parsed.success &&
       saved.source === allocationSource(row) &&
       Object.values(parsed.data).reduce((a, b) => a + b, 0) ===
-        Math.round(row.frais_optionnels_montant * 100)
+        Math.round(Number(row.frais_optionnels_montant) * 100)
       ? parsed.data
       : null;
   } catch {
@@ -46,7 +67,7 @@ export async function getReportAllocation(
     reservationId: row.id,
     guest: row.hote_nom,
     property: row.gite?.nom ?? "Sans logement",
-    totalCents: Math.round(row.frais_optionnels_montant * 100),
+    totalCents: Math.round(Number(row.frais_optionnels_montant) * 100),
     updatedAt: row.updatedAt.toISOString(),
     amounts: storedAllocation(row),
   };
@@ -65,7 +86,7 @@ export async function saveReportAllocation(
         "La réservation a changé. Rechargez la ventilation avant de réessayer.",
       );
     const total = Object.values(payload.amounts).reduce((a, b) => a + b, 0);
-    if (total !== Math.round(row.frais_optionnels_montant * 100))
+    if (total !== Math.round(Number(row.frais_optionnels_montant) * 100))
       throw fail(
         "La ventilation doit correspondre exactement au total des prestations de la réservation.",
         400,

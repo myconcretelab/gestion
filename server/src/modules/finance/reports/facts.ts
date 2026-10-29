@@ -11,7 +11,7 @@ import {
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { loadReservationPaymentTracking } from "../../reservationPayments/ledger.js";
 import { fromJsonString } from "../../../utils/jsonFields.js";
-import { storedAllocation } from "./allocation.js";
+import { reportOptionsSignature, storedAllocation } from "./allocation.js";
 import type { OptionsInput } from "../../../services/contractCalculator.js";
 
 const cents = (amount: number) => Math.round(amount * 100);
@@ -185,7 +185,8 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
     const savedQuote = quotes.find(
       (quote) =>
         rows.some((row) => row.id === quote.approved_reservation_id) &&
-        quote.options === first.options,
+        reportOptionsSignature(quote.options) ===
+          reportOptionsSignature(first.options),
     );
     const saved = fromJsonString<SavedOptionDetail>(
       savedQuote?.pricing_snapshot,

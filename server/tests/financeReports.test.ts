@@ -739,3 +739,34 @@ test("un remboursement groupé reste à vérifier dans chaque logement concerné
       1,
     );
   }));
+
+test("les JSON et montants PostgreSQL et SQLite conservent la même ventilation", async () => {
+  const { allocationSource, storedAllocation, reportOptionsSignature } =
+    await import("../src/modules/finance/reports/allocation.js");
+  const sqlite = {
+    options:
+      '{"menage":{"enabled":true,"offert":false},"draps":{"nb_lits":2,"enabled":true}}',
+    frais_optionnels_montant: 20,
+  };
+  const postgres = {
+    options: {
+      draps: { enabled: true, nb_lits: 2 },
+      menage: { offert: false, enabled: true },
+    },
+    frais_optionnels_montant: { toString: () => "20.00" },
+  };
+  assert.equal(
+    reportOptionsSignature(sqlite.options),
+    reportOptionsSignature(postgres.options),
+  );
+  assert.equal(allocationSource(sqlite), allocationSource(postgres));
+  const amounts = { cleaning: 1500, linen: 500, extras: 0 };
+  const reporting_amounts = JSON.stringify({
+    source: allocationSource(sqlite),
+    amounts,
+  });
+  assert.deepEqual(
+    storedAllocation({ ...postgres, reporting_amounts }),
+    amounts,
+  );
+});
