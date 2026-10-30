@@ -285,7 +285,8 @@ export const loadReservationPaymentTracking = async (
             entry.origin !== "legacy" &&
             (entry.method !== "Versement plateforme" ||
               Boolean(entry.ota && entry.ota.category !== "accommodation")) &&
-            entry.purpose !== "deposit",
+            (entry.purpose !== "deposit" ||
+              Boolean(entry.ota && entry.ota.category !== "accommodation")),
         )
         .map((entry) => cents(entry.amount)),
     );

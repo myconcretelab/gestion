@@ -1091,10 +1091,15 @@ test("import OTA : un séjour groupé conserve les logements, le ménage et les 
       method: "Versement plateforme",
       channel: "Airbnb",
       category: "linen",
-      purpose: "extras",
+      purpose: "deposit",
       fee_amount: 0,
       paid_on: "2026-10-31",
     });
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(first.id)).platform
+        ?.extras_remaining,
+      0,
+    );
     const afterExtras = await reports.getReportWorkspace();
     assert.equal(
       result(afterExtras, "2026-10", {
