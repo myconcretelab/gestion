@@ -30,6 +30,7 @@ export type ReportDefinition = {
   propertyIds: string[];
   favorite: boolean;
   operatorId?: string | null;
+  otaAmountBasis?: "gross" | "net";
 };
 export type ReportOperation = {
   id: string;
@@ -49,6 +50,7 @@ export type ReportOperation = {
   basis?: "payment" | "stay" | "nights";
   allocationNote?: string;
   categoryUncertain?: boolean;
+  ota?: import("./ota.js").OtaAmounts;
 };
 export type OperationStatus = "included" | "review" | "excluded";
 export type OperationOverride = {
@@ -208,6 +210,7 @@ export const operationSourceSignature = (operation: ReportOperation) =>
     operation.basis,
     operation.categoryUncertain,
     operation.reviewReason,
+    operation.ota,
   ]);
 
 export function evaluateReport(
@@ -236,11 +239,7 @@ export function evaluateReport(
         : operation.stayDate;
     // A missing payment date is surfaced in its stay period; it never enters the total automatically.
     const candidateDate = effectiveDate ?? operation.stayDate;
-    if (
-      effectiveDate &&
-      (candidateDate < period.start || candidateDate >= period.end)
-    )
-      continue;
+    if (candidateDate < period.start || candidateDate >= period.end) continue;
     const inProperty = report.propertyIds.includes(operation.propertyId);
     const uncertainCategories =
       operation.categoryUncertain && report.kind !== "tourist";
@@ -370,7 +369,13 @@ export function evaluateReport(
           : `Correction pour ce rapport : ${override.note}`;
     }
     const value =
-      report.kind === "tourist" ? operation.nights : operation.amountCents;
+      report.kind === "tourist"
+        ? operation.nights
+        : operation.ota
+          ? report.otaAmountBasis === "net"
+            ? operation.ota.netCents
+            : operation.ota.grossCents
+          : operation.amountCents;
     rows.push({ ...operation, status, reason, value, effectiveDate, issues });
   }
   rows.sort(
@@ -474,6 +479,10 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
     report.kind === "tourist" ? "Nuitées" : "Montant EUR",
     "Traitement",
     "Explication",
+    "Brut OTA EUR",
+    "Commission OTA EUR",
+    "Net OTA EUR",
+    "Base OTA du rapport",
   ];
   const labels = {
     included: "Inclus",
@@ -495,6 +504,10 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
         report.kind === "tourist" ? row.value : row.value / 100,
         labels[row.status],
         row.reason,
+        row.ota ? row.ota.grossCents / 100 : "",
+        row.ota ? row.ota.feeCents / 100 : "",
+        row.ota ? row.ota.netCents / 100 : "",
+        report.otaAmountBasis === "net" ? "Net plateforme" : "Brut",
       ]),
     ]
       .map((row) => row.map(quote).join(";"))

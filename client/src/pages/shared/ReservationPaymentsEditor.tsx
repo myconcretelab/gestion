@@ -60,6 +60,9 @@ type PaymentInput = {
   paid_on: string;
   note: string | null;
   shortcut_id?: string;
+  channel?: string;
+  category?: "accommodation" | "cleaning" | "linen" | "extras" | "tourist_tax";
+  fee_amount?: number;
 };
 
 export default function ReservationPaymentsEditor({
@@ -105,6 +108,12 @@ export default function ReservationPaymentsEditor({
   );
   const [paidOn, setPaidOn] = useState(today);
   const [note, setNote] = useState("");
+  const [paymentChannel, setPaymentChannel] = useState(
+    bookingSource === "Direct" ? "Airbnb" : bookingSource,
+  );
+  const [paymentCategory, setPaymentCategory] =
+    useState<NonNullable<PaymentInput["category"]>>("extras");
+  const [feeAmount, setFeeAmount] = useState("");
   const formId = useId();
   const unconfirmedHistory =
     !tracking.managed &&
@@ -169,6 +178,15 @@ export default function ReservationPaymentsEditor({
       purpose,
       paid_on: paidOn,
       note: note.trim() || null,
+      ...(method === "Versement plateforme"
+        ? {
+            channel: paymentChannel,
+            category: paymentCategory,
+            ...(feeAmount === ""
+              ? {}
+              : { fee_amount: Number(feeAmount.replace(",", ".")) }),
+          }
+        : {}),
     });
   };
   const useShortcut = async (shortcut: ReservationPaymentShortcut) => {
@@ -298,6 +316,15 @@ export default function ReservationPaymentsEditor({
               {entry.note && entry.origin !== "platform" ? (
                 <small>{entry.note}</small>
               ) : null}
+              {entry.ota && (
+                <small>
+                  {entry.ota.channel} · Brut{" "}
+                  {formatEuro(entry.ota.grossCents / 100)} · Frais{" "}
+                  {formatEuro(entry.ota.feeCents / 100)} · Net{" "}
+                  {formatEuro(entry.ota.netCents / 100)}
+                  {entry.ota.source === "rate" ? " · commission calculée" : ""}
+                </small>
+              )}
               {entry.refunded_amount ? (
                 <small>
                   Après remboursement de {formatEuro(entry.refunded_amount)}
@@ -482,6 +509,7 @@ export default function ReservationPaymentsEditor({
                 <option value="deposit">Arrhes</option>
                 <option value="balance">Solde</option>
                 <option value="payment">Versement partiel</option>
+                <option value="extras">Règlement de prestations</option>
               </select>
             </label>
             <label>
@@ -510,6 +538,11 @@ export default function ReservationPaymentsEditor({
                 disabled={busy}
                 onChange={(event) => {
                   setMethod(event.target.value as typeof method);
+                  if (
+                    event.target.value === "Versement plateforme" &&
+                    paymentCategory !== "accommodation"
+                  )
+                    setPurpose("extras");
                   requestId.current = crypto.randomUUID();
                 }}
               >
@@ -518,8 +551,82 @@ export default function ReservationPaymentsEditor({
                 ))}
               </select>
             </label>
+            {method === "Versement plateforme" && (
+              <>
+                <label>
+                  Canal du règlement
+                  <select
+                    aria-label="Canal du règlement"
+                    value={paymentChannel}
+                    onChange={(event) => {
+                      setPaymentChannel(event.target.value);
+                      requestId.current = crypto.randomUUID();
+                    }}
+                  >
+                    {[
+                      ...new Set([
+                        ...(tracking.payment_channels ?? [
+                          "Airbnb",
+                          "Abritel",
+                          "Booking.com",
+                          "Gites de France",
+                          "Autre",
+                        ]),
+                        paymentChannel,
+                      ]),
+                    ].map((channel) => (
+                      <option key={channel}>{channel}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Prestation réglée
+                  <select
+                    aria-label="Prestation réglée"
+                    value={paymentCategory}
+                    onChange={(event) => {
+                      setPaymentCategory(
+                        event.target.value as typeof paymentCategory,
+                      );
+                      if (event.target.value !== "accommodation")
+                        setPurpose("extras");
+                      requestId.current = crypto.randomUUID();
+                    }}
+                  >
+                    <option value="extras">Autres prestations</option>
+                    <option value="linen">Linge et draps</option>
+                    <option value="cleaning">Ménage</option>
+                    <option value="accommodation">Hébergement</option>
+                    <option value="tourist_tax">Taxe de séjour</option>
+                  </select>
+                </label>
+                <label>
+                  Commission (€)
+                  <input
+                    aria-label="Commission du règlement"
+                    type="number"
+                    min="0"
+                    max={amount}
+                    step="0.01"
+                    value={feeAmount}
+                    placeholder="Taux daté si vide"
+                    onChange={(event) => {
+                      setFeeAmount(event.target.value);
+                      requestId.current = crypto.randomUUID();
+                    }}
+                  />
+                  <small>
+                    Montant payé par le voyageur ci-dessus. Saisissez 0 si le
+                    canal ne prélève aucun frais, ou laissez vide pour utiliser
+                    le taux daté.
+                  </small>
+                </label>
+              </>
+            )}
             <label>
-              Reçu le
+              {method === "Versement plateforme"
+                ? "Date du versement plateforme"
+                : "Reçu le"}
               <input
                 type="date"
                 required

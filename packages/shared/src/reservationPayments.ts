@@ -2,6 +2,7 @@ export const BOOKING_SOURCES = [
   "Direct",
   "Airbnb",
   "Abritel",
+  "Booking.com",
   "Gites de France",
   "HomeExchange",
   "Autre",
@@ -25,6 +26,7 @@ export type ReservationPaymentSettings = {
   platform_payments_received_automatically: boolean;
   first_payment_default: "full" | "deposit";
   shortcuts: ReservationPaymentShortcut[];
+  platforms?: import("./ota.js").OtaChannel[];
 };
 export type ReservationPaymentMethod =
   (typeof RESERVATION_PAYMENT_METHODS)[number];
@@ -84,10 +86,13 @@ export type ReservationPaymentEntry = {
   origin: "manual" | "legacy" | "stripe" | "platform";
   voided_at: string | null;
   refunded_amount?: number;
+  reservation_id?: string;
+  ota?: import("./ota.js").OtaAmounts;
 };
 export type ReservationPaymentTracking = {
   first_payment_default?: ReservationPaymentSettings["first_payment_default"];
   payment_shortcuts?: ReservationPaymentShortcut[];
+  payment_channels?: string[];
   managed: boolean;
   total: number;
   deposit: number;

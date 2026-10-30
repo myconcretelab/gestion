@@ -23,6 +23,7 @@ model Organization {
   settings              OrganizationSettings?
   memberships           Membership[]
   runtime_settings      OrganizationRuntimeSetting[]
+  ota_transactions OtaTransaction[]
   finance_report_store  FinanceReportStore?
   jobs                  OrganizationJob[]
   job_attempts          OrganizationJobAttempt[]
@@ -1655,6 +1656,7 @@ model Reservation {
 
   gite                          Gite?                   @relation(fields: [gite_id], references: [id])
   placeholder                   ReservationPlaceholder? @relation(fields: [placeholder_id], references: [id])
+  ota_transactions OtaTransaction[]
   recorded_payments             ReservationRecordedPayment[]
   payment_links                 ReservationPaymentLink[]
   online_payments               BookingPayment[]
@@ -1820,6 +1822,8 @@ model ReservationRecordedPayment {
   paid_on           DateTime?
   note              String?
   origin            String    @default("manual")
+  ota_details       String?
+  ota_transaction   OtaTransaction?
   voided_at         DateTime?
   createdAt         DateTime  @default(now())
   organization_id   String    @default("org_historical_broceliande")
@@ -1840,4 +1844,33 @@ model FinanceReportStore {
   updatedAt       DateTime @updatedAt
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   @@map("finance_report_stores")
+}
+
+// Immutable source amounts from an OTA statement. Import never rewrites reservation prices.
+model OtaTransaction {
+  id String @id @default(cuid())
+  organization_id String @default("org_historical_broceliande")
+  channel String
+  external_key String
+  import_id String
+  source_hash String
+  file_name String
+  type String
+  payout_reference String
+  confirmation_code String
+  paid_on DateTime
+  arrival_by DateTime?
+  gross_cents Int
+  fee_cents Int
+  net_cents Int
+  raw_json String
+  reservation_id String?
+  recorded_payment_id String? @unique
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  reservation Reservation? @relation(fields: [reservation_id], references: [id], onDelete: Restrict)
+  recorded_payment ReservationRecordedPayment? @relation(fields: [recorded_payment_id], references: [id], onDelete: Restrict)
+  @@unique([organization_id, channel, external_key], map: "ota_transactions_org_channel_reference_key")
+  @@index([organization_id, import_id], map: "ota_transactions_org_import_idx")
+  @@map("ota_transactions")
 }

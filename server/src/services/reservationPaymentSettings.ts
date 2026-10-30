@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
   RESERVATION_PAYMENT_METHODS,
+  otaChannelSchema,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../db/prisma.js";
 import { getOrganizationId } from "./organizationContext.js";
@@ -10,6 +11,7 @@ import { writeRuntimeSetting } from "../modules/organizations/runtimeSettings.js
 export const reservationPaymentSettingsSchema = z
   .object({
     platform_payments_received_automatically: z.boolean(),
+    platforms: z.array(otaChannelSchema).max(30).refine(items => new Set(items.map(item => item.name.toLocaleLowerCase())).size === items.length, "Chaque canal doit être unique.").optional(),
     first_payment_default: z.enum(["full", "deposit"]).default("full"),
     shortcuts: z
       .array(

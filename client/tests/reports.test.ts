@@ -82,7 +82,7 @@ test("tous les moyens de paiement sont inclus et consultables sans filtre", () =
     false,
   );
 });
-test("une date manquante reste à vérifier dans chaque période et ne peut être forcée dans le total", () => {
+test("une date manquante reste à vérifier dans la période du séjour, sans entrer dans le total", () => {
   for (const month of ["2026-09", "2026-10", "2026-11"]) {
     const result = evaluateReport(
       report,
@@ -92,7 +92,7 @@ test("une date manquante reste à vérifier dans chaque période et ne peut êtr
       sources,
     );
     assert.equal(result.total, 0);
-    assert.equal(result.reviewCount, 1);
+    assert.equal(result.reviewCount, month === "2026-11" ? 1 : 0);
   }
 });
 test("les rapports sociaux demandent un rattachement confirmé à un exploitant", () => {

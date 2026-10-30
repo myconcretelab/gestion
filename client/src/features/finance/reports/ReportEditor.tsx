@@ -444,6 +444,14 @@ export default function ReportEditor({
                 <option value="yearly">Chaque année</option>
               </select>
             </label>
+            {draft.kind !== "tourist" && draft.dateBasis === "payment" && <label className="rp-field">
+              Base des recettes de plateformes
+              <select aria-label="Base OTA" value={draft.otaAmountBasis ?? "gross"} onChange={event => update({ otaAmountBasis: event.target.value as "gross" | "net" })}>
+                <option value="gross">Brut, avant commissions</option>
+                <option value="net">Net plateforme, après commissions</option>
+              </select>
+              <span className="rp-field-help">Le choix concerne ce rapport. Le net plateforme n’est pas un bénéfice fiscal. Vérifiez la base applicable à votre démarche et à votre régime ; les deux montants restent conservés.</span>
+            </label>}
             <fieldset className="rp-choice-fieldset">
               <legend>Quelle date détermine la période ?</legend>
               <div className="rp-radio-choices">

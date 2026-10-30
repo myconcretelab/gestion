@@ -118,7 +118,7 @@ export const createApp = () => {
     // isolated instead of allowing every API request to allocate up to 20 MB.
     const isLargeUpload =
       req.method === "POST" &&
-      (/^\/api\/contracts\/[^/]+\/signed-document$/.test(req.path) || /^\/api\/gites\/[^/]+\/photos\/upload$/.test(req.path));
+      (/^\/api\/contracts\/[^/]+\/signed-document$/.test(req.path) || /^\/api\/gites\/[^/]+\/photos\/upload$/.test(req.path) || /^\/api\/reports\/ota\/(preview|apply)$/.test(req.path));
     if (isLargeUpload) return uploadJsonParser(req, res, next);
     return next();
   });

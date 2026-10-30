@@ -8,6 +8,7 @@ import {
 import { apiFetch } from "../../utils/api";
 import { canCurrentUserWritePage } from "../../utils/auth";
 import { getContrastTextColor } from "../../utils/paymentColors";
+import OtaChannelSettings from "./OtaChannelSettings";
 
 export default function ReservationPaymentSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -149,11 +150,13 @@ export default function ReservationPaymentSettings() {
               draps, les options ajoutées dans l’application et la taxe
               collectée sur place restent à encaisser.
             </p>
+            <p className="field-hint">Le réglage propre à chaque canal ci-dessous est prioritaire sur ce réglage général.</p>
             <p className="field-hint">
               Si vous désactivez ce réglage, enregistrez les versements reçus
               avec le moyen « Versement plateforme ». Les règlements déjà saisis
               sont conservés. HomeExchange n’est pas concerné.
             </p>
+            <OtaChannelSettings value={settings.platforms} automatic={settings.platform_payments_received_automatically} disabled={busy || !canCurrentUserWritePage("settings")} onChange={platforms => { setSettings({ ...settings, platforms }); setNotice(""); }} />
             <fieldset
               className="reservation-shortcut-settings"
               disabled={busy || !canCurrentUserWritePage("settings")}

@@ -11,7 +11,10 @@ import {
   reportPeriodKey,
   reportMutationSchema,
   buildReportReminders,
+  parseAirbnbCsv,
+  DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
 } from "@contrats/shared";
+import { airbnbFixture } from "../../packages/shared/dist/tests/fixtures/airbnb.js";
 
 const { chromium } = createRequire(
   new URL("../../server/package.json", import.meta.url),
@@ -106,6 +109,7 @@ function data() {
         ...baseOperation,
         id: "d",
         reservationId: "reservation-d",
+        stayDate: "2026-10-05",
         propertyId: "g2",
         propertyLabel: "Le Refuge des bois",
         paymentDate: null,
@@ -165,6 +169,16 @@ try {
       reads: 0,
       reminderReads: 0,
       failReminders: false,
+      otaImported: false,
+      otaFailApply: 0,
+      otaApplies: 0,
+      otaHistory: [],
+      paymentPosts: [],
+      paymentSettings: {
+        platform_payments_received_automatically: true,
+        first_payment_default: "full",
+        shortcuts: DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+      },
     };
     await page.route("**/api/**", async (route) => {
       const request = route.request();
@@ -206,7 +220,161 @@ try {
           },
           modules: { finances },
         };
-      else if (pathname === "/api/reports/reminders" && method === "GET") {
+      else if (pathname === "/api/settings/reservation-payments") {
+        if (method === "PUT") fixture.paymentSettings = request.postDataJSON();
+        body = fixture.paymentSettings;
+      } else if (pathname === "/api/reports/ota/imports")
+        body = fixture.otaHistory;
+      else if (pathname === "/api/reports/ota/preview") {
+        const rows = parseAirbnbCsv(request.postDataJSON().content);
+        body = {
+          fingerprint: "a".repeat(64),
+          rows: rows.map(({ raw, ...row }) => ({
+            ...row,
+            reservationId: row.type === "payout" ? null : "reservation-a",
+            reservationLabel: "Client Test · Maison du verger",
+            existingAmountCents: 8500,
+            suggestedBasis: row.type === "reservation" ? "net" : null,
+            status: fixture.otaImported ? "imported" : "new",
+            warning:
+              row.type === "resolution"
+                ? "Précisez la catégorie de ce règlement complémentaire."
+                : null,
+          })),
+          reservations: [
+            {
+              id: "reservation-a",
+              label: "Client Test · Maison du verger",
+              payments: [],
+            },
+          ],
+          totals: {
+            grossCents: 11500,
+            feeCents: 1500,
+            netCents: 10000,
+            payouts: 1,
+            reservations: 1,
+            resolutions: 1,
+          },
+        };
+      } else if (pathname === "/api/reports/ota/apply") {
+        fixture.otaApplies++;
+        if (fixture.otaFailApply-- > 0) {
+          status = 503;
+          body = { error: "Import indisponible" };
+        } else {
+          const input = request.postDataJSON();
+          assert.equal(input.fingerprint, "a".repeat(64));
+          const rows = parseAirbnbCsv(input.content);
+          fixture.state.operations = rows
+            .filter((row) => row.type !== "payout")
+            .map((row) => ({
+              ...baseOperation,
+              id: row.key,
+              propertyId: "g1",
+              amountCents: row.grossCents,
+              paymentDate: row.date,
+              stayDate: row.start,
+              channel: "Airbnb",
+              paymentMethod: "platform",
+              category:
+                row.type === "reservation"
+                  ? "accommodation"
+                  : input.choices.find((choice) => choice.key === row.key)
+                      .category,
+              ota: {
+                channel: "Airbnb",
+                grossCents: row.grossCents,
+                feeCents: row.feeCents,
+                netCents: row.netCents,
+                source: "import",
+                category:
+                  row.type === "reservation" ? "accommodation" : "linen",
+              },
+            }));
+          fixture.state.factsRevision = "ota-imported";
+          fixture.otaImported = true;
+          fixture.otaHistory = [
+            {
+              id: "import-a",
+              fileName: input.fileName,
+              createdAt: "2026-10-31T12:00:00Z",
+              rows: 3,
+              totals: { netCents: 10000 },
+            },
+          ];
+          body = { added: 3 };
+        }
+      } else if (pathname === "/api/reservations/prefill/reservation-extra")
+        body = {
+          id: "reservation-extra",
+          hote_nom: "Client Test",
+          booking_source: "Airbnb",
+          source_paiement: "Airbnb",
+          options: {},
+          date_entree: "2026-10-30",
+          date_sortie: "2026-11-03",
+          gite: { nom: "Maison du verger" },
+          payment_tracking: {
+            managed: true,
+            total: 100,
+            deposit: 0,
+            received: 85,
+            remaining: 15,
+            overpaid: 0,
+            requires_review: false,
+            payment_shortcuts: [],
+            entries: [],
+            platform: {
+              source: "Airbnb",
+              automatic: true,
+              accommodation: 85,
+              expected: 0,
+              extras_remaining: 15,
+            },
+          },
+        };
+      else if (
+        pathname === "/api/reservations/reservation-extra/payments" &&
+        method === "POST"
+      ) {
+        const input = request.postDataJSON();
+        fixture.paymentPosts.push(input);
+        assert.equal(input.method, "Versement plateforme");
+        assert.equal(input.channel, "Airbnb");
+        assert.equal(input.category, "linen");
+        assert.equal(input.fee_amount, 0);
+        assert.equal(input.purpose, "extras");
+        body = {
+          managed: true,
+          total: 100,
+          deposit: 0,
+          received: 100,
+          remaining: 0,
+          overpaid: 0,
+          requires_review: false,
+          entries: [
+            {
+              id: input.id,
+              amount: 15,
+              method: input.method,
+              origin: "manual",
+              purpose: input.purpose,
+              paid_on: "2026-10-31",
+              note: null,
+              voided_at: null,
+              ota: {
+                channel: "Airbnb",
+                grossCents: 1500,
+                feeCents: 0,
+                netCents: 1500,
+                category: "linen",
+                source: "manual",
+              },
+            },
+          ],
+        };
+      } else if (pathname === "/api/reports/reminders" && method === "GET") {
         fixture.reminderReads++;
         status = fixture.failReminders ? 503 : 200;
         body = fixture.failReminders
@@ -827,6 +995,128 @@ try {
     assert.equal(hiddenFixture.reminderReads, 0);
     assert.equal(await hidden.locator(".reservation-declarations").count(), 0);
   }
+  const { page: otaPage, fixture: otaFixture } = await createPage();
+  otaFixture.state.reports = [
+    { ...otaFixture.state.reports[0], propertyIds: ["g1"] },
+  ];
+  await open(otaPage, "/import-airbnb");
+  await otaPage
+    .getByRole("heading", { name: "Importer un relevé Airbnb", exact: true })
+    .waitFor();
+  await otaPage.getByLabel("Relevé Airbnb", { exact: true }).setInputFiles({
+    name: "airbnb-test.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(airbnbFixture()),
+  });
+  await otaPage.getByRole("region", { name: "Aperçu de l’import" }).waitFor();
+  assert.equal(
+    await otaPage
+      .getByRole("button", { name: "Confirmer l’import", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await otaPage
+    .getByLabel("Catégorie ligne 4", { exact: true })
+    .selectOption("linen");
+  await noOverflow(otaPage);
+  await capture(otaPage, "ota-import-desktop.png");
+  for (const width of [360, 390, 768]) {
+    await otaPage.setViewportSize({ width, height: 844 });
+    await noOverflow(otaPage);
+    await capture(otaPage, `ota-import-${width}.png`);
+  }
+  otaFixture.otaFailApply = 1;
+  await otaPage
+    .getByRole("button", { name: "Confirmer l’import", exact: true })
+    .click();
+  await otaPage.getByText("Import indisponible", { exact: false }).waitFor();
+  assert.equal(
+    await otaPage.getByLabel("Catégorie ligne 4", { exact: true }).inputValue(),
+    "linen",
+  );
+  await otaPage
+    .getByRole("button", { name: "Confirmer l’import", exact: true })
+    .click();
+  await otaPage.getByText(/Import enregistré : 3 lignes/).waitFor();
+  assert.equal(otaFixture.otaApplies, 2);
+  await open(otaPage, "/social");
+  assert.match(await total(otaPage), /115,00/);
+  await open(otaPage, "/social/modifier");
+  await otaPage.getByLabel("Base OTA", { exact: true }).selectOption("net");
+  await otaPage.getByRole("button", { name: /Appliquer les règles/ }).click();
+  await otaPage
+    .getByRole("heading", { name: "Cotisations sociales", exact: true })
+    .waitFor();
+  assert.match(await total(otaPage), /100,00/);
+  await open(otaPage, "/import-airbnb");
+  await otaPage.getByLabel("Relevé Airbnb", { exact: true }).setInputFiles({
+    name: "airbnb-test.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(airbnbFixture()),
+  });
+  await otaPage
+    .getByText("2 règlements à importer.")
+    .waitFor({ state: "hidden" });
+  await otaPage.getByRole("region", { name: "Aperçu de l’import" }).waitFor();
+  assert.equal(
+    await otaPage
+      .getByRole("button", { name: "Confirmer l’import", exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.equal(await otaPage.getByText(/Déjà importé/).count(), 2);
+  await otaPage.goto(`${origin}/reservations/reservation-extra/reglements`);
+  await otaPage
+    .getByRole("heading", { name: "Règlements de la réservation", exact: true })
+    .waitFor();
+  await otaPage.getByRole("button", { name: /Ajouter un règlement/ }).click();
+  await otaPage
+    .getByLabel("Moyen", { exact: true })
+    .selectOption("Versement plateforme");
+  await otaPage
+    .getByLabel("Prestation réglée", { exact: true })
+    .selectOption("linen");
+  await otaPage
+    .getByLabel("Commission du règlement", { exact: true })
+    .fill("0");
+  await otaPage
+    .getByRole("button", { name: "Enregistrer le règlement", exact: true })
+    .click();
+  await otaPage.getByText(/Airbnb · Brut/).waitFor();
+  assert.equal(otaFixture.paymentPosts.length, 1);
+  await otaPage.goto(`${origin}/parametres/reglements`);
+  await otaPage
+    .getByRole("heading", { name: "Règlements des réservations", exact: true })
+    .waitFor();
+  const channelSettings = otaPage.locator(".ota-channel").first();
+  await channelSettings
+    .getByRole("button", { name: "Ajouter une commission datée", exact: true })
+    .click();
+  await otaPage
+    .getByLabel("Date d’effet Airbnb 1", { exact: true })
+    .fill("2026-01-01");
+  await otaPage.getByLabel("Commission Airbnb 1", { exact: true }).fill("15");
+  await channelSettings
+    .getByRole("button", { name: "Ajouter une commission datée", exact: true })
+    .click();
+  await otaPage
+    .getByLabel("Date d’effet Airbnb 2", { exact: true })
+    .fill("2026-10-01");
+  await otaPage.getByLabel("Commission Airbnb 2", { exact: true }).fill("16");
+  await otaPage
+    .getByRole("button", { name: "Enregistrer", exact: true })
+    .click();
+  await otaPage.getByText(/Réglage enregistré/).waitFor();
+  assert.deepEqual(otaFixture.paymentSettings.platforms[0].rates, [
+    { effectiveFrom: "2026-01-01", percent: 15 },
+    { effectiveFrom: "2026-10-01", percent: 16 },
+  ]);
+  await otaPage.setViewportSize({ width: 1440, height: 1050 });
+  await noOverflow(otaPage);
+  await capture(otaPage, "ota-settings-desktop.png");
+  await otaPage.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(otaPage);
+  await capture(otaPage, "ota-settings-mobile.png");
   assert.deepEqual(unexpectedRequests, []);
   assert.deepEqual(runtimeErrors, []);
   console.log(

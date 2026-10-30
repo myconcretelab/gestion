@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { airbnbFixture } from "../../packages/shared/tests/fixtures/airbnb.js";
 import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -18,6 +19,8 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), "finance-reports-"));
 let db: typeof import("../src/db/prisma.js");
 let context: typeof import("../src/modules/organizations/context.js");
 let reports: typeof import("../src/modules/finance/reports/service.js");
+let otaImport: typeof import("../src/modules/finance/reports/otaImport.js");
+let paymentSettings: typeof import("../src/services/reservationPaymentSettings.js");
 let ledger: typeof import("../src/modules/reservationPayments/ledger.js");
 let factsModule: typeof import("../src/modules/finance/reports/facts.js");
 before(async () => {
@@ -41,6 +44,9 @@ before(async () => {
   context = await import("../src/modules/organizations/context.js");
   reports = await import("../src/modules/finance/reports/service.js");
   ledger = await import("../src/modules/reservationPayments/ledger.js");
+  otaImport = await import("../src/modules/finance/reports/otaImport.js");
+  paymentSettings =
+    await import("../src/services/reservationPaymentSettings.js");
   factsModule = await import("../src/modules/finance/reports/facts.js");
 });
 after(async () => {
@@ -248,7 +254,7 @@ test("un versement de plateforme estimé ne devient pas un encaissement daté", 
     const state = await reports.getReportWorkspace();
     assert.equal(result(state).total, 0);
     assert.equal(result(state).reviewCount, 1);
-    assert.equal(result(state, "2026-12").reviewCount, 1);
+    assert.equal(result(state, "2026-12").reviewCount, 0);
     assert.match(result(state).rows[0].reason, /estimé/);
   }));
 test("un règlement annulé est retiré et les changements de source invalident la préparation", () =>
@@ -297,7 +303,10 @@ test("les anciennes déclarations sont reprises sans reconstruction de leurs op�
     const manager = await db.default.gestionnaire.create({
       data: { prenom: "Ancien", nom: "Propriétaire" },
     });
-    await db.default.gite.update({ where: { id: gite }, data: { gestionnaire_id: manager.id } });
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { gestionnaire_id: manager.id },
+    });
     await db.default.urssafDeclaration.create({
       data: {
         year: 2025,
@@ -319,8 +328,14 @@ test("les anciennes déclarations sont reprises sans reconstruction de leurs op�
       12,
     );
     assert.deepEqual(state.progress, {});
-    assert.deepEqual(state.legacyDeclarations.map((row) => row.propertyIds), [[gite], [gite]]);
-    assert.deepEqual(buildReportReminders(state, 2026, new Date("2026-01-05T12:00:00Z")), []);
+    assert.deepEqual(
+      state.legacyDeclarations.map((row) => row.propertyIds),
+      [[gite], [gite]],
+    );
+    assert.deepEqual(
+      buildReportReminders(state, 2026, new Date("2026-01-05T12:00:00Z")),
+      [],
+    );
   }));
 test("les définitions persistent, les versions concurrentes et les faits périmés sont refusés", () =>
   fixture(async ({ gite }) => {
@@ -502,7 +517,7 @@ test("les remboursements partiels ou complets restent visibles avec leur date à
         .length,
       2,
     );
-    assert.equal(result(state, "2026-12").reviewCount, 2);
+    assert.equal(result(state, "2026-12").reviewCount, 0);
   }));
 test("les règlements par carte sont rattachés à la date civile en France", () =>
   fixture(async ({ gite }) => {
@@ -738,10 +753,11 @@ test("un remboursement groupé reste à vérifier dans chaque logement concerné
       -5000,
     );
     assert.equal(
-      result(state, "2026-12", { ...social(state), propertyIds: [second.id] })
+      result(state, "2026-10", { ...social(state), propertyIds: [second.id] })
         .reviewCount,
-      1,
+      2,
     );
+    assert.equal(result(state, "2026-12").reviewCount, 0);
   }));
 
 test("les JSON et montants PostgreSQL et SQLite conservent la même ventilation", async () => {
@@ -774,3 +790,438 @@ test("les JSON et montants PostgreSQL et SQLite conservent la même ventilation"
     amounts,
   );
 });
+
+test("import OTA : aperçu sans écriture, rattachement exact, brut/net/options, doublons et copie confirmée", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      prix_total: 85,
+      frais_optionnels_montant: 15,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+      airbnb_url:
+        "https://www.airbnb.com/hosting/reservations/details/HM12345678",
+    });
+    const content = airbnbFixture();
+    const preview = await otaImport.previewOtaImport(content);
+    assert.equal(preview.totals.grossCents, 11500);
+    assert.equal(preview.totals.netCents, 10000);
+    assert.equal(preview.rows[1].reservationId, reservation.id);
+    assert.equal(await db.default.otaTransaction.count(), 0);
+    const choices = preview.rows
+      .filter((row) => row.type !== "payout")
+      .map((row) => ({
+        key: row.key,
+        reservationId: reservation.id,
+        settlementBasis: "net" as const,
+        ...(row.type === "resolution" ? { category: "linen" as const } : {}),
+      }));
+    const applied = await otaImport.applyOtaImport(
+      {
+        content,
+        fileName: "anonyme.csv",
+        fingerprint: preview.fingerprint,
+        choices,
+      },
+      "test-user",
+    );
+    assert.equal(applied.added, 3);
+    const tracking = await ledger.getReservationPaymentTracking(reservation.id);
+    assert.equal(tracking.remaining, 0);
+    assert.equal(tracking.platform?.extras_remaining, 0);
+    assert.equal(
+      tracking.entries.filter((entry) => entry.origin === "platform").length,
+      0,
+    );
+    let state = await reports.getReportWorkspace();
+    assert.equal(result(state).total, 11500);
+    assert.equal(
+      result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
+        .total,
+      10000,
+    );
+    assert.equal(
+      result(state, "2026-10", { ...social(state), categories: ["linen"] })
+        .total,
+      1500,
+    );
+    assert.equal(
+      (
+        await db.default.reservation.findUniqueOrThrow({
+          where: { id: reservation.id },
+        })
+      ).prix_total,
+      85,
+    );
+    const again = await otaImport.previewOtaImport(content);
+    assert.ok(again.rows.every((row) => row.status === "imported"));
+    assert.equal(
+      (
+        await otaImport.applyOtaImport({
+          content,
+          fileName: "encore.csv",
+          fingerprint: again.fingerprint,
+          choices,
+        })
+      ).added,
+      0,
+    );
+    assert.equal(await db.default.reservationRecordedPayment.count(), 2);
+    state = await mutate(state, { type: "ready", reportId: social(state).id });
+    state = await mutate(state, {
+      type: "confirm",
+      reportId: social(state).id,
+    });
+    const fixed =
+      state.progress[reportPeriodKey(social(state), "2026-10")].snapshot!;
+    const changed = await mutate(state, {
+      type: "save",
+      definition: { ...social(state), otaAmountBasis: "net" },
+    });
+    assert.equal(fixed.result.total, 11500);
+    assert.equal(result(changed).total, 10000);
+    assert.equal(snapshotDiffers(fixed, result(changed)), true);
+  }));
+
+test("import OTA : une révision périmée et une ligne non classée annulent toute la transaction", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      prix_total: 85,
+      frais_optionnels_montant: 15,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    const content = airbnbFixture();
+    const preview = await otaImport.previewOtaImport(content);
+    await assert.rejects(
+      otaImport.applyOtaImport({
+        content,
+        fileName: "test.csv",
+        fingerprint: preview.fingerprint,
+        choices: [],
+      }),
+      /catégorie/,
+    );
+    assert.equal(await db.default.otaTransaction.count(), 0);
+    assert.equal(await db.default.reservationRecordedPayment.count(), 0);
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: { prix_total: 90 },
+    });
+    await assert.rejects(
+      otaImport.applyOtaImport({
+        content,
+        fileName: "test.csv",
+        fingerprint: preview.fingerprint,
+        choices: [],
+      }),
+      /changé/,
+    );
+  }));
+
+test("import OTA : rapprochement d’un règlement existant et annulation sans résurrection au réimport", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      prix_total: 85,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: false,
+    });
+    await pay(reservation.id, 85, { method: "Versement plateforme" });
+    const content = airbnbFixture({}, { resolution: false });
+    let preview = await otaImport.previewOtaImport(content);
+    const row = preview.rows.find((row) => row.type === "reservation")!;
+    const choice = {
+      key: row.key,
+      reservationId: reservation.id,
+      settlementBasis: "net" as const,
+    };
+    await assert.rejects(
+      otaImport.applyOtaImport({
+        content,
+        fileName: "test.csv",
+        fingerprint: preview.fingerprint,
+        choices: [choice],
+      }),
+      /déjà saisi|doublon/,
+    );
+    const existing =
+      await db.default.reservationRecordedPayment.findFirstOrThrow();
+    await otaImport.applyOtaImport({
+      content,
+      fileName: "test.csv",
+      fingerprint: preview.fingerprint,
+      choices: [{ ...choice, paymentId: existing.id }],
+    });
+    assert.equal(await db.default.reservationRecordedPayment.count(), 1);
+    assert.equal(result(await reports.getReportWorkspace()).total, 10000);
+    await ledger.voidReservationPayment(reservation.id, existing.id);
+    preview = await otaImport.previewOtaImport(content);
+    assert.equal(
+      preview.rows.find((row) => row.type === "reservation")!.status,
+      "conflict",
+    );
+    assert.equal(result(await reports.getReportWorkspace()).total, 0);
+  }));
+
+test("options encaissées par un autre canal : commission datée figée et ventilation de prestations", () =>
+  fixture(async ({ gite }) => {
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: true,
+      platforms: [
+        {
+          name: "Airbnb",
+          automatic: true,
+          storedPriceBasis: "net",
+          rateDateBasis: "payment",
+          rates: [
+            { effectiveFrom: "2026-01-01", percent: 10 },
+            { effectiveFrom: "2026-11-01", percent: 20 },
+          ],
+        },
+      ],
+    });
+    const reservation = await stay(gite, { frais_optionnels_montant: 50 });
+    await pay(reservation.id, 50, {
+      method: "Versement plateforme",
+      purpose: "extras",
+      channel: "Airbnb",
+      category: "linen",
+      paid_on: "2026-10-31",
+    });
+    let state = await reports.getReportWorkspace();
+    assert.equal(result(state).total, 5000);
+    assert.equal(
+      result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
+        .total,
+      4500,
+    );
+    assert.equal(
+      state.operations.find((operation) => operation.ota)?.category,
+      "linen",
+    );
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: true,
+      platforms: [
+        {
+          name: "Airbnb",
+          automatic: true,
+          rates: [{ effectiveFrom: "2026-01-01", percent: 90 }],
+        },
+      ],
+    });
+    state = await reports.getReportWorkspace();
+    assert.equal(
+      state.operations.find((operation) => operation.ota)?.ota?.feeCents,
+      500,
+    );
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(reservation.id)).remaining,
+      100,
+    );
+  }));
+
+test("import OTA : un séjour groupé conserve les logements, le ménage et les centimes", () =>
+  fixture(async ({ gite }) => {
+    const {
+      id: _id,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      ...fields
+    } = await db.default.gite.findUniqueOrThrow({ where: { id: gite } });
+    const second = await db.default.gite.create({
+      data: { ...fields, nom: "Second logement", prefixe_contrat: "R2" },
+    });
+    const group = randomUUID();
+    const first = await stay(gite, {
+      stay_group_id: group,
+      prix_total: 34,
+      frais_optionnels_montant: 10,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    await stay(second.id, {
+      stay_group_id: group,
+      prix_total: 51,
+      frais_optionnels_montant: 15,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    const content = airbnbFixture(
+      { "Frais de ménage": "10.00" },
+      { resolution: false },
+    );
+    const preview = await otaImport.previewOtaImport(content);
+    const row = preview.rows.find((row) => row.type === "reservation")!;
+    assert.equal(row.suggestedBasis, "net");
+    assert.equal(row.existingAmountCents, 8500);
+    await otaImport.applyOtaImport({
+      content,
+      fileName: "groupe.csv",
+      fingerprint: preview.fingerprint,
+      choices: [],
+    });
+    const state = await reports.getReportWorkspace();
+    assert.equal(result(state).total, 10000);
+    assert.equal(
+      result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
+        .total,
+      8500,
+    );
+    assert.equal(
+      result(state, "2026-10", { ...social(state), propertyIds: [gite] }).total,
+      4000,
+    );
+    assert.equal(
+      result(state, "2026-10", { ...social(state), propertyIds: [second.id] })
+        .total,
+      6000,
+    );
+    assert.equal(
+      result(state, "2026-10", { ...social(state), categories: ["cleaning"] })
+        .total,
+      1000,
+    );
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(first.id)).remaining,
+      25,
+    );
+    await pay(first.id, 25, {
+      method: "Versement plateforme",
+      channel: "Airbnb",
+      category: "linen",
+      purpose: "extras",
+      fee_amount: 0,
+      paid_on: "2026-10-31",
+    });
+    const afterExtras = await reports.getReportWorkspace();
+    assert.equal(
+      result(afterExtras, "2026-10", {
+        ...social(afterExtras),
+        propertyIds: [gite],
+        categories: ["linen"],
+      }).total,
+      1000,
+    );
+    assert.equal(
+      result(afterExtras, "2026-10", {
+        ...social(afterExtras),
+        propertyIds: [second.id],
+        categories: ["linen"],
+      }).total,
+      1500,
+    );
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(first.id)).remaining,
+      0,
+    );
+    const changed = airbnbFixture(
+      {
+        "Frais de ménage": "10.00",
+        "Revenus bruts": "101.00",
+        "Frais de service": "16.00",
+      },
+      { resolution: false },
+    );
+    assert.equal(
+      (await otaImport.previewOtaImport(changed)).rows[1].status,
+      "conflict",
+    );
+  }));
+
+test("import OTA : un complément déjà saisi conserve sa date et ne crée aucun doublon", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      prix_total: 85,
+      frais_optionnels_montant: 15,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    await pay(reservation.id, 15, { purpose: "extras", paid_on: "2026-11-01" });
+    const existing =
+      await db.default.reservationRecordedPayment.findFirstOrThrow();
+    const content = airbnbFixture();
+    const preview = await otaImport.previewOtaImport(content);
+    const choices = preview.rows
+      .filter((row) => row.type !== "payout")
+      .map((row) => ({
+        key: row.key,
+        reservationId: reservation.id,
+        settlementBasis: "net" as const,
+        ...(row.type === "resolution"
+          ? { category: "linen" as const, paymentId: existing.id }
+          : {}),
+      }));
+    await otaImport.applyOtaImport({
+      content,
+      fileName: "complement.csv",
+      fingerprint: preview.fingerprint,
+      choices,
+    });
+    assert.equal(await db.default.reservationRecordedPayment.count(), 2);
+    const updated =
+      await db.default.reservationRecordedPayment.findUniqueOrThrow({
+        where: { id: existing.id },
+      });
+    assert.equal(updated.paid_on?.toISOString().slice(0, 10), "2026-11-01");
+    const state = await reports.getReportWorkspace();
+    assert.equal(result(state).total, 10000);
+    assert.equal(result(state, "2026-11").total, 1500);
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(reservation.id)).remaining,
+      0,
+    );
+  }));
+
+test("import OTA : mêmes références isolées par organisation et rattachement étranger refusé", () =>
+  fixture(async ({ gite }) => {
+    const own = await stay(gite, {
+      prix_total: 85,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    const content = airbnbFixture({}, { resolution: false });
+    let foreignId = "";
+    await fixture(async ({ gite: foreignGite }) => {
+      const foreign = await stay(foreignGite, {
+        prix_total: 85,
+        booking_source: "Airbnb",
+        origin_reference: "listing|HM12345678",
+      });
+      foreignId = foreign.id;
+      const preview = await otaImport.previewOtaImport(content);
+      await otaImport.applyOtaImport({
+        content,
+        fileName: "autre.csv",
+        fingerprint: preview.fingerprint,
+        choices: [],
+      });
+    });
+    const preview = await otaImport.previewOtaImport(content);
+    assert.equal(preview.rows[1].status, "new");
+    assert.equal(preview.rows[1].reservationId, own.id);
+    await assert.rejects(
+      otaImport.applyOtaImport({
+        content,
+        fileName: "test.csv",
+        fingerprint: preview.fingerprint,
+        choices: [
+          {
+            key: preview.rows[1].key,
+            reservationId: foreignId,
+            settlementBasis: "net",
+          },
+        ],
+      }),
+      /rattachez/,
+    );
+    assert.equal(await db.default.otaTransaction.count(), 0);
+    await otaImport.applyOtaImport({
+      content,
+      fileName: "test.csv",
+      fingerprint: preview.fingerprint,
+      choices: [],
+    });
+    assert.equal(await db.default.otaTransaction.count(), 2);
+  }));

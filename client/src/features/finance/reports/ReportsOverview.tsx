@@ -66,6 +66,7 @@ export default function ReportsOverview({
         title="Rapports et déclarations"
         actions={
           <div className="rp-header-actions">
+            {canEdit && <Link to={href("/import-airbnb")} className="rp-button rp-button--secondary"><ReportIcon name="download" />Importer un relevé Airbnb</Link>}
             <button
               type="button"
               className="rp-icon-button"
@@ -84,6 +85,7 @@ export default function ReportsOverview({
           </div>
         }
       />
+      {state.operations.some(row => row.basis === "payment" && !row.paymentDate) && <p className="rp-notice">Des versements sans date restent hors des totaux. <Link to={href("/versements-a-dater")}>Consulter les versements à dater</Link></p>}
       <div className="rp-overview-top">
         <div className="rp-period-card">
           <span className="rp-overline">Période</span>

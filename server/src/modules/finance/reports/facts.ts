@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   computeTouristTax,
+  allocateCents,
   getBookingSource,
   type ReportCategory,
   type ReportOperation,
@@ -26,18 +27,7 @@ const paymentDay = (date: string | null) =>
       }).format(new Date(date))
     : null;
 const sum = (values: number[]) => values.reduce((total, n) => total + n, 0);
-/** Largest remainders: allocations always conserve every cent, including tiny receipts. */
-export function allocateCents(total: number, weights: number[]) {
-  const weight = sum(weights);
-  if (!weight) return weights.map(() => 0);
-  const shares = weights.map((n) => Math.floor((total * n) / weight));
-  const order = weights
-    .map((n, i) => ({ i, rest: (total * n) % weight }))
-    .sort((a, b) => b.rest - a.rest || a.i - b.i);
-  for (let left = total - sum(shares), i = 0; left > 0; left--, i++)
-    shares[order[i % order.length].i]++;
-  return shares;
-}
+export { allocateCents } from "@contrats/shared";
 const method = (value: string | null): ReportPaymentMethod =>
   value === "Virement"
     ? "transfer"
@@ -335,6 +325,76 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
         (entry.amount > 0 || (entry.refunded_amount ?? 0) > 0),
     )) {
       const received = cents(entry.amount + (entry.refunded_amount ?? 0));
+      if (entry.ota) {
+        const reservation =
+          rows.find((row) => row.id === entry.reservation_id) ?? first;
+        const splits = entry.ota.allocations ?? [entry.ota];
+        for (const [index, amounts] of splits.entries()) {
+          const destination =
+            rows.find(
+              (row) =>
+                row.id ===
+                ("reservationId" in amounts ? amounts.reservationId : null),
+            ) ?? reservation;
+          operations.push({
+            ...baseOperation({
+              propertyId: destination.gite_id ?? "unassigned",
+              reservationId: destination.id,
+              category: amounts.category,
+              amount: amounts.grossCents,
+            }),
+            id: `receipt:${entry.id}:${destination.id}:${amounts.category}:${index}`,
+            amountCents: amounts.grossCents,
+            paymentDate: paymentDay(entry.paid_on),
+            paymentMethod: "platform",
+            basis: "payment",
+            channel: entry.ota.channel,
+            ota: { ...entry.ota, ...amounts, allocations: undefined },
+            ...(entry.origin === "platform"
+              ? {
+                  reviewReason:
+                    "Versement de plateforme estimé : importez le relevé ou renseignez le règlement reçu et sa date.",
+                }
+              : ledger.requires_review
+                ? {
+                    reviewReason:
+                      "Un paiement ou remboursement reste à vérifier sur ce séjour.",
+                  }
+                : {}),
+            allocationNote:
+              entry.ota.source === "import" && entry.ota.dateSource === "manual"
+                ? "Montants exacts du relevé ; date du règlement déjà saisi conservée."
+                : entry.ota.source === "import"
+                  ? "Montants exacts du relevé. Date de versement fournie par la plateforme ; arrivée bancaire non attestée par le relevé."
+                  : entry.ota.source === "rate"
+                    ? "Commission calculée avec le taux daté enregistré au moment du règlement."
+                    : "Brut et commission renseignés lors de la saisie du règlement.",
+          });
+        }
+        const targetIds = new Set(
+          splits.map((amounts) =>
+            "reservationId" in amounts
+              ? (amounts.reservationId ?? reservation.id)
+              : reservation.id,
+          ),
+        );
+        const weights = components.map((component, i) =>
+          targetIds.has(component.reservationId) &&
+          (entry.ota!.category === "accommodation"
+            ? component.category === "accommodation"
+            : component.category !== "accommodation")
+            ? remaining[i]
+            : 0,
+        );
+        const allocation = allocateCents(
+          Math.min(received, sum(weights)),
+          weights,
+        );
+        allocation.forEach((amount, i) => {
+          remaining[i] -= amount;
+        });
+        continue;
+      }
       // Local platform extras and platform transfers have different scopes in the ledger.
       const preferAccommodation =
         entry.origin === "platform" || entry.method === "Versement plateforme";
@@ -369,6 +429,13 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       if (ledger.requires_review)
         problems.push(
           "Un paiement par carte ou un remboursement reste à vérifier. La date du remboursement n’est pas disponible dans le registre.",
+        );
+      if (
+        entry.method === "Versement plateforme" &&
+        entry.origin !== "platform"
+      )
+        problems.push(
+          "Brut et commission inconnus : importez le relevé de la plateforme pour vérifier cette recette.",
         );
       if (entry.origin === "platform")
         problems.push(
@@ -494,7 +561,9 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       subject: `${row.gestionnaire.prenom} ${row.gestionnaire.nom}`,
       value: cents(Number(row.amount)),
       confirmedAt: row.declared_at.toISOString(),
-      propertyIds: gites.filter((gite) => gite.gestionnaire_id === row.gestionnaire_id).map((gite) => gite.id),
+      propertyIds: gites
+        .filter((gite) => gite.gestionnaire_id === row.gestionnaire_id)
+        .map((gite) => gite.id),
     })),
     ...nightHistory.map((row) => ({
       id: row.id,

@@ -364,8 +364,7 @@ export default function ReportDetail({
               report.dateBasis === "payment",
           ) && (
             <p className="rp-muted">
-              Les encaissements sans date restent à vérifier dans toutes les
-              périodes jusqu’à leur rattachement.
+              Les encaissements sans date sont présentés dans la période du séjour pour être complétés. Ils ne sont pas inclus dans le total. Importez le relevé de plateforme pour renseigner ses versements.
             </p>
           )}
         </section>
@@ -380,6 +379,7 @@ export default function ReportDetail({
           <strong className="rp-total-value">
             {formatReportValue(displayedReport, displayedResult.total)}
           </strong>
+          {displayedReport.kind !== "tourist" && displayedReport.dateBasis === "payment" && <span>Plateformes : {displayedReport.otaAmountBasis === "net" ? "net après commissions" : "brut avant commissions"}</span>}
           <span>
             {displayedReport.kind === "tourist"
               ? "Une personne hébergée pendant une nuit = une nuitée. Les séjours sont répartis entre les mois concernés."
@@ -788,6 +788,11 @@ function OperationDialog({
           <dd>{reportName}</dd>
         </div>
       </dl>
+      {row.ota && <dl className="rp-source-details">
+        <div><dt>Brut plateforme</dt><dd>{formatReportValue({ kind: "custom" }, row.ota.grossCents)}</dd></div>
+        <div><dt>Commission</dt><dd>{formatReportValue({ kind: "custom" }, row.ota.feeCents)}</dd></div>
+        <div><dt>Net plateforme</dt><dd>{formatReportValue({ kind: "custom" }, row.ota.netCents)}</dd></div>
+      </dl>}
       {sourceHref && (
         <Link className="rp-text-button" to={sourceHref}>
           Ouvrir les règlements de la réservation <ReportIcon name="arrow" />

@@ -20,6 +20,7 @@ export const reportDefinitionSchema = z
     propertyIds: z.array(z.string().min(1).max(100)).min(1).max(1000),
     favorite: z.boolean(),
     operatorId: z.string().max(100).nullable().optional(),
+    otaAmountBasis: z.enum(["gross", "net"]).optional(),
   })
   .strict()
   .superRefine((report, ctx) => {

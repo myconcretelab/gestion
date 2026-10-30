@@ -5,6 +5,9 @@ import {
   getReservationPaymentShortcutValue,
   legacyPaymentMethod,
   AUTOMATIC_PAYMENT_PLATFORMS,
+  otaRate,
+  allocateCents,
+  type OtaAmounts,
   type ReservationPaymentEntry,
   type ReservationPaymentTracking,
 } from "@contrats/shared";
@@ -146,9 +149,9 @@ export const loadReservationPaymentTracking = async (
       sum(rows.map((row) => Number(row.frais_optionnels_montant))) +
       (tax?.host_amount || 0);
     const source = getBookingSource(first);
-    const isPlatform = (
-      AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]
-    ).includes(source);
+    const isPlatform =
+      (AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]).includes(source) ||
+      Boolean(settings.platforms?.some((channel) => channel.name === source));
     // Platform stays can acquire local extras after an older contract or card payment.
     const total = isPlatform
       ? cents(rawTotal)
@@ -193,6 +196,15 @@ export const loadReservationPaymentTracking = async (
           note: row.note,
           origin: row.origin === "legacy" ? "legacy" : "manual",
           voided_at: iso(row.voided_at),
+          reservation_id: row.reservation_id,
+          ...(row.ota_details
+            ? {
+                ota: fromJsonString<OtaAmounts>(
+                  row.ota_details,
+                  {} as OtaAmounts,
+                ),
+              }
+            : {}),
         })),
       );
     } else {
@@ -258,6 +270,7 @@ export const loadReservationPaymentTracking = async (
         .filter(
           (entry) =>
             !entry.voided_at &&
+            (!entry.ota || entry.ota.category === "accommodation") &&
             (entry.origin === "legacy" ||
               entry.method === "Versement plateforme" ||
               entry.purpose === "deposit"),
@@ -270,7 +283,8 @@ export const loadReservationPaymentTracking = async (
           (entry) =>
             !entry.voided_at &&
             entry.origin !== "legacy" &&
-            entry.method !== "Versement plateforme" &&
+            (entry.method !== "Versement plateforme" ||
+              Boolean(entry.ota && entry.ota.category !== "accommodation")) &&
             entry.purpose !== "deposit",
         )
         .map((entry) => cents(entry.amount)),
@@ -282,8 +296,30 @@ export const loadReservationPaymentTracking = async (
         actualPlatformReceived -
         Math.max(0, localReceived - localTotal),
     );
-    const automatic = settings.platform_payments_received_automatically;
+    const automatic =
+      settings.platforms?.find((channel) => channel.name === source)
+        ?.automatic ?? settings.platform_payments_received_automatically;
     if (isPlatform && automatic && platformExpected > 0) {
+      const policy = settings.platforms?.find(
+        (channel) => channel.name === source,
+      );
+      const rateDate =
+        policy?.rateDateBasis === "arrival"
+          ? first.date_entree.toISOString().slice(0, 10)
+          : null;
+      const rate = rateDate ? otaRate(policy, rateDate) : undefined;
+      const estimatedGross =
+        policy?.storedPriceBasis === "gross"
+          ? platformExpected
+          : rate && policy?.storedPriceBasis === "net"
+            ? Math.round(platformExpected / (1 - rate.percent / 100))
+            : null;
+      const estimatedFee =
+        estimatedGross !== null && rate
+          ? policy?.storedPriceBasis === "net"
+            ? estimatedGross - platformExpected
+            : Math.round((estimatedGross * rate.percent) / 100)
+          : null;
       entries.push({
         id: `platform-auto-${first.id}`,
         amount: platformExpected / 100,
@@ -293,6 +329,22 @@ export const loadReservationPaymentTracking = async (
         note: `Hébergement considéré reçu automatiquement de ${source}. Les options et la taxe à encaisser sur place restent dues.`,
         origin: "platform",
         voided_at: null,
+        ...(estimatedGross !== null && estimatedFee !== null
+          ? {
+              ota: {
+                channel: source,
+                category: "accommodation" as const,
+                source: "rate" as const,
+                grossCents: estimatedGross,
+                feeCents: estimatedFee,
+                netCents:
+                  policy?.storedPriceBasis === "net"
+                    ? platformExpected
+                    : estimatedGross - estimatedFee,
+                effectiveRate: rate,
+              },
+            }
+          : {}),
       });
     }
     entries.sort(
@@ -308,6 +360,13 @@ export const loadReservationPaymentTracking = async (
     const tracking: ReservationPaymentTracking = {
       first_payment_default: settings.first_payment_default,
       payment_shortcuts: settings.shortcuts,
+      payment_channels: [
+        ...new Set([
+          ...(AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]),
+          ...(settings.platforms?.map((channel) => channel.name) ?? []),
+          "Autre",
+        ]),
+      ],
       managed,
       total: total / 100,
       deposit: deposit / 100,
@@ -411,6 +470,17 @@ const materializeHistory = async (
   });
 };
 
+export async function prepareReservationPaymentImport(id: string, db: Db) {
+  const stay = await lockedStay(id, db);
+  const tracking = await getReservationPaymentTracking(id, db);
+  if (tracking.requires_review)
+    throw ledgerError(
+      "Un paiement ou remboursement reste à vérifier sur ce séjour.",
+    );
+  await materializeHistory(stay, tracking, db);
+  return tracking;
+}
+
 export const syncManagedContractPayments = async (
   reservationId: string,
   db: Db = prisma,
@@ -452,6 +522,9 @@ export type NewRecordedPayment = {
   paid_on: string;
   note?: string | null;
   shortcut_id?: string;
+  channel?: string;
+  category?: OtaAmounts["category"];
+  fee_amount?: number;
 };
 export const addReservationPayment = async (
   id: string,
@@ -469,7 +542,18 @@ export const addReservationPayment = async (
         existing.method !== input.method ||
         existing.purpose !== input.purpose ||
         iso(existing.paid_on)?.slice(0, 10) !== input.paid_on ||
-        (existing.note || null) !== (input.note || null)
+        (existing.note || null) !== (input.note || null) ||
+        (existing.ota_details
+          ? fromJsonString<OtaAmounts>(existing.ota_details, {} as OtaAmounts)
+              .channel
+          : undefined) !== input.channel ||
+        (input.channel &&
+          existing.ota_details &&
+          (fromJsonString<OtaAmounts>(existing.ota_details, {} as OtaAmounts)
+            .category !== (input.category ?? "extras") ||
+            (input.fee_amount !== undefined &&
+              fromJsonString<OtaAmounts>(existing.ota_details, {} as OtaAmounts)
+                .feeCents !== cents(input.fee_amount))))
       ) {
         throw ledgerError(
           "Cette saisie a déjà été utilisée pour un autre règlement.",
@@ -505,6 +589,89 @@ export const addReservationPayment = async (
         "Le règlement dépasse le reste à payer. Actualisez la fiche et vérifiez le montant.",
       );
     await materializeHistory(stay, tracking, tx);
+    let ota: OtaAmounts | undefined;
+    if (input.channel) {
+      if (input.method !== "Versement plateforme")
+        throw ledgerError(
+          "Choisissez le moyen Versement plateforme pour ce canal.",
+          400,
+        );
+      const settings = await readReservationPaymentSettings(tx);
+      const channel = settings.platforms?.find(
+        (channel) => channel.name === input.channel,
+      );
+      const bookingDate = tracking.entries.find(
+        (entry) =>
+          entry.ota?.channel === input.channel && entry.ota?.bookingDate,
+      )?.ota?.bookingDate;
+      const rateDate =
+        channel?.rateDateBasis === "arrival"
+          ? stay.rows[0].date_entree.toISOString().slice(0, 10)
+          : channel?.rateDateBasis === "booking"
+            ? bookingDate
+            : input.paid_on;
+      const rate = rateDate ? otaRate(channel, rateDate) : undefined;
+      if (input.fee_amount === undefined && !rate)
+        throw ledgerError(
+          "Renseignez la commission du règlement (0 si aucune), ou un taux applicable à sa date.",
+          400,
+        );
+      const grossCents = cents(input.amount);
+      const feeCents =
+        input.fee_amount === undefined
+          ? Math.round((grossCents * (rate?.percent ?? 0)) / 100)
+          : cents(input.fee_amount);
+      if (
+        !Number.isSafeInteger(feeCents) ||
+        feeCents < 0 ||
+        feeCents > grossCents
+      )
+        throw ledgerError(
+          "La commission doit être comprise entre zéro et le montant brut.",
+          400,
+        );
+      ota = {
+        channel: input.channel,
+        category: input.category ?? "extras",
+        grossCents,
+        feeCents,
+        netCents: grossCents - feeCents,
+        source: input.fee_amount === undefined && rate ? "rate" : "manual",
+        ...(input.fee_amount === undefined && rate
+          ? { effectiveRate: rate }
+          : {}),
+      };
+    }
+    if (ota && stay.rows.length > 1) {
+      const weights = stay.rows.map((row) =>
+        Math.max(
+          0,
+          Math.round(
+            Number(
+              ota!.category === "accommodation"
+                ? row.prix_total
+                : row.frais_optionnels_montant,
+            ) * 100,
+          ),
+        ),
+      );
+      if (!weights.some(Boolean))
+        throw ledgerError(
+          "Renseignez la prestation dans les logements du séjour avant de saisir ce règlement.",
+          400,
+        );
+      const gross = allocateCents(ota.grossCents, weights);
+      const fees = allocateCents(ota.feeCents, gross);
+      ota.allocations = stay.rows
+        .map((row, i) => ({
+          reservationId: row.id,
+          category: ota!.category,
+          grossCents: gross[i],
+          feeCents: fees[i],
+          netCents: gross[i] - fees[i],
+        }))
+        .filter((row) => row.grossCents > 0);
+    }
     await tx.reservationRecordedPayment.create({
       data: {
         id: input.id,
@@ -514,6 +681,7 @@ export const addReservationPayment = async (
         purpose: input.purpose,
         paid_on: new Date(`${input.paid_on}T12:00:00Z`),
         note: input.note || null,
+        ota_details: ota ? JSON.stringify(ota) : null,
       },
     });
     await syncManagedContractPayments(id, tx);

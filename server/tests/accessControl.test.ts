@@ -186,3 +186,12 @@ test("les rapports exigent les droits de déclaration et d’accès aux montants
   assert.equal(hasBusinessPermission(worker, "declarations:read"), false);
   assert.equal(hasBusinessPermission({ ...worker, pageAccess: ["statistics"], permissions: { ...worker.permissions, canWrite: false } }, "declarations:write"), false);
 });
+
+test("l’import OTA nécessite la modification des réservations en plus des déclarations", () => {
+  for (const path of ["/reports/ota/preview", "/reports/ota/apply"]) {
+    assert.equal(getRequiredBusinessPermission("POST", path), "declarations:write");
+    assert.deepEqual(getAdditionalBusinessPermissions("POST", path, {}), ["reservations:write"]);
+  }
+  assert.deepEqual(getAdditionalBusinessPermissions("GET", "/reports/ota/imports", {}), []);
+  assert.deepEqual(getAdditionalBusinessPermissions("POST", "/reports/commands", {}), []);
+});

@@ -18,6 +18,8 @@ import {
 } from "../../../utils/auth";
 import { apiFetch, isApiError } from "../../../utils/api";
 import { ReportIcon } from "./ReportUi";
+import OtaImportPage from "./OtaImportPage";
+import UndatedPaymentsPage from "./UndatedPaymentsPage";
 import ReportsOverview from "./ReportsOverview";
 import ReportAllocationEditor from "./ReportAllocationEditor";
 import ReportDetail from "./ReportDetail";
@@ -223,6 +225,8 @@ export default function ReportsPage() {
           )}
           <Routes>
             <Route index element={<ReportsOverview workspace={workspace} />} />
+            <Route path="import-airbnb" element={<OtaImportPage workspace={workspace} />} />
+            <Route path="versements-a-dater" element={<UndatedPaymentsPage workspace={workspace} />} />
             <Route
               path="ventiler/:reservationId"
               element={<ReportAllocationEditor workspace={workspace} />}

@@ -27,12 +27,39 @@ const paymentSchema = z
         "Utilisez au plus deux décimales.",
       ),
     method: z.enum(RESERVATION_PAYMENT_METHODS),
-    purpose: z.enum(["deposit", "balance", "payment", "full"]),
+    purpose: z.enum(["deposit", "balance", "payment", "full", "extras"]),
+    channel: z.string().trim().min(1).max(60).optional(),
+    category: z
+      .enum(["accommodation", "cleaning", "linen", "extras", "tourist_tax"])
+      .optional(),
+    fee_amount: z
+      .number()
+      .min(0)
+      .max(10000000)
+      .refine(
+        (value) => Math.abs(value * 100 - Math.round(value * 100)) < 0.00001,
+        "Utilisez au plus deux décimales.",
+      )
+      .optional(),
     paid_on: dateSchema,
     note: z.string().trim().max(500).nullable().optional(),
     shortcut_id: z.string().trim().min(1).max(80).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.category || value.fee_amount !== undefined) && !value.channel)
+      ctx.addIssue({
+        code: "custom",
+        path: ["channel"],
+        message: "Précisez le canal de distribution.",
+      });
+    if (value.channel && value.method !== "Versement plateforme")
+      ctx.addIssue({
+        code: "custom",
+        path: ["method"],
+        message: "Choisissez Versement plateforme pour ce canal.",
+      });
+  });
 router.get<{ id: string }>("/", async (req, res, next) => {
   try {
     res.json(await getReservationPaymentTracking(req.params.id));
