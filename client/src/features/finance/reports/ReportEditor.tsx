@@ -121,6 +121,7 @@ export default function ReportEditor({
       </>
     );
 
+  const fixedDate = draft.kind === "social" || draft.kind === "tourist";
   const update = (patch: Partial<ReportDefinition>) => {
     setError("");
     setDraft(draftKey, { ...draft, ...patch });
@@ -239,417 +240,455 @@ export default function ReportEditor({
         onSubmit={(event) => void publish(event)}
         noValidate
       >
-        <div className="rp-editor-settings">
-          <section className="rp-panel rp-editor-section">
-            <div className="rp-section-title">
-              <span>01</span>
-              <div>
-                <h2>Identification</h2>
+        <div className="rp-editor-layout">
+          <div className="rp-editor-settings">
+            <section className="rp-panel rp-editor-section">
+              <div className="rp-section-title">
+                <span>01</span>
+                <div>
+                  <h2>Identification</h2>
+                </div>
               </div>
-            </div>
-            <label className="rp-field">
-              Nom du rapport
-              <input
-                id="rp-report-name"
-                required
-                maxLength={100}
-                value={draft.name}
-                onChange={(event) => update({ name: event.target.value })}
-                placeholder="Ex. Recettes du propriétaire"
-              />
-            </label>
-            <label className="rp-field">
-              Destinataire ou usage
-              <input
-                id="rp-report-recipient"
-                required
-                maxLength={120}
-                value={draft.recipient}
-                onChange={(event) => update({ recipient: event.target.value })}
-                placeholder="Ex. Propriétaire · Maison du verger"
-              />
-            </label>
-            <label className="rp-field">
-              Description <span className="rp-optional">Facultatif</span>
-              <textarea
-                rows={2}
-                maxLength={350}
-                value={draft.description}
-                onChange={(event) =>
-                  update({ description: event.target.value })
-                }
-              />
-            </label>
-            {!base && (
-              <button
-                type="button"
-                className="rp-text-button"
-                onClick={() => setChoosingTemplate(true)}
-              >
-                Changer de modèle
-              </button>
-            )}
-          </section>
-          <section className="rp-panel rp-editor-section">
-            <div className="rp-section-title">
-              <span>02</span>
-              <div>
-                <h2>Périmètre</h2>
-              </div>
-            </div>
-            {draft.kind === "social" && (
               <label className="rp-field">
-                Exploitant
-                <select
-                  id="rp-report-operator"
-                  value={draft.operatorId ?? ""}
-                  onChange={(event) => {
-                    const operatorId = event.target.value || null;
-                    const operator = state.operators.find(
-                      (row) => row.id === operatorId,
-                    );
-                    update({
-                      operatorId,
-                      recipient: operator?.name ?? draft.recipient,
-                      propertyIds: state.properties
-                        .filter(
-                          (property) =>
-                            !operatorId ||
-                            !property.operatorId ||
-                            property.operatorId === operatorId,
-                        )
-                        .map((property) => property.id),
-                    });
-                  }}
-                >
-                  <option value="">Rattachement à vérifier</option>
-                  {state.operators.map((operator) => (
-                    <option key={operator.id} value={operator.id}>
-                      {operator.name}
-                      {operator.legacy ? " · propriétaire historique" : ""}
-                    </option>
-                  ))}
-                </select>
-                <small>
-                  Le rattachement à l’établissement facturant est utilisé. Un
-                  propriétaire historique reste à confirmer.
-                </small>
+                Nom du rapport
+                <input
+                  id="rp-report-name"
+                  required
+                  maxLength={100}
+                  value={draft.name}
+                  onChange={(event) => update({ name: event.target.value })}
+                  placeholder="Ex. Recettes du propriétaire"
+                />
               </label>
-            )}
-            <fieldset
-              className="rp-choice-fieldset"
-              id="rp-report-properties"
-              tabIndex={-1}
-            >
-              <legend>Logements concernés</legend>
-              <div className="rp-property-choices">
-                {state.properties.map((property) => (
-                  <label
-                    key={property.id}
-                    className={`rp-property-choice${draft.propertyIds.includes(property.id) ? " is-selected" : ""}`}
+              <label className="rp-field">
+                Destinataire ou usage
+                <input
+                  id="rp-report-recipient"
+                  required
+                  maxLength={120}
+                  value={draft.recipient}
+                  onChange={(event) =>
+                    update({ recipient: event.target.value })
+                  }
+                  placeholder="Ex. Propriétaire · Maison du verger"
+                />
+              </label>
+              <label className="rp-field">
+                Description <span className="rp-optional">Facultatif</span>
+                <textarea
+                  rows={2}
+                  maxLength={350}
+                  value={draft.description}
+                  onChange={(event) =>
+                    update({ description: event.target.value })
+                  }
+                />
+              </label>
+              {!base && (
+                <button
+                  type="button"
+                  className="rp-text-button"
+                  onClick={() => setChoosingTemplate(true)}
+                >
+                  Changer de modèle
+                </button>
+              )}
+            </section>
+            <section className="rp-panel rp-editor-section">
+              <div className="rp-section-title">
+                <span>02</span>
+                <div>
+                  <h2>Périmètre</h2>
+                </div>
+              </div>
+              {draft.kind === "social" && (
+                <label className="rp-field">
+                  Exploitant
+                  <select
+                    id="rp-report-operator"
+                    value={draft.operatorId ?? ""}
+                    onChange={(event) => {
+                      const operatorId = event.target.value || null;
+                      const operator = state.operators.find(
+                        (row) => row.id === operatorId,
+                      );
+                      update({
+                        operatorId,
+                        recipient: operator?.name ?? draft.recipient,
+                        propertyIds: state.properties
+                          .filter(
+                            (property) =>
+                              !operatorId ||
+                              !property.operatorId ||
+                              property.operatorId === operatorId,
+                          )
+                          .map((property) => property.id),
+                      });
+                    }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={draft.propertyIds.includes(property.id)}
-                      disabled={
-                        draft.kind === "social" &&
-                        Boolean(draft.operatorId) &&
-                        Boolean(property.operatorId) &&
-                        draft.operatorId !== property.operatorId
-                      }
-                      onChange={(event) =>
-                        update({
-                          propertyIds: event.target.checked
-                            ? [...draft.propertyIds, property.id]
-                            : draft.propertyIds.filter(
-                                (id) => id !== property.id,
-                              ),
-                        })
-                      }
-                    />
-                    <span className="rp-property-initials">
-                      {property.initials}
-                    </span>
-                    <span>{property.name}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset
-              className="rp-choice-fieldset"
-              id="rp-report-categories"
-              tabIndex={-1}
-            >
-              <legend>
-                {draft.kind === "tourist"
-                  ? "Données retenues"
-                  : "Catégories de recettes"}
-              </legend>
-              <div className="rp-category-choices">
-                {REPORT_CATEGORIES.filter(
-                  (category) =>
-                    (draft.kind !== "tourist" ||
-                      category.id === "accommodation") &&
-                    (draft.kind !== "social" || category.id !== "tourist_tax"),
-                ).map((category) => (
-                  <label
-                    key={category.id}
-                    className={
-                      draft.categories.includes(category.id)
-                        ? "is-selected"
-                        : ""
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={draft.categories.includes(category.id)}
-                      onChange={(event) =>
-                        update({
-                          categories: event.target.checked
-                            ? [...draft.categories, category.id]
-                            : draft.categories.filter(
-                                (id) => id !== category.id,
-                              ),
-                        })
-                      }
-                    />
-                    {category.label}
-                  </label>
-                ))}
-              </div>
-              <p className="rp-field-help">
-                {draft.kind === "tourist"
-                  ? "Le rapport compte les personnes hébergées par nuit, y compris les enfants. Il ne calcule pas un montant de taxe."
-                  : "Une même recette peut alimenter plusieurs rapports."}
-              </p>
-            </fieldset>
-          </section>
-          <section className="rp-panel rp-editor-section">
-            <div className="rp-section-title">
-              <span>03</span>
-              <div>
-                <h2>Période et date de référence</h2>
-              </div>
-            </div>
-            <label className="rp-field">
-              Périodicité
-              <select
-                value={draft.cadence}
-                onChange={(event) =>
-                  update({ cadence: event.target.value as ReportCadence })
-                }
+                    <option value="">Rattachement à vérifier</option>
+                    {state.operators.map((operator) => (
+                      <option key={operator.id} value={operator.id}>
+                        {operator.name}
+                        {operator.legacy ? " · propriétaire historique" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    Le rattachement à l’établissement facturant est utilisé. Un
+                    propriétaire historique reste à confirmer.
+                  </small>
+                </label>
+              )}
+              <fieldset
+                className="rp-choice-fieldset"
+                id="rp-report-properties"
+                tabIndex={-1}
               >
-                <option value="monthly">Chaque mois</option>
-                <option value="quarterly">Chaque trimestre</option>
-                <option value="yearly">Chaque année</option>
-              </select>
-            </label>
-            {draft.kind !== "tourist" && draft.dateBasis === "payment" && <label className="rp-field">
-              Base des recettes de plateformes
-              <select aria-label="Base OTA" value={draft.otaAmountBasis ?? "gross"} onChange={event => update({ otaAmountBasis: event.target.value as "gross" | "net" })}>
-                <option value="gross">Brut, avant commissions</option>
-                <option value="net">Net plateforme, après commissions</option>
-              </select>
-              <span className="rp-field-help">Le choix concerne ce rapport. Le net plateforme n’est pas un bénéfice fiscal. Vérifiez la base applicable à votre démarche et à votre régime ; les deux montants restent conservés.</span>
-            </label>}
-            <fieldset className="rp-choice-fieldset">
-              <legend>Quelle date détermine la période ?</legend>
-              <div className="rp-radio-choices">
-                {[
-                  {
-                    id: "payment" as const,
-                    label: "Date du paiement reçu",
-                    text: "L’opération apparaît dans le mois du paiement.",
-                  },
-                  {
-                    id: "stay" as const,
-                    label:
-                      draft.kind === "tourist"
-                        ? "Date des nuitées"
-                        : "Date d’arrivée",
-                    text:
-                      draft.kind === "tourist"
-                        ? "Les nuitées sont réparties dans chaque mois du séjour."
-                        : "Le montant du séjour apparaît dans le mois de l’arrivée.",
-                  },
-                ]
-                  .filter(
-                    (choice) =>
-                      (draft.kind !== "tourist" || choice.id === "stay") &&
-                      (draft.kind !== "social" || choice.id === "payment"),
-                  )
-                  .map((choice) => (
+                <legend>Logements concernés</legend>
+                <div className="rp-property-choices">
+                  {state.properties.map((property) => (
                     <label
-                      key={choice.id}
+                      key={property.id}
+                      className={`rp-property-choice${draft.propertyIds.includes(property.id) ? " is-selected" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={draft.propertyIds.includes(property.id)}
+                        disabled={
+                          draft.kind === "social" &&
+                          Boolean(draft.operatorId) &&
+                          Boolean(property.operatorId) &&
+                          draft.operatorId !== property.operatorId
+                        }
+                        onChange={(event) =>
+                          update({
+                            propertyIds: event.target.checked
+                              ? [...draft.propertyIds, property.id]
+                              : draft.propertyIds.filter(
+                                  (id) => id !== property.id,
+                                ),
+                          })
+                        }
+                      />
+                      <span className="rp-property-initials">
+                        {property.initials}
+                      </span>
+                      <span>{property.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset
+                className="rp-choice-fieldset"
+                id="rp-report-categories"
+                tabIndex={-1}
+              >
+                <legend>
+                  {draft.kind === "tourist"
+                    ? "Données retenues"
+                    : "Catégories de recettes"}
+                </legend>
+                <div className="rp-category-choices">
+                  {REPORT_CATEGORIES.filter(
+                    (category) =>
+                      (draft.kind !== "tourist" ||
+                        category.id === "accommodation") &&
+                      (draft.kind !== "social" ||
+                        category.id !== "tourist_tax"),
+                  ).map((category) => (
+                    <label
+                      key={category.id}
                       className={
-                        draft.dateBasis === choice.id ? "is-selected" : ""
+                        draft.categories.includes(category.id)
+                          ? "is-selected"
+                          : ""
                       }
                     >
                       <input
-                        type="radio"
-                        name="dateBasis"
-                        checked={draft.dateBasis === choice.id}
-                        onChange={() => update({ dateBasis: choice.id })}
+                        type="checkbox"
+                        checked={draft.categories.includes(category.id)}
+                        onChange={(event) =>
+                          update({
+                            categories: event.target.checked
+                              ? [...draft.categories, category.id]
+                              : draft.categories.filter(
+                                  (id) => id !== category.id,
+                                ),
+                          })
+                        }
                       />
-                      <span>
-                        <strong>{choice.label}</strong>
-                        <small>{choice.text}</small>
-                      </span>
+                      {category.label}
                     </label>
                   ))}
-              </div>
-              {draft.kind !== "social" && draft.kind !== "tourist" ? (
-                <div className="rp-date-example">
-                  <strong>
-                    Exemple : paiement le 25 octobre, arrivée le 2 novembre
-                  </strong>
-                  <dl>
-                    <div
-                      className={
-                        draft.dateBasis === "payment" ? "is-selected" : ""
-                      }
-                    >
-                      <dt>Date du paiement reçu</dt>
-                      <dd>Rapport d’octobre</dd>
-                    </div>
-                    <div
-                      className={
-                        draft.dateBasis === "stay" ? "is-selected" : ""
-                      }
-                    >
-                      <dt>Date d’arrivée</dt>
-                      <dd>Rapport de novembre</dd>
-                    </div>
-                  </dl>
-                  <p>
-                    Le choix « Date d’arrivée » rattache le montant prévu du
-                    séjour au mois de l’arrivée. Le choix « Date du paiement
-                    reçu » utilise uniquement les règlements enregistrés.
-                  </p>
                 </div>
-              ) : (
-                <p className="rp-muted">
+                <p className="rp-field-help">
                   {draft.kind === "tourist"
-                    ? "Une nuitée correspond à une personne hébergée pendant une nuit. Les séjours à cheval sur deux mois sont répartis entre ces mois."
-                    : "Chaque règlement est retenu dans la période de son encaissement, indépendamment des dates du séjour."}
+                    ? "Le rapport compte les personnes hébergées par nuit, y compris les enfants. Il ne calcule pas un montant de taxe."
+                    : "Une même recette peut alimenter plusieurs rapports."}
                 </p>
+              </fieldset>
+            </section>
+            <section className="rp-panel rp-editor-section">
+              <div className="rp-section-title">
+                <span>03</span>
+                <div>
+                  <h2>Période et date de référence</h2>
+                </div>
+              </div>
+              <label className="rp-field">
+                Périodicité
+                <select
+                  value={draft.cadence}
+                  onChange={(event) =>
+                    update({ cadence: event.target.value as ReportCadence })
+                  }
+                >
+                  <option value="monthly">Chaque mois</option>
+                  <option value="quarterly">Chaque trimestre</option>
+                  <option value="yearly">Chaque année</option>
+                </select>
+              </label>
+              {draft.kind !== "tourist" && draft.dateBasis === "payment" && (
+                <label className="rp-field">
+                  Base des recettes de plateformes
+                  <select
+                    aria-label="Base OTA"
+                    value={draft.otaAmountBasis ?? "gross"}
+                    onChange={(event) =>
+                      update({
+                        otaAmountBasis: event.target.value as "gross" | "net",
+                      })
+                    }
+                  >
+                    <option value="gross">Brut, avant commissions</option>
+                    <option value="net">
+                      Net plateforme, après commissions
+                    </option>
+                  </select>
+                  <span className="rp-field-help">
+                    Le choix concerne ce rapport. Le net plateforme n’est pas un
+                    bénéfice fiscal. Vérifiez la base applicable à votre
+                    démarche et à votre régime ; les deux montants restent
+                    conservés.
+                  </span>
+                </label>
               )}
-            </fieldset>
-          </section>
-        </div>
-        <aside className="rp-editor-preview" aria-label="Aperçu du rapport">
-          <div className="rp-preview-card">
-            <div className="rp-preview-card__top">
-              <h2>{draft.name || "Rapport"}</h2>
-              <ReportBadge tone="primary">En direct</ReportBadge>
+              <fieldset className="rp-choice-fieldset">
+                <legend>
+                  {fixedDate
+                    ? "Date de référence"
+                    : "Quelle date détermine la période ?"}
+                </legend>
+                {fixedDate ? (
+                  <p className="rp-date-fixed">
+                    <strong>
+                      {draft.kind === "social"
+                        ? "Date du paiement reçu"
+                        : "Date des nuitées"}
+                    </strong>
+                  </p>
+                ) : (
+                  <div className="rp-radio-choices">
+                    {[
+                      {
+                        id: "payment" as const,
+                        label: "Date du paiement reçu",
+                        text: "L’opération apparaît dans le mois du paiement.",
+                      },
+                      {
+                        id: "stay" as const,
+                        label:
+                          draft.kind === "tourist"
+                            ? "Date des nuitées"
+                            : "Date d’arrivée",
+                        text:
+                          draft.kind === "tourist"
+                            ? "Les nuitées sont réparties dans chaque mois du séjour."
+                            : "Le montant du séjour apparaît dans le mois de l’arrivée.",
+                      },
+                    ]
+                      .filter(
+                        (choice) =>
+                          (draft.kind !== "tourist" || choice.id === "stay") &&
+                          (draft.kind !== "social" || choice.id === "payment"),
+                      )
+                      .map((choice) => (
+                        <label
+                          key={choice.id}
+                          className={
+                            draft.dateBasis === choice.id ? "is-selected" : ""
+                          }
+                        >
+                          <input
+                            type="radio"
+                            name="dateBasis"
+                            checked={draft.dateBasis === choice.id}
+                            onChange={() => update({ dateBasis: choice.id })}
+                          />
+                          <span>
+                            <strong>{choice.label}</strong>
+                            <small>{choice.text}</small>
+                          </span>
+                        </label>
+                      ))}
+                  </div>
+                )}
+                {draft.kind !== "social" && draft.kind !== "tourist" ? (
+                  <div className="rp-date-example">
+                    <strong>
+                      Exemple : paiement le 25 octobre, arrivée le 2 novembre
+                    </strong>
+                    <dl>
+                      <div
+                        className={
+                          draft.dateBasis === "payment" ? "is-selected" : ""
+                        }
+                      >
+                        <dt>Date du paiement reçu</dt>
+                        <dd>Rapport d’octobre</dd>
+                      </div>
+                      <div
+                        className={
+                          draft.dateBasis === "stay" ? "is-selected" : ""
+                        }
+                      >
+                        <dt>Date d’arrivée</dt>
+                        <dd>Rapport de novembre</dd>
+                      </div>
+                    </dl>
+                    <p>
+                      Le choix « Date d’arrivée » rattache le montant prévu du
+                      séjour au mois de l’arrivée. Le choix « Date du paiement
+                      reçu » utilise uniquement les règlements enregistrés.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="rp-muted">
+                    {draft.kind === "tourist"
+                      ? "Une nuitée correspond à une personne hébergée pendant une nuit. Les séjours à cheval sur deux mois sont répartis entre ces mois."
+                      : "Ce rapport utilise la période d’encaissement de chaque règlement. Les rapports internes proposent aussi la date d’arrivée du séjour."}
+                  </p>
+                )}
+              </fieldset>
+            </section>
+          </div>
+          <aside className="rp-editor-preview" aria-label="Aperçu du rapport">
+            <div className="rp-preview-card">
+              <div className="rp-preview-card__top">
+                <h2>{draft.name || "Rapport"}</h2>
+                <ReportBadge tone="primary">En direct</ReportBadge>
+              </div>
+              <p className="rp-muted">
+                {getReportPeriod(month, draft.cadence).label} ·{" "}
+                {draft.recipient || "Destinataire"}
+              </p>
+              <div
+                className="rp-preview-value"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {formatReportValue(draft, result.total)}
+              </div>
+              <p className="rp-muted">
+                {result.includedCount} opération
+                {result.includedCount > 1 ? "s" : ""} incluse
+                {result.includedCount > 1 ? "s" : ""}
+                {result.reviewCount
+                  ? ` · ${result.reviewCount} à vérifier`
+                  : ""}
+              </p>
+              <div className="rp-rule-summary">
+                <ReportIcon name="filter" />
+                <p>
+                  {draft.kind === "tourist" ? "Nuitées" : "Recettes"} de{" "}
+                  <strong>
+                    {draft.propertyIds.length} logement
+                    {draft.propertyIds.length > 1 ? "s" : ""}
+                  </strong>
+                  ,{" "}
+                  {draft.dateBasis === "payment"
+                    ? "selon les encaissements"
+                    : "selon le début des séjours"}
+                  , avec{" "}
+                  {draft.categories.length
+                    ? draft.categories
+                        .map(categoryLabel)
+                        .join(", ")
+                        .toLocaleLowerCase("fr")
+                    : "aucune catégorie sélectionnée"}
+                  .
+                </p>
+              </div>
+              <dl className="rp-preview-facts">
+                <div>
+                  <dt>Périodicité</dt>
+                  <dd>{cadenceLabel(draft.cadence)}</dd>
+                </div>
+                <div>
+                  <dt>Hors périmètre</dt>
+                  <dd>
+                    {result.excludedCount} opération
+                    {result.excludedCount > 1 ? "s" : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>À vérifier</dt>
+                  <dd>
+                    {result.reviewCount} opération
+                    {result.reviewCount > 1 ? "s" : ""}
+                  </dd>
+                </div>
+              </dl>
+              <AccommodationBreakdown report={draft} result={result} />
+              {changed && (
+                <div className="rp-impact" aria-live="polite">
+                  <strong>{base ? "Effet du brouillon" : "Sélection"}</strong>
+                  <span>
+                    {additions} opération{additions > 1 ? "s" : ""} ajoutée
+                    {additions > 1 ? "s" : ""}
+                    {removals
+                      ? ` · ${removals} retirée${removals > 1 ? "s" : ""}`
+                      : ""}
+                  </span>
+                  {base && (
+                    <b>
+                      {difference > 0 ? "+" : ""}
+                      {formatReportValue(draft, difference)} sur cette période
+                    </b>
+                  )}
+                </div>
+              )}
+              <details className="rp-preview-lines">
+                <summary>Voir les opérations incluses</summary>
+                {result.rows
+                  .filter((row) => row.status === "included")
+                  .map((row) => (
+                    <div key={row.id}>
+                      <span>
+                        {row.guest}
+                        <small>
+                          {propertyName(row.propertyId)} ·{" "}
+                          {categoryLabel(row.category)}
+                        </small>
+                      </span>
+                      <strong>{formatReportValue(draft, row.value)}</strong>
+                    </div>
+                  ))}
+                {!result.includedCount && (
+                  <p>Aucune opération incluse pour ces choix.</p>
+                )}
+              </details>
             </div>
-            <p className="rp-muted">
-              {getReportPeriod(month, draft.cadence).label} ·{" "}
-              {draft.recipient || "Destinataire"}
-            </p>
-            <div
-              className="rp-preview-value"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {formatReportValue(draft, result.total)}
-            </div>
-            <p className="rp-muted">
-              {result.includedCount} opération
-              {result.includedCount > 1 ? "s" : ""} incluse
-              {result.includedCount > 1 ? "s" : ""}
-              {result.reviewCount ? ` · ${result.reviewCount} à vérifier` : ""}
-            </p>
-            <div className="rp-rule-summary">
-              <ReportIcon name="filter" />
+            <div className="rp-preview-note">
+              <ReportIcon name="info" />
               <p>
-                {draft.kind === "tourist" ? "Nuitées" : "Recettes"} de{" "}
-                <strong>
-                  {draft.propertyIds.length} logement
-                  {draft.propertyIds.length > 1 ? "s" : ""}
-                </strong>
-                ,{" "}
-                {draft.dateBasis === "payment"
-                  ? "selon les encaissements"
-                  : "selon le début des séjours"}
-                , avec{" "}
-                {draft.categories.length
-                  ? draft.categories
-                      .map(categoryLabel)
-                      .join(", ")
-                      .toLocaleLowerCase("fr")
-                  : "aucune catégorie sélectionnée"}
-                .
+                Ces choix s’appliquent au calcul courant. Les copies dont la
+                transmission a été confirmée sont conservées.
               </p>
             </div>
-            <dl className="rp-preview-facts">
-              <div>
-                <dt>Périodicité</dt>
-                <dd>{cadenceLabel(draft.cadence)}</dd>
-              </div>
-              <div>
-                <dt>Hors périmètre</dt>
-                <dd>
-                  {result.excludedCount} opération
-                  {result.excludedCount > 1 ? "s" : ""}
-                </dd>
-              </div>
-              <div>
-                <dt>À vérifier</dt>
-                <dd>
-                  {result.reviewCount} opération
-                  {result.reviewCount > 1 ? "s" : ""}
-                </dd>
-              </div>
-            </dl>
-            <AccommodationBreakdown report={draft} result={result} />
-            {changed && (
-              <div className="rp-impact" aria-live="polite">
-                <strong>{base ? "Effet du brouillon" : "Sélection"}</strong>
-                <span>
-                  {additions} opération{additions > 1 ? "s" : ""} ajoutée
-                  {additions > 1 ? "s" : ""}
-                  {removals
-                    ? ` · ${removals} retirée${removals > 1 ? "s" : ""}`
-                    : ""}
-                </span>
-                {base && (
-                  <b>
-                    {difference > 0 ? "+" : ""}
-                    {formatReportValue(draft, difference)} sur cette période
-                  </b>
-                )}
-              </div>
-            )}
-            <details className="rp-preview-lines">
-              <summary>Voir les opérations incluses</summary>
-              {result.rows
-                .filter((row) => row.status === "included")
-                .map((row) => (
-                  <div key={row.id}>
-                    <span>
-                      {row.guest}
-                      <small>
-                        {propertyName(row.propertyId)} ·{" "}
-                        {categoryLabel(row.category)}
-                      </small>
-                    </span>
-                    <strong>{formatReportValue(draft, row.value)}</strong>
-                  </div>
-                ))}
-              {!result.includedCount && (
-                <p>Aucune opération incluse pour ces choix.</p>
-              )}
-            </details>
-          </div>
-          <div className="rp-preview-note">
-            <ReportIcon name="info" />
-            <p>
-              Ces choix s’appliquent au calcul courant. Les copies dont la
-              transmission a été confirmée sont conservées.
-            </p>
-          </div>
-        </aside>
+          </aside>
+        </div>
         <div className="rp-editor-actions">
           {error && (
             <p className="rp-form-error" role="alert">

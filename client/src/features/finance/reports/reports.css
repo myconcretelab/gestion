@@ -842,6 +842,9 @@
   color: var(--primary);
 }
 .rp-editor {
+  display: block;
+}
+.rp-editor-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(310px, 1fr);
   gap: 25px;
@@ -1024,6 +1027,13 @@
 .rp-radio-choices small {
   display: block;
 }
+.rp-date-fixed {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--chip);
+  font-size: 0.8rem;
+}
 .rp-radio-choices strong {
   font-size: 0.77rem;
   font-weight: 550;
@@ -1033,6 +1043,7 @@
   color: var(--muted);
   margin-top: 3px;
 }
+/* The sticky preview is bounded by the columns, before the action row. */
 .rp-editor-preview {
   position: sticky;
   top: 94px;
@@ -1180,7 +1191,7 @@
   margin-top: 3px;
 }
 .rp-editor-actions {
-  grid-column: 1 / -1;
+  margin-top: 25px;
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -1433,7 +1444,7 @@
   .rp-report-row__identity {
     gap: 10px;
   }
-  .rp-editor {
+  .rp-editor-layout {
     grid-template-columns: minmax(0, 1.2fr) minmax(290px, 1fr);
     gap: 18px;
   }
@@ -1554,7 +1565,7 @@
   }
 }
 @media (max-width: 700px) {
-  .rp-editor {
+  .rp-editor-layout {
     display: flex;
     flex-direction: column;
   }

@@ -545,6 +545,31 @@ try {
       false,
     );
 
+  const editorActionsAccessible = async (page) => {
+    const save = page.getByRole("button", {
+      name: /Appliquer les règles|Créer ce rapport/,
+    });
+    await save.scrollIntoViewIfNeeded();
+    const covered = await save.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      const points = [0.2, 0.5, 0.8].flatMap((x) =>
+        [0.25, 0.5, 0.75].map((y) => [
+          rect.x + rect.width * x,
+          rect.y + rect.height * y,
+        ]),
+      );
+      return points.filter(
+        ([x, y]) => !button.contains(document.elementFromPoint(x, y)),
+      ).length;
+    });
+    assert.equal(
+      covered,
+      0,
+      "Le bouton d’enregistrement doit rester entièrement accessible, sans superposition de l’aperçu.",
+    );
+    await save.click({ trial: true });
+  };
+
   const { page, fixture } = await createPage();
   // Demo state from earlier prototypes is deliberately ignored.
   await page.addInitScript(() =>
@@ -690,7 +715,30 @@ try {
     "Cotisations octobre",
   );
   await noOverflow(page);
+  const socialDate = page.getByRole("group", {
+    name: "Date de référence",
+    exact: true,
+  });
+  assert.equal(await socialDate.getByRole("radio").count(), 0);
+  assert.ok(
+    await socialDate
+      .getByText("Date du paiement reçu", { exact: true })
+      .isVisible(),
+  );
   await capture(page, "reports-editor-desktop.png");
+  for (const [width, height] of [
+    [1440, 900],
+    [1100, 700],
+    [900, 600],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await editorActionsAccessible(page);
+    await page.screenshot({
+      path: path.join(screenshots, `reports-editor-actions-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
   fixture.failMutation = 1;
   await page.getByRole("button", { name: /Appliquer les règles/ }).click();
   await page
@@ -738,6 +786,22 @@ try {
 
   await open(page, "/nouveau");
   await page.getByRole("button", { name: /Rapport personnalisé/ }).click();
+  const dateChoices = page.getByRole("group", {
+    name: "Quelle date détermine la période ?",
+    exact: true,
+  });
+  assert.equal(await dateChoices.getByRole("radio").count(), 2);
+  await dateChoices.getByRole("radio", { name: /^Date d’arrivée/ }).check();
+  assert.ok(
+    await dateChoices
+      .getByRole("radio", { name: /^Date d’arrivée/ })
+      .isChecked(),
+  );
+  assert.equal(await page.getByLabel("Base OTA", { exact: true }).count(), 0);
+  await dateChoices
+    .getByRole("radio", { name: /^Date du paiement reçu/ })
+    .check();
+  assert.ok(await page.getByLabel("Base OTA", { exact: true }).isVisible());
   await page.getByLabel("Nom du rapport", { exact: true }).fill("Suivi annuel");
   await page
     .getByLabel("Destinataire ou usage", { exact: true })
@@ -752,6 +816,18 @@ try {
     "Suivi annuel",
   );
 
+  const { page: nightsEditor } = await createPage();
+  await open(nightsEditor, "/nouveau");
+  await nightsEditor.getByRole("button", { name: /^Nuitées/ }).click();
+  const nightsDate = nightsEditor.getByRole("group", {
+    name: "Date de référence",
+    exact: true,
+  });
+  assert.equal(await nightsDate.getByRole("radio").count(), 0);
+  assert.ok(
+    await nightsDate.getByText("Date des nuitées", { exact: true }).isVisible(),
+  );
+
   for (const width of [360, 390, 768]) {
     await page.setViewportSize({ width, height: 844 });
     await open(page, "/social/modifier");
@@ -759,7 +835,17 @@ try {
       .getByRole("heading", { name: "Réglages", exact: true })
       .waitFor();
     await noOverflow(page);
-    if (width === 390) await capture(page, "reports-editor-mobile.png");
+    await editorActionsAccessible(page);
+    if (width === 390) {
+      await page.getByRole("button", { name: /^Aperçu ·/ }).click();
+      await editorActionsAccessible(page);
+      await page.screenshot({
+        path: path.join(screenshots, "reports-editor-actions-mobile.png"),
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "Réglages", exact: true }).click();
+      await capture(page, "reports-editor-mobile.png");
+    }
   }
   const { page: readonly } = await createPage({ canWrite: false });
   await open(readonly, "/owner");
