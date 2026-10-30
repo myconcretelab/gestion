@@ -31,6 +31,7 @@ const importBody = z
               ])
               .optional(),
             paymentId: z.string().max(100).optional(),
+            regularizeOneCent: z.boolean().optional(),
           })
           .strict(),
       )

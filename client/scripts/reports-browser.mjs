@@ -12,6 +12,7 @@ import {
   reportMutationSchema,
   buildReportReminders,
   parseAirbnbCsv,
+  findOtaRoundingAdjustment,
   DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
 } from "@contrats/shared";
 import { airbnbFixture } from "../../packages/shared/dist/tests/fixtures/airbnb.js";
@@ -170,6 +171,8 @@ try {
       reminderReads: 0,
       failReminders: false,
       otaImported: false,
+      otaStoredAmountCents: 8500,
+      otaApplyInputs: [],
       otaFailApply: 0,
       otaApplies: 0,
       otaHistory: [],
@@ -233,8 +236,23 @@ try {
             ...row,
             reservationId: row.type === "payout" ? null : "reservation-a",
             reservationLabel: "Client Test · Maison du verger",
-            existingAmountCents: 8500,
-            suggestedBasis: row.type === "reservation" ? "net" : null,
+            existingAmountCents: fixture.otaStoredAmountCents,
+            suggestedBasis:
+              row.type === "reservation"
+                ? fixture.otaStoredAmountCents === row.netCents
+                  ? "net"
+                  : fixture.otaStoredAmountCents === row.grossCents
+                    ? "gross"
+                    : null
+                : null,
+            roundingAdjustment:
+              row.type === "reservation" && !fixture.otaImported
+                ? findOtaRoundingAdjustment(
+                    fixture.otaStoredAmountCents,
+                    row.grossCents,
+                    row.netCents,
+                  )
+                : null,
             status: fixture.otaImported ? "imported" : "new",
             warning:
               row.type === "resolution"
@@ -245,6 +263,7 @@ try {
             {
               id: "reservation-a",
               label: "Client Test · Maison du verger",
+              amountCents: fixture.otaStoredAmountCents,
               payments: [],
             },
           ],
@@ -264,6 +283,7 @@ try {
           body = { error: "Import indisponible" };
         } else {
           const input = request.postDataJSON();
+          fixture.otaApplyInputs.push(input);
           assert.equal(input.fingerprint, "a".repeat(64));
           const rows = parseAirbnbCsv(input.content);
           fixture.state.operations = rows
@@ -300,10 +320,29 @@ try {
               fileName: input.fileName,
               createdAt: "2026-10-31T12:00:00Z",
               rows: 3,
+              regularized: input.choices.filter(
+                (choice) => choice.regularizeOneCent,
+              ).length,
+              roundingAdjustments: input.choices
+                .filter((choice) => choice.regularizeOneCent)
+                .map((choice) => ({
+                  ...findOtaRoundingAdjustment(
+                    fixture.otaStoredAmountCents,
+                    10000,
+                    8500,
+                  ),
+                  reservationId: choice.reservationId,
+                  reservationLabel: "Client Test · Maison du verger",
+                })),
               totals: { netCents: 10000 },
             },
           ];
-          body = { added: 3 };
+          body = {
+            added: 3,
+            regularized: input.choices.filter(
+              (choice) => choice.regularizeOneCent,
+            ).length,
+          };
         }
       } else if (pathname === "/api/reservations/prefill/reservation-extra")
         body = {
@@ -1082,6 +1121,7 @@ try {
     assert.equal(await hidden.locator(".reservation-declarations").count(), 0);
   }
   const { page: otaPage, fixture: otaFixture } = await createPage();
+  otaFixture.otaStoredAmountCents = 8501;
   otaFixture.state.reports = [
     { ...otaFixture.state.reports[0], propertyIds: ["g1"] },
   ];
@@ -1104,6 +1144,37 @@ try {
   await otaPage
     .getByLabel("Catégorie ligne 4", { exact: true })
     .selectOption("linen");
+  const roundingOption = otaPage.getByRole("checkbox", {
+    name: /^Régulariser automatiquement les écarts de 0,01/,
+  });
+  assert.equal(await roundingOption.isChecked(), false);
+  const importButton = otaPage.getByRole("button", {
+    name: "Confirmer l’import",
+    exact: true,
+  });
+  assert.equal(await importButton.isDisabled(), true);
+  await otaPage
+    .getByLabel("Montant suivi ligne 3", { exact: true })
+    .selectOption("net");
+  await roundingOption.check();
+  assert.equal(
+    await otaPage
+      .getByLabel("Montant suivi ligne 3", { exact: true })
+      .inputValue(),
+    "net",
+  );
+  assert.equal(await otaPage.locator(".ota-rounding-note").count(), 0);
+  await otaPage
+    .getByLabel("Montant suivi ligne 3", { exact: true })
+    .selectOption("");
+  assert.equal(await importButton.isDisabled(), false);
+  assert.match(
+    await otaPage.locator(".ota-rounding-note").innerText(),
+    /\+0,01/,
+  );
+  await roundingOption.uncheck();
+  assert.equal(await importButton.isDisabled(), true);
+  await roundingOption.check();
   await noOverflow(otaPage);
   await capture(otaPage, "ota-import-desktop.png");
   for (const width of [360, 390, 768]) {
@@ -1125,6 +1196,16 @@ try {
     .click();
   await otaPage.getByText(/Import enregistré : 3 lignes/).waitFor();
   assert.equal(otaFixture.otaApplies, 2);
+  const rounded = otaFixture.otaApplyInputs
+    .at(-1)
+    .choices.find((choice) => choice.regularizeOneCent);
+  assert.equal(rounded.settlementBasis, "reservation");
+  assert.equal(rounded.reservationId, "reservation-a");
+  await otaPage
+    .getByText("1 écart d’arrondi régularisé", { exact: true })
+    .click();
+  assert.match(await otaPage.locator(".ota-history").innerText(), /85,01/);
+
   await open(otaPage, "/social");
   assert.match(await total(otaPage), /115,00/);
   await open(otaPage, "/social/modifier");
@@ -1151,6 +1232,30 @@ try {
     true,
   );
   assert.equal(await otaPage.getByText(/Déjà importé/).count(), 2);
+  const { page: largerGap, fixture: largerFixture } = await createPage();
+  largerFixture.otaStoredAmountCents = 8502;
+  await open(largerGap, "/import-airbnb");
+  await largerGap
+    .getByLabel("Relevé Airbnb", { exact: true })
+    .setInputFiles({
+      name: "ecart.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(airbnbFixture()),
+    });
+  await largerGap.getByRole("region", { name: "Aperçu de l’import" }).waitFor();
+  assert.equal(
+    await largerGap
+      .getByRole("checkbox", { name: /^Régulariser automatiquement/ })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await largerGap
+      .getByRole("button", { name: "Confirmer l’import", exact: true })
+      .isDisabled(),
+    true,
+  );
+
   await otaPage.goto(`${origin}/reservations/reservation-extra/reglements`);
   await otaPage
     .getByRole("heading", { name: "Règlements de la réservation", exact: true })

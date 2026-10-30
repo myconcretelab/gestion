@@ -112,3 +112,37 @@ test("le choix brut/net appartient au rapport, sans modifier le règlement ni un
     true,
   );
 });
+
+test("arrondis OTA : un seul centime, dans les deux sens, avec une base non ambiguë", async () => {
+  const { findOtaRoundingAdjustment: rounding } =
+    await import("../src/index.js");
+  for (const [recorded, basis, reference] of [
+    [8501, "net", 8500],
+    [8499, "net", 8500],
+    [10001, "gross", 10000],
+    [9999, "gross", 10000],
+  ] as const) {
+    assert.deepEqual(rounding(recorded, 10000, 8500), {
+      basis,
+      sourceAmountCents: reference,
+      recordedAmountCents: recorded,
+      adjustmentCents: recorded - reference,
+    });
+  }
+  assert.equal(rounding(8501, 8500, 8500)?.basis, "net");
+  for (const recorded of [
+    8500,
+    10000,
+    8502,
+    8498,
+    10002,
+    9998,
+    0,
+    -1,
+    8500.5,
+    NaN,
+  ])
+    assert.equal(rounding(recorded, 10000, 8500), null);
+  assert.equal(rounding(8501, 8502, 8500), null); // One cent from both different bases.
+  assert.equal(rounding(1, 10000, 0), null);
+});

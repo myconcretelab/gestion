@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   parseAirbnbCsv,
+  findOtaRoundingAdjustment,
+  type OtaSettlementAdjustment,
   allocateCents,
   type AirbnbRow,
   type OtaAmounts,
@@ -147,6 +149,18 @@ async function preview(content: string, db: TenantTransactionClient) {
         reservationLabel: match ? label(match) : "À rattacher",
         existingAmountCents: currentAmount,
         suggestedBasis,
+        roundingAdjustment:
+          row.type === "reservation" &&
+          !saved &&
+          match &&
+          datesMatch(match, row) &&
+          currentAmount !== null
+            ? findOtaRoundingAdjustment(
+                currentAmount,
+                row.grossCents,
+                row.netCents,
+              )
+            : null,
         status: saved
           ? saved.source_hash === rowHash(row) &&
             !saved.recorded_payment?.voided_at
@@ -247,6 +261,14 @@ export async function applyOtaImport(
           );
         const importId = randomUUID();
         let added = 0;
+        const roundingAdjustments: Array<
+          OtaSettlementAdjustment & {
+            key: string;
+            reservationId: string;
+            reservationLabel: string;
+            paymentId: string;
+          }
+        > = [];
         for (const row of rows) {
           const info = result.rows.find((info) => info.key === row.key)!;
           if (info.status === "imported") continue;
@@ -310,6 +332,25 @@ export async function applyOtaImport(
                   ) - Number(related[0].remise_montant)) * 100,
               ),
             );
+            const roundingAdjustment = choice?.regularizeOneCent
+              ? findOtaRoundingAdjustment(
+                  currentAmount,
+                  row.grossCents,
+                  row.netCents,
+                )
+              : null;
+            if (
+              choice?.regularizeOneCent &&
+              (row.type !== "reservation" ||
+                choice.settlementBasis !== "reservation" ||
+                info.reservationId !== reservation.id ||
+                !info.roundingAdjustment ||
+                !roundingAdjustment)
+            )
+              throw fail(
+                `Ligne ${row.row} : la régularisation automatique exige un rapprochement confirmé et un écart d’arrondi de 0,01 € avec le brut ou le net.`,
+                400,
+              );
             const amount =
               basis === "reservation"
                 ? currentAmount
@@ -387,6 +428,9 @@ export async function applyOtaImport(
               source: "import",
               reference: row.payoutReference,
               ...(row.bookingDate ? { bookingDate: row.bookingDate } : {}),
+              ...(roundingAdjustment
+                ? { settlementAdjustment: roundingAdjustment }
+                : {}),
             };
             if (
               related.length > 1 ||
@@ -443,12 +487,24 @@ export async function applyOtaImport(
               method: "Versement plateforme",
               purpose: category === "accommodation" ? "full" : "extras",
               paid_on: atNoon(row.date),
-              note: `Import Airbnb · ${row.payoutReference} · date de versement plateforme`,
+              note:
+                `Import Airbnb · ${row.payoutReference} · date de versement plateforme` +
+                (roundingAdjustment
+                  ? ` · Écart d’arrondi du suivi : ${roundingAdjustment.adjustmentCents > 0 ? "+" : ""}${(roundingAdjustment.adjustmentCents / 100).toFixed(2).replace(".", ",")} € par rapport au ${roundingAdjustment.basis === "net" ? "net" : "brut"}`
+                  : ""),
               ota_details: JSON.stringify(ota),
             };
             if (choice?.paymentId && choice.paymentId !== "new") {
               const existing = matchedPayment;
-              if (!existing || existing.amount_cents !== amount)
+              if (
+                !existing ||
+                (existing.amount_cents !== amount &&
+                  !(
+                    roundingAdjustment &&
+                    existing.amount_cents ===
+                      roundingAdjustment.sourceAmountCents
+                  ))
+              )
                 throw fail(
                   `Ligne ${row.row} : le règlement à rapprocher est absent ou son montant diffère.`,
                   400,
@@ -477,6 +533,14 @@ export async function applyOtaImport(
               });
             }
             await syncManagedContractPayments(reservation.id, db);
+            if (roundingAdjustment && paymentId)
+              roundingAdjustments.push({
+                ...roundingAdjustment,
+                key: row.key,
+                reservationId: reservation.id,
+                reservationLabel: info.reservationLabel,
+                paymentId,
+              });
           }
           await db.otaTransaction.create({
             data: {
@@ -513,10 +577,17 @@ export async function applyOtaImport(
                 fileName: input.fileName,
                 rows: added,
                 totals: result.totals,
+                regularized: roundingAdjustments.length,
+                roundingAdjustments,
               }),
             },
           });
-        return { importId, added, alreadyImported: rows.length - added };
+        return {
+          importId,
+          added,
+          alreadyImported: rows.length - added,
+          regularized: roundingAdjustments.length,
+        };
       },
       { isolationLevel: "Serializable", timeout: 60000 },
     );

@@ -1230,3 +1230,292 @@ test("import OTA : mêmes références isolées par organisation et rattachement
     });
     assert.equal(await db.default.otaTransaction.count(), 2);
   }));
+
+test("import OTA : régularisation explicite d’un centime, prix et relevé conservés, audit et réimport", async () => {
+  for (const [price, basis, sourceAmount, delta] of [
+    [85.01, "net", 8500, 1],
+    [84.99, "net", 8500, -1],
+    [100.01, "gross", 10000, 1],
+    [99.99, "gross", 10000, -1],
+  ] as const) {
+    await fixture(async ({ gite }) => {
+      const reservation = await stay(gite, {
+        prix_total: price,
+        booking_source: "Airbnb",
+        origin_reference: "listing|HM12345678",
+      });
+      const content = airbnbFixture({}, { resolution: false });
+      const preview = await otaImport.previewOtaImport(content);
+      const row = preview.rows[1];
+      assert.equal(row.suggestedBasis, null);
+      assert.equal(row.roundingAdjustment?.basis, basis);
+      assert.equal(row.roundingAdjustment?.adjustmentCents, delta);
+      await assert.rejects(
+        otaImport.applyOtaImport({
+          content,
+          fileName: "arrondi.csv",
+          fingerprint: preview.fingerprint,
+          choices: [],
+        }),
+        /choisissez le montant/,
+      );
+      const choice = {
+        key: row.key,
+        reservationId: reservation.id,
+        settlementBasis: "reservation" as const,
+        regularizeOneCent: true,
+      };
+      const applied = await otaImport.applyOtaImport({
+        content,
+        fileName: "arrondi.csv",
+        fingerprint: preview.fingerprint,
+        choices: [choice],
+      });
+      assert.equal(applied.regularized, 1);
+      const tracking = await ledger.getReservationPaymentTracking(
+        reservation.id,
+      );
+      assert.equal(tracking.remaining, 0);
+      assert.equal(tracking.overpaid, 0);
+      assert.equal(tracking.received, price);
+      const receipt = tracking.entries.find((entry) => entry.ota)!;
+      assert.deepEqual(receipt.ota?.settlementAdjustment, {
+        basis,
+        sourceAmountCents: sourceAmount,
+        recordedAmountCents: Math.round(price * 100),
+        adjustmentCents: delta,
+      });
+      assert.match(receipt.note!, /Écart d’arrondi/);
+      assert.equal(
+        (
+          await db.default.reservation.findUniqueOrThrow({
+            where: { id: reservation.id },
+          })
+        ).prix_total,
+        price,
+      );
+      const state = await reports.getReportWorkspace();
+      assert.equal(result(state).total, 10000);
+      assert.equal(
+        result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
+          .total,
+        8500,
+      );
+      const history = await otaImport.listOtaImports();
+      assert.equal(history[0].regularized, 1);
+      const adjustments = history[0].roundingAdjustments as Array<{
+        adjustmentCents: number;
+        reservationId: string;
+      }>;
+      assert.equal(adjustments[0].adjustmentCents, delta);
+      assert.equal(adjustments[0].reservationId, reservation.id);
+      const again = await otaImport.previewOtaImport(content);
+      assert.equal(again.rows[1].roundingAdjustment, null);
+      const reapplied = await otaImport.applyOtaImport({
+        content,
+        fileName: "arrondi.csv",
+        fingerprint: again.fingerprint,
+        choices: [choice],
+      });
+      assert.equal(reapplied.added, 0);
+      assert.equal(reapplied.regularized, 0);
+      assert.equal(await db.default.reservationRecordedPayment.count(), 1);
+    });
+  }
+});
+
+test("import OTA : le serveur refuse une régularisation forcée hors tolérance ou avec des dates différentes", async () => {
+  for (const patch of [
+    { prix_total: 85.02 },
+    { prix_total: 85.01, date_entree: new Date("2026-10-29") },
+  ]) {
+    await fixture(async ({ gite }) => {
+      const reservation = await stay(gite, {
+        booking_source: "Airbnb",
+        origin_reference: "listing|HM12345678",
+        ...patch,
+      });
+      const content = airbnbFixture({}, { resolution: false });
+      const preview = await otaImport.previewOtaImport(content);
+      assert.equal(preview.rows[1].roundingAdjustment, null);
+      await assert.rejects(
+        otaImport.applyOtaImport({
+          content,
+          fileName: "invalide.csv",
+          fingerprint: preview.fingerprint,
+          choices: [
+            {
+              key: preview.rows[1].key,
+              reservationId: reservation.id,
+              settlementBasis: "reservation",
+              regularizeOneCent: true,
+            },
+          ],
+        }),
+        /régularisation automatique/,
+      );
+      assert.equal(await db.default.otaTransaction.count(), 0);
+      assert.equal(await db.default.reservationRecordedPayment.count(), 0);
+    });
+  }
+});
+
+test("import OTA : l’arrondi ne contourne pas un règlement existant ni une révision périmée", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      prix_total: 85.01,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: false,
+    });
+    await pay(reservation.id, 85.01, { method: "Versement plateforme" });
+    const content = airbnbFixture({}, { resolution: false });
+    const preview = await otaImport.previewOtaImport(content);
+    const choice = {
+      key: preview.rows[1].key,
+      reservationId: reservation.id,
+      settlementBasis: "reservation" as const,
+      regularizeOneCent: true,
+    };
+    await assert.rejects(
+      otaImport.applyOtaImport({
+        content,
+        fileName: "doublon.csv",
+        fingerprint: preview.fingerprint,
+        choices: [choice],
+      }),
+      /doublon|déjà saisi/,
+    );
+    assert.equal(await db.default.otaTransaction.count(), 0);
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: { prix_total: 85.02 },
+    });
+    await assert.rejects(
+      otaImport.applyOtaImport({
+        content,
+        fileName: "perime.csv",
+        fingerprint: preview.fingerprint,
+        choices: [choice],
+      }),
+      /changé/,
+    );
+  }));
+
+test("import OTA : un centime régularisé sur un séjour groupé conserve les totaux de chaque base", () =>
+  fixture(async ({ gite }) => {
+    const {
+      id: _id,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      ...fields
+    } = await db.default.gite.findUniqueOrThrow({ where: { id: gite } });
+    const second = await db.default.gite.create({
+      data: { ...fields, nom: "Second logement", prefixe_contrat: "R2" },
+    });
+    const group = randomUUID();
+    const first = await stay(gite, {
+      stay_group_id: group,
+      prix_total: 34,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    await stay(second.id, {
+      stay_group_id: group,
+      prix_total: 51.01,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    const content = airbnbFixture({}, { resolution: false });
+    const preview = await otaImport.previewOtaImport(content);
+    const row = preview.rows[1];
+    assert.equal(row.roundingAdjustment?.adjustmentCents, 1);
+    const applied = await otaImport.applyOtaImport({
+      content,
+      fileName: "groupe.csv",
+      fingerprint: preview.fingerprint,
+      choices: [
+        {
+          key: row.key,
+          reservationId: row.reservationId!,
+          settlementBasis: "reservation",
+          regularizeOneCent: true,
+        },
+      ],
+    });
+    assert.equal(applied.regularized, 1);
+    const tracking = await ledger.getReservationPaymentTracking(first.id);
+    assert.equal(tracking.remaining, 0);
+    assert.equal(tracking.received, 85.01);
+    const allocations = tracking.entries.find((entry) => entry.ota)?.ota
+      ?.allocations!;
+    assert.equal(
+      allocations.reduce((sum, allocation) => sum + allocation.grossCents, 0),
+      10000,
+    );
+    assert.equal(
+      allocations.reduce((sum, allocation) => sum + allocation.netCents, 0),
+      8500,
+    );
+    const state = await reports.getReportWorkspace();
+    assert.equal(result(state).total, 10000);
+    assert.equal(
+      result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
+        .total,
+      8500,
+    );
+    assert.equal(await db.default.reservationRecordedPayment.count(), 1);
+  }));
+
+test("import OTA : un règlement existant rapproché explicitement peut solder son centime sans doublon ni changement de date", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      prix_total: 85.01,
+      booking_source: "Airbnb",
+      origin_reference: "listing|HM12345678",
+    });
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: false,
+    });
+    await pay(reservation.id, 85, {
+      method: "Versement plateforme",
+      paid_on: "2026-10-02",
+    });
+    const existing =
+      await db.default.reservationRecordedPayment.findFirstOrThrow();
+    const content = airbnbFixture({}, { resolution: false });
+    const preview = await otaImport.previewOtaImport(content);
+    await otaImport.applyOtaImport({
+      content,
+      fileName: "rapprochement.csv",
+      fingerprint: preview.fingerprint,
+      choices: [
+        {
+          key: preview.rows[1].key,
+          reservationId: reservation.id,
+          settlementBasis: "reservation",
+          regularizeOneCent: true,
+          paymentId: existing.id,
+        },
+      ],
+    });
+    const updated =
+      await db.default.reservationRecordedPayment.findUniqueOrThrow({
+        where: { id: existing.id },
+      });
+    assert.equal(updated.amount_cents, 8501);
+    assert.equal(updated.paid_on?.toISOString().slice(0, 10), "2026-10-02");
+    assert.equal(await db.default.reservationRecordedPayment.count(), 1);
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(reservation.id)).remaining,
+      0,
+    );
+    const state = await reports.getReportWorkspace();
+    assert.equal(
+      result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
+        .total,
+      8500,
+    );
+  }));

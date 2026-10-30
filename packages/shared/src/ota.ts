@@ -39,6 +39,45 @@ export function otaRate(channel: OtaChannel | undefined, day: string) {
     .filter((rate) => rate.effectiveFrom <= day)
     .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0];
 }
+export type OtaSettlementAdjustment = {
+  basis: "net" | "gross";
+  sourceAmountCents: number;
+  recordedAmountCents: number;
+  adjustmentCents: number;
+};
+/** Only a unique one-cent rounding gap is eligible; source amounts stay exact. */
+export function findOtaRoundingAdjustment(
+  recordedAmountCents: number,
+  grossCents: number,
+  netCents: number,
+): OtaSettlementAdjustment | null {
+  if (
+    ![recordedAmountCents, grossCents, netCents].every(
+      (value) => Number.isSafeInteger(value) && value > 0,
+    ) ||
+    recordedAmountCents === grossCents ||
+    recordedAmountCents === netCents
+  )
+    return null;
+  const candidates = (
+    [
+      { basis: "net", amount: netCents },
+      { basis: "gross", amount: grossCents },
+    ] as const
+  ).filter((item) => Math.abs(recordedAmountCents - item.amount) === 1);
+  if (
+    !candidates.length ||
+    new Set(candidates.map((item) => item.amount)).size !== 1
+  )
+    return null;
+  const candidate = candidates[0];
+  return {
+    basis: candidate.basis,
+    sourceAmountCents: candidate.amount,
+    recordedAmountCents,
+    adjustmentCents: recordedAmountCents - candidate.amount,
+  };
+}
 export type OtaAmounts = {
   channel: string;
   grossCents: number;
@@ -48,6 +87,7 @@ export type OtaAmounts = {
   source: "import" | "manual" | "rate";
   reference?: string;
   bookingDate?: string;
+  settlementAdjustment?: OtaSettlementAdjustment;
   dateSource?: "platform" | "manual";
   effectiveRate?: { effectiveFrom: string; percent: number };
   allocations?: Array<{
@@ -244,6 +284,7 @@ export type OtaImportChoice = {
   key: string;
   reservationId: string;
   settlementBasis?: "net" | "gross" | "reservation";
+  regularizeOneCent?: boolean;
   category?: OtaAmounts["category"];
   paymentId?: string;
 };
@@ -255,6 +296,7 @@ export type OtaImportPreview = {
       reservationLabel: string;
       existingAmountCents: number | null;
       suggestedBasis: "net" | "gross" | null;
+      roundingAdjustment?: OtaSettlementAdjustment | null;
       status: "new" | "imported" | "conflict";
       warning: string | null;
     }

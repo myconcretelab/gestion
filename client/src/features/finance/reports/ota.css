@@ -266,3 +266,47 @@
     max-width: 100%;
   }
 }
+
+.ota-rounding {
+  margin: 20px 24px;
+  padding: 16px;
+  border: 1px solid var(--primary-strong);
+  border-radius: 12px;
+  background: var(--primary-soft);
+}
+.ota-rounding label {
+  min-height: 44px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ota-rounding input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+}
+.ota-rounding p {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.ota-match > .ota-rounding-note {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.ota-history summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.ota-history details p {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  font-size: 0.8rem;
+}

@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
-import type { OtaImportChoice, OtaImportPreview } from "@contrats/shared";
+import type {
+  OtaImportChoice,
+  OtaImportPreview,
+  OtaSettlementAdjustment,
+} from "@contrats/shared";
 import { REPORT_CATEGORIES } from "@contrats/shared";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../../../utils/api";
-import { canCurrentUserWritePage } from "../../../utils/auth";
+import {
+  canCurrentUserWritePage,
+  canCurrentUserAccessPage,
+} from "../../../utils/auth";
 import { formatEuro, formatDate } from "../../../utils/format";
 import type { ReportWorkspace } from "./ReportsPage";
 import ReportPageHeader from "./ReportPageHeader";
@@ -14,6 +21,13 @@ type ImportHistory = {
   createdAt: string;
   fileName: string;
   rows: number;
+  regularized?: number;
+  roundingAdjustments?: Array<
+    OtaSettlementAdjustment & {
+      reservationId: string;
+      reservationLabel?: string;
+    }
+  >;
   totals: OtaImportPreview["totals"];
 };
 export default function OtaImportPage({
@@ -28,6 +42,7 @@ export default function OtaImportPage({
     Record<string, string>
   >({});
   const [editingRows, setEditingRows] = useState<Record<string, boolean>>({});
+  const [autoRegularize, setAutoRegularize] = useState(false);
   const [choices, setChoices] = useState<Record<string, OtaImportChoice>>({});
   const [history, setHistory] = useState<ImportHistory[]>([]);
   const [busy, setBusy] = useState(false);
@@ -53,6 +68,7 @@ export default function OtaImportPage({
     setNotice("");
     setPreview(null);
     setChoices({});
+    setAutoRegularize(false);
     setEditingRows({});
     setReservationSearch({});
     try {
@@ -87,12 +103,31 @@ export default function OtaImportPage({
     preview?.rows.filter(
       (row) => row.type !== "payout" && row.status === "new",
     ) ?? [];
+  const effectiveChoices: Record<string, OtaImportChoice> = Object.fromEntries(
+    Object.entries(choices).map(([key, choice]) => {
+      const row = pending.find((row) => row.key === key);
+      return [
+        key,
+        autoRegularize &&
+        row?.roundingAdjustment &&
+        row.reservationId === choice.reservationId &&
+        !choice.settlementBasis
+          ? {
+              ...choice,
+              settlementBasis: "reservation",
+              regularizeOneCent: true,
+            }
+          : choice,
+      ];
+    }),
+  );
+  const roundingCandidates = pending.filter((row) => row.roundingAdjustment);
   const incomplete = pending.some(
     (row) =>
-      !choices[row.key]?.reservationId ||
+      !effectiveChoices[row.key]?.reservationId ||
       (row.type === "resolution"
-        ? !choices[row.key]?.category
-        : !choices[row.key]?.settlementBasis),
+        ? !effectiveChoices[row.key]?.category
+        : !effectiveChoices[row.key]?.settlementBasis),
   );
   const change = (key: string, patch: Partial<OtaImportChoice>) =>
     setChoices((previous) => ({
@@ -104,18 +139,21 @@ export default function OtaImportPage({
     setBusy(true);
     setError("");
     try {
-      const result = await apiFetch<{ added: number }>("/reports/ota/apply", {
-        method: "POST",
-        json: {
-          content,
-          fileName,
-          fingerprint: preview.fingerprint,
-          choices: Object.values(choices),
+      const result = await apiFetch<{ added: number; regularized?: number }>(
+        "/reports/ota/apply",
+        {
+          method: "POST",
+          json: {
+            content,
+            fileName,
+            fingerprint: preview.fingerprint,
+            choices: Object.values(effectiveChoices),
+          },
         },
-      });
+      );
       setNotice(
         result.added
-          ? `Import enregistré : ${result.added} lignes. Les prix des réservations sont conservés.`
+          ? `Import enregistré : ${result.added} lignes. ${result.regularized ? `${result.regularized} écart${result.regularized > 1 ? "s" : ""} de 0,01 € régularisé${result.regularized > 1 ? "s" : ""}. ` : ""}Les prix des réservations sont conservés.`
           : "Ce relevé est déjà importé.",
       );
       setPreview(null);
@@ -237,6 +275,26 @@ export default function OtaImportPage({
             d’écart, le montant affecté au suivi du séjour se choisit ci-dessous
             ; le brut et le net du relevé restent inchangés.
           </p>
+          {roundingCandidates.length > 0 && (
+            <div className="ota-rounding">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={autoRegularize}
+                  disabled={busy || !allowed}
+                  onChange={(event) => setAutoRegularize(event.target.checked)}
+                />
+                Régulariser automatiquement les écarts de 0,01 € (
+                {roundingCandidates.length} réservation
+                {roundingCandidates.length > 1 ? "s" : ""})
+              </label>
+              <p>
+                Le suivi du séjour est soldé au prix enregistré. Les prix et les
+                montants bruts, frais et nets du relevé sont conservés. Les
+                écarts plus importants restent à traiter.
+              </p>
+            </div>
+          )}
           <details className="ota-payouts">
             <summary>
               Afficher{" "}
@@ -306,9 +364,10 @@ export default function OtaImportPage({
                               : ""}
                         </small>
                         {row.warning &&
+                          !effectiveChoices[row.key]?.regularizeOneCent &&
                           !(
                             row.type === "resolution" &&
-                            choices[row.key]?.category
+                            effectiveChoices[row.key]?.category
                           ) && <p className="ota-warning">{row.warning}</p>}
                       </td>
                       <td className="ota-table__amount">
@@ -321,42 +380,64 @@ export default function OtaImportPage({
                           <strong>
                             {preview.reservations.find(
                               (item) =>
-                                item.id === choices[row.key]?.reservationId,
+                                item.id ===
+                                effectiveChoices[row.key]?.reservationId,
                             )?.label ?? "À rattacher"}
                           </strong>
                           {row.type === "reservation" &&
-                            choices[row.key]?.settlementBasis && (
+                            effectiveChoices[row.key]?.settlementBasis && (
                               <span>
                                 Suivi du séjour :{" "}
-                                {choices[row.key]?.settlementBasis === "net"
+                                {effectiveChoices[row.key]?.settlementBasis ===
+                                "net"
                                   ? "net"
-                                  : choices[row.key]?.settlementBasis ===
-                                      "gross"
+                                  : effectiveChoices[row.key]
+                                        ?.settlementBasis === "gross"
                                     ? "brut"
                                     : "prix enregistré"}{" "}
                                 ·{" "}
                                 {formatEuro(
-                                  (choices[row.key]?.settlementBasis === "net"
+                                  (effectiveChoices[row.key]
+                                    ?.settlementBasis === "net"
                                     ? row.netCents
-                                    : choices[row.key]?.settlementBasis ===
-                                        "gross"
+                                    : effectiveChoices[row.key]
+                                          ?.settlementBasis === "gross"
                                       ? row.grossCents
                                       : (preview.reservations.find(
                                           (item) =>
                                             item.id ===
-                                            choices[row.key]?.reservationId,
+                                            effectiveChoices[row.key]
+                                              ?.reservationId,
                                         )?.amountCents ??
                                         row.existingAmountCents ??
                                         0)) / 100,
                                 )}
                               </span>
                             )}
-                          {choices[row.key]?.reservationId && (
+                          {effectiveChoices[row.key]?.regularizeOneCent &&
+                            row.roundingAdjustment && (
+                              <span className="ota-rounding-note">
+                                Écart d’arrondi du suivi :{" "}
+                                {row.roundingAdjustment.adjustmentCents > 0
+                                  ? "+"
+                                  : ""}
+                                {formatEuro(
+                                  row.roundingAdjustment.adjustmentCents / 100,
+                                )}{" "}
+                                par rapport au{" "}
+                                {row.roundingAdjustment.basis === "net"
+                                  ? "net"
+                                  : "brut"}{" "}
+                                Airbnb. Régularisé à la confirmation de
+                                l’import.
+                              </span>
+                            )}
+                          {effectiveChoices[row.key]?.reservationId && (
                             <Link
                               target="_blank"
                               rel="noopener noreferrer"
                               className="rp-text-button"
-                              to={`/reservations/${encodeURIComponent(choices[row.key].reservationId)}/reglements?back=${encodeURIComponent(workspace.href("/import-airbnb"))}`}
+                              to={`/reservations/${encodeURIComponent(effectiveChoices[row.key].reservationId)}/reglements?back=${encodeURIComponent(workspace.href("/import-airbnb"))}`}
                             >
                               Ouvrir la réservation ↗
                             </Link>
@@ -399,7 +480,9 @@ export default function OtaImportPage({
                               <select
                                 aria-label={`Réservation ligne ${row.row}`}
                                 disabled={busy || row.status !== "new"}
-                                value={choices[row.key]?.reservationId ?? ""}
+                                value={
+                                  effectiveChoices[row.key]?.reservationId ?? ""
+                                }
                                 onChange={(event) =>
                                   change(row.key, {
                                     reservationId: event.target.value,
@@ -413,7 +496,8 @@ export default function OtaImportPage({
                                   .filter(
                                     (item) =>
                                       item.id ===
-                                        choices[row.key]?.reservationId ||
+                                        effectiveChoices[row.key]
+                                          ?.reservationId ||
                                       item.label
                                         .toLocaleLowerCase("fr")
                                         .includes(
@@ -433,7 +517,8 @@ export default function OtaImportPage({
                         )}
                         {row.status === "new" &&
                           (row.type === "resolution" ||
-                            !row.suggestedBasis ||
+                            (!row.suggestedBasis &&
+                              !effectiveChoices[row.key]?.regularizeOneCent) ||
                             editingRows[row.key]) &&
                           (row.type === "reservation" ? (
                             <label>
@@ -441,7 +526,10 @@ export default function OtaImportPage({
                               <select
                                 aria-label={`Montant suivi ligne ${row.row}`}
                                 disabled={busy || row.status !== "new"}
-                                value={choices[row.key]?.settlementBasis ?? ""}
+                                value={
+                                  effectiveChoices[row.key]?.settlementBasis ??
+                                  ""
+                                }
                                 onChange={(event) =>
                                   change(row.key, {
                                     settlementBasis: event.target
@@ -461,11 +549,11 @@ export default function OtaImportPage({
                                   {(preview.reservations.find(
                                     (item) =>
                                       item.id ===
-                                      choices[row.key]?.reservationId,
+                                      effectiveChoices[row.key]?.reservationId,
                                   )?.amountCents ?? row.existingAmountCents) ==
                                   null
                                     ? ""
-                                    : ` : ${formatEuro((preview.reservations.find((item) => item.id === choices[row.key]?.reservationId)?.amountCents ?? row.existingAmountCents ?? 0) / 100)}`}
+                                    : ` : ${formatEuro((preview.reservations.find((item) => item.id === effectiveChoices[row.key]?.reservationId)?.amountCents ?? row.existingAmountCents ?? 0) / 100)}`}
                                 </option>
                               </select>
                             </label>
@@ -475,7 +563,9 @@ export default function OtaImportPage({
                               <select
                                 aria-label={`Catégorie ligne ${row.row}`}
                                 disabled={busy || row.status !== "new"}
-                                value={choices[row.key]?.category ?? ""}
+                                value={
+                                  effectiveChoices[row.key]?.category ?? ""
+                                }
                                 onChange={(event) =>
                                   change(row.key, {
                                     category: event.target
@@ -496,7 +586,8 @@ export default function OtaImportPage({
                           Boolean(
                             preview.reservations.find(
                               (item) =>
-                                item.id === choices[row.key]?.reservationId,
+                                item.id ===
+                                effectiveChoices[row.key]?.reservationId,
                             )?.payments?.length,
                           )) && (
                           <label>
@@ -504,7 +595,7 @@ export default function OtaImportPage({
                             <select
                               aria-label={`Règlement ligne ${row.row}`}
                               disabled={busy || row.status !== "new"}
-                              value={choices[row.key]?.paymentId ?? ""}
+                              value={effectiveChoices[row.key]?.paymentId ?? ""}
                               onChange={(event) =>
                                 change(row.key, {
                                   paymentId: event.target.value || undefined,
@@ -520,7 +611,8 @@ export default function OtaImportPage({
                               {preview.reservations
                                 .find(
                                   (item) =>
-                                    item.id === choices[row.key]?.reservationId,
+                                    item.id ===
+                                    effectiveChoices[row.key]?.reservationId,
                                 )
                                 ?.payments?.map((item) => (
                                   <option key={item.id} value={item.id}>
@@ -574,6 +666,36 @@ export default function OtaImportPage({
                   <span>
                     {formatDate(item.createdAt)} · {item.rows} lignes
                   </span>
+                  {Boolean(item.regularized) && (
+                    <details>
+                      <summary>
+                        {item.regularized} écart
+                        {item.regularized! > 1 ? "s" : ""} d’arrondi régularisé
+                        {item.regularized! > 1 ? "s" : ""}
+                      </summary>
+                      {item.roundingAdjustments?.map((adjustment, index) => (
+                        <p key={index}>
+                          {canCurrentUserAccessPage("reservations") ? (
+                            <Link
+                              to={`/reservations/${encodeURIComponent(adjustment.reservationId)}/reglements?back=${encodeURIComponent(workspace.href("/import-airbnb"))}`}
+                            >
+                              {adjustment.reservationLabel ??
+                                "Voir la réservation"}
+                            </Link>
+                          ) : (
+                            (adjustment.reservationLabel ?? "Réservation")
+                          )}
+                          <span>
+                            {formatEuro(adjustment.sourceAmountCents / 100)}{" "}
+                            {adjustment.basis === "net" ? "nets" : "bruts"}{" "}
+                            Airbnb →{" "}
+                            {formatEuro(adjustment.recordedAmountCents / 100)}{" "}
+                            au suivi du séjour.
+                          </span>
+                        </p>
+                      ))}
+                    </details>
+                  )}
                 </div>
                 <strong>{formatEuro(item.totals.netCents / 100)} nets</strong>
               </li>
