@@ -1143,6 +1143,17 @@
   font-size: 0.69rem;
   margin: 10px 0 0;
 }
+.rp-source-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+.rp-source-shortcuts button[aria-pressed="true"] {
+  color: var(--primary-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .rp-radio-choices {
   display: flex;
   flex-direction: column;

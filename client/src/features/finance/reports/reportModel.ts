@@ -1,6 +1,7 @@
 export {
   REPORT_CATEGORIES,
   REPORT_PAYMENT_METHODS,
+  BOOKING_SOURCES,
   REPORT_TEMPLATES,
   categoryLabel,
   propertyName,
@@ -19,6 +20,7 @@ export {
   operationAmountBasisLabel,
   platformAmountBreakdown,
   reportTotalLabel,
+  reportBookingSourcesLabel,
 } from "@contrats/shared";
 export type {
   ReportKind,

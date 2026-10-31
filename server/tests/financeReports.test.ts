@@ -12,6 +12,7 @@ import {
   snapshotDiffers,
   buildReportReminders,
   buildReportWorklist,
+  createReport,
   type ReportCommand,
   type ReportWorkspaceData,
 } from "@contrats/shared";
@@ -214,6 +215,118 @@ test("les nuitées sont réparties entre les mois et ne sont pas multipliées pa
       12,
     );
   }));
+test("les filtres de gestionnaire et de source sont persistés pour chaque modèle et les copies restent figées", () =>
+  fixture(async ({ gite, entity }) => {
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: false,
+    });
+    const manager = await db.default.gestionnaire.create({
+      data: { prenom: "Camille", nom: "Martin" },
+    });
+    const otherManager = await db.default.gestionnaire.create({
+      data: { prenom: "Alex", nom: "Durand" },
+    });
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { gestionnaire_id: manager.id },
+    });
+    const original = await db.default.gite.findUniqueOrThrow({
+      where: { id: gite },
+    });
+    const second = await db.default.gite.create({
+      data: {
+        nom: "Autre logement",
+        prefixe_contrat: "S",
+        adresse_ligne1: "Test",
+        capacite_max: 10,
+        proprietaires_noms: "Test",
+        proprietaires_adresse: "Test",
+        telephones: "",
+        taxe_sejour_par_personne_par_nuit: 0,
+        iban: "",
+        titulaire: "Test",
+        fiscal_establishment_id: original.fiscal_establishment_id,
+        gestionnaire_id: otherManager.id,
+      },
+    });
+    const direct = await stay(gite);
+    const airbnb = await stay(gite, { booking_source: "Airbnb" });
+    const outside = await stay(second.id);
+    await pay(direct.id, 100);
+    await pay(airbnb.id, 100);
+    await pay(outside.id, 100);
+    let state = await reports.getReportWorkspace();
+    assert.equal(
+      state.properties.find((row) => row.id === gite)?.managerId,
+      manager.id,
+    );
+    assert.equal(state.propertyOperators[gite], entity);
+    assert.equal(state.propertyManagers?.[gite], manager.id);
+    assert.ok(
+      state.managers?.some(
+        (row) => row.id === manager.id && row.name === "Camille Martin",
+      ),
+    );
+    for (const kind of ["social", "tourist", "owner", "custom"] as const) {
+      const definition = {
+        ...createReport(kind, `filtered-${kind}`),
+        recipient: "Camille Martin",
+        operatorId: kind === "social" ? entity : null,
+        managerId: manager.id,
+        propertyIds: [gite],
+        categories: ["accommodation" as const],
+        bookingSources: ["Direct"],
+      };
+      state = await mutate(state, { type: "save", definition });
+      const total = kind === "tourist" ? 6 : 10000;
+      assert.equal(result(state, "2026-10", definition).total, total);
+      assert.equal(result(state, "2026-10", definition).reviewCount, 0);
+      state = await mutate(state, { type: "ready", reportId: definition.id });
+      state = await mutate(state, { type: "confirm", reportId: definition.id });
+      const key = reportPeriodKey(definition, "2026-10");
+      assert.equal(state.progress[key].snapshot?.result.total, total);
+      state = await mutate(state, {
+        type: "save",
+        definition: { ...definition, bookingSources: ["Direct", "Airbnb"] },
+      });
+      const reloaded = await reports.getReportWorkspace();
+      const saved = reloaded.reports.find((row) => row.id === definition.id)!;
+      assert.deepEqual(saved.bookingSources, ["Direct", "Airbnb"]);
+      assert.equal(saved.managerId, manager.id);
+      assert.equal(result(reloaded, "2026-10", saved).total, total * 2);
+      assert.deepEqual(
+        reloaded.progress[key].snapshot?.definition.bookingSources,
+        ["Direct"],
+      );
+      assert.equal(reloaded.progress[key].snapshot?.result.total, total);
+      await assert.rejects(
+        mutate(state, {
+          type: "save",
+          definition: { ...definition, propertyIds: [second.id] },
+        }),
+        /gestionnaire choisi/,
+      );
+      await assert.rejects(
+        mutate(state, {
+          type: "save",
+          definition: { ...definition, managerId: "foreign-manager" },
+        }),
+        /Gestionnaire introuvable/,
+      );
+    }
+    const report = state.reports.find((row) => row.id === "filtered-tourist")!;
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { gestionnaire_id: otherManager.id },
+    });
+    state = await reports.getReportWorkspace();
+    assert.equal(result(state, "2026-11", report).reviewCount, 2);
+    await assert.rejects(
+      mutate(state, { type: "ready", reportId: report.id }, "2026-11"),
+      /rattachement au gestionnaire/,
+    );
+  }));
+
 test("les options historiques restent incluses indépendamment de l’ancien indicateur", () =>
   fixture(async ({ gite }) => {
     const r = await stay(gite, {
@@ -1097,6 +1210,21 @@ test("options encaissées par un autre canal : commission datée figée et venti
     });
     let state = await reports.getReportWorkspace();
     assert.equal(result(state).total, 5000);
+    const platformOperation = state.operations.find(
+      (operation) => operation.ota,
+    )!;
+    assert.equal(platformOperation.channel, "Airbnb");
+    assert.equal(platformOperation.bookingSource, "Direct");
+    assert.equal(
+      result(state, "2026-10", { ...social(state), bookingSources: ["Direct"] })
+        .total,
+      5000,
+    );
+    assert.equal(
+      result(state, "2026-10", { ...social(state), bookingSources: ["Airbnb"] })
+        .total,
+      0,
+    );
     assert.equal(
       result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
         .total,

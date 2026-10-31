@@ -44,13 +44,41 @@ function workspace(): ReportWorkspaceData {
         nights: 0,
         paymentDate: "2026-08-10",
         stayDate: "2026-08-10",
-        channel: "direct",
+        channel: "Direct",
         paymentMethod: "cash",
         basis: "payment",
       },
     ],
   };
 }
+test("les rappels de nuitées suivent les sources sélectionnées et vérifient le gestionnaire même à zéro", () => {
+  const state = workspace();
+  state.reports = [
+    {
+      ...createReport("tourist", "nights"),
+      propertyIds: ["g1"],
+      managerId: "manager",
+    },
+  ];
+  state.managers = [{ id: "manager", name: "Gestionnaire" }];
+  state.propertyManagers = { g1: "manager" };
+  state.operations = [
+    { ...state.operations[0], channel: "Airbnb", basis: "nights", nights: 6 },
+  ];
+  assert.deepEqual(buildReportReminders(state, 2026, now), []);
+  state.operations.push({
+    ...state.operations[0],
+    id: "direct",
+    channel: "Direct",
+  });
+  const reminders = buildReportReminders(state, 2026, now);
+  assert.equal(reminders.length, 1);
+  assert.equal(reminders[0].total, 6);
+  assert.equal(reminders[0].canCopy, true);
+  state.propertyManagers.g1 = "other";
+  assert.equal(buildReportReminders(state, 2026, now)[0].canCopy, false);
+});
+
 test("closed periods only, including zero receipts after the first activity", () => {
   const state = workspace();
   assert.deepEqual(

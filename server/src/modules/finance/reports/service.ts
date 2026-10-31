@@ -47,6 +47,8 @@ function initialConfiguration(facts: Facts): Configuration {
   if (facts.properties.length)
     reports.push({
       ...createReport("tourist", "guest-nights"),
+      // Preserve the scope of the existing default report; new reports default to Direct.
+      bookingSources: undefined,
       recipient: "Gestion interne",
       propertyIds: facts.properties.map((row) => row.id),
     });
@@ -65,6 +67,7 @@ const evaluate = (
     facts.operations,
     {
       propertyOperators: facts.propertyOperators,
+      propertyManagers: facts.propertyManagers,
       operatorIssues: facts.operatorIssues,
       socialIssues: facts.socialIssues,
       operationEdits: {},
@@ -145,6 +148,21 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
           )
             throw fail("Un logement sélectionné n’existe plus.", 400);
           if (
+            definition.managerId &&
+            !facts.managers.some((row) => row.id === definition.managerId)
+          )
+            throw fail("Gestionnaire introuvable.", 400);
+          if (
+            definition.managerId &&
+            definition.propertyIds.some(
+              (id) => facts.propertyManagers[id] !== definition.managerId,
+            )
+          )
+            throw fail(
+              "Les logements sélectionnés doivent dépendre du gestionnaire choisi.",
+              400,
+            );
+          if (
             definition.operatorId &&
             !facts.operators.some((row) => row.id === definition.operatorId)
           )
@@ -212,6 +230,19 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
             )
               throw fail(
                 "Un logement du rapport n’existe plus. Modifiez son périmètre.",
+                400,
+              );
+            if (
+              report.managerId &&
+              (!facts.managers.some(
+                (manager) => manager.id === report.managerId,
+              ) ||
+                report.propertyIds.some(
+                  (id) => facts.propertyManagers[id] !== report.managerId,
+                ))
+            )
+              throw fail(
+                "Le rattachement au gestionnaire a changé. Modifiez le périmètre du rapport.",
                 400,
               );
             if (

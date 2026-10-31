@@ -18,6 +18,7 @@ import {
   reportAmountBasisLabel,
   operationAmountBasisLabel,
   reportTotalLabel,
+  reportBookingSourcesLabel,
   type ReportDefinition,
   type EvaluatedOperation,
   type OperationOverride,
@@ -126,7 +127,7 @@ export default function ReportDetail({
   const rows = displayedResult.rows.filter(
     (row) =>
       row.status === filter &&
-      `${row.guest} ${row.reservation} ${propertyName(row.propertyId)} ${categoryLabel(row.category)} ${row.channel}`
+      `${row.guest} ${row.reservation} ${propertyName(row.propertyId)} ${categoryLabel(row.category)} ${row.bookingSource ?? row.channel}`
         .toLocaleLowerCase("fr")
         .includes(search.toLocaleLowerCase("fr")),
   );
@@ -296,10 +297,14 @@ export default function ReportDetail({
             </strong>
             <p>
               La règle enregistrée est « {reportAmountBasisLabel(report)} ».
-              Appliquez les règles dans les réglages pour enregistrer votre choix.
+              Appliquez les règles dans les réglages pour enregistrer votre
+              choix.
             </p>
             {canEdit && (
-              <Link className="rp-text-button" to={href(`/${report.id}/modifier`)}>
+              <Link
+                className="rp-text-button"
+                to={href(`/${report.id}/modifier`)}
+              >
                 Reprendre les réglages <ReportIcon name="arrow" />
               </Link>
             )}
@@ -396,10 +401,10 @@ export default function ReportDetail({
           ) && (
             <p className="rp-muted">
               Les encaissements sans date sont présentés dans la période du
-              séjour pour être complétés et restent exclus du total.
-              Renseignez le règlement reçu avec sa date. Les versements OTA
-              utilisent automatiquement une date estimée au lendemain de
-              l’arrivée jusqu’à la saisie ou l’import d’un versement daté.
+              séjour pour être complétés et restent exclus du total. Renseignez
+              le règlement reçu avec sa date. Les versements OTA utilisent
+              automatiquement une date estimée au lendemain de l’arrivée jusqu’à
+              la saisie ou l’import d’un versement daté.
             </p>
           )}
         </section>
@@ -430,7 +435,20 @@ export default function ReportDetail({
             {displayedReport.categories.length > 1 ? "s" : ""} ·{" "}
             {displayedReport.dateBasis === "payment"
               ? "Date d’encaissement"
-              : "Début du séjour"}
+              : displayedReport.kind === "tourist"
+                ? "Nuits occupées"
+                : "Début du séjour"}
+            {" · "}
+            {reportBookingSourcesLabel(displayedReport)}
+            {displayedReport.managerId && (
+              <>
+                {" "}
+                · Gestionnaire :{" "}
+                {state.managers?.find(
+                  (manager) => manager.id === displayedReport.managerId,
+                )?.name ?? displayedReport.recipient}
+              </>
+            )}
           </div>
           <AccommodationBreakdown
             report={displayedReport}
@@ -573,7 +591,9 @@ export default function ReportDetail({
             <span>Source de réservation</span>
             <span>Date retenue</span>
             <span>
-              {displayedReport.kind === "tourist" ? "Nuitées" : "Montant retenu"}
+              {displayedReport.kind === "tourist"
+                ? "Nuitées"
+                : "Montant retenu"}
             </span>
             <span />
           </div>
@@ -604,7 +624,7 @@ export default function ReportDetail({
               </span>
               <span className="rp-operation-source">
                 <span className="rp-operation-source-label">Source : </span>
-                {row.channel}
+                {row.bookingSource ?? row.channel}
               </span>
               <span className="rp-operation-date">
                 {dateLabel(row.effectiveDate)}
@@ -614,7 +634,9 @@ export default function ReportDetail({
               <strong className="rp-operation-value">
                 {formatReportValue(displayedReport, row.value)}
                 {(row.ota || row.paymentMethod === "platform") && (
-                  <small>{operationAmountBasisLabel(displayedReport, row)}</small>
+                  <small>
+                    {operationAmountBasisLabel(displayedReport, row)}
+                  </small>
                 )}
               </strong>
               <ReportIcon name="arrow" />
@@ -822,7 +844,9 @@ function OperationDialog({
           <dt>Encaissement</dt>
           <dd>
             {dateLabel(row.paymentDate)}
-            {row.paymentDateEstimated ? " · Date estimée (arrivée + 1 jour)" : ""}
+            {row.paymentDateEstimated
+              ? " · Date estimée (arrivée + 1 jour)"
+              : ""}
           </dd>
         </div>
         <div>
@@ -831,7 +855,7 @@ function OperationDialog({
         </div>
         <div>
           <dt>Canal de réservation</dt>
-          <dd>{row.channel}</dd>
+          <dd>{row.bookingSource ?? row.channel}</dd>
         </div>
         <div>
           <dt>Rapport</dt>
@@ -846,7 +870,11 @@ function OperationDialog({
       </dl>
       {row.ota && (
         <dl className="rp-source-details rp-platform-amounts__details">
-          <div className={report.otaAmountBasis !== "net" ? "is-selected" : undefined}>
+          <div
+            className={
+              report.otaAmountBasis !== "net" ? "is-selected" : undefined
+            }
+          >
             <dt>Brut avant commissions</dt>
             <dd>{formatReportValue({ kind: "custom" }, row.ota.grossCents)}</dd>
           </div>
@@ -854,7 +882,11 @@ function OperationDialog({
             <dt>Commissions prélevées</dt>
             <dd>{formatReportValue({ kind: "custom" }, -row.ota.feeCents)}</dd>
           </div>
-          <div className={report.otaAmountBasis === "net" ? "is-selected" : undefined}>
+          <div
+            className={
+              report.otaAmountBasis === "net" ? "is-selected" : undefined
+            }
+          >
             <dt>Net après commissions</dt>
             <dd>{formatReportValue({ kind: "custom" }, row.ota.netCents)}</dd>
           </div>

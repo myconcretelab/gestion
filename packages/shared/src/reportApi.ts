@@ -20,6 +20,12 @@ export const reportDefinitionSchema = z
     propertyIds: z.array(z.string().min(1).max(100)).min(1).max(1000),
     favorite: z.boolean(),
     operatorId: z.string().max(100).nullable().optional(),
+    managerId: z.string().min(1).max(100).nullable().optional(),
+    bookingSources: z
+      .array(z.string().trim().min(1).max(120))
+      .min(1)
+      .max(100)
+      .optional(),
     otaAmountBasis: z.enum(["gross", "net"]).optional(),
   })
   .strict()
@@ -31,6 +37,8 @@ export const reportDefinitionSchema = z
       });
     if (
       new Set(report.propertyIds).size !== report.propertyIds.length ||
+      (report.bookingSources &&
+        new Set(report.bookingSources).size !== report.bookingSources.length) ||
       new Set(report.categories).size !== report.categories.length
     )
       ctx.addIssue({
@@ -67,6 +75,10 @@ export const reportDraftSchema = z
     recipient: z.string().max(160),
     categories: z.array(reportDefinitionSchema.shape.categories.element).max(5),
     propertyIds: z.array(z.string().min(1).max(100)).max(1000),
+    bookingSources: z
+      .array(z.string().trim().min(1).max(120))
+      .max(100)
+      .optional(),
   })
   .strict();
 export const reportAllocationSchema = z
@@ -138,8 +150,10 @@ export type ReportProperty = {
   name: string;
   initials: string;
   operatorId: string | null;
+  managerId?: string | null;
 };
 export type ReportOperator = { id: string; name: string; legacy: boolean };
+export type ReportManager = { id: string; name: string };
 export type LegacyReportDeclaration = {
   id: string;
   kind: "social" | "tourist";
@@ -155,6 +169,7 @@ export type ReportWorkspaceData = ReportState & {
   factsRevision: string;
   properties: ReportProperty[];
   operators: ReportOperator[];
+  managers?: ReportManager[];
   operations: ReportOperation[];
   legacyDeclarations: LegacyReportDeclaration[];
 };

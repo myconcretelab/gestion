@@ -14,7 +14,9 @@ import {
   reportAmountBasisLabel,
   reportTotalLabel,
   REPORT_CATEGORIES,
+  BOOKING_SOURCES,
   REPORT_TEMPLATES,
+  reportBookingSourcesLabel,
   type ReportCadence,
   type ReportDefinition,
   type ReportKind,
@@ -125,6 +127,15 @@ export default function ReportEditor({
     );
 
   const fixedDate = draft.kind === "social" || draft.kind === "tourist";
+  const bookingSources = [
+    ...new Set([
+      ...BOOKING_SOURCES,
+      ...state.operations.map(
+        (operation) => operation.bookingSource ?? operation.channel,
+      ),
+      ...(draft.bookingSources ?? []),
+    ]),
+  ];
   const update = (patch: Partial<ReportDefinition>) => {
     setError("");
     setDraft(draftKey, { ...draft, ...patch });
@@ -153,10 +164,11 @@ export default function ReportEditor({
       !draft.recipient.trim() ||
       !draft.propertyIds.length ||
       !draft.categories.length ||
+      draft.bookingSources?.length === 0 ||
       (draft.kind === "social" && !draft.operatorId)
     ) {
       setError(
-        "Renseignez un nom, un destinataire, au moins un logement, une catégorie et l’exploitant pour un rapport social.",
+        "Renseignez un nom, un destinataire, au moins un logement, une catégorie, une source et l’exploitant pour un rapport social.",
       );
       setMobilePane("settings");
       const fieldId =
@@ -168,7 +180,9 @@ export default function ReportEditor({
               ? "rp-report-recipient"
               : !draft.propertyIds.length
                 ? "rp-report-properties"
-                : "rp-report-categories";
+                : !draft.categories.length
+                  ? "rp-report-categories"
+                  : "rp-report-sources";
       window.requestAnimationFrame(() =>
         document.getElementById(fieldId)?.focus(),
       );
@@ -325,6 +339,11 @@ export default function ReportEditor({
                               !property.operatorId ||
                               property.operatorId === operatorId,
                           )
+                          .filter(
+                            (property) =>
+                              !draft.managerId ||
+                              property.managerId === draft.managerId,
+                          )
                           .map((property) => property.id),
                       });
                     }}
@@ -343,6 +362,57 @@ export default function ReportEditor({
                   </small>
                 </label>
               )}
+              <label className="rp-field">
+                Gestionnaire
+                <select
+                  id="rp-report-manager"
+                  value={draft.managerId ?? ""}
+                  onChange={(event) => {
+                    const managerId = event.target.value || null;
+                    const manager = state.managers?.find(
+                      (row) => row.id === managerId,
+                    );
+                    update({
+                      managerId,
+                      ...(draft.kind !== "social" && manager
+                        ? { recipient: manager.name }
+                        : {}),
+                      propertyIds: state.properties
+                        .filter(
+                          (property) =>
+                            !managerId || property.managerId === managerId,
+                        )
+                        .filter(
+                          (property) =>
+                            draft.kind !== "social" ||
+                            !draft.operatorId ||
+                            !property.operatorId ||
+                            property.operatorId === draft.operatorId,
+                        )
+                        .map((property) => property.id),
+                    });
+                  }}
+                >
+                  <option value="">Tous les gestionnaires</option>
+                  {draft.managerId &&
+                    !state.managers?.some(
+                      (manager) => manager.id === draft.managerId,
+                    ) && (
+                      <option value={draft.managerId}>
+                        Gestionnaire à vérifier
+                      </option>
+                    )}
+                  {state.managers?.map((manager) => (
+                    <option key={manager.id} value={manager.id}>
+                      {manager.name}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Le choix d’un gestionnaire sélectionne ses logements. Vous
+                  pouvez ensuite affiner la sélection.
+                </small>
+              </label>
               <fieldset
                 className="rp-choice-fieldset"
                 id="rp-report-properties"
@@ -359,10 +429,12 @@ export default function ReportEditor({
                         type="checkbox"
                         checked={draft.propertyIds.includes(property.id)}
                         disabled={
-                          draft.kind === "social" &&
-                          Boolean(draft.operatorId) &&
-                          Boolean(property.operatorId) &&
-                          draft.operatorId !== property.operatorId
+                          (Boolean(draft.managerId) &&
+                            draft.managerId !== property.managerId) ||
+                          (draft.kind === "social" &&
+                            Boolean(draft.operatorId) &&
+                            Boolean(property.operatorId) &&
+                            draft.operatorId !== property.operatorId)
                         }
                         onChange={(event) =>
                           update({
@@ -381,6 +453,67 @@ export default function ReportEditor({
                     </label>
                   ))}
                 </div>
+              </fieldset>
+              <fieldset
+                className="rp-choice-fieldset"
+                id="rp-report-sources"
+                tabIndex={-1}
+              >
+                <legend>Sources de réservation</legend>
+                <div className="rp-source-shortcuts">
+                  <button
+                    type="button"
+                    className="rp-text-button"
+                    aria-pressed={draft.bookingSources === undefined}
+                    onClick={() => update({ bookingSources: undefined })}
+                  >
+                    Toutes les sources
+                  </button>
+                  <button
+                    type="button"
+                    className="rp-text-button"
+                    aria-pressed={
+                      draft.bookingSources?.length === 1 &&
+                      draft.bookingSources[0] === "Direct"
+                    }
+                    onClick={() => update({ bookingSources: ["Direct"] })}
+                  >
+                    Direct uniquement
+                  </button>
+                </div>
+                <div className="rp-category-choices">
+                  {bookingSources.map((source) => {
+                    const selected =
+                      draft.bookingSources === undefined ||
+                      draft.bookingSources.includes(source);
+                    return (
+                      <label
+                        key={source}
+                        className={selected ? "is-selected" : ""}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(event) => {
+                            const current =
+                              draft.bookingSources ?? bookingSources;
+                            update({
+                              bookingSources: event.target.checked
+                                ? [...current, source]
+                                : current.filter((value) => value !== source),
+                            });
+                          }}
+                        />
+                        {source}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="rp-field-help">
+                  {draft.kind === "tourist"
+                    ? "Sélectionnez les sources dont vous déclarez les nuitées. Décochez les plateformes qui les déclarent pour vous."
+                    : "Seules les réservations des sources cochées alimentent le rapport, quel que soit leur moyen de paiement."}
+                </p>
               </fieldset>
               <fieldset
                 className="rp-choice-fieldset"
@@ -470,18 +603,20 @@ export default function ReportEditor({
                     </option>
                   </select>
                   <span className="rp-field-help">
-                    Exemple : 100 € bruts − 15 € de commission = 85 € nets.
-                    Ce choix s’applique aux versements dont la commission est
+                    Exemple : 100 € bruts − 15 € de commission = 85 € nets. Ce
+                    choix s’applique aux versements dont la commission est
                     connue. Les montants sans détail restent repris tels quels.
                   </span>
                   {base &&
-                    (base.otaAmountBasis ?? "gross") !== (draft.otaAmountBasis ?? "gross") && (
-                    <span className="rp-field-help rp-basis-pending">
-                      Actuellement enregistré : {reportAmountBasisLabel(base)}.
-                      {" "}L’aperçu utilise votre nouveau choix. Cliquez sur
-                      « Appliquer les règles » pour l’enregistrer dans le rapport.
-                    </span>
-                  )}
+                    (base.otaAmountBasis ?? "gross") !==
+                      (draft.otaAmountBasis ?? "gross") && (
+                      <span className="rp-field-help rp-basis-pending">
+                        Actuellement enregistré : {reportAmountBasisLabel(base)}
+                        . L’aperçu utilise votre nouveau choix. Cliquez sur «
+                        Appliquer les règles » pour l’enregistrer dans le
+                        rapport.
+                      </span>
+                    )}
                 </label>
               )}
               <fieldset className="rp-choice-fieldset">
@@ -623,7 +758,9 @@ export default function ReportEditor({
                   ,{" "}
                   {draft.dateBasis === "payment"
                     ? "selon les encaissements"
-                    : "selon le début des séjours"}
+                    : draft.kind === "tourist"
+                      ? "selon les nuits occupées"
+                      : "selon le début des séjours"}
                   , avec{" "}
                   {draft.categories.length
                     ? draft.categories
@@ -631,10 +768,20 @@ export default function ReportEditor({
                         .join(", ")
                         .toLocaleLowerCase("fr")
                     : "aucune catégorie sélectionnée"}
-                  .
+                  . Sources : {reportBookingSourcesLabel(draft)}.
                 </p>
               </div>
               <dl className="rp-preview-facts">
+                {draft.managerId && (
+                  <div>
+                    <dt>Gestionnaire</dt>
+                    <dd>
+                      {state.managers?.find(
+                        (manager) => manager.id === draft.managerId,
+                      )?.name ?? "À vérifier"}
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt>Périodicité</dt>
                   <dd>{cadenceLabel(draft.cadence)}</dd>

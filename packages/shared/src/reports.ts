@@ -30,6 +30,9 @@ export type ReportDefinition = {
   propertyIds: string[];
   favorite: boolean;
   operatorId?: string | null;
+  managerId?: string | null;
+  /** Undefined keeps all sources, including sources added later. */
+  bookingSources?: string[];
   otaAmountBasis?: "gross" | "net";
 };
 export type ReportOperation = {
@@ -44,6 +47,8 @@ export type ReportOperation = {
   paymentDateEstimated?: boolean;
   stayDate: string;
   channel: string;
+  /** Reservation source, independently of the platform used for a payment. */
+  bookingSource?: string;
   paymentMethod: ReportPaymentMethod;
   reviewReason?: string;
   propertyLabel?: string;
@@ -67,6 +72,7 @@ export type ReportIssue = {
 };
 export type ReportSources = {
   propertyOperators: Record<string, string | null>;
+  propertyManagers?: Record<string, string | null>;
   operatorIssues?: Record<string, string>;
   socialIssues?: Record<string, { message: string; entityId: string }>;
   operationEdits: Record<
@@ -160,6 +166,7 @@ export function createReport(kind: ReportKind, id: string): ReportDefinition {
           : [...revenueCategories],
     propertyIds: [],
     operatorId: null,
+    ...(kind === "tourist" ? { bookingSources: ["Direct"] } : {}),
     favorite: kind === "social",
   };
 }
@@ -169,6 +176,20 @@ export const categoryLabel = (id: ReportCategory) =>
 export const propertyName = (id: string) => id;
 export const paymentMethodLabel = (id: ReportPaymentMethod) =>
   REPORT_PAYMENT_METHODS.find((method) => method.id === id)!.label;
+export const reportBookingSourcesLabel = (
+  report: Pick<ReportDefinition, "bookingSources">,
+) =>
+  report.bookingSources === undefined
+    ? "Toutes les sources"
+    : report.bookingSources.length
+      ? report.bookingSources.join(", ")
+      : "Aucune source sélectionnée";
+export const reportIncludesBookingSource = (
+  report: Pick<ReportDefinition, "bookingSources">,
+  operation: Pick<ReportOperation, "bookingSource" | "channel">,
+) =>
+  report.bookingSources === undefined ||
+  report.bookingSources.includes(operation.bookingSource ?? operation.channel);
 export const cadenceLabel = (cadence: ReportCadence) =>
   ({ monthly: "Mensuel", quarterly: "Trimestriel", yearly: "Annuel" })[cadence];
 
@@ -245,6 +266,7 @@ export function evaluateReport(
     const candidateDate = effectiveDate ?? operation.stayDate;
     if (candidateDate < period.start || candidateDate >= period.end) continue;
     const inProperty = report.propertyIds.includes(operation.propertyId);
+    const inSource = reportIncludesBookingSource(report, operation);
     const uncertainCategories =
       operation.categoryUncertain && report.kind !== "tourist";
     const optionalCategories: ReportCategory[] = [
@@ -278,7 +300,20 @@ export function evaluateReport(
           "Les données de cette correction ont changé. Réexaminez l’opération avant de finaliser le rapport.",
         actionLabel: "Réexaminer la correction",
       });
-    if ((inProperty && inCategory) || override?.status === "included") {
+    if (
+      (inProperty && inCategory && inSource) ||
+      (inSource && override?.status === "included")
+    ) {
+      if (
+        report.managerId &&
+        sources.propertyManagers?.[operation.propertyId] !== report.managerId
+      )
+        issues.push({
+          kind: "settings",
+          message:
+            "Le rattachement du logement au gestionnaire a changé : vérifiez le périmètre du rapport.",
+          actionLabel: "Modifier le périmètre",
+        });
       if (report.kind === "social" && !report.operatorId)
         issues.push({
           kind: "settings",
@@ -350,7 +385,7 @@ export function evaluateReport(
         });
     }
     let status: OperationStatus =
-      !inProperty || !inCategory
+      !inProperty || !inCategory || !inSource
         ? "excluded"
         : issues.length
           ? "review"
@@ -359,10 +394,17 @@ export function evaluateReport(
       ? "Ce logement ne fait pas partie du périmètre."
       : !inCategory
         ? "Cette catégorie ne fait pas partie du périmètre."
-        : issues.length
-          ? issues.map((issue) => issue.message).join(" ")
-          : `Logement et catégorie inclus dans le rapport${operation.category === "accommodation" && report.kind !== "tourist" ? ` · ${paymentMethodLabel(operation.paymentMethod)}` : ""}.`;
-    if (override && report.kind !== "social" && report.kind !== "tourist") {
+        : !inSource
+          ? `La source ${operation.bookingSource ?? operation.channel} ne fait pas partie du périmètre.`
+          : issues.length
+            ? issues.map((issue) => issue.message).join(" ")
+            : `Logement et catégorie inclus dans le rapport${operation.category === "accommodation" && report.kind !== "tourist" ? ` · ${paymentMethodLabel(operation.paymentMethod)}` : ""}.`;
+    if (
+      inSource &&
+      override &&
+      report.kind !== "social" &&
+      report.kind !== "tourist"
+    ) {
       status =
         staleCorrection || (override.status === "included" && issues.length)
           ? "review"
@@ -559,7 +601,7 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
         row.propertyLabel ?? propertyName(row.propertyId),
         categoryLabel(row.category),
         paymentMethodLabel(row.paymentMethod),
-        row.channel,
+        row.bookingSource ?? row.channel,
         row.effectiveDate ?? "À vérifier",
         report.kind === "tourist" ? row.value : row.value / 100,
         labels[row.status],

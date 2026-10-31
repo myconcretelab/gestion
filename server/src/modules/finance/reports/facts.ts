@@ -58,7 +58,7 @@ type SavedOptionDetail = {
 export async function loadReportFacts(db: TenantTransactionClient = prisma) {
   const [
     gites,
-    managers,
+    managerRows,
     reservations,
     quotes,
     socialHistory,
@@ -95,7 +95,11 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       select: { id: true, stripe_mode: true },
     }),
   ]);
-  const operators: ReportOperator[] = managers.map((row) => ({
+  const managers = managerRows.map((row) => ({
+    id: row.id,
+    name: `${row.prenom} ${row.nom}`.trim(),
+  }));
+  const operators: ReportOperator[] = managerRows.map((row) => ({
     id: `manager:${row.id}`,
     name: `${row.prenom} ${row.nom}`.trim(),
     legacy: true,
@@ -116,6 +120,7 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
     operatorId:
       row.fiscal_establishment?.fiscal_entity_id ??
       (row.gestionnaire_id ? `manager:${row.gestionnaire_id}` : null),
+    managerId: row.gestionnaire_id,
   }));
   if (reservations.some((row) => !row.gite_id))
     properties.push({
@@ -250,7 +255,6 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       else add("extras", fees[i], true);
     });
     const total = sum(components.map((row) => row.amount));
-    const source = getBookingSource(first);
     const baseOperation = (component: Component) => {
       const reservation = rows.find(
         (row) => row.id === component.reservationId,
@@ -265,7 +269,8 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
           component.propertyId,
         category: component.category,
         stayDate: day(reservation.date_entree),
-        channel: source,
+        channel: getBookingSource(reservation),
+        bookingSource: getBookingSource(reservation),
         nights: 0,
         ...(component.uncertain ? { categoryUncertain: true } : {}),
       };
@@ -310,7 +315,8 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
               (options.tourist_tax?.infants ?? 0)),
           stayDate: dateString,
           paymentDate: null,
-          channel: source,
+          channel: getBookingSource(row),
+          bookingSource: getBookingSource(row),
           paymentMethod: "unknown",
           basis: "nights",
         });
@@ -537,11 +543,15 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
   const propertyOperators = Object.fromEntries(
     properties.map((row) => [row.id, row.operatorId]),
   );
+  const propertyManagers = Object.fromEntries(
+    properties.map((row) => [row.id, row.managerId ?? null]),
+  );
   const factsRevision = createHash("sha256")
     .update(
       JSON.stringify({
         properties,
         operators,
+        managers,
         operations,
         operatorIssues,
         socialIssues,
@@ -573,8 +583,10 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
   return {
     properties,
     operators,
+    managers,
     operations,
     propertyOperators,
+    propertyManagers,
     operatorIssues,
     socialIssues,
     factsRevision,

@@ -60,15 +60,22 @@ function data() {
         name: "La Maison du verger",
         initials: "MV",
         operatorId: "entity-a",
+        managerId: "manager-a",
       },
       {
         id: "g2",
         name: "Le Refuge des bois",
         initials: "RB",
         operatorId: null,
+        managerId: "manager-b",
       },
     ],
     operators: [{ id: "entity-a", name: "Entreprise Martin", legacy: false }],
+    managers: [
+      { id: "manager-a", name: "Camille Martin" },
+      { id: "manager-b", name: "Alex Durand" },
+    ],
+    propertyManagers: { g1: "manager-a", g2: "manager-b" },
     propertyOperators: { g1: "entity-a", g2: null },
     operationEdits: {},
     drafts: {},
@@ -620,6 +627,136 @@ try {
     await save.click({ trial: true });
   };
 
+  for (const kind of ["social", "tourist", "owner", "custom"]) {
+    const { page: filters, fixture: filterFixture } = await createPage();
+    filterFixture.state.reports = [
+      {
+        ...createReport(kind, "filtered"),
+        name: `Rapport ${kind}`,
+        recipient: "Gestion interne",
+        propertyIds: ["g1", "g2"],
+        categories: ["accommodation"],
+        operatorId: kind === "social" ? "entity-a" : null,
+      },
+    ];
+    filterFixture.state.operations = [
+      {
+        ...baseOperation,
+        id: "direct",
+        stayDate: "2026-10-10",
+        nights: 6,
+        basis: kind === "tourist" ? "nights" : "payment",
+      },
+      {
+        ...baseOperation,
+        id: "airbnb",
+        channel: "Airbnb",
+        stayDate: "2026-10-10",
+        nights: 9,
+        basis: kind === "tourist" ? "nights" : "payment",
+      },
+      {
+        ...baseOperation,
+        id: "outside",
+        propertyId: "g2",
+        stayDate: "2026-10-10",
+        nights: 20,
+        basis: kind === "tourist" ? "nights" : "payment",
+      },
+    ];
+    await open(filters, "/filtered/modifier");
+    await filters.locator("#rp-report-manager").selectOption("manager-a");
+    const properties = filters.getByRole("group", {
+      name: "Logements concernés",
+      exact: true,
+    });
+    assert.equal(
+      await properties
+        .getByLabel("La Maison du verger", { exact: false })
+        .isChecked(),
+      true,
+    );
+    assert.equal(
+      await properties
+        .getByLabel("Le Refuge des bois", { exact: false })
+        .isDisabled(),
+      true,
+    );
+    await filters
+      .getByRole("button", { name: "Direct uniquement", exact: true })
+      .click();
+    const sourceChoices = filters.getByRole("group", {
+      name: "Sources de réservation",
+      exact: true,
+    });
+    assert.equal(
+      await sourceChoices.getByLabel("Direct", { exact: true }).isChecked(),
+      true,
+    );
+    assert.equal(
+      await sourceChoices.getByLabel("Airbnb", { exact: true }).isChecked(),
+      false,
+    );
+    await sourceChoices.getByLabel("Airbnb", { exact: true }).check();
+    await sourceChoices.getByLabel("Direct", { exact: true }).uncheck();
+    await filters.reload();
+    assert.equal(
+      await filters.locator("#rp-report-manager").inputValue(),
+      "manager-a",
+    );
+    assert.equal(
+      await sourceChoices.getByLabel("Airbnb", { exact: true }).isChecked(),
+      true,
+    );
+    assert.equal(
+      await sourceChoices.getByLabel("Direct", { exact: true }).isChecked(),
+      false,
+    );
+    await sourceChoices.getByLabel("Airbnb", { exact: true }).uncheck();
+    await filters.getByRole("button", { name: /Appliquer les règles/ }).click();
+    await filters.getByText(/Renseignez un nom, un destinataire/).waitFor();
+    assert.equal(filterFixture.commands.length, 0);
+    await filters.reload();
+    assert.equal(
+      await sourceChoices.getByRole("checkbox", { checked: true }).count(),
+      0,
+    );
+    await sourceChoices.getByLabel("Airbnb", { exact: true }).check();
+    await noOverflow(filters);
+    if (kind === "tourist") {
+      await capture(filters, "reports-filters-desktop.png");
+      await filters.setViewportSize({ width: 390, height: 844 });
+      await noOverflow(filters);
+      await capture(filters, "reports-filters-mobile.png");
+      await filters.setViewportSize({ width: 1440, height: 1050 });
+    }
+    await filters.getByRole("button", { name: /Appliquer les règles/ }).click();
+    await filters
+      .getByRole("heading", { name: `Rapport ${kind}`, exact: true })
+      .waitFor();
+    assert.equal(
+      await total(filters),
+      kind === "tourist" ? "9 nuitées" : "500,00 €",
+    );
+    assert.equal(filterFixture.commands[0].definition.managerId, "manager-a");
+    assert.deepEqual(filterFixture.commands[0].definition.bookingSources, [
+      "Airbnb",
+    ]);
+    assert.deepEqual(filterFixture.commands[0].definition.propertyIds, ["g1"]);
+    await open(filters, "/filtered/modifier");
+    await filters
+      .getByRole("button", { name: "Toutes les sources", exact: true })
+      .click();
+    await filters.getByRole("button", { name: /Appliquer les règles/ }).click();
+    await filters
+      .getByRole("heading", { name: `Rapport ${kind}`, exact: true })
+      .waitFor();
+    assert.equal(
+      filterFixture.commands[1].definition.bookingSources,
+      undefined,
+    );
+    await filters.context().close();
+  }
   const { page: worklist, fixture: worklistFixture } = await createPage();
   await worklist.clock.setFixedTime(new Date("2026-10-31T12:00:00Z"));
   worklistFixture.state.worklistStartMonth = "2026-09";

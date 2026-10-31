@@ -7,6 +7,7 @@ import {
   getReportPeriod,
   reportPeriodKey,
   snapshotDiffers,
+  reportIncludesBookingSource,
 } from "./reports.js";
 import { legacyReportPeriodConfirmed } from "./reportWorklist.js";
 
@@ -47,6 +48,7 @@ export function buildReportReminders(
       (row) =>
         scope.has(row.propertyId) &&
         report.categories.includes(row.category) &&
+        reportIncludesBookingSource(report, row) &&
         (!row.basis ||
           row.basis ===
             (report.kind === "tourist" ? "nights" : report.dateBasis)),
@@ -105,7 +107,7 @@ export function buildReportReminders(
       );
       if (
         report.kind === "tourist" &&
-        !result.rows.length &&
+        !result.rows.some((row) => row.status !== "excluded") &&
         !progress?.snapshot
       )
         continue;
@@ -134,6 +136,12 @@ export function buildReportReminders(
               !state.operatorIssues?.[id] &&
               !state.socialIssues?.[id],
           ));
+      const managerValid =
+        !report.managerId ||
+        (state.managers?.some((manager) => manager.id === report.managerId) &&
+          report.propertyIds.every(
+            (id) => state.propertyManagers?.[id] === report.managerId,
+          ));
       reminders.push({
         id: key,
         reportId: report.id,
@@ -150,6 +158,7 @@ export function buildReportReminders(
           result.reviewCount === 0 &&
           reportDefinitionSchema.safeParse(report).success &&
           scopeValid &&
+          Boolean(managerValid) &&
           operatorValid,
         status: progress?.snapshot
           ? "changed"
