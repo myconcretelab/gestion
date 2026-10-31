@@ -1,4 +1,4 @@
-import type { OtaChannel } from "@contrats/shared";
+import { AUTOMATIC_PAYMENT_PLATFORMS, type OtaChannel } from "@contrats/shared";
 import "../../features/finance/reports/ota.css";
 
 export default function OtaChannelSettings({
@@ -14,9 +14,9 @@ export default function OtaChannelSettings({
 }) {
   const channels =
     value ??
-    ["Airbnb", "Abritel", "Gites de France", "Booking.com"].map((name) => ({
+    AUTOMATIC_PAYMENT_PLATFORMS.map((name) => ({
       name,
-      automatic: name === "Booking.com" ? false : automatic,
+      automatic,
       storedPriceBasis: "unknown" as const,
       rateDateBasis: "payment" as const,
       rates: [],

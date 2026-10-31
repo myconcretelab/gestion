@@ -95,6 +95,29 @@ test("une date manquante reste à vérifier dans la période du séjour, sans en
     assert.equal(result.reviewCount, month === "2026-11" ? 1 : 0);
   }
 });
+test("les dates estimées OTA restent incluses, identifiées au CSV et distinguées d’une date confirmée", () => {
+  const estimated = {
+    ...receipt,
+    channel: "Airbnb",
+    paymentDateEstimated: true,
+  };
+  const result = evaluateReport(report, "2026-10", {}, [estimated], sources);
+  assert.equal(result.total, 101);
+  assert.equal(result.reviewCount, 0);
+  assert.match(reportCsv(report, result), /"Date estimée"/);
+  assert.match(reportCsv(report, result), /"Oui \(arrivée \+ 1 jour\)"/);
+  assert.equal(
+    snapshotDiffers(
+      {
+        confirmedAt: "2026-10-31",
+        definition: report,
+        result,
+      },
+      evaluateReport(report, "2026-10", {}, [receipt], sources),
+    ),
+    true,
+  );
+});
 test("les rapports sociaux demandent un rattachement confirmé à un exploitant", () => {
   assert.equal(
     evaluateReport(report, "2026-10", {}, [receipt], {

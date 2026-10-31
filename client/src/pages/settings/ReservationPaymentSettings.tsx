@@ -150,6 +150,12 @@ export default function ReservationPaymentSettings() {
               draps, les options ajoutées dans l’application et la taxe
               collectée sur place restent à encaisser.
             </p>
+            <p className="field-hint">
+              Pour les réservations existantes et futures, les versements OTA
+              sans date sont datés au lendemain de l’arrivée et inclus dans les
+              rapports avec la mention « Date estimée ». Une date saisie ou
+              importée prend la priorité.
+            </p>
             <p className="field-hint">Le réglage propre à chaque canal ci-dessous est prioritaire sur ce réglage général.</p>
             <p className="field-hint">
               Si vous désactivez ce réglage, enregistrez les versements reçus

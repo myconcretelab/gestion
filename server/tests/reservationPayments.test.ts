@@ -544,8 +544,13 @@ test("changer l'origine conserve le classement historique et les réservations a
   });
 });
 
-test("les plateformes sont considérées reçues par défaut sans créer de règlement daté", async () => {
-  for (const source of ["Airbnb", "Abritel", "Gites de France"]) {
+test("les plateformes existantes et futures sont reçues à J+1 avec une date estimée sans créer de saisie", async () => {
+  for (const source of [
+    "Airbnb",
+    "Abritel",
+    "Gites de France",
+    "Booking.com",
+  ]) {
     const r = await stay({ booking_source: source, source_paiement: source });
     await inOrg(async () => {
       const state = await ledger.getReservationPaymentTracking(r.id);
@@ -553,7 +558,8 @@ test("les plateformes sont considérées reçues par défaut sans créer de règ
       assert.equal(state.remaining, 0);
       assert.equal(state.platform?.automatic, true);
       assert.equal(state.entries[0].origin, "platform");
-      assert.equal(state.entries[0].paid_on, null);
+      assert.equal(state.entries[0].paid_on, "2040-01-02T12:00:00.000Z");
+      assert.equal(state.entries[0].paid_on_estimated, true);
       assert.equal(
         await db.default.reservationRecordedPayment.count({
           where: { reservation_id: r.id },

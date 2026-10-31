@@ -365,10 +365,10 @@ export default function ReportDetail({
           ) && (
             <p className="rp-muted">
               Les encaissements sans date sont présentés dans la période du
-              séjour pour être complétés et restent exclus du total. Les
-              versements de plateforme considérés reçus automatiquement n’ont
-              pas de date confirmée. Importez le relevé de plateforme ou
-              renseignez le règlement reçu avec sa date.
+              séjour pour être complétés et restent exclus du total.
+              Renseignez le règlement reçu avec sa date. Les versements OTA
+              utilisent automatiquement une date estimée au lendemain de
+              l’arrivée jusqu’à la saisie ou l’import d’un versement daté.
             </p>
           )}
         </section>
@@ -575,6 +575,8 @@ export default function ReportDetail({
               </span>
               <span className="rp-operation-date">
                 {dateLabel(row.effectiveDate)}
+                {displayedReport.dateBasis === "payment" &&
+                  row.paymentDateEstimated && <small>Date estimée</small>}
               </span>
               <strong className="rp-operation-value">
                 {formatReportValue(displayedReport, row.value)}
@@ -782,7 +784,10 @@ function OperationDialog({
         </div>
         <div>
           <dt>Encaissement</dt>
-          <dd>{dateLabel(row.paymentDate)}</dd>
+          <dd>
+            {dateLabel(row.paymentDate)}
+            {row.paymentDateEstimated ? " · Date estimée (arrivée + 1 jour)" : ""}
+          </dd>
         </div>
         <div>
           <dt>Mode de paiement</dt>

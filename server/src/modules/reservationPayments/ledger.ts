@@ -300,6 +300,9 @@ export const loadReservationPaymentTracking = async (
     const automatic =
       settings.platforms?.find((channel) => channel.name === source)
         ?.automatic ?? settings.platform_payments_received_automatically;
+    const estimatedPaymentDate = new Date(first.date_entree);
+    estimatedPaymentDate.setUTCDate(estimatedPaymentDate.getUTCDate() + 1);
+    estimatedPaymentDate.setUTCHours(12, 0, 0, 0);
     if (isPlatform && automatic && platformExpected > 0) {
       const policy = settings.platforms?.find(
         (channel) => channel.name === source,
@@ -307,7 +310,9 @@ export const loadReservationPaymentTracking = async (
       const rateDate =
         policy?.rateDateBasis === "arrival"
           ? first.date_entree.toISOString().slice(0, 10)
-          : null;
+          : policy?.rateDateBasis === "payment"
+            ? estimatedPaymentDate.toISOString().slice(0, 10)
+            : null;
       const rate = rateDate ? otaRate(policy, rateDate) : undefined;
       const estimatedGross =
         policy?.storedPriceBasis === "gross"
@@ -327,7 +332,7 @@ export const loadReservationPaymentTracking = async (
         method: "Versement plateforme",
         purpose: "full",
         paid_on: null,
-        note: `Hébergement considéré reçu automatiquement de ${source}. Les options et la taxe à encaisser sur place restent dues.`,
+        note: `Hébergement considéré reçu automatiquement de ${source}. Date de versement estimée au lendemain de l’arrivée. Les options et la taxe à encaisser sur place restent dues.`,
         origin: "platform",
         voided_at: null,
         ...(estimatedGross !== null && estimatedFee !== null
@@ -347,6 +352,18 @@ export const loadReservationPaymentTracking = async (
             }
           : {}),
       });
+    }
+    for (const entry of entries) {
+      if (
+        !entry.paid_on &&
+        (entry.origin === "platform" ||
+          entry.method === "Versement plateforme" ||
+          (entry.origin === "legacy" && isPlatform))
+      ) {
+        entry.paid_on = estimatedPaymentDate.toISOString();
+        entry.paid_on_estimated = true;
+        entry.method ??= "Versement plateforme";
+      }
     }
     entries.sort(
       (a, b) =>
@@ -458,7 +475,10 @@ const materializeHistory = async (
         reservation_id: stay.canonicalId,
         amount_cents: Math.round(entry.amount * 100),
         method: entry.method,
-        paid_on: entry.paid_on ? new Date(entry.paid_on) : null,
+        paid_on:
+          entry.paid_on && !entry.paid_on_estimated
+            ? new Date(entry.paid_on)
+            : null,
         purpose: entry.purpose,
         note: entry.note,
         origin: "legacy",

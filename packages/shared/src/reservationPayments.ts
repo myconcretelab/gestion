@@ -21,6 +21,7 @@ export const AUTOMATIC_PAYMENT_PLATFORMS = [
   "Airbnb",
   "Abritel",
   "Gites de France",
+  "Booking.com",
 ] as const;
 export type ReservationPaymentSettings = {
   platform_payments_received_automatically: boolean;
@@ -70,7 +71,7 @@ export const getBookingSource = (reservation: {
   source_paiement?: string | null;
 }) =>
   reservation.booking_source ||
-  (["Airbnb", "Abritel", "Gites de France", "HomeExchange"].includes(
+  ([...AUTOMATIC_PAYMENT_PLATFORMS, "HomeExchange"].includes(
     reservation.source_paiement || "",
   )
     ? reservation.source_paiement!
@@ -82,6 +83,7 @@ export type ReservationPaymentEntry = {
   method: string | null;
   purpose: string;
   paid_on: string | null;
+  paid_on_estimated?: boolean;
   note: string | null;
   origin: "manual" | "legacy" | "stripe" | "platform";
   voided_at: string | null;
@@ -198,7 +200,8 @@ export const getContractReceiptStatus = (
     ),
   );
   const date =
-    contributors.length && contributors.every((entry) => entry.paid_on)
+    contributors.length &&
+    contributors.every((entry) => entry.paid_on && !entry.paid_on_estimated)
       ? contributors[contributors.length - 1].paid_on
       : null;
   return {

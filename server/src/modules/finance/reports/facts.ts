@@ -346,23 +346,21 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
             id: `receipt:${entry.id}:${destination.id}:${amounts.category}:${index}`,
             amountCents: amounts.grossCents,
             paymentDate: paymentDay(entry.paid_on),
+            ...(entry.paid_on_estimated ? { paymentDateEstimated: true } : {}),
             paymentMethod: "platform",
             basis: "payment",
             channel: entry.ota.channel,
             ota: { ...entry.ota, ...amounts, allocations: undefined },
-            ...(entry.origin === "platform"
+            ...(ledger.requires_review
               ? {
                   reviewReason:
-                    "Versement de plateforme estimé : importez le relevé ou renseignez le règlement reçu et sa date.",
+                    "Un paiement ou remboursement reste à vérifier sur ce séjour.",
                 }
-              : ledger.requires_review
-                ? {
-                    reviewReason:
-                      "Un paiement ou remboursement reste à vérifier sur ce séjour.",
-                  }
-                : {}),
-            allocationNote:
-              entry.ota.source === "import" && entry.ota.dateSource === "manual"
+              : {}),
+            allocationNote: entry.paid_on_estimated
+              ? "Versement de plateforme inclus automatiquement. Date estimée au lendemain de l’arrivée ; un règlement saisi ou importé remplace cette estimation."
+              : entry.ota.source === "import" &&
+                  entry.ota.dateSource === "manual"
                 ? "Montants exacts du relevé ; date du règlement déjà saisi conservée."
                 : entry.ota.source === "import"
                   ? "Montants exacts du relevé. Date de versement fournie par la plateforme ; arrivée bancaire non attestée par le relevé."
@@ -430,17 +428,6 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
         problems.push(
           "Un paiement par carte ou un remboursement reste à vérifier. La date du remboursement n’est pas disponible dans le registre.",
         );
-      if (
-        entry.method === "Versement plateforme" &&
-        entry.origin !== "platform"
-      )
-        problems.push(
-          "Brut et commission inconnus : importez le relevé de la plateforme pour vérifier cette recette.",
-        );
-      if (entry.origin === "platform")
-        problems.push(
-          "Versement de plateforme estimé : renseignez le règlement reçu et sa date.",
-        );
       for (const [index, component] of components.entries()) {
         if (!amounts[index]) continue;
         remaining[index] -= amounts[index];
@@ -449,10 +436,17 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
           id: `receipt:${entry.id}:${component.reservationId}:${component.category}`,
           amountCents: amounts[index],
           paymentDate: paymentDay(entry.paid_on),
+          ...(entry.paid_on_estimated ? { paymentDateEstimated: true } : {}),
           paymentMethod: method(entry.method),
           basis: "payment",
           ...(problems.length ? { reviewReason: problems.join(" ") } : {}),
           allocationNote:
+            (entry.paid_on_estimated
+              ? "Versement de plateforme inclus automatiquement. Date estimée au lendemain de l’arrivée ; un règlement saisi ou importé remplace cette estimation. "
+              : "") +
+            (entry.method === "Versement plateforme"
+              ? "Montant enregistré utilisé ; importez le relevé pour détailler le brut et la commission. "
+              : "") +
             "Règlement ventilé au prorata des montants restant dus par logement et catégorie. Les versements de plateforme sont affectés à l’hébergement en priorité ; les règlements sur place aux prestations et à la taxe.",
         });
       }
@@ -499,6 +493,7 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
           id: `surplus:${entry.id}`,
           amountCents: surplus,
           paymentDate: paymentDay(entry.paid_on),
+          ...(entry.paid_on_estimated ? { paymentDateEstimated: true } : {}),
           paymentMethod: method(entry.method),
           basis: "payment",
           reviewReason:

@@ -103,8 +103,10 @@ function data() {
         ...baseOperation,
         id: "b",
         amountCents: 20000,
-        paymentMethod: "transfer",
+        paymentMethod: "platform",
         channel: "Airbnb",
+        stayDate: "2026-10-09",
+        paymentDateEstimated: true,
       },
       {
         ...baseOperation,
@@ -701,12 +703,24 @@ try {
   }
   await operationSearch.fill("Camille");
   assert.equal(await page.locator(".rp-operation-row").count(), 4);
+  assert.ok(
+    await page
+      .locator(".rp-operation-date")
+      .getByText("Date estimée", { exact: true })
+      .isVisible(),
+  );
   await operationSearch.fill("");
   await capture(page, "reports-detail-desktop.png");
   for (const width of [1024, 820]) {
     await page.setViewportSize({ width, height: 900 });
     await noOverflow(page);
     assert.ok(await page.locator(".rp-operation-source").first().isVisible());
+    assert.ok(
+      await page
+        .locator(".rp-operation-date")
+        .getByText("Date estimée", { exact: true })
+        .isVisible(),
+    );
     assert.equal(
       await page
         .locator(".rp-operation-row")
@@ -738,6 +752,12 @@ try {
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await noOverflow(page);
+  assert.ok(
+    await page
+      .locator(".rp-operation-date")
+      .getByText("Date estimée", { exact: true })
+      .isVisible(),
+  );
   assert.ok(await page.locator(".rp-operation-source").first().isVisible());
   assert.ok(
     await page.locator(".rp-operation-source-label").first().isVisible(),
@@ -1283,13 +1303,11 @@ try {
   const { page: largerGap, fixture: largerFixture } = await createPage();
   largerFixture.otaStoredAmountCents = 8502;
   await open(largerGap, "/import-airbnb");
-  await largerGap
-    .getByLabel("Relevé Airbnb", { exact: true })
-    .setInputFiles({
-      name: "ecart.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from(airbnbFixture()),
-    });
+  await largerGap.getByLabel("Relevé Airbnb", { exact: true }).setInputFiles({
+    name: "ecart.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(airbnbFixture()),
+  });
   await largerGap.getByRole("region", { name: "Aperçu de l’import" }).waitFor();
   assert.equal(
     await largerGap

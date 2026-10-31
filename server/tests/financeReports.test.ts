@@ -248,14 +248,79 @@ test("une ventilation inconnue ne transforme pas les tarifs actuels en prix hist
       2000,
     );
   }));
-test("un versement de plateforme estimé ne devient pas un encaissement daté", () =>
+test("les versements OTA sont inclus à J+1, y compris les futurs séjours et les changements de mois ou d’année", () =>
   fixture(async ({ gite }) => {
-    await stay(gite, { booking_source: "Airbnb", source_paiement: "Airbnb" });
+    const cases = [
+      ["Airbnb", "2026-10-30", "2026-10-31"],
+      ["Abritel", "2026-10-31", "2026-11-01"],
+      ["Gites de France", "2026-12-31", "2027-01-01"],
+      ["Booking.com", "2028-02-28", "2028-02-29"],
+    ];
+    const ids: string[] = [];
+    for (const [source, arrival] of cases) {
+      const departure = new Date(arrival);
+      departure.setUTCDate(departure.getUTCDate() + 4);
+      const reservation = await stay(gite, {
+        booking_source: source,
+        source_paiement: source,
+        date_entree: new Date(arrival),
+        date_sortie: departure,
+      });
+      ids.push(reservation.id);
+    }
     const state = await reports.getReportWorkspace();
-    assert.equal(result(state).total, 0);
-    assert.equal(result(state).reviewCount, 1);
-    assert.equal(result(state, "2026-12").reviewCount, 0);
-    assert.match(result(state).rows[0].reason, /estimé/);
+    for (const [index, [, , date]] of cases.entries()) {
+      const period = result(state, date.slice(0, 7));
+      const payment = period.rows.find(
+        (row) => row.reservationId === ids[index],
+      )!;
+      assert.equal(payment.effectiveDate, date);
+      assert.equal(payment.paymentDateEstimated, true);
+      assert.equal(payment.status, "included");
+      assert.equal(period.total, 10000);
+      assert.equal(period.reviewCount, 0);
+    }
+    assert.equal(result(state, "2026-12").total, 0);
+    assert.equal(await db.default.reservationRecordedPayment.count(), 0);
+    await db.default.reservation.update({
+      where: { id: ids[0] },
+      data: { date_entree: new Date("2026-10-31") },
+    });
+    const changed = await reports.getReportWorkspace();
+    assert.equal(result(changed).total, 0);
+    assert.equal(result(changed, "2026-11").total, 20000);
+  }));
+test("les anciens versements OTA non datés gardent leur estimation après la saisie d’un complément", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      booking_source: "Airbnb",
+      frais_optionnels_montant: 20,
+      payments_managed: true,
+    });
+    const payment = await db.default.reservationRecordedPayment.create({
+      data: {
+        reservation_id: reservation.id,
+        amount_cents: 10000,
+        method: "Versement plateforme",
+        purpose: "full",
+        origin: "legacy",
+      },
+    });
+    await pay(reservation.id, 20, { method: "Espèces", purpose: "extras" });
+    const state = await reports.getReportWorkspace();
+    const row = result(state).rows.find((row) => row.id.includes(payment.id))!;
+    assert.equal(row.effectiveDate, "2026-10-31");
+    assert.equal(row.paymentDateEstimated, true);
+    assert.equal(result(state).total, 12000);
+    assert.equal(result(state).reviewCount, 0);
+    assert.equal(
+      (
+        await db.default.reservationRecordedPayment.findUniqueOrThrow({
+          where: { id: payment.id },
+        })
+      ).paid_on,
+      null,
+    );
   }));
 test("un règlement annulé est retiré et les changements de source invalident la préparation", () =>
   fixture(async ({ gite }) => {
@@ -834,6 +899,7 @@ test("import OTA : aperçu sans écriture, rattachement exact, brut/net/options,
     );
     let state = await reports.getReportWorkspace();
     assert.equal(result(state).total, 11500);
+    assert.ok(result(state).rows.every((row) => !row.paymentDateEstimated));
     assert.equal(
       result(state, "2026-10", { ...social(state), otaAmountBasis: "net" })
         .total,

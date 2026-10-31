@@ -302,14 +302,13 @@ export default function ReservationPaymentsEditor({
               {entry.origin === "platform"
                 ? "Hébergement"
                 : purposeLabel(entry.purpose)}
-              {entry.origin !== "platform" ? (
-                <small>
-                  {entry.method || "Moyen non renseigné"} ·{" "}
-                  {entry.paid_on
-                    ? formatDate(entry.paid_on)
-                    : "Date non renseignée"}
-                </small>
-              ) : null}
+              <small>
+                {entry.method || "Moyen non renseigné"} ·{" "}
+                {entry.paid_on
+                  ? formatDate(entry.paid_on)
+                  : "Date non renseignée"}
+                {entry.paid_on_estimated ? " · Date estimée" : ""}
+              </small>
               {entry.origin === "legacy" ? (
                 <small>Historique repris</small>
               ) : null}

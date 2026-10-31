@@ -41,6 +41,7 @@ export type ReportOperation = {
   amountCents: number;
   nights: number;
   paymentDate: string | null;
+  paymentDateEstimated?: boolean;
   stayDate: string;
   channel: string;
   paymentMethod: ReportPaymentMethod;
@@ -211,6 +212,7 @@ export const operationSourceSignature = (operation: ReportOperation) =>
     operation.categoryUncertain,
     operation.reviewReason,
     operation.ota,
+    ...(operation.paymentDateEstimated ? ["estimated-payment-date"] : []),
   ]);
 
 export function evaluateReport(
@@ -439,6 +441,7 @@ export function snapshotDiffers(
         row.value,
         row.effectiveDate,
         recordedMethods.get(row.id) === "unknown" ? null : row.paymentMethod,
+        ...(row.paymentDateEstimated ? ["estimated-payment-date"] : []),
       ]),
     );
   return signature(snapshot.result) !== signature(result);
@@ -483,6 +486,7 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
     "Commission OTA EUR",
     "Net OTA EUR",
     "Base OTA du rapport",
+    "Date estimée",
   ];
   const labels = {
     included: "Inclus",
@@ -508,6 +512,9 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
         row.ota ? row.ota.feeCents / 100 : "",
         row.ota ? row.ota.netCents / 100 : "",
         report.otaAmountBasis === "net" ? "Net plateforme" : "Brut",
+        report.dateBasis === "payment" && row.paymentDateEstimated
+          ? "Oui (arrivée + 1 jour)"
+          : "",
       ]),
     ]
       .map((row) => row.map(quote).join(";"))

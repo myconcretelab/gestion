@@ -241,6 +241,26 @@ test("les arrhes fractionnées retiennent la date de complétion et ne prétende
   assert.equal(result.statut_paiement_arrhes, "recu");
   assert.equal(result.date_paiement_arrhes, "2026-10-13");
   assert.equal(result.mode_paiement_arrhes, null);
+  assert.equal(
+    getContractReceiptStatus(
+      {
+        managed: true,
+        total: 1000,
+        deposit: 200,
+        received: 200,
+        remaining: 800,
+        overpaid: 0,
+        requires_review: false,
+        entries: entries.map((entry) => ({
+          ...entry,
+          paid_on_estimated: true,
+        })),
+      },
+      200,
+      1000,
+    ).date_paiement_arrhes,
+    null,
+  );
 });
 
 test("un solde d'un autre moyen ne change pas le moyen des arrhes déjà reçues", async () => {
