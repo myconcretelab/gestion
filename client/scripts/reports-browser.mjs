@@ -651,6 +651,18 @@ try {
     .getByRole("heading", { name: "Cotisations sociales", exact: true })
     .waitFor();
   assert.match(await total(page), /770/);
+  assert.match(
+    await page.locator(".rp-total-card > .rp-overline").innerText(),
+    /commissions non renseignées/i,
+  );
+  assert.match(
+    await page.locator(".rp-platform-amounts__undetailed").innerText(),
+    /200,00.*1 opération incluse telle quelle/s,
+  );
+  assert.match(
+    await page.locator(".rp-platform-basis").innerText(),
+    /Brut \/ net non déterminé/,
+  );
   const header = page.locator(".rp-page-header");
   assert.ok((await header.boundingBox()).height < 100);
   assert.ok(
@@ -1274,15 +1286,70 @@ try {
     .click();
   assert.match(await otaPage.locator(".ota-history").innerText(), /85,01/);
 
+  await otaPage.setViewportSize({ width: 1440, height: 1050 });
   await open(otaPage, "/social");
   assert.match(await total(otaPage), /115,00/);
+  assert.match(
+    await otaPage.locator(".rp-total-card > .rp-overline").innerText(),
+    /Total brut avant commissions/i,
+  );
+  const platformAmounts = otaPage.getByRole("region", {
+    name: "Brut, commissions et net des plateformes",
+    exact: true,
+  });
+  assert.match(
+    await platformAmounts.locator(".is-selected").innerText(),
+    /Brut avant commissions.*115,00/s,
+  );
+  assert.match(
+    await platformAmounts.innerText(),
+    /Commissions prélevées.*15,00.*Net après commissions.*100,00/s,
+  );
+  await capture(otaPage, "reports-basis-gross-desktop.png");
   await open(otaPage, "/social/modifier");
   await otaPage.getByLabel("Base OTA", { exact: true }).selectOption("net");
+  assert.match(
+    await otaPage.locator(".rp-preview-value").innerText(),
+    /Total net après commissions.*100,00/is,
+  );
+  assert.match(
+    await otaPage.locator(".rp-basis-pending").innerText(),
+    /Actuellement enregistré : Brut avant commissions/,
+  );
+  await otaPage
+    .getByRole("link", { name: "Fermer le brouillon", exact: true })
+    .click();
+  await otaPage.locator(".rp-basis-draft").waitFor();
+  assert.match(await total(otaPage), /115,00/);
+  assert.match(
+    await otaPage.locator(".rp-basis-draft").innerText(),
+    /Net après commissions.*n’est pas encore appliqué/s,
+  );
+  await otaPage.getByRole("link", { name: /Reprendre les réglages/ }).click();
+  assert.equal(
+    await otaPage.getByLabel("Base OTA", { exact: true }).inputValue(),
+    "net",
+  );
   await otaPage.getByRole("button", { name: /Appliquer les règles/ }).click();
   await otaPage
     .getByRole("heading", { name: "Cotisations sociales", exact: true })
     .waitFor();
   assert.match(await total(otaPage), /100,00/);
+  assert.match(
+    await otaPage.locator(".rp-total-card > .rp-overline").innerText(),
+    /Total net après commissions/i,
+  );
+  assert.match(
+    await platformAmounts.locator(".is-selected").innerText(),
+    /Net après commissions.*100,00/s,
+  );
+  assert.equal(await otaPage.locator(".rp-basis-draft").count(), 0);
+  await capture(otaPage, "reports-basis-net-desktop.png");
+  await otaPage.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(otaPage);
+  assert.ok(await platformAmounts.isVisible());
+  await capture(otaPage, "reports-basis-net-mobile.png");
+  await otaPage.setViewportSize({ width: 1440, height: 1050 });
   await open(otaPage, "/import-airbnb");
   await otaPage.getByLabel("Relevé Airbnb", { exact: true }).setInputFiles({
     name: "airbnb-test.csv",

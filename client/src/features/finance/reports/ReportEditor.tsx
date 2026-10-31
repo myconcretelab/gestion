@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
+import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
 import {
   categoryLabel,
@@ -10,6 +11,8 @@ import {
   evaluateWorkspaceReport,
   formatReportValue,
   getReportPeriod,
+  reportAmountBasisLabel,
+  reportTotalLabel,
   REPORT_CATEGORIES,
   REPORT_TEMPLATES,
   type ReportCadence,
@@ -467,11 +470,18 @@ export default function ReportEditor({
                     </option>
                   </select>
                   <span className="rp-field-help">
-                    Le choix concerne ce rapport. Le net plateforme n’est pas un
-                    bénéfice fiscal. Vérifiez la base applicable à votre
-                    démarche et à votre régime ; les deux montants restent
-                    conservés.
+                    Exemple : 100 € bruts − 15 € de commission = 85 € nets.
+                    Ce choix s’applique aux versements dont la commission est
+                    connue. Les montants sans détail restent repris tels quels.
                   </span>
+                  {base &&
+                    (base.otaAmountBasis ?? "gross") !== (draft.otaAmountBasis ?? "gross") && (
+                    <span className="rp-field-help rp-basis-pending">
+                      Actuellement enregistré : {reportAmountBasisLabel(base)}.
+                      {" "}L’aperçu utilise votre nouveau choix. Cliquez sur
+                      « Appliquer les règles » pour l’enregistrer dans le rapport.
+                    </span>
+                  )}
                 </label>
               )}
               <fieldset className="rp-choice-fieldset">
@@ -588,8 +598,12 @@ export default function ReportEditor({
                 aria-live="polite"
                 aria-atomic="true"
               >
+                <span className="rp-overline">
+                  {reportTotalLabel(draft, result)}
+                </span>
                 {formatReportValue(draft, result.total)}
               </div>
+              <ReportPlatformAmounts report={draft} result={result} />
               <p className="rp-muted">
                 {result.includedCount} opération
                 {result.includedCount > 1 ? "s" : ""} incluse

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
+import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
 import { canAccessReportSource, sourceCorrectionHref } from "./reportSources";
 import {
@@ -14,6 +15,10 @@ import {
   reportPeriodKey,
   reportStatus,
   snapshotDiffers,
+  reportAmountBasisLabel,
+  operationAmountBasisLabel,
+  reportTotalLabel,
+  type ReportDefinition,
   type EvaluatedOperation,
   type OperationOverride,
   type OperationStatus,
@@ -112,6 +117,12 @@ export default function ReportDetail({
   const differs = Boolean(
     progress?.snapshot && snapshotDiffers(progress.snapshot, result),
   );
+  const draft = state.drafts[report.id];
+  const unappliedBasis =
+    !snapshot &&
+    draft &&
+    report.dateBasis === "payment" &&
+    (draft.otaAmountBasis ?? "gross") !== (report.otaAmountBasis ?? "gross");
   const rows = displayedResult.rows.filter(
     (row) =>
       row.status === filter &&
@@ -275,6 +286,26 @@ export default function ReportDetail({
           </>
         }
       />
+      {unappliedBasis && (
+        <div className="rp-notice rp-basis-draft">
+          <ReportIcon name="info" />
+          <div>
+            <strong>
+              Votre choix « {reportAmountBasisLabel(draft)} » n’est pas encore
+              appliqué.
+            </strong>
+            <p>
+              La règle enregistrée est « {reportAmountBasisLabel(report)} ».
+              Appliquez les règles dans les réglages pour enregistrer votre choix.
+            </p>
+            {canEdit && (
+              <Link className="rp-text-button" to={href(`/${report.id}/modifier`)}>
+                Reprendre les réglages <ReportIcon name="arrow" />
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
       {snapshot && (
         <div className="rp-notice rp-notice--primary">
           <ReportIcon name="check" />
@@ -376,14 +407,16 @@ export default function ReportDetail({
       <section className="rp-report-summary" aria-label="Synthèse du rapport">
         <div className="rp-total-card">
           <span className="rp-overline">
-            {snapshot
-              ? "Résultat confirmé"
-              : "Résultat des opérations incluses"}
+            {snapshot ? "Copie confirmée · " : ""}
+            {reportTotalLabel(displayedReport, displayedResult)}
           </span>
           <strong className="rp-total-value">
             {formatReportValue(displayedReport, displayedResult.total)}
           </strong>
-          {displayedReport.kind !== "tourist" && displayedReport.dateBasis === "payment" && <span>Plateformes : {displayedReport.otaAmountBasis === "net" ? "net après commissions" : "brut avant commissions"}</span>}
+          <ReportPlatformAmounts
+            report={displayedReport}
+            result={displayedResult}
+          />
           <span>
             {displayedReport.kind === "tourist"
               ? "Une personne hébergée pendant une nuit = une nuitée. Les séjours sont répartis entre les mois concernés."
@@ -540,7 +573,7 @@ export default function ReportDetail({
             <span>Source de réservation</span>
             <span>Date retenue</span>
             <span>
-              {displayedReport.kind === "tourist" ? "Nuitées" : "Montant"}
+              {displayedReport.kind === "tourist" ? "Nuitées" : "Montant retenu"}
             </span>
             <span />
           </div>
@@ -580,6 +613,9 @@ export default function ReportDetail({
               </span>
               <strong className="rp-operation-value">
                 {formatReportValue(displayedReport, row.value)}
+                {(row.ota || row.paymentMethod === "platform") && (
+                  <small>{operationAmountBasisLabel(displayedReport, row)}</small>
+                )}
               </strong>
               <ReportIcon name="arrow" />
             </button>
@@ -605,7 +641,7 @@ export default function ReportDetail({
         <OperationDialog
           key={selectedRow.id}
           row={selectedRow}
-          reportName={displayedReport.name}
+          report={displayedReport}
           formattedValue={formatReportValue(displayedReport, selectedRow.value)}
           canEdit={canEdit && !snapshot}
           canOverride={
@@ -728,7 +764,7 @@ export default function ReportDetail({
 
 function OperationDialog({
   row,
-  reportName,
+  report,
   formattedValue,
   canEdit,
   canOverride,
@@ -739,7 +775,7 @@ function OperationDialog({
   onSave,
 }: {
   row: EvaluatedOperation;
-  reportName: string;
+  report: ReportDefinition;
   formattedValue: string;
   canEdit: boolean;
   canOverride: boolean;
@@ -799,14 +835,31 @@ function OperationDialog({
         </div>
         <div>
           <dt>Rapport</dt>
-          <dd>{reportName}</dd>
+          <dd>{report.name}</dd>
+        </div>
+        <div>
+          <dt>Montant retenu dans ce rapport</dt>
+          <dd>
+            {formattedValue} · {operationAmountBasisLabel(report, row)}
+          </dd>
         </div>
       </dl>
-      {row.ota && <dl className="rp-source-details">
-        <div><dt>Brut plateforme</dt><dd>{formatReportValue({ kind: "custom" }, row.ota.grossCents)}</dd></div>
-        <div><dt>Commission</dt><dd>{formatReportValue({ kind: "custom" }, row.ota.feeCents)}</dd></div>
-        <div><dt>Net plateforme</dt><dd>{formatReportValue({ kind: "custom" }, row.ota.netCents)}</dd></div>
-      </dl>}
+      {row.ota && (
+        <dl className="rp-source-details rp-platform-amounts__details">
+          <div className={report.otaAmountBasis !== "net" ? "is-selected" : undefined}>
+            <dt>Brut avant commissions</dt>
+            <dd>{formatReportValue({ kind: "custom" }, row.ota.grossCents)}</dd>
+          </div>
+          <div>
+            <dt>Commissions prélevées</dt>
+            <dd>{formatReportValue({ kind: "custom" }, -row.ota.feeCents)}</dd>
+          </div>
+          <div className={report.otaAmountBasis === "net" ? "is-selected" : undefined}>
+            <dt>Net après commissions</dt>
+            <dd>{formatReportValue({ kind: "custom" }, row.ota.netCents)}</dd>
+          </div>
+        </dl>
+      )}
       {sourceHref && (
         <Link className="rp-text-button" to={sourceHref}>
           Ouvrir les règlements de la réservation <ReportIcon name="arrow" />

@@ -15,6 +15,10 @@ export {
   snapshotDiffers,
   reportStatus,
   reportCsv,
+  reportAmountBasisLabel,
+  operationAmountBasisLabel,
+  platformAmountBreakdown,
+  reportTotalLabel,
 } from "@contrats/shared";
 export type {
   ReportKind,

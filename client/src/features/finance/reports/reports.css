@@ -603,6 +603,88 @@
   font-size: 0.7rem;
   color: var(--muted);
 }
+.rp-platform-amounts {
+  width: 100%;
+  font-size: 0.74rem;
+  line-height: 1.6;
+}
+.rp-platform-basis {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 10px;
+}
+.rp-platform-basis > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.rp-platform-basis > small {
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+.rp-platform-basis > strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+.rp-platform-amounts__details {
+  margin: 0;
+}
+.rp-platform-amounts__details > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+}
+.rp-platform-amounts__details > .is-selected {
+  background: var(--primary-soft);
+  border-color: var(--primary-strong);
+  border-radius: 8px;
+}
+.rp-platform-amounts__details dt small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+.rp-platform-amounts__details dd {
+  margin: 0;
+  font-weight: 650;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rp-platform-amounts__undetailed {
+  margin: 10px 0;
+  padding: 11px 12px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.rp-platform-amounts__undetailed > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.rp-platform-amounts__undetailed strong {
+  font-size: 0.7rem;
+  font-weight: 550;
+}
+.rp-platform-amounts__undetailed b {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rp-platform-amounts__undetailed p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+.rp-basis-pending {
+  padding: 10px 12px;
+  border-left: 3px solid var(--primary);
+  background: var(--primary-soft);
+}
 .rp-total-rule .rp-icon {
   width: 16px;
   height: 16px;
@@ -733,10 +815,21 @@
   display: none;
 }
 .rp-operation-value {
+  min-width: 0;
   text-align: right;
   font-weight: 650;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+.rp-operation-value small {
+  display: block;
+  max-width: 140px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
 }
 .rp-operation-row > .rp-icon {
   width: 15px;
@@ -1100,6 +1193,15 @@
   line-height: 1.2;
   margin-top: 24px;
   font-variant-numeric: tabular-nums;
+}
+.rp-preview-value > .rp-overline {
+  margin-bottom: 10px;
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  line-height: 1.6;
+}
+.rp-preview-value + .rp-platform-amounts {
+  margin-top: 14px;
 }
 .rp-rule-summary {
   display: flex;

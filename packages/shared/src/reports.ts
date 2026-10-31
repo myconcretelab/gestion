@@ -414,6 +414,59 @@ export function accommodationBreakdown(result: ReportResult) {
   }).filter((group) => group.count > 0);
 }
 
+export const reportAmountBasisLabel = (
+  report: Pick<ReportDefinition, "otaAmountBasis">,
+) =>
+  report.otaAmountBasis === "net"
+    ? "Net après commissions"
+    : "Brut avant commissions";
+
+export function operationAmountBasisLabel(
+  report: Pick<ReportDefinition, "kind" | "dateBasis" | "otaAmountBasis">,
+  operation: Pick<ReportOperation, "ota" | "paymentMethod">,
+) {
+  if (report.kind === "tourist") return "Nuitées";
+  if (report.dateBasis === "stay") return "Montant du séjour";
+  if (operation.ota) return reportAmountBasisLabel(report);
+  return operation.paymentMethod === "platform"
+    ? "Montant enregistré · commission non détaillée"
+    : "Montant encaissé";
+}
+
+export function platformAmountBreakdown(result: ReportResult) {
+  const included = result.rows.filter((row) => row.status === "included");
+  const detailed = included.filter((row) => row.ota);
+  const undetailed = included.filter(
+    (row) => row.paymentMethod === "platform" && !row.ota,
+  );
+  return {
+    detailedCount: detailed.length,
+    grossCents: detailed.reduce((sum, row) => sum + row.ota!.grossCents, 0),
+    feeCents: detailed.reduce((sum, row) => sum + row.ota!.feeCents, 0),
+    netCents: detailed.reduce((sum, row) => sum + row.ota!.netCents, 0),
+    undetailedCount: undetailed.length,
+    undetailedCents: undetailed.reduce((sum, row) => sum + row.value, 0),
+    otherCents: included
+      .filter((row) => !row.ota && row.paymentMethod !== "platform")
+      .reduce((sum, row) => sum + row.value, 0),
+  };
+}
+
+export function reportTotalLabel(
+  report: ReportDefinition,
+  result: ReportResult,
+) {
+  if (report.kind === "tourist") return "Total des nuitées incluses";
+  if (report.dateBasis === "stay") return "Total des recettes au séjour";
+  const amounts = platformAmountBreakdown(result);
+  if (amounts.undetailedCount)
+    return "Total avec des commissions non renseignées";
+  if (!amounts.detailedCount) return "Total des recettes incluses";
+  return report.otaAmountBasis === "net"
+    ? "Total net après commissions des plateformes"
+    : "Total brut avant commissions des plateformes";
+}
+
 export const formatReportValue = (
   report: Pick<ReportDefinition, "kind">,
   value: number,
@@ -487,6 +540,7 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
     "Net OTA EUR",
     "Base OTA du rapport",
     "Date estimée",
+    "Base du montant retenu",
   ];
   const labels = {
     included: "Inclus",
@@ -515,6 +569,7 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
         report.dateBasis === "payment" && row.paymentDateEstimated
           ? "Oui (arrivée + 1 jour)"
           : "",
+        operationAmountBasisLabel(report, row),
       ]),
     ]
       .map((row) => row.map(quote).join(";"))

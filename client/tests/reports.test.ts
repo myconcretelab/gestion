@@ -7,6 +7,10 @@ import {
   reportPeriodKey,
   snapshotDiffers,
   reportCsv,
+  platformAmountBreakdown,
+  reportAmountBasisLabel,
+  operationAmountBasisLabel,
+  reportTotalLabel,
   accommodationBreakdown,
   reportDefinitionSchema,
   type ReportOperation,
@@ -33,6 +37,87 @@ const receipt: ReportOperation = {
   channel: "Direct",
   basis: "payment",
 };
+test("le total distingue brut, commissions, net, règlements hors plateforme et montants non détaillés", () => {
+  const detailed: ReportOperation = {
+    ...receipt,
+    id: "detailed",
+    paymentMethod: "platform",
+    channel: "Airbnb",
+    ota: {
+      channel: "Airbnb",
+      grossCents: 10000,
+      feeCents: 1500,
+      netCents: 8500,
+      source: "import",
+      category: "accommodation",
+    },
+  };
+  const undetailed = {
+    ...receipt,
+    id: "undetailed",
+    amountCents: 7000,
+    paymentMethod: "platform" as const,
+  };
+  const direct = { ...receipt, id: "direct", amountCents: 5000 };
+  const excluded = { ...detailed, id: "excluded", propertyId: "outside" };
+  for (const otaAmountBasis of ["gross", "net"] as const) {
+    const definition = { ...report, otaAmountBasis };
+    const result = evaluateReport(
+      definition,
+      "2026-10",
+      {},
+      [detailed, undetailed, direct, excluded],
+      sources,
+    );
+    const amounts = platformAmountBreakdown(result);
+    assert.deepEqual(amounts, {
+      detailedCount: 1,
+      grossCents: 10000,
+      feeCents: 1500,
+      netCents: 8500,
+      undetailedCount: 1,
+      undetailedCents: 7000,
+      otherCents: 5000,
+    });
+    assert.equal(
+      result.total,
+      (otaAmountBasis === "net" ? amounts.netCents : amounts.grossCents) +
+        amounts.undetailedCents +
+        amounts.otherCents,
+    );
+    assert.equal(result.reviewCount, 0);
+    assert.match(
+      reportTotalLabel(definition, result),
+      /commissions non renseignées/,
+    );
+    assert.match(
+      operationAmountBasisLabel(definition, undetailed),
+      /Montant enregistré/,
+    );
+    assert.equal(
+      operationAmountBasisLabel(definition, detailed),
+      reportAmountBasisLabel(definition),
+    );
+    assert.match(reportCsv(definition, result), /"Base du montant retenu"/);
+    assert.match(
+      reportCsv(definition, result),
+      /Montant enregistré · commission non détaillée/,
+    );
+    const known = evaluateReport(
+      definition,
+      "2026-10",
+      {},
+      [detailed, direct],
+      sources,
+    );
+    assert.equal(
+      reportTotalLabel(definition, known),
+      otaAmountBasis === "net"
+        ? "Total net après commissions des plateformes"
+        : "Total brut avant commissions des plateformes",
+    );
+  }
+});
 test("encaissements, montants au séjour et nuitées utilisent des sources distinctes", () => {
   const operations = [
     receipt,
