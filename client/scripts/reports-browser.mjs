@@ -104,8 +104,15 @@ function data() {
         id: "b",
         amountCents: 20000,
         paymentMethod: "transfer",
+        channel: "Airbnb",
       },
-      { ...baseOperation, id: "c", amountCents: 5000, category: "cleaning" },
+      {
+        ...baseOperation,
+        id: "c",
+        amountCents: 5000,
+        category: "cleaning",
+        channel: "Gites de France",
+      },
       {
         ...baseOperation,
         id: "d",
@@ -673,7 +680,44 @@ try {
       .count(),
     0,
   );
+  assert.ok(
+    await page
+      .locator(".rp-operation-head")
+      .getByText("Source de réservation", { exact: true })
+      .isVisible(),
+  );
+  const operationSearch = page.getByRole("searchbox", {
+    name: "Rechercher une opération",
+  });
+  for (const channel of ["Direct", "Airbnb", "Gites de France"]) {
+    await operationSearch.fill(channel.toLowerCase());
+    const sources = await page
+      .locator(".rp-operation-source")
+      .allTextContents();
+    assert.ok(sources.length > 0);
+    assert.ok(
+      sources.every((source) => source.trim() === `Source : ${channel}`),
+    );
+  }
+  await operationSearch.fill("Camille");
+  assert.equal(await page.locator(".rp-operation-row").count(), 4);
+  await operationSearch.fill("");
   await capture(page, "reports-detail-desktop.png");
+  for (const width of [1024, 820]) {
+    await page.setViewportSize({ width, height: 900 });
+    await noOverflow(page);
+    assert.ok(await page.locator(".rp-operation-source").first().isVisible());
+    assert.equal(
+      await page
+        .locator(".rp-operation-row")
+        .evaluateAll((rows) =>
+          rows.some((row) => row.scrollWidth > row.clientWidth),
+        ),
+      false,
+    );
+    await capture(page, `reports-detail-${width}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
   await page
     .getByRole("button", { name: /Camille Martin/ })
     .first()
@@ -694,6 +738,10 @@ try {
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await noOverflow(page);
+  assert.ok(await page.locator(".rp-operation-source").first().isVisible());
+  assert.ok(
+    await page.locator(".rp-operation-source-label").first().isVisible(),
+  );
   await capture(page, "reports-detail-mobile.png");
 
   await open(page, "/owner");

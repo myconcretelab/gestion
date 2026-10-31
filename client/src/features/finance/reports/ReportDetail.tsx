@@ -115,7 +115,7 @@ export default function ReportDetail({
   const rows = displayedResult.rows.filter(
     (row) =>
       row.status === filter &&
-      `${row.guest} ${row.reservation} ${propertyName(row.propertyId)} ${categoryLabel(row.category)}`
+      `${row.guest} ${row.reservation} ${propertyName(row.propertyId)} ${categoryLabel(row.category)} ${row.channel}`
         .toLocaleLowerCase("fr")
         .includes(search.toLocaleLowerCase("fr")),
   );
@@ -364,7 +364,11 @@ export default function ReportDetail({
               report.dateBasis === "payment",
           ) && (
             <p className="rp-muted">
-              Les encaissements sans date sont présentés dans la période du séjour pour être complétés. Ils ne sont pas inclus dans le total. Importez le relevé de plateforme pour renseigner ses versements.
+              Les encaissements sans date sont présentés dans la période du
+              séjour pour être complétés et restent exclus du total. Les
+              versements de plateforme considérés reçus automatiquement n’ont
+              pas de date confirmée. Importez le relevé de plateforme ou
+              renseignez le règlement reçu avec sa date.
             </p>
           )}
         </section>
@@ -494,7 +498,7 @@ export default function ReportDetail({
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Voyageur, logement, catégorie…"
+              placeholder="Voyageur, logement, source…"
             />
           </label>
         </div>
@@ -533,6 +537,7 @@ export default function ReportDetail({
           <div className="rp-operation-head" aria-hidden="true">
             <span>Opération</span>
             <span>Logement et catégorie</span>
+            <span>Source de réservation</span>
             <span>Date retenue</span>
             <span>
               {displayedReport.kind === "tourist" ? "Nuitées" : "Montant"}
@@ -564,6 +569,10 @@ export default function ReportDetail({
                 <strong>{propertyName(row.propertyId)}</strong>
                 <small>{categoryLabel(row.category)}</small>
               </span>
+              <span className="rp-operation-source">
+                <span className="rp-operation-source-label">Source : </span>
+                {row.channel}
+              </span>
               <span className="rp-operation-date">
                 {dateLabel(row.effectiveDate)}
               </span>
@@ -584,7 +593,7 @@ export default function ReportDetail({
               }
             >
               {search
-                ? "Essayez un autre nom ou une autre catégorie."
+                ? "Essayez un autre nom, logement, catégorie ou source."
                 : "Les autres onglets présentent le reste des opérations de la période."}
             </ReportEmpty>
           )}
