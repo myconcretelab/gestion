@@ -112,20 +112,32 @@ function response(
     operationEdits: {},
   };
 }
-export async function getReportWorkspace() {
-  return prisma.$transaction(
-    async (db) => {
-      const facts = await loadReportFacts(db);
-      const { store, config } = await read(db, facts);
-      return response(config, facts, store?.revision ?? 0);
-    },
-    { isolationLevel: "Serializable", timeout: 30_000 },
-  );
+// Share only active reads for the same tenant, never completed results.
+const workspaceReads = new Map<string, Promise<ReportWorkspaceData>>();
+export function getReportWorkspace() {
+  const organizationId = getOrganizationId();
+  const pending = workspaceReads.get(organizationId);
+  if (pending) return pending;
+  const request = prisma
+    .$transaction(
+      async (db) => {
+        const facts = await loadReportFacts(db);
+        const { store, config } = await read(db, facts);
+        return response(config, facts, store?.revision ?? 0);
+      },
+      { isolationLevel: "Serializable", timeout: 30_000 },
+    )
+    .finally(() => {
+      if (workspaceReads.get(organizationId) === request)
+        workspaceReads.delete(organizationId);
+    });
+  workspaceReads.set(organizationId, request);
+  return request;
 }
 export async function mutateReportWorkspace(input: unknown, userId?: string) {
   const payload = reportMutationSchema.parse(input);
   try {
-    return await prisma.$transaction(
+    const result = await prisma.$transaction(
       async (db) => {
         const facts = await loadReportFacts(db);
         const { store, config } = await read(db, facts);
@@ -334,6 +346,8 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
       },
       { isolationLevel: "Serializable", timeout: 30_000 },
     );
+    workspaceReads.delete(getOrganizationId());
+    return result;
   } catch (error) {
     if (
       ["P2002", "P2034", "P1008", "P2028"].includes(

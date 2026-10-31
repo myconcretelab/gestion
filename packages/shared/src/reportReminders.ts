@@ -26,18 +26,20 @@ export type ReportReminder = {
   canCopy: boolean;
 };
 
+const todayFormatter = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Europe/Paris",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 /** Closed reporting periods, not legal deadlines: the app does not submit declarations. */
 export function buildReportReminders(
   state: ReportWorkspaceData,
   year: number,
   now = new Date(),
 ): ReportReminder[] {
-  const today = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
+  const today = todayFormatter.format(now);
   const currentYear = Number(today.slice(0, 4));
   if (year > currentYear) return [];
   const reminders: ReportReminder[] = [];

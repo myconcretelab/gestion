@@ -8,13 +8,13 @@ import {
   type ReportDefinition,
 } from "./reports.js";
 
-const parisDay = (now: Date) =>
-  new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
+const parisDayFormatter = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Europe/Paris",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const parisDay = (now: Date) => parisDayFormatter.format(now);
 
 export function legacyReportPeriodConfirmed(
   state: ReportWorkspaceData,

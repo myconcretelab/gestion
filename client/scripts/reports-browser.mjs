@@ -1301,7 +1301,13 @@ try {
   const reminders = reservations.getByRole("region", {
     name: /Déclarations à traiter/,
   });
+  await reservations.evaluate(() => {
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("focus"));
+  });
   await reminders.waitFor();
+  assert.equal(reservationFixture.reminderReads, 1);
   assert.match(await reminders.innerText(), /octobre 2026/);
   assert.equal(await reminders.locator("li").count(), 1);
   assert.match(

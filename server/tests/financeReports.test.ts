@@ -201,6 +201,37 @@ test("les recettes proviennent des paiements reçus, y compris espèces, et non 
       1,
     );
   }));
+
+test("les chargements simultanés partagent le calcul uniquement dans le même compte et les relectures restent fraîches", () =>
+  fixture(async ({ org, gite }) => {
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    const [first, simultaneous] = await Promise.all([
+      reports.getReportWorkspace(),
+      reports.getReportWorkspace(),
+    ]);
+    assert.strictEqual(first, simultaneous);
+    assert.equal(result(first).total, 2500);
+    await pay(reservation.id, 15);
+    const refreshed = await reports.getReportWorkspace();
+    assert.notStrictEqual(refreshed, first);
+    assert.equal(result(refreshed).total, 4000);
+    await fixture(async ({ org: otherOrg, gite: otherGite }) => {
+      const otherReservation = await stay(otherGite);
+      await pay(otherReservation.id, 10);
+      const [a, b] = await Promise.all([
+        inOrg(org, () => reports.getReportWorkspace()),
+        inOrg(otherOrg, () => reports.getReportWorkspace()),
+      ]);
+      assert.notStrictEqual(a, b);
+      assert.equal(a.organizationId, org);
+      assert.equal(b.organizationId, otherOrg);
+      assert.equal(result(a).total, 4000);
+      assert.equal(result(b).total, 1000);
+      assert.ok(a.properties.every((row) => row.id !== otherGite));
+      assert.ok(b.properties.every((row) => row.id !== gite));
+    });
+  }));
 test("les nuitées sont réparties entre les mois et ne sont pas multipliées par les paiements", () =>
   fixture(async ({ gite }) => {
     const r = await stay(gite);

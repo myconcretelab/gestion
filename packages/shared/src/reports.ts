@@ -193,6 +193,17 @@ export const reportIncludesBookingSource = (
 export const cadenceLabel = (cadence: ReportCadence) =>
   ({ monthly: "Mensuel", quarterly: "Trimestriel", yearly: "Annuel" })[cadence];
 
+const monthFormatter = new Intl.DateTimeFormat("fr-FR", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+const amountFormatter = new Intl.NumberFormat("fr-FR", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 2,
+});
+
 export function getReportPeriod(month: string, cadence: ReportCadence) {
   const [year, monthNumber] = month.split("-").map(Number);
   const startMonth =
@@ -210,11 +221,7 @@ export function getReportPeriod(month: string, cadence: ReportCadence) {
       ? String(year)
       : cadence === "quarterly"
         ? `${Math.floor((monthNumber - 1) / 3) + 1}ᵉ trimestre ${year}`
-        : new Intl.DateTimeFormat("fr-FR", {
-            month: "long",
-            year: "numeric",
-            timeZone: "UTC",
-          }).format(new Date(`${start}T12:00:00Z`));
+        : monthFormatter.format(new Date(`${start}T12:00:00Z`));
   return { start, end, label, key: `${start}:${cadence}` };
 }
 
@@ -257,14 +264,15 @@ export function evaluateReport(
         (report.kind === "tourist" ? "nights" : report.dateBasis)
     )
       continue;
-    const operation = { ...original, ...sources.operationEdits[original.id] };
     const effectiveDate =
       report.dateBasis === "payment"
-        ? operation.paymentDate
-        : operation.stayDate;
+        ? (sources.operationEdits[original.id]?.paymentDate ??
+          original.paymentDate)
+        : original.stayDate;
     // A missing payment date is surfaced in its stay period; it never enters the total automatically.
-    const candidateDate = effectiveDate ?? operation.stayDate;
+    const candidateDate = effectiveDate ?? original.stayDate;
     if (candidateDate < period.start || candidateDate >= period.end) continue;
+    const operation = { ...original, ...sources.operationEdits[original.id] };
     const inProperty = report.propertyIds.includes(operation.propertyId);
     const inSource = reportIncludesBookingSource(report, operation);
     const uncertainCategories =
@@ -517,11 +525,7 @@ export const formatReportValue = (
 ) =>
   report.kind === "tourist"
     ? `${value.toLocaleString("fr-FR")} nuitée${Math.abs(value) === 1 ? "" : "s"}`
-    : new Intl.NumberFormat("fr-FR", {
-        style: "currency",
-        currency: "EUR",
-        maximumFractionDigits: 2,
-      }).format(value / 100);
+    : amountFormatter.format(value / 100);
 
 export function snapshotDiffers(
   snapshot: ReportSnapshot,

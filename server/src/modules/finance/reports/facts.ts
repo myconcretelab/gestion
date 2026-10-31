@@ -17,15 +17,15 @@ import type { OptionsInput } from "../../../services/contractCalculator.js";
 
 const cents = (amount: number) => Math.round(amount * 100);
 const day = (date: Date) => date.toISOString().slice(0, 10);
+// Intl allocates native memory too; share one formatter across all receipts.
+const paymentDayFormatter = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Europe/Paris",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 const paymentDay = (date: string | null) =>
-  date
-    ? new Intl.DateTimeFormat("sv-SE", {
-        timeZone: "Europe/Paris",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date(date))
-    : null;
+  date ? paymentDayFormatter.format(new Date(date)) : null;
 const sum = (values: number[]) => values.reduce((total, n) => total + n, 0);
 export { allocateCents } from "@contrats/shared";
 const method = (value: string | null): ReportPaymentMethod =>

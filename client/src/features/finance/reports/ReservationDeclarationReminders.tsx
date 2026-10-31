@@ -69,6 +69,7 @@ export default function ReservationDeclarationReminders({
   useEffect(() => {
     let controller: AbortController | undefined;
     let disposed = false;
+    let timer: number | undefined;
     const load = async () => {
       controller?.abort();
       controller = new AbortController();
@@ -83,15 +84,19 @@ export default function ReservationDeclarationReminders({
           setError(false);
         }
       } catch (err) {
-        if (!disposed && !isAbortError(err)) {
+        if (!disposed && !request.signal.aborted && !isAbortError(err)) {
           setError(true);
           setReminders([]);
         }
       }
     };
-    const timer = window.setTimeout(() => void load(), 250);
+    const scheduleLoad = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void load(), 250);
+    };
+    scheduleLoad();
     const onFocus = () => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") scheduleLoad();
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
