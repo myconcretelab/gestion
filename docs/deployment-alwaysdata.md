@@ -8,6 +8,8 @@ Utiliser le script `update` uniquement depuis le serveur cible ou son wrapper lo
 
 Dans la configuration du site Node.js, utiliser la commande **`node dist/index.js`** et le **répertoire de travail `server/` de l'installation**. Le chemin du répertoire doit être renseigné selon les conventions Alwaysdata, relativement au répertoire du compte ou en chemin absolu.
 
+Sur l'installation historique, la commande appliquée le 31 octobre 2026 est **`node --max-old-space-size=128 --max-semi-space-size=8 dist/index.js`**. Ces limites concernent le serveur en fonctionnement, pas les compilateurs. Elles déclenchent le nettoyage mémoire avant la limite de l'hébergement : le plafond de 512 Mio ne prévenait pas les arrêts du processus pendant un recalcul complet des rapports. Le réglage de 128 Mio a été contrôlé avec le jeu réel de 6 384 opérations, plusieurs recalculs et les retours aux réservations. Revalider cette capacité si le volume ou les traitements évoluent.
+
 Ce démarrage conserve le répertoire utilisé par `npm run start -w server`, ainsi que la résolution des fichiers d'environnement, des données, des modèles PDF et du client compilé. La version de Node.js et l'environnement du site restent ceux configurés sur l'hébergement. Les commandes npm du dépôt restent disponibles pour le développement et les opérations ponctuelles.
 
 Éviter `npm run start` comme commande permanente de l'hébergeur : le script racine lance un second npm dans le workspace serveur et conserve deux processus npm, en plus du serveur et de leurs shells. Le démarrage direct supprime ces intermédiaires ; il ne modifie pas les tâches planifiées Smart Life et iCal ni les automatismes internes.
@@ -18,8 +20,10 @@ Le délai d'inactivité du site ne suffit pas à économiser la mémoire tant qu
 
 ## Mémoire pendant la compilation
 
-Le script `./update` construit successivement le workspace partagé, le client et le serveur. Il impose des plafonds distincts : **768 Mio** de heap pour Vite et **832 Mio** pour la compilation TypeScript complète du serveur. Les contrôles de types restent activés. Les modes complet et léger utilisent la même procédure de compilation.
+Le script `./update` construit successivement le workspace partagé, le client et le serveur. Il impose des plafonds distincts : **640 Mio** de heap pour Vite et **832 Mio** pour la compilation TypeScript complète du serveur. Les contrôles de types restent activés. Les modes complet et léger utilisent la même procédure de compilation.
 
 Ces valeurs sont versionnées dans le script, indépendamment du `NODE_OPTIONS` global utilisé par les commandes auxiliaires. Elles peuvent être ajustées dans la configuration privée avec `CLIENT_BUILD_HEAP_MB` et `SERVER_BUILD_HEAP_MB` (entiers positifs), après vérification des ressources de l’hébergement. Ne pas augmenter globalement `NODE_OPTIONS` pour résoudre une erreur du seul serveur : cela peut faire dépasser à Vite la limite mémoire du processus.
 
 Valeurs vérifiées sur Alwaysdata le 24 octobre 2026 : Vite réussit à 768 Mio ; la compilation complète du serveur réussit à 832 Mio, avec un maximum de mémoire résidente observé de 998 460 Kio. Un heap serveur de 768 Mio échoue ; un plafond global de 1152 Mio provoque l’arrêt de Vite par l’hébergement. Une croissance future du projet peut nécessiter une nouvelle mesure ou une compilation sur une machine plus dotée.
+
+Le 31 octobre 2026, la compilation Vite a été arrêtée par l'hébergement à 640 Mio ; un essai à 512 Mio a atteint la limite du heap JavaScript. La reprise du déploiement a utilisé le client compilé et vérifié localement depuis les mêmes sources, transféré dans `client/dist/`. Le serveur a été compilé sur l'hébergement à 832 Mio. Les tests complets avaient réussi sur le serveur avant l'échec de Vite. La reprise a ensuite créé et vérifié une sauvegarde chiffrée (intégrité de l'archive et lecture du dump déchiffré avec `pg_restore --list`), appliqué les migrations et redémarré le site. Les empreintes de l'index et des fichiers client publiés ont été comparées à la compilation locale. Un échec de compilation ne dispense jamais de terminer ces étapes et de vérifier les pages authentifiées.
