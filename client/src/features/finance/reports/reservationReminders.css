@@ -66,6 +66,19 @@
   margin: 0;
   padding: 0 20px;
 }
+.reservation-declarations__stale {
+  margin: 0;
+  padding: 14px 20px;
+  font-size: 0.82rem;
+  color: var(--declaration-ink);
+  background: var(--primary-soft);
+  line-height: 1.6;
+}
+.reservation-declarations__stale a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
 .reservation-declarations__list li {
   display: flex;
   align-items: center;

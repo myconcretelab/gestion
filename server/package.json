@@ -31,6 +31,7 @@
     "private:import:what-today:icals": "tsx tools/private/what-today/import-what-today-icals.ts",
     "private:import:revenus": "tsx tools/private/legacy-revenues/importLegacyRevenues.ts",
     "cron:ical": "node dist/cli/run-ical-sync-cron.js",
+    "cron:reports": "node dist/cli/run-reports-cron.js",
     "cron:ical:dev": "tsx src/cli/run-ical-sync-cron.ts"
   },
   "dependencies": {

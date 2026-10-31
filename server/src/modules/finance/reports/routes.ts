@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAuthenticatedAppUser } from "../../../services/serverAuth.js";
 import { getReportWorkspace, mutateReportWorkspace } from "./service.js";
-import { buildReportReminders } from "@contrats/shared";
+import { getStoredReportReminders } from "./cache.js";
 import { z } from "zod";
 import {
   applyOtaImport,
@@ -75,16 +75,17 @@ router.get("/reminders", async (req, res, next) => {
       .min(2000)
       .max(2099)
       .parse(req.query.year);
-    res.json({
-      reminders: buildReportReminders(await getReportWorkspace(), year),
-    });
+    res.json(await getStoredReportReminders(year));
   } catch (error) {
     next(error);
   }
 });
-router.get("/", async (_req, res, next) => {
+router.get("/", async (req, res, next) => {
   try {
-    res.json(await getReportWorkspace());
+    const { refresh } = z
+      .object({ refresh: z.literal("1").optional() })
+      .parse(req.query);
+    res.json(await getReportWorkspace({ force: refresh === "1" }));
   } catch (error) {
     next(error);
   }

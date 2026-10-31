@@ -186,6 +186,10 @@ try {
       reads: 0,
       reminderReads: 0,
       failReminders: false,
+      remindersStale: false,
+      remindersEmpty: false,
+      remindersCalculatedAt: "2026-11-05T12:00:00.000Z",
+      reportRefreshQueries: [],
       otaImported: false,
       otaStoredAmountCents: 8500,
       otaApplyInputs: [],
@@ -435,11 +439,15 @@ try {
         body = fixture.failReminders
           ? { error: "Indisponible" }
           : {
-              reminders: buildReportReminders(
-                fixture.state,
-                Number(new URL(request.url()).searchParams.get("year")),
-                new Date("2026-11-05T12:00:00Z"),
-              ),
+              stale: fixture.remindersStale,
+              calculatedAt: fixture.remindersCalculatedAt,
+              reminders: fixture.remindersEmpty
+                ? []
+                : buildReportReminders(
+                    fixture.state,
+                    Number(new URL(request.url()).searchParams.get("year")),
+                    new Date("2026-11-05T12:00:00Z"),
+                  ),
             };
       } else if (pathname === "/api/gites")
         body = fixture.state.properties.map((property) => ({
@@ -468,6 +476,12 @@ try {
         body = { colors: {}, available_sources: [] };
       else if (pathname === "/api/reports" && method === "GET") {
         fixture.reads++;
+        fixture.reportRefreshQueries.push(
+          new URL(request.url()).searchParams.get("refresh"),
+        );
+        fixture.remindersStale = false;
+        fixture.remindersEmpty = false;
+        fixture.remindersCalculatedAt = "2026-11-05T12:00:00.000Z";
         if (fixture.failRead-- > 0) {
           status = 503;
           body = { error: "Rapports indisponibles" };
@@ -1308,6 +1322,7 @@ try {
   });
   await reminders.waitFor();
   assert.equal(reservationFixture.reminderReads, 1);
+  assert.equal(reservationFixture.reads, 0);
   assert.match(await reminders.innerText(), /octobre 2026/);
   assert.equal(await reminders.locator("li").count(), 1);
   assert.match(
@@ -1323,6 +1338,31 @@ try {
     await reservations.evaluate(() => navigator.clipboard.readText()),
     "1234,56",
   );
+  reservationFixture.remindersStale = true;
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders.getByText("À actualiser.", { exact: true }).waitFor();
+  assert.equal(
+    await reminders.getByRole("button", { name: /^Copier/ }).count(),
+    0,
+  );
+  assert.equal(reservationFixture.reads, 0);
+  await reservations.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await reminders.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+    true,
+  );
+  await reservations.locator(".app-sync-notice").waitFor({ state: "hidden" });
+  await reminders.screenshot({
+    path: path.join(screenshots, "reservations-reminder-stale-mobile.png"),
+  });
+  await reservations.setViewportSize({ width: 1440, height: 1050 });
+  reservationFixture.remindersStale = false;
+  await reservations.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await reminders
+    .locator(".reservation-declarations__stale")
+    .waitFor({ state: "hidden" });
   await reservations.evaluate(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1475,6 +1515,64 @@ try {
     assert.equal(hiddenFixture.reminderReads, 0);
     assert.equal(await hidden.locator(".reservation-declarations").count(), 0);
   }
+  const { page: missingCalculation, fixture: missingFixture } =
+    await createPage();
+  missingFixture.remindersStale = true;
+  missingFixture.remindersEmpty = true;
+  missingFixture.remindersCalculatedAt = null;
+  await missingCalculation.goto(reservationUrl);
+  await missingCalculation
+    .getByText(/Les déclarations n’ont pas encore été calculées/)
+    .waitFor();
+  assert.equal(
+    await missingCalculation
+      .locator(".reservation-declarations__count")
+      .count(),
+    0,
+  );
+  assert.equal(missingFixture.reads, 0);
+  assert.equal(
+    await missingCalculation.getByRole("button", { name: /^Copier/ }).count(),
+    0,
+  );
+  await capture(missingCalculation, "reservations-reminder-not-calculated.png");
+  await missingCalculation
+    .getByRole("link", {
+      name: "Ouvrir les rapports pour actualiser",
+      exact: true,
+    })
+    .click();
+  await missingCalculation
+    .getByRole("heading", { name: "Rapports et déclarations", exact: true })
+    .waitFor();
+  assert.ok(missingFixture.reportRefreshQueries.length > 0);
+  assert.ok(
+    missingFixture.reportRefreshQueries.every((query) => query === null),
+  );
+  await Promise.all([
+    missingCalculation.waitForResponse((response) =>
+      response.url().includes("/api/reports?refresh=1"),
+    ),
+    missingCalculation
+      .getByRole("button", { name: "Actualiser les données", exact: true })
+      .click(),
+  ]);
+  assert.equal(missingFixture.reportRefreshQueries.at(-1), "1");
+  assert.equal(
+    missingFixture.reportRefreshQueries.filter((query) => query === "1").length,
+    1,
+  );
+  await missingCalculation.goto(reservationUrl);
+  await missingCalculation
+    .getByRole("region", { name: /Déclarations à traiter/ })
+    .waitFor();
+  assert.equal(
+    await missingCalculation
+      .locator(".reservation-declarations__stale")
+      .count(),
+    0,
+  );
+  await missingCalculation.context().close();
   const { page: otaPage, fixture: otaFixture } = await createPage();
   otaFixture.otaStoredAmountCents = 8501;
   otaFixture.state.reports = [

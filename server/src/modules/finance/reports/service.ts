@@ -14,6 +14,7 @@ import {
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { getOrganizationId } from "../../organizations/context.js";
 import { loadReportFacts } from "./facts.js";
+import { reportCacheIsCurrent, storeReportCalculation } from "./cache.js";
 
 type Configuration = Pick<
   ReportState,
@@ -112,26 +113,65 @@ function response(
     operationEdits: {},
   };
 }
-// Share only active reads for the same tenant, never completed results.
-const workspaceReads = new Map<string, Promise<ReportWorkspaceData>>();
-export function getReportWorkspace() {
+// The database holds completed calculations. Share concurrent refreshes within a tenant too.
+const workspaceReads = new Map<
+  string,
+  { promise: Promise<ReportWorkspaceData>; forced: boolean }
+>();
+export function getReportWorkspace(
+  options: { force?: boolean; now?: Date } = {},
+): Promise<ReportWorkspaceData> {
   const organizationId = getOrganizationId();
   const pending = workspaceReads.get(organizationId);
-  if (pending) return pending;
-  const request = prisma
-    .$transaction(
+  if (pending) {
+    if (options.force && !pending.forced)
+      return pending.promise.then(() => getReportWorkspace(options));
+    return pending.promise;
+  }
+  const calculate = () =>
+    prisma.$transaction(
       async (db) => {
+        const now = options.now ?? new Date();
+        const cache = await db.financeReportCache.findFirst();
+        if (
+          !options.force &&
+          reportCacheIsCurrent(cache, now) &&
+          cache?.workspace_json
+        )
+          return JSON.parse(cache.workspace_json) as ReportWorkspaceData;
         const facts = await loadReportFacts(db);
         const { store, config } = await read(db, facts);
-        return response(config, facts, store?.revision ?? 0);
+        return storeReportCalculation(
+          db,
+          response(config, facts, store?.revision ?? 0),
+          now,
+        );
       },
       { isolationLevel: "Serializable", timeout: 30_000 },
-    )
-    .finally(() => {
-      if (workspaceReads.get(organizationId) === request)
-        workspaceReads.delete(organizationId);
-    });
-  workspaceReads.set(organizationId, request);
+    );
+  const run = async () => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await calculate();
+      } catch (error) {
+        if (
+          attempt >= 2 ||
+          !["P2034", "P1008", "P2028"].includes(
+            (error as { code?: string })?.code ?? "",
+          )
+        )
+          throw error;
+      }
+    }
+  };
+  const request = run().finally(() => {
+    if (workspaceReads.get(organizationId)?.promise === request)
+      workspaceReads.delete(organizationId);
+  });
+  workspaceReads.set(organizationId, {
+    promise: request,
+    forced: Boolean(options.force),
+  });
   return request;
 }
 export async function mutateReportWorkspace(input: unknown, userId?: string) {
@@ -342,7 +382,11 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
             metadata_json: JSON.stringify({ month, revision, command }),
           },
         });
-        return response(config, facts, revision);
+        return storeReportCalculation(
+          db,
+          response(config, facts, revision),
+          new Date(),
+        );
       },
       { isolationLevel: "Serializable", timeout: 30_000 },
     );

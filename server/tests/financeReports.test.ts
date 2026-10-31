@@ -25,6 +25,8 @@ let otaImport: typeof import("../src/modules/finance/reports/otaImport.js");
 let paymentSettings: typeof import("../src/services/reservationPaymentSettings.js");
 let ledger: typeof import("../src/modules/reservationPayments/ledger.js");
 let factsModule: typeof import("../src/modules/finance/reports/facts.js");
+let reportCache: typeof import("../src/modules/finance/reports/cache.js");
+let reportAutomation: typeof import("../src/services/reportAutomation.js");
 before(async () => {
   Object.assign(process.env, {
     NODE_ENV: "test",
@@ -50,6 +52,8 @@ before(async () => {
   paymentSettings =
     await import("../src/services/reservationPaymentSettings.js");
   factsModule = await import("../src/modules/finance/reports/facts.js");
+  reportCache = await import("../src/modules/finance/reports/cache.js");
+  reportAutomation = await import("../src/services/reportAutomation.js");
 });
 after(async () => {
   await db?.systemPrisma.$disconnect();
@@ -182,6 +186,282 @@ test("le début du suivi est conservé sans créer de fausses déclarations et r
       const other = await reports.getReportWorkspace();
       assert.equal(other.worklistStartMonth, undefined);
     });
+  }));
+
+test("Réservations lit des résumés persistés, sans calcul initial ni recalcul après une modification", () =>
+  fixture(async ({ gite }) => {
+    const now = new Date("2026-11-05T12:00:00Z");
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    assert.deepEqual(await reportCache.getStoredReportReminders(2026, now), {
+      reminders: [],
+      stale: true,
+      calculatedAt: null,
+    });
+    assert.equal(
+      (await db.default.financeReportCache.findFirst())?.workspace_json,
+      null,
+    );
+    const first = await reports.getReportWorkspace({ now });
+    const stored = await reportCache.getStoredReportReminders(2026, now);
+    assert.equal(stored.stale, false);
+    assert.equal(
+      stored.reminders.find((row) => row.kind === "social")?.total,
+      2500,
+    );
+    assert.equal(
+      stored.reminders.find((row) => row.kind === "social")?.canCopy,
+      true,
+    );
+    const cached = await reports.getReportWorkspace({
+      now: new Date("2026-11-06T12:00:00Z"),
+    });
+    assert.equal(cached.calculatedAt, first.calculatedAt);
+    await pay(reservation.id, 15);
+    const stale = await reportCache.getStoredReportReminders(2026, now);
+    assert.equal(stale.stale, true);
+    assert.equal(stale.calculatedAt, stored.calculatedAt);
+    assert.equal(
+      stale.reminders.find((row) => row.kind === "social")?.total,
+      2500,
+    );
+    assert.ok(stale.reminders.every((row) => !row.canCopy));
+    const fresh = await reports.getReportWorkspace({ now });
+    assert.equal(result(fresh).total, 4000);
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      false,
+    );
+    const forced = await reports.getReportWorkspace({
+      force: true,
+      now: new Date("2026-11-07T12:00:00Z"),
+    });
+    assert.equal(forced.calculatedAt, "2026-11-07T12:00:00.000Z");
+    const [, simultaneousForce] = await Promise.all([
+      reports.getReportWorkspace({ now }),
+      reports.getReportWorkspace({
+        force: true,
+        now: new Date("2026-11-08T12:00:00Z"),
+      }),
+    ]);
+    assert.equal(simultaneousForce.calculatedAt, "2026-11-08T12:00:00.000Z");
+  }));
+
+test("un échec de calcul conserve le dernier résumé et la tentative suivante peut reprendre", () =>
+  fixture(async ({ gite }) => {
+    const now = new Date("2026-11-05T12:00:00Z");
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    await reports.getReportWorkspace({ now });
+    const before = await reportCache.getStoredReportReminders(2026, now);
+    await db.default.organizationRuntimeSetting.create({
+      data: { key: "reservation-payments", value_json: "{}" },
+    });
+    await assert.rejects(reports.getReportWorkspace({ now }));
+    const after = await reportCache.getStoredReportReminders(2026, now);
+    assert.equal(after.stale, true);
+    assert.equal(after.calculatedAt, before.calculatedAt);
+    assert.equal(
+      after.reminders.find((row) => row.kind === "social")?.total,
+      2500,
+    );
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: true,
+    });
+    await reports.getReportWorkspace({ now });
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      false,
+    );
+  }));
+
+test("l’invalidation couvre les suppressions et respecte les transactions, sans réagir à l’énergie ni au ménage", () =>
+  fixture(async ({ gite }) => {
+    const now = new Date("2026-11-05T12:00:00Z");
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    await reports.getReportWorkspace({ now });
+    const before = await db.default.financeReportCache.findFirstOrThrow();
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        energy_consumption_kwh: 8,
+        energy_cost_eur: 2,
+        arrival_cleaning_checked_at: new Date(),
+      },
+    });
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      false,
+    );
+    await assert.rejects(
+      db.default.$transaction(async (tx) => {
+        await tx.reservation.update({
+          where: { id: reservation.id },
+          data: { prix_total: 250 },
+        });
+        throw new Error("rollback");
+      }),
+      /rollback/,
+    );
+    assert.equal(
+      (await db.default.financeReportCache.findFirstOrThrow()).source_revision,
+      before.source_revision,
+    );
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      false,
+    );
+    await db.default
+      .$executeRaw`UPDATE reservations SET hote_nom = ${"Nom importé"} WHERE id = ${reservation.id}`;
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      true,
+    );
+    await reports.getReportWorkspace({ now });
+    const payment =
+      await db.default.reservationRecordedPayment.findFirstOrThrow({
+        where: { reservation_id: reservation.id },
+      });
+    await db.default.reservationRecordedPayment.delete({
+      where: { id: payment.id },
+    });
+    const stale = await reportCache.getStoredReportReminders(2026, now);
+    assert.equal(stale.stale, true);
+    assert.equal(
+      stale.reminders.find((row) => row.kind === "social")?.total,
+      2500,
+    );
+    assert.equal(result(await reports.getReportWorkspace({ now })).total, 0);
+  }));
+
+test("les sources fiscales, les règles et les réglages de paiement invalident le cache de leur seul compte", () =>
+  fixture(async ({ org, gite, entity }) => {
+    const now = new Date("2026-11-05T12:00:00Z");
+    await stay(gite);
+    await reports.getReportWorkspace({ now });
+    await db.default.organizationRuntimeSetting.create({
+      data: { key: "unrelated", value_json: "{}" },
+    });
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      false,
+    );
+    await paymentSettings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: false,
+    });
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      true,
+    );
+    await reports.getReportWorkspace({ now });
+    await db.default.fiscalEntity.update({
+      where: { id: entity },
+      data: { vat_regime: "unknown" },
+    });
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, now)).stale,
+      true,
+    );
+    await reports.getReportWorkspace({ now });
+    await fixture(async ({ gite: otherGite }) => {
+      await stay(otherGite);
+      assert.equal(
+        (await reportCache.getStoredReportReminders(2026, now)).calculatedAt,
+        null,
+      );
+      await reports.getReportWorkspace({ now });
+      await db.default.gite.update({
+        where: { id: otherGite },
+        data: { nom: "Autre nom" },
+      });
+      assert.equal(
+        (await reportCache.getStoredReportReminders(2026, now)).stale,
+        true,
+      );
+      const original = await inOrg(org, () =>
+        reportCache.getStoredReportReminders(2026, now),
+      );
+      assert.equal(original.stale, false);
+      assert.ok(
+        original.reminders.every((row) => !row.propertyIds.includes(otherGite)),
+      );
+    });
+  }));
+
+test("le calcul mensuel rattrape une clôture à l’heure de Paris et attend le mois suivant pour les modifications", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    const before = new Date("2026-10-31T22:59:59Z");
+    const after = new Date("2026-10-31T23:00:01Z");
+    assert.deepEqual(
+      await reportAutomation.runMonthlyReportCalculation(before),
+      { calculated: true },
+    );
+    await pay(reservation.id, 15);
+    assert.deepEqual(
+      await reportAutomation.runMonthlyReportCalculation(before),
+      { calculated: false },
+    );
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, before)).stale,
+      true,
+    );
+    assert.deepEqual(
+      await reportAutomation.runMonthlyReportCalculation(after),
+      { calculated: true },
+    );
+    const summary = await reportCache.getStoredReportReminders(2026, after);
+    assert.equal(summary.stale, false);
+    assert.equal(
+      summary.reminders.find((row) => row.kind === "social")?.total,
+      4000,
+    );
+    assert.equal(
+      summary.reminders.find((row) => row.kind === "tourist")?.total,
+      6,
+    );
+    assert.deepEqual(
+      await reportAutomation.runMonthlyReportCalculation(after),
+      { calculated: false },
+    );
+    assert.equal(await db.default.financeReportStore.count(), 0);
+  }));
+
+test("le rattrapage mensuel prépare aussi les trimestres et années clôturés sans confirmer une transmission", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    let state = await reports.getReportWorkspace();
+    state = await mutate(state, {
+      type: "save",
+      definition: { ...social(state), cadence: "yearly" },
+    });
+    const tourist = state.reports.find((row) => row.kind === "tourist")!;
+    state = await mutate(state, {
+      type: "save",
+      definition: { ...tourist, cadence: "quarterly" },
+    });
+    const configuration = (
+      await db.default.financeReportStore.findFirstOrThrow()
+    ).data_json;
+    const now = new Date("2027-01-01T00:01:00Z");
+    await reportAutomation.runMonthlyReportCalculation(now);
+    const reminders = await reportCache.getStoredReportReminders(2027, now);
+    assert.equal(reminders.stale, false);
+    assert.equal(
+      reminders.reminders.find((row) => row.kind === "social")?.total,
+      2500,
+    );
+    assert.equal(
+      reminders.reminders.find((row) => row.kind === "tourist")?.total,
+      12,
+    );
+    assert.equal(
+      (await db.default.financeReportStore.findFirstOrThrow()).data_json,
+      configuration,
+    );
   }));
 
 test("les recettes proviennent des paiements reçus, y compris espèces, et non des réservations impayées", () =>

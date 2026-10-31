@@ -79,11 +79,14 @@ export default function ReportsPage() {
   const candidate = params.get("periode") ?? now;
   const month = /^20\d{2}-(0[1-9]|1[0-2])$/.test(candidate) ? candidate : now;
   const notify = useCallback((message: string) => setNotice(message), []);
-  const refresh = useCallback(async (signal?: AbortSignal) => {
+  const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
     setLoading(true);
     setError("");
     try {
-      const data = await apiFetch<ReportWorkspaceData>("/reports", { signal });
+      const data = await apiFetch<ReportWorkspaceData>(
+        force ? "/reports?refresh=1" : "/reports",
+        { signal },
+      );
       if (!signal?.aborted)
         setState((previous) => ({
           ...data,
@@ -173,7 +176,7 @@ export default function ReportsPage() {
         mutate,
         saving,
         loading,
-        refresh: () => refresh(),
+        refresh: () => refresh(undefined, true),
         setDraft: (key, definition) =>
           setState((previous) => {
             if (!previous) return previous;
@@ -211,7 +214,7 @@ export default function ReportsPage() {
             type="button"
             className="rp-text-button"
             disabled={loading || saving}
-            onClick={() => void refresh()}
+            onClick={() => void refresh(undefined, true)}
           >
             Actualiser
           </button>

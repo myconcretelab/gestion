@@ -7,6 +7,7 @@ import { startBillingJobWorker } from "./modules/billing/worker.js";
 import { startSuperPdpJobWorker } from "./modules/superpdp/worker.js";
 import { startMultiTenantAutomationScheduler } from "./services/multiTenantAutomation.js";
 import { startTaskUrgencyAutomationScheduler } from "./services/taskUrgencyAutomation.js";
+import { startReportAutomationScheduler } from "./services/reportAutomation.js";
 
 await assertProductionAuthConfigured();
 await ensureLegacyIntegrationTokenMigrated();
@@ -19,6 +20,7 @@ if (env.NODE_ENV !== "test") {
   startSuperPdpJobWorker();
   startMultiTenantAutomationScheduler();
   startTaskUrgencyAutomationScheduler();
+  startReportAutomationScheduler();
 }
 
 app.listen(env.PORT, () => {

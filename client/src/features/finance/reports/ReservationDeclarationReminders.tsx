@@ -1,6 +1,10 @@
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { formatReportValue, type ReportReminder } from "@contrats/shared";
+import {
+  formatReportValue,
+  type ReportReminder,
+  type ReportRemindersResponse,
+} from "@contrats/shared";
 import { apiFetch, isAbortError } from "../../../utils/api";
 import { dispatchAppNotice } from "../../../utils/appNotices";
 import { ReportIcon } from "./ReportUi";
@@ -24,6 +28,8 @@ export default function ReservationDeclarationReminders({
   }).format(new Date(currentTimeMs));
   const headingId = useId();
   const [reminders, setReminders] = useState<ReportReminder[]>([]);
+  const [stale, setStale] = useState(false);
+  const [calculatedAt, setCalculatedAt] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -33,7 +39,7 @@ export default function ReservationDeclarationReminders({
   } | null>(null);
   const copyKey = (item: ReportReminder) => `${item.id}:${item.total}`;
   const copy = async (item: ReportReminder) => {
-    if (!item.canCopy) return;
+    if (stale || !item.canCopy) return;
     const key = copyKey(item);
     setCopyState({ key, pending: true });
     try {
@@ -75,12 +81,14 @@ export default function ReservationDeclarationReminders({
       controller = new AbortController();
       const request = controller;
       try {
-        const data = await apiFetch<{ reminders: ReportReminder[] }>(
+        const data = await apiFetch<ReportRemindersResponse>(
           `/reports/reminders?year=${year}`,
           { signal: controller.signal },
         );
         if (!disposed && !request.signal.aborted) {
           setReminders(data.reminders);
+          setStale(Boolean(data.stale));
+          setCalculatedAt(data.calculatedAt ?? null);
           setError(false);
         }
       } catch (err) {
@@ -124,7 +132,7 @@ export default function ReservationDeclarationReminders({
         </button>
       </div>
     );
-  if (!visible.length) return null;
+  if (!visible.length && !stale) return null;
   return (
     <section className="reservation-declarations" aria-labelledby={headingId}>
       <div className="reservation-declarations__heading">
@@ -133,17 +141,28 @@ export default function ReservationDeclarationReminders({
         </span>
         <h2 id={headingId}>
           Déclarations à traiter{" "}
-          <span className="reservation-declarations__count">
-            {visible.length}
-          </span>
+          {visible.length > 0 && (
+            <span className="reservation-declarations__count">
+              {visible.length}
+            </span>
+          )}
         </h2>
         <Link
           className="reservation-declarations__all"
-          to={`/rapports?periode=${visible[0].month}`}
+          to={visible[0] ? `/rapports?periode=${visible[0].month}` : "/rapports"}
         >
           Tous les rapports <ReportIcon name="arrow" />
         </Link>
       </div>
+      {stale && (
+        <p className="reservation-declarations__stale" role="status">
+          <strong>À actualiser.</strong>{" "}
+          {calculatedAt
+            ? "Les réservations, les règlements ou la période ont changé depuis le dernier calcul. Les montants affichés sont ceux du dernier calcul enregistré."
+            : "Les déclarations n’ont pas encore été calculées."}{" "}
+          <Link to="/rapports">Ouvrir les rapports pour actualiser</Link>
+        </p>
+      )}
       <ul className="reservation-declarations__list">
         {(expanded ? visible : visible.slice(0, 3)).map((item) => (
           <li key={item.id}>
@@ -169,7 +188,7 @@ export default function ReservationDeclarationReminders({
                     : "À préparer"}
             </span>
             <div className="reservation-declarations__actions">
-              {item.canCopy && (
+              {!stale && item.canCopy && (
                 <button
                   type="button"
                   className="reservation-declarations__copy"

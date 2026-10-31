@@ -26,6 +26,12 @@ export type ReportReminder = {
   canCopy: boolean;
 };
 
+export type ReportRemindersResponse = {
+  reminders: ReportReminder[];
+  stale: boolean;
+  calculatedAt: string | null;
+};
+
 const todayFormatter = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Europe/Paris",
   year: "numeric",

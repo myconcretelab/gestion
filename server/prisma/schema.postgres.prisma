@@ -25,6 +25,7 @@ model Organization {
   runtime_settings      OrganizationRuntimeSetting[]
   ota_transactions OtaTransaction[]
   finance_report_store  FinanceReportStore?
+  finance_report_cache  FinanceReportCache?
   jobs                  OrganizationJob[]
   job_attempts          OrganizationJobAttempt[]
   audit_logs            AuditLog[]
@@ -1844,6 +1845,21 @@ model FinanceReportStore {
   updatedAt       DateTime @updatedAt
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   @@map("finance_report_stores")
+}
+
+// Rebuildable calculation data; confirmed copies remain in FinanceReportStore.
+model FinanceReportCache {
+  organization_id     String    @id
+  source_revision     Int       @default(0)
+  calculated_revision Int?
+  engine_version      Int       @default(0)
+  calculated_at       DateTime?
+  calculated_month    String?
+  workspace_json      String?
+  reminders_json      String?
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@map("finance_report_caches")
 }
 
 // Immutable source amounts from an OTA statement. Import never rewrites reservation prices.

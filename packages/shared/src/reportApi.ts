@@ -164,6 +164,7 @@ export type LegacyReportDeclaration = {
   propertyIds?: string[];
 };
 export type ReportWorkspaceData = ReportState & {
+  calculatedAt?: string;
   organizationId: string;
   revision: number;
   factsRevision: string;

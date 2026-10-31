@@ -71,6 +71,7 @@ export default function ReportsOverview({
               type="button"
               className="rp-icon-button"
               aria-label="Actualiser les données"
+              title="Forcer le recalcul des rapports"
               disabled={saving || loading}
               onClick={refresh}
             >
