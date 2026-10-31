@@ -15,7 +15,7 @@ export default function ReportsToDo({
 }: {
   workspace: ReportWorkspace;
 }) {
-  const { state, href } = workspace;
+  const { state, href, canEdit } = workspace;
   const [params, setParams] = useSearchParams();
   const [now, setNow] = useState(() => new Date());
   const [search, setSearch] = useState("");
@@ -147,6 +147,16 @@ export default function ReportsToDo({
                 </ReportBadge>
               </div>
               <div className="rp-report-row__actions">
+                {canEdit && (
+                  <Link
+                    to={href(`/${report.id}/modifier`, month)}
+                    className="rp-icon-link"
+                    aria-label={`Réglages de ${report.name} · ${report.recipient} · ${period.label}`}
+                    title="Réglages du rapport"
+                  >
+                    <ReportIcon name="settings" />
+                  </Link>
+                )}
                 <Link
                   to={href(`/${report.id}`, month)}
                   className="rp-icon-link"

@@ -244,6 +244,16 @@ export default function ReportsOverview({
                     >
                       <ReportIcon name="star" />
                     </button>
+                    {canEdit && (
+                      <Link
+                        to={href(`/${report.id}/modifier`)}
+                        className="rp-icon-link"
+                        aria-label={`Réglages de ${report.name} · ${report.recipient}`}
+                        title="Réglages du rapport"
+                      >
+                        <ReportIcon name="settings" />
+                      </Link>
+                    )}
                     <Link
                       to={href(`/${report.id}`)}
                       className="rp-icon-link"

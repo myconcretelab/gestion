@@ -120,7 +120,12 @@ export default function UndatedPaymentsPage({
                     {canCurrentUserAccessPage("reservations") &&
                     row.reservationId ? (
                       <Link
-                        to={`/reservations/${encodeURIComponent(row.reservationId)}/reglements?back=${encodeURIComponent(workspace.href("/versements-a-dater"))}`}
+                        to={`/reservations?${new URLSearchParams({
+                          focus: row.reservationId,
+                          tab: row.propertyId,
+                          year: row.stayDate.slice(0, 4),
+                          month: row.stayDate.slice(5, 7),
+                        }).toString()}#reservation-${encodeURIComponent(row.reservationId)}`}
                       >
                         Compléter le règlement
                       </Link>
