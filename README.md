@@ -40,7 +40,7 @@ Les modules sont désactivés sur une installation vierge : réservations et dem
 
 ## Tâche Smart Life sur Alwaysdata
 
-La tâche `28015` appelle Smart Life toutes les cinq minutes. Le jeton reste dans `/home/myconcretelab/.config/gestion/cron.env`, non versionné et de mode `600`. Utiliser la commande suivante dans la tâche planifiée :
+La tâche `28015` appelle Smart Life **une fois par heure, à chaque heure pleine**. Configurer la date en syntaxe crontab avec **`0 * * * *`**. Une commande ou un relevé peut ainsi être exécuté jusqu'à une heure après son horaire prévu ; ce compromis réduit les appels planifiés de 288 à 24 par jour. Le jeton reste dans `/home/myconcretelab/.config/gestion/cron.env`, non versionné et de mode `600`. Utiliser la commande suivante dans la tâche planifiée :
 
 ```sh
 . /home/myconcretelab/.config/gestion/cron.env && curl --fail --silent --show-error --location --max-redirs 5 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 5 --retry-max-time 120 --retry-connrefused --header "Authorization: Bearer ${CRON_TRIGGER_TOKEN}" "https://gestion.gites-broceliande.com/api/settings/smartlife/run" --output /dev/null
