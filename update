@@ -287,9 +287,9 @@ else
 fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  # A larger global heap lets Vite exceed the hosting process limit, while the
-  # full server typecheck needs slightly more than 768 MiB. Keep both checks.
-  client_build_heap="${CLIENT_BUILD_HEAP_MB:-768}"
+  # Vite needs room for native allocations above its JS heap on the host.
+  # The full server typecheck needs a separate, larger heap. Keep both checks.
+  client_build_heap="${CLIENT_BUILD_HEAP_MB:-640}"
   server_build_heap="${SERVER_BUILD_HEAP_MB:-832}"
   if [[ ! "$client_build_heap" =~ ^[1-9][0-9]*$ || ! "$server_build_heap" =~ ^[1-9][0-9]*$ ]]; then
     echo "CLIENT_BUILD_HEAP_MB and SERVER_BUILD_HEAP_MB must be positive integers."
