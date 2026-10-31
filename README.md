@@ -38,6 +38,16 @@ Une installation de production refuse de démarrer sans compte protégé, sauf p
 
 Les modules sont désactivés sur une installation vierge : réservations et demandes, contrats, factures, finances et statistiques, frais personnels, planning des intervenants, publication web/WordPress, iCal, Pump/Airbnb, Smart Life, SMS, Telegram et e-mail quotidien. Une fonctionnalité désactivée est masquée, ses API sont fermées et ses tâches ne démarrent pas.
 
+## Tâche Smart Life sur Alwaysdata
+
+La tâche `28015` appelle Smart Life toutes les cinq minutes. Le jeton reste dans `/home/myconcretelab/.config/gestion/cron.env`, non versionné et de mode `600`. Utiliser la commande suivante dans la tâche planifiée :
+
+```sh
+. /home/myconcretelab/.config/gestion/cron.env && curl --fail --silent --show-error --location --max-redirs 5 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 5 --retry-max-time 120 --retry-connrefused --header "Authorization: Bearer ${CRON_TRIGGER_TOKEN}" "https://gestion.gites-broceliande.com/api/settings/smartlife/run" --output /dev/null
+```
+
+Les reprises absorbent les erreurs HTTP temporaires, notamment une réponse `502` pendant un redémarrage du site. Elles restent limitées dans le temps ; une erreur persistante continue de faire échouer la tâche et apparaît dans ses journaux grâce à `--show-error`. Les réponses `401` et `403` ne sont pas réessayées. Les commandes Smart Life déjà exécutées pour un créneau sont reconnues par leur clé d'événement et ne sont pas rejouées lors d'une reprise. Voir la [documentation curl des reprises](https://curl.se/docs/manpage.html#--retry).
+
 ## Notifications sur téléphone et ordinateur
 
 Les propriétaires peuvent activer les notifications dans **Paramètres → Canaux de communication → Notifications**. Chaque appareil s'inscrit séparément et peut recevoir un test ou être retiré depuis cette page. Sur iPhone/iPad (iOS 16.4+), ajouter d'abord le site à l'écran d'accueil depuis Safari, puis ouvrir cette application pour autoriser les notifications. Aucun compte Apple Developer ni service de notifications payant n'est nécessaire.

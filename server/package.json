@@ -44,7 +44,7 @@
     "nodemailer": "^10.1.4",
     "oauth4webapi": "^3.8.8",
     "playwright": "^1.48.2",
-    "qs": "^6.16.0",
+    "qs": "^6.16.1",
     "read-excel-file": "^9.3.2",
     "stripe": "^23.0.0",
     "web-push": "^3.6.7",
