@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { reportWorkItem } from "@contrats/shared";
 import ReportPageHeader from "./ReportPageHeader";
+import ReportsToDo from "./ReportsToDo";
 import type { ReportWorkspace } from "./ReportsPage";
 import {
   cadenceLabel,
-  evaluateWorkspaceReport,
   formatReportValue,
   getReportPeriod,
-  reportPeriodKey,
-  reportStatus,
 } from "./reportModel";
 import {
   ReportBadge,
@@ -18,7 +17,11 @@ import {
 } from "./ReportUi";
 
 export default function ReportsOverview({
-  workspace: {
+  workspace,
+}: {
+  workspace: ReportWorkspace;
+}) {
+  const {
     state,
     mutate,
     month,
@@ -28,25 +31,14 @@ export default function ReportsOverview({
     saving,
     loading,
     refresh,
-  },
-}: {
-  workspace: ReportWorkspace;
-}) {
+  } = workspace;
+  const [params, setParams] = useSearchParams();
+  const view = params.get("vue") === "periode" ? "period" : "todo";
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const summaries = state.reports.map((report) => {
-    const key = reportPeriodKey(report, month);
-    const result = evaluateWorkspaceReport(state, report, month);
-    const progress = state.progress[key];
-    return { report, result, progress, status: reportStatus(progress, result) };
-  });
-  const needsAttention = summaries.filter(
-    (item) => item.result.reviewCount > 0 || item.status === "Écart à examiner",
-  ).length;
-  const done = summaries.filter(
-    (item) =>
-      item.status === "Prêt" || item.status === "Transmission confirmée",
-  ).length;
+  const summaries = state.reports.map((report) =>
+    reportWorkItem(state, report, month),
+  );
   const filtered = summaries.filter(
     ({ report, result, status }) =>
       (filter !== "favorites" || report.favorite) &&
@@ -66,7 +58,15 @@ export default function ReportsOverview({
         title="Rapports et déclarations"
         actions={
           <div className="rp-header-actions">
-            {canEdit && <Link to={href("/import-airbnb")} className="rp-button rp-button--secondary"><ReportIcon name="download" />Importer un relevé Airbnb</Link>}
+            {canEdit && (
+              <Link
+                to={href("/import-airbnb")}
+                className="rp-button rp-button--secondary"
+              >
+                <ReportIcon name="download" />
+                Importer un relevé Airbnb
+              </Link>
+            )}
             <button
               type="button"
               className="rp-icon-button"
@@ -85,14 +85,52 @@ export default function ReportsOverview({
           </div>
         }
       />
-      {state.operations.some(row => row.basis === "payment" && !row.paymentDate) && <p className="rp-notice">Des versements sans date restent hors des totaux. <Link to={href("/versements-a-dater")}>Consulter les versements à dater</Link></p>}
-      <div className="rp-overview-top">
-        <div className="rp-period-card">
-          <span className="rp-overline">Période</span>
-          <label className="rp-period-picker">
+      {state.operations.some(
+        (row) => row.basis === "payment" && !row.paymentDate,
+      ) && (
+        <p className="rp-notice">
+          Des versements sans date restent hors des totaux.{" "}
+          <Link to={href("/versements-a-dater")}>
+            Consulter les versements à dater
+          </Link>
+        </p>
+      )}
+      <div
+        className="rp-overview-views"
+        role="group"
+        aria-label="Vue des rapports"
+      >
+        {[
+          { id: "todo", label: "À traiter" },
+          { id: "period", label: "Par période" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={view === tab.id ? "is-active" : ""}
+            aria-pressed={view === tab.id}
+            onClick={() =>
+              setParams((previous) => {
+                const next = new URLSearchParams(previous);
+                if (tab.id === "period") next.set("vue", "periode");
+                else next.delete("vue");
+                return next;
+              })
+            }
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {view === "todo" ? (
+        <ReportsToDo workspace={workspace} />
+      ) : (
+        <>
+          <label className="rp-period-compact">
             <ReportIcon name="clock" />
-            <span className="rp-sr-only">Période de travail</span>
+            <span>Période à consulter</span>
             <input
+              aria-label="Période de travail"
               type="month"
               value={month}
               min="2000-01"
@@ -100,148 +138,132 @@ export default function ReportsOverview({
               onChange={(event) => setMonth(event.target.value)}
             />
           </label>
-        </div>
-        <div className="rp-stat-card">
-          <span className="rp-stat-number">
-            {String(state.reports.length).padStart(2, "0")}
-          </span>
-          <div>
-            <strong>rapports</strong>
-          </div>
-        </div>
-        <div className="rp-stat-card">
-          <span className="rp-stat-number rp-stat-number--accent">
-            {String(needsAttention).padStart(2, "0")}
-          </span>
-          <div>
-            <strong>à examiner</strong>
-            <span>
-              {done
-                ? `${done} rapport${done > 1 ? "s" : ""} prêt${done > 1 ? "s" : ""} ou confirmé${done > 1 ? "s" : ""}.`
-                : "Aucun rapport finalisé sur cette période."}
-            </span>
-          </div>
-        </div>
-      </div>
-      <section className="rp-panel" aria-labelledby="rp-reports-heading">
-        <div className="rp-panel-heading">
-          <div>
-            <h2 id="rp-reports-heading">Rapports</h2>
-          </div>
-          <label className="rp-search">
-            <ReportIcon name="search" />
-            <span className="rp-sr-only">Rechercher un rapport</span>
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Rechercher un rapport…"
-            />
-          </label>
-        </div>
-        <div className="rp-filter-tabs" aria-label="Filtrer les rapports">
-          {[
-            { id: "all", label: "Tous les rapports" },
-            { id: "favorites", label: "Favoris" },
-            { id: "attention", label: "À examiner" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={filter === tab.id ? "is-active" : ""}
-              aria-pressed={filter === tab.id}
-              onClick={() => setFilter(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <div className="rp-report-list">
-          <div className="rp-report-list__head" aria-hidden="true">
-            <span>Rapport et destinataire</span>
-            <span>Période</span>
-            <span>Résultat inclus</span>
-            <span>Avancement</span>
-            <span />
-          </div>
-          {sorted.map(({ report, result, status }) => (
-            <article key={report.id} className="rp-report-row">
-              <div className="rp-report-row__identity">
-                <ReportKindIcon kind={report.kind} />
-                <div>
-                  <Link to={href(`/${report.id}`)} className="rp-report-title">
-                    {report.name}
-                  </Link>
-                  <span>{report.recipient}</span>
-                </div>
-              </div>
-              <div className="rp-report-row__period">
-                <strong>{getReportPeriod(month, report.cadence).label}</strong>
-                <span>{cadenceLabel(report.cadence)}</span>
-              </div>
-              <div className="rp-report-row__amount">
-                <strong>{formatReportValue(report, result.total)}</strong>
-                <span>
-                  {result.includedCount} opération
-                  {result.includedCount > 1 ? "s" : ""} incluse
-                  {result.includedCount > 1 ? "s" : ""}
-                </span>
-              </div>
+          <section className="rp-panel" aria-labelledby="rp-reports-heading">
+            <div className="rp-panel-heading">
               <div>
-                <ReportBadge
-                  tone={
-                    status === "Écart à examiner" || result.reviewCount
-                      ? "attention"
-                      : status === "Transmission confirmée"
-                        ? "complete"
-                        : status === "Prêt"
-                          ? "primary"
-                          : "neutral"
-                  }
-                >
-                  {status}
-                </ReportBadge>
-                {state.drafts[report.id] && (
-                  <span className="rp-draft-hint">
-                    Brouillon de règles conservé
-                  </span>
-                )}
+                <h2 id="rp-reports-heading">Rapports</h2>
               </div>
-              <div className="rp-report-row__actions">
+              <label className="rp-search">
+                <ReportIcon name="search" />
+                <span className="rp-sr-only">Rechercher un rapport</span>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Rechercher un rapport…"
+                />
+              </label>
+            </div>
+            <div className="rp-filter-tabs" aria-label="Filtrer les rapports">
+              {[
+                { id: "all", label: "Tous les rapports" },
+                { id: "favorites", label: "Favoris" },
+                { id: "attention", label: "À examiner" },
+              ].map((tab) => (
                 <button
+                  key={tab.id}
                   type="button"
-                  className={`rp-icon-button${report.favorite ? " is-favorite" : ""}`}
-                  aria-label={`${report.favorite ? "Retirer des" : "Ajouter aux"} favoris : ${report.name}`}
-                  aria-pressed={report.favorite}
-                  disabled={!canEdit || saving}
-                  onClick={() =>
-                    void mutate({
-                      type: "favorite",
-                      reportId: report.id,
-                      favorite: !report.favorite,
-                    })
-                  }
+                  className={filter === tab.id ? "is-active" : ""}
+                  aria-pressed={filter === tab.id}
+                  onClick={() => setFilter(tab.id)}
                 >
-                  <ReportIcon name="star" />
+                  {tab.label}
                 </button>
-                <Link
-                  to={href(`/${report.id}`)}
-                  className="rp-icon-link"
-                  aria-label={`Ouvrir ${report.name}`}
-                >
-                  <ReportIcon name="arrow" />
-                </Link>
+              ))}
+            </div>
+            <div className="rp-report-list">
+              <div className="rp-report-list__head" aria-hidden="true">
+                <span>Rapport et destinataire</span>
+                <span>Période</span>
+                <span>Résultat inclus</span>
+                <span>Avancement</span>
+                <span />
               </div>
-            </article>
-          ))}
-          {!sorted.length && (
-            <ReportEmpty title="Aucun rapport dans cette sélection">
-              Essayez un autre filtre ou recherchez un autre nom.
-            </ReportEmpty>
-          )}
-        </div>
-      </section>
-      {state.legacyDeclarations.length > 0 && (
+              {sorted.map(({ report, result, status, confirmed }) => (
+                <article key={report.id} className="rp-report-row">
+                  <div className="rp-report-row__identity">
+                    <ReportKindIcon kind={report.kind} />
+                    <div>
+                      <Link
+                        to={href(`/${report.id}`)}
+                        className="rp-report-title"
+                      >
+                        {report.name}
+                      </Link>
+                      <span>{report.recipient}</span>
+                    </div>
+                  </div>
+                  <div className="rp-report-row__period">
+                    <strong>
+                      {getReportPeriod(month, report.cadence).label}
+                    </strong>
+                    <span>{cadenceLabel(report.cadence)}</span>
+                  </div>
+                  <div className="rp-report-row__amount">
+                    <strong>{formatReportValue(report, result.total)}</strong>
+                    <span>
+                      {result.includedCount} opération
+                      {result.includedCount > 1 ? "s" : ""} incluse
+                      {result.includedCount > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div>
+                    <ReportBadge
+                      tone={
+                        status === "Écart à examiner" || result.reviewCount
+                          ? "attention"
+                          : confirmed
+                            ? "complete"
+                            : status === "Prêt à confirmer"
+                              ? "primary"
+                              : "neutral"
+                      }
+                    >
+                      {status}
+                    </ReportBadge>
+                    {state.drafts[report.id] && (
+                      <span className="rp-draft-hint">
+                        Brouillon de règles conservé
+                      </span>
+                    )}
+                  </div>
+                  <div className="rp-report-row__actions">
+                    <button
+                      type="button"
+                      className={`rp-icon-button${report.favorite ? " is-favorite" : ""}`}
+                      aria-label={`${report.favorite ? "Retirer des" : "Ajouter aux"} favoris : ${report.name}`}
+                      aria-pressed={report.favorite}
+                      disabled={!canEdit || saving}
+                      onClick={() =>
+                        void mutate({
+                          type: "favorite",
+                          reportId: report.id,
+                          favorite: !report.favorite,
+                        })
+                      }
+                    >
+                      <ReportIcon name="star" />
+                    </button>
+                    <Link
+                      to={href(`/${report.id}`)}
+                      className="rp-icon-link"
+                      aria-label={`Ouvrir ${report.name}`}
+                    >
+                      <ReportIcon name="arrow" />
+                    </Link>
+                  </div>
+                </article>
+              ))}
+              {!sorted.length && (
+                <ReportEmpty title="Aucun rapport dans cette sélection">
+                  Essayez un autre filtre ou recherchez un autre nom.
+                </ReportEmpty>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "period" && state.legacyDeclarations.length > 0 && (
         <details className="rp-panel rp-legacy-history">
           <summary>
             Déclarations historiques ({state.legacyDeclarations.length})

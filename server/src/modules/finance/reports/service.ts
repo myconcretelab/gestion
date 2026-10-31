@@ -15,7 +15,10 @@ import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { getOrganizationId } from "../../organizations/context.js";
 import { loadReportFacts } from "./facts.js";
 
-type Configuration = Pick<ReportState, "reports" | "overrides" | "progress">;
+type Configuration = Pick<
+  ReportState,
+  "reports" | "overrides" | "progress" | "worklistStartMonth"
+>;
 type Facts = Awaited<ReturnType<typeof loadReportFacts>>;
 const fail = (message: string, status = 409) =>
   Object.assign(new Error(message), { status, statusCode: status });
@@ -131,7 +134,9 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
             "Les données ont changé. Actualisez les rapports avant de réessayer. Votre brouillon est conservé.",
           );
         const { command, month } = payload;
-        if (command.type === "save") {
+        if (command.type === "worklist-start") {
+          config.worklistStartMonth = command.startMonth;
+        } else if (command.type === "save") {
           const definition = command.definition;
           if (
             definition.propertyIds.some(
@@ -286,9 +291,11 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
             action: `report.${command.type}`,
             resource_type: "finance_report",
             resource_id:
-              command.type === "save"
-                ? command.definition.id
-                : command.reportId,
+              command.type === "worklist-start"
+                ? "worklist"
+                : command.type === "save"
+                  ? command.definition.id
+                  : command.reportId,
             metadata_json: JSON.stringify({ month, revision, command }),
           },
         });

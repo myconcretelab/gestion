@@ -34,7 +34,7 @@ export type ReportWorkspace = {
   mutate: (command: ReportCommand) => Promise<boolean>;
   month: string;
   setMonth: (month: string) => void;
-  href: (path?: string) => string;
+  href: (path?: string, period?: string) => string;
   canEdit: boolean;
   saving: boolean;
   notify: (message: string) => void;
@@ -184,9 +184,17 @@ export default function ReportsPage() {
           }),
         setMonth: (value) => {
           if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(value))
-            setParams({ periode: value });
+            setParams((previous) => {
+              const next = new URLSearchParams(previous);
+              next.set("periode", value);
+              return next;
+            });
         },
-        href: (path = "") => `/rapports${path}?periode=${month}`,
+        href: (path = "", period = month) => {
+          const next = new URLSearchParams(params);
+          next.set("periode", period);
+          return `/rapports${path}?${next}`;
+        },
         canEdit: canCurrentUserWritePage("statistics"),
         notify,
         storageError,
@@ -225,8 +233,14 @@ export default function ReportsPage() {
           )}
           <Routes>
             <Route index element={<ReportsOverview workspace={workspace} />} />
-            <Route path="import-airbnb" element={<OtaImportPage workspace={workspace} />} />
-            <Route path="versements-a-dater" element={<UndatedPaymentsPage workspace={workspace} />} />
+            <Route
+              path="import-airbnb"
+              element={<OtaImportPage workspace={workspace} />}
+            />
+            <Route
+              path="versements-a-dater"
+              element={<UndatedPaymentsPage workspace={workspace} />}
+            />
             <Route
               path="ventiler/:reservationId"
               element={<ReportAllocationEditor workspace={workspace} />}

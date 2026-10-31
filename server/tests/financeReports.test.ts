@@ -11,6 +11,7 @@ import {
   reportPeriodKey,
   snapshotDiffers,
   buildReportReminders,
+  buildReportWorklist,
   type ReportCommand,
   type ReportWorkspaceData,
 } from "@contrats/shared";
@@ -143,6 +144,44 @@ const mutate = (
     },
     "test-user",
   );
+
+test("le début du suivi est conservé sans créer de fausses déclarations et reste isolé par organisation", () =>
+  fixture(async ({ gite }) => {
+    await stay(gite, {
+      date_entree: new Date("2017-01-06"),
+      date_sortie: new Date("2017-01-10"),
+    });
+    const initial = await reports.getReportWorkspace();
+    const state = await mutate(initial, {
+      type: "worklist-start",
+      startMonth: "2026-09",
+    });
+    assert.equal(state.worklistStartMonth, "2026-09");
+    assert.deepEqual(state.progress, initial.progress);
+    assert.deepEqual(state.legacyDeclarations, initial.legacyDeclarations);
+    const reloaded = await reports.getReportWorkspace();
+    const pending = buildReportWorklist(
+      reloaded,
+      new Date("2026-10-31T12:00:00Z"),
+    );
+    assert.equal(pending.length, 2);
+    assert.ok(pending.every((item) => item.month === "2026-09"));
+    const audit = await db.default.auditLog.findFirst({
+      where: { action: "report.worklist-start" },
+    });
+    assert.equal(audit?.resource_id, "worklist");
+    await assert.rejects(
+      mutate(initial, { type: "worklist-start", startMonth: "2026-08" }),
+      /Les données ont changé/,
+    );
+    await assert.rejects(
+      mutate(reloaded, { type: "worklist-start", startMonth: "2026-13" }),
+    );
+    await fixture(async () => {
+      const other = await reports.getReportWorkspace();
+      assert.equal(other.worklistStartMonth, undefined);
+    });
+  }));
 
 test("les recettes proviennent des paiements reçus, y compris espèces, et non des réservations impayées", () =>
   fixture(async ({ gite }) => {

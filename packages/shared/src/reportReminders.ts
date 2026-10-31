@@ -8,6 +8,7 @@ import {
   reportPeriodKey,
   snapshotDiffers,
 } from "./reports.js";
+import { legacyReportPeriodConfirmed } from "./reportWorklist.js";
 
 export type ReportReminder = {
   id: string;
@@ -112,21 +113,13 @@ export function buildReportReminders(
         continue;
       // Legacy confirmations stay valid only when every scoped property and month was covered.
       // A confirmation in the new system takes precedence, including subsequent discrepancies.
-      if (!progress?.snapshot) {
-        const months = candidatesForPeriod(period.start, period.end);
-        if (
-          scope.size &&
-          months.every((item) => {
-            const covered = new Set(
-              history
-                .filter((row) => row.period === item)
-                .flatMap((row) => row.propertyIds ?? []),
-            );
-            return [...scope].every((id) => covered.has(id));
-          })
-        )
-          continue;
-      }
+      if (
+        !progress?.snapshot &&
+        ((state.worklistStartMonth &&
+          period.end <= `${state.worklistStartMonth}-01`) ||
+          legacyReportPeriodConfirmed(state, report, month))
+      )
+        continue;
       const scopeValid = report.propertyIds.every((id) =>
         state.properties.some((property) => property.id === id),
       );
@@ -174,14 +167,4 @@ export function buildReportReminders(
       a.name.localeCompare(b.name, "fr") ||
       a.recipient.localeCompare(b.recipient, "fr"),
   );
-}
-
-function candidatesForPeriod(start: string, end: string) {
-  const months: string[] = [];
-  const date = new Date(`${start}T00:00:00Z`);
-  while (date.toISOString().slice(0, 10) < end) {
-    months.push(date.toISOString().slice(0, 7));
-    date.setUTCMonth(date.getUTCMonth() + 1);
-  }
-  return months;
 }

@@ -483,7 +483,9 @@ try {
         } else {
           const state = fixture.state;
           const command = payload.command;
-          if (command.type === "save") {
+          if (command.type === "worklist-start") {
+            state.worklistStartMonth = command.startMonth;
+          } else if (command.type === "save") {
             const index = state.reports.findIndex(
               (report) => report.id === command.definition.id,
             );
@@ -618,6 +620,135 @@ try {
     await save.click({ trial: true });
   };
 
+  const { page: worklist, fixture: worklistFixture } = await createPage();
+  await worklist.clock.setFixedTime(new Date("2026-10-31T12:00:00Z"));
+  worklistFixture.state.worklistStartMonth = "2026-09";
+  worklistFixture.state.legacyDeclarations = [];
+  worklistFixture.state.reports[0].propertyIds = ["g1"];
+  worklistFixture.state.operations = [
+    {
+      ...baseOperation,
+      id: "september",
+      paymentDate: "2026-09-10",
+      stayDate: "2026-09-09",
+    },
+    {
+      ...baseOperation,
+      id: "old-stay",
+      paymentDate: "2017-01-07",
+      stayDate: "2017-01-06",
+    },
+  ];
+  await open(worklist);
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(await worklist.locator(".rp-report-row").count(), 3);
+  assert.equal(
+    await worklist.locator('.rp-report-row[data-period="2026-09"]').count(),
+    3,
+  );
+  assert.equal(await worklist.locator(".rp-overview-top").count(), 0);
+  await capture(worklist, "reports-todo-desktop.png");
+  await noOverflow(worklist);
+  await worklist.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(worklist);
+  await capture(worklist, "reports-todo-mobile.png");
+  await worklist.setViewportSize({ width: 1440, height: 1050 });
+  await worklist
+    .getByRole("link", { name: "Relevé propriétaire", exact: true })
+    .click();
+  assert.match(worklist.url(), /periode=2026-09/);
+  await worklist
+    .getByRole("button", { name: "Marquer comme prêt", exact: true })
+    .click();
+  await worklist
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .waitFor();
+  await worklist
+    .getByRole("link", { name: "Tous les rapports", exact: true })
+    .click();
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(await worklist.locator(".rp-report-row").count(), 3);
+  assert.match(
+    await worklist.locator('[data-report-id="owner"]').innerText(),
+    /Prêt à confirmer/,
+  );
+  await worklist
+    .getByRole("link", { name: "Relevé propriétaire", exact: true })
+    .click();
+  await worklist
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .click();
+  await worklist
+    .getByRole("dialog")
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .click();
+  await worklist
+    .getByRole("button", { name: "Voir la copie confirmée", exact: true })
+    .waitFor();
+  await worklist
+    .getByRole("link", { name: "Tous les rapports", exact: true })
+    .click();
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(await worklist.locator(".rp-report-row").count(), 2);
+  await worklist.reload();
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(await worklist.locator(".rp-report-row").count(), 2);
+  worklistFixture.state.operations[0].amountCents += 100;
+  worklistFixture.state.factsRevision = "facts-v2";
+  await worklist
+    .getByRole("button", { name: "Actualiser les données", exact: true })
+    .click();
+  await worklist
+    .locator('[data-report-id="owner"]')
+    .getByText("Écart à examiner", { exact: true })
+    .waitFor();
+  await worklist.clock.setFixedTime(new Date("2026-10-31T23:00:00Z"));
+  await worklist.reload();
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(await worklist.locator(".rp-report-row").count(), 6);
+  assert.equal(
+    await worklist.locator('.rp-report-row[data-period="2026-10"]').count(),
+    3,
+  );
+  await worklist
+    .getByRole("button", { name: "Par période", exact: true })
+    .click();
+  await worklist.getByLabel("Période de travail").fill("2026-08");
+  assert.match(worklist.url(), /vue=periode/);
+  assert.equal(await worklist.locator(".rp-report-row").count(), 3);
+  assert.equal(
+    await worklist.getByText("Déjà traité", { exact: true }).count(),
+    3,
+  );
+  await worklist
+    .getByRole("button", { name: "À traiter", exact: true })
+    .click();
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(await worklist.locator(".rp-report-row").count(), 6);
+  await worklist
+    .getByLabel("Rapport à traiter", { exact: true })
+    .selectOption("owner");
+  assert.equal(await worklist.locator(".rp-report-row").count(), 2);
+  await worklist
+    .getByLabel("Rapport à traiter", { exact: true })
+    .selectOption("all");
+  await worklist
+    .getByRole("searchbox", { name: "Rechercher un rapport à traiter" })
+    .fill("septembre");
+  assert.equal(await worklist.locator(".rp-report-row").count(), 3);
+  await worklist
+    .getByRole("searchbox", { name: "Rechercher un rapport à traiter" })
+    .fill("");
+  worklistFixture.state.reports[2].cadence = "quarterly";
+  await worklist
+    .getByRole("button", { name: "Actualiser les données", exact: true })
+    .click();
+  await worklist
+    .locator('[data-report-id="fees"]')
+    .getByText("Trimestriel", { exact: true })
+    .waitFor();
+  assert.equal(await worklist.locator('[data-report-id="fees"]').count(), 1);
+
   const { page, fixture } = await createPage();
   // Demo state from earlier prototypes is deliberately ignored.
   await page.addInitScript(() =>
@@ -630,6 +761,7 @@ try {
   await page
     .getByRole("heading", { name: "Rapports et déclarations" })
     .waitFor();
+  await page.getByRole("button", { name: "Par période", exact: true }).click();
   assert.equal(await page.locator(".rp-report-row").count(), 3);
   assert.equal(
     await page

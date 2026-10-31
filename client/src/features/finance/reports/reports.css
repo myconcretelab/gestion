@@ -228,81 +228,108 @@
 .rp-icon-button.is-favorite .rp-icon {
   fill: var(--primary-soft);
 }
-.rp-overview-top {
-  display: grid;
-  grid-template-columns: 1.1fr 1fr 1fr;
-  gap: 14px;
-  margin-bottom: 28px;
-}
-.rp-period-card,
-.rp-stat-card {
-  background: var(--card);
+.rp-overview-views {
+  display: flex;
+  gap: 5px;
+  width: fit-content;
+  margin-bottom: 20px;
+  padding: 5px;
   border: 1px solid var(--border);
-  border-radius: 15px;
-  min-height: 140px;
-  padding: 22px;
+  border-radius: 11px;
+  background: var(--card);
 }
-.rp-period-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 7px;
+.rp-overview-views button {
+  padding: 9px 17px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
-.rp-period-card > .rp-muted {
-  font-size: 0.65rem;
-}
-.rp-period-picker {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  color: var(--ink);
-}
-.rp-period-picker > .rp-icon {
+.rp-overview-views button.is-active {
+  background: var(--primary-soft);
+  border-color: var(--primary-strong);
   color: var(--primary);
 }
-.rp-period-picker input {
-  min-width: 0;
+.rp-todo-count {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--subtle);
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: normal;
+  vertical-align: middle;
+}
+.rp-todo-filters {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  padding: 0 26px 20px;
+}
+.rp-todo-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 140px;
+  max-width: 350px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.rp-todo-filters select {
   width: 100%;
-  max-width: 210px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
   color: var(--ink);
-  background: transparent;
+  font-size: 0.76rem;
+}
+.rp-todo-filters p {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.rp-todo-more {
+  padding: 20px;
+  text-align: center;
+}
+.rp-period-compact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 0.78rem;
+}
+.rp-period-compact .rp-icon {
+  color: var(--primary);
+}
+.rp-period-compact input {
+  width: 175px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 0;
   border: 0;
-  padding: 3px 0;
-  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
   font-family: inherit;
-  font-size: 0.96rem;
-  font-weight: 650;
+  font-size: 0.8rem;
+  font-weight: 600;
   box-shadow: none;
 }
-.rp-stat-card {
-  display: flex;
-  gap: 19px;
-  align-items: center;
-}
-.rp-stat-number {
-  font-size: 2.7rem;
-  font-weight: 600;
-  letter-spacing: -0.07em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.rp-stat-number--accent {
-  color: var(--primary);
-}
-.rp-stat-card > div {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.rp-stat-card strong {
-  font-size: 0.79rem;
-  font-weight: 650;
-}
-.rp-stat-card > div > span {
-  font-size: 0.71rem;
-  color: var(--muted);
-  max-width: 190px;
-}
+
 .rp-panel {
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -1553,13 +1580,7 @@
     padding-left: 20px;
     padding-right: 20px;
   }
-  .rp-stat-card {
-    padding: 18px;
-    gap: 13px;
-  }
-  .rp-stat-number {
-    font-size: 2.2rem;
-  }
+
   .rp-report-row__identity {
     gap: 10px;
   }
@@ -1588,23 +1609,7 @@
   .rp-save-indicator {
     max-width: none;
   }
-  .rp-overview-top {
-    grid-template-columns: 1fr 1fr;
-  }
-  .rp-period-card {
-    grid-column: 1 / -1;
-    min-height: 100px;
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    padding: 16px 20px;
-  }
-  .rp-period-card > .rp-muted {
-    grid-column: 1 / -1;
-  }
-  .rp-stat-card {
-    min-height: 110px;
-  }
+
   .rp-report-list__head {
     display: none;
   }
@@ -1680,6 +1685,21 @@
   }
 }
 @media (max-width: 700px) {
+  .rp-overview-views {
+    width: 100%;
+  }
+  .rp-overview-views button {
+    flex: 1;
+  }
+  .rp-todo-filters {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 0 17px 16px;
+  }
+  .rp-todo-filters label {
+    max-width: none;
+    min-width: 0;
+  }
   .rp-editor-layout {
     display: flex;
     flex-direction: column;
@@ -1767,43 +1787,6 @@
     font-size: 1.85rem;
   }
 
-  .rp-overview-top {
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  .rp-period-card {
-    padding: 14px;
-    gap: 5px;
-  }
-  .rp-period-card .rp-overline {
-    font-size: 0.6rem;
-  }
-  .rp-period-picker {
-    gap: 5px;
-  }
-  .rp-period-picker input {
-    max-width: 155px;
-    font-size: 0.8rem;
-  }
-  .rp-period-picker .rp-icon {
-    width: 15px;
-    height: 15px;
-  }
-  .rp-stat-card {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 17px;
-    gap: 12px;
-  }
-  .rp-stat-card strong {
-    font-size: 0.72rem;
-  }
-  .rp-stat-card > div > span {
-    font-size: 0.64rem;
-  }
-  .rp-stat-number {
-    font-size: 2rem;
-  }
   .rp-panel-heading {
     padding: 21px 17px 16px;
     flex-direction: column;

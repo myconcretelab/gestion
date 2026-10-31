@@ -91,6 +91,12 @@ export type ReportAllocation = {
 };
 export const reportCommandSchema = z.discriminatedUnion("type", [
   z
+    .object({
+      type: z.literal("worklist-start"),
+      startMonth: reportMonthSchema,
+    })
+    .strict(),
+  z
     .object({ type: z.literal("save"), definition: reportDefinitionSchema })
     .strict(),
   z

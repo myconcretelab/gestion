@@ -105,6 +105,8 @@ export type ReportState = ReportSources & {
   drafts: Record<string, ReportDefinition>;
   overrides: Record<string, Record<string, OperationOverride>>;
   progress: Record<string, ReportProgress>;
+  /** Earlier periods were already treated before the worklist was adopted. */
+  worklistStartMonth?: string;
 };
 
 const revenueCategories: ReportCategory[] = [
