@@ -15534,6 +15534,25 @@ button.personal-expenses-status:disabled {
   color: #111827;
 }
 
+.contract-return-status__upload {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--primary) 70%, #111827);
+  box-shadow: none;
+  font-size: 0.75rem;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.contract-return-status__upload:hover,
+.contract-return-status__upload:focus-visible {
+  background: var(--primary-soft);
+  color: color-mix(in srgb, var(--primary) 70%, #111827);
+}
+
 .contract-return-status__summary strong {
   font-size: 0.76rem;
   font-weight: 700;
@@ -16322,6 +16341,10 @@ button.personal-expenses-status:disabled {
   border: 1px solid #ebe3dc;
   border-radius: 22px;
   background: linear-gradient(180deg, #fffdf8 0%, #ffffff 100%);
+}
+
+.contract-return-drawer__body--document {
+  align-content: start;
 }
 
 .contract-return-drawer__section-head {
