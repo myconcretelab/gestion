@@ -3,35 +3,19 @@ import { Link, useSearchParams } from "react-router-dom";
 import { reportWorkItem } from "@contrats/shared";
 import ReportPageHeader from "./ReportPageHeader";
 import ReportsToDo from "./ReportsToDo";
+import ReportGroupedList from "./ReportGroupedList";
+import { groupReportWorkItems, reportManagerGroup } from "./reportGrouping";
 import type { ReportWorkspace } from "./ReportsPage";
-import {
-  cadenceLabel,
-  formatReportValue,
-  getReportPeriod,
-} from "./reportModel";
-import {
-  ReportBadge,
-  ReportEmpty,
-  ReportIcon,
-  ReportKindIcon,
-} from "./ReportUi";
+import { formatReportValue } from "./reportModel";
+import { ReportEmpty, ReportIcon } from "./ReportUi";
 
 export default function ReportsOverview({
   workspace,
 }: {
   workspace: ReportWorkspace;
 }) {
-  const {
-    state,
-    mutate,
-    month,
-    setMonth,
-    href,
-    canEdit,
-    saving,
-    loading,
-    refresh,
-  } = workspace;
+  const { state, month, setMonth, href, canEdit, saving, loading, refresh } =
+    workspace;
   const [params, setParams] = useSearchParams();
   const view = params.get("vue") === "periode" ? "period" : "todo";
   const [filter, setFilter] = useState("all");
@@ -45,7 +29,7 @@ export default function ReportsOverview({
       (filter !== "attention" ||
         result.reviewCount ||
         status === "Écart à examiner") &&
-      `${report.name} ${report.recipient}`
+      `${report.name} ${report.recipient} ${reportManagerGroup(report, state).name}`
         .toLocaleLowerCase("fr")
         .includes(search.toLocaleLowerCase("fr")),
   );
@@ -172,105 +156,18 @@ export default function ReportsOverview({
                 </button>
               ))}
             </div>
-            <div className="rp-report-list">
-              <div className="rp-report-list__head" aria-hidden="true">
-                <span>Rapport et destinataire</span>
-                <span>Période</span>
-                <span>Résultat inclus</span>
-                <span>Avancement</span>
-                <span />
-              </div>
-              {sorted.map(({ report, result, status, confirmed }) => (
-                <article key={report.id} className="rp-report-row">
-                  <div className="rp-report-row__identity">
-                    <ReportKindIcon kind={report.kind} />
-                    <div>
-                      <Link
-                        to={href(`/${report.id}`)}
-                        className="rp-report-title"
-                      >
-                        {report.name}
-                      </Link>
-                      <span>{report.recipient}</span>
-                    </div>
-                  </div>
-                  <div className="rp-report-row__period">
-                    <strong>
-                      {getReportPeriod(month, report.cadence).label}
-                    </strong>
-                    <span>{cadenceLabel(report.cadence)}</span>
-                  </div>
-                  <div className="rp-report-row__amount">
-                    <strong>{formatReportValue(report, result.total)}</strong>
-                    <span>
-                      {result.includedCount} opération
-                      {result.includedCount > 1 ? "s" : ""} incluse
-                      {result.includedCount > 1 ? "s" : ""}
-                    </span>
-                  </div>
-                  <div>
-                    <ReportBadge
-                      tone={
-                        status === "Écart à examiner" || result.reviewCount
-                          ? "attention"
-                          : confirmed
-                            ? "complete"
-                            : status === "Prêt à confirmer"
-                              ? "primary"
-                              : "neutral"
-                      }
-                    >
-                      {status}
-                    </ReportBadge>
-                    {state.drafts[report.id] && (
-                      <span className="rp-draft-hint">
-                        Brouillon de règles conservé
-                      </span>
-                    )}
-                  </div>
-                  <div className="rp-report-row__actions">
-                    <button
-                      type="button"
-                      className={`rp-icon-button${report.favorite ? " is-favorite" : ""}`}
-                      aria-label={`${report.favorite ? "Retirer des" : "Ajouter aux"} favoris : ${report.name}`}
-                      aria-pressed={report.favorite}
-                      disabled={!canEdit || saving}
-                      onClick={() =>
-                        void mutate({
-                          type: "favorite",
-                          reportId: report.id,
-                          favorite: !report.favorite,
-                        })
-                      }
-                    >
-                      <ReportIcon name="star" />
-                    </button>
-                    {canEdit && (
-                      <Link
-                        to={href(`/${report.id}/modifier`)}
-                        className="rp-icon-link"
-                        aria-label={`Réglages de ${report.name} · ${report.recipient}`}
-                        title="Réglages du rapport"
-                      >
-                        <ReportIcon name="settings" />
-                      </Link>
-                    )}
-                    <Link
-                      to={href(`/${report.id}`)}
-                      className="rp-icon-link"
-                      aria-label={`Ouvrir ${report.name}`}
-                    >
-                      <ReportIcon name="arrow" />
-                    </Link>
-                  </div>
-                </article>
-              ))}
-              {!sorted.length && (
-                <ReportEmpty title="Aucun rapport dans cette sélection">
-                  Essayez un autre filtre ou recherchez un autre nom.
-                </ReportEmpty>
-              )}
-            </div>
+            {sorted.length > 0 && (
+              <ReportGroupedList
+                groups={groupReportWorkItems(sorted, state)}
+                workspace={workspace}
+                showFavorites
+              />
+            )}
+            {!sorted.length && (
+              <ReportEmpty title="Aucun rapport dans cette sélection">
+                Essayez un autre filtre ou recherchez un autre nom.
+              </ReportEmpty>
+            )}
           </section>
         </>
       )}

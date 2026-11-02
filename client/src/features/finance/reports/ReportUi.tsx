@@ -8,6 +8,9 @@ type IconName =
   | "back"
   | "check"
   | "clock"
+  | "calendar"
+  | "chevron"
+  | "people"
   | "document"
   | "download"
   | "edit"
@@ -21,6 +24,19 @@ type IconName =
   | "undo"
   | "home";
 const paths: Record<IconName, ReactNode> = {
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 11h18M8 15h2m4 0h2" />
+    </>
+  ),
+  chevron: <path d="m8 10 4 4 4-4" />,
+  people: (
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 4v3" />
+    </>
+  ),
   copy: (
     <>
       <rect x="8" y="8" width="12" height="13" rx="2" />

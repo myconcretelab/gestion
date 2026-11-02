@@ -900,6 +900,166 @@ try {
     .waitFor();
   assert.equal(await worklist.locator('[data-report-id="fees"]').count(), 1);
 
+  const { page: grouped, fixture: groupedFixture } = await createPage();
+  await grouped.clock.setFixedTime(new Date("2026-11-02T12:00:00Z"));
+  Object.assign(groupedFixture.state, {
+    worklistStartMonth: "2026-09",
+    legacyDeclarations: [],
+    propertyOperators: { g1: "entity-a", g2: "entity-b" },
+    operators: [
+      { id: "entity-a", name: "Martin Camille", legacy: false },
+      { id: "entity-b", name: "Durand Alex", legacy: false },
+    ],
+    reports: [
+      ...["a", "b"].map((suffix, i) => ({
+        ...createReport("social", `social-${suffix}`),
+        name: "URSSAF",
+        favorite: false,
+        recipient: i ? "Durand Alex" : "Martin Camille",
+        operatorId: `entity-${suffix}`,
+        propertyIds: [`g${i + 1}`],
+      })),
+      ...["a", "b"].map((suffix, i) => ({
+        ...createReport("tourist", `nights-${suffix}`),
+        name: "Nuitées",
+        recipient: i ? "Alex Durand" : "Camille Martin",
+        managerId: `manager-${suffix}`,
+        propertyIds: [`g${i + 1}`],
+      })),
+    ],
+    operations: ["09", "10"].flatMap((month) =>
+      ["g1", "g2"].flatMap((propertyId, i) => [
+        {
+          ...baseOperation,
+          id: `income-${month}-${propertyId}`,
+          propertyId,
+          paymentDate: `2026-${month}-10`,
+          stayDate: `2026-${month}-10`,
+          amountCents: i ? 316947 : 443817,
+        },
+        {
+          ...baseOperation,
+          id: `night-${month}-${propertyId}`,
+          propertyId,
+          basis: "nights",
+          stayDate: `2026-${month}-10`,
+          nights: i ? 14 : 19,
+        },
+      ]),
+    ),
+  });
+  await open(grouped);
+  await grouped.locator(".rp-month-group").first().waitFor();
+  assert.deepEqual(
+    await grouped
+      .locator(".rp-month-group")
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset.month)),
+    ["2026-09", "2026-10"],
+  );
+  assert.equal(await grouped.locator(".rp-manager-group").count(), 4);
+  assert.equal(await grouped.locator(".rp-report-row").count(), 8);
+  for (const month of ["2026-09", "2026-10"]) {
+    const monthGroup = grouped.locator(
+      `.rp-month-group[data-month="${month}"]`,
+    );
+    for (const manager of ["a", "b"]) {
+      const rows = monthGroup.locator(
+        `[data-manager="manager:manager-${manager}"] .rp-report-row`,
+      );
+      assert.deepEqual(
+        await rows.evaluateAll((nodes) =>
+          nodes.map((node) => node.dataset.reportId),
+        ),
+        [`nights-${manager}`, `social-${manager}`],
+      );
+    }
+  }
+  await capture(grouped, "reports-grouped-desktop.png");
+  await noOverflow(grouped);
+  await grouped
+    .getByRole("button", { name: "Tout replier", exact: true })
+    .click();
+  assert.equal(
+    await grouped
+      .locator('.rp-month-group__toggle[aria-expanded="false"]')
+      .count(),
+    2,
+  );
+  assert.equal(await grouped.locator(".rp-report-row:visible").count(), 0);
+  await grouped
+    .getByRole("button", { name: "Tout déplier", exact: true })
+    .click();
+  const september = grouped.locator(
+    '[data-month="2026-09"] .rp-month-group__toggle',
+  );
+  await september.focus();
+  await grouped.keyboard.press("Enter");
+  assert.equal(await september.getAttribute("aria-expanded"), "false");
+  await grouped.keyboard.press("Space");
+  assert.equal(await september.getAttribute("aria-expanded"), "true");
+  await grouped.getByLabel("Mois des rapports").selectOption("2026-10");
+  await grouped
+    .getByLabel("Gestionnaire des rapports")
+    .selectOption("manager:manager-b");
+  assert.equal(await grouped.locator(".rp-report-row").count(), 2);
+  assert.match(
+    await grouped.locator(".rp-manager-group__identity").innerText(),
+    /Alex Durand/,
+  );
+  await grouped
+    .getByRole("button", { name: "Effacer les filtres", exact: true })
+    .click();
+  await grouped.locator('[data-month="2026-09"]').waitFor();
+  assert.equal(await grouped.locator(".rp-report-row").count(), 8);
+  await grouped
+    .getByRole("searchbox", { name: "Rechercher un rapport à traiter" })
+    .fill("Camille Martin");
+  assert.equal(await grouped.locator(".rp-report-row").count(), 4);
+  await grouped
+    .getByRole("button", { name: "Effacer les filtres", exact: true })
+    .click();
+  await grouped.waitForFunction(
+    () => document.querySelectorAll(".rp-report-row").length === 8,
+  );
+  for (const width of [390, 320]) {
+    await grouped.setViewportSize({ width, height: 844 });
+    await noOverflow(grouped);
+    await capture(grouped, `reports-grouped-mobile-${width}.png`);
+  }
+  await grouped.setViewportSize({ width: 1440, height: 1050 });
+  await grouped
+    .getByRole("button", { name: "Par période", exact: true })
+    .click();
+  await grouped
+    .getByRole("heading", { name: "Rapports", exact: true })
+    .waitFor();
+  assert.equal(await grouped.locator(".rp-manager-group").count(), 2);
+  await grouped
+    .getByRole("button", { name: "Ajouter aux favoris : URSSAF", exact: true })
+    .first()
+    .click();
+  await grouped
+    .getByRole("button", { name: "Retirer des favoris : URSSAF", exact: true })
+    .waitFor();
+  await grouped.getByRole("button", { name: "Favoris", exact: true }).click();
+  assert.equal(await grouped.locator(".rp-report-row").count(), 1);
+  groupedFixture.state.worklistStartMonth = "2026-04";
+  await grouped
+    .getByRole("button", { name: "Actualiser les données", exact: true })
+    .click();
+  await grouped.getByRole("button", { name: "À traiter", exact: true }).click();
+  const moreMonths = grouped.getByRole("button", {
+    name: "Afficher le mois suivant",
+    exact: true,
+  });
+  await moreMonths.waitFor();
+  assert.equal(await grouped.locator(".rp-month-group").count(), 6);
+  assert.equal(await grouped.locator(".rp-report-row").count(), 24);
+  await moreMonths.click();
+  assert.equal(await grouped.locator(".rp-month-group").count(), 7);
+  assert.equal(await grouped.locator(".rp-report-row").count(), 28);
+  await grouped.context().close();
+
   const { page, fixture } = await createPage();
   // Demo state from earlier prototypes is deliberately ignored.
   await page.addInitScript(() =>
