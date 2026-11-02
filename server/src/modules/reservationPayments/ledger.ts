@@ -740,6 +740,90 @@ export const voidReservationPayment = async (id: string, paymentId: string) =>
     return getReservationPaymentTracking(id, tx);
   });
 
+export const updateReservationPaymentDate = async (
+  id: string,
+  paymentId: string,
+  input: { paid_on: string; expected_paid_on: string | null },
+  userId?: string,
+) =>
+  ledgerTransaction(async (tx) => {
+    const paidOn = new Date(`${input.paid_on}T12:00:00Z`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(input.paid_on) ||
+      !Number.isFinite(+paidOn) ||
+      paidOn.toISOString().slice(0, 10) !== input.paid_on
+    )
+      throw ledgerError("Date de paiement invalide.", 400);
+    const stay = await lockedStay(id, tx);
+    const tracking = await getReservationPaymentTracking(id, tx);
+    const entry = tracking.entries.find((row) => row.id === paymentId);
+    if (!entry || entry.voided_at)
+      throw ledgerError("Règlement introuvable ou annulé.", 404);
+    if (entry.origin === "stripe")
+      throw ledgerError(
+        "La date d’un paiement Stripe est transmise par Stripe.",
+      );
+    if (entry.paid_on === paidOn.toISOString() && !entry.paid_on_estimated)
+      return tracking;
+    if (entry.paid_on !== input.expected_paid_on)
+      throw ledgerError(
+        "La date a changé. Actualisez les règlements avant de réessayer.",
+      );
+    if (tracking.requires_review)
+      throw ledgerError(
+        "Vérifiez le paiement ou son remboursement avant de modifier sa date.",
+      );
+    await materializeHistory(stay, tracking, tx);
+    const ota = entry.ota
+      ? {
+          ...entry.ota,
+          ...(entry.ota.source === "import"
+            ? { dateSource: "manual" as const }
+            : {}),
+        }
+      : undefined;
+    if (entry.origin === "platform") {
+      // Persist the automatic receipt so the estimated date cannot replace this correction.
+      await tx.reservationRecordedPayment.create({
+        data: {
+          id: entry.id,
+          reservation_id: stay.canonicalId,
+          amount_cents: cents(entry.amount),
+          method: "Versement plateforme",
+          purpose: entry.purpose,
+          paid_on: paidOn,
+          note: "Date du versement plateforme renseignée manuellement.",
+          ota_details: ota ? JSON.stringify(ota) : null,
+        },
+      });
+    } else {
+      await tx.reservationRecordedPayment.update({
+        where: { id: entry.id },
+        data: {
+          paid_on: paidOn,
+          ...(ota ? { ota_details: JSON.stringify(ota) } : {}),
+        },
+      });
+    }
+    await syncManagedContractPayments(id, tx);
+    await tx.auditLog.create({
+      data: {
+        organization_id: stay.rows[0].organization_id,
+        user_id: userId,
+        action: "reservation.payment-date.update",
+        resource_type: "reservation",
+        resource_id: stay.canonicalId,
+        metadata_json: JSON.stringify({
+          paymentId: entry.id,
+          previous_paid_on: entry.paid_on,
+          previous_date_estimated: Boolean(entry.paid_on_estimated),
+          paid_on: paidOn.toISOString(),
+        }),
+      },
+    });
+    return getReservationPaymentTracking(id, tx);
+  });
+
 export const assertLegacyTrackingEditable = async (contract: {
   reservation_id?: string | null;
 }) => {

@@ -91,6 +91,11 @@ export default function ReservationPaymentsEditor({
   }, [busy, onBusyChange]);
   const [error, setError] = useState<string | null>(null);
   const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
+  const [dateEdit, setDateEdit] = useState<{
+    id: string;
+    paidOn: string;
+    expectedPaidOn: string | null;
+  } | null>(null);
   const requestId = useRef(crypto.randomUUID());
   const saving = useRef(false);
   const shortcutRequest = useRef<{ key: string; id: string } | null>(null);
@@ -248,6 +253,36 @@ export default function ReservationPaymentsEditor({
       setBusy(false);
     }
   };
+  const savePaymentDate = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!dateEdit || busy || saving.current) return;
+    saving.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await apiFetch<ReservationPaymentTracking>(
+        `/reservations/${reservation.id}/payments/${encodeURIComponent(dateEdit.id)}/date`,
+        {
+          method: "PATCH",
+          json: {
+            paid_on: dateEdit.paidOn,
+            expected_paid_on: dateEdit.expectedPaidOn,
+          },
+        },
+      );
+      publish(next);
+      setDateEdit(null);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Impossible de modifier la date du règlement.",
+      );
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  };
   return (
     <section
       id={detailsId}
@@ -332,6 +367,58 @@ export default function ReservationPaymentsEditor({
             </span>
             <strong>{formatEuro(entry.amount)}</strong>
           </div>
+          {canWrite && !entry.voided_at && entry.origin !== "stripe" ? (
+            dateEdit?.id === entry.id ? (
+              <form
+                className="reservation-ledger__date-form"
+                onSubmit={savePaymentDate}
+                aria-label="Modifier la date du règlement"
+              >
+                <label>
+                  Date d’encaissement
+                  <input
+                    autoFocus
+                    type="date"
+                    required
+                    value={dateEdit.paidOn}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setDateEdit({ ...dateEdit, paidOn: event.target.value })
+                    }
+                  />
+                </label>
+                <div className="reservation-ledger__form-actions">
+                  <button type="submit" disabled={busy}>
+                    Enregistrer la date
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setDateEdit(null)}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                className="reservation-ledger__text-button"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmVoid(null);
+                  setError(null);
+                  setDateEdit({
+                    id: entry.id,
+                    paidOn: entry.paid_on?.slice(0, 10) ?? today(),
+                    expectedPaidOn: entry.paid_on,
+                  });
+                }}
+              >
+                {entry.paid_on ? "Modifier la date" : "Renseigner la date"}
+              </button>
+            )
+          ) : null}
           {canWrite &&
           !entry.voided_at &&
           entry.origin !== "stripe" &&
@@ -359,7 +446,10 @@ export default function ReservationPaymentsEditor({
                 type="button"
                 className="reservation-ledger__text-button"
                 disabled={busy}
-                onClick={() => setConfirmVoid(entry.id)}
+                onClick={() => {
+                  setDateEdit(null);
+                  setConfirmVoid(entry.id);
+                }}
               >
                 Annuler la saisie
               </button>

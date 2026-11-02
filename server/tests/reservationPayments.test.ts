@@ -7,6 +7,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import express from "express";
 import {
+  createReport,
+  evaluateReport,
   DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
   getReservationPaymentShortcutValue,
 } from "@contrats/shared";
@@ -413,6 +415,35 @@ test("l'API valide les dates réelles, les centimes, les moyens et refuse un mon
     });
     assert.equal(response.status, 201);
     assert.equal(((await response.json()) as any).remaining, 900);
+    const recorded = await inOrg(() =>
+      ledger.getReservationPaymentTracking(r.id),
+    );
+    const dateUrl = `${url}/${recorded.entries[0].id}/date`;
+    for (const invalid of [
+      { paid_on: "2026-02-30", expected_paid_on: recorded.entries[0].paid_on },
+      { paid_on: "2026-09-15" },
+      { paid_on: "2026-09-15", expected_paid_on: null, amount: 999 },
+    ]) {
+      const invalidResponse = await fetch(dateUrl, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invalid),
+      });
+      assert.equal(invalidResponse.status, 400);
+    }
+    const corrected = await fetch(dateUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paid_on: "2026-09-15",
+        expected_paid_on: recorded.entries[0].paid_on,
+      }),
+    });
+    assert.equal(corrected.status, 200);
+    assert.equal(
+      ((await corrected.json()) as any).entries[0].paid_on,
+      "2026-09-15T12:00:00.000Z",
+    );
     const firstFull = await stay();
     await contractFor(firstFull.id);
     const fullResponse = await fetch(
@@ -435,6 +466,191 @@ test("l'API valide les dates réelles, les centimes, les moyens et refuse un mon
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test("corriger une date déplace les recettes dans le bon mois sans changer le règlement ni son contrat", async () => {
+  const r = await stay();
+  const c = await contractFor(r.id);
+  await inOrg(async () => {
+    const input = payment(200, { purpose: "deposit", paid_on: "2026-11-02" });
+    const original = await ledger.addReservationPayment(r.id, input);
+    const { loadReportFacts } =
+      await import("../src/modules/finance/reports/facts.js");
+    const report = {
+      ...createReport("owner", "test-date"),
+      propertyIds: ["ledger-gite"],
+    };
+    const before = await loadReportFacts();
+    const november = evaluateReport(
+      report,
+      "2026-11",
+      {},
+      before.operations,
+    ).total;
+    const september = evaluateReport(
+      report,
+      "2026-09",
+      {},
+      before.operations,
+    ).total;
+    const revision = (await db.default.financeReportCache.findFirstOrThrow())
+      .source_revision;
+    const corrected = await ledger.updateReservationPaymentDate(
+      r.id,
+      input.id,
+      { paid_on: "2026-09-15", expected_paid_on: original.entries[0].paid_on },
+    );
+    assert.equal(corrected.received, original.received);
+    assert.equal(corrected.remaining, original.remaining);
+    assert.equal(corrected.entries.length, 1);
+    assert.equal(corrected.entries[0].id, input.id);
+    const after = await loadReportFacts();
+    assert.equal(
+      evaluateReport(report, "2026-11", {}, after.operations).total,
+      november - 20000,
+    );
+    assert.equal(
+      evaluateReport(report, "2026-09", {}, after.operations).total,
+      september + 20000,
+    );
+    assert.ok(
+      (await db.default.financeReportCache.findFirstOrThrow()).source_revision >
+        revision,
+    );
+    assert.equal(
+      (
+        await db.default.contrat.findUniqueOrThrow({ where: { id: c.id } })
+      ).date_paiement_arrhes?.toISOString(),
+      "2026-09-15T12:00:00.000Z",
+    );
+    const audit = await db.default.auditLog.findFirstOrThrow({
+      where: { resource_id: r.id, action: "reservation.payment-date.update" },
+    });
+    assert.equal(
+      JSON.parse(audit.metadata_json!).previous_paid_on,
+      "2026-11-02T12:00:00.000Z",
+    );
+    await ledger.updateReservationPaymentDate(r.id, input.id, {
+      paid_on: "2026-09-15",
+      expected_paid_on: original.entries[0].paid_on,
+    });
+    assert.equal(
+      await db.default.auditLog.count({ where: { resource_id: r.id } }),
+      1,
+    );
+    await assert.rejects(
+      ledger.updateReservationPaymentDate(r.id, input.id, {
+        paid_on: "2026-08-15",
+        expected_paid_on: original.entries[0].paid_on,
+      }),
+      /date a changé/,
+    );
+  });
+});
+
+test("une date peut être ajoutée au règlement historique et à un versement automatique sans doublon", async () => {
+  const historical = await stay();
+  await contractFor(historical.id, {
+    statut_paiement_arrhes: "recu",
+    statut_paiement_solde: "regle",
+  });
+  await inOrg(async () => {
+    const before = await ledger.getReservationPaymentTracking(historical.id);
+    const entry = before.entries.find((e) => e.purpose === "balance")!;
+    const corrected = await ledger.updateReservationPaymentDate(
+      historical.id,
+      entry.id,
+      { paid_on: "2026-09-20", expected_paid_on: null },
+    );
+    assert.equal(corrected.received, before.received);
+    assert.equal(corrected.entries.length, before.entries.length);
+    assert.equal(
+      corrected.entries.find((e) => e.id === entry.id)?.paid_on,
+      "2026-09-20T12:00:00.000Z",
+    );
+  });
+  const platform = await stay({
+    booking_source: "Airbnb",
+    frais_optionnels_montant: 60,
+  });
+  await inOrg(async () => {
+    const before = await ledger.getReservationPaymentTracking(platform.id);
+    const entry = before.entries[0];
+    const corrected = await ledger.updateReservationPaymentDate(
+      platform.id,
+      entry.id,
+      { paid_on: "2026-09-20", expected_paid_on: entry.paid_on },
+    );
+    assert.equal(corrected.received, 1000);
+    assert.equal(corrected.remaining, 60);
+    assert.equal(corrected.platform?.extras_remaining, 60);
+    assert.equal(corrected.entries.length, 1);
+    assert.equal(corrected.entries[0].paid_on_estimated, undefined);
+    assert.equal(corrected.entries[0].paid_on, "2026-09-20T12:00:00.000Z");
+    assert.deepEqual(
+      await ledger.getReservationPaymentTracking(platform.id),
+      corrected,
+    );
+  });
+});
+
+test("la correction de date refuse les paiements annulés, étrangers et Stripe", async () => {
+  const r = await stay();
+  const other = await stay();
+  await inOrg(async () => {
+    const input = payment(100);
+    const state = await ledger.addReservationPayment(r.id, input);
+    const correction = {
+      paid_on: "2026-09-20",
+      expected_paid_on: state.entries[0].paid_on,
+    };
+    await assert.rejects(
+      ledger.updateReservationPaymentDate(other.id, input.id, correction),
+      /introuvable/,
+    );
+    await inOrg(
+      () =>
+        assert.rejects(
+          ledger.updateReservationPaymentDate(r.id, input.id, correction),
+          /introuvable/,
+        ),
+      "org_date_other",
+    );
+    await ledger.voidReservationPayment(r.id, input.id);
+    await assert.rejects(
+      ledger.updateReservationPaymentDate(r.id, input.id, correction),
+      /annulé/,
+    );
+    const stripe = await db.default.bookingPayment.create({
+      data: {
+        reservation_id: r.id,
+        stripe_mode: "live",
+        purpose: "deposit",
+        amount_cents: 20000,
+        total_cents: 100000,
+        access_token_hash: randomUUID(),
+        expires_at: new Date("2040-01-01"),
+        paid_amount_cents: 20000,
+        paid_at: new Date("2026-11-02T12:00:00Z"),
+        status: "paid",
+      },
+    });
+    await assert.rejects(
+      ledger.updateReservationPaymentDate(r.id, stripe.id, {
+        paid_on: "2026-09-20",
+        expected_paid_on: stripe.paid_at!.toISOString(),
+      }),
+      /transmise par Stripe/,
+    );
+    assert.equal(
+      (
+        await db.default.bookingPayment.findUniqueOrThrow({
+          where: { id: stripe.id },
+        })
+      ).paid_at?.toISOString(),
+      stripe.paid_at!.toISOString(),
+    );
+  });
 });
 
 test("un ancien lien Stripe ne réintroduit pas un règlement manuel annulé", async () => {

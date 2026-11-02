@@ -5,7 +5,9 @@ import {
   addReservationPayment,
   getReservationPaymentTracking,
   voidReservationPayment,
+  updateReservationPaymentDate,
 } from "../modules/reservationPayments/ledger.js";
+import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 
 const router = Router({ mergeParams: true });
 const dateSchema = z
@@ -87,6 +89,30 @@ router.post<{ id: string; paymentId: string }>(
     try {
       res.json(
         await voidReservationPayment(req.params.id, req.params.paymentId),
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+router.patch<{ id: string; paymentId: string }>(
+  "/:paymentId/date",
+  async (req, res, next) => {
+    try {
+      const input = z
+        .object({
+          paid_on: dateSchema,
+          expected_paid_on: z.string().datetime({ offset: true }).nullable(),
+        })
+        .strict()
+        .parse(req.body);
+      res.json(
+        await updateReservationPaymentDate(
+          req.params.id,
+          req.params.paymentId,
+          input,
+          (await getAuthenticatedAppUser(req))?.id,
+        ),
       );
     } catch (error) {
       next(error);

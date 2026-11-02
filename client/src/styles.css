@@ -22202,6 +22202,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 }
 .reservation-ledger__origin select,
 .reservation-ledger__form select,
+.reservation-ledger__date-form input,
 .reservation-ledger__form input {
   width: 100%;
   min-width: 0;
@@ -22218,8 +22219,11 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .reservation-ledger__form select option { background: #1e293b; color: white; }
 .reservation-ledger__origin select:focus-visible,
 .reservation-ledger__form input:focus-visible,
+.reservation-ledger__date-form input:focus-visible,
 .reservation-ledger__form select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .reservation-ledger__entry { display: grid; gap: 3px; }
+.reservation-ledger__date-form { display: grid; gap: 8px; padding: 8px 0; }
+.reservation-ledger__date-form label { display: grid; gap: 4px; }
 .reservation-ledger__entry--void { opacity: 0.55; }
 .reservation-ledger__entry--void strong { text-decoration: line-through; }
 .reservation-ledger__text-button,
@@ -22356,6 +22360,7 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 :is(.reservation-payment-popover, .today-reservation-drawer) .reservation-payment-details p { color: var(--muted); }
 :is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__origin select,
 :is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__form select,
+:is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__date-form input,
 :is(.reservation-payment-popover, .today-reservation-drawer) .reservation-ledger__form input {
   background: var(--field-bg);
   color: var(--ink);
