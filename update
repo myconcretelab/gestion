@@ -288,9 +288,9 @@ fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   # Vite needs room for native allocations above its JS heap on the host.
-  # The full server typecheck needs a separate, larger heap. Keep both checks.
+  # Keep the full server typecheck, with room for its type graph and native memory.
   client_build_heap="${CLIENT_BUILD_HEAP_MB:-640}"
-  server_build_heap="${SERVER_BUILD_HEAP_MB:-832}"
+  server_build_heap="${SERVER_BUILD_HEAP_MB:-896}"
   if [[ ! "$client_build_heap" =~ ^[1-9][0-9]*$ || ! "$server_build_heap" =~ ^[1-9][0-9]*$ ]]; then
     echo "CLIENT_BUILD_HEAP_MB and SERVER_BUILD_HEAP_MB must be positive integers."
     exit 1
@@ -298,8 +298,10 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   run_step "Build shared workspace" npm run build -w @contrats/shared
   run_step "Build client (${client_build_heap} MiB heap)" \
     env NODE_OPTIONS="--max-old-space-size=${client_build_heap}" npm run build -w client
+  # Avoid npm wrapper processes and keep the young generation small on this host.
   run_step "Build server with typecheck (${server_build_heap} MiB heap)" \
-    env NODE_OPTIONS="--max-old-space-size=${server_build_heap}" npm run build -w server
+    env NODE_OPTIONS="--max-old-space-size=${server_build_heap} --max-semi-space-size=1" \
+    node node_modules/typescript/lib/tsc.js -p server/tsconfig.json
 else
   echo "==> Skip build (SKIP_BUILD=1)"
 fi
