@@ -1,0 +1,35 @@
+import { NIGHT_REGISTER_LEGAL_URL, type NightRegister } from "@contrats/shared";
+
+const escape = (value: unknown) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        char
+      ]!,
+  );
+const date = (value: string | null) =>
+  value ? value.slice(0, 10).split("-").reverse().join("/") : "À compléter";
+const money = (value: number | null) =>
+  value === null
+    ? "À compléter"
+    : new Intl.NumberFormat("fr-FR", {
+        style: "currency",
+        currency: "EUR",
+      }).format(value / 100);
+
+export function renderNightRegisterHtml(register: NightRegister) {
+  const groups = register.properties.map((property) => ({
+    property,
+    rows: register.rows.filter((row) => row.propertyId === property.id),
+  }));
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Registre des séjours</title><style>
+    *{box-sizing:border-box}body{margin:0;color:#19212e;font:12px/1.5 Arial,sans-serif}h1,h2,p{margin:0}header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #ff5a5f;padding-bottom:12px;margin-bottom:12px}h1{font-size:26px;line-height:1.15;letter-spacing:-.7px}header p{margin-top:4px;color:#5c6675}.stamp{max-width:255px;text-align:right;font-size:11px;color:#5c6675}.stamp strong{display:block;color:#80591c;font-size:13px}.metrics{display:flex;gap:12px;margin-bottom:12px}.metric{flex:1;border:1px solid #e0e3e8;border-radius:7px;padding:8px 12px;background:#f7f8fa}.metric strong{display:block;font-size:18px}.metric span{color:#5c6675}.notice{border:1px solid #edd8af;background:#fff7e8;padding:9px 12px;border-radius:7px;margin:0 0 12px;font-size:11px;color:#6d4d1b}.property{margin-top:14px}h2{font-size:18px}.address{color:#5c6675;margin:3px 0 6px}.registration{font-size:11px;margin-bottom:6px;color:#5c6675}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#edf0f4;color:#434e5e;text-align:left;font-size:11px;padding:7px 6px;border:1px solid #dce1e8}td{padding:7px 6px;vertical-align:top;border:1px solid #dce1e8;overflow-wrap:anywhere}tbody{break-inside:avoid}td strong{font-size:12px}td small{display:block;color:#5c6675;margin-top:3px}.notes td{font-size:10.5px;background:#fafbfc;padding:8px 10px;color:#5c6675}.notes .missing{color:#80591c}.empty{padding:25px;border:1px solid #dce1e8;border-radius:7px}footer{margin-top:24px;padding-top:12px;border-top:1px solid #dce1e8;color:#5c6675;font-size:10px}footer p+p{margin-top:5px}a{color:inherit}.property h2{break-after:avoid}
+    </style></head><body>
+    <header><div><h1>Registre des séjours</h1><p>${escape(register.recipient)} · ${escape(register.period.label)}</p><p>${escape(register.reportName)}</p></div><div class="stamp"><strong>${register.incompleteCount ? "Document à compléter avant transmission" : "Données à vérifier avant transmission"}</strong>Édité le ${date(register.generatedAt)}<br>Données actuelles de gestion</div></header>
+    <div class="metrics"><div class="metric"><strong>${register.stayCount}</strong><span>Séjour${register.stayCount > 1 ? "s" : ""} dans le périmètre</span></div><div class="metric"><strong>${register.reportNights}</strong><span>Nuitées retenues par le rapport</span></div><div class="metric"><strong>${register.incompleteCount}</strong><span>Séjour${register.incompleteCount > 1 ? "s" : ""} avec des informations à compléter</span></div></div>
+    <div class="notice">Ce document reprend les séjours et les perceptions identifiables dans les données actuelles. Les cellules « À compléter » et les points signalés doivent être renseignés ou vérifiés avant transmission. Une taxe calculée n’est pas présentée comme une taxe perçue. Le tableau CSV permet de compléter les informations manquantes.</div>
+    ${groups.map(({ property, rows }) => `<section class="property"><h2>${escape(property.name)}</h2><p class="address">${escape(property.address || "Adresse à compléter")}</p><p class="registration">Numéro d’enregistrement : ${escape(property.registrationNumber || "À compléter s’il s’applique")}</p><table><thead><tr><th style="width:16%">Séjour / arrivée</th><th style="width:13%">Date de perception</th><th style="width:13%">Personnes hébergées</th><th style="width:12%">Nuits / nuitées</th><th style="width:16%">Prix par nuitée<br>si non classé</th><th style="width:15%">Total collecté<br>affecté à la période</th><th style="width:15%">Taxes additionnelles</th></tr></thead>${rows.map((row) => `<tbody><tr><td><strong>${escape(row.reference)}</strong><small>Arrivée : ${date(row.arrival)}<br>Départ : ${date(row.departure)}</small></td><td>${row.collector === "not_applicable" ? "Sans perception" : date(row.collectionDate)}</td><td><strong>${row.occupants ?? "À compléter"}</strong><small>${row.adults} adulte(s), ${row.children} enfant(s), ${row.infants === null ? "bébés à vérifier" : `${row.infants} bébé(s)`}</small></td><td><strong>${row.nights} nuit(s)</strong><small>${row.personNights === null ? "Nuitées personnes à compléter" : `${row.personNights} nuitées personnes`}<br>Du ${date(row.periodStart)} au ${date(row.periodEnd)} (fin exclue)</small></td><td>${row.classified === true ? "Sans objet : classé" : money(row.nightlyPriceCents)}<small>${row.classified === null ? "Classement à vérifier" : row.classified ? "" : "Hébergement non classé"}</small></td><td>${money(row.collectedTaxCents)}<small>Hors taxes additionnelles : ${money(row.collectedBaseTaxCents)}</small></td><td>${escape(row.additionalTaxes ?? "À compléter si applicables")}</td></tr><tr class="notes"><td colspan="7">Source : ${escape(row.source)} · Exonérations : ${escape(row.exemptionReason ?? "À compléter")} · Taxe calculée pour le séjour complet : ${money(row.calculatedStayTaxCents)} (ne vaut pas perception)${row.issues.length ? `<br><span class="missing">À vérifier : ${row.issues.map(escape).join(" · ")}</span>` : ""}</td></tr></tbody>`).join("")}${!rows.length ? '<tbody><tr><td colspan="7">Aucun séjour pour ce gîte dans la période.</td></tr></tbody>' : ""}</table></section>`).join("")}
+    <footer><p>Les nuits correspondent à la durée du séjour dans la période ; les nuitées personnes sont le nombre de personnes multiplié par ces nuits. Les perceptions multiples d’un même séjour ne doivent pas conduire à compter plusieurs fois ses nuitées. Les séjours à cheval sur plusieurs périodes nécessitent une ventilation de la taxe collectée.</p><p>Les noms et coordonnées des voyageurs ne sont pas inclus. Cet état courant complète les données de gestion et ne remplace pas une copie confirmée du rapport.</p><p>Référence des champs : article L. 2333-34 du Code général des collectivités territoriales. <a href="${NIGHT_REGISTER_LEGAL_URL}">Consulter le texte sur Légifrance</a>.</p></footer>
+    </body></html>`;
+}

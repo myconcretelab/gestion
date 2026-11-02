@@ -4,6 +4,10 @@ import { getReportWorkspace, mutateReportWorkspace } from "./service.js";
 import { getStoredReportReminders } from "./cache.js";
 import { getNightSummaries } from "./nightSummaries.js";
 import { z } from "zod";
+import { nightRegisterCsv, reportMonthSchema } from "@contrats/shared";
+import { getNightRegister } from "./nightRegister.js";
+import { renderNightRegisterHtml } from "./nightRegisterRender.js";
+import { generatePlanningPdf } from "../../../services/pdfService.js";
 import {
   applyOtaImport,
   listOtaImports,
@@ -100,6 +104,42 @@ router.get("/", async (req, res, next) => {
       .object({ refresh: z.literal("1").optional() })
       .parse(req.query);
     res.json(await getReportWorkspace({ force: refresh === "1" }));
+  } catch (error) {
+    next(error);
+  }
+});
+router.get("/:reportId/night-register", async (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const { month, format, revision } = z
+      .object({
+        month: reportMonthSchema,
+        format: z.enum(["json", "csv", "pdf"]).default("json"),
+        revision: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+      })
+      .strict()
+      .parse(req.query);
+    const register = await getNightRegister(req.params.reportId, month);
+    if (revision && revision !== register.revision)
+      return res.status(409).json({
+        error:
+          "Les données du registre ont changé. Rechargez son aperçu avant de télécharger.",
+      });
+    if (format === "json") return res.json(register);
+    res.attachment(`registre-sejours-${month}.${format}`);
+    if (format === "csv")
+      return res
+        .type("text/csv; charset=utf-8")
+        .send(nightRegisterCsv(register));
+    res.type("application/pdf").send(
+      await generatePlanningPdf(renderNightRegisterHtml(register), {
+        landscape: true,
+        pageNumbers: true,
+      }),
+    );
   } catch (error) {
     next(error);
   }

@@ -1547,8 +1547,8 @@ export const generateInvoicePreviewHtml = async (params: {
   });
 };
 
-export const generatePlanningPdf = (html: string) => withPageRetry(async (page) => {
+export const generatePlanningPdf = (html: string, options: { landscape?: boolean; pageNumbers?: boolean } = {}) => withPageRetry(async (page) => {
   await page.route("**/*", (route) => route.abort());
   await page.setContent(html, { waitUntil: "domcontentloaded" });
-  return page.pdf({ format: "A4", printBackground: true, margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" } });
+  return page.pdf({ format: "A4", landscape: options.landscape ?? false, printBackground: true, displayHeaderFooter: options.pageNumbers ?? false, headerTemplate: "<div></div>", footerTemplate: '<div style="font-family:Arial,sans-serif;font-size:9px;width:100%;text-align:right;padding:0 12mm;color:#667085">Page <span class="pageNumber"></span> / <span class="totalPages"></span></div>', margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" } });
 });

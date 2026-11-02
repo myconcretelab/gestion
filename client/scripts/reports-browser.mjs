@@ -14,6 +14,7 @@ import {
   parseAirbnbCsv,
   findOtaRoundingAdjustment,
   DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+  nightRegisterCsv,
 } from "@contrats/shared";
 import { airbnbFixture } from "../../packages/shared/dist/tests/fixtures/airbnb.js";
 
@@ -154,6 +155,61 @@ function data() {
   };
 }
 let browser;
+function registerData() {
+  return {
+    reportId: "nights-a",
+    reportName: "Nuitées",
+    recipient: "Camille Martin",
+    period: { label: "octobre 2026", start: "2026-10-01", end: "2026-11-01" },
+    generatedAt: "2026-11-02T12:00:00Z",
+    revision: "a".repeat(64),
+    reportNights: 19,
+    stayCount: 1,
+    incompleteCount: 1,
+    properties: [
+      {
+        id: "g1",
+        name: "La Maison du verger",
+        address: "1 rue du Verger, 35000 Rennes",
+        registrationNumber: null,
+      },
+    ],
+    rows: [
+      {
+        reference: "Séjour 1",
+        reservationId: "reservation-a",
+        propertyId: "g1",
+        propertyName: "La Maison du verger",
+        address: "1 rue du Verger, 35000 Rennes",
+        registrationNumber: null,
+        arrival: "2026-10-01",
+        departure: "2026-10-20",
+        periodStart: "2026-10-01",
+        periodEnd: "2026-10-20",
+        collectionDate: null,
+        collector: "host",
+        adults: 1,
+        children: 0,
+        infants: 0,
+        occupants: 1,
+        nights: 19,
+        personNights: 19,
+        classified: true,
+        nightlyPriceCents: 5000,
+        collectedTaxCents: null,
+        collectedBaseTaxCents: null,
+        calculatedStayTaxCents: 1900,
+        additionalTaxes: "Aucune selon le barème enregistré",
+        exemptionReason: "Aucune exonération renseignée",
+        source: "Direct",
+        issues: [
+          "Date et montant de perception à compléter.",
+          "Numéro d’enregistrement à compléter s’il s’applique.",
+        ],
+      },
+    ],
+  };
+}
 const runtimeErrors = [];
 const unexpectedRequests = [];
 try {
@@ -182,6 +238,10 @@ try {
       state: data(),
       commands: [],
       commandMonths: [],
+      nightRegister: registerData(),
+      registerRequests: [],
+      registerFailRead: 0,
+      registerFailDownload: 0,
       failRead: 0,
       failMutation: 0,
       conflict: false,
@@ -599,7 +659,44 @@ try {
         body = { gites: [], entriesByGite: {}, availableYears: [2026] };
       else if (pathname === "/api/settings/source-colors")
         body = { colors: {}, available_sources: [] };
-      else if (pathname === "/api/reports" && method === "GET") {
+      else if (/^\/api\/reports\/[^/]+\/night-register$/.test(pathname)) {
+        const query = new URL(request.url()).searchParams;
+        const format = query.get("format") ?? "json";
+        fixture.registerRequests.push({
+          format,
+          month: query.get("month"),
+          revision: query.get("revision"),
+        });
+        if (
+          (format === "json"
+            ? fixture.registerFailRead--
+            : fixture.registerFailDownload--) > 0
+        ) {
+          status = 503;
+          body = { error: "Registre indisponible" };
+        } else if (
+          format !== "json" &&
+          query.get("revision") !== fixture.nightRegister.revision
+        ) {
+          status = 409;
+          body = {
+            error:
+              "Les données du registre ont changé. Rechargez son aperçu avant de télécharger.",
+          };
+        } else if (format === "csv") {
+          return route.fulfill({
+            status: 200,
+            contentType: "text/csv; charset=utf-8",
+            body: nightRegisterCsv(fixture.nightRegister),
+          });
+        } else if (format === "pdf") {
+          return route.fulfill({
+            status: 200,
+            contentType: "application/pdf",
+            body: "%PDF-1.4\nBrowser download fixture",
+          });
+        } else body = fixture.nightRegister;
+      } else if (pathname === "/api/reports" && method === "GET") {
         fixture.reads++;
         fixture.reportRefreshQueries.push(
           new URL(request.url()).searchParams.get("refresh"),
@@ -1553,6 +1650,70 @@ try {
   await quickReader.locator(".rp-month-group").first().waitFor();
   assert.equal(await quickReader.locator(".rp-progress-button").count(), 0);
   await quickReader.context().close();
+  await grouped.setViewportSize({ width: 1440, height: 1050 });
+  await open(grouped, "/nights-a");
+  await grouped
+    .getByRole("button", { name: "Télécharger le registre", exact: true })
+    .click();
+  const registerDialog = grouped.getByRole("dialog", {
+    name: "Registre des séjours",
+    exact: true,
+  });
+  await registerDialog
+    .getByRole("button", { name: "Télécharger le PDF", exact: true })
+    .waitFor();
+  await registerDialog
+    .getByText("La Maison du verger", { exact: true })
+    .first()
+    .waitFor();
+  assert.match(await registerDialog.innerText(), /informations à compléter/);
+  assert.equal(groupedFixture.registerRequests.at(-1).month, "2026-10");
+  await capture(grouped, "night-register-preview-desktop.png");
+  groupedFixture.nightRegister.revision = "b".repeat(64);
+  await registerDialog
+    .getByRole("button", { name: "Télécharger le PDF", exact: true })
+    .click();
+  await registerDialog.getByRole("alert").waitFor();
+  assert.equal(
+    await registerDialog
+      .getByRole("button", { name: "Télécharger le PDF", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await registerDialog
+    .getByRole("button", { name: "Recharger l’aperçu", exact: true })
+    .click();
+  await registerDialog
+    .getByText("La Maison du verger", { exact: true })
+    .first()
+    .waitFor();
+  const csvDownload = grouped.waitForEvent("download");
+  await registerDialog
+    .getByRole("button", { name: "Télécharger le tableau CSV", exact: true })
+    .click();
+  assert.match(
+    (await csvDownload).suggestedFilename(),
+    /registre-sejours-.*2026-10\.csv$/,
+  );
+  groupedFixture.registerFailDownload = 1;
+  await registerDialog
+    .getByRole("button", { name: "Télécharger le PDF", exact: true })
+    .click();
+  await registerDialog.getByRole("alert").waitFor();
+  const pdfDownload = grouped.waitForEvent("download");
+  await registerDialog
+    .getByRole("button", { name: "Télécharger le PDF", exact: true })
+    .click();
+  assert.match(
+    (await pdfDownload).suggestedFilename(),
+    /registre-sejours-.*2026-10\.pdf$/,
+  );
+  await grouped.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(grouped);
+  await capture(grouped, "night-register-preview-mobile.png");
+  await registerDialog
+    .getByRole("button", { name: "Fermer", exact: true })
+    .click();
   await grouped.context().close();
 
   // Copy the displayed amount, rounded to whole euros; this remains available in read-only mode.

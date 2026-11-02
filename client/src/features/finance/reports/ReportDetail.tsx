@@ -6,6 +6,7 @@ import ReportCopyAmount from "./ReportCopyAmount";
 import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
 import ReportProgressActions from "./ReportProgressActions";
+import ReportNightRegister from "./ReportNightRegister";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
 import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
@@ -305,6 +306,13 @@ export default function ReportDetail({
               <ReportIcon name="download" />
               Exporter
             </button>
+            {report.kind === "tourist" && !snapshot && (
+              <ReportNightRegister
+                key={`${report.id}:${month}`}
+                reportId={report.id}
+                month={month}
+              />
+            )}
             {canEdit && (
               <Link
                 className="rp-button rp-button--secondary"

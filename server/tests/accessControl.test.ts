@@ -179,6 +179,9 @@ test("les rapports exigent les droits de déclaration et d’accès aux montants
   assert.equal(getRequiredBusinessPermission("GET", "/reports/reminders"), "declarations:read");
   assert.equal(getRequiredPageForApiPath("/reports/reminders"), "statistics");
   assert.equal(isAmountsOnlyApiPath("/reports/reminders"), true);
+  assert.equal(getRequiredBusinessPermission("GET", "/reports/night-test/night-register"), "declarations:read");
+  assert.equal(getRequiredPageForApiPath("/reports/night-test/night-register"), "statistics");
+  assert.equal(isAmountsOnlyApiPath("/reports/night-test/night-register"), true);
   assert.equal(getRequiredBusinessPermission("POST", "/reports/commands"), "declarations:write");
   assert.equal(getRequiredPageForApiPath("/reports"), "statistics");
   assert.equal(getRequiredBusinessPermission("PUT", "/reservations/r/reporting-allocation"), "reservations:write");
