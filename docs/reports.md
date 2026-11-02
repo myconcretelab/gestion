@@ -2,6 +2,8 @@
 
 `/rapports` utilise les réservations et le registre des règlements de l’organisation connectée. Le module Finances, le droit Statistiques et l’accès aux montants sont requis. Les commandes nécessitent aussi le droit d’écriture. La correction d’un logement, d’une entreprise ou d’un règlement conserve les droits de la page source.
 
+Les listes sont classées par mois de clôture, puis par gestionnaire, avec des blocs mensuels repliables. Le gestionnaire vient du filtre explicite du rapport ou du rattachement commun de tous ses logements ; le texte du destinataire ne sert pas à rapprocher les personnes. Les périmètres partagés et incomplets restent identifiés séparément. Les rapports trimestriels et annuels figurent dans leur mois de clôture et conservent leur période complète et leurs liens d’origine. La vue « À traiter » propose des filtres de mois, gestionnaire et rapport, une recherche et une remise à zéro ; le chargement progressif conserve six mois entiers à la fois, sans couper un groupe. Les montants, calculs et confirmations restent inchangés.
+
 ## Sources et calculs
 
 Le même moteur de calcul, dans `packages/shared/src/reports.ts`, sert au serveur et à l’aperçu de l’éditeur. Les règles, corrections internes, états de préparation et copies confirmées sont enregistrés dans `FinanceReportStore`, isolé par organisation et protégé par un numéro de révision. Les confirmations sont calculées sur le serveur : le navigateur ne fournit jamais le montant ou les opérations à figer. Chaque commande produit une entrée d’audit. Les identifiants des lignes restent stables lors d’une modification de ventilation. Une correction interne devient à vérifier si ses données sources changent.

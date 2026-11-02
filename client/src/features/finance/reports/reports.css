@@ -299,6 +299,12 @@
   padding: 20px;
   text-align: center;
 }
+.rp-todo-filters label {
+  flex: 1 1 170px;
+}
+.rp-todo-filters > .rp-text-button {
+  margin-bottom: 2px;
+}
 .rp-period-compact {
   display: flex;
   align-items: center;
@@ -2368,4 +2374,334 @@
 }
 .reports-workspace [aria-disabled="true"] {
   opacity: 0.65;
+}
+
+/* A month is the primary landmark; each manager keeps their reports together. */
+.rp-grouped-list {
+  padding: 12px 24px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--subtle);
+}
+.rp-grouped-list__guide,
+.rp-grouped-list__guide > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rp-grouped-list__guide {
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.69rem;
+}
+.rp-grouped-list__guide > span > span {
+  opacity: 0.45;
+}
+.rp-grouped-list__guide .rp-icon {
+  width: 16px;
+  height: 16px;
+}
+.rp-grouped-list__guide .rp-text-button {
+  font-size: 0.69rem;
+}
+.rp-month-group {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--ink) 3%, transparent);
+}
+.rp-month-group + .rp-month-group {
+  margin-top: 22px;
+}
+.reports-workspace .rp-month-group__heading {
+  margin: 0;
+  font-size: inherit;
+}
+.rp-month-group__toggle {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  margin: 0;
+  padding: 20px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(100deg, var(--primary-soft), var(--card) 70%);
+  color: var(--ink);
+  text-align: left;
+  box-shadow: none;
+  cursor: pointer;
+}
+.rp-month-group__toggle:hover {
+  background: var(--primary-soft);
+  box-shadow: none;
+}
+.rp-month-group__calendar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 48px;
+  height: 55px;
+  border: 1px solid var(--primary-strong);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--primary);
+  line-height: 1.3;
+}
+.rp-month-group__calendar > span {
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.rp-month-group__calendar > strong {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rp-month-group__identity {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+.rp-month-group__title {
+  font-size: 1.04rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.rp-month-group__title::first-letter {
+  text-transform: uppercase;
+}
+.rp-month-group__meta {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+.rp-month-group__attention {
+  padding: 5px 10px;
+  border-radius: 20px;
+  color: var(--rp-attention);
+  background: var(--rp-attention-bg);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+.rp-month-group__chevron {
+  color: var(--muted);
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+[aria-expanded="true"] > .rp-month-group__chevron {
+  transform: rotate(0);
+}
+.rp-month-group__body {
+  display: grid;
+  gap: 16px;
+  padding: 0 20px 20px 83px;
+}
+.rp-month-group__body[hidden] {
+  display: none;
+}
+.rp-manager-group {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.rp-manager-group__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--subtle) 55%, var(--card));
+}
+.rp-manager-group__avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: 1px solid var(--primary-strong);
+  border-radius: 50%;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.rp-manager-group__identity {
+  flex: 1;
+  min-width: 0;
+}
+.rp-manager-group__identity h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.rp-manager-group__identity > span,
+.rp-manager-group__count {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+.rp-manager-group__count {
+  flex-shrink: 0;
+}
+.rp-grouped-list .rp-grouped-row {
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 0.4fr) 150px auto;
+  gap: 18px;
+  padding: 17px 18px;
+}
+.rp-grouped-list .rp-report-row__identity {
+  gap: 11px;
+  grid-column: auto;
+  padding-right: 0;
+}
+.rp-grouped-list .rp-kind-icon {
+  width: 34px;
+  height: 38px;
+  border-radius: 9px;
+}
+.rp-grouped-list .rp-kind-icon .rp-icon {
+  width: 18px;
+  height: 18px;
+}
+.rp-grouped-list .rp-report-row__amount {
+  grid-column: auto;
+  grid-row: auto;
+  text-align: right;
+}
+.rp-grouped-list .rp-grouped-row__status {
+  grid-column: auto;
+  grid-row: auto;
+}
+.rp-grouped-list .rp-grouped-row .rp-report-row__actions {
+  position: static;
+  grid-column: auto;
+  grid-row: auto;
+  gap: 2px;
+}
+.rp-grouped-list .rp-grouped-row__open {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+@media (max-width: 1100px) {
+  .rp-month-group__body {
+    padding-left: 20px;
+  }
+  .rp-grouped-list .rp-grouped-row {
+    grid-template-columns: minmax(0, 1fr) minmax(95px, 0.4fr) 135px auto;
+    gap: 12px;
+  }
+}
+@media (max-width: 850px) {
+  .rp-grouped-list .rp-grouped-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+  .rp-grouped-list .rp-report-row__identity {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .rp-grouped-list .rp-report-row__amount {
+    grid-column: 1;
+    grid-row: 2;
+    padding-left: 45px;
+    text-align: left;
+  }
+  .rp-grouped-list .rp-grouped-row__status {
+    grid-column: 1;
+    grid-row: 3;
+    padding-left: 45px;
+  }
+  .rp-grouped-list .rp-grouped-row .rp-report-row__actions {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    align-self: end;
+  }
+}
+@media (max-width: 560px) {
+  .rp-todo-panel .rp-todo-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .rp-todo-panel .rp-todo-filters label {
+    width: 100%;
+  }
+  .rp-todo-panel .rp-todo-filters label:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+  .rp-grouped-list {
+    padding: 8px 12px 16px;
+  }
+  .rp-grouped-list__guide {
+    gap: 6px;
+    font-size: 0.61rem;
+  }
+  .rp-grouped-list__guide > span {
+    gap: 6px;
+  }
+  .rp-grouped-list__guide > span > .rp-icon {
+    display: none;
+  }
+  .rp-grouped-list__guide .rp-text-button {
+    font-size: 0.63rem;
+  }
+  .rp-month-group__toggle {
+    padding: 14px 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .rp-month-group__calendar {
+    flex-basis: 40px;
+    height: 48px;
+  }
+  .rp-month-group__title {
+    font-size: 0.9rem;
+  }
+  .rp-month-group__meta {
+    font-size: 0.61rem;
+  }
+  .rp-month-group__attention {
+    order: 1;
+    margin-left: 50px;
+    padding: 2px 8px;
+    font-size: 0.6rem;
+  }
+  .rp-month-group__body {
+    gap: 12px;
+    padding: 0 10px 12px;
+  }
+  .rp-manager-group__header {
+    padding: 12px;
+    gap: 8px;
+  }
+  .rp-manager-group__identity h4 {
+    font-size: 0.74rem;
+  }
+  .rp-manager-group__avatar {
+    width: 29px;
+    height: 29px;
+  }
+  .rp-manager-group__count {
+    font-size: 0.57rem;
+  }
+  .rp-grouped-list .rp-grouped-row {
+    padding: 15px 12px;
+    gap: 8px;
+  }
+  .rp-grouped-list .rp-report-row__identity {
+    gap: 9px;
+  }
+  .rp-grouped-list .rp-report-row__amount,
+  .rp-grouped-list .rp-grouped-row__status {
+    padding-left: 0;
+  }
+  .rp-grouped-list .rp-report-row__actions :is(.rp-icon-button, .rp-icon-link) {
+    width: 34px;
+    height: 36px;
+  }
 }
