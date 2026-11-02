@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
@@ -6,6 +6,7 @@ import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
+import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
 import useReportPaymentReservations from "./useReportPaymentReservations";
 import { canAccessReportSource, sourceCorrectionHref } from "./reportSources";
 import {
@@ -70,7 +71,7 @@ export default function ReportDetail({
   } = workspace;
   const [filter, setFilter] = useState<OperationStatus>("included");
   const [search, setSearch] = useState("");
-  const [showAllIssues, setShowAllIssues] = useState(false);
+  const operationsSection = useRef<HTMLElement>(null);
   const [selectedRow, setSelectedRow] = useState<EvaluatedOperation | null>(
     null,
   );
@@ -84,7 +85,6 @@ export default function ReportDetail({
   } | null>(null);
   useEffect(() => {
     setLastCorrection(null);
-    setShowAllIssues(false);
     setSnapshotKey(null);
     setSelectedRow(null);
     setHistoryOpen(false);
@@ -149,19 +149,23 @@ export default function ReportDetail({
         .toLocaleLowerCase("fr")
         .includes(search.toLocaleLowerCase("fr")),
   );
-  const issueLinks = result.rows
-    .filter((row) => row.status === "review")
-    .flatMap((row) =>
-      row.issues.map((issue) => ({
-        row,
-        issue,
-        id: `${issue.kind}:${issue.kind === "operator" ? row.propertyId : issue.kind === "settings" ? report.id : issue.kind === "fiscal" ? issue.sourceId : (row.reservationId ?? row.id)}`,
-      })),
-    )
-    .filter(
-      (item, index, items) =>
-        items.findIndex((other) => other.id === item.id) === index,
-    );
+  const manager = state.managers?.find(
+    (item) => item.id === displayedReport.managerId,
+  );
+  const identity = {
+    name: manager?.name ?? displayedReport.recipient,
+    label: manager
+      ? "Gestionnaire"
+      : displayedReport.kind === "social"
+        ? "Exploitant"
+        : "Destinataire ou usage",
+    detail:
+      manager &&
+      displayedReport.kind === "social" &&
+      manager.name !== displayedReport.recipient
+        ? `Exploitant : ${displayedReport.recipient}`
+        : undefined,
+  };
   const exportCsv = () => {
     const url = URL.createObjectURL(
       new Blob([reportCsv(displayedReport, displayedResult)], {
@@ -214,6 +218,7 @@ export default function ReportDetail({
     <>
       <ReportPageHeader
         title={displayedReport.name}
+        identity={identity}
         back={{ to: href(), label: "Tous les rapports" }}
         status={
           <ReportBadge
@@ -237,8 +242,6 @@ export default function ReportDetail({
             <span>
               {getReportPeriod(displayedMonth, displayedReport.cadence).label}
             </span>
-            <span aria-hidden="true">·</span>
-            <span>{displayedReport.recipient}</span>
             {snapshot ? (
               <button
                 className="rp-text-button"
@@ -365,68 +368,6 @@ export default function ReportDetail({
           </div>
         </div>
       )}
-      {!snapshot && issueLinks.length > 0 && (
-        <section className="rp-problems" aria-label="Problèmes à corriger">
-          <h2>Problèmes à corriger</h2>
-          {(showAllIssues ? issueLinks : issueLinks.slice(0, 3)).map(
-            ({ row, issue, id }) => (
-              <div className="rp-notice" key={id}>
-                <ReportIcon name="info" />
-                <div>
-                  <strong>{issue.message}</strong>
-                  {issue.kind === "payment" && (
-                    <p>
-                      {row.guest} · {row.reservation} ·{" "}
-                      {categoryLabel(row.category)}
-                    </p>
-                  )}
-                </div>
-                <Link
-                  className="rp-text-button"
-                  to={sourceCorrectionHref(workspace, report.id, row, issue)}
-                  aria-disabled={!canAccessReportSource(issue, row)}
-                  onClick={(event) => {
-                    if (!canAccessReportSource(issue, row)) {
-                      event.preventDefault();
-                      notify(
-                        "Votre profil ne permet pas d’accéder à cette fiche. Demandez la correction à une personne autorisée.",
-                      );
-                    }
-                  }}
-                >
-                  {canEdit ? issue.actionLabel : "Consulter"}
-                  <ReportIcon name="arrow" />
-                </Link>
-              </div>
-            ),
-          )}
-          {issueLinks.length > 3 && (
-            <button
-              type="button"
-              className="rp-text-button"
-              onClick={() => setShowAllIssues((value) => !value)}
-            >
-              {showAllIssues
-                ? "Réduire la liste"
-                : `Afficher les ${issueLinks.length - 3} autres problèmes`}
-            </button>
-          )}
-          {result.rows.some(
-            (row) =>
-              row.status === "review" &&
-              !row.paymentDate &&
-              report.dateBasis === "payment",
-          ) && (
-            <p className="rp-muted">
-              Les encaissements sans date sont présentés dans la période du
-              séjour pour être complétés et restent exclus du total. Renseignez
-              le règlement reçu avec sa date. Les versements OTA utilisent
-              automatiquement une date estimée au lendemain de l’arrivée jusqu’à
-              la saisie ou l’import d’un versement daté.
-            </p>
-          )}
-        </section>
-      )}
       <section className="rp-report-summary" aria-label="Synthèse du rapport">
         <div className="rp-total-card">
           <span className="rp-overline">
@@ -505,7 +446,21 @@ export default function ReportDetail({
             <button
               type="button"
               className="rp-button"
-              onClick={() => setFilter("review")}
+              onClick={() => {
+                setFilter("review");
+                setSearch("");
+                window.requestAnimationFrame(() => {
+                  operationsSection.current?.scrollIntoView({
+                    block: "start",
+                    behavior: window.matchMedia(
+                      "(prefers-reduced-motion: reduce)",
+                    ).matches
+                      ? "instant"
+                      : "smooth",
+                  });
+                  operationsSection.current?.focus({ preventScroll: true });
+                });
+              }}
             >
               {result.reviewCount === 1
                 ? "Examiner l’opération"
@@ -555,7 +510,12 @@ export default function ReportDetail({
           )}
         </div>
       </section>
-      <section className="rp-panel" aria-labelledby="rp-operations-heading">
+      <section
+        ref={operationsSection}
+        tabIndex={-1}
+        className="rp-panel rp-operations-panel"
+        aria-labelledby="rp-operations-heading"
+      >
         <div className="rp-panel-heading">
           <div>
             <h2 id="rp-operations-heading">Opérations</h2>
@@ -749,7 +709,10 @@ export default function ReportDetail({
           }
           sourceHref={
             selectedRow.reservationId
-              ? `/reservations/${encodeURIComponent(selectedRow.reservationId)}/reglements?back=${encodeURIComponent(href(`/${report.id}`))}`
+              ? reservationPaymentsHref(
+                  selectedRow.reservationId,
+                  selectedRow.stayDate,
+                )
               : undefined
           }
           existingOverride={state.overrides[key]?.[selectedRow.id]}
@@ -972,7 +935,7 @@ function OperationDialog({
       )}
       {sourceHref && (
         <Link className="rp-text-button" to={sourceHref}>
-          Ouvrir les règlements de la réservation <ReportIcon name="arrow" />
+          Voir les règlements dans le listing <ReportIcon name="arrow" />
         </Link>
       )}
       {row.allocationNote && <p className="rp-muted">{row.allocationNote}</p>}

@@ -14,6 +14,7 @@ import {
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import SignedDocumentLightbox from "./shared/SignedDocumentLightbox";
 import { toDateInputValue } from "./shared/rentalForm";
+import { reservationPaymentsHref } from "../utils/reservationNavigation";
 
 type EmailComposerState = {
   recipient: string;
@@ -466,7 +467,7 @@ const ContratDetailPage = () => {
               </label>
               <span>Reçu en retour</span>
             </div>
-            {contrat.reservation_id ? <a href={`/reservations/${contrat.reservation_id}/reglements`}>Voir et saisir les règlements ↗</a> : null}
+            {contrat.reservation_id ? <Link to={reservationPaymentsHref(contrat.reservation_id, contrat.date_debut)}>Voir les règlements dans le listing ↗</Link> : null}
             <div className="arrhes-card__editor">
               <label className="field">
                 Date de réception du contrat

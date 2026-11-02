@@ -22289,9 +22289,6 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
   .reservation-shortcut-settings__item > .field:nth-child(3) { grid-column: 1 / -1; }
 }
 .reservation-ledger__error { color: white !important; border-left: 2px solid var(--primary); padding-left: 8px; }
-.reservation-ledger-page { width: min(100%, 680px); margin: 0 auto; padding: 16px; }
-.reservation-ledger-page__card { background: #1e293b; color: white; padding: 8px; border-radius: 18px; }
-.reservation-ledger-page .reservation-payment-details { max-height: none; overflow: visible; }
 .reservation-payment-inline { display: block; width: fit-content; margin-top: 4px; font-size: 0.65rem; color: var(--muted); text-decoration: none; }
 .reservation-payment-inline--paid,
 .reservation-payment-inline:hover,

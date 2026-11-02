@@ -12,6 +12,7 @@ import {
   canCurrentUserAccessPage,
 } from "../../../utils/auth";
 import { formatEuro, formatDate } from "../../../utils/format";
+import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
 import type { ReportWorkspace } from "./ReportsPage";
 import ReportPageHeader from "./ReportPageHeader";
 import "./ota.css";
@@ -437,7 +438,9 @@ export default function OtaImportPage({
                               target="_blank"
                               rel="noopener noreferrer"
                               className="rp-text-button"
-                              to={`/reservations/${encodeURIComponent(effectiveChoices[row.key].reservationId)}/reglements?back=${encodeURIComponent(workspace.href("/import-airbnb"))}`}
+                              to={reservationPaymentsHref(
+                                effectiveChoices[row.key].reservationId,
+                              )}
                             >
                               Ouvrir la réservation ↗
                             </Link>
@@ -677,7 +680,9 @@ export default function OtaImportPage({
                         <p key={index}>
                           {canCurrentUserAccessPage("reservations") ? (
                             <Link
-                              to={`/reservations/${encodeURIComponent(adjustment.reservationId)}/reglements?back=${encodeURIComponent(workspace.href("/import-airbnb"))}`}
+                              to={reservationPaymentsHref(
+                                adjustment.reservationId,
+                              )}
                             >
                               {adjustment.reservationLabel ??
                                 "Voir la réservation"}

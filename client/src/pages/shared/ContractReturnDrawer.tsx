@@ -8,6 +8,8 @@ import type { Contrat, ContratOptions, Reservation } from "../../utils/types";
 import ReservationOptionsEditor from "./ReservationOptionsEditor";
 import SignedDocumentLightbox from "./SignedDocumentLightbox";
 import { toDateInputValue } from "./rentalForm";
+import { reservationPaymentsHref } from "../../utils/reservationNavigation";
+import { Link } from "react-router-dom";
 
 type ContractReturnDrawerProps = {
   open: boolean;
@@ -447,7 +449,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 </select>
               </label>
 
-              {contract.reservation_id ? <a href={`/reservations/${contract.reservation_id}/reglements`}>Voir et saisir les règlements ↗</a> : null}
+              {contract.reservation_id ? <Link to={reservationPaymentsHref(contract.reservation_id, contract.date_debut)} onClick={onClose}>Voir les règlements dans le listing ↗</Link> : null}
               <div className="contract-return-drawer__amount-card">
                 <span>Montant des arrhes prévues</span>
                 <strong>{formatEuro(contract.arrhes_montant)}</strong>

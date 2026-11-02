@@ -197,6 +197,49 @@ try {
       otaFailApply: 0,
       otaApplies: 0,
       otaHistory: [],
+      listingReservationRequests: [],
+      showListingReservation: false,
+      extraReservationDetailsReads: 0,
+      extraReservation: {
+        id: "reservation-extra",
+        gite_id: "g1",
+        nb_nuits: 4,
+        nb_adultes: 2,
+        nb_enfants_2_17: 0,
+        prix_par_nuit: 21.25,
+        prix_total: 85,
+        remise_montant: 0,
+        commission_channel_value: 0,
+        frais_optionnels_montant: 15,
+        frais_optionnels_declares: false,
+        energy_consumption_kwh: 0,
+        energy_cost_eur: 0,
+        hote_nom: "Client Test",
+        booking_source: "Airbnb",
+        source_paiement: "Airbnb",
+        options: {},
+        date_entree: "2026-10-30",
+        date_sortie: "2026-11-03",
+        gite: { nom: "Maison du verger" },
+        payment_tracking: {
+          managed: true,
+          total: 100,
+          deposit: 0,
+          received: 85,
+          remaining: 15,
+          overpaid: 0,
+          requires_review: false,
+          payment_shortcuts: [],
+          entries: [],
+          platform: {
+            source: "Airbnb",
+            automatic: true,
+            accommodation: 85,
+            expected: 0,
+            extras_remaining: 15,
+          },
+        },
+      },
       paymentPosts: [],
       reservationReads: [],
       failReservationRead: 0,
@@ -405,34 +448,7 @@ try {
           };
         }
       } else if (pathname === "/api/reservations/prefill/reservation-extra")
-        body = {
-          id: "reservation-extra",
-          hote_nom: "Client Test",
-          booking_source: "Airbnb",
-          source_paiement: "Airbnb",
-          options: {},
-          date_entree: "2026-10-30",
-          date_sortie: "2026-11-03",
-          gite: { nom: "Maison du verger" },
-          payment_tracking: {
-            managed: true,
-            total: 100,
-            deposit: 0,
-            received: 85,
-            remaining: 15,
-            overpaid: 0,
-            requires_review: false,
-            payment_shortcuts: [],
-            entries: [],
-            platform: {
-              source: "Airbnb",
-              automatic: true,
-              accommodation: 85,
-              expected: 0,
-              extras_remaining: 15,
-            },
-          },
-        };
+        body = fixture.extraReservation;
       else if (
         pathname === "/api/reservations/reservation-extra/payments" &&
         method === "POST"
@@ -534,10 +550,20 @@ try {
           prix_nuit: 100,
           ordre: 0,
         }));
-      else if (pathname === "/api/reservations/years") body = [2026];
-      else if (
+      else if (pathname === "/api/reservations/years") body = [2026, 2027];
+      else if (pathname === "/api/reservations/reservation-extra") {
+        fixture.extraReservationDetailsReads++;
+        body = fixture.extraReservation;
+      } else if (pathname === "/api/reservations") {
+        const requestedYear = new URL(request.url()).searchParams.get("year");
+        fixture.listingReservationRequests.push(requestedYear);
+        body =
+          fixture.showListingReservation &&
+          fixture.extraReservation.date_entree.startsWith(requestedYear)
+            ? [fixture.extraReservation]
+            : [];
+      } else if (
         [
-          "/api/reservations",
           "/api/reservations/placeholders",
           "/api/reservations/monthly-energy/eligible-gites",
           "/api/reservations/monthly-energy",
@@ -866,6 +892,10 @@ try {
     );
     assert.equal(filterFixture.commands[0].definition.managerId, "manager-a");
     assert.equal(
+      await filters.locator(".rp-identity-name").innerText(),
+      "Camille Martin",
+    );
+    assert.equal(
       filterFixture.commands[0].definition.recipient,
       kind === "social" ? "Entreprise Martin" : "Camille Martin",
     );
@@ -904,9 +934,35 @@ try {
   ];
   const { page: paymentReview, fixture: paymentReviewFixture } =
     await createPage();
+  await paymentReview.setViewportSize({ width: 1440, height: 700 });
   paymentReviewFixture.state.operations = reviewOperations;
   await open(paymentReview, "/social");
-  await paymentReview.getByRole("button", { name: /^À vérifier/ }).click();
+  await paymentReview
+    .getByRole("searchbox", { name: "Rechercher une opération" })
+    .fill("introuvable");
+  await paymentReview
+    .getByRole("button", { name: "Examiner les 2 opérations", exact: true })
+    .click();
+  await paymentReview.waitForFunction(() => {
+    const section = document.querySelector(".rp-operations-panel");
+    return (
+      section &&
+      section.getBoundingClientRect().top >= 0 &&
+      section.getBoundingClientRect().top < innerHeight - 200
+    );
+  });
+  assert.equal(
+    await paymentReview
+      .getByRole("searchbox", { name: "Rechercher une opération" })
+      .inputValue(),
+    "",
+  );
+  assert.equal(
+    await paymentReview
+      .getByRole("button", { name: /^À vérifier/ })
+      .getAttribute("aria-pressed"),
+    "true",
+  );
   const reviewBalance = paymentReview.getByRole("button", {
     name: /^Règlements de Camille Martin/,
   });
@@ -1209,7 +1265,22 @@ try {
     /Brut \/ net non déterminé/,
   );
   const header = page.locator(".rp-page-header");
-  assert.ok((await header.boundingBox()).height < 100);
+  assert.ok((await header.boundingBox()).height < 220);
+  assert.match(
+    await header.locator(".rp-identity-name").innerText(),
+    /Entreprise Martin/,
+  );
+  assert.ok(
+    await header
+      .locator(".rp-identity-name")
+      .evaluate((name) => parseFloat(getComputedStyle(name).fontSize) >= 20),
+  );
+  assert.equal(
+    await page
+      .getByRole("region", { name: "Problèmes à corriger", exact: true })
+      .count(),
+    0,
+  );
   assert.ok(
     await header
       .getByRole("link", { name: "Réglages", exact: true })
@@ -1219,20 +1290,6 @@ try {
     .getByRole("link", { name: "Tous les rapports", exact: true })
     .boundingBox();
   assert.ok(back.width >= 44 && back.height >= 44);
-  assert.ok(
-    (
-      await page
-        .getByRole("link", { name: /Rattacher le gîte/ })
-        .getAttribute("href")
-    ).startsWith("/gites?gite=g2"),
-  );
-  assert.ok(
-    (
-      await page
-        .getByRole("link", { name: /Renseigner l’encaissement/ })
-        .getAttribute("href")
-    ).includes("/reservations/reservation-d/reglements?back="),
-  );
   assert.equal(
     await page
       .getByRole("button", { name: "Marquer comme prêt", exact: true })
@@ -1295,7 +1352,9 @@ try {
     .click();
   assert.equal(await page.getByLabel("Traitement", { exact: true }).count(), 0);
   assert.ok(
-    await page.getByRole("link", { name: /Ouvrir les règlements/ }).isVisible(),
+    await page
+      .getByRole("link", { name: /Voir les règlements dans le listing/ })
+      .isVisible(),
   );
   await page
     .getByRole("dialog")
@@ -1433,6 +1492,8 @@ try {
   await page
     .getByRole("heading", { name: "Prestations", exact: true })
     .waitFor();
+  await page.getByRole("button", { name: /Examiner l’opération/ }).click();
+  await page.locator(".rp-operation-open").first().click();
   await page.getByRole("link", { name: /Vérifier les prestations/ }).click();
   await page
     .getByRole("heading", { name: "Ventiler les prestations", exact: true })
@@ -2027,10 +2088,17 @@ try {
     true,
   );
 
-  await otaPage.goto(`${origin}/reservations/reservation-extra/reglements`);
+  otaFixture.showListingReservation = true;
+  otaFixture.extraReservation.date_entree = "2027-04-29";
+  otaFixture.extraReservation.date_sortie = "2027-05-02";
+  await otaPage.goto(
+    `${origin}/reservations?focus=reservation-extra&payments=1&tab=all-gites&month=0`,
+  );
   await otaPage
-    .getByRole("heading", { name: "Règlements de la réservation", exact: true })
+    .getByRole("dialog", { name: "Règlements", exact: true })
     .waitFor();
+  assert.ok(otaFixture.extraReservationDetailsReads > 0);
+  assert.ok(otaFixture.listingReservationRequests.includes("2027"));
   await otaPage.getByRole("button", { name: /Ajouter un règlement/ }).click();
   await otaPage
     .getByLabel("Moyen", { exact: true })
