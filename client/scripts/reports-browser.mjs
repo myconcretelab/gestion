@@ -679,6 +679,30 @@ try {
       },
     ];
     await open(filters, "/filtered/modifier");
+    await filters
+      .getByRole("heading", { name: "Réglages", exact: true })
+      .waitFor();
+    assert.equal(
+      await filters
+        .getByLabel("Destinataire ou usage", { exact: true })
+        .count(),
+      kind === "social" ? 0 : 1,
+    );
+    if (kind === "social") {
+      assert.match(
+        await filters
+          .getByRole("complementary", { name: "Aperçu du rapport" })
+          .innerText(),
+        /Entreprise Martin/,
+      );
+      await filters.locator("#rp-report-operator").selectOption("");
+      await filters
+        .getByRole("button", { name: /Appliquer les règles/ })
+        .click();
+      await filters.getByText(/Renseignez un nom, un exploitant/).waitFor();
+      assert.equal(filterFixture.commands.length, 0);
+      await filters.locator("#rp-report-operator").selectOption("entity-a");
+    }
     await filters.locator("#rp-report-manager").selectOption("manager-a");
     const properties = filters.getByRole("group", {
       name: "Logements concernés",
@@ -727,8 +751,17 @@ try {
       false,
     );
     await sourceChoices.getByLabel("Airbnb", { exact: true }).uncheck();
-    await filters.getByRole("button", { name: /Appliquer les règles/ }).click();
-    await filters.getByText(/Renseignez un nom, un destinataire/).waitFor();
+    await filters
+      .locator(".rp-header-actions")
+      .getByRole("button", { name: "Enregistrer", exact: true })
+      .click();
+    await filters
+      .getByText(
+        kind === "social"
+          ? /Renseignez un nom, un exploitant/
+          : /Renseignez un nom, un destinataire/,
+      )
+      .waitFor();
     assert.equal(filterFixture.commands.length, 0);
     await filters.reload();
     assert.equal(
@@ -744,7 +777,10 @@ try {
       await capture(filters, "reports-filters-mobile.png");
       await filters.setViewportSize({ width: 1440, height: 1050 });
     }
-    await filters.getByRole("button", { name: /Appliquer les règles/ }).click();
+    await filters
+      .locator(".rp-header-actions")
+      .getByRole("button", { name: "Enregistrer", exact: true })
+      .click();
     await filters
       .getByRole("heading", { name: `Rapport ${kind}`, exact: true })
       .waitFor();
@@ -753,6 +789,10 @@ try {
       kind === "tourist" ? "9 nuitées" : "500,00 €",
     );
     assert.equal(filterFixture.commands[0].definition.managerId, "manager-a");
+    assert.equal(
+      filterFixture.commands[0].definition.recipient,
+      kind === "social" ? "Entreprise Martin" : "Camille Martin",
+    );
     assert.deepEqual(filterFixture.commands[0].definition.bookingSources, [
       "Airbnb",
     ]);
@@ -913,6 +953,7 @@ try {
     .getByRole("heading", { name: "Rapports et déclarations" })
     .waitFor();
   await page.getByRole("button", { name: "Par période", exact: true }).click();
+  await page.getByLabel("Période de travail").waitFor();
   assert.equal(await page.locator(".rp-report-row").count(), 3);
   assert.equal(
     await page
@@ -1208,7 +1249,10 @@ try {
   await page
     .getByLabel("Destinataire ou usage", { exact: true })
     .fill("Comptable");
-  await page.getByRole("button", { name: /Créer ce rapport/ }).click();
+  await page
+    .locator(".rp-header-actions")
+    .getByRole("button", { name: "Enregistrer", exact: true })
+    .click();
   await page
     .getByRole("heading", { name: "Suivi annuel", exact: true })
     .waitFor();
