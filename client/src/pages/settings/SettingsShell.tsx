@@ -36,9 +36,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   {
     id: "hebergements",
     label: "Hébergements",
-    path: "nuitees",
+    path: "reglements",
     tabs: [
-      { label: "Nuitées à déclarer", path: "nuitees", navId: "nav-settings-declaration-nights" },
       { label: "Règlements", path: "reglements", navId: "nav-settings-payments" },
       { label: "Couleurs des sources", path: "couleurs-sources", navId: "nav-settings-source-colors" },
     ],

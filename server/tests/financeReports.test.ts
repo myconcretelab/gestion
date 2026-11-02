@@ -21,6 +21,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), "finance-reports-"));
 let db: typeof import("../src/db/prisma.js");
 let context: typeof import("../src/modules/organizations/context.js");
 let reports: typeof import("../src/modules/finance/reports/service.js");
+let nightSummaries: typeof import("../src/modules/finance/reports/nightSummaries.js");
 let otaImport: typeof import("../src/modules/finance/reports/otaImport.js");
 let paymentSettings: typeof import("../src/services/reservationPaymentSettings.js");
 let ledger: typeof import("../src/modules/reservationPayments/ledger.js");
@@ -47,6 +48,8 @@ before(async () => {
   db = await import("../src/db/prisma.js");
   context = await import("../src/modules/organizations/context.js");
   reports = await import("../src/modules/finance/reports/service.js");
+  nightSummaries =
+    await import("../src/modules/finance/reports/nightSummaries.js");
   ledger = await import("../src/modules/reservationPayments/ledger.js");
   otaImport = await import("../src/modules/finance/reports/otaImport.js");
   paymentSettings =
@@ -420,13 +423,13 @@ test("le calcul mensuel rattrape une clôture à l’heure de Paris et attend le
     );
     assert.equal(
       summary.reminders.find((row) => row.kind === "tourist")?.total,
-      6,
+      4,
     );
     assert.deepEqual(
       await reportAutomation.runMonthlyReportCalculation(after),
       { calculated: false },
     );
-    assert.equal(await db.default.financeReportStore.count(), 0);
+    assert.equal(await db.default.financeReportStore.count(), 1);
   }));
 
 test("le rattrapage mensuel prépare aussi les trimestres et années clôturés sans confirmer une transmission", () =>
@@ -456,7 +459,7 @@ test("le rattrapage mensuel prépare aussi les trimestres et années clôturés 
     );
     assert.equal(
       reminders.reminders.find((row) => row.kind === "tourist")?.total,
-      12,
+      8,
     );
     assert.equal(
       (await db.default.financeReportStore.findFirstOrThrow()).data_json,
@@ -519,11 +522,11 @@ test("les nuitées sont réparties entre les mois et ne sont pas multipliées pa
     await pay(r.id, 20);
     const state = await reports.getReportWorkspace();
     const report = state.reports.find((row) => row.kind === "tourist")!;
-    assert.equal(result(state, "2026-10", report).total, 6);
-    assert.equal(result(state, "2026-11", report).total, 6);
+    assert.equal(result(state, "2026-10", report).total, 4);
+    assert.equal(result(state, "2026-11", report).total, 4);
     assert.equal(
       result(state, "2026-12", { ...report, cadence: "quarterly" }).total,
-      12,
+      8,
     );
   }));
 test("les filtres de gestionnaire et de source sont persistés pour chaque modèle et les copies restent figées", () =>
@@ -589,7 +592,7 @@ test("les filtres de gestionnaire et de source sont persistés pour chaque modè
         bookingSources: ["Direct"],
       };
       state = await mutate(state, { type: "save", definition });
-      const total = kind === "tourist" ? 6 : 10000;
+      const total = kind === "tourist" ? 4 : 10000;
       assert.equal(result(state, "2026-10", definition).total, total);
       assert.equal(result(state, "2026-10", definition).reviewCount, 0);
       state = await mutate(state, { type: "ready", reportId: definition.id });
@@ -932,7 +935,7 @@ test("les rapports sont isolés entre organisations et refusent les logements d�
       assert.equal(await db.default.financeReportStore.count(), 1);
       assert.notEqual(otherGite, gite);
     });
-    assert.equal(await db.default.financeReportStore.count(), 0);
+    assert.equal(await db.default.financeReportStore.count(), 1);
     assert.equal((await reports.getReportWorkspace()).organizationId, org);
     assert.equal(
       a.operations.some((row) => row.reservationId === r.id),
@@ -2063,3 +2066,180 @@ test("import OTA : un règlement existant rapproché explicitement peut solder s
       8500,
     );
   }));
+
+test("les macarons partagent le calcul et les filtres du rapport sans charger l’espace financier", () =>
+  fixture(async ({ gite }) => {
+    await stay(gite, {
+      nb_enfants_2_17: 3,
+      options: JSON.stringify({
+        tourist_tax: {
+          settings: {
+            classified: true,
+            stars: 2,
+            included: false,
+            fixed_rate: 0,
+            percentage: 0,
+            cap: 0,
+            additional_percentage: 0,
+            accommodation_vat_rate: 0,
+            authority: "Test",
+            effective_from: "2026-01-01",
+          },
+          collector: "host",
+          platform: "",
+          infants: 1,
+          exempt_adults: 0,
+          exemption_reason: "",
+        },
+      }),
+    });
+    const summary = await nightSummaries.getNightSummaries(2026);
+    const october = summary.properties.find((row) => row.id === gite)!
+      .months[9];
+    assert.deepEqual(october, {
+      month: 10,
+      total: 4,
+      included: 4,
+      reviewCount: 0,
+    });
+    assert.equal(
+      (await db.default.financeReportCache.findFirst())?.workspace_json,
+      null,
+    );
+    assert.deepEqual(await nightSummaries.getNightSummaries(2026), summary);
+    let state = await reports.getReportWorkspace();
+    const report = state.reports.find((row) => row.kind === "tourist")!;
+    assert.equal(result(state, "2026-10", report).total, october.included);
+    state = await mutate(state, { type: "ready", reportId: report.id });
+    state = await mutate(state, { type: "confirm", reportId: report.id });
+    const confirmed = structuredClone(
+      state.progress[reportPeriodKey(report, "2026-10")].snapshot,
+    );
+    state = await mutate(state, {
+      type: "save",
+      definition: { ...report, nightGuests: ["adults", "children", "infants"] },
+    });
+    const updated = await nightSummaries.getNightSummaries(2026);
+    assert.equal(updated.properties[0].months[9].included, 12);
+    assert.equal(
+      result(
+        state,
+        "2026-10",
+        state.reports.find((row) => row.id === report.id)!,
+      ).total,
+      12,
+    );
+    assert.deepEqual(
+      state.progress[reportPeriodKey(report, "2026-10")].snapshot,
+      confirmed,
+    );
+    assert.equal(
+      (await nightSummaries.getNightSummaries(2027)).properties[0].months[9]
+        .total,
+      0,
+    );
+    await db.default.reservation.updateMany({ data: { nb_adultes: 4 } });
+    assert.equal(
+      (await nightSummaries.getNightSummaries(2026)).properties[0].months[9]
+        .included,
+      16,
+    );
+  }));
+
+test("le rapport de référence est unique et les nuitées sont isolées par organisation", () =>
+  fixture(async ({ gite }) => {
+    await stay(gite);
+    let state = await reports.getReportWorkspace();
+    state = await mutate(state, {
+      type: "save",
+      definition: {
+        ...createReport("tourist", "reference-new"),
+        recipient: "Nouveau",
+        propertyIds: [gite],
+        nightReference: true,
+      },
+    });
+    assert.equal(state.reports.filter((row) => row.nightReference).length, 1);
+    assert.equal(
+      (await nightSummaries.getNightSummaries(2026)).report?.id,
+      "reference-new",
+    );
+    await fixture(async ({ gite: other }) => {
+      await stay(other, { nb_adultes: 5 });
+      const summary = await nightSummaries.getNightSummaries(2026);
+      assert.equal(
+        summary.properties.some((row) => row.id === gite),
+        false,
+      );
+      assert.equal(summary.properties[0].months[9].total, 10);
+    });
+  }));
+
+test("la mise à niveau des anciens rapports conserve la copie confirmée et choisit les adultes", () =>
+  fixture(async ({ gite }) => {
+    const definition = {
+      ...createReport("tourist", "old-night"),
+      recipient: "Historique",
+      propertyIds: [gite],
+      nightGuests: undefined,
+    };
+    const snapshot = {
+      confirmedAt: "2026-10-01T12:00:00.000Z",
+      definition,
+      result: {
+        rows: [],
+        total: 42,
+        includedCount: 0,
+        excludedCount: 0,
+        reviewCount: 0,
+      },
+    };
+    await db.default.financeReportStore.create({
+      data: {
+        organization_id: context.getOrganizationId(),
+        data_json: JSON.stringify({
+          reports: [definition],
+          overrides: {},
+          progress: { historical: { snapshot } },
+        }),
+      },
+    });
+    const state = await reports.getReportWorkspace();
+    assert.deepEqual(state.reports[0].nightGuests, ["adults"]);
+    assert.equal(state.reports[0].nightReference, true);
+    assert.equal(state.progress.historical.snapshot?.result.total, 42);
+    assert.equal(
+      state.progress.historical.snapshot?.definition.nightGuests,
+      undefined,
+    );
+  }));
+
+test("les anciennes exclusions sont reprises sans confondre une plateforme avec un moyen de paiement", async () => {
+  const { upgradeNightConfiguration } =
+    await import("../src/modules/finance/reports/configuration.js");
+  const config = {
+    reports: [
+      {
+        ...createReport("tourist", "guest-nights"),
+        bookingSources: undefined,
+        nightGuests: undefined,
+      },
+      { ...createReport("tourist", "personal"), bookingSources: ["Airbnb"] },
+    ],
+    overrides: {},
+    progress: {},
+  };
+  upgradeNightConfiguration(config, ["airbnb", "Gîtes de France", "Espèces"]);
+  assert.deepEqual(config.reports[0].excludedBookingSources, [
+    "Airbnb",
+    "Gites de France",
+  ]);
+  assert.deepEqual(config.reports[1].bookingSources, ["Airbnb"]);
+  assert.deepEqual(
+    (config as { nightSettingsWarnings?: string[] }).nightSettingsWarnings,
+    ["Espèces"],
+  );
+  const upgraded = JSON.stringify(config);
+  upgradeNightConfiguration(config, ["Direct"]);
+  assert.equal(JSON.stringify(config), upgraded);
+});

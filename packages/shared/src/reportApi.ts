@@ -27,9 +27,28 @@ export const reportDefinitionSchema = z
       .max(100)
       .optional(),
     otaAmountBasis: z.enum(["gross", "net"]).optional(),
+    nightGuests: z
+      .array(z.enum(["adults", "children", "infants"]))
+      .min(1)
+      .max(3)
+      .optional(),
+    nightReference: z.boolean().optional(),
+    excludedBookingSources: z
+      .array(z.string().trim().min(1).max(120))
+      .max(100)
+      .optional(),
   })
   .strict()
   .superRefine((report, ctx) => {
+    if (
+      report.kind !== "tourist" &&
+      (report.nightGuests || report.nightReference)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Le choix des occupants et du rapport de référence concerne les rapports de nuitées.",
+      });
     if (report.kind === "social" && !report.operatorId)
       ctx.addIssue({
         code: "custom",
@@ -39,7 +58,12 @@ export const reportDefinitionSchema = z
       new Set(report.propertyIds).size !== report.propertyIds.length ||
       (report.bookingSources &&
         new Set(report.bookingSources).size !== report.bookingSources.length) ||
-      new Set(report.categories).size !== report.categories.length
+      new Set(report.categories).size !== report.categories.length ||
+      (report.nightGuests &&
+        new Set(report.nightGuests).size !== report.nightGuests.length) ||
+      (report.excludedBookingSources &&
+        new Set(report.excludedBookingSources).size !==
+          report.excludedBookingSources.length)
     )
       ctx.addIssue({
         code: "custom",

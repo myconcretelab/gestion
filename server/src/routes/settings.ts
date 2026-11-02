@@ -64,11 +64,7 @@ import {
   startPumpSessionRenewal,
   submitPumpSessionRenewalSmsCode,
 } from "../services/pumpSessionRenewal.js";
-import {
-  mergeDeclarationNightsSettings,
-  readDeclarationNightsSettings,
-  writeDeclarationNightsSettings,
-} from "../services/declarationNightsSettings.js";
+
 import {
   mergeSourceColorSettings,
   readSourceColorSettings,
@@ -272,9 +268,7 @@ const pumpSessionRenewalSubmitCodeSchema = z.object({
     .trim()
     .regex(/^\d{4,10}$/, "Le code SMS doit contenir entre 4 et 10 chiffres."),
 });
-const declarationNightsSettingsSchema = z.object({
-  excluded_sources: z.array(z.string().trim().min(1)).default([]),
-});
+
 const sourceColorSettingsSchema = z.object({
   colors: z
     .record(
@@ -488,20 +482,6 @@ const listDeclarationSources = async () => {
   ].sort((left, right) =>
     left.localeCompare(right, "fr", { sensitivity: "base" }),
   );
-};
-
-const buildDeclarationNightsSettingsResponse = async () => {
-  const settings = readDeclarationNightsSettings();
-  const availableSources = await listDeclarationSources();
-
-  return {
-    excluded_sources: settings.excluded_sources,
-    available_sources: [
-      ...new Set([...settings.excluded_sources, ...availableSources]),
-    ].sort((left, right) =>
-      left.localeCompare(right, "fr", { sensitivity: "base" }),
-    ),
-  };
 };
 
 const buildSourceColorSettingsResponse = async () => {
@@ -1400,13 +1380,7 @@ router.put("/reservation-payments", async (req, res, next) => {
   }
 });
 
-router.get("/declaration-nights", async (_req, res, next) => {
-  try {
-    res.json(await buildDeclarationNightsSettingsResponse());
-  } catch (error) {
-    next(error);
-  }
-});
+
 
 router.get("/source-colors", async (_req, res, next) => {
   try {
@@ -1467,17 +1441,7 @@ router.get("/message-channels", (_req, res, next) => {
   }
 });
 
-router.put("/declaration-nights", async (req, res, next) => {
-  try {
-    const payload = declarationNightsSettingsSchema.parse(req.body);
-    const current = readDeclarationNightsSettings();
-    const nextSettings = mergeDeclarationNightsSettings(current, payload);
-    writeDeclarationNightsSettings(nextSettings);
-    res.json(await buildDeclarationNightsSettingsResponse());
-  } catch (error) {
-    next(error);
-  }
-});
+
 
 router.put("/source-colors", async (req, res, next) => {
   try {

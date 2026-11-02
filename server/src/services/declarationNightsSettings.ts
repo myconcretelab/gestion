@@ -6,7 +6,10 @@ export type DeclarationNightsSettings = {
   excluded_sources: string[];
 };
 
-const SETTINGS_FILE = path.join(env.DATA_DIR, "declaration-nights-settings.json");
+const SETTINGS_FILE = path.join(
+  env.DATA_DIR,
+  "declaration-nights-settings.json",
+);
 
 const normalizeTextKey = (value: string) =>
   value
@@ -14,12 +17,6 @@ const normalizeTextKey = (value: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "");
-
-const ensureDataDir = () => {
-  if (!fs.existsSync(env.DATA_DIR)) {
-    fs.mkdirSync(env.DATA_DIR, { recursive: true });
-  }
-};
 
 const normalizeSourceList = (values: unknown, fallback: string[]) => {
   if (!Array.isArray(values)) return fallback;
@@ -39,22 +36,25 @@ const normalizeSourceList = (values: unknown, fallback: string[]) => {
   return normalized;
 };
 
-export const buildDefaultDeclarationNightsSettings = (): DeclarationNightsSettings => ({
-  excluded_sources: ["Airbnb"],
-});
+export const buildDefaultDeclarationNightsSettings =
+  (): DeclarationNightsSettings => ({
+    excluded_sources: ["Airbnb"],
+  });
 
 const normalizeSettings = (
   input: Partial<DeclarationNightsSettings>,
-  fallback: DeclarationNightsSettings
+  fallback: DeclarationNightsSettings,
 ): DeclarationNightsSettings => ({
-  excluded_sources: normalizeSourceList(input.excluded_sources, fallback.excluded_sources),
+  excluded_sources: normalizeSourceList(
+    input.excluded_sources,
+    fallback.excluded_sources,
+  ),
 });
 
 export const readDeclarationNightsSettings = (
-  fallback?: DeclarationNightsSettings
+  fallback?: DeclarationNightsSettings,
 ): DeclarationNightsSettings => {
   const defaults = fallback ?? buildDefaultDeclarationNightsSettings();
-  ensureDataDir();
 
   if (!fs.existsSync(SETTINGS_FILE)) return defaults;
 
@@ -67,13 +67,3 @@ export const readDeclarationNightsSettings = (
     return defaults;
   }
 };
-
-export const writeDeclarationNightsSettings = (settings: DeclarationNightsSettings) => {
-  ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
-};
-
-export const mergeDeclarationNightsSettings = (
-  current: DeclarationNightsSettings,
-  patch: Partial<DeclarationNightsSettings>
-) => normalizeSettings(patch, current);

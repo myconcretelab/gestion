@@ -1,3 +1,5 @@
+import { reportNightValue, type NightGuestGroup } from "./nightOperations.js";
+
 export const REPORT_CATEGORIES = [
   { id: "accommodation", label: "Hébergement" },
   { id: "cleaning", label: "Ménage" },
@@ -34,6 +36,9 @@ export type ReportDefinition = {
   /** Undefined keeps all sources, including sources added later. */
   bookingSources?: string[];
   otaAmountBasis?: "gross" | "net";
+  nightGuests?: NightGuestGroup[];
+  nightReference?: boolean;
+  excludedBookingSources?: string[];
 };
 export type ReportOperation = {
   id: string;
@@ -43,6 +48,7 @@ export type ReportOperation = {
   category: ReportCategory;
   amountCents: number;
   nights: number;
+  nightCounts?: Record<NightGuestGroup, number>;
   paymentDate: string | null;
   paymentDateEstimated?: boolean;
   stayDate: string;
@@ -113,6 +119,8 @@ export type ReportState = ReportSources & {
   progress: Record<string, ReportProgress>;
   /** Earlier periods were already treated before the worklist was adopted. */
   worklistStartMonth?: string;
+  nightSettingsVersion?: number;
+  nightSettingsWarnings?: string[];
 };
 
 const revenueCategories: ReportCategory[] = [
@@ -166,7 +174,9 @@ export function createReport(kind: ReportKind, id: string): ReportDefinition {
           : [...revenueCategories],
     propertyIds: [],
     operatorId: null,
-    ...(kind === "tourist" ? { bookingSources: ["Direct"] } : {}),
+    ...(kind === "tourist"
+      ? { bookingSources: ["Direct"], nightGuests: ["adults" as const] }
+      : {}),
     favorite: kind === "social",
   };
 }
@@ -177,19 +187,26 @@ export const propertyName = (id: string) => id;
 export const paymentMethodLabel = (id: ReportPaymentMethod) =>
   REPORT_PAYMENT_METHODS.find((method) => method.id === id)!.label;
 export const reportBookingSourcesLabel = (
-  report: Pick<ReportDefinition, "bookingSources">,
+  report: Pick<ReportDefinition, "bookingSources" | "excludedBookingSources">,
 ) =>
   report.bookingSources === undefined
-    ? "Toutes les sources"
+    ? report.excludedBookingSources?.length
+      ? `Toutes sauf ${report.excludedBookingSources.join(", ")}`
+      : "Toutes les sources"
     : report.bookingSources.length
       ? report.bookingSources.join(", ")
       : "Aucune source sélectionnée";
 export const reportIncludesBookingSource = (
-  report: Pick<ReportDefinition, "bookingSources">,
+  report: Pick<ReportDefinition, "bookingSources" | "excludedBookingSources">,
   operation: Pick<ReportOperation, "bookingSource" | "channel">,
 ) =>
-  report.bookingSources === undefined ||
-  report.bookingSources.includes(operation.bookingSource ?? operation.channel);
+  !report.excludedBookingSources?.includes(
+    operation.bookingSource ?? operation.channel,
+  ) &&
+  (report.bookingSources === undefined ||
+    report.bookingSources.includes(
+      operation.bookingSource ?? operation.channel,
+    ));
 export const cadenceLabel = (cadence: ReportCadence) =>
   ({ monthly: "Mensuel", quarterly: "Trimestriel", yearly: "Annuel" })[cadence];
 
@@ -235,6 +252,7 @@ export const operationSourceSignature = (operation: ReportOperation) =>
     operation.category,
     operation.amountCents,
     operation.nights,
+    ...(operation.nightCounts ? [operation.nightCounts] : []),
     operation.paymentDate,
     operation.stayDate,
     operation.paymentMethod,
@@ -424,7 +442,7 @@ export function evaluateReport(
     }
     const value =
       report.kind === "tourist"
-        ? operation.nights
+        ? reportNightValue(operation, report.nightGuests)
         : operation.ota
           ? report.otaAmountBasis === "net"
             ? operation.ota.netCents

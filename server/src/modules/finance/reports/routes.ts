@@ -2,6 +2,7 @@ import { Router } from "express";
 import { getAuthenticatedAppUser } from "../../../services/serverAuth.js";
 import { getReportWorkspace, mutateReportWorkspace } from "./service.js";
 import { getStoredReportReminders } from "./cache.js";
+import { getNightSummaries } from "./nightSummaries.js";
 import { z } from "zod";
 import {
   applyOtaImport,
@@ -76,6 +77,19 @@ router.get("/reminders", async (req, res, next) => {
       .max(2099)
       .parse(req.query.year);
     res.json(await getStoredReportReminders(year));
+  } catch (error) {
+    next(error);
+  }
+});
+router.get("/night-summaries", async (req, res, next) => {
+  try {
+    const year = z.coerce
+      .number()
+      .int()
+      .min(2000)
+      .max(2099)
+      .parse(req.query.year);
+    res.json(await getNightSummaries(year));
   } catch (error) {
     next(error);
   }

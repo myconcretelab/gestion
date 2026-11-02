@@ -329,7 +329,6 @@ const SETTINGS_SECTIONS = [
   { id: "settings-telegram", label: "Telegram" },
   { id: "settings-daily-reservation-email", label: "Email quotidien" },
   { id: "settings-smartlife", label: "Smart Life" },
-  { id: "settings-declaration-nights", label: "Nuitées à déclarer" },
   { id: "settings-source-colors", label: "Couleurs des sources" },
   { id: "settings-team", label: "Équipe" },
   { id: "settings-ical-sources", label: "Sources iCal" },
@@ -355,7 +354,6 @@ const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
   "settings-telegram": "telegram",
   "settings-daily-reservation-email": "email-quotidien",
   "settings-smartlife": "smartlife",
-  "settings-declaration-nights": "nuitees",
   "settings-source-colors": "couleurs-sources",
   "settings-team": "equipe",
   "settings-ical-sources": "ical-sources",
@@ -467,10 +465,7 @@ type PumpConfigExportPayload = {
   config: PumpAutomationConfig;
 };
 
-type DeclarationNightsSettings = {
-  excluded_sources: string[];
-  available_sources: string[];
-};
+
 
 type SourceColorSettings = {
   colors: Record<string, string>;
@@ -827,10 +822,7 @@ const DEFAULT_SOURCE_DRAFT: IcalSourceDraft = {
   is_active: true,
 };
 
-const DEFAULT_DECLARATION_NIGHTS_SETTINGS: DeclarationNightsSettings = {
-  excluded_sources: ["Airbnb"],
-  available_sources: ["Airbnb"],
-};
+
 
 const DEFAULT_SOURCE_COLOR_SETTINGS: SourceColorSettings = {
   colors: { ...DEFAULT_PAYMENT_SOURCE_COLORS },
@@ -1752,19 +1744,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const importSourcesInputRef = useRef<HTMLInputElement | null>(null);
-  const [declarationNightsSettings, setDeclarationNightsSettings] =
-    useState<DeclarationNightsSettings>(DEFAULT_DECLARATION_NIGHTS_SETTINGS);
-  const [declarationExcludedSourcesDraft, setDeclarationExcludedSourcesDraft] =
-    useState<string[]>(DEFAULT_DECLARATION_NIGHTS_SETTINGS.excluded_sources);
-  const [loadingDeclarationNights, setLoadingDeclarationNights] =
-    useState(true);
-  const [savingDeclarationNights, setSavingDeclarationNights] = useState(false);
-  const [declarationNightsError, setDeclarationNightsError] = useState<
-    string | null
-  >(null);
-  const [declarationNightsNotice, setDeclarationNightsNotice] = useState<
-    string | null
-  >(null);
   const [sourceColorSettings, setSourceColorSettings] =
     useState<SourceColorSettings>(DEFAULT_SOURCE_COLOR_SETTINGS);
   const [sourceColorDraft, setSourceColorDraft] = useState<
@@ -2200,15 +2179,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
       }).length,
     [sourceImportMapping, sourceImportUnknownIds],
   );
-  const availableDeclarationSources = useMemo(
-    () =>
-      normalizeSourceList([
-        ...declarationNightsSettings.available_sources,
-        ...declarationNightsSettings.excluded_sources,
-        ...declarationExcludedSourcesDraft,
-      ]),
-    [declarationExcludedSourcesDraft, declarationNightsSettings],
-  );
   const paymentColorMap = useMemo(
     () => buildPaymentColorMap(sourceColorDraft),
     [sourceColorDraft],
@@ -2328,29 +2298,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
       ...previous,
       gite_id: previous.gite_id || gitesData[0]?.id || "",
     }));
-  };
-
-  const applyDeclarationNightsSettings = (data: DeclarationNightsSettings) => {
-    const excludedSources = Array.isArray(data.excluded_sources)
-      ? normalizeSourceList(data.excluded_sources)
-      : DEFAULT_DECLARATION_NIGHTS_SETTINGS.excluded_sources;
-    const availableSources = normalizeSourceList([
-      ...(data.available_sources ?? []),
-      ...excludedSources,
-    ]);
-
-    setDeclarationNightsSettings({
-      excluded_sources: excludedSources,
-      available_sources: availableSources,
-    });
-    setDeclarationExcludedSourcesDraft(excludedSources);
-  };
-
-  const loadDeclarationNightsSettings = async () => {
-    const data = await apiFetch<DeclarationNightsSettings>(
-      "/settings/declaration-nights",
-    );
-    applyDeclarationNightsSettings(data);
   };
 
   const applySourceColorSettings = (data: SourceColorSettings) => {
@@ -3044,20 +2991,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
             setLoadingSmartlife(false);
           }
           break;
-        case "settings-declaration-nights":
-          setLoadingDeclarationNights(true);
-          try {
-            await loadDeclarationNightsSettings();
-          } catch (error: any) {
-            setDeclarationNightsError(
-              error?.message ??
-                "Impossible de charger les paramètres de nuitées.",
-            );
-            return;
-          } finally {
-            setLoadingDeclarationNights(false);
-          }
-          break;
         case "settings-source-colors":
           setLoadingSourceColors(true);
           try {
@@ -3254,31 +3187,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
         window.scrollBy({ top: delta, left: 0, behavior: "auto" });
       });
     };
-  };
-
-  const saveDeclarationNightsSettings = async () => {
-    setSavingDeclarationNights(true);
-    setDeclarationNightsError(null);
-    setDeclarationNightsNotice(null);
-    try {
-      const response = await apiFetch<DeclarationNightsSettings>(
-        "/settings/declaration-nights",
-        {
-          method: "PUT",
-          json: {
-            excluded_sources: declarationExcludedSourcesDraft,
-          },
-        },
-      );
-      applyDeclarationNightsSettings(response);
-      setDeclarationNightsNotice("Sources d'exclusion enregistrées.");
-    } catch (error: any) {
-      setDeclarationNightsError(
-        error.message ?? "Impossible d'enregistrer les sources exclues.",
-      );
-    } finally {
-      setSavingDeclarationNights(false);
-    }
   };
 
   const saveSourceColorSettings = async () => {
@@ -8448,138 +8356,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                   ) : null}
                 </div>
               ) : null}
-            </div>
-            </section>
-          ) : null}
-
-          {activeSettingsSection === "settings-declaration-nights" ? (
-            <section
-              id="settings-declaration-nights"
-              className="settings-cluster"
-              aria-labelledby="nav-settings-declaration-nights"
-            >
-            <div className="settings-cluster__header">
-              <div>
-                <div className="settings-cluster__eyebrow">Totaux mensuels</div>
-                <h2 className="settings-cluster__title">Nuitées à déclarer</h2>
-              </div>
-              <p className="settings-cluster__text">
-                Choisissez quelles sources doivent être exclues du total de
-                nuitées à déclarer.
-              </p>
-            </div>
-            <div className="settings-cluster__grid">
-              <div className="card settings-card settings-card--rose settings-card--span-12">
-                <div className="settings-card-accordion__content">
-                  <div className="settings-card__topline">
-                    <span className="settings-card__tag">Totaux mensuels</span>
-                    <span className="settings-card__badge">
-                      {declarationExcludedSourcesDraft.length} exclue(s)
-                    </span>
-                  </div>
-                  <div className="section-title">Nuitées à déclarer</div>
-                  <div className="field-hint">
-                    Les sources listées ici sont retirées du macaron "Nuitées à
-                    déclarer" dans les totaux mensuels.
-                  </div>
-                  {loadingDeclarationNights ? (
-                    <div className="field-hint">Chargement...</div>
-                  ) : (
-                    <>
-                      {availableDeclarationSources.length > 0 ? (
-                        <div className="field-group">
-                          <div className="field-group__header">
-                            <div className="field-group__label">
-                              Sources détectées
-                            </div>
-                            <div className="field-hint">
-                              Cochez les sources à exclure du total à déclarer.
-                            </div>
-                          </div>
-                          <div className="checkbox-grid">
-                            {availableDeclarationSources.map((source) => {
-                              const checked =
-                                declarationExcludedSourcesDraft.some(
-                                  (item) =>
-                                    normalizeTextKey(item) ===
-                                    normalizeTextKey(source),
-                                );
-
-                              return (
-                                <label key={source} className="checkbox-inline">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(event) => {
-                                      setDeclarationNightsNotice(null);
-                                      setDeclarationNightsError(null);
-                                      setDeclarationExcludedSourcesDraft(
-                                        (previous) =>
-                                          event.target.checked
-                                            ? normalizeSourceList([
-                                                ...previous,
-                                                source,
-                                              ])
-                                            : previous.filter(
-                                                (item) =>
-                                                  normalizeTextKey(item) !==
-                                                  normalizeTextKey(source),
-                                              ),
-                                      );
-                                    }}
-                                    disabled={savingDeclarationNights}
-                                  />
-                                  <span>{source}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <label className="field">
-                        Sources exclues
-                        <textarea
-                          rows={4}
-                          value={declarationExcludedSourcesDraft.join("\n")}
-                          onChange={(event) => {
-                            setDeclarationNightsNotice(null);
-                            setDeclarationNightsError(null);
-                            setDeclarationExcludedSourcesDraft(
-                              parseDeclarationSourcesInput(event.target.value),
-                            );
-                          }}
-                          placeholder={"Airbnb\nHomeExchange"}
-                          disabled={savingDeclarationNights}
-                        />
-                      </label>
-                      <div className="field-hint">
-                        Une source par ligne. Les variantes accent/casse sont
-                        reconnues.
-                      </div>
-                      <div className="actions">
-                        <button
-                          type="button"
-                          onClick={() => void saveDeclarationNightsSettings()}
-                          disabled={savingDeclarationNights}
-                        >
-                          {savingDeclarationNights
-                            ? "Enregistrement..."
-                            : "Enregistrer"}
-                        </button>
-                      </div>
-                      {declarationNightsNotice ? (
-                        <div className="note note--success">
-                          {declarationNightsNotice}
-                        </div>
-                      ) : null}
-                      {declarationNightsError ? (
-                        <div className="note">{declarationNightsError}</div>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              </div>
             </div>
             </section>
           ) : null}

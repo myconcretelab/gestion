@@ -97,13 +97,6 @@ export type UrssafManagerAmount = {
   amount: number;
 };
 
-export type GuestNightGiteAmount = {
-  giteId: string;
-  giteName: string;
-  managerName: string | null;
-  guestNights: number;
-};
-
 export type ParsedStatisticsEntry = StatisticsEntry & {
   debutDate: Date;
 };
@@ -786,42 +779,6 @@ export const computeUrssafByManager = (
 
   return Object.values(byManager)
     .sort((left, right) => right.amount - left.amount || left.manager.localeCompare(right.manager, "fr"));
-};
-
-export const computeGuestNightsByGite = (
-  entriesByGite: Record<string, ParsedStatisticsEntry[]>,
-  gites: StatisticsGite[],
-  selectedYear: PeriodYear,
-  selectedMonth: PeriodMonth,
-  excludedSources: string[],
-  now = new Date()
-) => {
-  const excludedSourceKeys = new Set(excludedSources.map((source) => normalizeLabel(source)).filter(Boolean));
-  const byGite: Record<string, GuestNightGiteAmount> = {};
-
-  for (const gite of gites) {
-    byGite[gite.id] = {
-      giteId: gite.id,
-      giteName: gite.nom,
-      managerName: gite.gestionnaire ? `${gite.gestionnaire.nom} ${gite.gestionnaire.prenom}`.trim() : null,
-      guestNights: 0,
-    };
-  }
-
-  for (const gite of gites) {
-    const entries = getEntriesByPeriod(entriesByGite[gite.id] ?? [], selectedYear, selectedMonth, {
-      includeHomeExchange: true,
-      now,
-    });
-    for (const entry of entries) {
-      if (excludedSourceKeys.has(normalizeLabel(entry.paiement))) continue;
-      byGite[gite.id].guestNights += Math.max(0, Number(entry.nuits || 0)) * Math.max(0, Number(entry.adultes || 0));
-    }
-  }
-
-  return Object.values(byGite)
-    .filter((item) => item.guestNights > 0)
-    .sort((left, right) => left.giteName.localeCompare(right.giteName, "fr", { sensitivity: "base" }));
 };
 
 export const computeChequeVirementNightsByGite = (

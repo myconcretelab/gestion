@@ -3,6 +3,7 @@ import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } fr
 import ReservationPaymentPopover from "./shared/ReservationPaymentPopover";
 import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
 import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
+import ReservationNightBadges, { useReservationNightSummaries } from "../features/finance/reports/ReservationNightBadges";
 import ReservationDeclarationReminders from "../features/finance/reports/ReservationDeclarationReminders";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import {
@@ -30,7 +31,6 @@ import ReservationOptionDetails from "./shared/ReservationOptionDetails";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
 import { mergeOptions } from "./shared/rentalForm";
 import {
-  computeGuestNightsByGite,
   parseStatisticsPayload,
   type ParsedStatisticsPayload,
   type StatisticsPayload,
@@ -3244,17 +3244,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     return giteById.has(activeTab) ? [activeTab] : [];
   }, [activeTab, giteById, gites]);
 
-  const guestNightSummaryByMonthForActiveTab = useMemo(() => {
-    const byMonth = new Map<number, { guestNights: number }>();
-    if (!statisticsDataset || !activeGuestNightGiteIds.length) return byMonth;
-    const activeGiteIdSet = new Set(activeGuestNightGiteIds);
-    for (let monthIndex = 1; monthIndex <= 12; monthIndex++) {
-      const guestNights = computeGuestNightsByGite(statisticsDataset.entriesByGite, statisticsDataset.gites, year, monthIndex, [])
-        .filter(item => activeGiteIdSet.has(item.giteId)).reduce((sum, item) => sum + item.guestNights, 0);
-      byMonth.set(monthIndex, { guestNights });
-    }
-    return byMonth;
-  }, [activeGuestNightGiteIds, statisticsDataset, year]);
+  const nightSummaries = useReservationNightSummaries(year, reservations, reportsEnabled);
 
   const currentMonthStartUtc = useMemo(() => {
     const now = new Date();
@@ -4382,9 +4372,6 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
           monthsToRender.map((monthIndex) => {
             const list = reservationsByMonth.get(monthIndex) ?? [];
             const summary = monthSummary(list, monthIndex);
-            const guestNightSummary = guestNightSummaryByMonthForActiveTab.get(monthIndex) ?? {
-              guestNights: 0,
-            };
             const addAllowed = activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB && Boolean(activeGite?.id);
             const newRow = newRows[monthIndex] ?? (addAllowed && activeGite ? buildEmptyDraft(year, monthIndex, activeGite) : null);
             const rawInsertIndex = insertRowIndexByMonth[monthIndex];
@@ -4478,9 +4465,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                     <div className="reservations-month__meta">
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.count, "réservation", "réservations")}</span>
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.nights, "nuit", "nuits")}</span>
-                      <span className="reservations-summary-pill reservations-summary-pill--guest-nights">
-                        Total {formatPluralLabel(guestNightSummary.guestNights, "nuitée", "nuitées")}
-                      </span>
+                      <ReservationNightBadges summary={nightSummaries} propertyIds={activeGuestNightGiteIds} month={monthIndex} />
                       {renderSummaryPopoverPill({
                         pillClassName: "reservations-summary-pill reservations-summary-pill--revenue",
                         label: `${formatEuro(summary.revenue)} revenus`,
