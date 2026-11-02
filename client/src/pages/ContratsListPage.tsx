@@ -187,10 +187,16 @@ const ContratsListPage = () => {
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [returnDrawerContractId, setReturnDrawerContractId] = useState<string | null>(null);
+  const [returnDrawerMode, setReturnDrawerMode] = useState<"return" | "signed-document">("return");
   const [signedDocumentContractId, setSignedDocumentContractId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentSaving, setCommentSaving] = useState<Record<string, boolean>>({});
   const commentInputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+
+  const openReturnDrawer = (contractId: string, mode: "return" | "signed-document" = "return") => {
+    setReturnDrawerMode(mode);
+    setReturnDrawerContractId(contractId);
+  };
 
   const resizeCommentInput = (input: HTMLTextAreaElement | null) => {
     if (!input) return;
@@ -539,10 +545,11 @@ const ContratsListPage = () => {
       <ContractReturnDrawer
         open={Boolean(selectedReturnDrawerContract)}
         contract={selectedReturnDrawerContract}
+        mode={returnDrawerMode}
         onClose={() => setReturnDrawerContractId(null)}
         onUpdated={(updated) => {
           setError(null);
-          setNotice(null);
+          setNotice(returnDrawerMode === "signed-document" ? "Le contrat signé a été enregistré." : null);
           setContrats((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         }}
       />
@@ -687,6 +694,15 @@ const ContratsListPage = () => {
                               {formatDate(contrat.date_reception_contrat ?? contrat.date_derniere_modif)}
                             </strong>
                           </div>
+                          {!contrat.signed_document_path ? (
+                            <button
+                              type="button"
+                              className="contract-return-status__upload"
+                              onClick={() => openReturnDrawer(contrat.id, "signed-document")}
+                            >
+                              Ajouter le contrat signé
+                            </button>
+                          ) : null}
                         </div>
                         <div className="contract-return-status__actions">
                           {contrat.signed_document_path ? (
@@ -703,7 +719,7 @@ const ContratsListPage = () => {
                           <button
                             type="button"
                             className="table-action table-action--icon table-action--neutral"
-                            onClick={() => setReturnDrawerContractId(contrat.id)}
+                            onClick={() => openReturnDrawer(contrat.id)}
                             aria-label={`Modifier le retour du contrat ${contrat.numero_contrat}`}
                           >
                             <PencilIcon />
@@ -724,7 +740,7 @@ const ContratsListPage = () => {
                         <button
                           type="button"
                           className="contract-return-trigger"
-                          onClick={() => setReturnDrawerContractId(contrat.id)}
+                          onClick={() => openReturnDrawer(contrat.id)}
                         >
                           Traiter le retour
                         </button>
@@ -816,6 +832,7 @@ const ContratsListPage = () => {
                         ariaLabel={`Actions pour le contrat ${contrat.numero_contrat}`}
                         context={contrat.numero_contrat}
                         items={[
+                          { id: "signed-document", label: contrat.signed_document_path ? "Remplacer le contrat signé" : "Ajouter le contrat signé", icon: "contract", onSelect: () => openReturnDrawer(contrat.id, "signed-document") },
                           { id: "email", label: emailSending[contrat.id] ? "Envoi en cours…" : "Envoyer par email", icon: "email", onSelect: () => { void openEmailComposer(contrat); }, disabled: !contrat.locataire_email || Boolean(emailSending[contrat.id]), description: !contrat.locataire_email ? "Email du locataire non renseigné" : undefined },
                           { id: "invoice", label: "Créer une facture", icon: "invoice", to: `/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}` },
                           { id: "delete", label: "Supprimer", icon: "trash", danger: true, separatorBefore: true, onSelect: () => { void remove(contrat); }, disabled: deletingId === contrat.id },

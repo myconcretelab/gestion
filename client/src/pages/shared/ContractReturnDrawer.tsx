@@ -14,6 +14,7 @@ import { Link } from "react-router-dom";
 type ContractReturnDrawerProps = {
   open: boolean;
   contract: Contrat | null;
+  mode?: "return" | "signed-document";
   onClose: () => void;
   onUpdated: (updated: Contrat) => void;
 };
@@ -80,7 +81,8 @@ const CloseIcon = () => (
   </svg>
 );
 
-const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractReturnDrawerProps) => {
+const ContractReturnDrawer = ({ open, contract, mode = "return", onClose, onUpdated }: ContractReturnDrawerProps) => {
+  const documentOnly = mode === "signed-document";
   const titleId = useId();
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
   const [reservation, setReservation] = useState<Reservation | null>(null);
@@ -111,17 +113,12 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     document.documentElement.classList.add(APP_SCROLL_LOCK_CLASS);
     document.body.style.overflow = "hidden";
 
-    const frame = window.requestAnimationFrame(() => {
-      firstFieldRef.current?.focus();
-    });
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !saving && !preparingSignedDocument && !signedDocumentLightboxOpen) onClose();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.cancelAnimationFrame(frame);
       window.removeEventListener("keydown", handleKeyDown);
       document.body.classList.remove(APP_SCROLL_LOCK_CLASS);
       document.documentElement.classList.remove(APP_SCROLL_LOCK_CLASS);
@@ -134,7 +131,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     let active = true;
     const controller = new AbortController();
 
-    setLoading(Boolean(contract.reservation_id));
+    setLoading(!documentOnly && Boolean(contract.reservation_id));
     setSaving(false);
     setLinkingReservation(false);
     setError(null);
@@ -160,7 +157,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
     setInternalComment(contract.commentaire_interne ?? "");
     setOptions(mergeReservationOptions(contract.options));
 
-    if (!contract.reservation_id) {
+    if (documentOnly || !contract.reservation_id) {
       setLoading(false);
       return () => {
         active = false;
@@ -188,7 +185,13 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
       active = false;
       controller.abort();
     };
-  }, [contract, open]);
+  }, [contract, documentOnly, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = window.requestAnimationFrame(() => firstFieldRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [documentOnly, fileInputKey, open]);
 
   const optionPreview = useMemo(
     () =>
@@ -243,34 +246,37 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
   };
 
   const submit = async () => {
-    if (!contract) return;
+    if (!contract || (documentOnly && !pendingSignedDocument)) return;
     setSaving(true);
     try {
-      const trackingUpdated = await apiFetch<Contrat>(`/contracts/${contract.id}/return-processing`, {
-        method: "PATCH",
-        json: {
-          nb_adultes: adultCount,
-          nb_enfants_2_17: childrenCount,
-          statut_reception_contrat: contractReceived ? "recu" : "non_recu",
-          date_reception_contrat: contractReceived ? receptionDate || null : null,
-          ...(!reservation?.payments_managed ? {
-            statut_paiement_arrhes: arrhesPaid ? "recu" : "non_recu",
-            date_paiement_arrhes: arrhesPaid ? arrhesDate || null : null,
-            mode_paiement_arrhes: arrhesPaid ? arrhesPaymentMode || null : null,
-          } : {}),
-          commentaire_interne: internalComment,
-          reservation: {
-            booking_source: reservationPaymentSource || undefined,
-            options,
+      let updated = contract;
+      if (!documentOnly) {
+        updated = await apiFetch<Contrat>(`/contracts/${contract.id}/return-processing`, {
+          method: "PATCH",
+          json: {
+            nb_adultes: adultCount,
+            nb_enfants_2_17: childrenCount,
+            statut_reception_contrat: contractReceived ? "recu" : "non_recu",
+            date_reception_contrat: contractReceived ? receptionDate || null : null,
+            ...(!reservation?.payments_managed ? {
+              statut_paiement_arrhes: arrhesPaid ? "recu" : "non_recu",
+              date_paiement_arrhes: arrhesPaid ? arrhesDate || null : null,
+              mode_paiement_arrhes: arrhesPaid ? arrhesPaymentMode || null : null,
+            } : {}),
+            commentaire_interne: internalComment,
+            reservation: {
+              booking_source: reservationPaymentSource || undefined,
+              options,
+            },
           },
-        },
-      });
-      let updated = trackingUpdated;
+        });
+      }
       if (pendingSignedDocument) {
-        updated = await apiFetch<Contrat>(`/contracts/${contract.id}/signed-document`, {
+        const documentUpdated = await apiFetch<Contrat>(`/contracts/${contract.id}/signed-document`, {
           method: "POST",
           json: pendingSignedDocument,
         });
+        updated = { ...updated, ...documentUpdated };
       }
       setError(null);
       setPendingSignedDocument(null);
@@ -283,7 +289,9 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
           ? err.message
           : err instanceof Error
             ? err.message
-            : "Impossible d'enregistrer le retour du contrat."
+            : documentOnly
+              ? "Impossible d'enregistrer le document signé."
+              : "Impossible d'enregistrer le retour du contrat."
       );
     } finally {
       setSaving(false);
@@ -347,7 +355,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
         >
         <div className="contract-return-drawer__header">
           <div>
-            <p className="contract-return-drawer__eyebrow">Traitement du retour</p>
+            <p className="contract-return-drawer__eyebrow">{documentOnly ? "Contrat signé" : "Traitement du retour"}</p>
             <h2 id={titleId}>Contrat {contract.numero_contrat}</h2>
             <div className="contract-return-drawer__summary">
               <span>{contract.locataire_nom}</span>
@@ -368,12 +376,15 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
           </button>
         </div>
 
-        <div className="contract-return-drawer__body">
+        <div className={`contract-return-drawer__body${documentOnly ? " contract-return-drawer__body--document" : ""}`}>
           <p className="contract-return-drawer__intro">
-            Le contrat envoyé reste figé. Les modifications ci-dessous mettent à jour le suivi du retour et la réservation liée.
+            {documentOnly
+              ? "Ajoutez le contrat signé, scanné ou photographié, même après validation du retour."
+              : "Le contrat envoyé reste figé. Les modifications ci-dessous mettent à jour le suivi du retour et la réservation liée."}
           </p>
           {error ? <div className="note note--error">{error}</div> : null}
 
+          {!documentOnly ? <>
           <section className="contract-return-drawer__section">
             <div className="contract-return-drawer__section-head">
               <strong>Retour courrier</strong>
@@ -539,10 +550,12 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
             )}
           </section>
 
+          </> : null}
+
           <section className="contract-return-drawer__section">
             <div className="contract-return-drawer__section-head">
               <strong>Document signé</strong>
-              <span>PDF ou scan photo conservé avec le contrat.</span>
+              <span>PDF, JPG, PNG ou WEBP, 12 Mo maximum.</span>
             </div>
             <div className="contract-return-drawer__signed-document">
               {signedDocumentUrl ? (
@@ -566,9 +579,10 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
               )}
 
               <label className="field">
-                Ajouter ou remplacer le document signé
+                {signedDocumentUrl ? "Remplacer le document signé" : "Ajouter le document signé"}
                 <input
                   key={fileInputKey}
+                  ref={documentOnly ? firstFieldRef : undefined}
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                   disabled={saving || preparingSignedDocument}
@@ -599,7 +613,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
             </div>
           </section>
 
-          <section className="contract-return-drawer__section">
+          {!documentOnly ? <section className="contract-return-drawer__section">
             <div className="contract-return-drawer__section-head">
               <strong>Notes internes</strong>
               <span>Visible seulement en gestion.</span>
@@ -613,7 +627,7 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
                 rows={5}
               />
             </label>
-          </section>
+          </section> : null}
         </div>
 
         <div className="contract-return-drawer__footer">
@@ -628,9 +642,9 @@ const ContractReturnDrawer = ({ open, contract, onClose, onUpdated }: ContractRe
           <button
             type="button"
             onClick={submit}
-            disabled={saving || loading || linkingReservation || preparingSignedDocument}
+            disabled={saving || loading || linkingReservation || preparingSignedDocument || (documentOnly && !pendingSignedDocument)}
           >
-            {saving ? "Enregistrement..." : "Enregistrer"}
+            {saving ? "Enregistrement..." : documentOnly ? "Enregistrer le document" : "Enregistrer"}
           </button>
         </div>
         </section>

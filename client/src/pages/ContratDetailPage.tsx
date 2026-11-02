@@ -13,6 +13,7 @@ import {
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import SignedDocumentLightbox from "./shared/SignedDocumentLightbox";
+import ContractReturnDrawer from "./shared/ContractReturnDrawer";
 import { toDateInputValue } from "./shared/rentalForm";
 import { reservationPaymentsHref } from "../utils/reservationNavigation";
 
@@ -48,6 +49,7 @@ const ContratDetailPage = () => {
   const [internalCommentDraft, setInternalCommentDraft] = useState("");
   const [internalCommentSaving, setInternalCommentSaving] = useState(false);
   const [signedDocumentLightboxOpen, setSignedDocumentLightboxOpen] = useState(false);
+  const [signedDocumentUploadOpen, setSignedDocumentUploadOpen] = useState(false);
 
   const normalizeInternalComment = (value: string | null | undefined) =>
     String(value ?? "").trim();
@@ -367,6 +369,17 @@ const ContratDetailPage = () => {
         mimeType={contrat.signed_document_mime_type ?? null}
         onClose={() => setSignedDocumentLightboxOpen(false)}
       />
+      <ContractReturnDrawer
+        open={signedDocumentUploadOpen}
+        contract={contrat}
+        mode="signed-document"
+        onClose={() => setSignedDocumentUploadOpen(false)}
+        onUpdated={(updated) => {
+          setContrat(updated);
+          setError(null);
+          setNotice("Le contrat signé a été enregistré.");
+        }}
+      />
       <Link to="/contrats" className="back-link">
         Retour
       </Link>
@@ -495,13 +508,19 @@ const ContratDetailPage = () => {
                   {contrat.signed_document_filename}
                 </div>
               ) : null}
-              <button
+              {signedDocumentUrl ? <button
                 type="button"
                 className="secondary arrhes-card__save"
-                disabled={!signedDocumentUrl}
                 onClick={() => setSignedDocumentLightboxOpen(true)}
               >
                 Voir le contrat retourné
+              </button> : null}
+              <button
+                type="button"
+                className="secondary arrhes-card__save"
+                onClick={() => setSignedDocumentUploadOpen(true)}
+              >
+                {signedDocumentUrl ? "Remplacer le contrat signé" : "Ajouter le contrat signé"}
               </button>
             </div>
           </div>
