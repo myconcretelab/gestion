@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   calculateOtaPrice,
+  otaGrossInputBasis,
   otaIncludedTotal,
+  otaOptionAmount,
+  OTA_QUANTITY_KEYS,
   type OtaPriceInput,
   type OtaPricingContext,
   type ReservationPaymentTracking,
@@ -26,27 +29,64 @@ export default function OtaReservationPricing({
   const [basis, setBasis] = useState<OtaPriceInput["basis"]>("gross");
   const [amount, setAmount] = useState("");
   const [fee, setFee] = useState("");
-  const [included, setIncluded] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const populate = (data: OtaPricingContext) => {
+    const grossBasis = otaGrossInputBasis(data.source, data.grossInputBasis);
+    const saved = data.saved;
     setContext(data);
-    setBasis(data.saved?.basis ?? "gross");
-    setAmount(String((data.saved?.amountCents ?? data.amountCents) / 100));
-    setFee(data.saved ? String(data.saved.feeCents / 100) : "");
-    setIncluded(
-      Object.fromEntries(
-        data.options.map((option) => [
-          option.key,
-          String(option.amountCents / 100),
-        ]),
-      ),
-    );
+    const preferNet =
+      data.preferredInputBasis === "net" ||
+      (!data.preferredInputBasis && data.source === "Airbnb");
+    const initialBasis =
+      preferNet || saved?.basis === "net" ? "net" : grossBasis;
+    setBasis(initialBasis);
+    let value: number | undefined = data.amountCents;
+    if (saved)
+      value =
+        initialBasis === "net"
+          ? saved.netCents
+          : saved.grossCents -
+            (grossBasis === "rental" ? otaIncludedTotal(saved.included) : 0);
+    else if (initialBasis === "net" && data.storedPriceBasis !== "net") {
+      value = undefined;
+      if (data.storedPriceBasis === "gross") {
+        try {
+          value = calculateOtaPrice(
+            {
+              basis: "gross",
+              amountCents: data.amountCents,
+              included: Object.fromEntries(
+                data.options.map((option) => [
+                  option.key,
+                  option.included ? option.amountCents : 0,
+                ]),
+              ) as OtaPriceInput["included"],
+            },
+            data.rule,
+          ).netCents;
+        } catch {
+          /* Ask for the actual net instead of guessing. */
+        }
+      }
+    }
+    setAmount(value === undefined ? "" : String(value / 100));
+    setFee(saved?.feeSource === "manual" ? String(saved.feeCents / 100) : "");
     setSelected(
       Object.fromEntries(
         data.options.map((option) => [option.key, option.included]),
+      ),
+    );
+    setQuantities(
+      Object.fromEntries(
+        data.options.map((option) => [
+          option.key,
+          String(option.quantity ?? 1),
+        ]),
       ),
     );
   };
@@ -56,7 +96,7 @@ export default function OtaReservationPricing({
     setError("");
     setContext(null);
     apiFetch<OtaPricingContext>(
-      `/reservations/${reservationId}/payments/pricing`,
+      "/reservations/" + reservationId + "/payments/pricing",
       { signal: controller.signal },
     )
       .then(populate)
@@ -66,6 +106,15 @@ export default function OtaReservationPricing({
       });
     return () => controller.abort();
   }, [open, reservationId]);
+
+  const quantityFor = (key: string) => {
+    const value = Number(quantities[key] ?? 1);
+    if (!Number.isInteger(value) || value < 1 || value > 1000)
+      throw new Error(
+        "Renseignez une quantité entière comprise entre 1 et 1 000.",
+      );
+    return value;
+  };
   let input: OtaPriceInput | null = null;
   let result: ReturnType<typeof calculateOtaPrice> | null = null;
   let calculationError = "";
@@ -79,9 +128,7 @@ export default function OtaReservationPricing({
           numeric < 0 ||
           Math.abs(numeric * 100 - Math.round(numeric * 100)) > 0.00001
         )
-          throw new Error(
-            "Renseignez des montants positifs avec au plus deux décimales.",
-          );
+          throw new Error("Renseignez un montant avec au plus deux décimales.");
         return Math.round(numeric * 100);
       };
       input = {
@@ -91,7 +138,9 @@ export default function OtaReservationPricing({
         included: Object.fromEntries(
           context.options.map((option) => [
             option.key,
-            selected[option.key] ? toCents(included[option.key] ?? "") : 0,
+            selected[option.key]
+              ? otaOptionAmount(option, quantityFor(option.key))
+              : 0,
           ]),
         ) as OtaPriceInput["included"],
       };
@@ -101,6 +150,9 @@ export default function OtaReservationPricing({
         reason instanceof Error ? reason.message : "Calcul impossible.";
     }
   }
+  const needsPrecision = /commission|Plusieurs prix bruts/.test(
+    calculationError,
+  );
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (
@@ -120,9 +172,22 @@ export default function OtaReservationPricing({
       const response = await apiFetch<{
         pricing: OtaPricingContext;
         tracking: ReservationPaymentTracking;
-      }>(`/reservations/${reservationId}/payments/pricing`, {
+      }>("/reservations/" + reservationId + "/payments/pricing", {
         method: "PUT",
-        json: { ...input, revision: context.revision },
+        json: {
+          ...input,
+          revision: context.revision,
+          useOptionPrices: true,
+          includedKeys: context.options
+            .filter((option) => selected[option.key])
+            .map((option) => option.key),
+          quantities: Object.fromEntries(
+            OTA_QUANTITY_KEYS.filter((key) => selected[key]).map((key) => [
+              key,
+              quantityFor(key),
+            ]),
+          ),
+        },
       });
       populate(response.pricing);
       onSaved(response.tracking);
@@ -132,7 +197,7 @@ export default function OtaReservationPricing({
         }),
       );
       setNotice(
-        "Montants enregistrés. La date de versement reste estimée jusqu’à la saisie du règlement réel.",
+        "Montants enregistrés. La date du versement reste estimée jusqu’à la saisie du règlement réel.",
       );
     } catch (reason) {
       setError(
@@ -169,22 +234,13 @@ export default function OtaReservationPricing({
               <p>
                 {context.source} ·{" "}
                 {context.rule.percent === undefined
-                  ? "Taux non renseigné"
-                  : `${context.rule.percent} %`}{" "}
+                  ? "Taux à renseigner dans les paramètres"
+                  : String(context.rule.percent) + " %"}{" "}
                 ·{" "}
                 {context.rule.rounding === "euro"
                   ? "Arrondi à l’euro"
-                  : "Arrondi au centime"}{" "}
-                ·{" "}
-                {context.rule.scope === "accommodation"
-                  ? "Commission sur l’hébergement"
-                  : "Commission sur l’hébergement et les options"}
+                  : "Arrondi au centime"}
                 .
-              </p>
-              <p className="field-hint">
-                Montants hors taxe de séjour et caution. Les options cochées
-                sont comprises dans le versement plateforme ; elles ne seront
-                pas ajoutées une seconde fois.
               </p>
               {context.blockedReason && (
                 <p role="alert">{context.blockedReason}</p>
@@ -193,27 +249,44 @@ export default function OtaReservationPricing({
                 disabled={busy || disabled || Boolean(context.blockedReason)}
               >
                 <label>
-                  Montant dont je dispose
+                  Je saisis
                   <select
                     aria-label="Base du montant plateforme"
-                    value={basis}
+                    value={basis === "net" ? "net" : "gross"}
                     onChange={(event) => {
-                      setBasis(event.target.value as typeof basis);
+                      const next =
+                        event.target.value === "net"
+                          ? "net"
+                          : otaGrossInputBasis(
+                              context.source,
+                              context.grossInputBasis,
+                            );
+                      if (result)
+                        setAmount(
+                          String(
+                            (next === "net"
+                              ? result.netCents
+                              : result.grossCents -
+                                (next === "rental"
+                                  ? otaIncludedTotal(result.included)
+                                  : 0)) / 100,
+                          ),
+                        );
+                      setBasis(next);
                       setFee("");
                       setNotice("");
                     }}
                   >
-                    <option value="rental">
-                      Prix de location, hors options
-                    </option>
-                    <option value="gross">Total brut, options incluses</option>
-                    <option value="net">
-                      Net propriétaire, options incluses
-                    </option>
+                    <option value="gross">Brut</option>
+                    <option value="net">Net propriétaire</option>
                   </select>
                 </label>
                 <label>
-                  Montant (€)
+                  {basis === "net"
+                    ? "Net propriétaire (€)"
+                    : basis === "rental"
+                      ? "Prix de location brut (€)"
+                      : "Brut hors taxes (€)"}
                   <input
                     aria-label="Montant plateforme"
                     type="number"
@@ -227,76 +300,101 @@ export default function OtaReservationPricing({
                     }}
                   />
                 </label>
-                <p>Options incluses dans le versement</p>
-                {context.options
-                  .filter((option) => option.enabled)
-                  .map((option) => (
-                    <div
-                      className="ota-reservation-pricing__option"
-                      key={option.key}
-                    >
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={selected[option.key] ?? false}
-                          onChange={(event) => {
-                            setSelected({
-                              ...selected,
-                              [option.key]: event.target.checked,
-                            });
-                            setNotice("");
-                          }}
-                        />
-                        {option.label} inclus
-                      </label>
-                      {selected[option.key] && (
+                {context.importedNet && !context.saved && (
+                  <small>
+                    Net propriétaire repris automatiquement de Pump.
+                  </small>
+                )}
+                <p className="field-hint">
+                  {basis === "rental"
+                    ? "Reprenez le « Prix location » du relevé. Les options cochées s’ajoutent à ce brut."
+                    : "Reprenez le montant hors taxe de séjour et caution. Les options cochées sont déjà comprises dans ce montant."}
+                </p>
+                <div className="ota-reservation-pricing__options">
+                  <p>Options comprises dans le versement</p>
+                  <small>
+                    Tarifs repris dans l’application. Ajustez seulement les
+                    quantités si nécessaire.
+                  </small>
+                  {context.options.map((option) => {
+                    const quantity = Number(quantities[option.key] ?? 1);
+                    const value =
+                      Number.isInteger(quantity) && quantity > 0
+                        ? otaOptionAmount(option, quantity)
+                        : 0;
+                    return (
+                      <div
+                        className="ota-reservation-pricing__option"
+                        key={option.key}
+                      >
                         <label>
-                          Valeur incluse (€)
                           <input
-                            aria-label={`Montant inclus ${option.label}`}
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            required
-                            value={included[option.key] ?? ""}
+                            type="checkbox"
+                            checked={selected[option.key] ?? false}
                             onChange={(event) => {
-                              setIncluded({
-                                ...included,
-                                [option.key]: event.target.value,
+                              setSelected({
+                                ...selected,
+                                [option.key]: event.target.checked,
                               });
                               setNotice("");
                             }}
                           />
+                          {option.label} inclus
                         </label>
-                      )}
-                    </div>
-                  ))}
-                {!context.options.some((option) => option.enabled) && (
-                  <p className="field-hint">
-                    Activez les prestations dans les options du séjour pour
-                    pouvoir les inclure.
-                  </p>
-                )}
-                <label>
-                  Commission réelle (€), si connue
-                  <input
-                    aria-label="Commission réelle plateforme"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={fee}
-                    placeholder="Calculée avec les règles si vide"
-                    onChange={(event) => {
-                      setFee(event.target.value);
-                      setNotice("");
-                    }}
-                  />
-                </label>
-                <small>
-                  La commission réelle du relevé est prioritaire. Avec un net et
-                  un arrondi à l’euro, elle peut être nécessaire pour retrouver
-                  le prix exact.
-                </small>
+                        <span className="ota-reservation-pricing__option-price">
+                          {formatEuro(value / 100)}
+                        </span>
+                        {selected[option.key] && option.quantityLabel && (
+                          <label className="ota-reservation-pricing__quantity">
+                            {option.quantityLabel}
+                            <input
+                              type="number"
+                              min="1"
+                              max="1000"
+                              step="1"
+                              aria-label={option.quantityLabel}
+                              value={quantities[option.key] ?? "1"}
+                              onChange={(event) => {
+                                setQuantities({
+                                  ...quantities,
+                                  [option.key]: event.target.value,
+                                });
+                                setNotice("");
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <details
+                  className="ota-reservation-pricing__precision"
+                  open={advanced || needsPrecision}
+                  onToggle={(event) => setAdvanced(event.currentTarget.open)}
+                >
+                  <summary>Précision sur la commission (facultatif)</summary>
+                  <label>
+                    Commission réelle (€), si connue
+                    <input
+                      aria-label="Commission réelle plateforme"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={fee}
+                      placeholder="Calcul automatique"
+                      onChange={(event) => {
+                        setFee(event.target.value);
+                        setNotice("");
+                      }}
+                    />
+                  </label>
+                  <small>
+                    À utiliser seulement si le relevé diffère du calcul, si
+                    aucun taux n’est configuré ou si plusieurs bruts donnent le
+                    même net.
+                  </small>
+                </details>
               </fieldset>
               {calculationError && <p role="status">{calculationError}</p>}
               {result && (

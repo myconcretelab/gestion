@@ -66,6 +66,19 @@ test("le choix de l'assiette, l'arrondi et la commission réelle sont indépenda
     /inférieur/,
   );
 });
+test("Airbnb : 692,90 € nets retrouvent 820 € bruts à 15,5 %, options comprises", () => {
+  const included = { ...empty, menage: 12000 };
+  for (const basis of ["net", "gross"] as const) {
+    const result = calculateOtaPrice(
+      { basis, amountCents: basis === "net" ? 69290 : 82000, included },
+      { percent: 15.5, rounding: "cent", scope: "all" },
+    );
+    assert.deepEqual(
+      [result.grossCents, result.feeCents, result.netCents],
+      [82000, 12710, 69290],
+    );
+  }
+});
 test("un net ambigu n'est jamais transformé en un brut inventé", () => {
   // 4,50 - 0 = 4,50 and 5,50 - 1 = 4,50.
   assert.throws(

@@ -20,7 +20,7 @@ import { setCurrentAuthUser } from "/src/utils/auth.ts";
 import "/src/styles.css";
 if (location.search.includes("readonly")) setCurrentAuthUser({ permissions:{canWrite:false,canViewAmounts:true,isOwner:false},pageAccess:["reservations"] });
 createRoot(document.getElementById("root")).render(React.createElement(Editor, {
-reservation: { id:"test", booking_source:"Gites de France", options:{menage:{enabled:true}, draps:{enabled:true,nb_lits:9}} },
+reservation: { id:"test", booking_source:location.search.includes("airbnb") ? "Airbnb" : "Gites de France", options:{menage:{enabled:true}, draps:{enabled:true,nb_lits:9}} },
 tracking: { managed:false, total:2005,received:1750,remaining:255,overpaid:0,deposit:0,requires_review:false,entries:[],platform:{source:"Gites de France",automatic:true,accommodation:1750,expected:0,extras_remaining:255}},
 onUpdated: () => {window.saved = (window.saved || 0) + 1}
 }));
@@ -64,10 +64,17 @@ try {
         enabled: true,
         included: false,
         amountCents: 13500,
+        quantity: 9,
+        unitAmountCents: 1500,
+        quantityLabel: "Nombre de lits",
       },
       ...["linge_toilette", "depart_tardif", "chiens"].map((key) => ({
         key,
-        label: key,
+        label: {
+          linge_toilette: "Linge de toilette",
+          depart_tardif: "Départ tardif",
+          chiens: "Animaux",
+        }[key],
         enabled: false,
         included: false,
         amountCents: 0,
@@ -89,7 +96,8 @@ try {
         });
       }
       commands.push(input);
-      const { revision, ...value } = input;
+      const { revision, includedKeys, quantities, useOptionPrices, ...value } =
+        input;
       const saved = calculateOtaPrice(value, pricing.rule);
       pricing = {
         ...pricing,
@@ -98,7 +106,8 @@ try {
         saved,
         options: pricing.options.map((option) => ({
           ...option,
-          included: input.included[option.key] > 0,
+          included: includedKeys.includes(option.key),
+          quantity: quantities[option.key] ?? option.quantity,
           amountCents: input.included[option.key] || option.amountCents,
         })),
       };
@@ -130,8 +139,30 @@ try {
   await page
     .getByRole("button", { name: "Saisir un prix brut ou un net propriétaire" })
     .click();
-  await page.getByLabel("Base du montant plateforme").selectOption("net");
-  await page.getByLabel("Montant plateforme", { exact: true }).fill("1830");
+  await page.getByLabel("Base du montant plateforme").waitFor();
+  assert.equal(
+    await page
+      .getByLabel("Base du montant plateforme")
+      .locator("option")
+      .count(),
+    2,
+  );
+  assert.equal(
+    await page.getByLabel("Base du montant plateforme").inputValue(),
+    "gross",
+  );
+  assert.equal(
+    await page
+      .locator('form[aria-label="Montants de la plateforme"] input[required]')
+      .count(),
+    1,
+  );
+  assert.equal(
+    await page
+      .getByLabel("Commission réelle plateforme", { exact: true })
+      .isVisible(),
+    false,
+  );
   await page
     .getByRole("checkbox", { name: "Ménage inclus", exact: true })
     .check();
@@ -139,6 +170,21 @@ try {
     .getByRole("checkbox", { name: "Draps inclus", exact: true })
     .check();
 
+  assert.equal(
+    await page.getByLabel("Nombre de lits", { exact: true }).inputValue(),
+    "9",
+  );
+  await page.getByLabel("Nombre de lits", { exact: true }).fill("10");
+  assert.match(
+    await page.getByLabel("Calcul de la plateforme").innerText(),
+    /270,00/,
+  );
+  await page.getByLabel("Nombre de lits", { exact: true }).fill("9");
+  await page.getByLabel("Base du montant plateforme").selectOption("net");
+  assert.equal(
+    await page.getByLabel("Montant plateforme", { exact: true }).inputValue(),
+    "1830",
+  );
   assert.match(
     await page.getByLabel("Calcul de la plateforme").innerText(),
     /1\s?750,00.*255,00.*2\s?005,00.*175,00.*1\s?830,00/s,
@@ -170,6 +216,8 @@ try {
     depart_tardif: 0,
     chiens: 0,
   });
+  assert.equal(commands[0].useOptionPrices, true);
+  assert.deepEqual(commands[0].quantities, { draps: 9 });
   for (const width of [1280, 390, 360]) {
     await page.setViewportSize({ width, height: 1000 });
     assert.ok(
@@ -183,9 +231,6 @@ try {
     });
   }
   await page.getByLabel("Montant plateforme", { exact: true }).fill("4.5");
-  await page
-    .getByLabel("Commission réelle plateforme", { exact: true })
-    .fill("");
   await page
     .getByRole("checkbox", { name: "Ménage inclus", exact: true })
     .uncheck();
@@ -209,6 +254,75 @@ try {
     await page.getByLabel("Calcul de la plateforme").innerText(),
     /5,50/,
   );
+  pricing = {
+    ...pricing,
+    revision: "10",
+    source: "Airbnb",
+    amountCents: 69290,
+    grossInputBasis: "gross",
+    preferredInputBasis: "net",
+    storedPriceBasis: "net",
+    importedNet: true,
+    saved: undefined,
+    rule: { percent: 15.5, rounding: "cent", scope: "all" },
+    options: pricing.options.map((option) => ({ ...option, included: false })),
+  };
+  await page.goto(origin + "/__ota_pricing_test.html?airbnb");
+  await page
+    .getByRole("button", { name: "Saisir un prix brut ou un net propriétaire" })
+    .click();
+  await page
+    .getByText("Net propriétaire repris automatiquement de Pump.", {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(
+    await page.getByLabel("Base du montant plateforme").inputValue(),
+    "net",
+  );
+  assert.equal(
+    await page.getByLabel("Montant plateforme", { exact: true }).inputValue(),
+    "692.9",
+  );
+  assert.match(
+    await page.getByLabel("Calcul de la plateforme").innerText(),
+    /820,00.*127,10.*692,90/s,
+  );
+  await page
+    .getByRole("checkbox", { name: "Ménage inclus", exact: true })
+    .check();
+  assert.match(
+    await page.getByLabel("Calcul de la plateforme").innerText(),
+    /700,00.*120,00.*820,00.*127,10.*692,90/s,
+  );
+  await page.getByLabel("Base du montant plateforme").selectOption("gross");
+  assert.equal(
+    await page.getByLabel("Montant plateforme", { exact: true }).inputValue(),
+    "820",
+  );
+  await page.getByLabel("Base du montant plateforme").selectOption("net");
+  await page
+    .getByRole("button", { name: "Enregistrer les montants", exact: true })
+    .click();
+  await page
+    .getByRole("status")
+    .getByText(/Montants enregistrés/)
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Fermer les montants plateforme" })
+    .click();
+  await page
+    .getByRole("button", { name: "Saisir un prix brut ou un net propriétaire" })
+    .click();
+  await page.getByLabel("Montant plateforme", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByLabel("Montant plateforme", { exact: true }).inputValue(),
+    "692.9",
+  );
+  await page.screenshot({
+    path: path.join(screenshots, "airbnb-net-360.png"),
+    fullPage: true,
+  });
   await page.goto(origin + "/__ota_pricing_test.html?readonly");
   await page.getByLabel("Détail du règlement").waitFor();
   assert.equal(

@@ -18,7 +18,7 @@
 }
 .ota-reservation-pricing__option {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr auto;
   gap: 10px;
   align-items: center;
 }
@@ -50,8 +50,26 @@
   font-weight: 600;
   white-space: nowrap;
 }
-@media (max-width: 400px) {
-  .ota-reservation-pricing__option {
-    grid-template-columns: 1fr;
-  }
+.ota-reservation-pricing__options {
+  display: grid;
+  gap: 10px;
+}
+.ota-reservation-pricing__option-price {
+  text-align: right;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+.ota-reservation-pricing__quantity {
+  grid-column: 1 / -1;
+}
+.ota-reservation-pricing__precision {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.ota-reservation-pricing__precision > summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.ota-reservation-pricing__precision[open] > label {
+  margin-top: 10px;
 }

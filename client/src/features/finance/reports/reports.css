@@ -2369,3 +2369,14 @@
 .reports-workspace [aria-disabled="true"] {
   opacity: 0.65;
 }
+
+.rp-total-copy {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+.rp-total-copy small {
+  font-variant-numeric: tabular-nums;
+  padding-left: 6px;
+  font-size: 0.8rem;
+  color: var(--primary-strong);
+}
