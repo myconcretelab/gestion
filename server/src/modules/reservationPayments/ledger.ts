@@ -6,6 +6,7 @@ import {
   legacyPaymentMethod,
   AUTOMATIC_PAYMENT_PLATFORMS,
   otaRate,
+  otaStoredPriceBasis,
   otaCommissionCents,
   calculateOtaPrice,
   otaIncludedTotal,
@@ -325,6 +326,11 @@ export const loadReservationPaymentTracking = async (
       const policy = settings.platforms?.find(
         (channel) => channel.name === source,
       );
+      const storedPriceBasis = otaStoredPriceBasis(
+        source,
+        first.origin_system,
+        policy?.storedPriceBasis,
+      );
       const rateDate =
         policy?.rateDateBasis === "arrival"
           ? first.date_entree.toISOString().slice(0, 10)
@@ -335,7 +341,7 @@ export const loadReservationPaymentTracking = async (
       const useSavedPrice =
         validPrice && platformExpected === priceSnapshot!.grossCents;
       let netEstimate: ReturnType<typeof calculateOtaPrice> | null = null;
-      if (!useSavedPrice && rate && policy?.storedPriceBasis === "net") {
+      if (!useSavedPrice && rate && storedPriceBasis === "net") {
         try {
           netEstimate = calculateOtaPrice(
             {
@@ -351,8 +357,8 @@ export const loadReservationPaymentTracking = async (
             },
             {
               percent: rate.percent,
-              rounding: policy.commissionRounding,
-              scope: policy.commissionScope,
+              rounding: policy?.commissionRounding,
+              scope: policy?.commissionScope,
             },
           );
         } catch {
@@ -364,13 +370,13 @@ export const loadReservationPaymentTracking = async (
           ? null
           : useSavedPrice
             ? priceSnapshot!.grossCents
-            : policy?.storedPriceBasis === "gross"
+            : storedPriceBasis === "gross"
               ? platformExpected
               : (netEstimate?.grossCents ?? null);
       const estimatedFee = useSavedPrice
         ? priceSnapshot!.feeCents
         : estimatedGross !== null && rate
-          ? policy?.storedPriceBasis === "net"
+          ? storedPriceBasis === "net"
             ? estimatedGross - platformExpected
             : otaCommissionCents(
                 estimatedGross,
@@ -399,7 +405,7 @@ export const loadReservationPaymentTracking = async (
                 feeCents: estimatedFee,
                 netCents: useSavedPrice
                   ? priceSnapshot!.netCents
-                  : policy?.storedPriceBasis === "net"
+                  : storedPriceBasis === "net"
                     ? platformExpected
                     : estimatedGross - estimatedFee,
                 effectiveRate: useSavedPrice

@@ -1,4 +1,8 @@
-import { AUTOMATIC_PAYMENT_PLATFORMS, type OtaChannel } from "@contrats/shared";
+import {
+  otaGrossInputBasis,
+  AUTOMATIC_PAYMENT_PLATFORMS,
+  type OtaChannel,
+} from "@contrats/shared";
 import "../../features/finance/reports/ota.css";
 
 export default function OtaChannelSettings({
@@ -77,6 +81,29 @@ export default function OtaChannelSettings({
             <small>
               Utilisé uniquement pour les estimations sans relevé. Les montants
               importés restent exacts et prioritaires.
+            </small>
+          </label>
+          <label className="field">
+            Montant brut indiqué par la plateforme
+            <select
+              value={otaGrossInputBasis(channel.name, channel.grossInputBasis)}
+              onChange={(event) =>
+                update(index, {
+                  grossInputBasis: event.target
+                    .value as OtaChannel["grossInputBasis"],
+                })
+              }
+            >
+              <option value="rental">
+                Prix de location, hors options (Gîtes de France)
+              </option>
+              <option value="gross">
+                Total brut, options comprises (Airbnb)
+              </option>
+            </select>
+            <small>
+              Ce choix permet de saisir le montant du relevé puis de cocher les
+              options à leurs tarifs enregistrés.
             </small>
           </label>
           <label className="field">

@@ -401,3 +401,151 @@ test("un brut explicite prime sur l'ancienne base nette du canal", () =>
     assert.equal(tracking.entries[0].ota?.netCents, 47000);
     assert.equal(tracking.entries[0].ota?.effectiveRate?.percent, 10);
   }));
+
+test("les cases reprennent les tarifs de l’application et retirent l’ancien supplément même si la quantité change", () =>
+  fixture(async (gite) => {
+    const row = await stay(gite, {
+      frais_optionnels_montant: 255,
+      options: JSON.stringify({
+        menage: { enabled: true },
+        draps: { enabled: true, nb_lits: 9 },
+      }),
+    });
+    const initial = await pricing.getOtaPricing(row.id);
+    assert.equal(initial.grossInputBasis, "rental");
+    assert.equal(
+      initial.options.find((option) => option.key === "draps")?.unitAmountCents,
+      1500,
+    );
+    const input = {
+      revision: initial.revision,
+      basis: "rental",
+      amountCents: 175000,
+      included: { ...empty, menage: 12000, draps: 15000 },
+      includedKeys: ["menage", "draps"],
+      quantities: { draps: 10 },
+      useOptionPrices: true,
+    };
+    await assert.rejects(
+      pricing.saveOtaPricing(row.id, {
+        ...input,
+        included: { ...input.included, draps: 13500 },
+      }),
+      /tarifs/,
+    );
+    await assert.rejects(
+      pricing.saveOtaPricing(row.id, { ...input, quantities: { draps: 0 } }),
+    );
+    const saved = await pricing.saveOtaPricing(row.id, input);
+    assert.equal(saved.saved?.grossCents, 202000);
+    assert.equal(saved.saved?.netCents, 184500);
+    const stored = await db.default.reservation.findFirstOrThrow({
+      where: { id: row.id },
+    });
+    assert.equal(Number(stored.frais_optionnels_montant), 0);
+    assert.equal(JSON.parse(String(stored.options)).draps.nb_lits, 10);
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(row.id)).remaining,
+      0,
+    );
+  }));
+
+test("les tarifs modifiés invalident la saisie ; une option gratuite cochée reste incluse", () =>
+  fixture(async (gite) => {
+    const row = await stay(gite);
+    const initial = await pricing.getOtaPricing(row.id);
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { options_draps_par_lit: 16 },
+    });
+    const input = {
+      revision: initial.revision,
+      basis: "rental",
+      amountCents: 175000,
+      included: empty,
+      includedKeys: ["linge_toilette"],
+      quantities: { linge_toilette: 3 },
+      useOptionPrices: true,
+    };
+    await assert.rejects(pricing.saveOtaPricing(row.id, input), /changé/);
+    const fresh = await pricing.getOtaPricing(row.id);
+    await pricing.saveOtaPricing(row.id, {
+      ...input,
+      revision: fresh.revision,
+    });
+    const stored = await db.default.reservation.findFirstOrThrow({
+      where: { id: row.id },
+    });
+    const option = JSON.parse(String(stored.options)).linge_toilette;
+    assert.deepEqual(
+      [option.enabled, option.inclus, option.offert, option.nb_personnes],
+      [true, true, false, 3],
+    );
+  }));
+
+test("Pump fournit le net Airbnb : le suivi et la saisie retrouvent le brut sans le demander", () =>
+  fixture(async (gite) => {
+    await settings.saveReservationPaymentSettings({
+      platform_payments_received_automatically: true,
+      platforms: [
+        {
+          ...channel,
+          name: "Airbnb",
+          storedPriceBasis: "gross",
+          commissionRounding: "cent",
+          commissionScope: "all",
+          rates: [{ effectiveFrom: "2026-01-01", percent: 15.5 }],
+        },
+      ],
+    });
+    const row = await stay(gite, {
+      booking_source: "Airbnb",
+      origin_system: "pump",
+      prix_total: 692.9,
+    });
+    const initial = await pricing.getOtaPricing(row.id);
+    assert.deepEqual(
+      [
+        initial.amountCents,
+        initial.storedPriceBasis,
+        initial.preferredInputBasis,
+        initial.importedNet,
+        initial.grossInputBasis,
+      ],
+      [69290, "net", "net", true, "gross"],
+    );
+    const tracking = await ledger.getReservationPaymentTracking(row.id);
+    assert.deepEqual(
+      [
+        tracking.entries[0].ota?.grossCents,
+        tracking.entries[0].ota?.feeCents,
+        tracking.entries[0].ota?.netCents,
+      ],
+      [82000, 12710, 69290],
+    );
+    const saved = await pricing.saveOtaPricing(row.id, {
+      revision: initial.revision,
+      basis: "net",
+      amountCents: initial.amountCents,
+      included: empty,
+      includedKeys: [],
+      useOptionPrices: true,
+    });
+    assert.equal(saved.amountCents, 82000);
+    assert.equal(saved.saved?.netCents, 69290);
+    assert.equal(saved.importedNet, false);
+    assert.equal(saved.storedPriceBasis, "gross");
+    assert.equal(
+      (await ledger.getReservationPaymentTracking(row.id)).entries[0].ota
+        ?.grossCents,
+      82000,
+    );
+    await db.default.reservation.update({
+      where: { id: row.id },
+      data: { prix_total: 850 },
+    });
+    const changed = await pricing.getOtaPricing(row.id);
+    assert.equal(changed.storedPriceBasis, "unknown");
+    assert.equal(changed.importedNet, false);
+    assert.equal(changed.saved, undefined);
+  }));

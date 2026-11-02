@@ -16,6 +16,7 @@ export const otaChannelSchema = z
     automatic: z.boolean(),
     commissionRounding: otaRoundingSchema.optional(),
     commissionScope: otaCommissionScopeSchema.optional(),
+    grossInputBasis: z.enum(["rental", "gross"]).optional(),
     storedPriceBasis: z.enum(["unknown", "net", "gross"]).default("unknown"),
     rateDateBasis: z.enum(["booking", "arrival", "payment"]).default("payment"),
     rates: z

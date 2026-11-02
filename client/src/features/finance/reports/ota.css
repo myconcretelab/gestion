@@ -26,6 +26,11 @@
   min-width: 180px;
   margin-bottom: 12px;
 }
+.ota-channel select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
 .ota-channel__heading .checkbox-inline {
   flex: 2;
   align-self: center;

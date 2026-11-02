@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
+import ReportCopyAmount from "./ReportCopyAmount";
 import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
@@ -385,6 +386,9 @@ export default function ReportDetail({
           <strong className="rp-total-value">
             {formatReportValue(displayedReport, displayedResult.total)}
           </strong>
+          {displayedReport.kind !== "tourist" && (
+            <ReportCopyAmount totalCents={displayedResult.total} />
+          )}
           <ReportPlatformAmounts
             report={displayedReport}
             result={displayedResult}

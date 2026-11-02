@@ -1399,6 +1399,54 @@ try {
   assert.equal(await grouped.locator(".rp-report-row").count(), 28);
   await grouped.context().close();
 
+  // Copy the displayed amount, rounded to whole euros; this remains available in read-only mode.
+  const { page: copyPage, fixture: copyFixture } = await createPage({
+    canWrite: false,
+  });
+  await copyPage
+    .context()
+    .grantPermissions(["clipboard-read", "clipboard-write"]);
+  for (const [amountCents, expected] of [
+    [336437, "3364"],
+    [336450, "3365"],
+    [336499, "3365"],
+    [0, "0"],
+  ]) {
+    copyFixture.state.operations = [
+      { ...baseOperation, id: "copy-amount", amountCents },
+    ];
+    copyFixture.state.factsRevision = "copy-" + amountCents;
+    await open(copyPage, "/social");
+    const copyButton = copyPage.getByRole("button", {
+      name: "Copier le montant sans centimes",
+      exact: true,
+    });
+    await copyButton.click();
+    assert.equal(
+      await copyPage.evaluate(() => navigator.clipboard.readText()),
+      expected,
+    );
+  }
+  await copyPage.evaluate(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () => Promise.reject(new Error("Clipboard refused")),
+      },
+    }),
+  );
+  await copyPage
+    .getByRole("button", {
+      name: "Copier le montant sans centimes",
+      exact: true,
+    })
+    .click();
+  await copyPage
+    .getByText("Copie impossible. Sélectionnez le montant pour le copier.", {
+      exact: true,
+    })
+    .waitFor();
+
   const { page, fixture } = await createPage();
   // Demo state from earlier prototypes is deliberately ignored.
   await page.addInitScript(() =>
@@ -1434,6 +1482,17 @@ try {
     .getByRole("heading", { name: "Cotisations sociales", exact: true })
     .waitFor();
   assert.match(await total(page), /770/);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page
+    .getByRole("button", {
+      name: "Copier le montant sans centimes",
+      exact: true,
+    })
+    .click();
+  assert.equal(
+    await page.evaluate(() => navigator.clipboard.readText()),
+    "770",
+  );
   assert.match(
     await page.locator(".rp-total-card > .rp-overline").innerText(),
     /commissions non renseignées/i,
@@ -1594,6 +1653,19 @@ try {
     .getByRole("button", { name: "Voir la copie confirmée", exact: true })
     .click();
   assert.equal(await total(page), frozenTotal);
+  await page
+    .getByRole("button", {
+      name: "Copier le montant sans centimes",
+      exact: true,
+    })
+    .click();
+  const frozenRounded = String(
+    Math.round(Number(frozenTotal.replace(/[^0-9,.-]/g, "").replace(",", "."))),
+  );
+  assert.equal(
+    await page.evaluate(() => navigator.clipboard.readText()),
+    frozenRounded,
+  );
   await page.reload();
   await page
     .getByRole("button", { name: "Voir la copie confirmée", exact: true })

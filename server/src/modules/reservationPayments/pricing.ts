@@ -8,6 +8,10 @@ import {
   getBookingSource,
   otaPriceInputSchema,
   otaRate,
+  otaGrossInputBasis,
+  otaStoredPriceBasis,
+  otaOptionAmount,
+  otaOptionQuantitiesSchema,
   validOtaPriceSnapshot,
   type OtaPricingContext,
   type OtaOptionKey,
@@ -21,7 +25,16 @@ import { getOrganizationId } from "../../services/organizationContext.js";
 import { ledgerError } from "./ledger.js";
 
 const inputSchema = otaPriceInputSchema
-  .extend({ revision: z.string().min(1) })
+  .extend({
+    revision: z.string().min(1),
+    includedKeys: z
+      .array(z.enum(OTA_OPTION_KEYS))
+      .max(5)
+      .refine((keys) => new Set(keys).size === keys.length)
+      .optional(),
+    quantities: otaOptionQuantitiesSchema.optional(),
+    useOptionPrices: z.boolean().optional(),
+  })
   .strict();
 const cents = (value: unknown) => Math.round(Number(value ?? 0) * 100);
 const labels: Record<OtaOptionKey, string> = {
@@ -85,6 +98,28 @@ async function read(id: string, db: TenantTransactionClient) {
       (options.chiens?.nb ?? 1) *
       rows.reduce((n, row) => n + row.nb_nuits, 0),
   };
+  const quantities = {
+    menage: 1,
+    depart_tardif: 1,
+    draps: Math.max(1, options.draps?.nb_lits ?? 1),
+    linge_toilette: Math.max(1, options.linge_toilette?.nb_personnes ?? 1),
+    chiens: Math.max(1, options.chiens?.nb ?? 1),
+  };
+  const nights = rows.reduce((n, row) => n + row.nb_nuits, 0);
+  const units: Record<OtaOptionKey, number> = {
+    menage: cents(first.gite?.options_menage_forfait),
+    depart_tardif: cents(
+      options.depart_tardif?.prix_forfait ??
+        first.gite?.options_depart_tardif_forfait,
+    ),
+    draps: cents(
+      options.draps?.prix_unitaire ?? first.gite?.options_draps_par_lit,
+    ),
+    linge_toilette: cents(first.gite?.options_linge_toilette_par_personne),
+    chiens: cents(
+      options.chiens?.prix_unitaire ?? first.gite?.options_chiens_forfait,
+    ),
+  };
   const recorded = await db.reservationRecordedPayment.count({
     where: { reservation_id: { in: ids }, voided_at: null },
   });
@@ -112,6 +147,21 @@ async function read(id: string, db: TenantTransactionClient) {
   const context: OtaPricingContext = {
     source,
     amountCents: gross,
+    grossInputBasis: otaGrossInputBasis(source, channel?.grossInputBasis),
+    preferredInputBasis: source === "Airbnb" ? "net" : "gross",
+    storedPriceBasis: valid
+      ? "gross"
+      : options.ota_price
+        ? "unknown"
+        : otaStoredPriceBasis(
+            source,
+            first.origin_system,
+            channel?.storedPriceBasis,
+          ),
+    importedNet:
+      !options.ota_price &&
+      source === "Airbnb" &&
+      first.origin_system === "pump",
     revision: createHash("sha256")
       .update(
         JSON.stringify([
@@ -123,6 +173,9 @@ async function read(id: string, db: TenantTransactionClient) {
             row.frais_optionnels_montant,
           ]),
           settings,
+          units,
+          quantities,
+          nights,
         ]),
       )
       .digest("hex"),
@@ -143,7 +196,17 @@ async function read(id: string, db: TenantTransactionClient) {
       amountCents:
         options[key]?.inclus && options[key]?.montant_inclus !== undefined
           ? cents(options[key]?.montant_inclus)
-          : prices[key],
+          : units[key] * quantities[key] * (key === "chiens" ? nights : 1),
+      quantity: quantities[key],
+      unitAmountCents: units[key],
+      multiplier: key === "chiens" ? nights : 1,
+      ...(key === "draps"
+        ? { quantityLabel: "Nombre de lits" }
+        : key === "linge_toilette"
+          ? { quantityLabel: "Nombre de personnes" }
+          : key === "chiens"
+            ? { quantityLabel: "Nombre d’animaux" }
+            : {}),
     })),
     ...(valid ? { saved: options.ota_price } : {}),
     ...(recorded || card || documents
@@ -167,6 +230,23 @@ export async function saveOtaPricing(id: string, input: unknown) {
         "La réservation ou les règles ont changé. Rechargez les montants avant d’enregistrer.",
       );
     if (context.blockedReason) throw ledgerError(context.blockedReason);
+    if (payload.useOptionPrices) {
+      if (!payload.includedKeys)
+        throw ledgerError("Précisez les options choisies.", 400);
+      for (const option of context.options) {
+        const quantity =
+          payload.quantities?.[
+            option.key as keyof NonNullable<typeof payload.quantities>
+          ] ?? option.quantity;
+        const expected = payload.includedKeys.includes(option.key)
+          ? otaOptionAmount(option, quantity)
+          : 0;
+        if (payload.included[option.key] !== expected)
+          throw ledgerError(
+            "Les tarifs des options ont changé. Rechargez les montants.",
+          );
+      }
+    }
     let snapshot;
     try {
       snapshot = calculateOtaPrice(
@@ -192,14 +272,19 @@ export async function saveOtaPricing(id: string, input: unknown) {
     );
     for (const key of OTA_OPTION_KEYS) {
       const old = options[key];
-      const included = payload.included[key] > 0;
+      const included = payload.includedKeys
+        ? payload.includedKeys.includes(key)
+        : payload.included[key] > 0;
       if (included && old?.enabled && !old.offert && !old.inclus) {
-        if (fees < payload.included[key])
+        const previousAmount = payload.useOptionPrices
+          ? prices[key]
+          : payload.included[key];
+        if (fees > 0 && fees < previousAmount)
           throw ledgerError(
             "Le montant des suppléments ne permet pas cette conversion. Vérifiez les options du séjour.",
             400,
           );
-        fees -= payload.included[key];
+        fees = Math.max(0, fees - previousAmount);
       } else if (!included && old?.enabled && old.inclus && !old.offert) {
         fees += cents(old.montant_inclus ?? prices[key] / 100);
       }
@@ -213,6 +298,15 @@ export async function saveOtaPricing(id: string, input: unknown) {
             : {}),
         };
     }
+    if (payload.quantities?.draps !== undefined && options.draps)
+      options.draps.nb_lits = payload.quantities.draps;
+    if (
+      payload.quantities?.linge_toilette !== undefined &&
+      options.linge_toilette
+    )
+      options.linge_toilette.nb_personnes = payload.quantities.linge_toilette;
+    if (payload.quantities?.chiens !== undefined && options.chiens)
+      options.chiens.nb = payload.quantities.chiens;
     // All three input choices explicitly exclude tourist tax.
     if (options.tourist_tax)
       options.tourist_tax = {

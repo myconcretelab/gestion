@@ -218,23 +218,63 @@ export const validOtaPriceSnapshot = (
     ),
   );
 
+export const otaGrossInputBasis = (
+  source: string,
+  configured?: "rental" | "gross",
+) => configured ?? (source === "Gites de France" ? "rental" : "gross");
+export const otaStoredPriceBasis = (
+  source: string,
+  origin: string | null | undefined,
+  configured?: "unknown" | "gross" | "net",
+) =>
+  source === "Airbnb" && origin === "pump" ? "net" : (configured ?? "unknown");
+export const OTA_QUANTITY_KEYS = ["draps", "linge_toilette", "chiens"] as const;
+export const otaOptionQuantitiesSchema = z
+  .object({
+    draps: z.number().int().min(1).max(1000).optional(),
+    linge_toilette: z.number().int().min(1).max(1000).optional(),
+    chiens: z.number().int().min(1).max(1000).optional(),
+  })
+  .strict();
+export type OtaOptionQuantities = z.infer<typeof otaOptionQuantitiesSchema>;
+export type OtaPricingOption = {
+  key: OtaOptionKey;
+  label: string;
+  enabled: boolean;
+  included: boolean;
+  amountCents: number;
+  quantity?: number;
+  unitAmountCents?: number;
+  multiplier?: number;
+  quantityLabel?: string;
+};
+export const otaOptionAmount = (
+  option: OtaPricingOption,
+  quantity = option.quantity ?? 1,
+) =>
+  quantity === (option.quantity ?? 1)
+    ? option.amountCents
+    : Math.round(
+        (option.unitAmountCents ?? option.amountCents) *
+          quantity *
+          (option.multiplier ?? 1),
+      );
+
 export type OtaPricingContext = {
   revision: string;
   source: string;
   amountCents: number;
+  grossInputBasis?: "rental" | "gross";
+  preferredInputBasis?: "gross" | "net";
+  storedPriceBasis?: "unknown" | "gross" | "net";
+  importedNet?: boolean;
   rule: {
     percent?: number;
     effectiveFrom?: string;
     rounding: "cent" | "euro";
     scope: "all" | "accommodation";
   };
-  options: {
-    key: OtaOptionKey;
-    label: string;
-    enabled: boolean;
-    included: boolean;
-    amountCents: number;
-  }[];
+  options: OtaPricingOption[];
   saved?: OtaPriceSnapshot;
   blockedReason?: string;
 };
