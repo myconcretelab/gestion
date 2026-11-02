@@ -9,6 +9,7 @@ type IconName =
   | "check"
   | "clock"
   | "calendar"
+  | "columns"
   | "chevron"
   | "people"
   | "document"
@@ -24,6 +25,12 @@ type IconName =
   | "undo"
   | "home";
 const paths: Record<IconName, ReactNode> = {
+  columns: (
+    <>
+      <rect x="3" y="4" width="7" height="16" rx="1.5" />
+      <rect x="14" y="4" width="7" height="16" rx="1.5" />
+    </>
+  ),
   calendar: (
     <>
       <rect x="3" y="5" width="18" height="16" rx="2" />
