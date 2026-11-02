@@ -305,7 +305,14 @@ export default function ReservationPaymentsEditor({
           </select>
         </label>
       ) : null}
-      {tracking.platform && canWrite && <OtaReservationPricing reservationId={reservation.id} disabled={busy} onBusyChange={setBusy} onSaved={next => publish(next)} />}
+      {tracking.platform && canWrite && (
+        <OtaReservationPricing
+          reservationId={reservation.id}
+          disabled={busy}
+          onBusyChange={setBusy}
+          onSaved={(next) => publish(next)}
+        />
+      )}
       <div className="reservation-payment-details__row">
         <span>Total du séjour</span>
         <strong>{formatEuro(tracking.total)}</strong>
@@ -324,60 +331,111 @@ export default function ReservationPaymentsEditor({
             : "Aucun règlement enregistré."}
         </p>
       ) : null}
-      {tracking.entries.map((entry) => (
-        <div
-          className={`reservation-ledger__entry${entry.voided_at ? " reservation-ledger__entry--void" : ""}`}
-          key={entry.id}
-        >
-          <div className="reservation-payment-details__row">
-            <span>
-              {entry.voided_at
-                ? "Saisie annulée · "
-                : entry.origin === "platform"
-                  ? "≈ "
-                  : "✓ "}
-              {entry.origin === "platform"
-                ? "Hébergement"
-                : purposeLabel(entry.purpose)}
-              <small>
-                {entry.method || "Moyen non renseigné"} ·{" "}
-                {entry.paid_on
-                  ? formatDate(entry.paid_on)
-                  : "Date non renseignée"}
-                {entry.paid_on_estimated ? " · Date estimée" : ""}
-              </small>
-              {entry.origin === "legacy" ? (
-                <small>Historique repris</small>
-              ) : null}
-              {entry.note && entry.origin !== "platform" ? (
-                <small>{entry.note}</small>
-              ) : null}
-              {entry.ota && (
+      {tracking.entries.map((entry) => {
+        const canEditDate =
+          canWrite && !entry.voided_at && entry.origin !== "stripe";
+        const platformPayment =
+          entry.method === "Versement plateforme" ||
+          entry.origin === "platform";
+        const dateText = entry.paid_on
+          ? formatDate(entry.paid_on)
+          : "Date non renseignée";
+        const dateAction = `${entry.paid_on ? "Modifier" : "Renseigner"} la date ${platformPayment ? "du versement plateforme" : "d’encaissement"}${entry.paid_on ? ` : ${dateText}` : ""}`;
+        const dateFormId = `${formId}-date-${entry.id}`;
+        return (
+          <div
+            className={`reservation-ledger__entry${entry.voided_at ? " reservation-ledger__entry--void" : ""}`}
+            key={entry.id}
+          >
+            <div className="reservation-payment-details__row">
+              <span>
+                {entry.voided_at
+                  ? "Saisie annulée · "
+                  : entry.origin === "platform"
+                    ? "≈ "
+                    : "✓ "}
+                {entry.origin === "platform"
+                  ? "Hébergement"
+                  : purposeLabel(entry.purpose)}
                 <small>
-                  {entry.ota.channel} · Brut{" "}
-                  {formatEuro(entry.ota.grossCents / 100)} · Frais{" "}
-                  {formatEuro(entry.ota.feeCents / 100)} · Net{" "}
-                  {formatEuro(entry.ota.netCents / 100)}
-                  {entry.ota.source === "rate" ? " · commission calculée" : ""}
+                  {entry.method || "Moyen non renseigné"} ·{" "}
+                  {canEditDate ? (
+                    <button
+                      type="button"
+                      className="reservation-ledger__payment-date"
+                      aria-label={dateAction}
+                      title={dateAction}
+                      aria-expanded={dateEdit?.id === entry.id}
+                      aria-controls={dateFormId}
+                      disabled={busy}
+                      onClick={() => {
+                        setConfirmVoid(null);
+                        setError(null);
+                        setDateEdit(
+                          dateEdit?.id === entry.id
+                            ? null
+                            : {
+                                id: entry.id,
+                                paidOn: entry.paid_on?.slice(0, 10) ?? today(),
+                                expectedPaidOn: entry.paid_on,
+                              },
+                        );
+                      }}
+                    >
+                      <span>{dateText}</span>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="m16 4 4 4M4 20l4-1L20 7a2.12 2.12 0 0 0-3-3L5 16l-1 4Z" />
+                      </svg>
+                    </button>
+                  ) : (
+                    dateText
+                  )}
+                  {entry.paid_on_estimated ? " · Date estimée" : ""}
                 </small>
-              )}
-              {entry.refunded_amount ? (
-                <small>
-                  Après remboursement de {formatEuro(entry.refunded_amount)}
-                </small>
-              ) : null}
-            </span>
-            <strong>{formatEuro(entry.amount)}</strong>
-          </div>
-          {canWrite && !entry.voided_at && entry.origin !== "stripe" ? (
-            dateEdit?.id === entry.id ? (
+                {entry.origin === "legacy" ? (
+                  <small>Historique repris</small>
+                ) : null}
+                {entry.note && entry.origin !== "platform" ? (
+                  <small>{entry.note}</small>
+                ) : null}
+                {entry.ota && (
+                  <small>
+                    {entry.ota.channel} · Brut{" "}
+                    {formatEuro(entry.ota.grossCents / 100)} · Frais{" "}
+                    {formatEuro(entry.ota.feeCents / 100)} · Net{" "}
+                    {formatEuro(entry.ota.netCents / 100)}
+                    {entry.ota.source === "rate"
+                      ? " · commission calculée"
+                      : ""}
+                  </small>
+                )}
+                {entry.refunded_amount ? (
+                  <small>
+                    Après remboursement de {formatEuro(entry.refunded_amount)}
+                  </small>
+                ) : null}
+              </span>
+              <strong>{formatEuro(entry.amount)}</strong>
+            </div>
+            {canEditDate && dateEdit?.id === entry.id ? (
               <form
+                id={dateFormId}
                 className="reservation-ledger__date-form"
                 onSubmit={savePaymentDate}
                 aria-label="Modifier la date du règlement"
               >
                 <label>
-                  Date d’encaissement
+                  {platformPayment
+                    ? "Date du versement plateforme"
+                    : "Date d’encaissement"}
                   <input
                     autoFocus
                     type="date"
@@ -402,63 +460,46 @@ export default function ReservationPaymentsEditor({
                   </button>
                 </div>
               </form>
-            ) : (
-              <button
-                type="button"
-                className="reservation-ledger__text-button"
-                disabled={busy}
-                onClick={() => {
-                  setConfirmVoid(null);
-                  setError(null);
-                  setDateEdit({
-                    id: entry.id,
-                    paidOn: entry.paid_on?.slice(0, 10) ?? today(),
-                    expectedPaidOn: entry.paid_on,
-                  });
-                }}
-              >
-                {entry.paid_on ? "Modifier la date" : "Renseigner la date"}
-              </button>
-            )
-          ) : null}
-          {canWrite &&
-          !entry.voided_at &&
-          entry.origin !== "stripe" &&
-          entry.origin !== "platform" ? (
-            confirmVoid === entry.id ? (
-              <div className="reservation-ledger__void-confirm">
-                <span>Annuler cette saisie ?</span>
+            ) : null}
+            {canWrite &&
+            !entry.voided_at &&
+            entry.origin !== "stripe" &&
+            entry.origin !== "platform" ? (
+              confirmVoid === entry.id ? (
+                <div className="reservation-ledger__void-confirm">
+                  <span>Annuler cette saisie ?</span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void voidEntry(entry.id)}
+                  >
+                    Confirmer l’annulation
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmVoid(null)}
+                  >
+                    Conserver
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
+                  className="reservation-ledger__text-button"
                   disabled={busy}
-                  onClick={() => void voidEntry(entry.id)}
+                  onClick={() => {
+                    setDateEdit(null);
+                    setConfirmVoid(entry.id);
+                  }}
                 >
-                  Confirmer l’annulation
+                  Annuler la saisie
                 </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setConfirmVoid(null)}
-                >
-                  Conserver
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="reservation-ledger__text-button"
-                disabled={busy}
-                onClick={() => {
-                  setDateEdit(null);
-                  setConfirmVoid(entry.id);
-                }}
-              >
-                Annuler la saisie
-              </button>
-            )
-          ) : null}
-        </div>
-      ))}
+              )
+            ) : null}
+          </div>
+        );
+      })}
       {optionBadges.length > 0 || tracking.platform ? (
         <div className="reservation-ledger__extras">
           <ReservationOptionDetails options={reservation.options} />

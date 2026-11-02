@@ -22248,6 +22248,30 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .reservation-ledger__entry { display: grid; gap: 3px; }
 .reservation-ledger__date-form { display: grid; gap: 8px; padding: 8px 0; }
 .reservation-ledger__date-form label { display: grid; gap: 4px; }
+.reservation-payment-details .reservation-ledger__payment-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  margin: -3px 0;
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  vertical-align: baseline;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.reservation-ledger__payment-date > span { text-decoration: underline dotted; text-underline-offset: 3px; }
+.reservation-ledger__payment-date > svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .7; }
+.reservation-payment-details .reservation-ledger__payment-date:hover:not(:disabled),
+.reservation-payment-details .reservation-ledger__payment-date[aria-expanded="true"] { background: var(--primary-soft); text-decoration-color: var(--primary); }
+.reservation-ledger__payment-date:hover:not(:disabled) > svg { color: var(--primary); opacity: 1; }
+.reservation-ledger__payment-date:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.reservation-ledger__payment-date:disabled { cursor: wait; opacity: .65; }
 .reservation-ledger__entry--void { opacity: 0.55; }
 .reservation-ledger__entry--void strong { text-decoration: line-through; }
 .reservation-ledger__text-button,
@@ -22257,6 +22281,8 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
   padding: 0;
   border: 0;
   background: none;
+  box-shadow: none;
+  border-radius: 0;
   color: inherit;
   font: inherit;
   font-size: 0.65rem;

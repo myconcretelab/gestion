@@ -112,20 +112,32 @@ try {
   });
   await page.goto(`${origin}/__payment-date-test`);
   await page
-    .getByRole("button", { name: "Modifier la date", exact: true })
+    .getByRole("button", {
+      name: /^Modifier la date (d’encaissement|du versement plateforme)/,
+    })
     .first()
     .waitFor();
   assert.equal(
     await page
-      .getByRole("button", { name: "Modifier la date", exact: true })
+      .getByRole("button", {
+        name: /^Modifier la date (d’encaissement|du versement plateforme)/,
+      })
       .count(),
     2,
     "Stripe keeps its original receipt date",
   );
   await page
-    .getByRole("button", { name: "Modifier la date", exact: true })
+    .getByRole("button", {
+      name: /^Modifier la date (d’encaissement|du versement plateforme)/,
+    })
     .first()
     .click();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Modifier la date", exact: true })
+      .count(),
+    0,
+  );
   const form = page.getByRole("form", {
     name: "Modifier la date du règlement",
   });
@@ -155,8 +167,26 @@ try {
   await page.getByText(/15\/09\/2026/).waitFor();
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    const inlineDate = page.getByRole("button", {
+      name: /^Modifier la date du versement plateforme/,
+    });
+    assert.equal(await inlineDate.innerText(), "02/11/2026");
+    assert.equal(
+      await inlineDate.evaluate((button) => button.parentElement.tagName),
+      "SMALL",
+    );
+    assert.equal(
+      await inlineDate.evaluate((button) => getComputedStyle(button).boxShadow),
+      "none",
+    );
+    await page.screenshot({
+      path: path.join(screenshots, `payment-date-inline-${width}.png`),
+      fullPage: true,
+    });
     await page
-      .getByRole("button", { name: "Modifier la date", exact: true })
+      .getByRole("button", {
+        name: /^Modifier la date (d’encaissement|du versement plateforme)/,
+      })
       .first()
       .click();
     assert.ok(
