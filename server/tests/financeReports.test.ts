@@ -2372,6 +2372,14 @@ test("registre : aucune perception ni tarif historique inventés et aucune dupli
       nb_nuits: 2,
     });
     await pay(legacy.id, 50, { paid_on: "2026-10-04" });
+    const legacyTax = await stay(gite, {
+      date_entree: new Date("2026-10-09"),
+      date_sortie: new Date("2026-10-11"),
+      nb_nuits: 2,
+      options: JSON.stringify({
+        tourist_tax: { ...registerTax, infants: undefined },
+      }),
+    });
     const state = await reports.getReportWorkspace();
     const definition = {
       ...createReport("tourist", "register-boundaries"),
@@ -2403,6 +2411,13 @@ test("registre : aucune perception ni tarif historique inventés et aucune dupli
     assert.equal(legacyRow.nightlyPriceCents, null);
     assert.equal(legacyRow.infants, null);
     assert.equal(legacyRow.classified, null);
+    const legacyTaxRow = october.rows.find(
+      (row) => row.reservationId === legacyTax.id,
+    )!;
+    assert.equal(legacyTaxRow.infants, null);
+    assert.equal(legacyTaxRow.occupants, null);
+    assert.equal(legacyTaxRow.personNights, null);
+    assert.match(legacyTaxRow.issues.join(" "), /bébés non enregistré/);
     const november = await nightRegister.getNightRegister(
       definition.id,
       "2026-11",
