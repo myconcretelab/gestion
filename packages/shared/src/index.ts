@@ -116,6 +116,7 @@ export * from "./bookingEmailTemplates.js";
 export * from "./reservationPayments.js";
 
 export * from "./reports.js";
+export * from "./nightOperations.js";
 export * from "./reportApi.js";
 export * from "./reportReminders.js";
 export * from "./reportWorklist.js";

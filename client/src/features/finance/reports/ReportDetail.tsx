@@ -7,6 +7,7 @@ import ReportPageHeader from "./ReportPageHeader";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
 import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
+import { nightGuestGroupsLabel } from "@contrats/shared";
 import useReportPaymentReservations from "./useReportPaymentReservations";
 import { canAccessReportSource, sourceCorrectionHref } from "./reportSources";
 import {
@@ -242,6 +243,13 @@ export default function ReportDetail({
             <span>
               {getReportPeriod(displayedMonth, displayedReport.cadence).label}
             </span>
+            {displayedReport.kind === "tourist" && (
+              <span>
+                {snapshot && !displayedReport.nightGuests
+                  ? "Occupants selon la copie confirmée"
+                  : nightGuestGroupsLabel(displayedReport.nightGuests)}
+              </span>
+            )}
             {snapshot ? (
               <button
                 className="rp-text-button"

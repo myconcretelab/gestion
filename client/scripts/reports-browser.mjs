@@ -191,6 +191,7 @@ try {
       remindersEmpty: false,
       remindersCalculatedAt: "2026-11-05T12:00:00.000Z",
       reportRefreshQueries: [],
+      nightSummaryReads: 0,
       otaImported: false,
       otaStoredAmountCents: 8500,
       otaApplyInputs: [],
@@ -525,6 +526,27 @@ try {
           fixture.state.factsRevision = "payment-updated";
           body = tracking;
         }
+      } else if (pathname === "/api/reports/night-summaries") {
+        fixture.nightSummaryReads++;
+        body = {
+          year: Number(new URL(request.url()).searchParams.get("year")),
+          report: {
+            id: "night-reference",
+            name: "Nuitées",
+            guestGroups: ["adults"],
+          },
+          calculatedAt: "2026-11-02T08:00:00.000Z",
+          properties: fixture.state.properties.map((property) => ({
+            id: property.id,
+            inScope: true,
+            months: Array.from({ length: 12 }, (_, i) => ({
+              month: i + 1,
+              total: 8,
+              included: 4,
+              reviewCount: 0,
+            })),
+          })),
+        };
       } else if (pathname === "/api/reports/reminders" && method === "GET") {
         fixture.reminderReads++;
         status = fixture.failReminders ? 503 : 200;
@@ -1544,9 +1566,32 @@ try {
     "Suivi annuel",
   );
 
-  const { page: nightsEditor } = await createPage();
+  const { page: nightsEditor, fixture: nightsFixture } = await createPage();
   await open(nightsEditor, "/nouveau");
   await nightsEditor.getByRole("button", { name: /^Nuitées/ }).click();
+  const occupants = nightsEditor.getByRole("group", {
+    name: "Occupants à compter",
+    exact: true,
+  });
+  assert.equal(
+    await occupants.getByLabel("Adultes", { exact: true }).isChecked(),
+    true,
+  );
+  assert.equal(
+    await occupants.getByLabel("Enfants", { exact: true }).isChecked(),
+    false,
+  );
+  assert.equal(
+    await occupants.getByLabel("Bébés", { exact: true }).isChecked(),
+    false,
+  );
+  await occupants.getByLabel("Enfants", { exact: true }).check();
+  await nightsEditor.reload();
+  assert.equal(
+    await occupants.getByLabel("Enfants", { exact: true }).isChecked(),
+    true,
+  );
+  await occupants.getByLabel("Enfants", { exact: true }).uncheck();
   const nightsDate = nightsEditor.getByRole("group", {
     name: "Date de référence",
     exact: true,
@@ -1555,6 +1600,28 @@ try {
   assert.ok(
     await nightsDate.getByText("Date des nuitées", { exact: true }).isVisible(),
   );
+  await nightsEditor
+    .getByLabel("Rapport de référence dans Réservations", { exact: true })
+    .check();
+  await nightsEditor.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(nightsEditor);
+  await capture(nightsEditor, "reports-night-guests-mobile.png");
+  await nightsEditor
+    .locator(".rp-header-actions")
+    .getByRole("button", { name: "Enregistrer", exact: true })
+    .click();
+  await nightsEditor
+    .getByRole("heading", { name: "Nuitées", exact: true })
+    .waitFor();
+  const savedNights = nightsFixture.commands.find(
+    (command) => command.type === "save",
+  ).definition;
+  assert.deepEqual(savedNights.nightGuests, ["adults"]);
+  assert.equal(savedNights.nightReference, true);
+  await nightsEditor.goto(`${origin}/parametres/nuitees`);
+  await nightsEditor
+    .getByRole("heading", { name: "Rapports et déclarations", exact: true })
+    .waitFor();
 
   for (const width of [360, 390, 768]) {
     await page.setViewportSize({ width, height: 844 });
@@ -1638,6 +1705,19 @@ try {
     .grantPermissions(["clipboard-read", "clipboard-write"]);
   const reservationUrl = `${origin}/reservations?year=2026&month=10&tab=all-gites`;
   await reservations.goto(reservationUrl);
+  await reservations
+    .getByRole("link", { name: "8 à déclarer", exact: true })
+    .first()
+    .waitFor();
+  assert.match(
+    await reservations
+      .getByRole("link", { name: "8 à déclarer", exact: true })
+      .first()
+      .getAttribute("href"),
+    /night-reference\?periode=2026-/,
+  );
+  assert.equal(reservationFixture.reads, 0);
+  assert.ok(reservationFixture.nightSummaryReads > 0);
   const reminders = reservations.getByRole("region", {
     name: /Déclarations à traiter/,
   });

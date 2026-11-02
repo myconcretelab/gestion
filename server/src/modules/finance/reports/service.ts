@@ -1,25 +1,23 @@
 import { createHash } from "node:crypto";
 import {
-  createReport,
   evaluateReport,
   reportDefinitionSchema,
   reportPeriodKey,
   reportMutationSchema,
   operationSourceSignature,
-  type ReportState,
   type ReportDefinition,
   type ReportWorkspaceData,
   type ReportResult,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { getOrganizationId } from "../../organizations/context.js";
+import {
+  readReportConfiguration as read,
+  type ReportConfiguration as Configuration,
+} from "./configuration.js";
 import { loadReportFacts } from "./facts.js";
 import { reportCacheIsCurrent, storeReportCalculation } from "./cache.js";
 
-type Configuration = Pick<
-  ReportState,
-  "reports" | "overrides" | "progress" | "worklistStartMonth"
->;
 type Facts = Awaited<ReturnType<typeof loadReportFacts>>;
 const fail = (message: string, status = 409) =>
   Object.assign(new Error(message), { status, statusCode: status });
@@ -29,32 +27,7 @@ const fingerprint = (definition: ReportDefinition, result: ReportResult) => {
     .update(JSON.stringify({ definition: rules, result }))
     .digest("hex");
 };
-function initialConfiguration(facts: Facts): Configuration {
-  const reports: ReportDefinition[] = [];
-  for (const operatorId of [
-    ...new Set(facts.properties.map((property) => property.operatorId)),
-  ]) {
-    const operator = facts.operators.find((row) => row.id === operatorId);
-    reports.push({
-      ...createReport("social", `social-${operatorId ?? "unassigned"}`),
-      name: operator ? "Cotisations sociales" : "Recettes sans exploitant",
-      recipient: operator?.name ?? "Exploitant à renseigner",
-      operatorId,
-      propertyIds: facts.properties
-        .filter((property) => property.operatorId === operatorId)
-        .map((row) => row.id),
-    });
-  }
-  if (facts.properties.length)
-    reports.push({
-      ...createReport("tourist", "guest-nights"),
-      // Preserve the scope of the existing default report; new reports default to Direct.
-      bookingSources: undefined,
-      recipient: "Gestion interne",
-      propertyIds: facts.properties.map((row) => row.id),
-    });
-  return { reports, overrides: {}, progress: {} };
-}
+
 const evaluate = (
   config: Configuration,
   facts: Facts,
@@ -74,13 +47,7 @@ const evaluate = (
       operationEdits: {},
     },
   );
-async function read(db: TenantTransactionClient, facts: Facts) {
-  const store = await db.financeReportStore.findFirst();
-  const config: Configuration = store
-    ? JSON.parse(store.data_json)
-    : initialConfiguration(facts);
-  return { store, config };
-}
+
 function response(
   config: Configuration,
   facts: Facts,
@@ -156,7 +123,7 @@ export function getReportWorkspace(
       } catch (error) {
         if (
           attempt >= 2 ||
-          !["P2034", "P1008", "P2028"].includes(
+          !["P2002", "P2034", "P1008", "P2028"].includes(
             (error as { code?: string })?.code ?? "",
           )
         )
@@ -193,6 +160,25 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
           config.worklistStartMonth = command.startMonth;
         } else if (command.type === "save") {
           const definition = command.definition;
+          if (definition.kind === "tourist" && definition.nightReference) {
+            config.reports = config.reports.map((report) =>
+              report.kind === "tourist" && report.id !== definition.id
+                ? { ...report, nightReference: false }
+                : report,
+            );
+          }
+          if (
+            definition.kind === "tourist" &&
+            !definition.nightReference &&
+            !config.reports.some(
+              (report) =>
+                report.kind === "tourist" &&
+                report.id !== definition.id &&
+                report.nightReference,
+            )
+          ) {
+            definition.nightReference = true;
+          }
           if (
             definition.propertyIds.some(
               (id) => !facts.properties.some((row) => row.id === id),

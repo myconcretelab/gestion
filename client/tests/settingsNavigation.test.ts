@@ -10,7 +10,7 @@ test("les rubriques de paramètres ouvrent directement un réglage utile", () =>
   assert.deepEqual(entryPaths, {
     organisation: "organisation",
     personnalisation: "widgets",
-    hebergements: "nuitees",
+    hebergements: "reglements",
     canaux: "emails",
     taches: "taches",
     connexions: "connexions",

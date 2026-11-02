@@ -1,6 +1,11 @@
 import { useId, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
+import {
+  NIGHT_GUEST_GROUPS,
+  nightGuestGroupsLabel,
+  reportIncludesBookingSource,
+} from "@contrats/shared";
 import AccommodationBreakdown from "./AccommodationBreakdown";
 import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
@@ -138,6 +143,7 @@ export default function ReportEditor({
     ]),
   ];
   const update = (patch: Partial<ReportDefinition>) => {
+    if ("bookingSources" in patch) patch.excludedBookingSources = undefined;
     setError("");
     setDraft(draftKey, { ...draft, ...patch });
   };
@@ -487,7 +493,10 @@ export default function ReportEditor({
                   <button
                     type="button"
                     className="rp-text-button"
-                    aria-pressed={draft.bookingSources === undefined}
+                    aria-pressed={
+                      draft.bookingSources === undefined &&
+                      !draft.excludedBookingSources?.length
+                    }
                     onClick={() => update({ bookingSources: undefined })}
                   >
                     Toutes les sources
@@ -506,9 +515,9 @@ export default function ReportEditor({
                 </div>
                 <div className="rp-category-choices">
                   {bookingSources.map((source) => {
-                    const selected =
-                      draft.bookingSources === undefined ||
-                      draft.bookingSources.includes(source);
+                    const selected = reportIncludesBookingSource(draft, {
+                      channel: source,
+                    });
                     return (
                       <label
                         key={source}
@@ -519,7 +528,12 @@ export default function ReportEditor({
                           checked={selected}
                           onChange={(event) => {
                             const current =
-                              draft.bookingSources ?? bookingSources;
+                              draft.bookingSources ??
+                              bookingSources.filter((value) =>
+                                reportIncludesBookingSource(draft, {
+                                  channel: value,
+                                }),
+                              );
                             update({
                               bookingSources: event.target.checked
                                 ? [...current, source]
@@ -538,6 +552,70 @@ export default function ReportEditor({
                     : "Seules les réservations des sources cochées alimentent le rapport, quel que soit leur moyen de paiement."}
                 </p>
               </fieldset>
+              {draft.kind === "tourist" && (
+                <fieldset className="rp-choice-fieldset">
+                  <legend>Occupants à compter</legend>
+                  <div className="rp-category-choices">
+                    {NIGHT_GUEST_GROUPS.map((group) => {
+                      const selected = draft.nightGuests ?? ["adults"];
+                      return (
+                        <label
+                          key={group.id}
+                          className={
+                            selected.includes(group.id) ? "is-selected" : ""
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(group.id)}
+                            disabled={
+                              selected.length === 1 &&
+                              selected.includes(group.id)
+                            }
+                            onChange={(event) =>
+                              update({
+                                nightGuests: event.target.checked
+                                  ? [...selected, group.id]
+                                  : selected.filter((id) => id !== group.id),
+                              })
+                            }
+                          />
+                          {group.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="rp-field-help">
+                    Par défaut, seuls les adultes sont comptés. Les enfants et
+                    les bébés restent exclus tant que vous ne les sélectionnez
+                    pas.
+                  </p>
+                  <label className="rp-reference-choice">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draft.nightReference)}
+                      disabled={Boolean(base?.nightReference)}
+                      onChange={(event) =>
+                        update({ nightReference: event.target.checked })
+                      }
+                    />
+                    Rapport de référence dans Réservations
+                  </label>
+                  <p className="rp-field-help">
+                    Ce rapport alimente le macaron « À déclarer ». Pour changer
+                    de référence, sélectionnez cette option dans un autre
+                    rapport de nuitées.
+                  </p>
+                  {state.nightSettingsWarnings?.length ? (
+                    <p className="rp-field-help">
+                      Anciennes exclusions à vérifier :{" "}
+                      {state.nightSettingsWarnings.join(", ")}. Ces libellés ne
+                      correspondent pas à des sources de réservation et n’ont
+                      pas été convertis automatiquement.
+                    </p>
+                  ) : null}
+                </fieldset>
+              )}
               <fieldset
                 className="rp-choice-fieldset"
                 id="rp-report-categories"
@@ -583,7 +661,7 @@ export default function ReportEditor({
                 </div>
                 <p className="rp-field-help">
                   {draft.kind === "tourist"
-                    ? "Le rapport compte les personnes hébergées par nuit, y compris les enfants. Il ne calcule pas un montant de taxe."
+                    ? `Le rapport compte les occupants sélectionnés par nuit : ${nightGuestGroupsLabel(draft.nightGuests).toLocaleLowerCase("fr")}. Il ne calcule pas un montant de taxe.`
                     : "Une même recette peut alimenter plusieurs rapports."}
                 </p>
               </fieldset>
@@ -734,7 +812,7 @@ export default function ReportEditor({
                 ) : (
                   <p className="rp-muted">
                     {draft.kind === "tourist"
-                      ? "Une nuitée correspond à une personne hébergée pendant une nuit. Les séjours à cheval sur deux mois sont répartis entre ces mois."
+                      ? "Une nuitée correspond à un occupant sélectionné hébergé pendant une nuit. Les séjours à cheval sur deux mois sont répartis entre ces mois."
                       : "Ce rapport utilise la période d’encaissement de chaque règlement. Les rapports internes proposent aussi la date d’arrivée du séjour."}
                   </p>
                 )}

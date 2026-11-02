@@ -1857,6 +1857,7 @@ model FinanceReportCache {
   calculated_month    String?
   workspace_json      String?
   reminders_json      String?
+  night_summaries_json String?
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
   @@map("finance_report_caches")

@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
 import {
+  buildNightOperations,
   computeTouristTax,
   allocateCents,
   getBookingSource,
   type ReportCategory,
   type ReportOperation,
-  type ReportOperator,
   type ReportPaymentMethod,
-  type ReportProperty,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { loadReservationPaymentTracking } from "../../reservationPayments/ledger.js";
 import { fromJsonString } from "../../../utils/jsonFields.js";
+import { buildReportScope } from "./scope.js";
 import { reportOptionsSignature, storedAllocation } from "./allocation.js";
 import type { OptionsInput } from "../../../services/contractCalculator.js";
 
@@ -95,33 +95,10 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       select: { id: true, stripe_mode: true },
     }),
   ]);
-  const managers = managerRows.map((row) => ({
-    id: row.id,
-    name: `${row.prenom} ${row.nom}`.trim(),
-  }));
-  const operators: ReportOperator[] = managerRows.map((row) => ({
-    id: `manager:${row.id}`,
-    name: `${row.prenom} ${row.nom}`.trim(),
-    legacy: true,
-  }));
-  for (const gite of gites) {
-    const entity = gite.fiscal_establishment?.fiscal_entity;
-    if (entity && !operators.some((row) => row.id === entity.id))
-      operators.push({ id: entity.id, name: entity.legal_name, legacy: false });
-  }
-  const properties: ReportProperty[] = gites.map((row) => ({
-    id: row.id,
-    name: row.nom,
-    initials: row.nom
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((s) => s[0])
-      .join(""),
-    operatorId:
-      row.fiscal_establishment?.fiscal_entity_id ??
-      (row.gestionnaire_id ? `manager:${row.gestionnaire_id}` : null),
-    managerId: row.gestionnaire_id,
-  }));
+  const { managers, operators, properties } = buildReportScope(
+    gites,
+    managerRows,
+  );
   if (reservations.some((row) => !row.gite_id))
     properties.push({
       id: "unassigned",
@@ -285,44 +262,21 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
         basis: "stay",
       });
     }
-    // One row per occupied night: stays crossing months are split at the calendar boundary.
-    for (const row of rows) {
-      const end = +row.date_sortie;
-      for (let date = +row.date_entree; date < end;) {
-        const dateString = day(new Date(date));
-        const monthEnd = Date.UTC(
-          new Date(date).getUTCFullYear(),
-          new Date(date).getUTCMonth() + 1,
-          1,
-        );
-        const segmentEnd = Math.min(end, monthEnd);
-        const occupiedNights = Math.round((segmentEnd - date) / 86400000);
-        operations.push({
-          id: `night:${row.id}:${dateString.slice(0, 7)}`,
-          reservation: row.id,
-          reservationId: row.id,
-          guest: row.hote_nom,
-          propertyId: row.gite_id ?? "unassigned",
-          propertyLabel: properties.find(
-            (p) => p.id === (row.gite_id ?? "unassigned"),
-          )?.name,
-          category: "accommodation",
-          amountCents: 0,
-          nights:
-            occupiedNights *
-            (row.nb_adultes +
-              row.nb_enfants_2_17 +
-              (options.tourist_tax?.infants ?? 0)),
-          stayDate: dateString,
-          paymentDate: null,
-          channel: getBookingSource(row),
-          bookingSource: getBookingSource(row),
-          paymentMethod: "unknown",
-          basis: "nights",
-        });
-        date = segmentEnd;
-      }
-    }
+    operations.push(
+      ...buildNightOperations(
+        rows.map((row) => ({
+          ...row,
+          infants:
+            fromJsonString<OptionsInput>(row.options, {}).tourist_tax
+              ?.infants ?? 0,
+        })),
+      ).map((operation) => ({
+        ...operation,
+        propertyLabel: properties.find(
+          (property) => property.id === operation.propertyId,
+        )?.name,
+      })),
+    );
     const remaining = components.map((row) => row.amount);
     for (const entry of ledger.entries.filter(
       (entry) =>

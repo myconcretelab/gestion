@@ -11,7 +11,7 @@ const sections = [
 ] as const;
 
 const overviewRedirects: Record<string, string> = {
-  hebergements: "nuitees",
+  hebergements: "reglements",
   documents: "emails",
   canaux: "emails",
   "equipe-acces": "utilisateurs",
