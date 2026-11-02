@@ -1073,6 +1073,7 @@ try {
     .getByRole("heading", { name: "Rapports et déclarations" })
     .waitFor();
   await page.getByRole("button", { name: "Par période", exact: true }).click();
+  await page.getByLabel("Période de travail").waitFor();
   assert.equal(await page.locator(".rp-report-row").count(), 3);
   assert.equal(
     await page
