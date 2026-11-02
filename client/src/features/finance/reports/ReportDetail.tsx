@@ -5,6 +5,7 @@ import AccommodationBreakdown from "./AccommodationBreakdown";
 import ReportCopyAmount from "./ReportCopyAmount";
 import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
+import ReportProgressActions from "./ReportProgressActions";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
 import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
@@ -77,7 +78,6 @@ export default function ReportDetail({
   const [selectedRow, setSelectedRow] = useState<EvaluatedOperation | null>(
     null,
   );
-  const [confirming, setConfirming] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [snapshotKey, setSnapshotKey] = useState<string | null>(null);
   const [lastCorrection, setLastCorrection] = useState<{
@@ -480,45 +480,15 @@ export default function ReportDetail({
               <ReportIcon name="arrow" />
             </button>
           )}
-          {!snapshot &&
-            canEdit &&
-            !result.reviewCount &&
-            !progress?.snapshot &&
-            (progress?.ready ? (
-              <button
-                type="button"
-                className="rp-button"
-                onClick={() => setConfirming(true)}
-              >
-                <ReportIcon name="check" />
-                Confirmer la transmission
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="rp-button"
-                onClick={async () => {
-                  if (await mutate({ type: "ready", reportId: report.id }))
-                    notify("Rapport marqué comme prêt.");
-                }}
-                disabled={saving}
-              >
-                <ReportIcon name="check" />
-                Marquer comme prêt
-              </button>
-            ))}
-          {!snapshot && progress?.snapshot && (
-            <button
-              type="button"
-              className="rp-button rp-button--secondary"
-              onClick={() => {
-                setSnapshotKey(key);
-                setFilter("included");
-              }}
-            >
-              Consulter la copie
-              <ReportIcon name="arrow" />
-            </button>
+          {!snapshot && (
+            <ReportProgressActions
+              key={`${report.id}:${month}`}
+              workspace={workspace}
+              report={report}
+              result={result}
+              progress={progress}
+              month={month}
+            />
           )}
         </div>
       </section>
@@ -739,50 +709,6 @@ export default function ReportDetail({
           onClose={() => setSelectedRow(null)}
           onSave={(override) => void correct(selectedRow, override)}
         />
-      )}
-      {confirming && (
-        <ReportDialog
-          title="Conserver une copie confirmée"
-          onClose={() => setConfirming(false)}
-        >
-          <div className="rp-confirm-value">
-            <ReportKindIcon kind={report.kind} />
-            <strong>{formatReportValue(report, result.total)}</strong>
-            <span>{getReportPeriod(month, report.cadence).label}</span>
-          </div>
-          <p>
-            Confirmez cette action après avoir effectué la démarche externe. Les
-            chiffres, les règles et les opérations de cette période seront
-            conservés sur le serveur dans une copie figée.
-          </p>
-          <p className="rp-muted">
-            Cette action n’envoie aucune information à un organisme.
-          </p>
-          <div className="rp-dialog__actions">
-            <button
-              type="button"
-              className="rp-button rp-button--secondary"
-              onClick={() => setConfirming(false)}
-            >
-              Revenir au rapport
-            </button>
-            <button
-              type="button"
-              className="rp-button"
-              disabled={saving}
-              onClick={async () => {
-                if (!canEdit || result.reviewCount || progress?.snapshot)
-                  return;
-                if (await mutate({ type: "confirm", reportId: report.id })) {
-                  setConfirming(false);
-                  notify("Copie confirmée enregistrée.");
-                }
-              }}
-            >
-              Confirmer la transmission
-            </button>
-          </div>
-        </ReportDialog>
       )}
       {historyOpen && (
         <ReportDialog

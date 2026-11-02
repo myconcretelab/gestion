@@ -181,6 +181,7 @@ try {
     const fixture = {
       state: data(),
       commands: [],
+      commandMonths: [],
       failRead: 0,
       failMutation: 0,
       conflict: false,
@@ -613,6 +614,7 @@ try {
       } else if (pathname === "/api/reports/commands" && method === "POST") {
         const payload = reportMutationSchema.parse(request.postDataJSON());
         fixture.commands.push(payload.command);
+        fixture.commandMonths.push(payload.month);
         assert.equal(payload.revision, fixture.state.revision);
         assert.equal(payload.factsRevision, fixture.state.factsRevision);
         if (fixture.failMutation-- > 0) {
@@ -1311,6 +1313,22 @@ try {
         ),
         [`nights-${manager}`, `social-${manager}`],
       );
+      assert.equal(
+        await monthGroup
+          .locator(
+            `[data-report-id="social-${manager}"] .rp-report-property-badge`,
+          )
+          .count(),
+        0,
+      );
+      assert.deepEqual(
+        await monthGroup
+          .locator(
+            `[data-report-id="nights-${manager}"] .rp-report-property-badge`,
+          )
+          .allTextContents(),
+        [manager === "a" ? "La Maison du verger" : "Le Refuge des bois"],
+      );
     }
   }
   await capture(grouped, "reports-grouped-desktop.png");
@@ -1386,7 +1404,7 @@ try {
   await grouped.waitForFunction(
     () => document.querySelectorAll(".rp-report-row").length === 8,
   );
-  for (const width of [900, 850, 390, 320]) {
+  for (const width of [1024, 900, 850, 390, 320]) {
     await grouped.setViewportSize({ width, height: 844 });
     await noOverflow(grouped);
     assert.equal(await columnsToggle.isVisible(), false);
@@ -1429,6 +1447,112 @@ try {
   await moreMonths.click();
   assert.equal(await grouped.locator(".rp-month-group").count(), 7);
   assert.equal(await grouped.locator(".rp-report-row").count(), 28);
+  await grouped.getByLabel("Mois des rapports").selectOption("2026-09");
+  const quickNight = grouped.locator(
+    '[data-report-id="nights-a"][data-period="2026-09"]',
+  );
+  const readyAction = quickNight.getByRole("button", {
+    name: /^Marquer comme prêt/,
+  });
+  const confirmAction = quickNight.getByRole("button", {
+    name: /^Confirmer la transmission/,
+  });
+  const nightDefinition = groupedFixture.state.reports.find(
+    (report) => report.id === "nights-a",
+  );
+  const septemberKey = reportPeriodKey(nightDefinition, "2026-09");
+  const octoberKey = reportPeriodKey(nightDefinition, "2026-10");
+  groupedFixture.failMutation = 1;
+  await readyAction.click();
+  await grouped
+    .getByText("Enregistrement indisponible", { exact: true })
+    .waitFor();
+  assert.equal(groupedFixture.state.progress[septemberKey], undefined);
+  await readyAction.click();
+  await confirmAction.waitFor();
+  assert.equal(groupedFixture.commandMonths.at(-1), "2026-09");
+  assert.equal(groupedFixture.state.progress[septemberKey].ready, true);
+  assert.equal(groupedFixture.state.progress[octoberKey], undefined);
+  assert.match(grouped.url(), /periode=2026-10/);
+  assert.match(await quickNight.innerText(), /Prêt à confirmer/);
+  await noOverflow(grouped);
+  await capture(grouped, "reports-quick-ready-desktop.png");
+  await confirmAction.click();
+  const confirmation = grouped.getByRole("dialog", {
+    name: "Conserver une copie confirmée",
+    exact: true,
+  });
+  await confirmation.waitFor();
+  assert.match(await confirmation.innerText(), /La Maison du verger/);
+  assert.match(await confirmation.innerText(), /septembre 2026/);
+  await capture(grouped, "reports-quick-confirmation.png");
+  await confirmation
+    .getByRole("button", { name: "Revenir aux rapports", exact: true })
+    .click();
+  assert.equal(groupedFixture.state.progress[septemberKey].snapshot, undefined);
+  await confirmAction.click();
+  groupedFixture.failMutation = 1;
+  await confirmation
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .click();
+  await confirmation.getByRole("alert").waitFor();
+  assert.equal(groupedFixture.state.progress[septemberKey].snapshot, undefined);
+  await confirmation
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .click();
+  await quickNight.waitFor({ state: "detached" });
+  assert.equal(groupedFixture.commandMonths.at(-1), "2026-09");
+  assert.ok(groupedFixture.state.progress[septemberKey].snapshot);
+  assert.equal(groupedFixture.state.progress[octoberKey], undefined);
+  assert.equal(await grouped.locator(".rp-report-row").count(), 3);
+  groupedFixture.state.operations.find(
+    (row) => row.id === "night-09-g1",
+  ).nights += 1;
+  groupedFixture.state.operations.find(
+    (row) => row.id === "night-09-g2",
+  ).reviewReason = "Occupants à vérifier";
+  groupedFixture.state.factsRevision = "night-review";
+  await grouped
+    .getByRole("button", { name: "Actualiser les données", exact: true })
+    .click();
+  await quickNight.getByText("Écart à examiner", { exact: true }).waitFor();
+  assert.equal(await quickNight.locator(".rp-progress-button").count(), 0);
+  const reviewNight = grouped.locator(
+    '[data-report-id="nights-b"][data-period="2026-09"]',
+  );
+  await reviewNight.getByText("1 à vérifier", { exact: true }).waitFor();
+  assert.equal(await reviewNight.locator(".rp-progress-button").count(), 0);
+  const sharedNight = groupedFixture.state.reports.find(
+    (report) => report.id === "nights-b",
+  );
+  sharedNight.propertyIds = ["g1", "g2"];
+  sharedNight.managerId = null;
+  groupedFixture.state.factsRevision = "night-multi-property";
+  await grouped
+    .getByRole("button", { name: "Actualiser les données", exact: true })
+    .click();
+  await grouped.waitForFunction(
+    () =>
+      document.querySelectorAll(
+        '[data-report-id="nights-b"] .rp-report-property-badge',
+      ).length === 2,
+  );
+  assert.deepEqual(
+    await reviewNight.locator(".rp-report-property-badge").allTextContents(),
+    ["La Maison du verger", "Le Refuge des bois"],
+  );
+  await grouped.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(grouped);
+  await capture(grouped, "reports-quick-actions-properties-mobile.png");
+  const { page: quickReader, fixture: quickReaderFixture } = await createPage({
+    canWrite: false,
+  });
+  quickReaderFixture.state = structuredClone(groupedFixture.state);
+  await quickReader.clock.setFixedTime(new Date("2026-11-02T12:00:00Z"));
+  await open(quickReader);
+  await quickReader.locator(".rp-month-group").first().waitFor();
+  assert.equal(await quickReader.locator(".rp-progress-button").count(), 0);
+  await quickReader.context().close();
   await grouped.context().close();
 
   // Copy the displayed amount, rounded to whole euros; this remains available in read-only mode.

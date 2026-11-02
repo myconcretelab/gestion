@@ -4,6 +4,7 @@ import type { ReportWorkspace } from "./ReportsPage";
 import { cadenceLabel, formatReportValue } from "./reportModel";
 import { reportMonthLabel, type ReportMonthGroup } from "./reportGrouping";
 import { ReportBadge, ReportIcon, ReportKindIcon } from "./ReportUi";
+import ReportProgressActions from "./ReportProgressActions";
 
 export default function ReportGroupedList({
   groups,
@@ -165,6 +166,7 @@ export default function ReportGroupedList({
                       result,
                       status,
                       confirmed,
+                      progress,
                     }) => (
                       <article
                         key={key}
@@ -190,6 +192,28 @@ export default function ReportGroupedList({
                                 <> · {period.label}</>
                               )}
                             </span>
+                            {report.kind === "tourist" &&
+                              report.propertyIds.length > 0 && (
+                                <ul
+                                  className="rp-report-properties"
+                                  aria-label="Gîtes concernés"
+                                >
+                                  {report.propertyIds.map((propertyId) => (
+                                    <li
+                                      className="rp-report-property-badge"
+                                      key={propertyId}
+                                    >
+                                      <ReportIcon name="home" />
+                                      <span>
+                                        {state.properties.find(
+                                          (property) =>
+                                            property.id === propertyId,
+                                        )?.name ?? "Gîte à vérifier"}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                           </div>
                         </div>
                         <div className="rp-report-row__amount">
@@ -217,6 +241,16 @@ export default function ReportGroupedList({
                           >
                             {status}
                           </ReportBadge>
+                          {!confirmed && (
+                            <ReportProgressActions
+                              workspace={workspace}
+                              report={report}
+                              result={result}
+                              progress={progress}
+                              month={month}
+                              compact
+                            />
+                          )}
                           {showFavorites && state.drafts[report.id] && (
                             <span className="rp-draft-hint">
                               Brouillon de règles conservé
