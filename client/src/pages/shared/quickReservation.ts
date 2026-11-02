@@ -290,7 +290,7 @@ const formatQuickReservationOptionSmsSummary = (params: {
       formatQuickReservationOptionSmsItem(
         `draps pour ${formatQuickReservationQuantity(count, "lit", "lits")}`,
         optionsPreview.byKey.draps,
-        "offerts"
+        options.draps.inclus ? "inclus dans le prix du séjour" : "offerts"
       )
     );
   }
@@ -301,13 +301,13 @@ const formatQuickReservationOptionSmsSummary = (params: {
       formatQuickReservationOptionSmsItem(
         `serviettes pour ${formatQuickReservationQuantity(count, "personne", "personnes")}`,
         optionsPreview.byKey.linge_toilette,
-        "offertes"
+        options.linge_toilette.inclus ? "inclus dans le prix du séjour" : "offertes"
       )
     );
   }
 
   if (options.depart_tardif.enabled) {
-    items.push(formatQuickReservationOptionSmsItem("départ tardif", optionsPreview.byKey.depart_tardif, "offert"));
+    items.push(formatQuickReservationOptionSmsItem("départ tardif", optionsPreview.byKey.depart_tardif, options.depart_tardif.inclus ? "inclus dans le prix du séjour" : "offert"));
   }
 
   if (options.chiens.enabled) {
@@ -316,7 +316,7 @@ const formatQuickReservationOptionSmsSummary = (params: {
       formatQuickReservationOptionSmsItem(
         formatQuickReservationQuantity(count, "chien", "chiens"),
         optionsPreview.byKey.chiens,
-        count > 1 ? "offerts" : "offert"
+        options.chiens.inclus ? "inclus dans le prix du séjour" : count > 1 ? "offerts" : "offert"
       )
     );
   }

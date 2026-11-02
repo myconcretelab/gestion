@@ -6,6 +6,11 @@ import {
   legacyPaymentMethod,
   AUTOMATIC_PAYMENT_PLATFORMS,
   otaRate,
+  otaCommissionCents,
+  calculateOtaPrice,
+  otaIncludedTotal,
+  allocateOtaPriceRows,
+  validOtaPriceSnapshot,
   allocateCents,
   type OtaAmounts,
   type ReservationPaymentEntry,
@@ -129,13 +134,23 @@ export const loadReservationPaymentTracking = async (
         Number(first.remise_montant || 0),
     );
     const options = fromJsonString<OptionsInput>(first.options, {});
+    const source = getBookingSource(first);
+    const priceSnapshot = options.ota_price;
+    const validPrice = validOtaPriceSnapshot(
+      priceSnapshot,
+      cents(accommodation),
+      options,
+      source,
+    );
     const tax = options.tourist_tax
       ? computeTouristTax({
           stay: options.tourist_tax,
           nights: sum(rows.map((row) => row.nb_nuits)),
           adults: first.nb_adultes,
           children: first.nb_enfants_2_17,
-          accommodation,
+          accommodation:
+            accommodation -
+            (validPrice ? otaIncludedTotal(priceSnapshot!.included) / 100 : 0),
           start: first.date_entree.toISOString().slice(0, 10),
         })
       : null;
@@ -146,9 +161,11 @@ export const loadReservationPaymentTracking = async (
     );
     const rawTotal =
       (tax?.accommodation_amount ?? accommodation) +
+      (tax && validPrice
+        ? otaIncludedTotal(priceSnapshot!.included) / 100
+        : 0) +
       sum(rows.map((row) => Number(row.frais_optionnels_montant))) +
       (tax?.host_amount || 0);
-    const source = getBookingSource(first);
     const isPlatform =
       (AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]).includes(source) ||
       Boolean(settings.platforms?.some((channel) => channel.name === source));
@@ -263,7 +280,8 @@ export const loadReservationPaymentTracking = async (
     }
     const platformAccommodation = Math.min(
       total,
-      cents(tax?.accommodation_amount ?? accommodation),
+      cents(tax?.accommodation_amount ?? accommodation) +
+        (tax && validPrice ? otaIncludedTotal(priceSnapshot!.included) : 0),
     );
     const actualPlatformReceived = sum(
       entries
@@ -314,17 +332,51 @@ export const loadReservationPaymentTracking = async (
             ? estimatedPaymentDate.toISOString().slice(0, 10)
             : null;
       const rate = rateDate ? otaRate(policy, rateDate) : undefined;
+      const useSavedPrice =
+        validPrice && platformExpected === priceSnapshot!.grossCents;
+      let netEstimate: ReturnType<typeof calculateOtaPrice> | null = null;
+      if (!useSavedPrice && rate && policy?.storedPriceBasis === "net") {
+        try {
+          netEstimate = calculateOtaPrice(
+            {
+              basis: "net",
+              amountCents: platformExpected,
+              included: {
+                menage: 0,
+                draps: 0,
+                linge_toilette: 0,
+                depart_tardif: 0,
+                chiens: 0,
+              },
+            },
+            {
+              percent: rate.percent,
+              rounding: policy.commissionRounding,
+              scope: policy.commissionScope,
+            },
+          );
+        } catch {
+          /* Keep the recorded amount undetailed when rounded inversion is ambiguous. */
+        }
+      }
       const estimatedGross =
-        policy?.storedPriceBasis === "gross"
-          ? platformExpected
-          : rate && policy?.storedPriceBasis === "net"
-            ? Math.round(platformExpected / (1 - rate.percent / 100))
-            : null;
-      const estimatedFee =
-        estimatedGross !== null && rate
+        priceSnapshot && !validPrice
+          ? null
+          : useSavedPrice
+            ? priceSnapshot!.grossCents
+            : policy?.storedPriceBasis === "gross"
+              ? platformExpected
+              : (netEstimate?.grossCents ?? null);
+      const estimatedFee = useSavedPrice
+        ? priceSnapshot!.feeCents
+        : estimatedGross !== null && rate
           ? policy?.storedPriceBasis === "net"
             ? estimatedGross - platformExpected
-            : Math.round((estimatedGross * rate.percent) / 100)
+            : otaCommissionCents(
+                estimatedGross,
+                rate.percent,
+                policy?.commissionRounding,
+              )
           : null;
       entries.push({
         id: `platform-auto-${first.id}`,
@@ -332,7 +384,7 @@ export const loadReservationPaymentTracking = async (
         method: "Versement plateforme",
         purpose: "full",
         paid_on: null,
-        note: `Hébergement considéré reçu automatiquement de ${source}. Date de versement estimée au lendemain de l’arrivée. Les options et la taxe à encaisser sur place restent dues.`,
+        note: `Hébergement et options incluses considérés reçus automatiquement de ${source}. Date de versement estimée au lendemain de l’arrivée. Les options et la taxe à encaisser sur place restent dues.`,
         origin: "platform",
         voided_at: null,
         ...(estimatedGross !== null && estimatedFee !== null
@@ -340,14 +392,59 @@ export const loadReservationPaymentTracking = async (
               ota: {
                 channel: source,
                 category: "accommodation" as const,
-                source: "rate" as const,
+                source: useSavedPrice
+                  ? (priceSnapshot!.feeSource ?? "manual")
+                  : ("rate" as const),
                 grossCents: estimatedGross,
                 feeCents: estimatedFee,
-                netCents:
-                  policy?.storedPriceBasis === "net"
+                netCents: useSavedPrice
+                  ? priceSnapshot!.netCents
+                  : policy?.storedPriceBasis === "net"
                     ? platformExpected
                     : estimatedGross - estimatedFee,
-                effectiveRate: rate,
+                effectiveRate: useSavedPrice
+                  ? priceSnapshot!.feeSource === "rate" &&
+                    priceSnapshot!.rateEffectiveFrom &&
+                    priceSnapshot!.percent !== undefined
+                    ? {
+                        effectiveFrom: priceSnapshot!.rateEffectiveFrom,
+                        percent: priceSnapshot!.percent,
+                      }
+                    : undefined
+                  : rate,
+                ...(useSavedPrice
+                  ? {
+                      allocations: (() => {
+                        const categories = [
+                          "accommodation",
+                          "cleaning",
+                          "linen",
+                          "extras",
+                        ] as const;
+                        const { gross: categoryGross, fees: categoryFees } =
+                          allocateOtaPriceRows(
+                            priceSnapshot!,
+                            rows.map((row) => Number(row.prix_total)),
+                          );
+                        return rows.flatMap((row, i) =>
+                          categories.flatMap((category, j) =>
+                            categoryGross[j][i]
+                              ? [
+                                  {
+                                    reservationId: row.id,
+                                    category,
+                                    grossCents: categoryGross[j][i],
+                                    feeCents: categoryFees[j][i],
+                                    netCents:
+                                      categoryGross[j][i] - categoryFees[j][i],
+                                  },
+                                ]
+                              : [],
+                          ),
+                        );
+                      })(),
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -391,10 +488,12 @@ export const loadReservationPaymentTracking = async (
       received: received / 100,
       remaining: Math.max(0, total - received) / 100,
       overpaid: Math.max(0, received - total) / 100,
-      requires_review: stripe.some(
-        (row) =>
-          row.status === "requires_review" || row.refunded_amount_cents > 0,
-      ),
+      requires_review:
+        Boolean(priceSnapshot && !validPrice) ||
+        stripe.some(
+          (row) =>
+            row.status === "requires_review" || row.refunded_amount_cents > 0,
+        ),
       entries,
       ...(isPlatform
         ? {
@@ -632,7 +731,11 @@ export const addReservationPayment = async (
             ? bookingDate
             : input.paid_on;
       const rate = rateDate ? otaRate(channel, rateDate) : undefined;
-      if (input.fee_amount === undefined && !rate)
+      const excluded =
+        input.category === "tourist_tax" ||
+        (channel?.commissionScope === "accommodation" &&
+          input.category !== "accommodation");
+      if (input.fee_amount === undefined && !rate && !excluded)
         throw ledgerError(
           "Renseignez la commission du règlement (0 si aucune), ou un taux applicable à sa date.",
           400,
@@ -640,7 +743,13 @@ export const addReservationPayment = async (
       const grossCents = cents(input.amount);
       const feeCents =
         input.fee_amount === undefined
-          ? Math.round((grossCents * (rate?.percent ?? 0)) / 100)
+          ? excluded
+            ? 0
+            : otaCommissionCents(
+                grossCents,
+                rate?.percent ?? 0,
+                channel?.commissionRounding,
+              )
           : cents(input.fee_amount);
       if (
         !Number.isSafeInteger(feeCents) ||

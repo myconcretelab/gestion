@@ -116,11 +116,11 @@ const ReservationOptionsEditor = ({
 
   const setOffert = (key: ReservationServiceOptionKey, offert: boolean) => {
     commit((previous) => {
-      if (key === "draps") return { ...previous, draps: { ...previous.draps, offert } };
-      if (key === "linge_toilette") return { ...previous, linge_toilette: { ...previous.linge_toilette, offert } };
-      if (key === "chiens") return { ...previous, chiens: { ...previous.chiens, offert } };
+      if (key === "draps") return { ...previous, draps: { ...previous.draps, offert, ...(offert ? { inclus: false } : {}) } };
+      if (key === "linge_toilette") return { ...previous, linge_toilette: { ...previous.linge_toilette, offert, ...(offert ? { inclus: false } : {}) } };
+      if (key === "chiens") return { ...previous, chiens: { ...previous.chiens, offert, ...(offert ? { inclus: false } : {}) } };
       if (key === "menage") return { ...previous, menage: { ...previous.menage, offert } };
-      return { ...previous, depart_tardif: { ...previous.depart_tardif, offert } };
+      return { ...previous, depart_tardif: { ...previous.depart_tardif, offert, ...(offert ? { inclus: false } : {}) } };
     });
   };
 
@@ -184,6 +184,11 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
+              <label className="checkbox-inline">
+                <input type="checkbox" aria-label="draps inclus dans le prix" checked={normalizedOptions.draps?.inclus ?? false} disabled={!normalizedOptions.draps?.enabled}
+                  onChange={event => commit(previous => ({ ...previous, draps: { ...previous.draps, inclus: event.target.checked, ...(event.target.checked ? { offert: false } : {}) } }))} />
+                Inclus dans le prix
+              </label>
             </div>
           </div>
           <div className="reservations-option-controls">
@@ -247,6 +252,11 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
+              <label className="checkbox-inline">
+                <input type="checkbox" aria-label="linge_toilette inclus dans le prix" checked={normalizedOptions.linge_toilette?.inclus ?? false} disabled={!normalizedOptions.linge_toilette?.enabled}
+                  onChange={event => commit(previous => ({ ...previous, linge_toilette: { ...previous.linge_toilette, inclus: event.target.checked, ...(event.target.checked ? { offert: false } : {}) } }))} />
+                Inclus dans le prix
+              </label>
             </div>
           </div>
           <div className="reservations-option-controls">
@@ -336,6 +346,11 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
+              <label className="checkbox-inline">
+                <input type="checkbox" aria-label="depart_tardif inclus dans le prix" checked={normalizedOptions.depart_tardif?.inclus ?? false} disabled={!normalizedOptions.depart_tardif?.enabled}
+                  onChange={event => commit(previous => ({ ...previous, depart_tardif: { ...previous.depart_tardif, inclus: event.target.checked, ...(event.target.checked ? { offert: false } : {}) } }))} />
+                Inclus dans le prix
+              </label>
             </div>
           </div>
           <div className="reservations-option-controls">
@@ -390,6 +405,11 @@ const ReservationOptionsEditor = ({
                   <span className="slider" />
                 </label>
               </div>
+              <label className="checkbox-inline">
+                <input type="checkbox" aria-label="chiens inclus dans le prix" checked={normalizedOptions.chiens?.inclus ?? false} disabled={!normalizedOptions.chiens?.enabled}
+                  onChange={event => commit(previous => ({ ...previous, chiens: { ...previous.chiens, inclus: event.target.checked, ...(event.target.checked ? { offert: false } : {}) } }))} />
+                Inclus dans le prix
+              </label>
             </div>
           </div>
           <div className="reservations-option-controls">

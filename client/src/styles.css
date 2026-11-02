@@ -1,5 +1,6 @@
 @import "./fonts/index.css";
 @import "./pages/shared/actionMenu.css";
+@import "./pages/shared/otaReservationPricing.css";
 
 :root {
   color-scheme: light;

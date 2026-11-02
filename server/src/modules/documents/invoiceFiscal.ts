@@ -1,5 +1,6 @@
 import {
   computeInvoiceFiscal,
+  reservationIncludedOptionCents,
   decimalAmount,
   emptyInvoiceFiscalInput,
   invoiceFiscalInputSchema,
@@ -134,7 +135,7 @@ export const proposeInvoiceFiscal = (
     });
   } else {
     addNights(
-      totals.touristTaxes?.[0]?.accommodation_amount ?? totals.totalSansOptions,
+      totals.touristTaxes?.[0] ? totals.touristTaxes[0].accommodation_amount + reservationIncludedOptionCents(invoice.options, Math.round(totals.totalSansOptions * 100)) / 100 : totals.totalSansOptions,
       totals.nbNuits,
       Number(invoice.remise_montant ?? 0),
     );
@@ -161,7 +162,7 @@ export const proposeInvoiceFiscal = (
             ? "depart_tardif"
             : key;
       const offered = options[optionKey]?.enabled && options[optionKey]?.offert;
-      const included = optionKey === "menage" && options.menage?.enabled && options.menage.inclus;
+      const included = options[optionKey]?.enabled && options[optionKey]?.inclus;
       const quantity = options[optionKey]?.enabled
         ? Math.max(1, quantities[key])
         : 1;

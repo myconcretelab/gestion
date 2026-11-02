@@ -1,4 +1,4 @@
-import { computeTouristTax, type TouristTaxResult } from "@contrats/shared";
+import { reservationIncludedOptionCents, computeTouristTax, type TouristTaxResult } from "@contrats/shared";
 import type { ContratOptions, Gite } from "./types";
 
 export type Totals = {
@@ -63,36 +63,37 @@ export const computeTotals = (params: {
   const chiensTarif = resolveChiensTarif({ options: params.options, gite });
 
   const draps = params.options.draps?.enabled
-    ? params.options.draps?.offert
+    ? (params.options.draps?.offert || params.options.draps?.inclus)
       ? 0
       : round2(drapsTarif * (params.options.draps.nb_lits ?? 0))
     : 0;
   const linge = params.options.linge_toilette?.enabled
-    ? params.options.linge_toilette?.offert
+    ? (params.options.linge_toilette?.offert || params.options.linge_toilette?.inclus)
       ? 0
       : round2(lingeTarif * (params.options.linge_toilette.nb_personnes ?? 0))
     : 0;
   const menage = params.options.menage?.enabled ? ((params.options.menage?.offert || params.options.menage?.inclus) ? 0 : round2(menageTarif)) : 0;
   const departTardif = params.options.depart_tardif?.enabled
-    ? params.options.depart_tardif?.offert
+    ? (params.options.depart_tardif?.offert || params.options.depart_tardif?.inclus)
       ? 0
       : round2(departTardifTarif)
     : 0;
   const chiens = params.options.chiens?.enabled
-    ? params.options.chiens?.offert
+    ? (params.options.chiens?.offert || params.options.chiens?.inclus)
       ? 0
       : round2(chiensTarif * (params.options.chiens.nb ?? 1) * nbNuits)
     : 0;
 
   const optionsTotal = round2(draps + linge + menage + departTardif + chiens);
 
+  const includedTotal = reservationIncludedOptionCents(params.options, Math.round(totalSansOptions * 100)) / 100;
   const tax = params.options.tourist_tax ? computeTouristTax({
     stay: params.options.tourist_tax, nights: nbNuits, adults: params.nbAdultes,
-    children: params.nbEnfants, accommodation: totalSansOptions, start: params.dateDebut,
+    children: params.nbEnfants, accommodation: Math.max(0, totalSansOptions - includedTotal), start: params.dateDebut,
   }) : null;
   const taxeSejour = tax?.amount ?? round2(params.nbAdultes * nbNuits * Number(gite?.taxe_sejour_par_personne_par_nuit ?? 0));
 
-  const totalGlobal = round2((tax?.accommodation_amount ?? totalSansOptions) + optionsTotal + (tax?.host_amount ?? 0));
+  const totalGlobal = round2((tax?.accommodation_amount ?? totalSansOptions) + (tax ? includedTotal : 0) + optionsTotal + (tax?.host_amount ?? 0));
   const solde = round2(totalGlobal - params.arrhesMontant);
 
   return { nbNuits, montantBase, totalSansOptions, optionsTotal, taxeSejour, solde, totalGlobal, ...(tax ? { touristTaxes: [tax] } : {}) };

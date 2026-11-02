@@ -491,6 +491,7 @@ export type BookingQuote = {
   total_options: number;
   taxe_sejour: number;
   tourist_tax?: TouristTaxStay;
+  ota_price?: import("@contrats/shared").OtaPriceSnapshot;
   tourist_tax_result?: TouristTaxResult;
   total_global: number;
   arrhes_theoriques: number;
@@ -542,11 +543,12 @@ export type BookingRequest = {
 
 export type ContratOptions = {
   tourist_tax?: TouristTaxStay;
-  draps?: { enabled: boolean; nb_lits?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
-  linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; declared?: boolean };
-  menage?: { enabled: boolean; offert?: boolean; inclus?: boolean; declared?: boolean };
-  depart_tardif?: { enabled: boolean; prix_forfait?: number; offert?: boolean; declared?: boolean };
-  chiens?: { enabled: boolean; nb?: number; prix_unitaire?: number; offert?: boolean; declared?: boolean };
+  ota_price?: import("@contrats/shared").OtaPriceSnapshot;
+  draps?: { enabled: boolean; nb_lits?: number; prix_unitaire?: number; offert?: boolean; inclus?: boolean; montant_inclus?: number; declared?: boolean };
+  linge_toilette?: { enabled: boolean; nb_personnes?: number; offert?: boolean; inclus?: boolean; montant_inclus?: number; declared?: boolean };
+  menage?: { enabled: boolean; offert?: boolean; inclus?: boolean; montant_inclus?: number; declared?: boolean };
+  depart_tardif?: { enabled: boolean; prix_forfait?: number; offert?: boolean; inclus?: boolean; montant_inclus?: number; declared?: boolean };
+  chiens?: { enabled: boolean; nb?: number; prix_unitaire?: number; offert?: boolean; inclus?: boolean; montant_inclus?: number; declared?: boolean };
   regle_animaux_acceptes?: boolean;
   regle_bois_premiere_flambee?: boolean;
   regle_tiers_personnes_info?: boolean;

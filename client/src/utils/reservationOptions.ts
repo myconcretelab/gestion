@@ -25,6 +25,7 @@ const resolveChiensTarif = (params: { options: ContratOptions; gite: Gite | null
     : round2(Number(params.gite?.options_chiens_forfait ?? 0));
 
 export const mergeReservationOptions = (value?: ContratOptions | null): NormalizedReservationOptions => ({
+  ...(value?.ota_price ? { ota_price: value.ota_price } : {}),
   ...(value?.tourist_tax ? { tourist_tax: value.tourist_tax } : {}),
   draps: { enabled: false, nb_lits: 0, offert: false, declared: false, ...(value?.draps ?? {}) },
   linge_toilette: { enabled: false, nb_personnes: 0, offert: false, declared: false, ...(value?.linge_toilette ?? {}) },
@@ -104,12 +105,12 @@ export const computeReservationOptionsPreview = (
       : round2(Number(params.gite?.options_draps_par_lit ?? 0));
 
   const draps = options.draps.enabled
-    ? options.draps.offert
+    ? (options.draps.offert || options.draps.inclus)
       ? 0
       : round2(drapsTarif * drapsQty)
     : 0;
   const linge = options.linge_toilette.enabled
-    ? options.linge_toilette.offert
+    ? (options.linge_toilette.offert || options.linge_toilette.inclus)
       ? 0
       : round2(Number(params.gite?.options_linge_toilette_par_personne ?? 0) * lingeQty)
     : 0;
@@ -119,22 +120,22 @@ export const computeReservationOptionsPreview = (
       : round2(Number(params.gite?.options_menage_forfait ?? 0))
     : 0;
   const departTardif = options.depart_tardif.enabled
-    ? options.depart_tardif.offert
+    ? (options.depart_tardif.offert || options.depart_tardif.inclus)
       ? 0
       : resolveDepartTardifTarif({ options, gite: params.gite })
     : 0;
   const chiens = options.chiens.enabled
-    ? options.chiens.offert
+    ? (options.chiens.offert || options.chiens.inclus)
       ? 0
       : round2(resolveChiensTarif({ options, gite: params.gite }) * chiensQty * nights)
     : 0;
 
   const labels: string[] = [];
-  if (options.draps.enabled) labels.push(`Draps x${drapsQty}${options.draps.offert ? " offerts" : ""}`);
-  if (options.linge_toilette.enabled) labels.push(`Serviettes x${lingeQty}${options.linge_toilette.offert ? " offertes" : ""}`);
+  if (options.draps.enabled) labels.push(`Draps x${drapsQty}${options.draps.inclus ? " inclus" : options.draps.offert ? " offerts" : ""}`);
+  if (options.linge_toilette.enabled) labels.push(`Serviettes x${lingeQty}${options.linge_toilette.inclus ? " inclus" : options.linge_toilette.offert ? " offertes" : ""}`);
   if (options.menage.enabled) labels.push(`Ménage${cleaningBillingSuffix(options.menage)}`);
-  if (options.depart_tardif.enabled) labels.push(`Départ tardif${options.depart_tardif.offert ? " offert" : ""}`);
-  if (options.chiens.enabled) labels.push(`Chiens x${chiensQty}${options.chiens.offert ? " offerts" : ""}`);
+  if (options.depart_tardif.enabled) labels.push(`Départ tardif${options.depart_tardif.inclus ? " inclus" : options.depart_tardif.offert ? " offert" : ""}`);
+  if (options.chiens.enabled) labels.push(`Chiens x${chiensQty}${options.chiens.inclus ? " inclus" : options.chiens.offert ? " offerts" : ""}`);
 
   const byKey: Record<ReservationServiceOptionKey, number> = {
     draps,

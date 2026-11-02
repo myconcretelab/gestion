@@ -9,6 +9,11 @@ import {
 } from "../modules/reservationPayments/ledger.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 
+import {
+  getOtaPricing,
+  saveOtaPricing,
+} from "../modules/reservationPayments/pricing.js";
+
 const router = Router({ mergeParams: true });
 const dateSchema = z
   .string()
@@ -62,6 +67,24 @@ const paymentSchema = z
         message: "Choisissez Versement plateforme pour ce canal.",
       });
   });
+router.get<{ id: string }>("/pricing", async (req, res, next) => {
+  try {
+    res.json(await getOtaPricing(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+router.put<{ id: string }>("/pricing", async (req, res, next) => {
+  try {
+    const pricing = await saveOtaPricing(req.params.id, req.body);
+    res.json({
+      pricing,
+      tracking: await getReservationPaymentTracking(req.params.id),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 router.get<{ id: string }>("/", async (req, res, next) => {
   try {
     res.json(await getReservationPaymentTracking(req.params.id));

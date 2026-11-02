@@ -19,6 +19,7 @@ import { formatDate, formatEuro } from "../../utils/format";
 import { getContrastTextColor } from "../../utils/paymentColors";
 import { getReservationOptionBadges } from "../../utils/reservationOptionBadges";
 import type { Reservation } from "../../utils/types";
+import OtaReservationPricing from "./OtaReservationPricing";
 import ReservationOptionDetails from "./ReservationOptionDetails";
 
 export const reservationPaymentChanged = "reservation:payment-changed";
@@ -304,6 +305,7 @@ export default function ReservationPaymentsEditor({
           </select>
         </label>
       ) : null}
+      {tracking.platform && canWrite && <OtaReservationPricing reservationId={reservation.id} disabled={busy} onBusyChange={setBusy} onSaved={next => publish(next)} />}
       <div className="reservation-payment-details__row">
         <span>Total du séjour</span>
         <strong>{formatEuro(tracking.total)}</strong>

@@ -1,4 +1,4 @@
-import { touristTaxStaySchema, parseTouristTaxSettings } from "@contrats/shared";
+import { otaPriceSnapshotSchema, touristTaxStaySchema, parseTouristTaxSettings } from "@contrats/shared";
 import fs from "fs/promises";
 import { z, ZodError } from "zod";
 import type { OptionsInput } from "../../services/contractCalculator.js";
@@ -6,12 +6,15 @@ import { fromJsonString } from "../../utils/jsonFields.js";
 
 export const optionsSchema = z.object({
   tourist_tax: touristTaxStaySchema.optional(),
+  ota_price: otaPriceSnapshotSchema.optional(),
   draps: z
     .object({
       enabled: z.boolean(),
       nb_lits: z.number().int().min(0).optional(),
       prix_unitaire: z.number().min(0).optional(),
       offert: z.boolean().optional(),
+      inclus: z.boolean().optional(),
+      montant_inclus: z.number().min(0).max(10_000_000).optional(),
       declared: z.boolean().optional(),
     })
     .optional(),
@@ -20,16 +23,20 @@ export const optionsSchema = z.object({
       enabled: z.boolean(),
       nb_personnes: z.number().int().min(0).optional(),
       offert: z.boolean().optional(),
+      inclus: z.boolean().optional(),
+      montant_inclus: z.number().min(0).max(10_000_000).optional(),
       declared: z.boolean().optional(),
     })
     .optional(),
-  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional(), inclus: z.boolean().optional(), declared: z.boolean().optional() })
+  menage: z.object({ enabled: z.boolean(), offert: z.boolean().optional(), inclus: z.boolean().optional(), montant_inclus: z.number().min(0).max(10_000_000).optional(), declared: z.boolean().optional() })
     .refine((option) => !(option.offert && option.inclus), { message: "Le ménage ne peut pas être à la fois inclus et offert." }).optional(),
   depart_tardif: z
     .object({
       enabled: z.boolean(),
       prix_forfait: z.number().min(0).optional(),
       offert: z.boolean().optional(),
+      inclus: z.boolean().optional(),
+      montant_inclus: z.number().min(0).max(10_000_000).optional(),
       declared: z.boolean().optional(),
     })
     .optional(),
@@ -39,6 +46,8 @@ export const optionsSchema = z.object({
       nb: z.number().int().min(0).optional(),
       prix_unitaire: z.number().min(0).optional(),
       offert: z.boolean().optional(),
+      inclus: z.boolean().optional(),
+      montant_inclus: z.number().min(0).max(10_000_000).optional(),
       declared: z.boolean().optional(),
     })
     .optional(),

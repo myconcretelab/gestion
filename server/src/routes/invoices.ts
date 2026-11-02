@@ -1,4 +1,4 @@
-import { reservationTouristTax, reservationAmountToCollect } from "@contrats/shared";
+import { reservationIncludedOptionCents, reservationTouristTax, reservationAmountToCollect } from "@contrats/shared";
 import { Router, type NextFunction, type Response } from "express";
 import { createSuperPdpEmissionRouter } from "../modules/superpdp/emissionRoutes.js";
 import { z } from "zod";
@@ -310,7 +310,7 @@ const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise
       nb_adultes: reservation.nb_adultes,
       nb_enfants_2_17: reservation.nb_enfants_2_17,
       prix_par_nuit: round2(toNumber(reservation.prix_par_nuit ?? toNumber(reservation.prix_total) / reservation.nb_nuits)),
-      montant_location: tax?.accommodation_amount ?? round2(toNumber(reservation.prix_total) - toNumber(reservation.remise_montant)),
+      montant_location: tax ? tax.accommodation_amount + reservationIncludedOptionCents(reservation.options, Math.round((toNumber(reservation.prix_total) - toNumber(reservation.remise_montant)) * 100)) / 100 : round2(toNumber(reservation.prix_total) - toNumber(reservation.remise_montant)),
       remise_montant: round2(toNumber(reservation.remise_montant)),
       services: invoiceReservationServices({
         ...reservation,

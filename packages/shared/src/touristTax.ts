@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reservationIncludedOptionCents } from "./otaPricing.js";
 
 const money = z.number().finite().min(0).max(10_000_000);
 const date = z
@@ -247,7 +248,16 @@ export function reservationTouristTax(reservation: {
     children: reservation.nb_enfants_2_17 ?? 0,
     accommodation:
       Number(reservation.prix_total ?? 0) -
-      Number(reservation.remise_montant ?? 0),
+      Number(reservation.remise_montant ?? 0) -
+      reservationIncludedOptionCents(
+        options,
+        Math.round(
+          (Number(reservation.prix_total ?? 0) -
+            Number(reservation.remise_montant ?? 0)) *
+            100,
+        ),
+      ) /
+        100,
     start:
       reservation.date_entree instanceof Date
         ? reservation.date_entree.toISOString()
@@ -264,6 +274,16 @@ export function reservationAmountToCollect(
     (tax?.accommodation_amount ??
       Number(reservation.prix_total ?? 0) -
         Number(reservation.remise_montant ?? 0)) +
+      (tax
+        ? reservationIncludedOptionCents(
+            reservation.options,
+            Math.round(
+              (Number(reservation.prix_total ?? 0) -
+                Number(reservation.remise_montant ?? 0)) *
+                100,
+            ),
+          ) / 100
+        : 0) +
       Number(reservation.frais_optionnels_montant ?? 0) +
       (tax?.host_amount ?? 0),
   );

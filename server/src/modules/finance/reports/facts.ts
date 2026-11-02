@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   buildNightOperations,
+  allocateOtaPriceRows,
+  validOtaPriceSnapshot,
   computeTouristTax,
   allocateCents,
   getBookingSource,
@@ -133,19 +135,29 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       base,
     );
     const net = base.map((value, i) => value - discount[i]);
+    const validPrice = validOtaPriceSnapshot(
+      options.ota_price,
+      sum(net),
+      options,
+      getBookingSource(first),
+    );
+    const priceParts = validPrice
+      ? allocateOtaPriceRows(options.ota_price!, net).gross
+      : [net, net.map(() => 0), net.map(() => 0), net.map(() => 0)];
+    const rental = priceParts[0];
     const tax = options.tourist_tax
       ? computeTouristTax({
           stay: options.tourist_tax,
           nights,
           adults: first.nb_adultes,
           children: first.nb_enfants_2_17,
-          accommodation: sum(net) / 100,
+          accommodation: sum(rental) / 100,
           start: day(first.date_entree),
         })
       : null;
     const accommodation = allocateCents(
-      cents(tax?.accommodation_amount ?? sum(net) / 100),
-      net,
+      cents(tax?.accommodation_amount ?? sum(rental) / 100),
+      rental,
     );
     const hostTax = allocateCents(
       cents(tax?.host_amount ?? 0),
@@ -182,9 +194,7 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
       ] as const
     ).filter(
       ([key]) =>
-        options[key]?.enabled &&
-        !options[key]?.offert &&
-        !(key === "menage" && options.menage?.inclus),
+        options[key]?.enabled && !options[key]?.offert && !options[key]?.inclus,
     );
     const components: Component[] = [];
     const detailRemaining = validDetails
@@ -200,6 +210,14 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
         amount: number,
         uncertain = false,
       ) => {
+        const existing = components.find(
+          (item) => item.reservationId === row.id && item.category === category,
+        );
+        if (existing) {
+          existing.amount += amount;
+          existing.uncertain ||= uncertain;
+          return;
+        }
         if (amount)
           components.push({
             propertyId: row.gite_id ?? "unassigned",
@@ -210,6 +228,11 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
           });
       };
       add("accommodation", accommodation[i]);
+      for (const [j, category] of (
+        ["cleaning", "linen", "extras"] as const
+      ).entries()) {
+        add(category, priceParts[j + 1][i]);
+      }
       add("tourist_tax", hostTax[i]);
       const quotedAllocation = validDetails
         ? allocateCents(fees[i], detailRemaining)
@@ -329,28 +352,44 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
                     : "Brut et commission renseignés lors de la saisie du règlement.",
           });
         }
-        const targetIds = new Set(
-          splits.map((amounts) =>
-            "reservationId" in amounts
-              ? (amounts.reservationId ?? reservation.id)
-              : reservation.id,
-          ),
-        );
-        const weights = components.map((component, i) =>
-          targetIds.has(component.reservationId) &&
-          (entry.ota!.category === "accommodation"
-            ? component.category === "accommodation"
-            : component.category !== "accommodation")
-            ? remaining[i]
-            : 0,
-        );
-        const allocation = allocateCents(
-          Math.min(received, sum(weights)),
-          weights,
-        );
-        allocation.forEach((amount, i) => {
-          remaining[i] -= amount;
-        });
+        if (entry.ota.allocations) {
+          // Source splits are exact: do not consume locally payable linen or cleaning proportionally.
+          for (const split of splits) {
+            const targetId =
+              "reservationId" in split
+                ? (split.reservationId ?? reservation.id)
+                : reservation.id;
+            const weights = components.map((component, i) =>
+              component.reservationId === targetId &&
+              component.category === split.category
+                ? remaining[i]
+                : 0,
+            );
+            const allocation = allocateCents(
+              Math.min(split.grossCents, sum(weights)),
+              weights,
+            );
+            allocation.forEach((amount, i) => {
+              remaining[i] -= amount;
+            });
+          }
+        } else {
+          const weights = components.map((component, i) =>
+            component.reservationId === reservation.id &&
+            (entry.ota!.category === "accommodation"
+              ? component.category === "accommodation"
+              : component.category !== "accommodation")
+              ? remaining[i]
+              : 0,
+          );
+          const allocation = allocateCents(
+            Math.min(received, sum(weights)),
+            weights,
+          );
+          allocation.forEach((amount, i) => {
+            remaining[i] -= amount;
+          });
+        }
         continue;
       }
       // Local platform extras and platform transfers have different scopes in the ledger.
