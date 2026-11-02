@@ -1315,6 +1315,32 @@ try {
   }
   await capture(grouped, "reports-grouped-desktop.png");
   await noOverflow(grouped);
+  const columnsToggle = grouped.getByRole("button", {
+    name: "Afficher les gestionnaires sur deux colonnes",
+    exact: true,
+  });
+  assert.equal(await columnsToggle.getAttribute("aria-pressed"), "false");
+  await columnsToggle.click();
+  await grouped.locator(".rp-grouped-list--columns").waitFor();
+  const managerCards = grouped.locator(
+    '[data-month="2026-09"] .rp-manager-group',
+  );
+  const firstCard = await managerCards.nth(0).boundingBox();
+  const secondCard = await managerCards.nth(1).boundingBox();
+  assert.ok(secondCard.x > firstCard.x + firstCard.width);
+  assert.ok(Math.abs(secondCard.y - firstCard.y) < 1);
+  await capture(grouped, "reports-grouped-two-columns-desktop.png");
+  await noOverflow(grouped);
+  await grouped.reload();
+  await grouped.locator(".rp-grouped-list--columns").waitFor();
+  assert.equal(await columnsToggle.getAttribute("aria-pressed"), "true");
+  await columnsToggle.click();
+  await grouped
+    .locator(".rp-grouped-list:not(.rp-grouped-list--columns)")
+    .waitFor();
+  assert.equal(await columnsToggle.getAttribute("aria-pressed"), "false");
+  await columnsToggle.click();
+  await grouped.locator(".rp-grouped-list--columns").waitFor();
   await grouped
     .getByRole("button", { name: "Tout replier", exact: true })
     .click();
@@ -1360,9 +1386,14 @@ try {
   await grouped.waitForFunction(
     () => document.querySelectorAll(".rp-report-row").length === 8,
   );
-  for (const width of [390, 320]) {
+  for (const width of [900, 850, 390, 320]) {
     await grouped.setViewportSize({ width, height: 844 });
     await noOverflow(grouped);
+    assert.equal(await columnsToggle.isVisible(), false);
+    const first = await managerCards.nth(0).boundingBox();
+    const second = await managerCards.nth(1).boundingBox();
+    assert.ok(Math.abs(first.x - second.x) < 1);
+    assert.ok(second.y > first.y);
     await capture(grouped, `reports-grouped-mobile-${width}.png`);
   }
   await grouped.setViewportSize({ width: 1440, height: 1050 });
@@ -1373,6 +1404,7 @@ try {
     .getByRole("heading", { name: "Rapports", exact: true })
     .waitFor();
   assert.equal(await grouped.locator(".rp-manager-group").count(), 2);
+  assert.equal(await columnsToggle.getAttribute("aria-pressed"), "true");
   await grouped
     .getByRole("button", { name: "Ajouter aux favoris : URSSAF", exact: true })
     .first()

@@ -2378,6 +2378,7 @@
 
 /* A month is the primary landmark; each manager keeps their reports together. */
 .rp-grouped-list {
+  container: report-list / inline-size;
   padding: 12px 24px 24px;
   border-top: 1px solid var(--border);
   background: var(--subtle);
@@ -2403,6 +2404,34 @@
 }
 .rp-grouped-list__guide .rp-text-button {
   font-size: 0.69rem;
+}
+.rp-grouped-list__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.rp-layout-toggle {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 0.69rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rp-layout-toggle:hover,
+.rp-layout-toggle[aria-pressed="true"] {
+  border-color: var(--primary-strong);
+  background: var(--primary-soft);
+  color: var(--primary);
+  box-shadow: none;
 }
 .rp-month-group {
   border: 1px solid var(--border);
@@ -2498,7 +2527,7 @@
 .rp-month-group__body {
   display: grid;
   gap: 16px;
-  padding: 0 20px 20px 83px;
+  padding: 20px 20px 20px 83px;
 }
 .rp-month-group__body[hidden] {
   display: none;
@@ -2515,7 +2544,7 @@
   gap: 10px;
   padding: 13px 18px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--subtle) 55%, var(--card));
+  background: color-mix(in srgb, var(--ink) 7%, var(--card));
 }
 .rp-manager-group__avatar {
   display: grid;
@@ -2673,7 +2702,7 @@
   }
   .rp-month-group__body {
     gap: 12px;
-    padding: 0 10px 12px;
+    padding: 16px 10px 12px;
   }
   .rp-manager-group__header {
     padding: 12px;
@@ -2715,4 +2744,39 @@
   padding-left: 6px;
   font-size: 0.8rem;
   color: var(--primary-strong);
+}
+
+@container report-list (min-width: 880px) {
+  .rp-layout-toggle {
+    display: inline-flex;
+  }
+  .rp-grouped-list--columns .rp-month-group__body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 20px;
+    padding-left: 20px;
+  }
+  .rp-grouped-list--columns .rp-grouped-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 16px;
+  }
+  .rp-grouped-list--columns .rp-report-row__identity {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .rp-grouped-list--columns .rp-report-row__amount {
+    grid-column: 2;
+    grid-row: 1;
+    padding-left: 0;
+    text-align: right;
+  }
+  .rp-grouped-list--columns .rp-grouped-row__status {
+    grid-column: 1;
+    grid-row: 2;
+    padding-left: 45px;
+  }
+  .rp-grouped-list--columns .rp-grouped-row .rp-report-row__actions {
+    grid-column: 2;
+    grid-row: 2;
+  }
 }

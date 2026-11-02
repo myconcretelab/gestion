@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
 import { cadenceLabel, formatReportValue } from "./reportModel";
 import { reportMonthLabel, type ReportMonthGroup } from "./reportGrouping";
@@ -16,26 +16,53 @@ export default function ReportGroupedList({
 }) {
   const { state, href, canEdit, saving, mutate } = workspace;
   const id = useId();
+  const [params, setParams] = useSearchParams();
+  const twoColumns = params.get("colonnes") === "2";
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const allCollapsed = groups.every((group) => collapsed.has(group.month));
   return (
-    <div className="rp-grouped-list">
+    <div
+      className={`rp-grouped-list${twoColumns ? " rp-grouped-list--columns" : ""}`}
+    >
       <div className="rp-grouped-list__guide">
         <span>
           <ReportIcon name="calendar" />
           Par mois <span aria-hidden="true">/</span> Par gestionnaire
         </span>
-        <button
-          type="button"
-          className="rp-text-button"
-          onClick={() =>
-            setCollapsed(
-              new Set(allCollapsed ? [] : groups.map((group) => group.month)),
-            )
-          }
-        >
-          {allCollapsed ? "Tout déplier" : "Tout replier"}
-        </button>
+        <div className="rp-grouped-list__actions">
+          <button
+            type="button"
+            className="rp-layout-toggle"
+            aria-label="Afficher les gestionnaires sur deux colonnes"
+            aria-pressed={twoColumns}
+            title={
+              twoColumns
+                ? "Revenir à une colonne"
+                : "Afficher les gestionnaires côte à côte"
+            }
+            onClick={() =>
+              setParams((previous) => {
+                const next = new URLSearchParams(previous);
+                if (twoColumns) next.delete("colonnes");
+                else next.set("colonnes", "2");
+                return next;
+              })
+            }
+          >
+            <ReportIcon name="columns" />2 colonnes
+          </button>
+          <button
+            type="button"
+            className="rp-text-button"
+            onClick={() =>
+              setCollapsed(
+                new Set(allCollapsed ? [] : groups.map((group) => group.month)),
+              )
+            }
+          >
+            {allCollapsed ? "Tout déplier" : "Tout replier"}
+          </button>
+        </div>
       </div>
       {groups.map((group) => {
         const expanded = !collapsed.has(group.month);
