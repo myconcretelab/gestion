@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { categoryLabel, formatReportValue } from "@contrats/shared";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
+import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
 import type { ReportWorkspace } from "./ReportsPage";
 import ReportPageHeader from "./ReportPageHeader";
 import "./ota.css";
@@ -120,12 +121,10 @@ export default function UndatedPaymentsPage({
                     {canCurrentUserAccessPage("reservations") &&
                     row.reservationId ? (
                       <Link
-                        to={`/reservations?${new URLSearchParams({
-                          focus: row.reservationId,
-                          tab: row.propertyId,
-                          year: row.stayDate.slice(0, 4),
-                          month: row.stayDate.slice(5, 7),
-                        }).toString()}#reservation-${encodeURIComponent(row.reservationId)}`}
+                        to={reservationPaymentsHref(
+                          row.reservationId,
+                          row.stayDate,
+                        )}
                       >
                         Compléter le règlement
                       </Link>

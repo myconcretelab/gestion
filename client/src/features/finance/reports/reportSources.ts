@@ -2,6 +2,7 @@ import type { ReportWorkspace } from "./ReportsPage";
 import type { EvaluatedOperation, ReportIssue } from "./reportModel";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
 import { buildMobileReservationEditorHref } from "../../../pages/shared/mobileReservationEditor";
+import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
 
 export const canAccessReportSource = (
   issue: ReportIssue,
@@ -41,5 +42,5 @@ export function sourceCorrectionHref(
       backHref: back,
       reservationId,
     });
-  return `/reservations/${encodeURIComponent(reservationId)}/reglements?back=${encodeURIComponent(back)}`;
+  return reservationPaymentsHref(reservationId, row.stayDate);
 }

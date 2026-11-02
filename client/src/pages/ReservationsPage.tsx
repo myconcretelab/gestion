@@ -1041,6 +1041,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const location = useLocation();
   const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const requestedFocusReservationId = locationParams.get("focus");
+  const requestedPayments = locationParams.get("payments") === "1";
   const requestedTab = locationParams.get("tab");
   const requestedYear = locationParams.get("year");
   const requestedMonth = locationParams.get("month");
@@ -1394,6 +1395,21 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       ]);
     });
   };
+
+  useEffect(() => {
+    if (!requestedFocusReservationId || requestedYear) return;
+    const controller = new AbortController();
+    void apiFetch<Reservation>(`/reservations/${encodeURIComponent(requestedFocusReservationId)}`, { signal: controller.signal })
+      .then((reservation) => {
+        if (controller.signal.aborted) return;
+        setYear(Number(reservation.date_entree.slice(0, 4)));
+        setMonth(0);
+      })
+      .catch((failure) => {
+        if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Réservation indisponible.");
+      });
+    return () => controller.abort();
+  }, [requestedFocusReservationId, requestedYear]);
 
   const updatePaymentTracking = (
     reservation: Reservation,
@@ -3379,7 +3395,10 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       if (!targetRow) return;
 
       handledLinkedFocusRef.current = focusSignature;
-      targetRow.scrollIntoView({ block: "center", behavior: "smooth" });
+      targetRow.scrollIntoView({ block: "center", behavior: requestedPayments ? "instant" : "smooth" });
+      if (requestedPayments) {
+        targetRow.querySelector<HTMLButtonElement>(".reservation-payment-balance")?.click();
+      }
       setLinkedFocusReservationId(requestedFocusReservationId);
       if (linkedFocusTimerRef.current) {
         window.clearTimeout(linkedFocusTimerRef.current);
@@ -3398,6 +3417,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     location.key,
     monthExpandedByIndex,
     requestedFocusReservationId,
+    requestedPayments,
     requestedTab,
     reservations,
     setMonthExpanded,
