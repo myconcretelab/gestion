@@ -202,6 +202,12 @@ try {
   await page
     .getByRole("menuitem", { name: "Ajouter le contrat signé", exact: true })
     .waitFor();
+  assert.equal(
+    await page
+      .getByRole("menuitem", { name: "Voir le contrat signé", exact: true })
+      .count(),
+    0,
+  );
   await page.screenshot({
     path: path.join(screenshots, "menu-desktop.png"),
     animations: "disabled",
@@ -261,6 +267,19 @@ try {
     exact: true,
   });
   await preview.waitFor();
+  assert.match(
+    await preview.locator("iframe").getAttribute("src"),
+    /\/signed-document\?/,
+  );
+  await preview.getByRole("button", { name: "Fermer", exact: true }).click();
+  await menu().click();
+  await page
+    .getByRole("menuitem", { name: "Voir le contrat signé", exact: true })
+    .click();
+  await preview.waitFor();
+  await preview
+    .getByText("contrat-photographie.pdf", { exact: true })
+    .waitFor();
   assert.match(
     await preview.locator("iframe").getAttribute("src"),
     /\/signed-document\?/,
@@ -330,6 +349,13 @@ try {
     path: path.join(screenshots, "menu-mobile.png"),
     animations: "disabled",
   });
+  await page
+    .getByRole("menuitem", { name: "Voir le contrat signé", exact: true })
+    .click();
+  await preview.waitFor();
+  await preview.getByText("contrat-complet.pdf", { exact: true }).waitFor();
+  await preview.getByRole("button", { name: "Fermer", exact: true }).click();
+  await menu().click();
   await page
     .getByRole("menuitem", { name: "Remplacer le contrat signé", exact: true })
     .click();

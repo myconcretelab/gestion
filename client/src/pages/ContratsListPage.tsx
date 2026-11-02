@@ -832,6 +832,7 @@ const ContratsListPage = () => {
                         ariaLabel={`Actions pour le contrat ${contrat.numero_contrat}`}
                         context={contrat.numero_contrat}
                         items={[
+                          ...(contrat.signed_document_path ? [{ id: "view-signed-document", label: "Voir le contrat signé", icon: "contract" as const, onSelect: () => setSignedDocumentContractId(contrat.id) }] : []),
                           { id: "signed-document", label: contrat.signed_document_path ? "Remplacer le contrat signé" : "Ajouter le contrat signé", icon: "contract", onSelect: () => openReturnDrawer(contrat.id, "signed-document") },
                           { id: "email", label: emailSending[contrat.id] ? "Envoi en cours…" : "Envoyer par email", icon: "email", onSelect: () => { void openEmailComposer(contrat); }, disabled: !contrat.locataire_email || Boolean(emailSending[contrat.id]), description: !contrat.locataire_email ? "Email du locataire non renseigné" : undefined },
                           { id: "invoice", label: "Créer une facture", icon: "invoice", to: `/factures/nouvelle?fromContractId=${encodeURIComponent(contrat.id)}` },
