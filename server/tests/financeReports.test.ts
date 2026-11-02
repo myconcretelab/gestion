@@ -13,6 +13,7 @@ import {
   buildReportReminders,
   buildReportWorklist,
   createReport,
+  nightRegisterCsv,
   type ReportCommand,
   type ReportWorkspaceData,
 } from "@contrats/shared";
@@ -22,6 +23,7 @@ let db: typeof import("../src/db/prisma.js");
 let context: typeof import("../src/modules/organizations/context.js");
 let reports: typeof import("../src/modules/finance/reports/service.js");
 let nightSummaries: typeof import("../src/modules/finance/reports/nightSummaries.js");
+let nightRegister: typeof import("../src/modules/finance/reports/nightRegister.js");
 let otaImport: typeof import("../src/modules/finance/reports/otaImport.js");
 let paymentSettings: typeof import("../src/services/reservationPaymentSettings.js");
 let ledger: typeof import("../src/modules/reservationPayments/ledger.js");
@@ -50,6 +52,8 @@ before(async () => {
   reports = await import("../src/modules/finance/reports/service.js");
   nightSummaries =
     await import("../src/modules/finance/reports/nightSummaries.js");
+  nightRegister =
+    await import("../src/modules/finance/reports/nightRegister.js");
   ledger = await import("../src/modules/reservationPayments/ledger.js");
   otaImport = await import("../src/modules/finance/reports/otaImport.js");
   paymentSettings =
@@ -2242,4 +2246,304 @@ test("les anciennes exclusions sont reprises sans confondre une plateforme avec 
   const upgraded = JSON.stringify(config);
   upgradeNightConfiguration(config, ["Direct"]);
   assert.equal(JSON.stringify(config), upgraded);
+});
+
+const registerTax = {
+  settings: {
+    version: 1,
+    classified: true,
+    stars: 2,
+    included: false,
+    fixed_rate: 1,
+    percentage: 5,
+    cap: 4,
+    additional_percentage: 0,
+    accommodation_vat_rate: 0,
+    authority: "Collectivité de test",
+    effective_from: "2026-01-01",
+  },
+  collector: "host",
+  platform: "",
+  infants: 0,
+  exempt_adults: 0,
+  exemption_reason: "",
+};
+test("registre : perceptions réelles, mineurs, source et nuitées sans double compte", async () => {
+  await fixture(async ({ gite, org }) => {
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-12"),
+      nb_nuits: 2,
+      prix_par_nuit: 50,
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    await stay(gite, {
+      date_entree: new Date("2026-09-15"),
+      date_sortie: new Date("2026-09-17"),
+      nb_nuits: 2,
+      booking_source: "Booking.com",
+    });
+    await pay(reservation.id, 2, {
+      purpose: "tourist_tax",
+      paid_on: "2026-09-11",
+    });
+    await pay(reservation.id, 2, {
+      purpose: "tourist_tax",
+      paid_on: "2026-09-12",
+    });
+    const state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "register-test"),
+      recipient: "Gestionnaire de test",
+      propertyIds: [gite],
+      bookingSources: ["Direct"],
+    };
+    await reports.mutateReportWorkspace({
+      revision: state.revision,
+      factsRevision: state.factsRevision,
+      month: "2026-09",
+      command: { type: "save", definition },
+    });
+    const register = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(register.stayCount, 1);
+    assert.equal(register.rows.length, 2);
+    assert.equal(register.reportNights, 4);
+    assert.deepEqual(
+      register.rows.map((row) => row.collectionDate),
+      ["2026-09-11", "2026-09-12"],
+    );
+    assert.deepEqual(
+      register.rows.map((row) => row.collectedTaxCents),
+      [200, 200],
+    );
+    assert.equal(register.rows[0].collectedBaseTaxCents, 200);
+    assert.equal(register.rows[0].occupants, 3);
+    assert.equal(register.rows[0].personNights, 6);
+    assert.match(register.rows[0].exemptionReason!, /mineures/);
+    assert.equal(register.properties[0].address, "Test");
+    assert.equal(register.rows[0].registrationNumber, null);
+    const csv = nightRegisterCsv(register);
+    assert.match(csv, /Date de perception/);
+    assert.match(csv, /hors taxes additionnelles/);
+    assert.doesNotMatch(csv, /Voyageur de test/);
+    const again = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(register.revision, again.revision);
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { adresse_ligne1: "Autre adresse" },
+    });
+    assert.notEqual(
+      (await nightRegister.getNightRegister(definition.id, "2026-09")).revision,
+      register.revision,
+    );
+    await assert.rejects(
+      () =>
+        inOrg(`${org}_other`, () =>
+          nightRegister.getNightRegister(definition.id, "2026-09"),
+        ),
+      /introuvable/,
+    );
+    if (process.env.NIGHT_REGISTER_QA_JSON)
+      fs.writeFileSync(
+        process.env.NIGHT_REGISTER_QA_JSON,
+        JSON.stringify(register),
+      );
+  });
+});
+
+test("registre : aucune perception ni tarif historique inventés et aucune duplication monétaire entre mois", async () => {
+  await fixture(async ({ gite }) => {
+    const overlapping = await stay(gite, {
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    await pay(overlapping.id, 8, {
+      purpose: "tourist_tax",
+      paid_on: "2026-10-31",
+    });
+    const legacy = await stay(gite, {
+      date_entree: new Date("2026-10-05"),
+      date_sortie: new Date("2026-10-07"),
+      nb_nuits: 2,
+    });
+    await pay(legacy.id, 50, { paid_on: "2026-10-04" });
+    const state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "register-boundaries"),
+      recipient: "Registre",
+      propertyIds: [gite],
+    };
+    await reports.mutateReportWorkspace({
+      revision: state.revision,
+      factsRevision: state.factsRevision,
+      month: "2026-10",
+      command: { type: "save", definition },
+    });
+    const october = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-10",
+    );
+    const octoberRow = october.rows.find(
+      (row) => row.reservationId === overlapping.id,
+    )!;
+    assert.equal(octoberRow.nights, 2);
+    assert.equal(octoberRow.collectionDate, "2026-10-31");
+    assert.equal(octoberRow.collectedTaxCents, null);
+    assert.match(octoberRow.issues.join(" "), /plusieurs périodes/);
+    const legacyRow = october.rows.find(
+      (row) => row.reservationId === legacy.id,
+    )!;
+    assert.equal(legacyRow.collectionDate, null);
+    assert.equal(legacyRow.collectedTaxCents, null);
+    assert.equal(legacyRow.nightlyPriceCents, null);
+    assert.equal(legacyRow.infants, null);
+    assert.equal(legacyRow.classified, null);
+    const november = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-11",
+    );
+    assert.equal(november.rows[0].nights, 2);
+    assert.equal(november.rows[0].collectedTaxCents, null);
+    const empty = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-08",
+    );
+    assert.equal(empty.rows.length, 0);
+    assert.equal(empty.properties[0].name, "Logement de test");
+    await assert.rejects(
+      () =>
+        nightRegister.getNightRegister(
+          state.reports.find((row) => row.kind === "social")!.id,
+          "2026-10",
+        ),
+      /rapports de nuitées/,
+    );
+  });
+});
+
+test("registre : CSV protégé et HTML échappé pour les noms de gîtes", async () => {
+  await fixture(async ({ gite }) => {
+    await db.default.gite.update({
+      where: { id: gite },
+      data: {
+        nom: '=HYPERLINK("test")',
+        adresse_ligne1: "<script>alert(1)</script>",
+      },
+    });
+    await stay(gite);
+    const state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "register-escape"),
+      recipient: "Registre",
+      propertyIds: [gite],
+    };
+    await reports.mutateReportWorkspace({
+      revision: state.revision,
+      factsRevision: state.factsRevision,
+      month: "2026-10",
+      command: { type: "save", definition },
+    });
+    const register = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-10",
+    );
+    assert.match(nightRegisterCsv(register), /'=HYPERLINK/);
+    const { renderNightRegisterHtml } =
+      await import("../src/modules/finance/reports/nightRegisterRender.js");
+    const html = renderNightRegisterHtml(register);
+    assert.doesNotMatch(html, /<script>/);
+    assert.match(html, /&lt;script&gt;/);
+    assert.match(html, /Document à compléter/);
+  });
+});
+
+test("registre HTTP : aperçu, pièces jointes réelles et refus d’une révision périmée", async () => {
+  await fixture(async ({ gite, org }) => {
+    await stay(gite, { options: JSON.stringify({ tourist_tax: registerTax }) });
+    const state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "register-http"),
+      recipient: "Registre HTTP",
+      propertyIds: [gite],
+    };
+    await reports.mutateReportWorkspace({
+      revision: state.revision,
+      factsRevision: state.factsRevision,
+      month: "2026-10",
+      command: { type: "save", definition },
+    });
+    const { default: express } = await import("express");
+    const { default: router } =
+      await import("../src/modules/finance/reports/routes.js");
+    const { closeBrowser } = await import("../src/services/pdfService.js");
+    const app = express();
+    app.use((_req, _res, next) => inOrg(org, next));
+    app.use("/reports", router);
+    app.use(((error, _req, res, _next) => {
+      res
+        .status(error.statusCode ?? (error.name === "ZodError" ? 400 : 500))
+        .json({ error: error.message });
+    }) as import("express").ErrorRequestHandler);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      const url = `http://127.0.0.1:${address.port}/reports/${definition.id}/night-register?month=2026-10`;
+      const preview = await fetch(url);
+      assert.equal(preview.status, 200);
+      assert.equal(preview.headers.get("cache-control"), "no-store");
+      const register = await preview.json();
+      assert.equal(register.rows.length, 1);
+      const csv = await fetch(
+        `${url}&format=csv&revision=${register.revision}`,
+      );
+      assert.equal(csv.status, 200);
+      assert.match(csv.headers.get("content-type")!, /text\/csv/);
+      assert.match(
+        csv.headers.get("content-disposition")!,
+        /attachment;.*registre-sejours-2026-10.csv/,
+      );
+      assert.match(await csv.text(), /Date de perception/);
+      const pdf = await fetch(
+        `${url}&format=pdf&revision=${register.revision}`,
+      );
+      assert.equal(pdf.status, 200);
+      assert.match(pdf.headers.get("content-type")!, /application\/pdf/);
+      assert.match(
+        pdf.headers.get("content-disposition")!,
+        /attachment;.*registre-sejours-2026-10.pdf/,
+      );
+      assert.equal(
+        Buffer.from(await pdf.arrayBuffer())
+          .subarray(0, 5)
+          .toString(),
+        "%PDF-",
+      );
+      await db.default.gite.update({
+        where: { id: gite },
+        data: { adresse_ligne1: "Adresse modifiée" },
+      });
+      const stale = await fetch(
+        `${url}&format=pdf&revision=${register.revision}`,
+      );
+      assert.equal(stale.status, 409);
+      assert.match((await stale.json()).error, /ont changé/);
+      assert.equal((await fetch(`${url}&format=exe`)).status, 400);
+      assert.equal(
+        (await fetch(url.replace("month=2026-10", "month=invalide"))).status,
+        400,
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+      await closeBrowser();
+    }
+  });
 });
