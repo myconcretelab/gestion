@@ -373,9 +373,12 @@ const gitePhotoReorderSchema = z.object({
 type GiteInput = z.infer<typeof giteSchema>;
 type GiteImportInput = z.infer<typeof giteImportItemSchema>;
 
-const toGitePersistenceData = (payload: GiteInput) => ({
+const toGitePersistenceData = ({ taxe_sejour_config, ...payload }: GiteInput) => ({
   ...payload,
-  ...(payload.taxe_sejour_config !== undefined ? { taxe_sejour_config: payload.taxe_sejour_config ? encodeJsonField(payload.taxe_sejour_config) : null } : {}),
+  // This column is String? in both schemas, including PostgreSQL.
+  ...(taxe_sejour_config !== undefined
+    ? { taxe_sejour_config: taxe_sejour_config ? JSON.stringify(taxe_sejour_config) : null }
+    : {}),
   ...(payload.public_translations !== undefined ? { public_translations: encodeJsonField(payload.public_translations) } : {}),
   date_debut_activite: payload.date_debut_activite
     ? new Date(`${payload.date_debut_activite}T00:00:00.000Z`)
