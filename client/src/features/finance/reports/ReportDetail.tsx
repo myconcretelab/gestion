@@ -4,6 +4,9 @@ import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
 import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
+import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
+import { canCurrentUserAccessPage } from "../../../utils/auth";
+import useReportPaymentReservations from "./useReportPaymentReservations";
 import { canAccessReportSource, sourceCorrectionHref } from "./reportSources";
 import {
   categoryLabel,
@@ -87,7 +90,23 @@ export default function ReportDetail({
     setHistoryOpen(false);
   }, [reportId, month]);
   const report = state.reports.find((item) => item.id === reportId);
-  if (!report)
+  const result = report ? evaluateWorkspaceReport(state, report, month) : null;
+  const showPayments =
+    filter === "review" &&
+    !snapshotKey &&
+    report?.kind !== "tourist" &&
+    canCurrentUserAccessPage("reservations");
+  const paymentReservations = useReportPaymentReservations(
+    showPayments
+      ? (result?.rows.flatMap((row) =>
+          row.status === "review" && row.reservationId
+            ? [row.reservationId]
+            : [],
+        ) ?? [])
+      : [],
+    `${state.organizationId}:${state.factsRevision}:${state.revision}`,
+  );
+  if (!report || !result)
     return (
       <div className="rp-empty">
         <h1>Rapport introuvable</h1>
@@ -95,7 +114,6 @@ export default function ReportDetail({
       </div>
     );
   const key = reportPeriodKey(report, month);
-  const result = evaluateWorkspaceReport(state, report, month);
   const progress = state.progress[key];
   const snapshots = Object.entries(state.progress)
     .filter(
@@ -597,51 +615,111 @@ export default function ReportDetail({
             </span>
             <span />
           </div>
-          {rows.map((row) => (
-            <button
-              type="button"
-              className="rp-operation-row"
-              key={row.id}
-              onClick={() => setSelectedRow(row)}
-            >
-              <span className="rp-operation-person">
-                <span className="rp-avatar">
-                  {row.guest
-                    .split(" ")
-                    .map((part) => part[0])
-                    .join("")}
-                </span>
-                <span>
-                  <strong>{row.guest}</strong>
-                  <small>
-                    {row.reservation} · {paymentMethodLabel(row.paymentMethod)}
-                  </small>
-                </span>
-              </span>
-              <span className="rp-operation-category">
-                <strong>{propertyName(row.propertyId)}</strong>
-                <small>{categoryLabel(row.category)}</small>
-              </span>
-              <span className="rp-operation-source">
-                <span className="rp-operation-source-label">Source : </span>
-                {row.bookingSource ?? row.channel}
-              </span>
-              <span className="rp-operation-date">
-                {dateLabel(row.effectiveDate)}
-                {displayedReport.dateBasis === "payment" &&
-                  row.paymentDateEstimated && <small>Date estimée</small>}
-              </span>
-              <strong className="rp-operation-value">
-                {formatReportValue(displayedReport, row.value)}
+          {rows.map((row) => {
+            const reservation = row.reservationId
+              ? paymentReservations.reservations[row.reservationId]
+              : undefined;
+            const amount = (
+              <>
+                <strong>{formatReportValue(displayedReport, row.value)}</strong>
                 {(row.ota || row.paymentMethod === "platform") && (
                   <small>
                     {operationAmountBasisLabel(displayedReport, row)}
                   </small>
                 )}
-              </strong>
-              <ReportIcon name="arrow" />
-            </button>
-          ))}
+              </>
+            );
+            return (
+              <div className="rp-operation-row" key={row.id}>
+                <button
+                  type="button"
+                  className="rp-operation-open"
+                  aria-label={`Détail de l’opération : ${row.guest} · ${categoryLabel(row.category)} · ${formatReportValue(displayedReport, row.value)}`}
+                  onClick={() => setSelectedRow(row)}
+                />
+                <span className="rp-operation-person">
+                  <span className="rp-avatar">
+                    {row.guest
+                      .split(" ")
+                      .map((part) => part[0])
+                      .join("")}
+                  </span>
+                  <span>
+                    <strong>{row.guest}</strong>
+                    <small>
+                      {row.reservation} ·{" "}
+                      {paymentMethodLabel(row.paymentMethod)}
+                    </small>
+                  </span>
+                </span>
+                <span className="rp-operation-category">
+                  <strong>{propertyName(row.propertyId)}</strong>
+                  <small>{categoryLabel(row.category)}</small>
+                </span>
+                <span className="rp-operation-source">
+                  <span className="rp-operation-source-label">Source : </span>
+                  {row.bookingSource ?? row.channel}
+                </span>
+                <span className="rp-operation-date">
+                  {dateLabel(row.effectiveDate)}
+                  {displayedReport.dateBasis === "payment" &&
+                    row.paymentDateEstimated && <small>Date estimée</small>}
+                </span>
+                <div className="rp-operation-value">
+                  {showPayments && row.reservationId ? (
+                    <div className="rp-operation-payments">
+                      {reservation ? (
+                        <ReservationPaymentPopover
+                          reservation={reservation}
+                          triggerHeader={
+                            <>
+                              <span className="rp-operation-retained">
+                                {amount}
+                              </span>
+                              <span className="rp-operation-payments__label">
+                                Reste à payer · séjour
+                              </span>
+                            </>
+                          }
+                          onUpdated={(tracking, bookingSource) => {
+                            paymentReservations.update(
+                              reservation,
+                              tracking,
+                              bookingSource,
+                            );
+                            void refresh();
+                          }}
+                        />
+                      ) : (
+                        <>
+                          {amount}
+                          {paymentReservations.errors[row.reservationId] ? (
+                            <button
+                              type="button"
+                              className="rp-text-button"
+                              title={
+                                paymentReservations.errors[row.reservationId]
+                              }
+                              onClick={paymentReservations.retry}
+                            >
+                              Règlements indisponibles · Réessayer
+                            </button>
+                          ) : (
+                            <span className="rp-muted" role="status">
+                              Chargement…
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    amount
+                  )}
+                </div>
+                <ReportIcon name="arrow" />
+              </div>
+            );
+          })}
           {!rows.length && (
             <ReportEmpty
               title={

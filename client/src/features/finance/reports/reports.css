@@ -767,6 +767,7 @@
   text-align: right;
 }
 .reports-workspace .rp-operation-row {
+  position: relative;
   width: 100%;
   text-align: left;
   color: var(--ink);
@@ -785,6 +786,41 @@
 .reports-workspace .rp-operation-row:hover {
   background: color-mix(in srgb, var(--primary-soft) 22%, var(--card));
   box-shadow: none;
+}
+.reports-workspace .rp-operation-open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+.reports-workspace .rp-operation-open:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.rp-operation-payments {
+  position: relative;
+  z-index: 2;
+  white-space: normal;
+}
+.rp-operation-retained {
+  display: block;
+  margin-bottom: 6px;
+}
+.rp-operation-payments__label {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 400;
+}
+.rp-operation-payments .rp-text-button {
+  white-space: normal;
+  font-size: 0.64rem;
 }
 .rp-operation-person {
   display: flex;

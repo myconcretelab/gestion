@@ -162,6 +162,7 @@ try {
     canWrite = true,
     canViewAmounts = true,
     canAccess = true,
+    reservationsAccess = true,
     finances = true,
     blockedStorage = false,
     viewport = { width: 1440, height: 1050 },
@@ -197,6 +198,40 @@ try {
       otaApplies: 0,
       otaHistory: [],
       paymentPosts: [],
+      reservationReads: [],
+      failReservationRead: 0,
+      failReviewPayment: 0,
+      paymentReservation: {
+        id: "reservation-a",
+        hote_nom: "Camille Martin",
+        booking_source: "Direct",
+        prix_total: 692.9,
+        frais_optionnels_montant: 50,
+        date_entree: "2026-10-10",
+        date_sortie: "2026-10-12",
+        options: {},
+        payment_tracking: {
+          managed: true,
+          total: 742.9,
+          deposit: 200,
+          received: 692.9,
+          remaining: 50,
+          overpaid: 0,
+          requires_review: false,
+          payment_shortcuts: DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+          entries: [
+            {
+              id: "receipt-a",
+              origin: "manual",
+              method: "Virement",
+              purpose: "payment",
+              amount: 692.9,
+              paid_on: "2026-10-10",
+              voided_at: null,
+            },
+          ],
+        },
+      },
       paymentSettings: {
         platform_payments_received_automatically: true,
         first_payment_default: "full",
@@ -221,7 +256,12 @@ try {
             displayName: "Compte de test",
             status: "custom",
             pageAccess: canAccess
-              ? ["statistics", "reservations", "gites", "settings"]
+              ? [
+                  "statistics",
+                  ...(reservationsAccess ? ["reservations"] : []),
+                  "gites",
+                  "settings",
+                ]
               : [],
             permissions: { isOwner: false, canWrite, canViewAmounts },
           },
@@ -433,6 +473,42 @@ try {
             },
           ],
         };
+      } else if (pathname.startsWith("/api/reservations/prefill/")) {
+        fixture.reservationReads.push(pathname.split("/").at(-1));
+        if (fixture.failReservationRead-- > 0) {
+          status = 503;
+          body = { error: "Suivi indisponible" };
+        } else
+          body = {
+            ...fixture.paymentReservation,
+            id: pathname.split("/").at(-1),
+          };
+      } else if (
+        pathname === "/api/reservations/reservation-a/payments" &&
+        method === "POST"
+      ) {
+        const input = request.postDataJSON();
+        fixture.paymentPosts.push(input);
+        if (fixture.failReviewPayment-- > 0) {
+          status = 503;
+          body = { error: "Règlement indisponible" };
+        } else {
+          assert.equal(input.amount, 50);
+          assert.equal(input.method, "Espèces");
+          const tracking = fixture.paymentReservation.payment_tracking;
+          tracking.received = 742.9;
+          tracking.remaining = 0;
+          tracking.entries.push({
+            ...input,
+            origin: "manual",
+            voided_at: null,
+          });
+          fixture.state.operations = fixture.state.operations.map(
+            (operation) => ({ ...operation, reviewReason: undefined }),
+          );
+          fixture.state.factsRevision = "payment-updated";
+          body = tracking;
+        }
       } else if (pathname === "/api/reports/reminders" && method === "GET") {
         fixture.reminderReads++;
         status = fixture.failReminders ? 503 : 200;
@@ -811,6 +887,151 @@ try {
     );
     await filters.context().close();
   }
+  const reviewOperations = [
+    {
+      ...baseOperation,
+      id: "review-accommodation",
+      amountCents: 69290,
+      reviewReason: "Règlement à vérifier.",
+    },
+    {
+      ...baseOperation,
+      id: "review-extras",
+      category: "extras",
+      amountCents: 5000,
+      reviewReason: "Règlement à vérifier.",
+    },
+  ];
+  const { page: paymentReview, fixture: paymentReviewFixture } =
+    await createPage();
+  paymentReviewFixture.state.operations = reviewOperations;
+  await open(paymentReview, "/social");
+  await paymentReview.getByRole("button", { name: /^À vérifier/ }).click();
+  const reviewBalance = paymentReview.getByRole("button", {
+    name: /^Règlements de Camille Martin/,
+  });
+  await reviewBalance.first().waitFor();
+  assert.equal(await reviewBalance.count(), 2);
+  assert.deepEqual(paymentReviewFixture.reservationReads, ["reservation-a"]);
+  assert.match(
+    await reviewBalance.first().innerText(),
+    /692,90.*Reste à payer.*50,00/s,
+  );
+  assert.equal(
+    await reviewBalance
+      .first()
+      .getByRole("progressbar")
+      .getAttribute("aria-valuenow"),
+    "93",
+  );
+  await paymentReview.getByText("692,90 €", { exact: true }).click();
+  const reviewPopover = paymentReview.getByRole("dialog", {
+    name: "Règlements",
+    exact: true,
+  });
+  await reviewPopover.waitFor();
+  assert.equal(
+    await paymentReview
+      .getByRole("dialog", { name: "Détail de l’opération", exact: true })
+      .count(),
+    0,
+  );
+  assert.match(await reviewPopover.innerText(), /742,90/);
+  await paymentReview.screenshot({
+    path: path.join(screenshots, "reports-review-payments-desktop.png"),
+    animations: "disabled",
+  });
+  await reviewPopover
+    .getByRole("button", { name: "Fermer les règlements", exact: true })
+    .click();
+  await paymentReview.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(paymentReview);
+  await reviewBalance.first().click();
+  await reviewPopover.waitFor();
+  const popoverBounds = await reviewPopover.boundingBox();
+  assert.ok(
+    popoverBounds.x >= 0 && popoverBounds.x + popoverBounds.width <= 390,
+  );
+  await paymentReview.screenshot({
+    path: path.join(screenshots, "reports-review-payments-mobile.png"),
+    animations: "disabled",
+  });
+  await reviewPopover
+    .getByRole("button", { name: /Ajouter un règlement/ })
+    .click();
+  await reviewPopover
+    .getByLabel("Moyen", { exact: true })
+    .selectOption("Espèces");
+  const readsBeforePayment = paymentReviewFixture.reads;
+  paymentReviewFixture.failReviewPayment = 1;
+  await reviewPopover
+    .getByRole("button", { name: "Enregistrer le règlement", exact: true })
+    .click();
+  await reviewPopover
+    .getByText("Règlement indisponible", { exact: true })
+    .waitFor();
+  assert.equal(paymentReviewFixture.reads, readsBeforePayment);
+  await reviewPopover
+    .getByRole("button", { name: "Enregistrer le règlement", exact: true })
+    .click();
+  await paymentReview
+    .getByText("Aucune opération à vérifier", { exact: true })
+    .waitFor();
+  assert.equal(paymentReviewFixture.paymentPosts.length, 2);
+  assert.equal(
+    paymentReviewFixture.paymentPosts[0].id,
+    paymentReviewFixture.paymentPosts[1].id,
+  );
+  assert.equal(paymentReviewFixture.reads, readsBeforePayment + 1);
+  assert.equal(paymentReviewFixture.reportRefreshQueries.at(-1), "1");
+  assert.match(await total(paymentReview), /742,90/);
+
+  for (const options of [
+    { canWrite: false },
+    { reservationsAccess: false },
+    {},
+  ]) {
+    const { page: reviewAccess, fixture: reviewAccessFixture } =
+      await createPage(options);
+    reviewAccessFixture.state.operations = reviewOperations;
+    reviewAccessFixture.failReservationRead = 1;
+    await open(reviewAccess, "/social");
+    await reviewAccess.getByRole("button", { name: /^À vérifier/ }).click();
+    if (options.reservationsAccess === false) {
+      await reviewAccess.locator(".rp-operation-row").first().waitFor();
+      assert.equal(
+        await reviewAccess.locator(".reservation-payment-balance").count(),
+        0,
+      );
+      assert.deepEqual(reviewAccessFixture.reservationReads, []);
+    } else {
+      await reviewAccess
+        .getByRole("button", { name: /Règlements indisponibles · Réessayer/ })
+        .first()
+        .click();
+      await reviewAccess
+        .getByRole("button", { name: /^Règlements de Camille Martin/ })
+        .first()
+        .click();
+      const readonlyPopover = reviewAccess.getByRole("dialog", {
+        name: "Règlements",
+        exact: true,
+      });
+      await readonlyPopover.waitFor();
+      if (options.canWrite === false) {
+        assert.equal(
+          await readonlyPopover
+            .getByRole("button", { name: /Ajouter un règlement|Encaisser/ })
+            .count(),
+          0,
+        );
+      }
+      assert.equal(reviewAccessFixture.paymentPosts.length, 0);
+    }
+    await reviewAccess.context().close();
+  }
+  await paymentReview.context().close();
+
   const { page: worklist, fixture: worklistFixture } = await createPage();
   await worklist.clock.setFixedTime(new Date("2026-10-31T12:00:00Z"));
   worklistFixture.state.worklistStartMonth = "2026-09";

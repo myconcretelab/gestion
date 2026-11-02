@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -20,6 +21,7 @@ import { actionMenuPosition } from "./actionMenuPosition";
 
 type Props = {
   reservation: Reservation;
+  triggerHeader?: ReactNode;
   onUpdated: (
     tracking: ReservationPaymentTracking,
     bookingSource?: string,
@@ -28,6 +30,7 @@ type Props = {
 
 export default function ReservationPaymentPopover({
   reservation,
+  triggerHeader,
   onUpdated,
 }: Props) {
   const id = useId();
@@ -161,6 +164,7 @@ export default function ReservationPaymentPopover({
           }
         }}
       >
+        {triggerHeader}
         <strong>
           {summary.remaining === null
             ? "Non renseigné"
