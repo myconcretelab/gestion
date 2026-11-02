@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { otaRoundingSchema, otaCommissionScopeSchema } from "./otaPricing.js";
 
 const date = z
   .string()
@@ -13,6 +14,8 @@ export const otaChannelSchema = z
   .object({
     name: z.string().trim().min(1).max(60),
     automatic: z.boolean(),
+    commissionRounding: otaRoundingSchema.optional(),
+    commissionScope: otaCommissionScopeSchema.optional(),
     storedPriceBasis: z.enum(["unknown", "net", "gross"]).default("unknown"),
     rateDateBasis: z.enum(["booking", "arrival", "payment"]).default("payment"),
     rates: z
@@ -332,4 +335,35 @@ export function allocateCents(total: number, weights: number[]) {
   )
     shares[order[i % order.length].i]++;
   return shares;
+}
+
+/** Preserve both the category totals and each grouped reservation's gross amount. */
+export function allocateOtaPriceRows(
+  snapshot: import("./otaPricing.js").OtaPriceSnapshot,
+  weights: number[],
+) {
+  const included = snapshot.included;
+  const amounts = [
+    snapshot.grossCents - Object.values(included).reduce((a, b) => a + b, 0),
+    included.menage,
+    included.draps + included.linge_toilette,
+    included.depart_tardif + included.chiens,
+  ];
+  const remaining = allocateCents(snapshot.grossCents, weights);
+  const gross: number[][] = [[], [], [], []];
+  for (let j = 1; j < amounts.length; j++) {
+    gross[j] = allocateCents(amounts[j], remaining);
+    gross[j].forEach((amount, i) => {
+      remaining[i] -= amount;
+    });
+  }
+  gross[0] = remaining;
+  const fees =
+    snapshot.scope === "accommodation"
+      ? [snapshot.feeCents, 0, 0, 0]
+      : allocateCents(snapshot.feeCents, amounts);
+  return {
+    gross,
+    fees: fees.map((amount, j) => allocateCents(amount, gross[j])),
+  };
 }

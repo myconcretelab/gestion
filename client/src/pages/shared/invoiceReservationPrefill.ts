@@ -17,7 +17,7 @@ export function invoiceReservationPrefill(
       "depart_tardif",
       "chiens",
     ] as const) {
-      if (!options[key].offert && !(key === "menage" && options.menage.inclus))
+      if (!options[key].offert && !options[key].inclus)
         options[key] = { ...options[key], enabled: false };
     }
   }

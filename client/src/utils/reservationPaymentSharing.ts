@@ -13,7 +13,7 @@ export const getPaymentLinkStaySummary = (reservation: Pick<PaymentLinkReservati
       : key === "chiens" ? options?.chiens?.nb : undefined;
     const unit = key === "draps" ? `lit${quantity === 1 ? "" : "s"}` : key === "linge_toilette" ? "pers." : "";
     const detail = quantity && quantity > 0 ? ` (${quantity}${unit ? ` ${unit}` : ""})` : "";
-    const billing = key === "menage" && options?.menage?.inclus ? " inclus"
+    const billing = options?.[key]?.inclus ? " inclus"
       : options?.[key]?.offert ? (["draps", "chiens"].includes(key) ? " offerts" : key === "linge_toilette" ? " offertes" : " offert") : "";
     return `${label}${detail}${billing}`;
   });

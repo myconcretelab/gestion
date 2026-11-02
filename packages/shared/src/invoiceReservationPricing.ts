@@ -59,7 +59,7 @@ export function invoiceReservationServices(
   ) => {
     const option = options[key];
     if (!option?.enabled || quantity <= 0) return;
-    const included = key === "menage" && option.inclus;
+    const included = option.inclus;
     services.push({
       key,
       label: `${label}${included ? " · inclus dans le prix du séjour" : option.offert ? " · offert" : ""}`,
@@ -95,7 +95,7 @@ export function invoiceReservationServices(
   const recorded = money(reservation.frais_optionnels_montant);
   const isUnbilled = (key: string) =>
     options[key as keyof Options]?.offert ||
-    (key === "menage" && options.menage?.inclus);
+    options[key as keyof Options]?.inclus;
   const reconstructed = money(
     services.reduce((sum, row) => sum + row.quantity * row.unit_price_ttc, 0),
   );

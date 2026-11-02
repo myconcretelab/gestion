@@ -1428,6 +1428,12 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   };
 
   useEffect(() => {
+    const changed = () => { load().catch((err) => setError((err as Error).message)); };
+    window.addEventListener("reservation:pricing-changed", changed);
+    return () => window.removeEventListener("reservation:pricing-changed", changed);
+  }, [year, month, q]);
+
+  useEffect(() => {
     load().catch((err) => setError((err as Error).message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month, q]);

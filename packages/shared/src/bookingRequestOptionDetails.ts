@@ -59,7 +59,7 @@ export const buildBookingRequestOptionsTemplateValues = (
     ]
       .filter(Boolean)
       .join(", ");
-    if (key === "menage" && option.inclus)
+    if (option.inclus)
       return `${label} : inclus dans le prix du séjour`;
     if (option.offert)
       return `${label} : offert${context ? ` (${context})` : ""}`;

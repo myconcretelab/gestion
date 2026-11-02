@@ -12,7 +12,7 @@ export default function OtaChannelSettings({
   disabled: boolean;
   onChange: (value: OtaChannel[]) => void;
 }) {
-  const channels =
+  const channels: OtaChannel[] =
     value ??
     AUTOMATIC_PAYMENT_PLATFORMS.map((name) => ({
       name,
@@ -77,6 +77,40 @@ export default function OtaChannelSettings({
             <small>
               Utilisé uniquement pour les estimations sans relevé. Les montants
               importés restent exacts et prioritaires.
+            </small>
+          </label>
+          <label className="field">
+            Arrondi de la commission
+            <select
+              value={channel.commissionRounding ?? "cent"}
+              onChange={(event) =>
+                update(index, {
+                  commissionRounding: event.target
+                    .value as OtaChannel["commissionRounding"],
+                })
+              }
+            >
+              <option value="cent">Au centime</option>
+              <option value="euro">À l’euro le plus proche</option>
+            </select>
+          </label>
+          <label className="field">
+            Prestations soumises à commission
+            <select
+              value={channel.commissionScope ?? "all"}
+              onChange={(event) =>
+                update(index, {
+                  commissionScope: event.target
+                    .value as OtaChannel["commissionScope"],
+                })
+              }
+            >
+              <option value="all">Hébergement et options</option>
+              <option value="accommodation">Hébergement uniquement</option>
+            </select>
+            <small>
+              La taxe de séjour reste hors commission. Pour Gîtes de France : 10
+              %, arrondi à l’euro, hébergement uniquement.
             </small>
           </label>
           <label className="field">

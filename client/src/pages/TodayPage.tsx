@@ -935,8 +935,20 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
         ...previous, reservation: { ...previous.reservation, payment_tracking: detail.tracking, booking_source: detail.booking_source },
       } : previous);
     };
+    const pricingChanged = (event: Event) => {
+      const { reservationId } = (event as CustomEvent<{ reservationId: string }>).detail;
+      void apiFetch<Reservation>(`/reservations/${encodeURIComponent(reservationId)}`).then(reservation => {
+        setPrimaryOverview(previous => previous ? { ...previous, reservations: previous.reservations.map(row =>
+          row.id === reservationId ? { ...row, ...reservation } : row) } : previous);
+        setMobilePaymentDetails(previous => previous?.id === reservationId ? { ...previous, reservation } : previous);
+      }).catch(() => {});
+    };
     window.addEventListener(reservationPaymentChanged, changed);
-    return () => window.removeEventListener(reservationPaymentChanged, changed);
+    window.addEventListener("reservation:pricing-changed", pricingChanged);
+    return () => {
+      window.removeEventListener(reservationPaymentChanged, changed);
+      window.removeEventListener("reservation:pricing-changed", pricingChanged);
+    };
   }, []);
 
   const mobileActionReservation = useMemo(

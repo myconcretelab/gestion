@@ -1,0 +1,57 @@
+.ota-reservation-pricing {
+  margin: 12px 0;
+}
+.ota-reservation-pricing > button {
+  width: 100%;
+  white-space: normal;
+}
+.ota-reservation-pricing fieldset {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+.ota-reservation-pricing p {
+  line-height: 1.5;
+}
+.ota-reservation-pricing__option {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.ota-reservation-pricing__option > label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ota-reservation-pricing__option input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--primary);
+}
+.ota-reservation-pricing__totals {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  background: var(--primary-soft);
+}
+.ota-reservation-pricing__totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ota-reservation-pricing__totals dd {
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+@media (max-width: 400px) {
+  .ota-reservation-pricing__option {
+    grid-template-columns: 1fr;
+  }
+}

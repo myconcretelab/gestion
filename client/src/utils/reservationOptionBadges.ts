@@ -35,6 +35,6 @@ export const getReservationOptionBadges = (
   const options = parseOptions(value);
   return OPTION_BADGE_DEFINITIONS.filter(({ key }) => options[key]?.enabled).map((definition) => ({
     ...definition,
-    ...(definition.key === "menage" && options.menage?.inclus ? { detail: "Inclus dans le prix du séjour" } : {}),
+    ...(options[definition.key]?.inclus ? { detail: "Inclus dans le prix du séjour" } : {}),
   }));
 };

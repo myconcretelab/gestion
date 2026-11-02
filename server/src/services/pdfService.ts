@@ -1,6 +1,6 @@
 import { assertTouristTaxReady } from "./contractCalculator.js";
 import fs from "fs/promises";
-import { computeInvoiceFiscal, invoicePaymentNotes, invoiceThemes, resolveInvoiceTheme, type InvoiceFiscalInput, type InvoiceThemeId, type TouristTaxResult } from "@contrats/shared";
+import { reservationIncludedOptionCents, computeInvoiceFiscal, invoicePaymentNotes, invoiceThemes, resolveInvoiceTheme, type InvoiceFiscalInput, type InvoiceThemeId, type TouristTaxResult } from "@contrats/shared";
 import path from "path";
 import { chromium, Browser, Page } from "playwright";
 import { env } from "../config/env.js";
@@ -797,7 +797,9 @@ const buildOptionsBandRowsHtml = (params: {
     options.depart_tardif?.enabled ||
     (regles.regle_animaux_acceptes && options.chiens?.enabled);
 
-  if (options.draps?.enabled) {
+  if (options.draps?.enabled && options.draps.inclus) {
+    rows.push('<tr class="band-option"><td>Draps — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.draps?.enabled) {
     const nbLits = options.draps.nb_lits ?? 0;
     const tarif = resolveDrapsTarif(options, gite);
     const base = round2(tarif * nbLits);
@@ -816,7 +818,9 @@ const buildOptionsBandRowsHtml = (params: {
       );
     }
   }
-  if (options.linge_toilette?.enabled) {
+  if (options.linge_toilette?.enabled && options.linge_toilette.inclus) {
+    rows.push('<tr class="band-option"><td>Linge de toilette — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.linge_toilette?.enabled) {
     const nbPersonnes = options.linge_toilette.nb_personnes ?? 0;
     const tarif = toNumber(gite.options_linge_toilette_par_personne);
     const base = round2(tarif * nbPersonnes);
@@ -851,7 +855,9 @@ const buildOptionsBandRowsHtml = (params: {
       );
     }
   }
-  if (options.depart_tardif?.enabled) {
+  if (options.depart_tardif?.enabled && options.depart_tardif.inclus) {
+    rows.push('<tr class="band-option"><td>Départ tardif — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.depart_tardif?.enabled) {
     const tarif = resolveDepartTardifTarif(options, gite);
     const base = round2(tarif);
     rows.push(
@@ -866,7 +872,9 @@ const buildOptionsBandRowsHtml = (params: {
       );
     }
   }
-  if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
+  if (regles.regle_animaux_acceptes && options.chiens?.enabled && options.chiens.inclus) {
+    rows.push('<tr class="band-option"><td>Animaux — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
     const nbChiens = options.chiens.nb ?? 1;
     const tarif = resolveChiensTarif(options, gite);
     const base = round2(tarif * nbChiens * nbNuits);
@@ -901,7 +909,9 @@ const buildClausesHtml = (params: {
   const { gite, options } = params;
   const regles = resolveContractRules(gite, options);
 
-  if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
+  if (regles.regle_animaux_acceptes && options.chiens?.enabled && options.chiens.inclus) {
+    clauses.push("Animaux acceptés ; prestation incluse dans le prix du séjour.");
+  } else if (regles.regle_animaux_acceptes && options.chiens?.enabled) {
     clauses.push(
       `Animaux acceptés sous réserve de respecter les lieux. Supplément chiens: ${formatEuro(
         resolveChiensTarif(options, gite)
@@ -915,7 +925,9 @@ const buildClausesHtml = (params: {
     );
   }
 
-  if (options.depart_tardif?.enabled) {
+  if (options.depart_tardif?.enabled && options.depart_tardif.inclus) {
+    clauses.push("Départ tardif accordé selon l’horaire convenu, inclus dans le prix du séjour.");
+  } else if (options.depart_tardif?.enabled) {
     clauses.push("Départ tardif accordé selon l'horaire convenu avec le propriétaire.");
   }
 
@@ -1110,7 +1122,7 @@ const buildContractHtml = async (params: {
     nbNuits: String(params.totals.nbNuits),
     prixParNuit: formatEuro(toNumber(params.contract.prix_par_nuit)),
     locationLabel: params.totals.touristTaxes?.length ? `Hébergement · ${params.totals.nbNuits} nuit(s), hors taxe de séjour` : `${params.totals.nbNuits} nuits x ${formatEuro(toNumber(params.contract.prix_par_nuit))}`,
-    montantBase: formatEuro(params.totals.touristTaxes?.[0] ? params.totals.touristTaxes[0].accommodation_amount + toNumber(params.contract.remise_montant) : params.totals.montantBase),
+    montantBase: formatEuro(params.totals.touristTaxes?.[0] ? params.totals.touristTaxes[0].accommodation_amount + reservationIncludedOptionCents(params.contract.options, Math.round(params.totals.totalSansOptions * 100)) / 100 + toNumber(params.contract.remise_montant) : params.totals.montantBase),
     touristTaxRowsHtml: buildTouristTaxRows(params.totals.touristTaxes),
     touristTaxDescription: params.totals.touristTaxes?.length ? "La taxe de séjour est détaillée séparément ci-dessus. Les sommes collectées par une plateforme ne sont pas à régler au loueur." : "Le prix comprend toutes les charges ainsi que la taxe de séjour :",
     remiseMontant: formatEuro(toNumber(params.contract.remise_montant)),
@@ -1237,7 +1249,9 @@ const buildInvoiceOptionsRowsHtml = (params: {
     );
   };
 
-  if (options.draps?.enabled) {
+  if (options.draps?.enabled && options.draps.inclus) {
+    rows.push('<tr class="band-option"><td>Draps — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.draps?.enabled) {
     const nbLits = options.draps.nb_lits ?? 0;
     const tarif = resolveDrapsTarif(options, gite);
     const baseAmount = round2(tarif * nbLits);
@@ -1247,7 +1261,9 @@ const buildInvoiceOptionsRowsHtml = (params: {
       billedAmount: totals.optionsDetail.draps,
     });
   }
-  if (options.linge_toilette?.enabled) {
+  if (options.linge_toilette?.enabled && options.linge_toilette.inclus) {
+    rows.push('<tr class="band-option"><td>Linge de toilette — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.linge_toilette?.enabled) {
     const nbPersonnes = options.linge_toilette.nb_personnes ?? 0;
     const tarif = toNumber(gite.options_linge_toilette_par_personne);
     const baseAmount = round2(tarif * nbPersonnes);
@@ -1267,7 +1283,9 @@ const buildInvoiceOptionsRowsHtml = (params: {
       billedAmount: totals.optionsDetail.menage,
     });
   }
-  if (options.depart_tardif?.enabled) {
+  if (options.depart_tardif?.enabled && options.depart_tardif.inclus) {
+    rows.push('<tr class="band-option"><td>Départ tardif — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.depart_tardif?.enabled) {
     const baseAmount = round2(resolveDepartTardifTarif(options, gite));
     addOptionRows({
       label: "Départ tardif",
@@ -1275,7 +1293,9 @@ const buildInvoiceOptionsRowsHtml = (params: {
       billedAmount: totals.optionsDetail.departTardif,
     });
   }
-  if (options.chiens?.enabled) {
+  if (options.chiens?.enabled && options.chiens.inclus) {
+    rows.push('<tr class="band-option"><td>Animaux — inclus dans le prix du séjour</td><td>Inclus</td></tr>');
+  } else if (options.chiens?.enabled) {
     const nbChiens = options.chiens.nb ?? 1;
     const tarif = resolveChiensTarif(options, gite);
     const baseAmount = round2(tarif * nbChiens * totals.nbNuits);
@@ -1390,7 +1410,7 @@ export const buildInvoiceHtml = async (params: {
     : isMultiReservation
     ? reservationRowsHtml
     : params.totals.touristTaxes?.length
-    ? `<tr><td>Hébergement · ${escapeHtml(nightsLabel)} (hors taxe de séjour)</td><td>${formatEuro(params.totals.touristTaxes[0].accommodation_amount + remiseMontantValue)}</td></tr>${remiseRowHtml}${optionsRowsHtml}${buildTouristTaxRows(params.totals.touristTaxes)}`
+    ? `<tr><td>Hébergement · ${escapeHtml(nightsLabel)} (hors taxe de séjour)</td><td>${formatEuro(params.totals.touristTaxes[0].accommodation_amount + reservationIncludedOptionCents(options, Math.round(params.totals.totalSansOptions * 100)) / 100 + remiseMontantValue)}</td></tr>${remiseRowHtml}${optionsRowsHtml}${buildTouristTaxRows(params.totals.touristTaxes)}`
     : `<tr><td>${escapeHtml(locationLineLabel)}</td><td>${formatEuro(params.totals.montantBase)}</td></tr><tr class="invoice-row-taxe-sejour"><td>Dont taxe de séjour</td><td>${formatEuro(params.totals.taxeSejourCalculee)}</td></tr>${remiseRowHtml}${optionsRowsHtml}`;
   const metaGridClass = statutPaiement === "reglee" || params.invoice.document_kind === "credit_note" ? "meta-grid--single" : "";
   const echeanceMetaHtml =
