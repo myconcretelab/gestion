@@ -28,6 +28,8 @@ Le modèle social prépare une base d’encaissements, sans calcul des taux de c
 
 Les corrections ponctuelles motivées concernent les rapports internes. Les rapports sociaux et de nuitées se corrigent dans les données sources. La ventilation par moyen de paiement reste consultable, sans filtre d’exclusion.
 
+Dans l’onglet « À vérifier » des rapports de recettes, le montant ouvre directement le même composant de règlements que la page Réservations : reste à payer du séjour, jauge et fenêtre de saisie avec les raccourcis habituels. Le montant retenu par le rapport reste distinct du solde du séjour. Les réservations sont chargées une seule fois par identifiant pour les lignes à vérifier, avec les droits d’accès aux réservations ; la saisie conserve les droits d’écriture de cette page. Un règlement enregistré actualise les lignes du séjour et recalcule le rapport. Les copies confirmées restent figées, sans accès à cette saisie depuis leurs opérations.
+
 ## Plateformes, brut/net et import Airbnb
 
 `/rapports/import-airbnb` accepte le relevé CSV français des transactions effectuées Airbnb, en euros (dates source `MM/DD/YYYY`). L’aperçu est sans écriture. Le rapprochement utilise le code de confirmation ; une correction explicite reste possible avec recherche et accès aux réservations. Une demande d’argent doit être classée et correspondre à une prestation déjà enregistrée. Un montant de séjour différent du brut et du net demande un choix explicite pour le suivi du paiement ; le prix du séjour n’est jamais remplacé par l’import.
