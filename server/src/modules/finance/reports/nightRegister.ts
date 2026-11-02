@@ -141,7 +141,11 @@ export async function getNightRegister(
           0,
           Math.round((Date.parse(end) - Date.parse(start)) / 86400000),
         );
-        const infants = stayTax?.infants ?? null;
+        const infantsRecorded =
+          typeof options.tourist_tax === "object" &&
+          options.tourist_tax !== null &&
+          Object.hasOwn(options.tourist_tax, "infants");
+        const infants = stayTax && infantsRecorded ? stayTax.infants : null;
         const occupants =
           infants === null
             ? null
@@ -158,6 +162,10 @@ export async function getNightRegister(
         if (!stayTax)
           issues.push(
             "Barème du séjour, collecteur, bébés et exonérations non enregistrés.",
+          );
+        else if (infants === null)
+          issues.push(
+            "Nombre de bébés non enregistré ; nombre total de personnes à compléter.",
           );
         if (tax?.issues.length) issues.push(...tax.issues);
         if (group.length > 1)
