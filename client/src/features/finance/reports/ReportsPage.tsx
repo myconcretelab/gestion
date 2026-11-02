@@ -31,7 +31,7 @@ export type ReportWorkspace = {
   refresh: () => Promise<void>;
   loading: boolean;
   setDraft: (key: string, definition: ReportDefinition | null) => void;
-  mutate: (command: ReportCommand) => Promise<boolean>;
+  mutate: (command: ReportCommand, period?: string) => Promise<boolean>;
   month: string;
   setMonth: (month: string) => void;
   href: (path?: string, period?: string) => string;
@@ -130,7 +130,7 @@ export default function ReportsPage() {
     const timeout = window.setTimeout(() => setNotice(""), 4500);
     return () => window.clearTimeout(timeout);
   }, [notice]);
-  const mutate = async (command: ReportCommand) => {
+  const mutate = async (command: ReportCommand, period = month) => {
     const before = current.current;
     if (
       !before ||
@@ -147,7 +147,7 @@ export default function ReportsPage() {
         method: "POST",
         json: {
           command,
-          month,
+          month: period,
           revision: before.revision,
           factsRevision: before.factsRevision,
         },
