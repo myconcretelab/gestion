@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
 import AccommodationBreakdown from "./AccommodationBreakdown";
@@ -47,6 +47,7 @@ export default function ReportEditor({
     storageError,
   } = workspace;
   const navigate = useNavigate();
+  const formId = useId();
   const [choosingTemplate, setChoosingTemplate] = useState(false);
   const [mobilePane, setMobilePane] = useState("settings");
   const base = state.reports.find((report) => report.id === reportId);
@@ -153,30 +154,35 @@ export default function ReportEditor({
   const additions = [...nextIds].filter((id) => !previousIds.has(id)).length;
   const removals = [...previousIds].filter((id) => !nextIds.has(id)).length;
   const difference = result.total - (baseline?.total ?? 0);
+  const operator = state.operators.find((row) => row.id === draft.operatorId);
+  const recipient =
+    draft.kind === "social" ? (operator?.name ?? "") : draft.recipient;
   const changed =
     !base ||
-    JSON.stringify({ ...draft, favorite: base.favorite }) !==
+    JSON.stringify({ ...draft, recipient, favorite: base.favorite }) !==
       JSON.stringify(base);
   const publish = async (event: FormEvent) => {
     event.preventDefault();
     if (
       !draft.name.trim() ||
-      !draft.recipient.trim() ||
+      (draft.kind !== "social" && !recipient.trim()) ||
       !draft.propertyIds.length ||
       !draft.categories.length ||
       draft.bookingSources?.length === 0 ||
-      (draft.kind === "social" && !draft.operatorId)
+      (draft.kind === "social" && !operator)
     ) {
       setError(
-        "Renseignez un nom, un destinataire, au moins un logement, une catégorie, une source et l’exploitant pour un rapport social.",
+        draft.kind === "social"
+          ? "Renseignez un nom, un exploitant, au moins un logement, une catégorie et une source."
+          : "Renseignez un nom, un destinataire, au moins un logement, une catégorie et une source.",
       );
       setMobilePane("settings");
       const fieldId =
-        draft.kind === "social" && !draft.operatorId
+        draft.kind === "social" && !operator
           ? "rp-report-operator"
           : !draft.name.trim()
             ? "rp-report-name"
-            : !draft.recipient.trim()
+            : draft.kind !== "social" && !recipient.trim()
               ? "rp-report-recipient"
               : !draft.propertyIds.length
                 ? "rp-report-properties"
@@ -194,7 +200,7 @@ export default function ReportEditor({
         definition: {
           ...draft,
           name: draft.name.trim(),
-          recipient: draft.recipient.trim(),
+          recipient: recipient.trim(),
         },
       }))
     )
@@ -233,6 +239,17 @@ export default function ReportEditor({
             )}
           </>
         }
+        actions={
+          <button
+            type="submit"
+            form={formId}
+            className="rp-button"
+            disabled={saving}
+          >
+            <ReportIcon name="check" />
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        }
       />
       <div className="rp-mobile-panes" aria-label="Vue de l’éditeur">
         <button
@@ -253,6 +270,7 @@ export default function ReportEditor({
         </button>
       </div>
       <form
+        id={formId}
         className={`rp-editor rp-editor--${mobilePane}`}
         onSubmit={(event) => void publish(event)}
         noValidate
@@ -277,19 +295,21 @@ export default function ReportEditor({
                   placeholder="Ex. Recettes du propriétaire"
                 />
               </label>
-              <label className="rp-field">
-                Destinataire ou usage
-                <input
-                  id="rp-report-recipient"
-                  required
-                  maxLength={120}
-                  value={draft.recipient}
-                  onChange={(event) =>
-                    update({ recipient: event.target.value })
-                  }
-                  placeholder="Ex. Propriétaire · Maison du verger"
-                />
-              </label>
+              {draft.kind !== "social" && (
+                <label className="rp-field">
+                  Destinataire ou usage
+                  <input
+                    id="rp-report-recipient"
+                    required
+                    maxLength={120}
+                    value={draft.recipient}
+                    onChange={(event) =>
+                      update({ recipient: event.target.value })
+                    }
+                    placeholder="Ex. Propriétaire · Maison du verger"
+                  />
+                </label>
+              )}
               <label className="rp-field">
                 Description <span className="rp-optional">Facultatif</span>
                 <textarea
@@ -331,7 +351,7 @@ export default function ReportEditor({
                       );
                       update({
                         operatorId,
-                        recipient: operator?.name ?? draft.recipient,
+                        recipient: operator?.name ?? "",
                         propertyIds: state.properties
                           .filter(
                             (property) =>
@@ -357,8 +377,10 @@ export default function ReportEditor({
                     ))}
                   </select>
                   <small>
-                    Le rattachement à l’établissement facturant est utilisé. Un
-                    propriétaire historique reste à confirmer.
+                    Identité à laquelle les recettes du rapport sont rattachées,
+                    d’après l’établissement facturant des logements.
+                    {operator?.legacy &&
+                      " Ce propriétaire provient d’un ancien rattachement : l’établissement facturant reste à confirmer."}
                   </small>
                 </label>
               )}
@@ -409,8 +431,9 @@ export default function ReportEditor({
                   ))}
                 </select>
                 <small>
-                  Le choix d’un gestionnaire sélectionne ses logements. Vous
-                  pouvez ensuite affiner la sélection.
+                  {draft.kind === "social"
+                    ? "Filtre facultatif parmi les logements de l’exploitant. Avec « Tous les gestionnaires », aucun filtre supplémentaire n’est appliqué."
+                    : "Le choix d’un gestionnaire sélectionne ses logements. Vous pouvez ensuite affiner la sélection."}
                 </small>
               </label>
               <fieldset
@@ -726,7 +749,10 @@ export default function ReportEditor({
               </div>
               <p className="rp-muted">
                 {getReportPeriod(month, draft.cadence).label} ·{" "}
-                {draft.recipient || "Destinataire"}
+                {recipient ||
+                  (draft.kind === "social"
+                    ? "Exploitant à renseigner"
+                    : "Destinataire")}
               </p>
               <div
                 className="rp-preview-value"
